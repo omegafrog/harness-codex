@@ -1,5 +1,7 @@
 # E2E 실패의 재발 방지
 
+실행 여부와 retry는 [공통 검증 정책](verification-policy.md)을 따른다. Current attempt와 remaining budget을 handoff의 기존 test evidence 요약으로 넘기며 새 schema를 만들지 않는다.
+
 ## 실행 전
 
 caller와 runner는 `docs/verification/e2e-lessons.md`가 있으면 관련 scenario/profile의 현행 항목과 연결된 EXEC·execution.json·검사·테스트를 읽는다. lesson은 과거 명령의 실행 허가가 아니다. 현재 source/config/용어와 다르면 caller가 정정하고 runner는 추측해 우회하지 않는다. caller는 적용한 lesson ID·예방 검사·미해결 실패를 runner에게 전달한다.
@@ -20,12 +22,12 @@ caller는 즉시 plan checkpoint의 `tests.e2e_failures`에 실패를 추가한�
 - `cleanup`: artifact guard/실행 recipe와 소유 프로세스 정리를 고치고 기존 파일 보존 및 새 산출물 제거를 다시 확인한다.
 - `unknown` 또는 외부 장애: 가설·증거·다음 확인 조건을 미해결로 남긴다. 권한 없는 인프라 변경이나 무한 재시도는 하지 않는다.
 
-변경 없는 동일 실패 재시도는 금지한다. 일시 장애라면 실제 health/config 변화와 알려진 상태 복구를 입증한 뒤 한 번 재시도할 수 있다. 같은 원인이 다시 발생하면 최소 두 발생 증거로 `correct`를 적용해 더 강한 예방 검사/구조 수정이 필요한지 판단한다. 진전이 없으면 blocker와 복구 조건을 인계한다.
+변경 없는 동일 실패 재시도는 금지한다. 재시도는 공통 검증 정책의 시나리오당 총 2회 한도(최초 1회와 진단 근거를 반영한 재실행 최대 1회) 안에서만 가능하다. 일시 장애도 실제 health/config 변화와 알려진 상태 복구를 입증해야 한다. 두 발생 증거로 같은 원인이 확인되면 `correct`를 적용해 구조적 예방 검사가 필요한지 판단한다. 재실행 한도를 쓰고도 해결되지 않거나 원인이 불명확하면 blocker와 복구 조건을 인계한다.
 
 ## 검증 및 다음 실행에 반영
 
 1. 가능한 가장 작은 부정 경로 검증으로 과거의 잘못된 전제를 잡는지 확인한다. 이전 실패 증거와 예방 검사의 검증 증거를 함께 보존한다.
-2. 현행 프로필로 해당 사용자 경로를 다시 실행하고 실제 결과·부작용·cleanup을 확인한다. 집중 테스트만으로 E2E 통과를 주장하지 않는다. 실패·미실행·불완전 cleanup은 verified가 아니다.
+2. 공통 검증 정책에 따라 해당 E2E 경로가 여전히 필요한 경우에만 현행 프로필로 다시 실행하고 실제 결과·부작용·cleanup을 확인한다. E2E 해결을 주장한다면 해당 경로를 실제로 재검증한다. Lower-level 변경을 마무리하기 위해 무관한 E2E를 실행하지 않는다. 그 E2E 실패를 해결했다고 주장하지 않는 경우는 verified로 바꾸지 말고 미해결 blocker로 남긴다. 실패·미실행·불완전 cleanup은 verified가 아니다.
 3. 확인된 원인만 프로젝트 소유 `docs/verification/e2e-lessons.md`에 요약한다. 항목은 stable ID, 수정일, 적용 scenario/profile, 원인/재현 전제, 다음 실행 전 검사, 예방 source/profile/test 링크, 마지막 검증 결과와 source revision을 가진다. 미확정 가설·raw 로그·비밀값·task 상태 목록은 넣지 않는다. 실행 설정은 EXEC/execution.json을 링크하며 복제하지 않는다. 폐기 항목은 대체 ID/이유를 남기고 활성 규칙에서 제외한다. 관련 기능/검증 지도와 계약 영향만 함께 반영한다.
 4. `tests.e2e_failures`의 항목을 아래 형식으로 보완하고 verified로 바꾼다. reviewer는 실제 수정·부정/긍정 증거·lesson을 읽어 예방 조치가 같은 실패 원인을 막는지 확인한다. 완료 검사 전 `sync-contracts`를 수행한다.
 

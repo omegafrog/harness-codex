@@ -61,6 +61,12 @@ node .codex/scripts/harness-contracts.mjs check --root /absolute/project --base-
 
 새 tracker mirror를 연결한 뒤에는 개별 gh/bd status 명령 대신 다음 공통 명령을 사용한다. root는 실제 consumer worktree의 절대 경로이며 subprocess cwd도 같은 경로다. linked worktree에서는 Git common directory의 공유 Beads도 발견한다.
 
+기존 mirror 유무와 관계없이 exact ticket 상태를 읽을 때는 다음 read-only 명령을 사용한다. GitHub는 설정된 repository와 issue number를 직접 조회하고 Project/field/item pagination이 불완전하면 누락으로 단정하지 않고 오류를 반환한다. local-markdown은 설정된 ticket 경로를 읽는다.
+
+```sh
+node .codex/scripts/harness-tracker.mjs read --root /absolute/project --ticket owner/repo#123
+```
+
 ```sh
 node .codex/scripts/harness-tracker.mjs check --root /absolute/project
 node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --status in-progress --phase implementation --classification committed
@@ -163,7 +169,7 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 
 ## 구현 준비 회귀 검증
 
-`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. `tracker-lifecycle-check`는 tracker lifecycle/CLI 회귀, `plan-traceability-check`는 검토 snapshot의 현재성과 dispatch gate 회귀를 실행한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.
 
 ## E2E 실패의 재발 방지
 

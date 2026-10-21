@@ -20,4 +20,12 @@ This provider-neutral document stores durable project-specific testing preferenc
 - Source: 2026-10-20, user instructions on session output boundaries and learning from E2E failures
 - Updated: 2026-10-20
 
+### selective-e2e-and-dynamic-agent-oracles
+- Status: active
+- Applies to: test planning, implementation verification, and E2E runner handoffs
+- Guidance: Default to focused unit/integration/contract checks. Use E2E only on explicit request or a changed critical cross-boundary path that cheaper checks cannot establish. For dynamic agent services, verify stable transport/UI states and goal/state/tool/permission/persistence/side-effect evidence; do not assert exact prose, ordering, or counts without a canonical contract. Keep E2E attempts bounded and do not let a runner edit tests or source.
+- Rationale: Avoid repeated slow E2E runs against intentionally dynamic agent responses and prevent retry-driven expectation weakening.
+- Source: 2026-10-21, explicit user preference on unnecessary E2E execution and dynamic agent response assertions
+- Updated: 2026-10-21
+
 ## Superseded guidance

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
-import { inspectTrackerSync, syncTrackerStatus } from "../src/tracker/lifecycle.mjs";
+import { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } from "../src/tracker/lifecycle.mjs";
 import { sessionDirectory } from "../src/workflow/session-output.mjs";
 
 const ref = "owner/repo#7";
@@ -79,9 +79,75 @@ test("GitHub sync uses the configured Workflow Status field and leaves Issue sta
     const result = await syncTrackerStatus({ workspace_root: f.root, ticket_ref: ref, status: "completed", run: f.run });
     assert.equal(result.status, "pass");
     assert.equal(f.bead.status, "closed");
+    assert.equal(f.calls.filter(([cmd, args]) => cmd === "gh" && args[0] === "project" && args[1] === "view").length, 1);
+    assert.equal(f.calls.filter(([cmd, args]) => cmd === "gh" && args[0] === "project" && args[1] === "field-list").length, 1);
+    assert.equal(f.calls.filter(([cmd, args]) => cmd === "gh" && args[0] === "api").length, 3);
     assert.equal(f.calls.some(([cmd, args]) => cmd === "gh" && args.includes("--field-id") && args[args.indexOf("--field-id") + 1] === "default"), false);
     assert.equal(f.calls.some(([cmd, args]) => cmd === "gh" && args[0] === "issue"), false);
   } finally { await f.cleanup(); }
+});
+
+test("read-only tracker lookup resolves exact issue beyond the default board page without requiring Beads", async () => {
+  const f = await fixture("github");
+  try {
+    const result = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run: async (cmd, args, cwd) => {
+      if (cmd === "bd") throw new Error("read-only lookup must not call Beads");
+      if (cmd === "gh" && args[0] === "project" && args[1] === "item-list") throw new Error("read-only lookup must not scan capped board pages");
+      return f.run(cmd, args, cwd);
+    } });
+    assert.equal(result.status, "pass");
+    assert.equal(result.canonical_status, "planned");
+    assert.equal(result.ticket_ref, ref);
+    assert.ok(result.item_id);
+  } finally { await f.cleanup(); }
+});
+
+test("read-only GitHub lookup distinguishes incomplete pagination from a missing project item", async () => {
+  const f = await fixture("github");
+  const run = async (cmd, args, cwd) => {
+    if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: true }, nodes: [] } } } } });
+    return f.run(cmd, args, cwd);
+  };
+  try {
+    const incomplete = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run });
+    assert.match(incomplete.violations[0], /incomplete project item pagination/);
+    const absent = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run: async (cmd, args, cwd) => {
+      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
+      return f.run(cmd, args, cwd);
+    } });
+    assert.match(absent.violations[0], /Configured project item: expected exactly one match/);
+    const wrongRef = await readTrackerStatus({ workspace_root: f.root, ticket_ref: "other/repo#7", run: f.run });
+    assert.match(wrongRef.violations[0], /match configured repository/);
+    const apiError = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run: async (cmd, args, cwd) => {
+      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ errors: [{ message: "configured project access unavailable" }] });
+      return f.run(cmd, args, cwd);
+    } });
+    assert.match(apiError.violations[0], /GitHub issue query failed for owner\/repo#7: configured project access unavailable/);
+  } finally { await f.cleanup(); }
+});
+
+test("tracker CLI read is read-only and works without a registered Beads mirror", async () => {
+  const f = await fixture();
+  const cli = new URL("../.codex/scripts/harness-tracker.mjs", import.meta.url).pathname;
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [cli, "read", "--root", f.root, "--ticket", f.ref], { encoding: "utf8" });
+    const result = JSON.parse(stdout);
+    assert.equal(result.status, "pass");
+    assert.equal(result.canonical_status, "planned");
+    await assert.rejects(execFileAsync(process.execPath, [cli, "read", "--root", f.root, "--ticket", f.ref, "--status", "completed"]), /read is read-only/);
+  } finally { await f.cleanup(); }
+});
+
+test("documented capped number-only board lookup misses the exact issue when it is beyond the page", () => {
+  const items = Array.from({ length: 362 }, (_, index) => ({ content: { number: index + 1000, repository: { nameWithOwner: "owner/repo" } } }));
+  items[0] = { content: { number: 7, repository: { nameWithOwner: "other/repo" } } };
+  items[361] = { content: { number: 7, repository: { nameWithOwner: "owner/repo" } } };
+  for (const limit of [30, 100, 200]) {
+    const page = items.slice(0, limit);
+    assert.equal(page.find((item) => item.content.number === 7)?.content.repository.nameWithOwner, "other/repo");
+    assert.equal(page.find((item) => item.content.number === 7 && item.content.repository.nameWithOwner === "owner/repo"), undefined);
+  }
+  assert.equal(items[361].content.repository.nameWithOwner, "owner/repo");
 });
 
 test("check rejects duplicate or missing exact Beads references before any write", async () => {
@@ -162,6 +228,59 @@ test("GitHub lifecycle check rejects incomplete or ambiguous configured items be
     };
     await assert.rejects(syncTrackerStatus({ workspace_root: f.root, ticket_ref: ref, status: "completed", run: bad }), /exactly one match/);
     assert.equal(f.calls.some(([, args]) => args[0] === "close" || args[0] === "update"), false);
+  } finally { await f.cleanup(); }
+});
+
+test("GitHub mirror check resolves project metadata once per invocation and refreshes each issue", async () => {
+  const f = await fixture("github");
+  let fieldCalls = 0, viewCalls = 0, issueCalls = 0;
+  const beads = [7, 8].map((number) => ({ ...f.bead, id: `bd-${number}`, external_ref: `owner/repo#${number}` }));
+  const run = async (cmd, args, cwd) => {
+    if (cmd === "bd" && args[0] === "list") return JSON.stringify([beads.find((bead) => bead.external_ref === args[args.indexOf("--external-ref") + 1])]);
+    if (cmd === "gh" && args[0] === "project" && args[1] === "view") viewCalls++;
+    if (cmd === "gh" && args[0] === "project" && args[1] === "field-list") {
+      fieldCalls++;
+    }
+    if (cmd === "gh" && args[0] === "api") {
+      issueCalls++;
+      const number = Number(args[args.indexOf("-F") + 1].split("=")[1]);
+      return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: `item-${number}`, project: { id: "project-4" }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: "Planned", field: { id: "workflow" } }] } }] } } } } });
+    }
+    return f.run(cmd, args, cwd);
+  };
+  try {
+    const result = await inspectTrackerSync({ workspace_root: f.root, ticket_refs: beads.map((bead) => bead.external_ref), run });
+    assert.equal(result.status, "pass");
+    assert.equal(fieldCalls, 1);
+    assert.equal(viewCalls, 1);
+    assert.equal(issueCalls, 2);
+    assert.equal(result.tickets.length, 2);
+    assert.equal((await inspectTrackerSync({ workspace_root: f.root, ticket_refs: beads.map((bead) => bead.external_ref), run })).status, "pass");
+    assert.equal(fieldCalls, 2);
+    assert.equal(viewCalls, 2);
+    assert.equal(issueCalls, 4);
+  } finally { await f.cleanup(); }
+});
+
+test("GitHub mirror check reports project metadata step and stops before issue reads on API failure", async () => {
+  const f = await fixture("github");
+  let fieldCalls = 0, issueCalls = 0;
+  const run = async (cmd, args, cwd) => {
+    if (cmd === "bd" && args[0] === "list") return JSON.stringify([f.bead]);
+    if (cmd === "gh" && args[0] === "project" && args[1] === "field-list" && ++fieldCalls === 1) throw new Error("simulated API failure; raw GitHub stderr unavailable");
+    if (cmd === "gh" && args[0] === "api") issueCalls++;
+    return f.run(cmd, args, cwd);
+  };
+  try {
+    const failed = await inspectTrackerSync({ workspace_root: f.root, ticket_refs: [ref], run });
+    assert.equal(failed.status, "fail");
+    assert.match(failed.violations[0], /GitHub configured project field-list failed \(owner\/4, Workflow Status\): simulated API failure/);
+    assert.equal(issueCalls, 0);
+    assert.equal(f.calls.some(([cmd, args]) => cmd === "gh" && args.includes("item-edit")), false);
+    const retriedByCaller = await inspectTrackerSync({ workspace_root: f.root, ticket_refs: [ref], run });
+    assert.equal(retriedByCaller.status, "pass");
+    assert.equal(fieldCalls, 2);
+    assert.equal(issueCalls, 1);
   } finally { await f.cleanup(); }
 });
 

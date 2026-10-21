@@ -37,20 +37,32 @@ async function localTicket(root, config, ref) {
   if (!Object.hasOwn(TRACKER_STATES, status)) throw new Error(`Unsupported local status: ${status}`);
   return { path, content, frontmatter: frontmatter[0], status };
 }
-async function githubTicket(root, config, ref, run) {
+async function githubProjectMetadata(root, settings, run, context) {
+  if (!context.githubProjectMetadata) context.githubProjectMetadata = (async () => {
+    let project, fields;
+    try { project = await json(run, 'gh', ['project', 'view', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json'], root); }
+    catch (error) { throw new Error(`GitHub configured project view failed (${settings.project_owner}/${settings.project_number}): ${error.message}`); }
+    try { fields = await json(run, 'gh', ['project', 'field-list', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json', '--limit', '100'], root); }
+    catch (error) { throw new Error(`GitHub configured project field-list failed (${settings.project_owner}/${settings.project_number}, ${settings.status_field}): ${error.message}`); }
+    if (fields.totalCount > fields.fields.length) throw new Error('Incomplete project field list');
+    const field = single(fields.fields.filter((f) => f.name === settings.status_field && f.type === 'ProjectV2SingleSelectField'), 'Configured status field');
+    for (const [name] of Object.values(TRACKER_STATES)) single(field.options.filter((o) => o.name === name), `Status option ${name}`);
+    return { project, field };
+  })();
+  return context.githubProjectMetadata;
+}
+async function githubTicket(root, config, ref, run, context) {
   const settings = config.github;
   if (!settings || !/^[\w.-]+\/[\w.-]+$/.test(settings.repository || '') || !/^[\w-]+$/.test(settings.project_owner || '') || !Number.isInteger(settings.project_number) || settings.project_number <= 0 || !settings.status_field || settings.status_field === 'Status') throw new Error('Invalid configured GitHub Workflow Status project');
   const match = ref.match(/^([\w.-]+\/[\w.-]+)#([1-9]\d*)$/);
   if (!match || match[1] !== settings.repository) throw new Error('Ticket reference must match configured repository');
-  const project = await json(run, 'gh', ['project', 'view', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json'], root);
-  const fields = await json(run, 'gh', ['project', 'field-list', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json', '--limit', '100'], root);
-  if (fields.totalCount > fields.fields.length) throw new Error('Incomplete project field list');
-  const field = single(fields.fields.filter((f) => f.name === settings.status_field && f.type === 'ProjectV2SingleSelectField'), 'Configured status field');
-  for (const [name] of Object.values(TRACKER_STATES)) single(field.options.filter((o) => o.name === name), `Status option ${name}`);
+  const { project, field } = await githubProjectMetadata(root, settings, run, context);
   const [owner, repo] = settings.repository.split('/');
   const query = 'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){state projectItems(first:100){pageInfo{hasNextPage} nodes{id project{id} fieldValues(first:100){pageInfo{hasNextPage} nodes{... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{id}}}}}}}}}}';
-  const response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${match[2]}`], root);
-  if (response.errors?.length) throw new Error('GitHub issue query failed');
+  let response;
+  try { response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${match[2]}`], root); }
+  catch (error) { throw new Error(`GitHub issue query failed for ${ref}: ${error.message}`); }
+  if (response.errors?.length) throw new Error(`GitHub issue query failed for ${ref}: ${response.errors.map((error) => error.message).filter(Boolean).join('; ') || 'API returned errors'}`);
   const issue = response.data?.repository?.issue;
   if (!issue || issue.projectItems.pageInfo.hasNextPage) throw new Error('Missing issue or incomplete project item pagination');
   const item = single(issue.projectItems.nodes.filter((i) => i.project.id === project.id), 'Configured project item');
@@ -61,10 +73,16 @@ async function githubTicket(root, config, ref, run) {
   if (issue.state !== 'OPEN' && status !== 'completed') throw new Error('A closed GitHub issue cannot have an unfinished Workflow Status');
   return { status, project, field, item, issue_state: issue.state };
 }
-async function readTracker(root, config, ref, run) {
-  if (config?.mode === 'github') return githubTicket(root, config, ref, run);
+async function readTracker(root, config, ref, run, context = {}) {
+  if (config?.mode === 'github') return githubTicket(root, config, ref, run, context);
   if (config?.mode === 'local-markdown') return localTicket(root, config, ref);
   throw new Error('Exactly one configured tracker mode is required');
+}
+export async function readTrackerStatus({ workspace_root: root, ticket_ref: ref, run = defaultRun } = {}) {
+  try {
+    const tracker = await readTracker(root, await projectConfig(root), ref, run, {});
+    return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
+  } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
 }
 async function mirror(root, ref, run) {
   const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--external-ref', ref], root);
@@ -100,9 +118,9 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     }
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
     if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
-    const config = await projectConfig(root), tickets = [];
+    const config = await projectConfig(root), tickets = [], context = {};
     for (const ref of refs) {
-      const bead = await mirror(root, ref, run), tracker = await readTracker(root, config, ref, run);
+      const bead = await mirror(root, ref, run), tracker = await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
@@ -119,7 +137,8 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   const config = await projectConfig(root);
   const bead = await mirror(root, ref, run); // Resolve uniqueness before either write.
   metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
-  let tracker = await readTracker(root, config, ref, run), tracker_updated = false;
+  const context = {};
+  let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
   try {
@@ -141,7 +160,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
       }
       tracker_updated = true;
     }
-    tracker = await readTracker(root, config, ref, run);
+    tracker = await readTracker(root, config, ref, run, context);
     if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
     const expected = TRACKER_STATES[desired][1];
     if (bead.status !== expected) {
@@ -156,7 +175,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     const verified = single(await json(run, 'bd', ['show', bead.id, '--json'], root), 'Beads verification');
     if (verified.external_ref !== ref || verified.status !== expected || (phase && verified.metadata?.harness_phase !== phase) || (classification && verified.metadata?.harness_classification !== classification)) throw new Error('Beads write did not verify');
     metadataValid(verified);
-    const current = await readTracker(root, config, ref, run);
+    const current = await readTracker(root, config, ref, run, context);
     if (current.status !== desired) throw new Error('Canonical state changed during mirror write; retry from the latest state');
     const result = { status: 'pass', reason: 'tracker_mirror_synced', ticket_ref: ref, canonical_status: desired, bead_id: bead.id, tracker_updated, evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });

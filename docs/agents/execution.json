@@ -1,6 +1,17 @@
 {
   "schema_version": 1,
   "profiles": {
+    "tracker-lifecycle-check": {
+      "command": ["node", "--test", "tests/tracker_lifecycle.test.mjs", "tests/tracker_contract.test.mjs"],
+      "required_env": [],
+      "config_inputs": ["package.json", "src/tracker/lifecycle.mjs", ".codex/scripts/harness-tracker.mjs", "tests/tracker_lifecycle.test.mjs", "docs/agents/EXEC.md"],
+      "prepare": [],
+      "verify_config": [["node", "-e", "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"]],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
     "harness-execution": {
       "command": [
         "node",

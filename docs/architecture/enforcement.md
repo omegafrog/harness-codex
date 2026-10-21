@@ -14,6 +14,7 @@
 | 승인된 구형 경로 제거를 실제 파일로 확인한다 | `src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
+| E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
 
 ## 통합 계약 완료 gate
 
@@ -25,7 +26,7 @@
 
 ## Tracker lifecycle와 mirror gate
 
-`src/tracker/lifecycle.mjs`의 공통 코드가 신규 v1 mirror를 exact external_ref로 연결한다. `syncTrackerStatus`는 canonical 상태 변경·재조회 후 Beads를 반영하고 재조회한다. phase/classification은 metadata로 분리한다. 부분 실패는 local journal에 남기며 canonical을 rollback하지 않는다. `inspectTrackerSync`는 읽기 전용이다.
+`src/tracker/lifecycle.mjs`의 공통 코드가 신규 v1 mirror를 exact external_ref로 연결한다. GitHub project/field metadata는 한 번의 read/check/sync invocation 안에서만 resolve하며 해당 ref의 issue/item/status는 각 검증 시 다시 읽는다. 호출 간 캐시나 오류시 성공 fallback은 없다. `readTrackerStatus`는 mirror 없이 configured exact ref의 canonical 상태를 읽으며 incomplete pagination은 오류로 둔다. `syncTrackerStatus`는 canonical 상태 변경·재조회 후 Beads를 반영하고 재조회한다. phase/classification은 metadata로 분리한다. 부분 실패는 local journal에 남기며 canonical을 rollback하지 않는다. `inspectTrackerSync`는 mirror 일관성 gate다.
 
 모든 workflow의 `tracker_sync`와 시작 workspace preflight, 실제 dispatch 전 검사, 실제 wrapper completion이 이를 호출한다. 중복/미연결 ref, 네 상태 밖의 값, metadata 누락, canonical/mirror 불일치는 실행·정상 완료·종속 plan 해제를 차단한다. 설치 runtime에도 같은 module/CLI가 배포된다. 기존 데이터는 이동·재분류하지 않고 새로 등록된 version1 mirror에 적용한다. GitHub 기본 Status와 Issue closure는 이 코드의 갱신 대상이 아니다.
 
@@ -61,7 +62,7 @@ spec-me의 Product/Architecture 초안을 각각 새 reviewer로 검토한다. �
 
 ## E2E 실패 학습과 이력 보존
 
-반복 실패를 원인 확인 없이 다시 실행하던 흐름을 e2e-test의 failure-learning reference로 연결한다. runner는 증거/cleanup, caller는 원인 조사·실제 profile/readiness/회귀 검사 수정·재검증·프로젝트 e2e-lessons 갱신을 소유한다. 매 시도는 새 세션 하위 run 경로를 사용하며 다음 실행은 현행 lesson/예방 검사를 먼저 읽는다. 같은 원인의 반복 발생은 두 증거를 기준으로 correct를 적용한다. 미확정 원인을 영구 규칙으로 승격하지 않는다.
+반복 실패를 원인 확인 없이 다시 실행하던 흐름을 e2e-test의 failure-learning reference로 연결한다. runner는 증거/cleanup, caller는 원인 조사·실제 profile/readiness/회귀 검사 수정·재검증·프로젝트 e2e-lessons 갱신을 소유한다. 매 시도는 새 세션 하위 run 경로를 사용하며 다음 실행은 현행 lesson/예방 검사를 먼저 읽는다. 같은 원인의 반복 발생은 두 증거를 기준으로 correct를 적용한다. 미확정 원인을 영구 규칙으로 승격하지 않는다. E2E 실행은 E2E/full-stack/browser end-to-end 명시 요청 또는 cheaper checks로 입증할 수 없는 변경 critical cross-boundary 위험으로 제한하고, 일반 검증/서비스 실행 요청은 E2E 요청으로 해석하지 않는다. UI 변경만으로 full-stack 실행을 요구하지 않는다. Agent 응답은 승인 oracle과 trace를 기준으로 검증하며, 동적 prose를 고정하거나 runner가 test/source를 수정하지 않는다. 최초 시도와 진단 후 최대 한 번 재실행 budget을 handoff 간 공유한다. 이 policy는 manual review이며 자동 강제되지 않는다.
 
 `mergeTests`는 ID별 e2e_failures를 누적하고 빈 배열/상태 요약으로 삭제하거나 원본 evidence_path를 바꾸는 것을 막는다. 공통 completeWorkflow도 tests.e2e_failures가 전달되면 로컬 manifest에 tests가 없어도 해당 gate를 강제한다. `e2eFailuresResolved`를 lifecycle tests gate와 wrapper 완료 판정이 공유하여 미해결/필수 근거 누락 실패가 passed로 덮이는 것을 차단한다. `tests/e2e_learning.test.mjs`와 e2e-learning-check 프로필이 이를 검증한다. 자동 검사는 메타데이터 형식/상태이며 파일 내용의 진위·미보고 실패·원인/예방 검사 의미는 runner 원본 결과와 독립 리뷰가 대조한다. 구조/회귀 검사로 표현할 수 있는 규칙은 메모만 추가하지 않고 실제 검사로 반영한다.
 

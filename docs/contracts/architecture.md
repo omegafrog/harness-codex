@@ -211,7 +211,7 @@ workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→r
 
 dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. managed worktree caller는 source project root(`return_root`)를 absolute `shared_guidance_root`로 구현/test worker에 전달하고, 동일 Git common directory인지 검증한다. implementer는 공유 구현·테스트 지침을 읽고, test runner는 공유 테스트 지침을 읽는다. worker는 branch-local copy를 참조하지 않는다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
 
-구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eFailuresResolved](../../src/eval/contracts.mjs)는 lifecycle tests gate와 wrapper testsPassed가 재사용한다. verified·확정 분류·원인·scenario/profile·원본/재검증 증거·lesson·예방 경로의 형식이 없으면 완료하지 않는다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다.
+구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eFailuresResolved](../../src/eval/contracts.mjs)는 lifecycle tests gate와 wrapper testsPassed가 재사용한다. verified·확정 분류·원인·scenario/profile·원본/재검증 증거·lesson·예방 경로의 형식이 없으면 완료하지 않는다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
 
 <a id="decision-service"></a>
 ## src/decision/review.mjs
@@ -420,10 +420,10 @@ workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state
 설정된 tracker·exact external_ref·v1 Beads mirror·phase/classification metadata·실행 결과·local journal. 객체형 DDD entity는 별도 선언하지 않는다.
 
 ### 동작
-GitHub Workflow Status 또는 local YAML frontmatter가 canonical이다. 단일 exact ref를 확인한 후 canonical 갱신→재조회→Beads 반영→재조회한다. 실패는 journal에 기록하고 canonical을 되돌리지 않는다. 기본 Project Status와 GitHub Issue open/closed는 갱신하지 않는다. local ticket은 본문을 보존하고 같은 directory의 임시 파일을 rename하여 교체한다. 기존 데이터는 migration하지 않는다.
+GitHub Workflow Status 또는 local YAML frontmatter가 canonical이다. 단일 exact ref를 확인한 후 canonical 갱신→재조회→Beads 반영→재조회한다. read-only 상태 조회는 Beads mirror를 요구하지 않고 설정된 repo+issue를 exact lookup하며 incomplete pagination은 오류로 반환한다. GitHub project/field metadata는 하나의 read/check/sync 호출 안에서만 한 번 resolve하며 각 issue/item/status 확인은 매번 다시 한다. 호출 사이에 재사용하거나 조회 실패를 우회하지 않는다. 실패는 journal에 기록하고 canonical을 되돌리지 않는다. 기본 Project Status와 GitHub Issue open/closed는 갱신하지 않는다. local ticket은 본문을 보존하고 같은 directory의 임시 파일을 rename하여 교체한다. 기존 데이터는 migration하지 않는다.
 
 ### 메서드
-[inspectTrackerSync](architecture.md#inspect-tracker-sync) · [syncTrackerStatus](architecture.md#sync-tracker-status)
+[inspectTrackerSync](architecture.md#inspect-tracker-sync) · readTrackerStatus · [syncTrackerStatus](architecture.md#sync-tracker-status)
 
 <a id="inspect-tracker-sync"></a>
 ## inspectTrackerSync

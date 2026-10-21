@@ -5,13 +5,15 @@ description: Run full-stack end-user E2E tests in the active worktree, following
 
 # E2E 테스트 실행
 
-실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 사용한다. 호출자는 활성 worktree의 절대 `workspace_root`와 세션을 시작한 원본 프로젝트의 절대 `shared_guidance_root`(`return_root`)를 모두 확정하고, 두 경로가 같은 Git common directory인지 확인한다. `<shared_guidance_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. `.codex/harness.yaml`의 `agents.execution_model`, `agents.execution_reasoning_effort`를 해석한 뒤 `multi_agent_v1.spawn_agent`로 `agent_type="e2e_test_runner"`를 호출한다. `workspace_root`와 `cwd`에 동일한 경로를 지정하고 두 경로, 사용자 시나리오·성공 조건·timeout을 전달하며 해석한 model/reasoning 값을 명시한다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
+먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. 이 정책은 의미적 수동 판단이며 자동 런타임 집행이 아니다. 호출자는 E2E/full-stack/browser end-to-end를 명시적으로 요청했거나 저비용 검사로 실패를 확인할 수 없는 변경된 critical cross-boundary 경로에 대해서만 실행한다. 승인된 E2E plan과 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다.
+
+실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 사용한다. 호출자는 활성 worktree의 절대 `workspace_root`와 세션을 시작한 원본 프로젝트의 절대 `shared_guidance_root`(`return_root`)를 모두 확정하고, 두 경로가 같은 Git common directory인지 확인한다. `<shared_guidance_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. `.codex/harness.yaml`의 `agents.execution_model`, `agents.execution_reasoning_effort`를 해석한 뒤 `multi_agent_v1.spawn_agent`로 `agent_type="e2e_test_runner"`를 호출한다. `workspace_root`와 `cwd`에 동일한 경로를 지정하고 두 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달하며 해석한 model/reasoning 값을 명시한다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
 
 프로젝트의 검증 기능 지도(있으면 `docs/verification/features.md`)에서 관련 시나리오·requirement/rule ID·진입점·성공 결과를 읽는다. 기능 변경으로 지도가 달라지면 검증한 항목만 갱신한다. 지도의 생성·전체 정합성 점검은 `maintain-verification`을 사용하며, 여기서는 요청된 범위의 실제 실행만 맡는다. 성능 목표가 있으면 plan의 workload·baseline·지표와 measurement 증거 계약을 따른다.
 
 ## 실패 학습과 다음 실행
 
-caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인하고, 실패 후에는 caller가 원인 확인→실제 예방 조치→해당 경로 재검증→lesson 반영을 소유한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 미해결 실패를 단순 재시도 성공으로 지우지 않는다.
+Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인하고, 실패 후에는 caller가 원인 확인→실제 예방 조치→필요한 경우 해당 E2E 경로 재검증→lesson 반영을 소유한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 미해결 실패를 단순 재시도 성공으로 지우지 않는다.
 
 ## 실행 절차
 

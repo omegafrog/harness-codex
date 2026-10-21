@@ -68,6 +68,26 @@ test('planning traceability validates full source-to-plan coverage and independe
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
+test('dispatch accepts the reviewed uncommitted Spec bytes and blocks a later Spec edit', async () => {
+  const f = await fixture();
+  try {
+    execFileSync('git', ['-C', f.root, 'config', 'user.email', 'fixture@example.invalid']);
+    execFileSync('git', ['-C', f.root, 'config', 'user.name', 'Fixture']);
+    execFileSync('git', ['-C', f.root, 'add', '.']);
+    execFileSync('git', ['-C', f.root, 'commit', '-qm', 'fixture baseline']);
+    const specPath = join(f.root, f.spec, 'product-spec.md');
+    await writeFile(specPath, '# Product\n- **BR-38:** Prevent uncovered rules in the current uncommitted Spec.\n');
+    f.ledger.requirements[0].statement = 'Prevent uncovered rules in the current uncommitted Spec.';
+    await f.save();
+    f.ledger.review.inputs = (await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' })).inputs;
+    await f.save();
+    assert.equal((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' })).status, 'pass');
+
+    await writeFile(specPath, '# Product\n- **BR-38:** Changed after review snapshot.\n');
+    assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' })).reason, /stale/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
 test('impact reports added and removed declarations and conservatively invalidates all plans', async () => {
   const f = await fixture();
   try {

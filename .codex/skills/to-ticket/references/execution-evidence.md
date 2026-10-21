@@ -6,6 +6,10 @@
 
 각 slice의 기존 `수용 기준`에 `UC/BR/INV 또는 기존 requirement ID → Context/모델 owner → 실행 진입점 → 기대 결과 → 검증 명령`을 기록한다. 전역 ID 체계나 별도 task board를 새로 만들지 않는다. `테스트 계약`에는 아래 항목을 필요한 만큼 기록한다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.
 
+E2E 선택은 [공통 검증 정책](../../e2e-test/references/verification-policy.md)을 따른다. 각 slice의 E2E 필드는 형식상 유지하되, 기본은 `해당 없음 — 사유, 선택한 저비용 검증`이다. E2E가 필요한 경우에만 변경 requirement/risk, 저비용 검사가 부족한 이유, 최소 시나리오와 oracle, profile, timeout, 총 시도 budget을 기존 문자열에 기록한다. UI 표면의 변경만으로 충분한 사유가 되지 않는다.
+
+Live agent 확인이 필요한 경우에는 사전 승인한 task와 task/environment budget, trace/correlation ID로 볼 결과를 함께 고정한다. UI stub은 request/stream/loading/done 같은 안정 상태만 검증하며 live 품질로 표시하지 않는다.
+
 - 변경된 rule과 enforcement method/function, 허용·금지 의존성, 기존 검사 또는 도메인 테스트.
 - 현행/폐기 용어와 호환 식별자 예외. 기존 구현 대체라면 old → new 경로, 이전할 소비자, 삭제할 구현/export/config/fixture와 잔존 검색·동작 검증. 제거할 수 없는 호환 경로는 소비자 근거·제거 조건·후속 tracker 참조를 포함한다.
 - 제거하기로 승인된 파일/디렉터리는 `retirement.removed_paths`의 저장소 상대 경로 목록으로 runtime handoff에 전달한다. canonical tracker에는 기존 acceptance/test-contract 문자열에 목록을 보존하고 새로운 structured-source key를 추가하지 않는다. 제거 대상이 없으면 빈 목록과 근거 `reason`을 전달한다. 이 검사는 새 후보가 임의로 정한 목록이 아니라 승인된 계획의 제거 목록을 사용한다.
