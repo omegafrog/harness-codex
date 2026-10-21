@@ -676,7 +676,7 @@ plan set ID·ticket ID·Spec/요청/결정/다이어그램/계약 입력·canoni
 workspace root·plan set ID.
 
 ### 동작
-요청·Spec·결정·diagram·계약·plan 본문과 원장 planning content를 수집한다. implementation evidence와 일반 source 변경은 제외한다.
+요청·Spec·결정·diagram·계약·plan 본문과 원장 planning content를 수집한다. 요구사항 선언은 제목의 ID 또는 `- **BR-38:**` / `- **BR-38**:` 형식의 강조 목록 항목에서만 인식한다. 본문에서 ID를 언급하거나 일반 목록에 적은 diagram inventory는 선언으로 계산하지 않는다. implementation evidence와 일반 source 변경은 제외한다.
 
 <a id="inspect-plan-traceability-method"></a>
 ## inspectPlanTraceability

@@ -7,7 +7,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const DECLARATION = /^(?:#{1,6}\s+|[-*]\s+|\d+[.)]\s+)?(?:\*\*)?((?:BR|UC|AC|INV)-[A-Za-z0-9._-]+)(?:\*\*)?\s*(?::|—|–|-|\s|$)/;
+const DECLARATION = /^(?:#{1,6}\s+((?:BR|UC|AC|INV)-[A-Za-z0-9._-]+)(?=\s|:|—|–|-|$)|[-*]\s+\*\*((?:BR|UC|AC|INV)-[A-Za-z0-9._-]+)(?::\*\*|\*\*:))/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const execFileAsync = promisify(execFile);
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -96,7 +96,7 @@ async function collectInputs(root, planSetId, ledger, { trackerPort = null, stri
 function declarations(text) {
   return [...text.split(/\r?\n/)].flatMap((line) => {
     const match = line.trim().match(DECLARATION);
-    return match ? [match[1]] : [];
+    return match ? [match[1] || match[2]] : [];
   });
 }
 

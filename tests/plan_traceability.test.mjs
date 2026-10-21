@@ -100,6 +100,21 @@ test('impact reports added and removed declarations and conservatively invalidat
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
+test('requirement references in prose and diagram inventories are not declarations', async () => {
+  const f = await fixture();
+  try {
+    const productPath = join(f.root, f.spec, 'product-spec.md');
+    await writeFile(productPath, '# Product\n### UC-001 Prepare an ability definition.\n- UC-001 diagram inventory entry.\n- **BR-38:** Prevent uncovered execution rules.\n');
+    f.ledger.requirements.push({ id: 'UC-001', source_path: `${f.spec}/product-spec.md`, source_anchor: 'UC-001', statement: 'Prepare an ability definition.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered' });
+    f.ledger.plans[0].requirement_ids.push(`${f.spec}/product-spec.md#UC-001`);
+    await writeFile(join(f.root, f.base, 'plan-a.md'), 'Plan plan-a implements BR-38 and UC-001. all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage.\n');
+    await f.save();
+
+    const snapshot = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    assert.ok(snapshot.declarations.includes(`${f.spec}/product-spec.md#UC-001`));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
 test('unchanged planning inputs stay current after ordinary source edits and report no impact', async () => {
   const f = await fixture();
   try {

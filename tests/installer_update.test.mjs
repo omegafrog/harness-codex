@@ -216,6 +216,12 @@ test("fresh installation includes the runtime required by the decision gate CLI"
   try {
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    const implementSkill = join(targetRoot, ".agents/skills/implement/SKILL.md");
+    const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, and update/;
+    assert.match(await readFile(implementSkill, "utf8"), distributionRule);
+    await writeFile(implementSkill, "stale consumer copy\n");
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.match(await readFile(implementSkill, "utf8"), distributionRule);
     const targets = {
       schema_version: 1,
       id: "system-targets",

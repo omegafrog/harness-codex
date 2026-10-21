@@ -106,6 +106,7 @@
         "bin/harness-install.mjs",
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
+        ".codex/skills/implement/SKILL.md",
         "src/doctor/doctor.mjs",
         "docs/agents/EXEC.md",
         "src/workflow/project-readiness.mjs",
