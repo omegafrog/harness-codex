@@ -214,3 +214,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 2026-10-22 임시 nc HTTP listener의 컨테이너 내부 token 응답을 확인한 뒤 WSL→bridge localhost 공개 port와 bridge→WSL loopback 앱의 host.docker.internal 접근을 검증했다. 초기 Alpine httpd 검사는 해당 binary가 없어 서버가 뜨지 않았으므로 연결 실패 근거에서 제외한다. host network에서 WSL localhost와 Docker host localhost가 같다고 가정하지 않는다. probe는 session 내부의 실행 profile로 수행하고 임시 container/listener를 finally에서 제거한다.
 
 같은 검증 세션에서 실제 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics를 bridge로 실행했다. WSL synthetic OTLP LogRecord → Collector → VictoriaLogs의 operation ID 검색과, Metrics → WSL loopback 임시 Prometheus endpoint의 up=1을 확인했다. 실제 Spring emitter·Java agent·MCP handshake 검증은 아니다. 임시 compose 스택·listener는 종료 후 제거했고 데이터·receipt는 session 안에 보존했다.
+
+## Codex native setup UI
+
+`$setup`은 session 내부 `runtime/setup/answers.json`에서 사용자 응답을 관리하고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 stdin 대기 없이 needs_input과 live 선택지·안정적인 question ID·configuration_hash를 반환한다. 스킬은 사용 가능한 native request_user_input_async/request_user_input 도구에 표시하고 제출된 value만 저장해 다시 호출한다. 답·기본값을 agent가 추정하지 않고 도구 미지원 시 정확한 사유를 보고한다. needs_input은 완료가 아니며 configured와 exit=0 뒤 source 기반 준비를 이어간다. 잘못된 option·stale config snapshot·session 밖 답 파일은 거부한다. 별도 GUI/설치기 메뉴/agent-only PTY는 사용하지 않는다. 수동 CLI는 유지한다.

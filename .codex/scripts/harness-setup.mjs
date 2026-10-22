@@ -1,28 +1,54 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--answers SESSION_JSON]');
   process.exit(0);
 }
-const rootIndex = args.indexOf('--root');
-if (args.some((arg, index) => !['--root'].includes(arg) && index !== rootIndex + 1) || (rootIndex >= 0 && !args[rootIndex + 1])) throw new Error('Usage: harness-setup.mjs [--root PROJECT_ROOT]');
-const root = resolve(rootIndex >= 0 ? args[rootIndex + 1] : process.cwd());
+const options = {};
+for (let i = 0; i < args.length; i += 2) {
+  if (!['--root', '--answers'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Usage: harness-setup.mjs [--root PROJECT_ROOT] [--answers SESSION_JSON]');
+  options[args[i]] = args[i + 1];
+}
+const root = resolve(options['--root'] || process.cwd());
 const gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
-if (!stdin.isTTY || !stdout.isTTY) throw new Error('Setup requires an interactive terminal.');
-
-const rl = createInterface({ input: stdin, output: stdout });
-const ask = async (label, initial = '') => (await rl.question(`${label}${initial ? ` [${initial}]` : ''}: `)).trim() || initial;
+const native = Boolean(options['--answers']);
+let document, configurationHash;
+if (native) {
+  const output = await import(new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/session-output.mjs')) ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs', import.meta.url).href);
+  const input = resolve(root, options['--answers']);
+  output.sessionOutputPath(root, relative(output.sessionDirectory(root), input));
+  document = JSON.parse(await readFile(input, 'utf8'));
+  if (!document.answers || typeof document.answers !== 'object' || Array.isArray(document.answers) || Object.values(document.answers).some((value) => typeof value !== 'string')) throw new Error('answers must be a map of question IDs to selected string values');
+  console.log = (...values) => process.stderr.write(values.join(' ') + '\n');
+} else if (!stdin.isTTY || !stdout.isTTY) throw new Error('Setup requires an interactive terminal; Codex native choices use --answers SESSION_JSON.');
+class PendingQuestion extends Error {
+  constructor(question) { super('needs_input'); this.question = question; }
+}
+const occurrences = new Map();
+function nativeAnswer(prompt, current = '', choices = null, context = null) {
+  const count = (occurrences.get(prompt) || 0) + 1;
+  occurrences.set(prompt, count);
+  const id = `${prompt}#${count}`;
+  if (!Object.hasOwn(document.answers, id)) throw new PendingQuestion({ id, prompt, type: choices ? 'select' : 'text', current, ...(choices ? { options: choices } : {}), ...(context ? { context } : {}) });
+  const value = document.answers[id];
+  if (choices && !choices.some((option) => option.value === value)) throw new Error(`Invalid or stale selection for ${id}`);
+  return choices ? value : value || current;
+}
+const rl = native ? null : createInterface({ input: stdin, output: stdout });
+const ask = async (label, initial = '') => native ? nativeAnswer(label, initial) : (await rl.question(`${label}${initial ? ` [${initial}]` : ''}: `)).trim() || initial;
 const choose = async (label, options, current = '') => {
+  if (native) return nativeAnswer(label, current, options);
   options.forEach((option, index) => console.log(`  ${index + 1}) ${option.label}${option.value === current ? ' (현재값)' : ''}`));
   for (;;) {
     const answer = await ask(label), index = Number(answer);
@@ -32,7 +58,8 @@ const choose = async (label, options, current = '') => {
     console.log('목록의 번호 또는 정확한 값을 입력해 주세요.');
   }
 };
-const confirm = async (label, initial = 'n') => {
+const confirm = async (label, initial = 'n', context = null) => {
+  if (native) return nativeAnswer(label, initial, [{ value: 'y', label: '예' }, { value: 'n', label: '아니요' }], context) === 'y';
   for (;;) {
     const answer = (await ask(`${label} (y/n)`, initial)).toLowerCase();
     if (['y', 'yes'].includes(answer)) return true;
@@ -150,6 +177,8 @@ async function main() {
   const { parseYaml } = await import(parserUrl.href);
   const configPath = join(root, '.codex/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  configurationHash = createHash('sha256').update(oldConfig).digest('hex');
+  if (native && Object.keys(document.answers).length && document.configuration_hash !== configurationHash) throw new Error('Project configuration changed; restart native setup with current choices');
   const config = parseYaml(oldConfig);
   const selection = {};
   for (const [key, title, recommendation] of [
@@ -160,10 +189,10 @@ async function main() {
   ]) {
     console.log(`\n${title} — 권장: ${recommendation}`);
     models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
-    const model = await choose('모델 선택', models.map((item) => ({ value: item.id, label: item.id })), config.agents?.[`${key}_model`]);
+    const model = await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), config.agents?.[`${key}_model`]);
     const selected = models.find((item) => item.id === model);
     const efforts = selected.supportedReasoningEfforts.map((item) => ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
-    const effort = await choose('추론 강도 선택', efforts, config.agents?.[`${key}_reasoning_effort`]);
+    const effort = await choose(`${title} 추론 강도 선택`, efforts, config.agents?.[`${key}_reasoning_effort`]);
     selection[`${key}_model`] = model;
     selection[`${key}_reasoning_effort`] = effort;
   }
@@ -255,7 +284,7 @@ async function main() {
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?')) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, tracker, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
   if (useBeads) await setupBeads();
 
   let configText = oldConfig || '';
@@ -318,4 +347,9 @@ async function main() {
   console.log('다음 단계: 프로젝트 source·CI·compose를 분석해 EXEC/execution.json과 통합 계약을 준비한 뒤 workspace preflight를 실행하세요.');
 }
 
-main().catch((error) => { console.error(error.message); process.exitCode = 1; }).finally(() => rl.close());
+main().then(() => {
+  if (native) process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
+}).catch((error) => {
+  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', configuration_hash: configurationHash, question: error.question }) + '\n');
+  else { console.error(error.message); process.exitCode = 1; }
+}).finally(() => rl?.close());

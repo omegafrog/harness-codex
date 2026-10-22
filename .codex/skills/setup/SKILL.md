@@ -7,13 +7,21 @@ description: Initialize a repository for the harness workflow. Use when setting 
 
 # Harness Setup
 
-Initialize repository-owned context, agent model tiers, and tracker settings before running `spec-me` or `to-ticket`. Run the interactive setup CLI first; do not ask setup choices in chat.
+Initialize repository-owned context, agent model tiers, and tracker settings before running `spec-me` or `to-ticket`. **Codex CLI 내부의 네이티브 선택 UI**로 설정한다. 외부 터미널·설치기 메뉴·agent-only PTY·일반 채팅의 번호 질문으로 대체하지 않는다.
 
-```sh
-node .codex/scripts/harness-setup.mjs --root <absolute-project-root>
-```
+## Codex 내부 선택 흐름
 
-The CLI owns deterministic choices, validates live model options, confirms the summary, and preserves existing project files. If it fails, report its exact error and leave setup incomplete. Continue only with source-based project analysis after it succeeds. When `.codex/harness.yaml` has `observability.victorialogs.local.enabled: true`, run the installed `victorialogs-local-setup` skill as part of this setup; it is the single project-local install and app-connection path for OpenTelemetry Collector, VictoriaLogs, VictoriaMetrics, Actuator targets and two official MCP servers. The CLI collects project/service identities and both app-visible metrics_url and container-visible scrape_url for Actuator; use compose bridge with loopback-published host ports and internal service DNS. On Docker Desktop/WSL, host.docker.internal is resolved by containers, not the WSL app. Never guess service ports or install Vector/Fluent Bit. Do not leave the user with only backend templates or tell them to run a separate untracked recipe.
+1. `harness-session-output.mjs --root <absolute-project-root>`로 session directory를 구하고 그 안의 `runtime/setup/answers.json`을 만든다. 최초 내용은 `{"answers":{}}`이며 이전 사용자 답이 있으면 보존한다.
+2. 같은 cwd에서 다음 비대화 명령을 실행한다. 이 명령은 사용자 입력을 stdin에서 기다리지 않고 다음 질문 또는 적용 결과를 JSON으로 반환한다.
+
+   `node .codex/scripts/harness-setup.mjs --root <absolute-project-root> --answers <session_directory>/runtime/setup/answers.json`
+
+3. `status: needs_input`이면 `question.prompt/options/current/context`를 읽어 **사용 가능한 `request_user_input_async` 또는 `request_user_input` 선택 도구**로 표시한다. 도구의 실제 availability와 mode 제한을 지키며 지원되지 않는 도구를 호출하거나 mode를 임의 전환하지 않는다. 도구가 없으면 네이티브 UI 미지원 사유를 보고하고 중단하며 PTY/별도 창으로 우회하지 않는다. `type: text`도 같은 네이티브 입력 도구를 사용한다. 선택지가 도구의 표시 한도를 넘으면 페이지를 나누되 실제 선택 항목을 누락하지 않는다.
+4. 사용자가 제출한 응답만 `answers[question.id]`에 해당 option.value 또는 입력 문자열로 기록하고 응답의 `configuration_hash`도 보존한다. 최종 적용 질문은 context의 실제 선택 요약을 함께 표시한다. 기본값·권장값·선택 도구의 사전 선택을 제출로 간주하지 않는다. AI가 모델·effort·tracker·관측성 값을 임의 선택하지 않는다. 도구 label을 backend value로 정확히 매핑한다.
+5. 2~4를 반복한다. CLI는 실제 Codex app-server의 live model/effort와 프로젝트 상태에서 질문을 만들며 유효하지 않은 선택·변경된 configuration snapshot을 거부한다. 답을 기다릴 때는 실제 native UI 요청을 유지하며 “터미널이 입력 대기 중”이라는 보고만 남기고 종료하지 않는다. 사용자 취소/무응답은 적용 승인이 아니다.
+6. `status: configured`와 exit 0을 받은 뒤 실제 source 기반 실행 계약·통합 계약 준비로 이어간다. `needs_input`의 exit 0은 완료가 아니다. CLI 오류는 원문을 보고하고 설정 미완료로 남긴다. 일반적인 terminal CLI는 수동 사용을 위해 유지하되 `$setup`은 이 native UI 경로만 사용한다.
+
+CLI는 선택지 발견·검증·설정 적용을 소유하고 스킬은 native UI 전달만 맡는다. 프로젝트 기존 파일은 보존한다. `observability.victorialogs.local.enabled: true`이면 설치된 `victorialogs-local-setup`을 이어 실행해 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·공식 MCP 두 개와 실제 앱 개발 profile을 연결한다. 앱 기준 metrics_url과 컨테이너 기준 scrape_url을 구분하고 포트를 추정하지 않는다. GUI·숨은 PTY나 별도 설치 절차를 요구하지 않는다.
 
 ## Context Files
 
@@ -65,17 +73,17 @@ Keep the Harness runtime local to each checkout. During installation, the instal
 
 ## Agent Model Setup
 
-Model and reasoning-effort choices are collected by `harness-setup.mjs` from the live Codex app-server schema. Never ask the user these choices in chat or hardcode a model list. The CLI preserves unrelated `.codex/harness.yaml` keys and confirms before writing.
+Model and reasoning-effort options come from the live Codex app-server schema through `harness-setup.mjs --answers`. Collect the user selection through Codex native choice UI; never hardcode a model list or substitute plain-chat questions. The CLI preserves unrelated `.codex/harness.yaml` keys and confirms before writing.
 
 ## Beads Project Board
 
-Beads 사용 여부, CLI 설치, 기존 workspace 보존, 원격 bootstrap 또는 새 초기화 확인은 모두 `harness-setup.mjs`의 터미널 안에서 처리한다. setup skill은 대화로 승인·초기화를 묻지 않는다. CLI가 성공한 경우에만 project root에서 `bd status`를 확인한다. 사용자가 Beads를 선택하지 않았으면 Beads 명령을 실행하지 않으며, 해당 프로젝트의 `to-ticket`이 Beads 의존으로 막힌다는 사실을 setup 결과에 기록한다.
+Beads 사용 여부, CLI 설치, 기존 workspace 보존, 원격 bootstrap 또는 새 초기화 확인은 모두 `harness-setup.mjs --answers`가 반환하는 질문을 Codex native UI에서 제출받아 처리한다. 일반 채팅 질문이나 별도 터미널로 승인·초기화를 대체하지 않는다. CLI가 성공한 경우에만 project root에서 `bd status`를 확인한다. 사용자가 Beads를 선택하지 않았으면 Beads 명령을 실행하지 않으며, 해당 프로젝트의 `to-ticket`이 Beads 의존으로 막힌다는 사실을 setup 결과에 기록한다.
 
 Linked Git worktrees in the same repository share the Beads workspace through Git common-directory discovery. Do not initialize a separate board in a linked worktree or copy `.beads` into it. For a remote-backed schema migration, designate one clone to migrate and publish; every other clone adopts that result with the Beads-supported bootstrap procedure. Never migrate multiple clones independently.
 
 ## Tracker Setup
 
-Tracker selection and GitHub Project field validation are performed by `harness-setup.mjs`. Do not ask tracker questions in chat or create tickets during setup. If GitHub access or API limits prevent validation, report the exact CLI error and leave setup incomplete.
+Tracker options and GitHub Project field validation are provided by `harness-setup.mjs --answers`; collect selection through Codex native UI. Do not ask tracker questions as plain chat or create tickets during setup. If GitHub access or API limits prevent validation, report the exact CLI error and leave setup incomplete.
 
 ## 통합 계약 연속성
 
@@ -88,3 +96,7 @@ Tracker selection and GitHub Project field validation are performed by `harness-
 GitHub Project의 보드 그룹과 필터는 configured `Workflow Status`를 사용하고 기본 `Status`는 workflow 기준으로 사용하지 않는다. setup 결과에 보드의 group-by를 `Workflow Status`로 선택하고 기본 `Status` 열을 숨기는 UI 설정을 안내한다. CLI가 지원하지 않는 view 변경을 성공했다고 보고하지 않는다. Project field 삭제나 기존 item 상태 migration은 하지 않는다.
 
 신규 Beads mirror는 네 가지 lifecycle 기본 상태만 사용한다. 초기 프로젝트 설정은 `bd config set status.custom ""`로 custom status를 비워 기본 상태만 사용한다. 사용자가 따로 운영하는 custom 설정을 무조건 덮어쓰거나 기존 Issue를 migration하지 않는다. backlog 분류와 test/review 단계는 `beads` 스킬의 metadata로 분리한다. `to-ticket`이 새로 연결한 ref에만 lifecycle version marker를 기록하고 공통 sync/check를 사용한다.
+
+## Native UI 도구 근거
+
+[Codex 공식 사용자 입력 도구 정의](https://github.com/openai/codex/blob/main/codex-rs/prompts/src/model_messages.rs)를 참고하되 실제 세션에 노출된 도구만 사용한다. 비동기 선택 UI의 사전 선택도 사용자가 제출하기 전에는 답이 아니다.

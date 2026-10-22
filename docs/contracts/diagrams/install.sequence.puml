@@ -2,6 +2,8 @@
 actor 사용자
 participant "harness-install.mjs" as install
 participant "updateProject" as update
+participant "$setup skill" as setupSkill
+participant "Codex native choice UI" as nativeUI
 participant "harness-setup.mjs" as setup
 participant "setupVictoriaLogs" as local
 participant "Project A / Spring Boot" as projectA
@@ -18,8 +20,25 @@ participant "project_default bridge network" as bridge
 install -> update : helper·skill·assets·runtime 배포
 update -> update : 폐기 managed skill backup 후 제거
 update --> install : lock·변경·backup 경로
-install --> 사용자 : setup CLI 경로
-사용자 -> setup : 터미널에서 model·tracker·관측성 선택
+install --> 사용자 : $setup 안내
+사용자 -> setupSkill : $setup 실행
+loop needs_input 질문이 남아 있음
+  setupSkill -> setup : --root ROOT --answers <sessionJSON>
+  setup --> setupSkill : needs_input {question: {id, prompt, type, options, current, context}, configuration_hash}
+  setupSkill -> nativeUI : request_user_input_async / request_user_input(question)
+  nativeUI --> 사용자 : prompt·options·context 표시; 마지막 확인은 context summary 포함
+  사용자 -> nativeUI : 제출한 선택값
+  nativeUI --> setupSkill : 선택값 반환
+  setupSkill -> setupSkill : session JSON {answers: {questionId: submittedValue}, configuration_hash} 저장
+end
+setupSkill -> setup : 다음 질문까지 재실행; 마지막은 context summary 확인
+alt configured and exit 0
+  setup --> setupSkill : 설정 적용 완료·configured
+  setupSkill --> 사용자 : 이후 준비 계속
+else snapshot stale·option invalid·apply 실패
+  setup --> setupSkill : 오류; configured 아님
+  setupSkill --> 사용자 : 중단; 후속 준비 안 함
+end
 alt VictoriaLogs 선택
   setup -> local : 저장소 port·retention·프로젝트 Git roots, ids, services·metrics_url·service.scrape_url 수집
   local -> local : compose·otel-collector.yaml·scrape.json·두 MCP 항목·실행 profile·공용 지침 준비
@@ -54,6 +73,9 @@ else 선택 안 함
   setup --> 사용자 : 관측성 구성 생략
 end
 note over setup, logs
+  질문 ID는 prompt와 occurrence로 안정화한다. stale configuration snapshot, 유효하지 않은 option, session 외부 파일은 거부한다.
+  마지막 native 확인은 context summary를 보여준다. 설정 적용과 exit 0 이후에만 configured를 반환한다.
+  수동 terminal mode는 유지한다. $setup skill은 native UI 답변만 session JSON으로 전달한다.
   setup은 서버를 자동 실행하지 않는다.
   Compose는 기본 bridge network를 사용한다. 컨테이너 서비스는 0.0.0.0의 고정 내부 포트 4318, 9428, 8428에서 수신한다.
   host 포트는 설정 가능한 값으로 127.0.0.1에만 publish한다. 앱은 localhost의 publish된 OTLP 포트에 연결한다.

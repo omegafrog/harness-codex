@@ -232,7 +232,7 @@ async function main() {
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
-    if (fullInstall) console.log("VictoriaLogs setup available: run node .codex/scripts/harness-setup.mjs; official MCP and development log collection are configured through the same path.");
+    if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
       ? `Beads CLI available: ${beadsVersion}`

@@ -192,6 +192,61 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(json.loads(present.stdout)["status"], "pass")
 
+    def test_setup_native_choices_apply_only_submitted_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+            self.configure_target(target)
+            self.assertEqual(self.run_full_installer(target).returncode, 0)
+            scripts = target / ".codex/scripts"
+            session = Path(subprocess.check_output(["node", str(scripts / "harness-session-output.mjs"), "--root", str(target)], cwd=target, text=True).strip())
+            answers_path = session / "runtime/setup/native-answers.json"
+            answers_path.parent.mkdir(parents=True, exist_ok=True)
+            document = {"answers": {}}
+            config = target / ".codex/harness.yaml"
+            original = config.read_bytes()
+            command = ["node", str(scripts / "harness-setup.mjs"), "--root", str(target), "--answers", str(answers_path)]
+            for _ in range(25):
+                answers_path.write_text(json.dumps(document))
+                result = subprocess.run(command, cwd=target, env=self.command_env(), capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                response = json.loads(result.stdout)
+                if response["status"] == "configured":
+                    break
+                self.assertEqual(response["status"], "needs_input")
+                self.assertEqual(config.read_bytes(), original)
+                document["configuration_hash"] = response["configuration_hash"]
+                question = response["question"]
+                prompt = question["prompt"]
+                if "모델 선택" in prompt:
+                    value = "fixture-model"
+                elif "추론 강도 선택" in prompt:
+                    value = "low"
+                elif prompt == "Tracker 선택":
+                    value = "local-markdown"
+                elif prompt == "티켓 디렉터리":
+                    value = ".scratch/native-issues"
+                elif prompt == "이 설정으로 계속할까요?":
+                    self.assertEqual(question["context"]["agents"]["implementation_model"], "fixture-model")
+                    document["answers"][question["id"]] = "n"
+                    answers_path.write_text(json.dumps(document))
+                    cancelled = subprocess.run(command, cwd=target, env=self.command_env(), capture_output=True, text=True)
+                    self.assertNotEqual(cancelled.returncode, 0)
+                    self.assertEqual(config.read_bytes(), original)
+                    value = "y"
+                else:
+                    self.assertEqual({option["value"] for option in question["options"]}, {"y", "n"})
+                    value = "n"
+                document["answers"][question["id"]] = value
+            else:
+                self.fail("Native setup did not complete")
+            self.assertIn('implementation_model: "fixture-model"', config.read_text())
+            self.assertIn('directory: ".scratch/native-issues"', config.read_text())
+            # Completed configuration makes the old question snapshot stale.
+            stale = subprocess.run(command, cwd=target, env=self.command_env(), capture_output=True, text=True)
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn("configuration changed", stale.stderr)
+
     @unittest.skipUnless(os.name == "posix", "Interactive CLI requires a POSIX PTY")
     def test_installed_setup_reaches_model_prompt_without_writing_configuration(self):
         import pty
