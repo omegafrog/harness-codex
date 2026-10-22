@@ -24,11 +24,18 @@
 
 ## Harness 원본 저장소의 설치 동작
 
+- 사용자 진입점만 `.codex/skills/*/SKILL.md`(소비자는 `.agents/skills/`)로 공개한다. workflow 전용 하위 절차와 supporting files는 원본·소비자 모두 `.codex/internal-skills/*/GUIDE.md`에 둔다. workflow loader는 내부 GUIDE를 먼저 해석한다. 관리 lock에 있는 구형 공개 사본은 설치·갱신 시 session backup 후 제거하며 사용자 소유 비관리 파일은 임의 제거하지 않는다.
+- 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile internal-skills-check`로 실행한다. 서버·외부 인프라는 필요하지 않다.
+
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
 - 원본 checkout 판별은 설치 도구와 대상이 같은 실제 경로이거나, 같은 package 이름과 Harness installer·소스·스킬 파일이 있는지를 확인한다.
 - 외부 프로젝트에는 기존 방식으로 스킬을 `.agents/skills/`에, agent profile을 `.codex/agents/`에 설치한다. workflow·schema·script와 프로젝트 설정도 `.codex/`에 둔다.
 - update는 스킬의 SKILL.md와 supporting reference/assets/scripts도 lock으로 관리한다. 관리 스킬 파일은 로컬 수정·충돌·untracked 경로 충돌 시 기존 내용을 session/runtime/installer-backups/<id>/에 먼저 백업하고 기본 교체한다. 그 밖의 관리 자산은 기존 충돌 보존 규칙을 따른다.
 - workflow의 스킬 탐색은 외부 consumer에서 `.agents/skills/`를 먼저 확인한다. Harness 원본 checkout/worktree는 `.codex/skills/`를 우선해 오래된 설치 사본이 원본 변경을 가리지 않도록 한다. 원본 저장소에는 중복 스킬 사본이 필요하지 않다.
+
+## E2E 실패 학습 계약
+
+E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 근거와 반복 여부를 기록한다. 반복되거나 재사용할 예방 절차가 확인되면 원본 프로젝트의 `docs/agents/testing-guidance.md`를 반드시 갱신한다. 실행값·URL·포트·readiness profile은 `docs/agents/execution.json`, 운영자가 따라야 할 준비·진단 절차는 이 문서에 반영하고 서로 일치시킨다. 테스트 결과와 학습 상태를 분리하며 학습 pending은 테스트 통과나 workflow 완료를 막지 않는다. `e2e-learning-check` profile의 `config_inputs`에는 이 규칙, 검증 코드와 관련 테스트를 포함한다.
 
 ## Harness 검증 경로 실행
 
@@ -175,8 +182,35 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 
 E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 따른다. raw 증거는 세션 `runtime/e2e/<run_id>/`에 시도별로 보존하고, 확인된 재발 방지 지식은 소비 프로젝트의 `docs/verification/e2e-lessons.md`와 실제 EXEC/execution.json·회귀 검사에 반영한다. 다음 실행 전에 관련 현행 lesson과 예방 검사를 읽는다. checkpoint의 `tests.e2e_failures`는 실패 ID별로 유지하고, 원본 증거는 교체하지 않으며 예방 조치/재검증이 없는 항목은 테스트 요약이 passed여도 완료하지 않는다.
 
-`e2e-learning-check`는 Node 내장 fixture 테스트로 실패 이력 보존과 lifecycle/wrapper 완료 차단을 검증한다. 실제 앱·서버·DB를 시작하지 않으므로 dependencies/prepare가 없으며 임시 fixture와 로그는 세션 내부에 둔다.
+`e2e-learning-check`는 Node 내장 fixture 테스트로 실패 이력 보존, 테스트 성공/학습 pending의 분리와 현재 테스트 실패의 lifecycle/wrapper 완료 차단을 검증한다. 실제 앱·서버·DB를 시작하지 않으므로 dependencies/prepare가 없으며 임시 fixture와 로그는 세션 내부에 둔다.
 
 ## 명세·계획·구현 추적 회귀 검사
 
 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, plan coverage, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다.
+
+## VictoriaLogs 개발 관측성 설치
+
+setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여부, 로그/메트릭 포트와 보존 일수, OTLP HTTP 포트, 프로젝트/서비스별 앱 기준 metrics_url·컨테이너 기준 scrape_url을 터미널에서 수집한다. `harness-victorialogs.mjs setup`이 compose·otel-collector.yaml·scrape.json·개발 Spring config·otel-javaagent.properties·공식 MCP 두 개·실행 profile·공용 지침을 준비한다. 기본 포트는 9428/8428/4318이고 저장소 보존은 각각 7일이다. 기본 compose bridge를 사용한다. host에는 127.0.0.1:<설정 port>만 publish하고 내부 listener는 0.0.0.0:4318/9428/8428이다. 앱→Collector는 공개 localhost, Collector/MCP→backend는 compose service DNS, Metrics→WSL 앱은 scrape_url의 host.docker.internal:<실제 port/path>로 연결한다. Desktop host networking 활성화나 WSL gateway IP에 의존하지 않는다. Collector는 native OTLP LogRecord를 받아 VictoriaLogs OTLP HTTP endpoint로 protobuf export한다. Vector·Fluent Bit은 설치하지 않고 session JSON 파일을 tail하지 않는다. `victorialogs-local-setup`이 실제 source의 개발 SDK/appender 또는 외부 Java agent와 Actuator/Prometheus registry를 연결한다. production artifact에서 개발 의존성을 제외하고 SDK/agent 중복 전송을 막는다. 일반 실행은 harness-exec infrastructure/check/stop과 기존 앱 profile을 사용한다. check는 세 API readiness이며 실제 수집은 앱 로그 검색과 project/service별 최신 up=1로 별도 확인한다. 이 Node 원본에는 Spring 앱이 없으므로 설치 fixture·오프라인 진단 검사와 설정 검증 범위를 보고하고 실제 앱 수집을 확인한 것으로 쓰지 않는다.
+
+공식 MCP Docker 이미지는 stdio client subprocess로 필요 시 실행한다. 전역 provider 설정은 자동 수정하지 않으며 SigNoz marketplace 자동 등록은 제거한다. 관리 lock으로 식별된 폐기 skill만 session backup 후 제거하고 기존 사용자 데이터와 전역 plugin은 유지한다. 데이터/offset은 원본 프로젝트 session directory, linked-worktree 로그는 같은 Git common directory의 sessions에서 수집한다. Docker daemon과 Compose v2가 전제이며 서버·이미지 pull·Spring 앱을 검증 명목으로 자동 실행하지 않는다.
+
+## Spring Boot diagnostic v1 검증
+
+`diagnostic-log-check`는 사용자 v1의 일곱 이벤트, 필수 Resource/Attributes, outcome·숫자/boolean·Trace ID·timestamp 및 offline JSONL CLI를 집중 검증한다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile diagnostic-log-check`를 사용하며 Docker/앱/인프라는 필요하지 않다. 소비 프로젝트 setup은 스키마·예시·수집 매핑과 공용 구현/테스트 지침을 설치하고 `victorialogs-diagnostic-logs` profile을 생성한다. 그 profile의 HARNESS_DIAGNOSTIC_LOG_FILE은 실제 emitter 원본 JSONL 경로다. 원본 타입 검사와 VictoriaLogs 저장 후 string 표현을 구분한다. 일반 unit 검증이나 실패 학습을 이유로 E2E를 추가 실행하지 않는다.
+
+
+## Beads 자동 백업의 table file 누락 복구
+
+`auto-backup failed ... .beads/backup/<table-file>`가 발생하면 작업 상태 변경 성공과 백업 실패를 구분한다. 운영 DB를 재초기화하거나 원격 sync/migration으로 우회하지 않는다.
+
+1. `bd export --output <session_directory>/runtime/beads-before-repair.jsonl`로 읽기 가능한 이슈를 보존하고 `bd backup status --json`, `.beads/backup/manifest`와 실제 파일을 대조한다.
+2. manifest가 참조하는 table file이 없으면 손상된 `.beads/backup/` 전체를 `<session_directory>/runtime/beads-recovery/`에 보존한다. 운영 `.beads/embeddeddolt/`는 건드리지 않는다.
+3. 로컬 Dolt-native 복구 사본은 `bd backup init <session_directory>/runtime/beads-recovery/backup`과 `bd backup sync`로 생성할 수 있다. 이 명시적 destination과 `.beads/backup/`의 자동 백업은 별도이므로 한쪽 성공만으로 다른 쪽 복구를 주장하지 않는다.
+4. 자동 백업은 손상 저장소를 보존해 옮긴 뒤 정상 Beads 쓰기에서 재생성되는지 확인한다. 재현 검증 때문에 `backup.interval`을 일시 변경했다면 원래 설정으로 복구한다. 후속 자동 백업의 경고 부재와 `backup_state.json`의 commit/timestamp 갱신을 모두 확인한다.
+5. 복구 후 다시 export해 이슈 ID와 비대상 이슈 내용을 비교한다. 명시적 backup sync도 재확인한다. 백업 실패를 숨기기 위해 `backup.enabled`를 끄지 않는다. 별도 원격 백업·이전·복원은 이 절차의 범위가 아니다.
+
+### WSL·Docker Desktop 네트워크 검증 근거
+
+2026-10-22 임시 nc HTTP listener의 컨테이너 내부 token 응답을 확인한 뒤 WSL→bridge localhost 공개 port와 bridge→WSL loopback 앱의 host.docker.internal 접근을 검증했다. 초기 Alpine httpd 검사는 해당 binary가 없어 서버가 뜨지 않았으므로 연결 실패 근거에서 제외한다. host network에서 WSL localhost와 Docker host localhost가 같다고 가정하지 않는다. probe는 session 내부의 실행 profile로 수행하고 임시 container/listener를 finally에서 제거한다.
+
+같은 검증 세션에서 실제 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics를 bridge로 실행했다. WSL synthetic OTLP LogRecord → Collector → VictoriaLogs의 operation ID 검색과, Metrics → WSL loopback 임시 Prometheus endpoint의 up=1을 확인했다. 실제 Spring emitter·Java agent·MCP handshake 검증은 아니다. 임시 compose 스택·listener는 종료 후 제거했고 데이터·receipt는 session 안에 보존했다.

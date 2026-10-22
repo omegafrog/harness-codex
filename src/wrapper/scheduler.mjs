@@ -204,7 +204,7 @@ export function buildImplementPrompt({
     `Product Spec: ${productSpecPath || approvedProductPath}`,
     `Architecture Spec: ${architectureSpecPath || approvedArchitecturePath}`,
     ...(traceabilityRefs ? [`Traceability ledger: ${traceabilityRefs.ledger_path}`, `Requirement IDs: ${(traceabilityRefs.requirement_ids || []).join(", ")}`, "Read each original requirement source and mapped verification case before editing; this exact plan and spec set passed the live traceability dispatch gate."] : []),
-    "Implementation contract: .codex/skills/implement/SKILL.md",
+    "Implementation contract: .codex/internal-skills/implement/GUIDE.md",
     `Checkpoint: ${checkpointPath || planRuntimePaths({ root: workspaceRoot || repository, planId }).checkpoint_path}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,
     `Resource facts: ${JSON.stringify(resourceFacts)}`,

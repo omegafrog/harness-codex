@@ -10,7 +10,7 @@ You are the implementation_agent agent.
 Hot-path contract:
 - Start tests, services, and infrastructure only through `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`, using the project-owned docs/agents/execution.json and EXEC.md. Require exact launch arguments, current configuration prepare/verify, and all infrastructure/server readiness checks. Missing or failed profiles block execution; do not bypass with direct commands or guessed defaults. Runners report missing contract details to the caller instead of editing configuration.
 - Role: implement exactly one approved split plan within its ticket and Architecture Spec scope.
-- Use `.codex/skills/implement/SKILL.md` as the required skill entrypoint.
+- Use `.codex/internal-skills/implement/GUIDE.md` as the required skill entrypoint.
 - Read `docs/agents/EXEC.md` plus the supplied plan, Product Spec, Architecture Spec, checkpoint, dependency/resource facts, and repository conventions before editing.
 - Before editing, read the current `docs/plans/<plan-set-id>/traceability.json`, the original requirement declaration in each mapped source file, and the exact canonical plan body named by the passing dispatch gate. Do not substitute a different `plan_path` or assume `ticket_id` equals the plan-set ID. Missing/stale review or coverage blocks implementation.
 - Require caller-supplied absolute `shared_guidance_root`; verify its Git common directory matches `workspace_root`. Read `<shared_guidance_root>/docs/agents/implementation-guidance.md` and `testing-guidance.md` before edits/tests, including during handoff. Never substitute worktree-local copies.

@@ -106,13 +106,21 @@
         "bin/harness-install.mjs",
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
-        ".codex/skills/implement/SKILL.md",
+        "src/installer/local-exclude.mjs",
+        ".codex/internal-skills/implement/GUIDE.md",
         "src/doctor/doctor.mjs",
         "docs/agents/EXEC.md",
         "src/workflow/project-readiness.mjs",
         "src/workflow/execution.mjs",
         "src/gates/lifecycle.mjs",
-        ".codex/scripts/workspace-preflight-cli.mjs"
+        ".codex/scripts/workspace-preflight-cli.mjs",
+        ".codex/scripts/harness-setup.mjs",
+        ".codex/scripts/harness-victorialogs.mjs",
+        ".codex/skills/victorialogs-local-setup/SKILL.md",
+        ".codex/skills/victorialogs-local-setup/assets/compose.yaml",
+        ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml",
+        "tests/test_project_local_installer.py",
+        "tests/installer_update.test.mjs"
       ],
       "prepare": [],
       "verify_config": [
@@ -144,8 +152,19 @@
         "bin/harness-install.mjs",
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
+        "src/installer/local-exclude.mjs",
         "src/doctor/doctor.mjs",
-        "docs/agents/EXEC.md"
+        "docs/agents/EXEC.md",
+        ".codex/scripts/harness-setup.mjs",
+        ".codex/scripts/harness-victorialogs.mjs",
+        ".codex/skills/victorialogs-local-setup/SKILL.md",
+        ".codex/skills/victorialogs-local-setup/assets/compose.yaml",
+        ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml",
+        "tests/test_project_local_installer.py",
+        "tests/installer_update.test.mjs",
+        "src/observability/diagnostic-logs.mjs",
+        ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json",
+        ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.example.json"
       ],
       "prepare": [],
       "verify_config": [
@@ -177,6 +196,7 @@
         "bin/harness-install.mjs",
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
+        "src/installer/local-exclude.mjs",
         "src/doctor/doctor.mjs",
         "docs/agents/EXEC.md"
       ],
@@ -210,6 +230,7 @@
         "bin/harness-install.mjs",
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
+        "src/installer/local-exclude.mjs",
         "src/doctor/doctor.mjs",
         "docs/agents/EXEC.md",
         "src/workflow/project-readiness.mjs",
@@ -228,6 +249,35 @@
       "dependencies": [],
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "diagnostic-log-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/diagnostic_logs.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/observability/diagnostic-logs.mjs",
+        ".codex/scripts/harness-victorialogs.mjs",
+        ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json",
+        ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.example.json",
+        "tests/diagnostic_logs.test.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "--check",
+          "src/observability/diagnostic-logs.mjs"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 30000,
+      "readiness_timeout_ms": 1000,
       "poll_interval_ms": 100
     },
     "e2e-learning-check": {
@@ -249,7 +299,11 @@
         "src/wrapper/checkpoint.mjs",
         "src/wrapper/reconciliation.mjs",
         "docs/agents/EXEC.md",
-        "src/workflow/completion.mjs"
+        "src/workflow/completion.mjs",
+        "tests/e2e_learning.test.mjs",
+        ".codex/skills/e2e-test/SKILL.md",
+        ".codex/skills/e2e-test/references/failure-learning.md",
+        ".codex/internal-skills/testing-guidance/GUIDE.md"
       ],
       "prepare": [],
       "verify_config": [
@@ -297,6 +351,41 @@
       "dependencies": [],
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "internal-skills-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/internal_skills.test.mjs",
+        "tests/workflow_loader.test.mjs",
+        "tests/installer_update.test.mjs",
+        "tests/installer_exclude.test.mjs",
+        "tests/doctor.test.mjs",
+        "tests/workflow_worktrees.test.mjs",
+        "tests/contracts.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/installer/update.mjs",
+        "src/installer/lock.mjs",
+        "src/workflow/loader.mjs",
+        "tests/internal_skills.test.mjs",
+        "tests/workflow_loader.test.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "--check",
+          "src/installer/update.mjs"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 1000,
       "poll_interval_ms": 100
     }
   }

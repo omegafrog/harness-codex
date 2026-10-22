@@ -160,14 +160,14 @@ test("completeWorkflow requires live plan traceability even when the workflow ho
   const { root, main, tree } = await fixture();
   const workflowDir = join(tree, ".codex/workflows");
   const agentDir = join(tree, ".codex/agents");
-  const skillDir = join(tree, ".agents/skills/implement");
+  const skillDir = join(tree, ".codex/internal-skills/implement");
   await mkdir(workflowDir, { recursive: true });
   await mkdir(agentDir, { recursive: true });
   await mkdir(skillDir, { recursive: true });
   await writeFile(join(agentDir, "implementation_agent.toml"), 'name = "implementation_agent"\ndescription = "fixture"\nsandbox_mode = "workspace-write"\n');
-  await writeFile(join(skillDir, "SKILL.md"), "---\nname: implement\ndescription: fixture\n---\n");
+  await writeFile(join(skillDir, "GUIDE.md"), "# Internal implementation fixture\n");
   await writeFile(join(workflowDir, "implement-wrapper.yaml"), "schema_version: 1\nid: implement-wrapper\nroles: [implementation_agent]\nskills: [implement]\nhooks:\n  before_complete: []\nstages:\n  - id: implementation\n    role: implementation_agent\n    skill: implement\n    model_tier: implementation\n    needs: []\n");
-  await git(tree, "add", ".codex/workflows/implement-wrapper.yaml", ".codex/agents/implementation_agent.toml", ".agents/skills/implement/SKILL.md");
+  await git(tree, "add", ".codex/workflows/implement-wrapper.yaml", ".codex/agents/implementation_agent.toml", ".codex/internal-skills/implement/GUIDE.md");
   await git(tree, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "minimal workflow");
   const baseRef = (await git(tree, "rev-parse", "HEAD")).stdout.trim();
   try {

@@ -1,4 +1,4 @@
 interface:
   display_name: "Harness Setup"
   short_description: "Initialize context files, model tiers, and tracker settings."
-  default_prompt: "Initialize this repository for the harness workflow. Show runtime model list first, let user select high-performance, implementation, execution, and low-performance models separately, confirm selections, then save them."
+  default_prompt: "Initialize this repository for the harness workflow. Run `node .codex/scripts/harness-setup.mjs --root <absolute-project-root>` first; do not ask setup questions in chat. Then inspect source and complete project-owned execution and contract preparation, reporting unresolved inputs without guessing."

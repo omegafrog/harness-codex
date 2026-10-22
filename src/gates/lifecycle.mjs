@@ -1,7 +1,7 @@
 import { inspectSpecReviews } from '../workflow/spec-review.mjs';
 import { isAbsolute, resolve } from "node:path";
 import { lstat } from "node:fs/promises";
-import { SCHEMA_VERSION, e2eFailuresResolved } from "../eval/contracts.mjs";
+import { SCHEMA_VERSION, e2eLearningComplete } from "../eval/contracts.mjs";
 import { assertWorkspaceTarget } from "../eval/case-workspace.mjs";
 import { inspectPlansIndex } from "./plans-index.mjs";
 
@@ -158,8 +158,7 @@ function checkRequiredOutcome(state) {
 function checkTests(state) {
   const tests = stateValue(state, "tests");
   if (!tests || typeof tests !== "object" || Array.isArray(tests)) return blocked("test_evidence_missing");
-  if (!e2eFailuresResolved(tests)) return blocked('e2e_failure_learning_incomplete');
-  if (tests.status === "passed" || tests.state === "passed" || tests.passed === true) return passed("tests_passed");
+  if (tests.status === "passed" || tests.state === "passed" || tests.passed === true) return passed("tests_passed", { e2e_learning: e2eLearningComplete(tests) ? "complete" : "pending" });
   if (["failed", "error", "cancelled"].includes(tests.status) || ["failed", "error", "cancelled"].includes(tests.state) || tests.passed === false) {
     return failed("tests_not_passed", "tests");
   }

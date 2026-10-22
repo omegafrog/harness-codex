@@ -43,12 +43,12 @@ async function makeProject() {
   const root = await mkdtemp(join(tmpdir(), "harness-workflow-"));
   await mkdir(join(root, ".codex", "workflows"), { recursive: true });
   await mkdir(join(root, ".codex", "agents"), { recursive: true });
-  await mkdir(join(root, ".agents", "skills", "product-spec"), { recursive: true });
-  await mkdir(join(root, ".agents", "skills", "architecture-spec"), { recursive: true });
+  await mkdir(join(root, ".codex", "internal-skills", "product-spec"), { recursive: true });
+  await mkdir(join(root, ".codex", "internal-skills", "architecture-spec"), { recursive: true });
   await writeFile(join(root, ".codex", "agents", "code_researcher.toml"), "name = 'code_researcher'\n", "utf8");
   await writeFile(join(root, ".codex", "agents", "spec_document_writer.toml"), "name = 'spec_document_writer'\n", "utf8");
-  await writeFile(join(root, ".agents", "skills", "product-spec", "SKILL.md"), "# product-spec\n", "utf8");
-  await writeFile(join(root, ".agents", "skills", "architecture-spec", "SKILL.md"), "# architecture-spec\n", "utf8");
+  await writeFile(join(root, ".codex", "internal-skills", "product-spec", "GUIDE.md"), "# product-spec\n", "utf8");
+  await writeFile(join(root, ".codex", "internal-skills", "architecture-spec", "GUIDE.md"), "# architecture-spec\n", "utf8");
   return root;
 }
 
@@ -74,21 +74,21 @@ test("workflow file preflight verifies physical role and skill references", asyn
   const workflow = await loadNamedWorkflow("spec-me", { root });
 
   assert.equal(workflow.references.roles.code_researcher, join(root, ".codex", "agents", "code_researcher.toml"));
-  assert.equal(workflow.references.skills["product-spec"], join(root, ".agents", "skills", "product-spec", "SKILL.md"));
+  assert.equal(workflow.references.skills["product-spec"], join(root, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
 });
 
 test("source checkout resolves maintained skills before stale installed copies", async () => {
   const root = await makeProject();
   try {
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "@omegafrog/harness-codex" }));
-    for (const path of ["bin/harness-install.mjs", "src/installer/update.mjs", ".codex/skills/spec-me/SKILL.md", ".codex/skills/product-spec/SKILL.md", ".codex/skills/architecture-spec/SKILL.md"]) {
+    for (const path of ["bin/harness-install.mjs", "src/installer/update.mjs", ".codex/skills/spec-me/SKILL.md", ".codex/internal-skills/product-spec/GUIDE.md", ".codex/internal-skills/architecture-spec/GUIDE.md"]) {
       await mkdir(join(root, path, ".."), { recursive: true });
       await writeFile(join(root, path), "maintained source\n");
     }
     await writeFile(join(root, ".codex/workflows/spec-me.yaml"), VALID_WORKFLOW);
     const workflow = await loadNamedWorkflow("spec-me", { root });
-    assert.equal(workflow.references.skills["product-spec"], join(root, ".codex/skills/product-spec/SKILL.md"));
-    assert.equal(workflow.references.skills["architecture-spec"], join(root, ".codex/skills/architecture-spec/SKILL.md"));
+    assert.equal(workflow.references.skills["product-spec"], join(root, ".codex/internal-skills/product-spec/GUIDE.md"));
+    assert.equal(workflow.references.skills["architecture-spec"], join(root, ".codex/internal-skills/architecture-spec/GUIDE.md"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -115,7 +115,7 @@ test("the checked-in frontend-design workflow resolves standalone frontend roles
     ["frontend-design", "frontend-implement", "frontend-visual-review"],
   );
   assert.ok(workflow.skills.includes("frontend-figma"));
-  assert.match(workflow.references.skills["frontend-figma"], /\.codex[\\/]skills[\\/]frontend-figma[\\/]SKILL\.md$/);
+  assert.match(workflow.references.skills["frontend-figma"], /\.codex[\\/]internal-skills[\\/]frontend-figma[\\/]GUIDE\.md$/);
   assert.deepEqual(
     workflow.stages.map((stage) => stage.model_tier),
     ["high_performance", "implementation", "high_performance"],

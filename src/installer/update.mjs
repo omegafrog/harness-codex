@@ -83,6 +83,9 @@ async function findDanglingSymlink(root, path) {
 
 async function discoverSourceDescriptors(sourceRoot) {
   const descriptors = [];
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/internal-skills", () => true)) {
+    descriptors.push(sourceDescriptor(sourcePath, sourcePath, sourcePath.endsWith(".md") ? SOURCE_TRANSFORM : null));
+  }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath, SOURCE_TRANSFORM));
   }
@@ -125,7 +128,7 @@ async function discoverSourceDescriptors(sourceRoot) {
       const information = await lstat(resolve(sourceRoot, sourcePath));
       if (information.isFile() || information.isSymbolicLink()) {
         for (const path of await listDirectoryFiles(sourceRoot, `.codex/skills/${skill.name}`, () => true)) {
-          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".agents/skills/")));
+          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".agents/skills/"), path.endsWith(".md") ? SOURCE_TRANSFORM : null));
         }
       }
     } catch (error) {
@@ -269,8 +272,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const descriptors = await discoverSourceDescriptors(sourceRoot);
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
   const entries = await classifyLockEntries({ root: targetRoot, lock, sourceRoot });
-  const selected = (path) => scope === "all" || path.startsWith(scope === "agents" ? ".codex/agents/" : ".agents/skills/");
-  const isSkill = (path) => path.startsWith(".agents/skills/");
+  const isSkill = (path) => path.startsWith(".agents/skills/") || path.startsWith(".codex/internal-skills/");
+  const selected = (path) => scope === "all" || (scope === "agents" ? path.startsWith(".codex/agents/") : isSkill(path));
   const actions = [];
   const skipped = [];
   const removed_lock_entries = [];
@@ -278,6 +281,12 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   for (const entry of entries) {
     const descriptor = byTarget.get(entry.path);
     if (!descriptor) {
+      if (!selected(entry.path)) continue;
+      const internalReplacement = entry.path.replace(/^\.agents\/skills\//, ".codex/internal-skills/").replace(/\/SKILL\.md$/, "/GUIDE.md");
+      if (selected(entry.path) && (entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
+        const target = await readTarget(targetRoot, entry.path);
+        if (target) actions.push({ descriptor: sourceDescriptor(entry.source_path, entry.path), retired: true, backup: target.content });
+      }
       delete nextFiles[entry.path];
       removed_lock_entries.push(entry.path);
       continue;
@@ -324,6 +333,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     await writeFile(sessionOutputPath(resolve(targetRoot), `${backupPrefix}/${action.descriptor.target_path}`), action.backup, { flag: "wx", mode: 0o600 });
   }
   for (const action of actions) {
+    if (action.retired) {
+      const target = await containedPath(targetRoot, action.descriptor.target_path);
+      await unlink(target.path);
+      continue;
+    }
     await installFile(targetRoot, action.descriptor.target_path, action.content);
     nextFiles[action.descriptor.target_path] = {
       installed_sha256: action.sourceHash,
@@ -334,5 +348,5 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
-  return { lock: nextLock, updated: actions.filter((action) => !action.added).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
+  return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
 }

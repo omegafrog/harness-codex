@@ -1,0 +1,482 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:harness:spring-boot-diagnostic-log:1.0",
+  "title": "Spring Boot Diagnostic Log Schema v1",
+  "description": "정규화된 논리적 진단 이벤트 JSON. OTLP wire format이나 Spring 기본 Logstash 형식이 아님.",
+  "type": "object",
+  "required": [
+    "Timestamp",
+    "EventName",
+    "Resource",
+    "Attributes"
+  ],
+  "properties": {
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ObservedTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "SeverityNumber": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 24
+    },
+    "SeverityText": {
+      "type": "string",
+      "minLength": 1,
+      "description": "기본 심각도 텍스트; 이벤트별 권장은 강제하지 않음"
+    },
+    "Body": {},
+    "EventName": {
+      "enum": [
+        "diag.operation.started",
+        "diag.operation.completed",
+        "diag.operation.failed",
+        "diag.operation.cancelled",
+        "diag.attempt.failed",
+        "diag.retry.scheduled",
+        "diag.state.changed"
+      ]
+    },
+    "TraceId": {
+      "type": "string",
+      "pattern": "^(?!0{32}$)[0-9a-fA-F]{32}$"
+    },
+    "SpanId": {
+      "type": "string",
+      "pattern": "^(?!0{16}$)[0-9a-fA-F]{16}$"
+    },
+    "TraceFlags": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "Resource": {
+      "type": "object",
+      "required": [
+        "service.name",
+        "deployment.environment.name",
+        "diag.project.id",
+        "diag.contract.version"
+      ],
+      "properties": {
+        "service.name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "서비스 이름"
+        },
+        "service.namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "서비스 그룹"
+        },
+        "service.version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "실행 버전"
+        },
+        "deployment.environment.name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "실행 환경"
+        },
+        "diag.project.id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "프로젝트 식별자"
+        },
+        "diag.contract.version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "진단 계약 버전",
+          "const": "1.0"
+        },
+        "vcs.ref.head.revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "실행 코드의 Git revision"
+        },
+        "host.name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "호스트"
+        },
+        "container.id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "컨테이너"
+        },
+        "service.instance.id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "서비스 인스턴스"
+        },
+        "process.pid": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "프로세스 ID"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Attributes": {
+      "type": "object",
+      "required": [
+        "diag.operation.name",
+        "diag.operation.id"
+      ],
+      "properties": {
+        "diag.operation.name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "작업 종류"
+        },
+        "diag.operation.id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "논리적 작업 ID"
+        },
+        "diag.operation.parent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "상위 작업 ID"
+        },
+        "diag.correlation.id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "여러 Trace에 걸친 워크플로 ID"
+        },
+        "diag.error.code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "안정적인 오류 코드"
+        },
+        "error.type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "기술 오류 유형"
+        },
+        "exception.type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "예외 클래스"
+        },
+        "diag.error.dependency": {
+          "type": "string",
+          "minLength": 1,
+          "description": "실패 의존성"
+        },
+        "diag.state.from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "이전 상태"
+        },
+        "diag.state.to": {
+          "type": "string",
+          "minLength": 1,
+          "description": "변경 상태"
+        },
+        "diag.state.reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "변경 사유"
+        },
+        "exception.message": {
+          "type": "string",
+          "description": "민감정보를 제거한 예외 메시지"
+        },
+        "exception.stacktrace": {
+          "type": "string",
+          "description": "민감정보를 제거한 stacktrace"
+        },
+        "diag.duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "diag.duration_ms"
+        },
+        "diag.attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "diag.attempt"
+        },
+        "diag.retry.next_attempt": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "diag.retry.next_attempt"
+        },
+        "diag.retry.delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "diag.retry.delay_ms"
+        },
+        "diag.outcome": {
+          "enum": [
+            "success",
+            "failure",
+            "cancelled"
+          ]
+        },
+        "diag.error.retryable": {
+          "type": "boolean"
+        },
+        "diag.error.category": {
+          "enum": [
+            "validation",
+            "dependency",
+            "timeout",
+            "network",
+            "resource",
+            "concurrency",
+            "configuration",
+            "internal",
+            "cancelled"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "dependentRequired": {
+        "exception.message": [
+          "exception.type"
+        ],
+        "exception.stacktrace": [
+          "exception.type"
+        ]
+      }
+    }
+  },
+  "dependentRequired": {
+    "SpanId": [
+      "TraceId"
+    ]
+  },
+  "$defs": {
+    "events": {
+      "$defs": {
+        "diag.operation.started": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id"
+          ],
+          "description": "권장 SeverityText: DEBUG; 예상된 비즈니스 거절은 조정 가능"
+        },
+        "diag.operation.completed": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.outcome",
+            "diag.duration_ms"
+          ],
+          "description": "권장 SeverityText: INFO; 예상된 비즈니스 거절은 조정 가능",
+          "properties": {
+            "diag.outcome": {
+              "const": "success"
+            }
+          }
+        },
+        "diag.operation.failed": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.outcome",
+            "diag.duration_ms",
+            "diag.error.code"
+          ],
+          "description": "권장 SeverityText: ERROR; 예상된 비즈니스 거절은 조정 가능",
+          "properties": {
+            "diag.outcome": {
+              "const": "failure"
+            }
+          }
+        },
+        "diag.operation.cancelled": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.outcome",
+            "diag.duration_ms"
+          ],
+          "description": "권장 SeverityText: INFO; 예상된 비즈니스 거절은 조정 가능",
+          "properties": {
+            "diag.outcome": {
+              "const": "cancelled"
+            }
+          }
+        },
+        "diag.attempt.failed": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.attempt",
+            "diag.error.code"
+          ],
+          "description": "권장 SeverityText: WARN; 예상된 비즈니스 거절은 조정 가능"
+        },
+        "diag.retry.scheduled": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.attempt",
+            "diag.retry.next_attempt",
+            "diag.retry.delay_ms"
+          ],
+          "description": "권장 SeverityText: INFO; 예상된 비즈니스 거절은 조정 가능"
+        },
+        "diag.state.changed": {
+          "type": "object",
+          "required": [
+            "diag.operation.name",
+            "diag.operation.id",
+            "diag.state.from",
+            "diag.state.to"
+          ],
+          "description": "권장 SeverityText: INFO; 예상된 비즈니스 거절은 조정 가능"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.operation.started"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.operation.started"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.operation.completed"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.operation.completed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.operation.failed"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.operation.failed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.operation.cancelled"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.operation.cancelled"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.attempt.failed"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.attempt.failed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.retry.scheduled"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.retry.scheduled"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "EventName": {
+            "const": "diag.state.changed"
+          }
+        },
+        "required": [
+          "EventName"
+        ]
+      },
+      "then": {
+        "properties": {
+          "Attributes": {
+            "$ref": "#/$defs/events/$defs/diag.state.changed"
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

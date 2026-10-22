@@ -173,6 +173,7 @@ export async function discoverHarnessOwnedFiles(root) {
     throw new HarnessLockError("Unable to resolve repository root", { root, cause: error });
   });
   const patterns = [
+    [".codex/internal-skills", () => true],
     [".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml")],
     [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],

@@ -3,6 +3,8 @@ name: frontend-design
 description: Build or materially redesign user-facing web UI through a standalone reference-first design, implementation, browser review, and correction workflow.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [frontend-figma](../../../.codex/internal-skills/frontend-figma/GUIDE.md) · [frontend-implement](../../../.codex/internal-skills/frontend-implement/GUIDE.md) · [frontend-visual-review](../../../.codex/internal-skills/frontend-visual-review/GUIDE.md) · [implement](../../../.codex/internal-skills/implement/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
+
 # frontend-design
 
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.
@@ -166,7 +168,7 @@ UI는 설명서가 아니다. **시각적으로 전달할 수 있는 상태를 �
 
 ## Phase 3.5 — Figwright / Figma authoring
 
-Figwright MCP가 연결되어 있고 사용자가 Figma-first 작업을 요구했거나 Figma를 authoritative design source로 사용하기로 한 경우, 구현 전에 `.codex/skills/frontend-figma/SKILL.md`의 **Mode A**를 실행한다.
+Figwright MCP가 연결되어 있고 사용자가 Figma-first 작업을 요구했거나 Figma를 authoritative design source로 사용하기로 한 경우, 구현 전에 `.codex/internal-skills/frontend-figma/GUIDE.md`의 **Mode A**를 실행한다.
 
 흐름:
 
@@ -199,7 +201,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 - acceptance scenarios
 - resolved implementation model ID / reasoning effort
 
-구현 agent는 `frontend-implement` skill을 사용한다. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 **Mode B**로 Figma design context / component_map / token_map / icon_map을 먼저 grounding한 뒤 코드를 작성한다.
+구현 agent는 `frontend-implement` skill을 사용한다. Figwright handoff가 있으면 `.codex/internal-skills/frontend-figma/GUIDE.md`의 **Mode B**로 Figma design context / component_map / token_map / icon_map을 먼저 grounding한 뒤 코드를 작성한다.
 
 ## Phase 5 — Browser visual review
 
@@ -215,7 +217,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 - project execution instructions
 - resolved high-performance model ID / reasoning effort
 
-reviewer는 `frontend-visual-review` skill을 사용하고 source를 수정하지 않는다. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 **Mode C**에 따라 authoritative Figma screenshot과 실제 browser screenshot을 비교한다.
+reviewer는 `frontend-visual-review` skill을 사용하고 source를 수정하지 않는다. Figwright handoff가 있으면 `.codex/internal-skills/frontend-figma/GUIDE.md`의 **Mode C**에 따라 authoritative Figma screenshot과 실제 browser screenshot을 비교한다.
 
 DOM 또는 accessibility tree만으로 visual quality를 통과시키지 않는다. 실제 browser render와 screenshot inspection이 필요하다.
 

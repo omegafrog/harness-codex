@@ -1,0 +1,136 @@
+<!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
+
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [frontend-figma](../frontend-figma/GUIDE.md).
+
+# frontend-visual-review
+
+`frontend-design` workflow의 독립적인 browser-based visual/UX review를 담당한다.
+
+source code를 수정하지 않는다.
+
+## Inputs
+
+- absolute `workspace_root`
+- settled frontend design brief
+- optional Figwright handoff: file/session identity and authoritative root node id
+- exact route(s) and user flow
+- acceptance scenarios
+- `docs/agents/EXEC.md` and project execution instructions
+
+## Execution
+
+1. `workspace_root`와 `git rev-parse --show-toplevel` 일치를 확인한다.
+2. `docs/agents/EXEC.md`와 대상 frontend의 실행 지침을 읽는다.
+3. 기존 project command로 필요한 app/server를 시작한다. 실행 방법을 추측해 repository 설정을 바꾸지 않는다.
+4. 실제 browser automation/screenshot capability를 사용한다. Playwright가 project 또는 environment에 준비되어 있으면 우선 사용한다.
+5. design brief의 primary user flow를 실제로 수행한다.
+6. target viewport가 지정되어 있지 않으면 최소 다음 범주를 확인한다.
+   - desktop: 약 1440px width
+   - compact desktop/laptop: 약 1280px width
+   - narrow mobile: 약 390px width
+7. Figwright handoff가 있으면 `.codex/internal-skills/frontend-figma/GUIDE.md`의 Mode C를 적용해 authoritative Figma root node의 `get_screenshot` 결과와 같은 state/viewport의 browser screenshot을 비교한다.
+8. 각 핵심 화면과 중요한 interaction state에서 실제 render를 시각적으로 검사한다.
+9. 종료 시 이 run이 시작한 process와 임시 artifact를 정리하고 git status를 확인한다.
+
+핵심 화면 screenshot의 route / state / viewport를 간단한 evidence index로 기록한다. 결과에 실제 확인한 범위와 확인하지 못한 적용 가능 상태를 구분해 남긴다. 인계에 필요한 evidence는 정리 대상 임시 산출물과 구분한다.
+
+DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않는다.
+
+## Review dimensions
+
+### Visual hierarchy
+- 사용자가 첫 2~3초 안에 primary task와 current state를 파악할 수 있는가
+- primary action이 secondary/destructive action보다 명확한가
+- 모든 section이 동일한 visual weight를 가져 hierarchy가 죽지 않았는가
+
+### Layout and density
+- information density가 task 성격과 맞는가
+- unnecessary card nesting이 없는가
+- alignment, rhythm, whitespace가 일관적인가
+- sidebar/header/content 비율이 자연스러운가
+
+### Typography
+- heading/body/metadata 역할이 구분되는가
+- line length와 wrapping이 읽기 좋은가
+- font size 차이만으로 모든 hierarchy를 해결하지 않았는가
+
+### Components and surfaces
+- 같은 역할의 control이 같은 모습과 behavior를 가지는가
+- borders, radius, shadow, surface contrast가 일관적인가
+- decorative styling이 information hierarchy를 방해하지 않는가
+
+### Interaction
+- hover/focus/pressed/disabled 상태가 구분되는가
+- keyboard navigation과 focus visibility가 합리적인가
+- destructive action이 실수하기 쉬운 위치/강조로 배치되지 않았는가
+- interaction 후 system status가 보이는가
+- accessible name과 field label이 연결되고, dialog/오류 복구 후 focus가 적절한가
+- 상태가 색상만으로 전달되지 않고 zoom/reflow에서도 정보와 조작이 유지되는가
+- WCAG 2.2 AA 기준으로 일반 텍스트 대비 4.5:1, 큰 텍스트와 UI 비텍스트 대비 3:1을 만족하는가; 예외는 명시했는가
+- 비필수 motion이 `prefers-reduced-motion` 설정을 존중하는가
+
+### UI copy restraint
+- UI가 이미 보여주는 상태나 규칙을 안내 문장이 반복하지 않는가
+- 요청되지 않은 helper text, subtitle, description, hint가 추가되지 않았는가
+- 설명 문장 대신 interaction, 시각적 상태, 숫자, 아이콘, 짧은 label로 해결할 수 있는 모호성이 남아 있지 않은가
+- 오류·안전·접근성에 꼭 필요한 정보는 남기면서 나머지 설명 문구는 덜어냈는가
+- 불필요한 설명 문구가 있으면 문구 추가로 덮지 말고 interaction 또는 visual hierarchy 수정을 제안한다
+
+### States
+적용 가능한 loading, empty, error, disabled, pending, success, retry, validation state를 실제로 확인한다. 중복 제출, 실패 후 복구, 미저장 변경이 해당 flow에 있으면 함께 확인한다.
+
+### Responsive
+- horizontal overflow / clipped content / overlapping control이 없는가
+- 좁은 화면에서 단순 축소가 아니라 priority에 맞게 재배치되는가
+- touch target이 지나치게 작지 않은가
+- 긴 한국어 label/value, dense content, 확대된 텍스트 등 대상 UI의 stress case에서 clipping/겹침 없이 사용할 수 있는가
+
+### Reference fidelity
+- dominant reference에서 추출한 원칙을 따르는가
+- 여러 reference의 표면 스타일이 뒤섞여 일관성이 깨지지 않았는가
+- Figwright handoff가 있으면 browser hierarchy/layout ratio/spacing/type/component treatment/action emphasis가 authoritative Figma screenshot과 합리적으로 일치하는가
+- responsive/runtime constraint 때문에 의도적으로 달라진 부분과 fidelity regression을 구분했는가
+
+## Findings
+
+각 finding은 다음 형태로 보고한다.
+
+- Severity: BLOCKER | MAJOR | MINOR
+- Route / viewport
+- Element or component
+- Observed problem
+- Why it hurts usability or visual quality
+- Concrete correction direction
+- Evidence: browser screenshot/state description
+- Screenshot evidence index: inspected route / state / viewport identifiers; note unreviewed applicable states
+- Figma evidence: authoritative node/screenshot when Figwright is used
+
+### Severity
+
+- BLOCKER: 주요 flow를 사용할 수 없거나 content/action이 가려짐, 심각한 responsive/accessibility failure
+- MAJOR: flow는 되지만 hierarchy, interaction, layout, readability가 명확히 품질 기준에 미달
+- MINOR: polish 수준의 일관성/spacing/visual refinement
+
+취향만 다른 문제를 BLOCKER/MAJOR로 올리지 않는다. design brief와 user goal을 기준으로 판단한다.
+
+## Completion output
+
+- executed commands
+- routes / flows exercised
+- viewports inspected
+- state coverage
+- Figma root node / comparison evidence when Figwright is used
+- findings grouped by severity
+- artifact cleanup result
+- PASS only when BLOCKER and MAJOR are zero
+- 모든 acceptance scenario와 적용 가능한 핵심 상태를 확인해야 PASS다; 미확인 항목은 따로 표시한다
+
+reviewer는 source, tests, specs, plans, tracker, configuration을 수정하지 않는다.
+
+## 세션 출력
+
+`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+
+## 테스트·서비스 실행 전제
+
+테스트·서버·인프라 명령은 `docs/agents/EXEC.md`와 해당 프로젝트의 `docs/agents/execution.json`을 먼저 대조한 뒤 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`로만 실행한다. 필수 인자·환경값·설정 prepare/verify·인프라와 선행 서버 readiness가 실제 entrypoint와 일치해야 한다. 프로필 누락/실패 시 직접 명령으로 우회하지 않는다. caller가 프로필을 보완하고 runner는 설정을 추정·수정하지 않는다. 설정/의존성/시작 인자가 바뀐 구현은 프로필·EXEC도 함께 갱신한다. 결과에는 실행 profile·receipt·실제 준비/검증 실패를 포함한다.

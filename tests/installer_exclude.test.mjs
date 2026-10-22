@@ -61,3 +61,13 @@ test("skill-only installation copies bundled skills without invoking npx", async
   assert.equal(await readFile(join(targetRoot, ".agents/skills/spec-me/SKILL.md"), "utf8"), await readFile(join(repositoryRoot, ".codex/skills/spec-me/SKILL.md"), "utf8"));
   await assert.rejects(readFile(invoked), { code: "ENOENT" });
 });
+
+test("installing into an uninitialized child directory never changes the parent Git exclude", async () => {
+  const parent = await createGitRepository("harness-parent-");
+  const source = await createGitRepository("harness-source-");
+  const target = join(parent, "nested-project");
+  await mkdir(target);
+  const before = await readExclude(parent);
+  await protectLocalInstallArtifacts(target, source);
+  assert.equal(await readExclude(parent), before);
+});

@@ -11,7 +11,7 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         return (ROOT / relative).read_text()
 
     def test_plantuml_skill_defines_local_renderer_contract_and_rules(self):
-        skill = self.read(".codex/skills/plantuml-diagrams/SKILL.md")
+        skill = self.read(".codex/internal-skills/plantuml-diagrams/GUIDE.md")
 
         for phrase in (
             "bin/plantuml-render.mjs",
@@ -26,8 +26,8 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
             self.assertIn(phrase, skill)
 
     def test_product_contract_is_flow_conditional_and_excludes_classes(self):
-        skill = self.read(".codex/skills/product-spec/SKILL.md")
-        template = self.read(".codex/skills/product-spec/references/template.md")
+        skill = self.read(".codex/internal-skills/product-spec/GUIDE.md")
+        template = self.read(".codex/internal-skills/product-spec/references/template.md")
 
         for text in (skill, template):
             self.assertRegex(text, r"흐름.*(신설|변경).*(유스케이스|액티비티)")
@@ -39,8 +39,8 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertRegex(skill, r"클래스.*(생성|금지|만들지)\s*(하지|금지|않)")
 
     def test_architecture_contract_has_independent_diagrams_and_links(self):
-        skill = self.read(".codex/skills/architecture-spec/SKILL.md")
-        template = self.read(".codex/skills/architecture-spec/references/template.md")
+        skill = self.read(".codex/internal-skills/architecture-spec/GUIDE.md")
+        template = self.read(".codex/internal-skills/architecture-spec/references/template.md")
 
         for text in (skill, template):
             self.assertIn("독립", text)
@@ -52,9 +52,9 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
     def test_class_diagrams_preserve_code_signatures_and_symbols(self):
         texts = [
-            self.read(".codex/skills/plantuml-diagrams/SKILL.md"),
+            self.read(".codex/internal-skills/plantuml-diagrams/GUIDE.md"),
             self.read(".codex/agents/diagram_creator.toml"),
-            self.read(".codex/skills/architecture-spec/references/template.md"),
+            self.read(".codex/internal-skills/architecture-spec/references/template.md"),
         ]
 
         for text in (texts[0], texts[2]):
@@ -84,7 +84,7 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
     def test_spec_me_prepares_the_session_worktree_before_spawning_agents(self):
         skill = self.read(".codex/skills/spec-me/SKILL.md")
-        worktree = self.read(".codex/skills/session-worktree/SKILL.md")
+        worktree = self.read(".codex/internal-skills/session-worktree/GUIDE.md")
 
         self.assertIn("session-worktree", skill)
         self.assertIn("node <harness_source_root>/bin/harness-install.mjs install --project <session_worktree> --force", worktree)
@@ -100,9 +100,9 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
     def test_diagram_creation_is_delegated_to_lightweight_agent(self):
         skills = [
             self.read(".codex/skills/spec-me/SKILL.md"),
-            self.read(".codex/skills/product-spec/SKILL.md"),
-            self.read(".codex/skills/architecture-spec/SKILL.md"),
-            self.read(".codex/skills/plantuml-diagrams/SKILL.md"),
+            self.read(".codex/internal-skills/product-spec/GUIDE.md"),
+            self.read(".codex/internal-skills/architecture-spec/GUIDE.md"),
+            self.read(".codex/internal-skills/plantuml-diagrams/GUIDE.md"),
         ]
 
         for skill in skills:
@@ -116,9 +116,9 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
     def test_diagram_paths_ids_and_svg_links_are_canonical(self):
         texts = [
-            self.read(".codex/skills/plantuml-diagrams/SKILL.md"),
-            self.read(".codex/skills/product-spec/references/template.md"),
-            self.read(".codex/skills/architecture-spec/references/template.md"),
+            self.read(".codex/internal-skills/plantuml-diagrams/GUIDE.md"),
+            self.read(".codex/internal-skills/product-spec/references/template.md"),
+            self.read(".codex/internal-skills/architecture-spec/references/template.md"),
         ]
         combined = "\n".join(texts)
 
@@ -152,10 +152,10 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("Never add a closing trigger to a plan PR", skill)
 
     def test_spec_workflow_promotes_durable_vocabulary_to_context_docs(self):
-        domain = self.read(".codex/skills/domain-modeling/SKILL.md")
-        grill = self.read(".codex/skills/grill-with-docs/SKILL.md")
-        product = self.read(".codex/skills/product-spec/SKILL.md")
-        architecture = self.read(".codex/skills/architecture-spec/SKILL.md")
+        domain = self.read(".codex/internal-skills/domain-modeling/GUIDE.md")
+        grill = self.read(".codex/internal-skills/grill-with-docs/GUIDE.md")
+        product = self.read(".codex/internal-skills/product-spec/GUIDE.md")
+        architecture = self.read(".codex/internal-skills/architecture-spec/GUIDE.md")
 
         self.assertIn("Project-wide canonical terms", domain)
         self.assertIn("CONTEXT-MAP.md", domain)
@@ -167,8 +167,8 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
     def test_user_managed_architecture_constraints_are_loaded(self):
         constraints = self.read("docs/architecture/constraints.md")
-        architecture = self.read(".codex/skills/architecture-spec/SKILL.md")
-        implement = self.read(".codex/skills/implement/SKILL.md")
+        architecture = self.read(".codex/internal-skills/architecture-spec/GUIDE.md")
+        implement = self.read(".codex/internal-skills/implement/GUIDE.md")
         review = self.read(".codex/skills/code-review/SKILL.md")
 
         self.assertIn("component scan", constraints)

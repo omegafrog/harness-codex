@@ -3,6 +3,8 @@ name: e2e-test
 description: Run full-stack end-user E2E tests in the active worktree, following repository execution instructions and cleaning test artifacts afterward.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [testing-guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md).
+
 # E2E 테스트 실행
 
 먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. 이 정책은 의미적 수동 판단이며 자동 런타임 집행이 아니다. 호출자는 E2E/full-stack/browser end-to-end를 명시적으로 요청했거나 저비용 검사로 실패를 확인할 수 없는 변경된 critical cross-boundary 경로에 대해서만 실행한다. 승인된 E2E plan과 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다.
@@ -13,7 +15,7 @@ description: Run full-stack end-user E2E tests in the active worktree, following
 
 ## 실패 학습과 다음 실행
 
-Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인하고, 실패 후에는 caller가 원인 확인→실제 예방 조치→필요한 경우 해당 E2E 경로 재검증→lesson 반영을 소유한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 미해결 실패를 단순 재시도 성공으로 지우지 않는다.
+Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인한다. 실패 후 caller는 runner의 증거를 바탕으로 원인과 재사용 가능성을 분류하고, 원인에 맞는 설정·lesson·공유 testing guidance를 갱신한 뒤 필요한 검증을 수행한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 과거 실패 이력은 다음 성공 뒤에도 보존한다. 현재 테스트 결과와 학습 상태는 별개이며 지침 갱신·학습 분류 누락으로 테스트 통과나 workflow 완료를 차단하지 않는다.
 
 ## 실행 절차
 

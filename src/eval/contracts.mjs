@@ -1,6 +1,6 @@
 export const SCHEMA_VERSION = 1;
 
-export function e2eFailuresResolved(tests) {
+export function e2eLearningComplete(tests) {
   if (tests?.e2e_failures === undefined) return true;
   if (!Array.isArray(tests.e2e_failures)) return false;
   const ids = new Set();
@@ -9,9 +9,12 @@ export function e2eFailuresResolved(tests) {
   return tests.e2e_failures.every((failure) => {
     if (!failure || !text(failure.id) || ids.has(failure.id)) return false;
     ids.add(failure.id);
+    if (failure.learning_route === 'not_reusable') return text(failure.cause);
     return failure.status === 'verified'
       && ['startup', 'configuration', 'infrastructure', 'product', 'test', 'cleanup'].includes(failure.category)
       && ['scenario', 'profile_id', 'cause'].every((key) => text(failure[key]))
+      && ['project_execution_contract', 'project_e2e_lesson', 'shared_testing_guidance', 'not_reusable'].includes(failure.learning_route)
+      && path(failure.learning_target)
       && ['evidence_path', 'verification_path', 'lesson_path'].every((key) => path(failure[key]))
       && Array.isArray(failure.prevention_paths) && failure.prevention_paths.length > 0 && failure.prevention_paths.every(path);
   });

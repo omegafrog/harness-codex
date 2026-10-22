@@ -117,16 +117,6 @@ function installPonytailPlugin() {
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
 }
 
-function registerSigNozMarketplace() {
-  const marketplaceUrl = "https://github.com/SigNoz/agent-skills.git";
-  const marketplaceResult = JSON.parse(runCodex(["plugin", "marketplace", "list", "--json"]));
-  const existing = marketplaceResult.marketplaces?.find((marketplace) => marketplace.name === "signoz-skills");
-  if (existing && existing.marketplaceSource?.source !== marketplaceUrl) {
-    throw new Error(`Codex marketplace 'signoz-skills' already points to a different source: ${existing.marketplaceSource?.source || existing.root}`);
-  }
-  if (!existing) runCodex(["plugin", "marketplace", "add", "SigNoz/agent-skills"]);
-}
-
 function beadsCliVersion() {
   const executables = process.platform === "win32" ? [["bd.exe", false], ["bd.cmd", true]] : [["bd", false]];
   for (const [executable, shell] of executables) {
@@ -149,18 +139,18 @@ function ensureBeadsCli() {
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     await stat(join(projectRoot, ".agents", "skills", "spec-me", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "product-spec", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "architecture-spec", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "architecture-spec", "GUIDE.md"));
     await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-design", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "frontend-figma", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "frontend-implement", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-figma", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-implement", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-visual-review", "GUIDE.md"));
     await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "architecture-review", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "architecture-review", "GUIDE.md"));
     await stat(join(projectRoot, ".agents", "skills", "beads", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "plan-review", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -233,16 +223,16 @@ async function main() {
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
-    registerSigNozMarketplace();
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
     if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
     if (syncResult.skipped.length > 0) console.log(`Preserved: ${syncResult.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+    if (syncResult.retired?.length) console.log(`Retired managed assets: ${syncResult.retired.join(", ")}`);
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
-    console.log("SigNoz Codex marketplace registered; install the signoz plugin and configure its MCP endpoint in Codex.");
+    if (fullInstall) console.log("VictoriaLogs setup available: run node .codex/scripts/harness-setup.mjs; official MCP and development log collection are configured through the same path.");
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
       ? `Beads CLI available: ${beadsVersion}`

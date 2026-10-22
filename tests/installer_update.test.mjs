@@ -216,11 +216,22 @@ test("fresh installation includes the runtime required by the decision gate CLI"
   try {
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
-    const implementSkill = join(targetRoot, ".agents/skills/implement/SKILL.md");
+    const implementSkill = join(targetRoot, ".codex/internal-skills/implement/GUIDE.md");
+    const internalRelativePath = ".agents/skills/spec-me/references/decision-knowledge.md";
+    const internalSkill = join(targetRoot, internalRelativePath);
+    const internalSource = await readFile(join(REPOSITORY_ROOT, ".codex/skills/spec-me/references/decision-knowledge.md"), "utf8");
+    assert.equal(await readFile(internalSkill, "utf8"), internalSource);
+    const specSkill = await readFile(join(targetRoot, ".agents/skills/spec-me/SKILL.md"), "utf8");
+    assert.ok(specSkill.includes("references/decision-knowledge.md"));
+    await assert.rejects(readFile(join(targetRoot, ".agents/skills/decision-knowledge/SKILL.md")), { code: "ENOENT" });
+    await writeFile(internalSkill, "stale internal guidance\n");
     const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, and update/;
     assert.match(await readFile(implementSkill, "utf8"), distributionRule);
     await writeFile(implementSkill, "stale consumer copy\n");
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.equal(await readFile(internalSkill, "utf8"), internalSource);
+    const internalLock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(internalLock.files[internalRelativePath]);
     assert.match(await readFile(implementSkill, "utf8"), distributionRule);
     const targets = {
       schema_version: 1,
@@ -447,4 +458,22 @@ test("installed session output CLI resolves through the portable runtime", async
     await rm(sourceRoot, { recursive: true, force: true });
     await rm(targetRoot, { recursive: true, force: true });
   }
+});
+
+test("VictoriaLogs replacement backs up and retires only the managed SigNoz skill", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const retired = '.agents/skills/signoz-local-setup/SKILL.md';
+  const source = join(sourceRoot, '.codex/skills/signoz-local-setup/SKILL.md');
+  await mkdir(dirname(source), { recursive: true });
+  await mkdir(dirname(join(targetRoot, retired)), { recursive: true });
+  await writeFile(source, '# old setup\n');
+  await writeFile(join(targetRoot, retired), '# project modified old setup\n');
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  await unlink(source);
+  const result = await updateProject({ sourceRoot, targetRoot });
+  assert.deepEqual(result.retired, [retired]);
+  await assert.rejects(readFile(join(targetRoot, retired)), { code: 'ENOENT' });
+  assert.equal(await readFile(join(result.backup_directory, retired), 'utf8'), '# project modified old setup\n');
+  assert.equal(result.lock.files[retired], undefined);
+  assert.equal(await readFile(join(targetRoot, '.agents/skills/alpha/SKILL.md'), 'utf8'), '# alpha\n');
 });

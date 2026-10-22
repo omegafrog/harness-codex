@@ -45,10 +45,11 @@ class AgentProfileContractTest(unittest.TestCase):
 
                 skill_name = self.expected[profile.stem]
                 if skill_name is not None:
-                    skill_path = ROOT / ".codex" / "skills" / skill_name / "SKILL.md"
+                    internal = (ROOT / ".codex/internal-skills" / skill_name / "GUIDE.md").is_file()
+                    skill_path = ROOT / ".codex" / ("internal-skills" if internal else "skills") / skill_name / ("GUIDE.md" if internal else "SKILL.md")
                     self.assertTrue(skill_path.is_file())
                     self.assertIn(
-                        f".codex/skills/{skill_name}/SKILL.md",
+                        skill_path.relative_to(ROOT).as_posix(),
                         data["developer_instructions"],
                     )
 

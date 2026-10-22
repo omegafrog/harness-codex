@@ -11,7 +11,7 @@ class ImplementationReviewContractTests(unittest.TestCase):
 
     def test_wrapper_requires_two_axis_review_after_implementation(self):
         wrapper = self.read(".codex/skills/implement-wrapper/SKILL.md")
-        implement = self.read(".codex/skills/implement/SKILL.md")
+        implement = self.read(".codex/internal-skills/implement/GUIDE.md")
 
         for text in (wrapper, implement):
             self.assertIn("fixed point", text)

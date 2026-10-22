@@ -3,6 +3,8 @@ name: to-ticket
 description: Split approved product and architecture specifications into vertical implementation tickets and plans.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [code-research](../../../.codex/internal-skills/code-research/GUIDE.md) · [implement](../../../.codex/internal-skills/implement/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [spec-review](../../../.codex/internal-skills/spec-review/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md) · [testing-guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md).
+
 # to-ticket
 
 ## What it does

@@ -11,6 +11,8 @@ const LOCAL_INSTALL_EXCLUDES = [
 
 export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const targetPath = await realpath(projectRoot);
+  const gitRoot = spawnSync("git", ["-C", projectRoot, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (gitRoot.status !== 0 || await realpath(gitRoot.stdout.trim()) !== targetPath) return;
   const harnessSourcePath = await realpath(sourceRoot);
   const sourceCheckout = await isHarnessSourceCheckout(harnessSourcePath, targetPath);
   // The Harness repository owns and versions its .codex source assets. Only a

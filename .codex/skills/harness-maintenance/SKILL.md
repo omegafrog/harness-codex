@@ -3,6 +3,8 @@ name: harness-maintenance
 description: Update the project-local Harness runtime when the user asks to update, upgrade, or refresh Harness; do not use for application dependency updates.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
+
 # Harness Maintenance
 
 Use this skill for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.

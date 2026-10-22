@@ -18,7 +18,8 @@ class TrackerModeContractTest(unittest.TestCase):
 
     def test_execution_skills_keep_selected_tracker_as_canonical(self):
         for name in ("implement", "to-ticket"):
-            text = (ROOT / ".codex" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+            path = ROOT / ".codex" / "internal-skills" / name / "GUIDE.md" if name == "implement" else ROOT / ".codex" / "skills" / name / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
             self.assertIn("tracker mode", text)
             self.assertIn("GitHub mode", text)
             self.assertIn("local-markdown mode", text)
@@ -54,7 +55,7 @@ class TrackerModeContractTest(unittest.TestCase):
         config = (ROOT / ".codex" / "harness.yaml").read_text(encoding="utf-8")
         issue_tracker = (ROOT / "docs" / "agents" / "issue-tracker.md").read_text(encoding="utf-8")
         to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")
-        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+        implement = (ROOT / ".codex" / "internal-skills" / "implement" / "GUIDE.md").read_text(encoding="utf-8")
 
         self.assertIn("assignees:", config)
         self.assertIn('spec_me: "@me"', config)
@@ -69,7 +70,7 @@ class TrackerModeContractTest(unittest.TestCase):
 
     def test_split_plans_finish_before_one_integration_pr_closes_issues(self):
         gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
-        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+        implement = (ROOT / ".codex" / "internal-skills" / "implement" / "GUIDE.md").read_text(encoding="utf-8")
         wrapper = (ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md").read_text(encoding="utf-8")
         plan_status = (ROOT / "docs" / "agents" / "plan-status.md").read_text(encoding="utf-8")
 
@@ -87,7 +88,7 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("merge되면", plan_status)
 
     def test_github_split_completion_updates_configured_workflow_status(self):
-        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+        implement = (ROOT / ".codex" / "internal-skills" / "implement" / "GUIDE.md").read_text(encoding="utf-8")
         implementation_agent = (ROOT / ".codex" / "agents" / "implementation_agent.toml").read_text(encoding="utf-8")
 
         self.assertIn("gh project item-edit", implement)

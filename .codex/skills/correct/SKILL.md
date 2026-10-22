@@ -3,6 +3,8 @@ name: correct
 description: Diagnose recurring agent mistakes and replace repeated instructions with structural constraints or executable checks. Use when the user asks to prevent repeated workflow or architecture errors.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [implement](../../../.codex/internal-skills/implement/GUIDE.md).
+
 # Correct recurring mistakes
 
 Read relevant corrections, commits/reverts, review findings and current rules. Group an error as recurring only with at least two concrete occurrences; a single incident can still justify an ordinary fix. Stay inside the user's authorized scope and use the existing tracker for additional work.

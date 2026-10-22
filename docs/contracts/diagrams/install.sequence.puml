@@ -1,29 +1,65 @@
 @startuml
 actor 사용자
-participant "harness-install.mjs install" as install
+participant "harness-install.mjs" as install
 participant "updateProject" as update
-participant "registerSigNozMarketplace" as register
-participant "Codex plugin CLI" as codex
-participant "SigNoz MCP endpoint" as signoz
-사용자 -> install : --project, 설치 범위
-install -> update : 프로젝트 자산 동기화
-update --> install : added, updated, skipped
-install -> register : 모든 install 범위에서 실행
-register -> codex : plugin marketplace list
-alt signoz-skills 이름이 다른 source를 가리킴
-  register --> 사용자 : 오류, 설치 중단
-else marketplace 미등록
-  register -> codex : plugin marketplace add SigNoz/agent-skills
-else marketplace source 일치
-  register -> register : 기존 marketplace 재사용
+participant "harness-setup.mjs" as setup
+participant "setupVictoriaLogs" as local
+participant "Project A / Spring Boot" as projectA
+participant "Project B / Spring Boot" as projectB
+participant "Project C / Spring Boot" as projectC
+participant "OpenTelemetry Collector" as otelCollector
+participant "VictoriaLogs :9428" as logs
+participant "VictoriaMetrics :8428" as metrics
+participant "공식 VictoriaLogs MCP" as logsMcp
+participant "공식 VictoriaMetrics MCP" as metricsMcp
+participant "provider-independent AI client" as client
+participant "project_default bridge network" as bridge
+사용자 -> install : --project
+install -> update : helper·skill·assets·runtime 배포
+update -> update : 폐기 managed skill backup 후 제거
+update --> install : lock·변경·backup 경로
+install --> 사용자 : setup CLI 경로
+사용자 -> setup : 터미널에서 model·tracker·관측성 선택
+alt VictoriaLogs 선택
+  setup -> local : 저장소 port·retention·프로젝트 Git roots, ids, services·metrics_url·service.scrape_url 수집
+  local -> local : compose·otel-collector.yaml·scrape.json·두 MCP 항목·실행 profile·공용 지침 준비
+  local --> 사용자 : 준비 결과와 앱 연결 절차
+  사용자 -> projectA : 개발 OTel SDK/appender/Java agent에서 진단 v1 schema를 LogRecord fields/attributes로 매핑
+  사용자 -> projectB : 개발 OTel SDK/appender/Java agent에서 진단 v1 schema를 LogRecord fields/attributes로 매핑
+  사용자 -> projectC : 개발 OTel SDK/appender/Java agent에서 진단 v1 schema를 LogRecord fields/attributes로 매핑
+  사용자 -> bridge : harness-exec infrastructure profile 시작
+  par 로그 수집
+    projectA -> otelCollector : OTLP HTTP localhost:<published 4318> · 실제 OTel LogRecords와 trace/correlation IDs
+    projectB -> otelCollector : OTLP HTTP localhost:<published 4318> · 실제 OTel LogRecords와 trace/correlation IDs
+    projectC -> otelCollector : OTLP HTTP localhost:<published 4318> · 실제 OTel LogRecords와 trace/correlation IDs
+    otelCollector -> logs : http://victorialogs:9428/insert/opentelemetry/v1/logs
+  else 메트릭 수집
+    metrics -> projectA : service.scrape_url = http://host.docker.internal:<Actuator port>/actuator/prometheus
+    metrics -> projectB : service.scrape_url = http://host.docker.internal:<Actuator port>/actuator/prometheus
+    metrics -> projectC : service.scrape_url = http://host.docker.internal:<Actuator port>/actuator/prometheus
+  end
+  사용자 -> client : 두 stdio MCP 서버 연결
+  client -> bridge : project_default 네트워크에 MCP 서버 연결
+  client -> logsMcp : 진단 근거 요청
+  logsMcp -> logs : victorialogs service DNS로 LogsQL 조회
+  logs --> logsMcp : 오류·상관 ID 근거
+  client -> metricsMcp : 진단 근거 요청
+  metricsMcp -> metrics : victoriametrics service DNS로 Prometheus 조회
+  metrics --> metricsMcp : 메트릭 근거
+  client --> 사용자 : 근거 기반 AI 진단·수정 제안
+  사용자 -> projectA : 수정 후 재검증
+  사용자 -> projectB : 수정 후 재검증
+  사용자 -> projectC : 수정 후 재검증
+else 선택 안 함
+  setup --> 사용자 : 관측성 구성 생략
 end
-register --> install : marketplace 준비 완료
-install --> 사용자 : SigNoz marketplace 등록 완료
-사용자 -> codex : /plugins에서 signoz 설치
-사용자 -> codex : signoz-mcp-setup <region-or-mcp-url>
-codex -> signoz : 선택한 endpoint 연결
-note over codex, signoz
-  Harness 설치는 plugin/MCP endpoint를 자동 구성하지 않는다.
-  사용자는 SigNoz Cloud 또는 self-hosted endpoint를 선택한다.
+note over setup, logs
+  setup은 서버를 자동 실행하지 않는다.
+  Compose는 기본 bridge network를 사용한다. 컨테이너 서비스는 0.0.0.0의 고정 내부 포트 4318, 9428, 8428에서 수신한다.
+  host 포트는 설정 가능한 값으로 127.0.0.1에만 publish한다. 앱은 localhost의 publish된 OTLP 포트에 연결한다.
+  metrics_url은 앱 접속 주소이며 service.scrape_url은 Collector/ VictoriaMetrics 컨테이너에서 접근하는 별도 주소다.
+  setup은 실제 앱 URL·컨테이너에서 접근 가능한 scrape URL을 받아 설정과 profile을 재생성한다.
+  두 MCP 서버는 project_default에 연결하고 backend service DNS로 통신한다. host network는 사용하지 않는다.
+  설정은 서버를 자동 시작하지 않으며 production은 분리한다.
 end note
 @enduml

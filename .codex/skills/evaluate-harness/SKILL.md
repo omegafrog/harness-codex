@@ -3,6 +3,8 @@ name: evaluate-harness
 description: Evaluate Harness workflow changes with the repo's eval suites, compare against suite baselines, and report quality, correctness, token, latency, and inconclusive regressions.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md) · [testing-guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md).
+
 # evaluate-harness
 
 ## Purpose

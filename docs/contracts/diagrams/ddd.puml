@@ -2,13 +2,16 @@
 left to right direction
 skinparam packageStyle rectangle
 rectangle "[[../architecture.md#codex-external Codex CLI]]" as codex
-rectangle "[[../architecture.md#signoz-external SigNoz]]" as signoz
+rectangle "[[../architecture.md#victorialogs-external VictoriaLogs]]" as victoriaLogs
+rectangle "[[../architecture.md#opentelemetry-collector-external OpenTelemetry Collector]]" as otelCollector
+rectangle "[[../architecture.md#victoriametrics-external VictoriaMetrics]]" as victoriaMetrics
 rectangle "[[../architecture.md#github-external GitHub Issues]]" as github
 rectangle "[[../architecture.md#beads-external Beads]]" as beads
 package "harness/control-plane" as controlPlane [[../architecture.md#control-plane]] {
   component "[[../architecture.md#installer-service src/installer/update.mjs]]" as installer {
     component "[[../architecture.md#update-method updateProject]]" as update
-    component "[[../architecture.md#register-signoz-marketplace-method registerSigNozMarketplace]]" as signozMarketplace
+    component "[[../architecture.md#setup-victorialogs-method setupVictoriaLogs]]" as victoriaLogsSetup
+    component "[[../architecture.md#validate-diagnostic-log-method validateDiagnosticLog]]" as validateDiagnosticLog
   }
   component "[[../architecture.md#doctor-service src/doctor/doctor.mjs]]" as doctor {
     component "[[../architecture.md#doctor-method runDoctor]]" as doctorRun
@@ -68,7 +71,9 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
   }
 }
 installer ..> codex
-codex ..> signoz
+victoriaLogsSetup ..> victoriaLogs
+victoriaLogsSetup ..> otelCollector
+victoriaLogsSetup ..> victoriaMetrics
 workspace ..> trackerLifecycle
 wrapper ..> trackerLifecycle
 wrapper ..> planTraceability

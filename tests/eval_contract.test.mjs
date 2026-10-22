@@ -756,8 +756,8 @@ test("hard gates inspect every normalized target in grouped evidence", async () 
     const sourceViolation = detectTrajectoryViolation({
       kind: "tool_call",
       action: "read_file",
-      target: ".agents/skills/product-spec/SKILL.md",
-      payload: { targets: [".agents/skills/product-spec/SKILL.md", "src/secret.txt"] },
+      target: ".codex/internal-skills/product-spec/GUIDE.md",
+      payload: { targets: [".codex/internal-skills/product-spec/GUIDE.md", "src/secret.txt"] },
     }, {
       forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }],
     }, dir);

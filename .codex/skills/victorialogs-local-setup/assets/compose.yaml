@@ -1,0 +1,47 @@
+# Harness observability stack v3: bridge DNS inside, loopback published ports outside.
+name: ${HARNESS_VL_PROJECT:?Use harness-victorialogs.mjs}
+services:
+  victorialogs:
+    ports: ["127.0.0.1:${HARNESS_VL_PORT:?}:9428"]
+    image: victoriametrics/victoria-logs:v1.53.0
+    user: "${HARNESS_OBSERVABILITY_UID:?}:${HARNESS_OBSERVABILITY_GID:?}"
+    command:
+      - -httpListenAddr=0.0.0.0:9428
+      - -storageDataPath=/data
+      - -retentionPeriod=${HARNESS_VL_RETENTION_DAYS:?}d
+    volumes:
+      - type: bind
+        source: ${HARNESS_VL_DATA_DIR:?}
+        target: /data
+    logging:
+      driver: none
+  victoriametrics:
+    ports: ["127.0.0.1:${HARNESS_VM_PORT:?}:8428"]
+    image: victoriametrics/victoria-metrics:v1.154.0
+    user: "${HARNESS_OBSERVABILITY_UID:?}:${HARNESS_OBSERVABILITY_GID:?}"
+    command:
+      - -httpListenAddr=0.0.0.0:8428
+      - -storageDataPath=/data
+      - -retentionPeriod=${HARNESS_VM_RETENTION_DAYS:?}d
+      - -promscrape.config=/etc/victoriametrics/scrape.json
+    volumes:
+      - type: bind
+        source: ${HARNESS_VM_DATA_DIR:?}
+        target: /data
+      - ./scrape.json:/etc/victoriametrics/scrape.json:ro
+    logging:
+      driver: none
+  otel-collector:
+    ports: ["127.0.0.1:${HARNESS_OTEL_PORT:?}:4318"]
+    image: otel/opentelemetry-collector-contrib:0.148.0
+    user: "${HARNESS_OBSERVABILITY_UID:?}:${HARNESS_OBSERVABILITY_GID:?}"
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - victorialogs
+    volumes:
+      - type: bind
+        source: ${HARNESS_VL_STATE_DIR:?}
+        target: /var/lib/otelcol
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    logging:
+      driver: none

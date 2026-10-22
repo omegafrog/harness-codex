@@ -3,10 +3,10 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FIGMA = ROOT / ".codex" / "skills" / "frontend-figma" / "SKILL.md"
+FIGMA = ROOT / ".codex" / "internal-skills" / "frontend-figma" / "GUIDE.md"
 DESIGN = ROOT / ".codex" / "skills" / "frontend-design" / "SKILL.md"
-IMPLEMENT = ROOT / ".codex" / "skills" / "frontend-implement" / "SKILL.md"
-REVIEW = ROOT / ".codex" / "skills" / "frontend-visual-review" / "SKILL.md"
+IMPLEMENT = ROOT / ".codex" / "internal-skills" / "frontend-implement" / "GUIDE.md"
+REVIEW = ROOT / ".codex" / "internal-skills" / "frontend-visual-review" / "GUIDE.md"
 
 
 class FrontendFigwrightContractTest(unittest.TestCase):

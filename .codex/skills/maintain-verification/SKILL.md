@@ -3,6 +3,8 @@ name: maintain-verification
 description: Create or reconcile a project's user-facing verification map against source and real execution, distinguishing documentation drift, harness gaps, and product regressions.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
+
 # Maintain verification coverage
 
 Use the existing project verification skill/map when available; otherwise seed `docs/verification/features.md` from affected user-facing commands/routes/use cases. Start with the main 3–5 journeys instead of cataloguing internals. The map is verification documentation, never a task board. For the Harness repository, the source-owned map lives at `docs/verification/features.md`; installed consumer projects discover their own surfaces rather than inheriting Harness CLI features.
@@ -35,4 +37,4 @@ Origin: adapted from pstack [create-verification-skill](https://github.com/backn
 
 ## E2E 실패 재발 방지
 
-E2E 전·후에는 [공통 실패 학습 절차](../e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 미해결 원인·외부 blocker·검증되지 않은 예방 조치는 완료를 막는다. runner는 증거 수집만 맡고 caller가 승인 범위 안에서 EXEC/profile·제품/검사 수정과 검증된 lesson 반영을 맡는다.
+E2E 전·후에는 [공통 실패 학습 절차](../e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 현재 필수 테스트의 실패·미실행과 실제 미해결 blocker는 완료를 막는다. 과거 실패의 학습 분류·지침 갱신·예방 조치 검증 상태는 별도 pending으로 인계하며 테스트 결과나 완료 판정을 바꾸지 않는다. runner는 증거 수집만 맡고 caller가 승인 범위 안에서 EXEC/profile·제품/검사 수정과 검증된 lesson 반영을 맡는다.

@@ -103,9 +103,9 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
   try {
     await mkdir(join(root, ".codex/agents"), { recursive: true });
     await mkdir(join(root, ".codex/workflows"), { recursive: true });
-    await mkdir(join(root, ".agents/skills/sync-contracts"), { recursive: true });
+    await mkdir(join(root, ".codex/internal-skills/sync-contracts"), { recursive: true });
     await writeFile(join(root, ".codex/agents/runner.toml"), "# local runner\n");
-    await writeFile(join(root, ".agents/skills/sync-contracts/SKILL.md"), "# local skill\n");
+    await writeFile(join(root, ".codex/internal-skills/sync-contracts/GUIDE.md"), "# local skill\n");
     const workflowPath = join(root, ".codex/workflows/minimal.yaml");
     const workflow = (checks) => `schema_version: 1\nid: minimal\nroles: [runner]\nskills: [sync-contracts]\nhooks:\n  before_complete: [${checks}]\nstages:\n  - id: run\n    role: runner\n    skill: sync-contracts\n    model_tier: implementation\n    needs: []\n`;
     await writeFile(workflowPath, workflow("contract_docs"));
@@ -129,17 +129,19 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
 
     await sealContracts({ workspace_root: root, change_summary: "영향 검토", no_contract_change: "구현 변경의 계약 영향 검토 완료" });
     const e2eStatePath = sessionOutputPath(root, "state/e2e-learning.json");
+    for (const [status, expectedStatus] of [["passed", 0], ["failed", 1]]) {
     for (const e2e_failures of [[{
       id: "run-1", category: "product", status: "open", scenario: "checkout", profile_id: "e2e-learning-check",
       evidence_path: "evidence/failure.json", cause: "stale state", lesson_path: "lessons/checkout.md",
       verification_path: "verification/checkout.test.mjs", prevention_paths: ["src/checkout.mjs"],
     }], null]) {
-      await writeFile(e2eStatePath, JSON.stringify({ tests: { status: "passed", e2e_failures } }));
+      await writeFile(e2eStatePath, JSON.stringify({ tests: { status, e2e_failures } }));
       const blocked = run(["--root", root, "--workflow", "minimal", "--base-ref", baseRef, "--state", "state/e2e-learning.json"]);
-      assert.equal(blocked.status, 1, blocked.stderr);
+      assert.equal(blocked.status, expectedStatus, blocked.stderr);
       const result = JSON.parse(blocked.stdout);
-      assert.equal(result.state, "in-progress");
-      assert.equal(result.verdict.checks.find((check) => check.rule_id === "tests").status, "blocked");
+      assert.equal(result.state, status === "passed" ? "completed" : "in-progress");
+      assert.equal(result.verdict.checks.find((check) => check.rule_id === "tests").status, status === "passed" ? "pass" : "fail");
+    }
     }
     await writeFile(workflowPath, workflow(""));
     const removed = run();

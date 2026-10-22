@@ -1,0 +1,33 @@
+{
+  "Timestamp": "2026-10-22T08:00:00Z",
+  "SeverityText": "ERROR",
+  "Body": "External dependency request failed",
+  "EventName": "diag.operation.failed",
+  "TraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "SpanId": "00f067aa0ba902b7",
+  "Resource": {
+    "service.name": "example-api",
+    "service.namespace": "example",
+    "service.version": "1.2.0",
+    "deployment.environment.name": "local",
+    "diag.project.id": "example",
+    "diag.contract.version": "1.0",
+    "vcs.ref.head.revision": "a9e21b6"
+  },
+  "Attributes": {
+    "diag.operation.name": "external-api.request",
+    "diag.operation.id": "op-123",
+    "diag.operation.parent_id": "op-100",
+    "diag.correlation.id": "workflow-456",
+    "diag.attempt": 3,
+    "diag.outcome": "failure",
+    "diag.duration_ms": 7230,
+    "diag.error.code": "UPSTREAM_TIMEOUT",
+    "diag.error.category": "timeout",
+    "diag.error.retryable": true,
+    "diag.error.dependency": "external-api",
+    "error.type": "timeout",
+    "exception.type": "java.net.SocketTimeoutException",
+    "exception.message": "Read timed out"
+  }
+}

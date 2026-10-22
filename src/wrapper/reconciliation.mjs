@@ -1,4 +1,4 @@
-import { e2eFailuresResolved } from '../eval/contracts.mjs';
+import { e2eLearningComplete } from '../eval/contracts.mjs';
 
 const REQUIRED_REVIEW_ROLES = ["spec", "standards"];
 const STATUS_ALIASES = new Map([
@@ -50,7 +50,7 @@ function unresolvedReviewRoles(reviews, implementation) {
 }
 
 function testsPassed(tests) {
-  return e2eFailuresResolved(tests) && (tests?.status === "passed" || tests?.state === "passed" || tests?.passed === true);
+  return tests?.status === "passed" || tests?.state === "passed" || tests?.passed === true;
 }
 
 function outcomePassed(evidence) {
@@ -114,6 +114,7 @@ export function evaluateCompletion({
     state: unresolved.length === 0 ? "completed" : blocker ? "blocked" : "in-progress",
     unresolved,
     evidence: {
+      e2e_learning: e2eLearningComplete(tests) ? "complete" : "pending",
       implementation_commit: implementation?.commit_sha || null,
       reviews: reviews.map(({ role, state }) => ({ role, state })),
       pr_merged: pr.merged === true,

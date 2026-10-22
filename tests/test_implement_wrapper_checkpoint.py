@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md"
-IMPLEMENT_SKILL = ROOT / ".codex" / "skills" / "implement" / "SKILL.md"
+IMPLEMENT_SKILL = ROOT / ".codex" / "internal-skills" / "implement" / "GUIDE.md"
 AGENT = ROOT / ".codex" / "agents" / "implementation_agent.toml"
 GITIGNORE = ROOT / ".gitignore"
 

@@ -9,7 +9,7 @@ Use the `bd` CLI as the durable project task tracker when the repository has an 
 
 ## Start
 
-Run `bd prime` for workflow context. If it prints nothing, check `bd where`. Never initialize a database from this skill; project setup owns initialization and must get user approval first.
+Run `bd prime` for workflow context. If it prints nothing, check `bd where`. Never initialize a database from this skill; project setup CLI owns initialization and must collect approval in its terminal before changing local or remote workspace state.
 
 ## Work
 

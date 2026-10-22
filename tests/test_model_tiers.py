@@ -103,7 +103,7 @@ class ModelTierContractTest(unittest.TestCase):
 
     def test_writer_owns_spec_markdown_and_diagram_creator_owns_diagrams(self):
         writer = self.read(".codex/agents/spec_document_writer.toml")
-        diagrams = self.read(".codex/skills/plantuml-diagrams/SKILL.md")
+        diagrams = self.read(".codex/internal-skills/plantuml-diagrams/GUIDE.md")
 
         self.assertIn("Spec Markdown", writer)
         self.assertIn("diagram inventory", diagrams)

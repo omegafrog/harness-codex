@@ -64,10 +64,14 @@ spec-me의 Product/Architecture 초안을 각각 새 reviewer로 검토한다. �
 
 반복 실패를 원인 확인 없이 다시 실행하던 흐름을 e2e-test의 failure-learning reference로 연결한다. runner는 증거/cleanup, caller는 원인 조사·실제 profile/readiness/회귀 검사 수정·재검증·프로젝트 e2e-lessons 갱신을 소유한다. 매 시도는 새 세션 하위 run 경로를 사용하며 다음 실행은 현행 lesson/예방 검사를 먼저 읽는다. 같은 원인의 반복 발생은 두 증거를 기준으로 correct를 적용한다. 미확정 원인을 영구 규칙으로 승격하지 않는다. E2E 실행은 E2E/full-stack/browser end-to-end 명시 요청 또는 cheaper checks로 입증할 수 없는 변경 critical cross-boundary 위험으로 제한하고, 일반 검증/서비스 실행 요청은 E2E 요청으로 해석하지 않는다. UI 변경만으로 full-stack 실행을 요구하지 않는다. Agent 응답은 승인 oracle과 trace를 기준으로 검증하며, 동적 prose를 고정하거나 runner가 test/source를 수정하지 않는다. 최초 시도와 진단 후 최대 한 번 재실행 budget을 handoff 간 공유한다. 이 policy는 manual review이며 자동 강제되지 않는다.
 
-`mergeTests`는 ID별 e2e_failures를 누적하고 빈 배열/상태 요약으로 삭제하거나 원본 evidence_path를 바꾸는 것을 막는다. 공통 completeWorkflow도 tests.e2e_failures가 전달되면 로컬 manifest에 tests가 없어도 해당 gate를 강제한다. `e2eFailuresResolved`를 lifecycle tests gate와 wrapper 완료 판정이 공유하여 미해결/필수 근거 누락 실패가 passed로 덮이는 것을 차단한다. `tests/e2e_learning.test.mjs`와 e2e-learning-check 프로필이 이를 검증한다. 자동 검사는 메타데이터 형식/상태이며 파일 내용의 진위·미보고 실패·원인/예방 검사 의미는 runner 원본 결과와 독립 리뷰가 대조한다. 구조/회귀 검사로 표현할 수 있는 규칙은 메모만 추가하지 않고 실제 검사로 반영한다.
+`mergeTests`는 ID별 e2e_failures를 누적하고 원본 증거를 보존한다. 현재 테스트 결과는 lifecycle tests gate와 wrapper 완료 판정이 확인한다. `e2eLearningComplete`는 학습 상태만 별도로 보고하며 과거 실패의 원인 분석·지침 갱신 미완료로 테스트 통과나 workflow 완료를 막지 않는다. `not_reusable`은 판단 근거만 기록한다. `tests/e2e_learning.test.mjs`와 e2e-learning-check 프로필은 성공 결과와 학습 pending의 공존, 실제 테스트 실패 차단 및 이력 보존을 검증한다. 원인과 예방 효과의 타당성은 증거 리뷰로 판단한다.
 
 ## 요구사항·계획·구현 추적
 
 `src/workflow/plan-traceability.mjs`는 `docs/plans/<plan-set-id>/traceability.json`의 요구사항 inventory를 Product/Architecture 및 자동 발견한 요청·결정·다이어그램·현행 계약과 대조한다. `to-ticket` 완료는 독립 `plan_reviewer`가 전체 canonical 계획을 읽은 현재 hash를 요구한다. wrapper dispatch는 workspace preflight 뒤 실제 ledger·Spec·계획·tracker body를 다시 읽고, 미통과 시 implementer spawn 전에 차단한다. completion은 구현/검증 파일 hash와 선택한 실행 profile의 성공 harness-exec receipt를 확인하며, receipt의 현재 설정 hash와 session log 위치도 확인한다. lifecycle completion도 원장 검사를 재실행한다.
 
 `tests/plan_traceability.test.mjs`와 `plan-traceability-check` profile이 원장/coverage/review/impact/evidence 및 실제 dispatch 차단을 검사한다. 자동 검사는 구조·현재성·receipt 형식을 증명하지만 source 요구가 의미상 완전하게 inventory 되었는지, 분해된 acceptance criteria를 함께 만족해도 원래 규칙을 위반하는 구현이 가능한지는 증명하지 않는다. 독립 reviewer가 원문과 전체 계획에서 counterexample을 찾아 판단한다. Receipt 구조 검사는 작성 주체의 암호학적 신원을 증명하지 않는다.
+
+## Spring Boot Diagnostic Log Schema v1
+
+사용자가 제공한 정규화 LogRecord 계약을 victorialogs-local-setup assets의 JSON Schema/Markdown으로 배포한다. validateDiagnosticLog와 helper validate-logs는 일곱 이벤트의 필수 Resource/Attributes·typed 값·outcome·timestamp·Trace/Span을 원본 JSON/JSONL에서 검사한다. 설치 helper는 공용 구현/테스트 지침과 offline profile을 연결한다. diagnostic-log-check 및 installer-maintenance-python profile은 올바른 이벤트와 누락·타입·outcome 오류, 설치 후 profile 실행·중복 없는 지침 갱신·collector 보완을 검사한다. generic Logstash/OTLP wire format·저장 후 string 표현은 구분한다. 실제 context 유무·async 전파·MDC 정리·monotonic duration·redaction과 수집 의미는 emitter 관련 집중 검증/리뷰 범위이며 형식 검사로 자동 증명한다고 주장하지 않는다.

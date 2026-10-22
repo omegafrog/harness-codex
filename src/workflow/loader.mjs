@@ -217,6 +217,11 @@ async function resolveReferences(workflow, { root, agentDir, skillDir, legacySki
     roles[role] = path;
   }
   for (const skill of workflow.skills) {
+    const internalPath = await resolveRegularFile(root, join(".codex/internal-skills", skill, "GUIDE.md"), `Internal skill ${skill}`);
+    if (internalPath) {
+      skills[skill] = internalPath;
+      continue;
+    }
     const canonicalPath = await resolveRegularFile(root, join(directories[0], skill, "SKILL.md"), `Skill ${skill}`);
     if (canonicalPath) {
       skills[skill] = canonicalPath;

@@ -3,6 +3,8 @@ name: gh-open-pr
 description: Create or update GitHub pull requests with issue links, plan context, and safe closing triggers.
 ---
 
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [architecture-spec](../../../.codex/internal-skills/architecture-spec/GUIDE.md) · [product-spec](../../../.codex/internal-skills/product-spec/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
+
 # gh-open-pr
 
 ## Purpose

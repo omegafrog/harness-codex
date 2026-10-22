@@ -13,10 +13,8 @@ INSTALLER_STUBS = ROOT / "tests" / "fixtures" / "installer-stubs"
 
 
 class ProjectLocalInstallerTest(unittest.TestCase):
-    def command_env(self, signoz_mode: str | None = None, call_log: Path | None = None) -> dict[str, str]:
+    def command_env(self, call_log: Path | None = None) -> dict[str, str]:
         env = {**os.environ, "PATH": f"{INSTALLER_STUBS}{os.pathsep}{os.environ['PATH']}"}
-        if signoz_mode:
-            env["CODEX_SIGNOZ_MODE"] = signoz_mode
         if call_log:
             env["CODEX_CALL_LOG"] = str(call_log)
         return env
@@ -39,14 +37,14 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             env=self.command_env(),
         )
 
-    def run_full_installer(self, target: Path, signoz_mode: str | None = None, call_log: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_full_installer(self, target: Path, call_log: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["node", str(INSTALLER), "install", "--project", str(target)],
             cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,
-            env=self.command_env(signoz_mode, call_log),
+            env=self.command_env(call_log),
         )
 
     def run_update(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -87,7 +85,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             result = self.run_installer(target)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("SigNoz Codex marketplace registered", result.stdout)
+            self.assertIn("Project-local Harness installation complete", result.stdout)
             agents = target / ".codex" / "agents"
             self.assertEqual(
                 {path.name for path in agents.glob("*.toml")},
@@ -96,6 +94,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "architecture_review_lead.toml",
                     "diagram_creator.toml",
                     "spec_reviewer.toml",
+                    "plan_reviewer.toml",
                     "standards_reviewer.toml",
                     "spec_document_writer.toml",
                     "execution_runner.toml",
@@ -117,7 +116,10 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 data = tomllib.loads(path.read_text(encoding="utf-8"))
                 self.assertNotIn("model", data)
                 self.assertNotIn(".codex/skills/", data["developer_instructions"])
-                self.assertIn(".agents/skills/", data["developer_instructions"])
+                self.assertTrue(
+                    ".agents/skills/" in data["developer_instructions"]
+                    or ".codex/internal-skills/" in data["developer_instructions"]
+                )
             lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
             self.assertIn(".codex/agents/code_researcher.toml", lock["files"])
             status = subprocess.run(["git", "-C", str(target), "status", "--short"], text=True, capture_output=True, check=True)
@@ -146,7 +148,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             plans_gate = target / ".codex" / "scripts" / "plans-index-gate.mjs"
             self.assertTrue(plans_gate.is_file())
             self.assertTrue((target / ".codex" / "agents" / "architecture_review_lead.toml").is_file())
-            self.assertTrue((target / ".agents" / "skills" / "architecture-review" / "SKILL.md").is_file())
+            self.assertTrue((target / ".codex" / "internal-skills" / "architecture-review" / "GUIDE.md").is_file())
             self.assertTrue((target / ".agents" / "skills" / "knowledge-harvest" / "SKILL.md").is_file())
             self.assertTrue((target / ".codex" / "agents" / "knowledge_source_researcher.toml").is_file())
             self.assertTrue((target / ".codex" / "agents" / "knowledge_claim_extractor.toml").is_file())
@@ -190,37 +192,87 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(json.loads(present.stdout)["status"], "pass")
 
-    def test_full_install_reuses_registered_signoz_marketplace(self):
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory)
-            subprocess.run(["git", "init", "-q", str(target)], check=True)
-            self.configure_target(target)
-
-            result = self.run_full_installer(target, "preinstalled")
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("SigNoz Codex marketplace registered", result.stdout)
-
-    def test_full_install_registers_signoz_marketplace(self):
+    def test_full_install_prepares_victorialogs_without_provider_plugin(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
             subprocess.run(["git", "init", "-q", str(target)], check=True)
             call_log = target / "codex.log"
-
             result = self.run_full_installer(target, call_log=call_log)
-
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("plugin marketplace add SigNoz/agent-skills", call_log.read_text(encoding="utf-8"))
-
-    def test_install_rejects_signoz_marketplace_name_collision(self):
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory)
-            subprocess.run(["git", "init", "-q", str(target)], check=True)
-
-            result = self.run_full_installer(target, "conflict")
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("signoz-skills' already points to a different source", result.stderr)
+            self.assertNotIn("SigNoz", call_log.read_text(encoding="utf-8"))
+            helper = target / ".codex/scripts/harness-victorialogs.mjs"
+            projects = [{"id": "app-a", "root": str(target), "services": [{"name": "api", "metrics_url": "http://127.0.0.1:18081/custom/prometheus", "scrape_url": "http://host.docker.internal:18081/custom/prometheus"}, {"name": "worker", "metrics_url": "http://127.0.0.1:18082/actuator/prometheus", "scrape_url": "http://host.docker.internal:18082/actuator/prometheus"}]}]
+            setup = ["node", str(helper), "setup", "--root", str(target), "--port", "19428", "--retention-days", "3", "--metrics-port", "18428", "--otel-port", "14318", "--projects", json.dumps(projects)]
+            prepared = subprocess.run(setup, cwd=target, text=True, capture_output=True)
+            self.assertEqual(prepared.returncode, 0, prepared.stderr)
+            config_dir = target / "docs/observability/victorialogs"
+            self.assertEqual(json.loads((config_dir / "config.json").read_text()), {"port": 19428, "retention_days": 3, "metrics_port": 18428, "metrics_retention_days": 7, "otel_port": 14318, "projects": projects})
+            compose = (config_dir / "compose.yaml").read_text()
+            self.assertIn("otel/opentelemetry-collector-contrib:", compose)
+            self.assertIn("victoriametrics:", compose)
+            self.assertNotIn("vector", compose)
+            self.assertNotIn("fluent-bit", compose)
+            self.assertNotIn("network_mode: host", compose)
+            self.assertIn("127.0.0.1:${HARNESS_OTEL_PORT:?}:4318", compose)
+            collector = (config_dir / "otel-collector.yaml").read_text()
+            self.assertIn("/insert/opentelemetry/v1/logs", collector)
+            self.assertIn("encoding: proto", collector)
+            self.assertIn("http://victorialogs:9428/insert/opentelemetry/v1/logs", collector)
+            self.assertIn("endpoint: 0.0.0.0:4318", collector)
+            self.assertIn("http://127.0.0.1:14318/v1/logs", (config_dir / "otel-javaagent.properties").read_text())
+            jobs = json.loads((config_dir / "scrape.json").read_text())["scrape_configs"]
+            self.assertEqual(jobs[0]["metrics_path"], "/custom/prometheus")
+            self.assertEqual(jobs[0]["static_configs"], [{"targets": ["host.docker.internal:18081"], "labels": {"project": "app-a", "service": "api"}}])
+            self.assertEqual(jobs[1]["job_name"], "app-a/worker")
+            self.assertEqual(json.loads((config_dir / "mcp.json").read_text())["mcpServers"]["victoriametrics"]["args"][1], "mcp-metrics")
+            mcp = json.loads((config_dir / "mcp.json").read_text())["mcpServers"]["victorialogs"]
+            self.assertEqual(mcp["args"][-2:], ["--root", str(target)])
+            docker_bin = target / "probe-bin"
+            docker_bin.mkdir()
+            docker = docker_bin / "docker"
+            docker.write_text('#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n')
+            docker.chmod(0o755)
+            for command, endpoint in [("mcp", "VL_INSTANCE_ENTRYPOINT=http://victorialogs:9428"), ("mcp-metrics", "VM_INSTANCE_ENTRYPOINT=http://victoriametrics:8428")]:
+                invoked = subprocess.run(["node", str(helper), command, "--root", str(target)], cwd=target, env={**os.environ, "PATH": str(docker_bin) + os.pathsep + os.environ["PATH"]}, text=True, capture_output=True)
+                self.assertEqual(invoked.returncode, 0, invoked.stderr)
+                argv = json.loads(invoked.stdout)
+                self.assertTrue(argv[argv.index("--network") + 1].endswith("_default"))
+                self.assertIn(endpoint, argv)
+            profiles = json.loads((target / "docs/agents/execution.json").read_text())["profiles"]
+            self.assertIn("victorialogs-infrastructure", profiles)
+            self.assertIn("victorialogs-check", profiles)
+            self.assertIn("victorialogs-diagnostic-logs", profiles)
+            self.assertTrue((config_dir / "diagnostic-log.schema.json").exists())
+            self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/implementation-guidance.md").read_text())
+            self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/testing-guidance.md").read_text())
+            validated = subprocess.run(["node", str(target / ".codex/scripts/harness-exec.mjs"), "--root", str(target), "--profile", "victorialogs-diagnostic-logs"], cwd=target, env={**os.environ, "HARNESS_DIAGNOSTIC_LOG_FILE": str(config_dir / "diagnostic-log.example.json")}, text=True, capture_output=True)
+            self.assertEqual(validated.returncode, 0, validated.stderr + validated.stdout)
+            validation = subprocess.run(["node", "--input-type=module", "-e", "const {readExecutionManifest}=await import(process.argv[1]);await readExecutionManifest(process.argv[2]);", (target / ".codex/harness-runtime/src/workflow/execution.mjs").as_uri(), str(target)], cwd=target, text=True, capture_output=True)
+            self.assertEqual(validation.returncode, 0, validation.stderr)
+            original = (config_dir / "compose.yaml").read_text() + "\n# project customization\n"
+            (config_dir / "compose.yaml").write_text(original)
+            custom_mcp = json.loads((config_dir / "mcp.json").read_text())
+            custom_mcp["mcpServers"]["custom"] = {"command": "custom-client"}
+            (config_dir / "mcp.json").write_text(json.dumps(custom_mcp))
+            repeated = subprocess.run(setup, cwd=target, text=True, capture_output=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual((config_dir / "compose.yaml").read_text(), original)
+            self.assertEqual(json.loads((config_dir / "mcp.json").read_text())["mcpServers"]["custom"], {"command": "custom-client"})
+            self.assertEqual((target / "docs/agents/testing-guidance.md").read_text().count("### opentelemetry-local-observability-v2"), 1)
+            # Legacy migration replaces the active collector and backs up its customization.
+            (config_dir / "compose.yaml").write_text("services:\n  fluent-bit:\n    image: legacy\n# project customization\n")
+            migrated = subprocess.run(setup, cwd=target, text=True, capture_output=True)
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            self.assertNotIn("fluent-bit:", (config_dir / "compose.yaml").read_text())
+            self.assertTrue(any("image: legacy" in path.read_text() for path in (target / ".git/harness-workflows/sessions").glob("*/runtime/setup/backups/compose.yaml-*")))
+            self.assertEqual((target / "docs/agents/testing-guidance.md").read_text().count("### spring-boot-diagnostic-log-v1"), 1)
+            invalid = subprocess.run(["node", str(helper), "setup", "--root", str(target), "--metrics-port", "70000"], cwd=target, text=True, capture_output=True)
+            self.assertNotEqual(invalid.returncode, 0)
+            same_port = subprocess.run(["node", str(helper), "setup", "--root", str(target), "--metrics-port", "19428"], cwd=target, text=True, capture_output=True)
+            self.assertNotEqual(same_port.returncode, 0)
+            projects[0]["services"][0]["metrics_url"] = "http://secret:password@127.0.0.1:18081/metrics"
+            invalid_url = subprocess.run(["node", str(helper), "setup", "--root", str(target), "--projects", json.dumps(projects)], cwd=target, text=True, capture_output=True)
+            self.assertNotEqual(invalid_url.returncode, 0)
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -250,7 +302,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertNotEqual(profile.read_text(encoding="utf-8"), "user-owned\n")
             self.assertIn("Local backups:", result.stdout)
 
-    def test_update_preserves_local_skill_by_default_and_force_backs_it_up(self):
+    def test_update_replaces_managed_skill_and_preserves_backups(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
             subprocess.run(["git", "init", "-q", str(target)], check=True)
@@ -261,9 +313,13 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             upstream = (ROOT / ".codex" / "skills" / "spec-me" / "SKILL.md").read_text(encoding="utf-8")
             skill.write_text("local skill\n", encoding="utf-8")
 
-            preserved = self.run_update(target)
-            self.assertEqual(preserved.returncode, 0, preserved.stderr)
-            self.assertEqual(skill.read_text(encoding="utf-8"), "local skill\n")
+            updated = self.run_update(target)
+            self.assertEqual(updated.returncode, 0, updated.stderr)
+            self.assertEqual(skill.read_text(encoding="utf-8"), upstream)
+            default_backup_line = next(line for line in updated.stdout.splitlines() if line.startswith("Local backups: "))
+            default_backup = Path(default_backup_line.removeprefix("Local backups: ")) / ".agents/skills/spec-me/SKILL.md"
+            self.assertEqual(default_backup.read_text(encoding="utf-8"), "local skill\n")
+            skill.write_text("local skill\n", encoding="utf-8")
 
             forced = self.run_update(target, "--force")
             self.assertEqual(forced.returncode, 0, forced.stderr)

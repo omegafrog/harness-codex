@@ -31,7 +31,7 @@ class ImplementWrapperSchedulerContractTest(unittest.TestCase):
             "docs/plans/<plan-set-id>/plans.md",
             "docs/specs/product-spec.md",
             "docs/specs/architecture-spec.md",
-            ".codex/skills/implement/SKILL.md",
+            ".codex/internal-skills/implement/GUIDE.md",
             "plan path",
         ):
             self.assertIn(required, self.text)

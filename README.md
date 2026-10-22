@@ -210,7 +210,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 
 ## Skill Catalog
 
-현재 `.codex/skills/`에는 25개 skill이 있다.
+사용자가 직접 시작하는 스킬은 `.codex/skills/`에 둔다.
 
 ### Workflow / entrypoint
 
@@ -220,37 +220,21 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`spec-me`](.codex/skills/spec-me/SKILL.md) | Product + Architecture Spec orchestration |
 | [`to-ticket`](.codex/skills/to-ticket/SKILL.md) | Spec → vertical plan |
 | [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | multi-plan scheduling / handoff |
-| [`implement`](.codex/skills/implement/SKILL.md) | single-plan implementation |
 | [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
 | [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
 | [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |
 | [`frontend-design`](.codex/skills/frontend-design/SKILL.md) | 독립 frontend design/build/visual-review orchestration |
 
-### Specification / design
-
-| Skill | 역할 |
-| --- | --- |
-| [`product-spec`](.codex/skills/product-spec/SKILL.md) | Product requirement와 acceptance criteria 정의 |
-| [`architecture-spec`](.codex/skills/architecture-spec/SKILL.md) | 구현 가능한 architecture contract 정의 |
-| [`code-research`](.codex/skills/code-research/SKILL.md) | codebase 구조 조사 |
-| [`event-storming`](.codex/skills/event-storming/SKILL.md) | actor / command / event / policy 모델링 |
-| [`ddd-design`](.codex/skills/ddd-design/SKILL.md) | aggregate / transaction / integration boundary 설계 |
-| [`codebase-design`](.codex/skills/codebase-design/SKILL.md) | DDD 결정을 package / seam / adapter 구조로 변환 |
-| [`domain-modeling`](.codex/skills/domain-modeling/SKILL.md) | ubiquitous language와 durable domain decision 관리 |
+내부 작성·모델링·리뷰·구현 절차는 `.codex/internal-skills/*/GUIDE.md`에 있으며 상위 workflow/agent가 읽는다. 사용자 공개 스킬 목록에는 등록하지 않는다.
 
 ### Interview / validation / utility
 
 | Skill | 역할 |
 | --- | --- |
 | [`grilling`](.codex/skills/grilling/SKILL.md) | 설계 가정과 trade-off 질문 |
-| [`grill-with-docs`](.codex/skills/grill-with-docs/SKILL.md) | coverage-driven interview + durable docs |
 | [`code-review`](.codex/skills/code-review/SKILL.md) | Product / Architecture 독립 리뷰 |
 | [`e2e-test`](.codex/skills/e2e-test/SKILL.md) | 실제 server/browser 기반 end-to-end 검증 |
-| [`plantuml-diagrams`](.codex/skills/plantuml-diagrams/SKILL.md) | ticket-scoped PlantUML + SVG 생성·검증 |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
-| [`frontend-figma`](.codex/skills/frontend-figma/SKILL.md) | Figwright 기반 Figma authoring / grounding / browser comparison adapter |
-| [`frontend-implement`](.codex/skills/frontend-implement/SKILL.md) | settled frontend brief 구현·correction |
-| [`frontend-visual-review`](.codex/skills/frontend-visual-review/SKILL.md) | 실제 browser 기반 UI/UX 시각 검증 |
 
 ---
 
@@ -359,7 +343,7 @@ npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 
 설치가 끝나면 프로젝트에서 Codex를 열어 `$setup`을 실행한다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
 
-설치기는 공식 [SigNoz agent-skills marketplace](https://github.com/SigNoz/agent-skills)를 Codex에 등록한다. Codex에서 `/plugins`를 열어 `signoz` plugin을 설치하고, `signoz-mcp-setup <region-or-mcp-url>`로 SigNoz Cloud 또는 직접 운영하는 SigNoz MCP endpoint를 설정한다. Harness 설치는 SigNoz 서버나 애플리케이션 SDK를 설치·실행하지 않는다.
+로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 공용 구현/테스트 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/skills/victorialogs-local-setup/assets/README.md)를 따른다.
 
 Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데이터나 원격 데이터가 있으면 새 데이터베이스를 만들지 않고 기존 보드를 보존한다. 같은 저장소의 linked worktree는 Beads 데이터베이스를 자동으로 공유하므로 worktree마다 초기화할 필요가 없다. 기존 원격 데이터가 있으면 `$setup`이 `bd bootstrap`으로 채택하고, 원격 migration은 한 clone만 수행해야 한다.
 
