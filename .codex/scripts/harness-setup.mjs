@@ -158,7 +158,7 @@ async function main() {
     ['execution', '서버·E2E 실행과 polling 모델', '균형 잡힌 모델과 medium effort'],
     ['low_performance', '문서·제한된 조사 모델', '가장 가벼운 모델과 low effort'],
   ]) {
-    console.log(`\n${title} — 권장: ${recommend}`);
+    console.log(`\n${title} — 권장: ${recommendation}`);
     models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
     const model = await choose('모델 선택', models.map((item) => ({ value: item.id, label: item.id })), config.agents?.[`${key}_model`]);
     const selected = models.find((item) => item.id === model);

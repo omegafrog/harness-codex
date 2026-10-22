@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "revision": 55,
+  "revision": 56,
   "updated_at": "2026-10-22",
-  "change_summary": "WSL/Desktop bridge 실수집 확인 및 listener 선검증·주소 관점 분리 지침을 설치 경로와 동기화",
+  "change_summary": "setup 권장 설명 출력의 미정의 변수 수정과 설치본 PTY 모델 선택 진입 확인",
   "source_roots": [
     "src",
     "bin",
@@ -857,7 +857,7 @@
       "source": "docs/contracts/diagrams/execution.state.puml"
     }
   ],
-  "no_contract_change": null,
+  "no_contract_change": "기존 계약의 live model 선택 화면에서 recommendation 출력 변수명만 바로잡았다. 모델·설정 형식·승인·설치 경계는 동일하며 설치 fixture의 PTY 진입 검사와 stub 입력 추적만 보완했다.",
   "hashes": {
     "@model": "2849a1af6cf7c74e792e3e8f69b4a492ec6eaf173d1aa3c9f84ec987db3e8dd3",
     ".codex/agents/architecture_review_lead.toml": "3f10e13728f8b9d9b78c9d40676aa6121e0584b034fa5ea429dd667d0bbd1aa9",
@@ -917,7 +917,7 @@
     ".codex/scripts/harness-knowledge.mjs": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
     ".codex/scripts/harness-plan-traceability.mjs": "1bb40b1dbfc3a2e54e6e53136705c8c5c7be5d32df078c30f37d4a1ad6409632",
     ".codex/scripts/harness-session-output.mjs": "0e41ab7d5d2453731e77a7dcc2a91375810cc4e61eed6abec3f7a6f060de911c",
-    ".codex/scripts/harness-setup.mjs": "a66239dcdf4beb8ce959fcd6b4537242b025b856338388c9b01f1018cb2613ec",
+    ".codex/scripts/harness-setup.mjs": "658f7bbbb9a05e750a5d701f0f02acc88292dcebcdb37ca5c24599319f1adf04",
     ".codex/scripts/harness-spec-review.mjs": "272ccf884d1c9b1e627fad47915bae5a29d2c2da01f83e0099c3c672e7dd7a9d",
     ".codex/scripts/harness-tracker.mjs": "4407caa61fc25f5f8be1541260b2448be07fc2fda8a9ce0a708bc27acc4e248c",
     ".codex/scripts/harness-victorialogs.mjs": "1e8c6ffe1d05fd9317d9e2f47e63aab54b54946be200f7a4c7503509425c0a96",
@@ -988,7 +988,7 @@
     "bin/plantuml-bootstrap.mjs": "d3236faa2cbcb0f629b127ab57a360318547c1aec6957a93ec167a85c3602fcf",
     "bin/plantuml-render.mjs": "7955523851844218c54e3255341f6d8a0b325e67fb770474bfdc9f768f4bf4c2",
     "docs/agents/EXEC.md": "c3b123e39f821cf1fce369d55a4315658196753636b8a0ed00f6d41a80a72ad2",
-    "docs/agents/execution.json": "426941c134c6d2bb0cb575b22cf27f749745aa27346f176731c2d04fc7274b7d",
+    "docs/agents/execution.json": "db77e16b16fd64330aaf4479dbc7f7357abb250d3c48964fe34c099e12e89d31",
     "docs/agents/implementation-guidance.md": "dfc0904df9b0f748579390635ca38e75f04aa9d3b378be6785344896e5e3e885",
     "docs/agents/testing-guidance.md": "81cd39bde6cdb3b9a11524afc71e5898aefd328613c1bf2dfcab67f4a28cdeab",
     "docs/contracts/architecture.md": "ff5f7db5e534ef84cc72d5423da5b2dd1bb5d3e7f2ceda757461ef8e003e4f51",

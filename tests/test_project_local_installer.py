@@ -192,6 +192,41 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(json.loads(present.stdout)["status"], "pass")
 
+    @unittest.skipUnless(os.name == "posix", "Interactive CLI requires a POSIX PTY")
+    def test_installed_setup_reaches_model_prompt_without_writing_configuration(self):
+        import pty
+        import select
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+            self.configure_target(target)
+            self.assertEqual(self.run_full_installer(target).returncode, 0)
+            config = target / ".codex/harness.yaml"
+            previous = config.read_bytes()
+            master, slave = pty.openpty()
+            process = subprocess.Popen(["node", str(target / ".codex/scripts/harness-setup.mjs"), "--root", str(target)], cwd=target, env=self.command_env(), stdin=slave, stdout=slave, stderr=slave)
+            os.close(slave)
+            output = b""
+            try:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and "모델 선택".encode() not in output:
+                    if select.select([master], [], [], 0.1)[0]:
+                        try:
+                            output += os.read(master, 8192)
+                        except OSError:
+                            break
+                    if process.poll() is not None:
+                        break
+                self.assertIn("모델 선택".encode(), output, output.decode(errors="replace"))
+                self.assertIn("권장:".encode(), output)
+                self.assertNotIn(b"is not defined", output)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                os.close(master)
+            self.assertEqual(config.read_bytes(), previous)
+
     def test_full_install_prepares_victorialogs_without_provider_plugin(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)

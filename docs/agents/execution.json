@@ -161,6 +161,7 @@
         ".codex/skills/victorialogs-local-setup/assets/compose.yaml",
         ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml",
         "tests/test_project_local_installer.py",
+        "tests/fixtures/installer-stubs/codex",
         "tests/installer_update.test.mjs",
         "src/observability/diagnostic-logs.mjs",
         ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json",
