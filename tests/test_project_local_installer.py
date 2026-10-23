@@ -128,6 +128,56 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertIn(".codex/", exclude)
             self.assertIn("skills-lock.json", exclude)
 
+    def test_installed_runtime_accepts_unlimited_command_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+
+            installed = self.run_full_installer(target)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+
+            agents = target / "docs" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "EXEC.md").write_text("Consumer execution instructions.\n", encoding="utf-8")
+            execution = {
+                "schema_version": 1,
+                "profiles": {
+                    "unlimited": {
+                        "command": ["node", "-e", "setTimeout(() => require('node:fs').writeFileSync('application-output.txt', 'done'), 150)"],
+                        "required_env": [],
+                        "config_inputs": ["docs/agents/EXEC.md"],
+                        "prepare": [],
+                        "verify_config": [["node", "-e", "process.exit(0)"]],
+                        "dependencies": [],
+                        "timeout_ms": None,
+                        "readiness_timeout_ms": 1000,
+                        "poll_interval_ms": 50,
+                    }
+                },
+            }
+            (agents / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
+
+            result = subprocess.run(
+                ["node", ".codex/scripts/harness-exec.mjs", "--root", str(target), "--profile", "unlimited"],
+                cwd=target,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)["status"], "passed")
+            self.assertEqual((target / "application-output.txt").read_text(encoding="utf-8"), "done")
+
+            harness_file = ".codex/harness-runtime/src/workflow/execution.mjs"
+            ignored = subprocess.run(["git", "check-ignore", "-q", harness_file], cwd=target, check=False)
+            self.assertEqual(ignored.returncode, 0)
+            visible = subprocess.run(["git", "check-ignore", "-q", "docs/agents/execution.json"], cwd=target, check=False)
+            self.assertNotEqual(visible.returncode, 0)
+            status = subprocess.run(["git", "status", "--short", "--untracked-files=all"], cwd=target, text=True, capture_output=True, check=True).stdout
+            self.assertIn("docs/agents/execution.json", status)
+            self.assertIn("application-output.txt", status)
+            self.assertNotIn(".codex/harness-runtime", status)
+
     def test_full_install_includes_project_local_workspace_preflight(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)

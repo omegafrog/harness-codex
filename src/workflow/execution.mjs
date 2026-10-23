@@ -25,7 +25,8 @@ function validate(profile) {
     requireValue(ID.test(dependency.id), 'Dependency id is required');
     command(dependency.check);
   }
-  for (const key of ['timeout_ms', 'readiness_timeout_ms', 'poll_interval_ms']) requireValue(Number.isSafeInteger(profile[key]) && profile[key] > 0 && profile[key] <= 43_200_000, `${key} must be 1..43200000`);
+  requireValue(profile.timeout_ms === null || (Number.isSafeInteger(profile.timeout_ms) && profile.timeout_ms > 0 && profile.timeout_ms <= 43_200_000), 'timeout_ms must be null or 1..43200000');
+  for (const key of ['readiness_timeout_ms', 'poll_interval_ms']) requireValue(Number.isSafeInteger(profile[key]) && profile[key] > 0 && profile[key] <= 43_200_000, `${key} must be 1..43200000`);
 }
 
 export async function readExecutionManifest(root) {
@@ -69,7 +70,7 @@ async function execute(argv, { root, env, path, timeout, signal }) {
       const stop = () => { if (stopped) return; stopped = true; kill('SIGTERM'); forceTimer = setTimeout(() => kill('SIGKILL'), 1000); };
       const abort = () => stop();
       signal?.addEventListener('abort', abort, { once: true });
-      timer = setTimeout(stop, timeout);
+      if (timeout !== null) timer = setTimeout(stop, timeout);
       if (signal?.aborted) stop();
       child.once('error', reject);
       child.once('close', (code) => {
