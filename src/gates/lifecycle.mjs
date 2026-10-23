@@ -95,11 +95,11 @@ function checkWorkspace(state) {
   if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return blocked("workspace_evidence_missing");
   if (workspace.valid === false) return failed(workspace.reason || "workspace_invalid", "workspace", workspace);
   if (workspace.valid !== true
-    || typeof workspace.expected_root !== "string"
+    || typeof workspace.workspace_root !== "string"
     || typeof workspace.cwd !== "string"
     || typeof workspace.git_root !== "string"
     || workspace.worktree_registered !== true) return blocked("workspace_preflight_evidence_incomplete", workspace);
-  const expected = resolve(workspace.expected_root);
+  const expected = resolve(workspace.workspace_root);
   if (resolve(workspace.cwd) !== expected || resolve(workspace.git_root) !== expected) {
     return failed("workspace_root_mismatch", "workspace", workspace);
   }
@@ -110,12 +110,12 @@ function checkSessionWorktree(state) {
   const workspace = stateValue(state, "workspace");
   if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return blocked("session_worktree_evidence_missing");
   if (workspace.valid === false) return failed(workspace.reason || "workspace_invalid", "session_worktree", workspace);
-  if (workspace.valid !== true || typeof workspace.expected_root !== "string"
+  if (workspace.valid !== true || typeof workspace.workspace_root !== "string"
     || typeof workspace.cwd !== "string" || typeof workspace.git_root !== "string"
     || workspace.worktree_registered !== true || typeof workspace.is_linked_worktree !== "boolean") {
     return blocked("session_worktree_preflight_evidence_incomplete", workspace);
   }
-  const expected = resolve(workspace.expected_root);
+  const expected = resolve(workspace.workspace_root);
   if (resolve(workspace.cwd) !== expected || resolve(workspace.git_root) !== expected) {
     return failed("workspace_root_mismatch", "session_worktree", workspace);
   }
@@ -230,7 +230,7 @@ function checkPlanTraceability(state) {
   const evidence = stateValue(state, "plan_traceability");
   const planSetId = evidence?.plan_set_id || state.plan_set_id || state.plans_index?.plan_set_id;
   if (typeof planSetId !== "string" || !planSetId) return blocked("plan_traceability_evidence_missing");
-  return inspectPlanTraceability({ root: state.workspace_root || state.workspace?.expected_root, planSetId, phase: evidence?.phase || "planning", planId: evidence?.plan_id || state.plan_id });
+  return inspectPlanTraceability({ root: state.workspace_root || state.workspace?.workspace_root, planSetId, phase: evidence?.phase || "planning", planId: evidence?.plan_id || state.plan_id });
 }
 
 function checkTrackerReconciliation(state) {
@@ -243,22 +243,22 @@ function checkTrackerReconciliation(state) {
 
 export async function checkContractDocs(state) {
   if (typeof state?.contract_base_ref !== "string" || !state.contract_base_ref.trim()) return blocked("contract_starting_commit_missing");
-  return inspectContracts({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, base_ref: state?.contract_base_ref || null });
+  return inspectContracts({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, base_ref: state?.contract_base_ref || null });
 }
 
 export async function checkTrackerSync(state) {
   const ticketRefs = Array.isArray(state?.tracker_sync?.ticket_refs) ? state.tracker_sync.ticket_refs : null;
-  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, ticket_refs: ticketRefs });
+  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, ticket_refs: ticketRefs });
 }
 
 const DEFAULT_CHECKS = Object.freeze({
   tracker_sync: checkTrackerSync,
   project_readiness: async (state) => {
-    const readiness = await inspectProjectReadiness({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, deferContractSync: true });
+    const readiness = await inspectProjectReadiness({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, deferContractSync: true });
     return readiness.status === 'pass' ? passed(readiness.reason, readiness) : blocked(readiness.reason, readiness);
   },
   contract_docs: checkContractDocs,
-  spec_reviews: (state) => inspectSpecReviews({ root: state.workspace_root || state.workspace?.expected_root, ticketId: state.ticket_id, reviews: state.spec_reviews }),
+  spec_reviews: (state) => inspectSpecReviews({ root: state.workspace_root || state.workspace?.workspace_root, ticketId: state.ticket_id, reviews: state.spec_reviews }),
   dependency: checkDependency,
   resource_conflict: checkResourceConflict,
   workspace: checkWorkspace,

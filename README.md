@@ -413,4 +413,4 @@ git rm --cached .codex/agents/<managed-profile>.toml
 
 설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. 기본 업데이트의 충돌은 보존하고 명시적인 `update --force`로 일괄 교체할 수 있다. upstream에서 사라진 자산의 lock 항목은 정리하되 기존 파일은 보존한다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 
-설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 `$setup`의 준비 복구와 `$sync-contracts`로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.
+설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 `$setup`의 준비 복구와 `$sync-contracts`로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.

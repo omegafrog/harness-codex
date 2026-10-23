@@ -11,12 +11,12 @@ participant "session_directory" as session
 participant "runWorkspacePreflightCli" as cli
 participant "inspectWorkspace" as inspect
 participant Git as git
-사용자 -> cli : --expected-root <path> [--json]
+사용자 -> cli : --workspace-root <path> [--json]
 cli -> cli : 인수 검사
 alt 인수 누락 또는 미지원
   cli --> 사용자 : Error
 else 인수 유효
-  cli -> inspect : expectedRoot, cwd
+  cli -> inspect : workspaceRoot, cwd
   inspect -> inspect : realpath·cwd 일치 검사
   alt 경로 오류 또는 cwd 불일치
     inspect --> cli : valid=false, reason

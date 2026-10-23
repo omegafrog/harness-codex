@@ -8,8 +8,13 @@
 
 ## 검토 항목
 
+- 각 canonical plan의 범위 첫 두 항목과 index의 실행 위치에 절대 `workspace_root`와 실제 `workspace_branch`가 있고 값이 일치하는지 확인한다. 기존 구현 대상의 Git root·등록·브랜치와 대조하고, 종료 시 삭제될 계획용 임시 경로 또는 Architecture review session 경로를 대신 썼으면 major finding이다.
+
 - Every declared source requirement is inventoried once and maps to a plan or a justified explicit exclusion.
+- Every applicable System Target and accepted Architecture Decision is inventoried and maps to its implementing plan or a justified explicit exclusion.
 - For each covered requirement, verify that every owning plan has explicitly mapped acceptance criteria and executable verification cases; requirement IDs alone are insufficient.
+- For each covered performance target, verify that the plan's acceptance criteria and verification case preserve its metric, unit, representative workload, measurement environment, baseline/comparison method, and acceptable regression.
+- For each accepted Architecture Decision, verify that the implementing plan follows the selected option and its constraints, preserves the cited standards/source references, and has a verification case for the decision's required behavior or quality attribute.
 - For each cross-plan handoff, verify the producer's output responsibility, the consumer's input responsibility, the dependency ordering, and a consumer-side verification scenario.
 - Every plan has testable acceptance criteria, prohibited behavior/counterexamples, and executable verification cases.
 - Ask whether an implementation could pass every plan acceptance criterion while violating the original rule. If so, report a major finding.

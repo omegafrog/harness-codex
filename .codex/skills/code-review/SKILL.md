@@ -98,7 +98,7 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 
 ## 소유 worktree 종료
 
-`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 병렬 owned plan worktree만 WorktreeManager가 개별 정리한다. 순차 execution_line은 생성·소유권 등록·삭제하지 않고 후속 구현에서도 같은 경로를 유지한다. 다른 workflow가 실제 생성·소유한 worktree는 해당 소유자만 정리하고 branch/HEAD/recovery_path/return_root를 남긴다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
 
 ## 세션 출력
 

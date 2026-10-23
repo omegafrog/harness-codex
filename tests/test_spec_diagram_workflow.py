@@ -73,29 +73,39 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("Do not translate", agent)
 
     def test_spec_me_blocks_stage_completion_until_diagram_gate_passes(self):
-        skill = self.read(".codex/skills/spec-me/SKILL.md")
+        product = self.read(".codex/internal-skills/product-spec/GUIDE.md")
+        architecture = self.read(".codex/internal-skills/architecture-spec/GUIDE.md")
+        stages = "\n".join((product, architecture))
 
-        self.assertRegex(skill, r"다이어그램.*완료.*게이트|완료.*게이트.*다이어그램")
-        self.assertIn("원본", skill)
-        self.assertIn("렌더", skill)
-        self.assertIn("Markdown", skill)
-        self.assertIn("일치", skill)
-        self.assertIn("렌더 실패", skill)
+        self.assertRegex(stages, r"diagram gate|다이어그램.*완료.*게이트|완료.*게이트.*다이어그램")
+        self.assertIn(".puml", stages)
+        self.assertIn("SVG", stages)
+        self.assertIn("Markdown", stages)
+        self.assertIn("content-consistency", stages)
+        self.assertIn("render failure", stages)
 
     def test_spec_me_prepares_the_session_worktree_before_spawning_agents(self):
         skill = self.read(".codex/skills/spec-me/SKILL.md")
-        worktree = self.read(".codex/internal-skills/session-worktree/GUIDE.md")
+        router = self.read(".codex/internal-skills/session-worktree/GUIDE.md")
+        create = self.read(".codex/internal-skills/worktree-create/GUIDE.md")
+        cli = self.read(".codex/internal-skills/session-worktree/references/worktree-cli.md")
+        execution = self.read("docs/agents/EXEC.md")
 
-        self.assertIn("session-worktree", skill)
-        self.assertIn("node <harness_source_root>/bin/harness-install.mjs install --project <session_worktree> --force", worktree)
-        self.assertIn(".agents/skills/<skill>/SKILL.md", worktree)
-        self.assertIn(".codex/agents/spec_document_writer.toml", worktree)
-        self.assertIn(".codex/workflows/spec-me.yaml", worktree)
-        self.assertIn("<source_workspace>/.codex/harness.yaml", worktree)
-        self.assertIn("Carry over local setup configuration", worktree)
-        self.assertIn("stop if installation or verification fails", worktree)
-        self.assertIn("Reuse it without creating another worktree", worktree)
-        self.assertIn("do not require or fetch `origin/main`", worktree)
+        for name in ("sequential", "parallel"):
+            self.assertIn(f"references/{name}.md", router)
+        self.assertNotIn("harness-workflow-worktree.mjs create", router)
+        self.assertIn("harness-workflow-worktree.mjs create --root", cli)
+        self.assertIn("harness-workflow-worktree.mjs finish", cli)
+        self.assertNotIn("harness-workflow-worktree.mjs create", execution)
+        self.assertIn("worktree-create", skill)
+        self.assertIn("internal-skills/product-spec/GUIDE.md", skill)
+        self.assertIn("references/architecture-decision.md", skill)
+        self.assertIn("harness-workflow-worktree.mjs create --root", create)
+        self.assertIn("harness-workspace-preflight.mjs --workspace-root", create)
+        self.assertIn("<session_directory>/worktree.json", create)
+        self.assertIn("source_workspace", cli)
+        self.assertIn("CLI가 발급한 실행 ID", cli)
+        self.assertIn("<session_directory>/worktree.json", create)
 
     def test_diagram_creation_is_delegated_to_lightweight_agent(self):
         skills = [
@@ -107,11 +117,11 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
         for skill in skills:
             self.assertIn("diagram_creator", skill)
-        spec_me = self.read(".codex/skills/spec-me/SKILL.md")
-        self.assertIn("경량", spec_me)
-        self.assertIn("multi_agent_v1.spawn_agent", spec_me)
-        self.assertIn('agent_type="diagram_creator"', spec_me)
-        self.assertIn("fork_context: false", spec_me)
+        delegated_spec = "\n".join(skills[:3])
+        self.assertIn("lightweight spawn", skills[0])
+        self.assertIn("multi_agent_v1.spawn_agent", delegated_spec)
+        self.assertIn('agent_type="diagram_creator"', delegated_spec)
+        self.assertIn("fork_context: false", delegated_spec)
         self.assertIn("model_reasoning_effort", self.read(".codex/agents/diagram_creator.toml"))
 
     def test_diagram_paths_ids_and_svg_links_are_canonical(self):

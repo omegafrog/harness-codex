@@ -63,7 +63,7 @@ test("split-plan and implementation PR renderers preserve one-plan and one-PR in
     parent_issue: 10,
     status: "Planned",
     purpose: "Persist evidence.",
-    scope: ["JSONL journal"],
+    scope: ["workspace_root: /workspace/existing-project", "workspace_branch: feature/journal", "JSONL journal"],
     acceptance_criteria: ["Replay is contiguous."],
     test_contract: { unit_policy: "Node tests", ui_entity_e2e: "Not applicable." },
     dependencies: [],
@@ -89,6 +89,8 @@ test("split-plan and implementation PR renderers preserve one-plan and one-PR in
   });
 
   assert.match(split, /## 상태[\s\S]*Planned/);
+  assert.ok(split.includes("- workspace_root: /workspace/existing-project"));
+  assert.ok(split.includes("- workspace_branch: feature/journal"));
   for (const heading of ["Summary", "Plan Set", "Implemented Plans", "Key Changes", "Verification", "Review", "Risks \/ Follow-ups", "Plan-set Integrity"]) assert.match(pr, new RegExp(`## ${heading}`));
   assert.ok(pr.indexOf("## Summary") < pr.indexOf("## Plan Set"));
   assert.ok(pr.indexOf("## Plan Set") < pr.indexOf("## Implemented Plans"));

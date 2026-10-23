@@ -179,7 +179,7 @@ export async function dispatchImplementPlan({
       error.reason = "workspace_root_required";
       throw error;
     }
-    const workspacePreflight = await inspectWorkspace({ expectedRoot: requestedWorkspaceRoot, cwd: requestedWorkspaceRoot });
+    const workspacePreflight = await inspectWorkspace({ workspaceRoot: requestedWorkspaceRoot, cwd: requestedWorkspaceRoot });
     const workspaceGate = await runLifecycleHook({
       hook: "before_dispatch",
       registry: WORKSPACE_PREFLIGHT_REGISTRY,
@@ -193,7 +193,7 @@ export async function dispatchImplementPlan({
       error.workspace_preflight = workspaceGate;
       throw error;
     }
-    const workspaceRoot = resolvePath(workspacePreflight.expected_root);
+    const workspaceRoot = resolvePath(workspacePreflight.workspace_root);
     const traceability = await inspectPlanTraceability({ root: workspaceRoot, planSetId, phase: "dispatch", planId: plan.id, trackerPort });
     if (traceability.status !== "pass") {
       const error = new Error(`Plan ${plan.id} traceability gate failed: ${traceability.reason}`);
@@ -217,7 +217,8 @@ export async function dispatchImplementPlan({
     const prompt = buildImplementPrompt({
       repository,
       workspaceRoot,
-      workspaceBranch: dispatchWorkspace?.branch || null,
+      workspaceBranch: parallelGroup ? null : dispatchWorkspace?.branch || null,
+      workspaceMode: parallelGroup ? "parallel" : "sequential",
       planSetId,
       planId: plan.id,
       planPath: traceability.details.plan_reference,
@@ -251,8 +252,7 @@ export async function dispatchImplementPlan({
       session_directory: session,
       env: { HARNESS_SESSION_DIR: session, TMPDIR: temporaryDirectory, TMP: temporaryDirectory, TEMP: temporaryDirectory },
       workspace_root: workspaceRoot,
-      workspace_branch: dispatchWorkspace?.branch || null,
-      workspace: dispatchWorkspace,
+      ...(parallelGroup ? {} : { workspace_branch: dispatchWorkspace?.branch || null, workspace: dispatchWorkspace }),
     });
     if (child?.context_id) slot.context_id = child.context_id;
     return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, traceability_refs: { ...traceability.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: dispatchWorkspace?.branch || null, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };

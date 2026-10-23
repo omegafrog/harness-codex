@@ -13,7 +13,7 @@ const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Workflow interrupted: ${name}`)));
 const { completeWorkflow } = await import(existsSync(installed) ? installed.href : source.href);
 try {
-  const flags = { '--root': 'workspace_root', '--workflow': 'workflow_id', '--base-ref': 'base_ref', '--state': 'state_file' };
+  const flags = { '--root': 'workspace_root', '--workflow': 'workflow_id', '--worktree-id': 'worktree_id', '--base-ref': 'base_ref', '--state': 'state_file' };
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (!flags[args[i]] || !args[i + 1]) throw new Error(`Unknown/missing argument: ${args[i]}`);
@@ -31,7 +31,7 @@ try {
   if (result.state !== 'completed') process.exitCode = 1;
 } catch (error) {
   if (!invoked && options.workspace_root) {
-    try { error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: options.workspace_root, workflow_id: options.workflow_id, outcome: 'failed' }); }
+    try { error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: options.workspace_root, worktree_id: options.worktree_id, outcome: 'failed' }); }
     catch (cleanupError) { error.worktree_cleanup = { state: 'failed', error: cleanupError.message }; }
   }
   process.stderr.write(`${JSON.stringify({ error: error.message, worktree_cleanup: error.worktree_cleanup || null })}\n`);

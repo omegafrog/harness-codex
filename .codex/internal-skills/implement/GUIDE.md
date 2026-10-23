@@ -4,7 +4,7 @@
 
 # implement
 
-구현 준비는 tracker 전환·fixed point·worktree 분기·코드 수정·agent dispatch보다 먼저 수행한다. [setup의 준비 복구](../../../.codex/skills/setup/SKILL.md#설치업데이트-및-구현-전-준비-복구)를 읽고, `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`의 실제 pass를 확인한다. 누락된 실행/통합 계약은 caller가 source 조사로 준비하고 재검사한다. 단순 파일 누락을 커밋 뒤 외부 blocker로 미루지 않는다.
+구현 준비는 tracker 전환·fixed point·worktree 분기·코드 수정·agent dispatch보다 먼저 수행한다. [setup의 준비 복구](../../../.codex/skills/setup/SKILL.md#설치업데이트-및-구현-전-준비-복구)를 읽고, `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`의 실제 pass를 확인한다. 누락된 실행/통합 계약은 caller가 source 조사로 준비하고 재검사한다. 단순 파일 누락을 커밋 뒤 외부 blocker로 미루지 않는다.
 
 
 Before editing code, activate the installed Ponytail plugin's `ponytail` skill in its default `full` mode and follow its minimal-change guidance throughout implementation. If it is unavailable, stop and report the missing/disabled plugin instead of silently proceeding without it.
@@ -17,7 +17,11 @@ When implementing a Harness feature or runtime change in the Harness source repo
 
 Require the caller's absolute `shared_guidance_root` (the original project root, `return_root` for managed worktrees) and verify it shares the same Git common directory as `workspace_root`. Read `<shared_guidance_root>/docs/agents/implementation-guidance.md` before planning/editing and `testing-guidance.md` before selecting or running any test. Never read worktree-local copies; those may be stale. Apply only in-scope guidance and surface conflicts with the approved Spec or execution contract before proceeding. Also read the affected [model continuity contract](../ddd-design/references/model-continuity.md), plan's [execution evidence contract](../../../.codex/skills/to-ticket/references/execution-evidence.md), and [shared verification policy](../../../.codex/skills/e2e-test/references/verification-policy.md). Before editing, confirm existing model/owner and requirement IDs, record any relevant pre-change baseline, and use the current public domain operation. Reject new modules/scaffolding without the approved boundary rationale. Preserve traceability and measurement results in the existing checkpoint `tests` payload, and hand them to both reviewers. Before completion, reconcile actual model/code and verification-map changes; do not relabel an accepted target as implemented before its behavior is verified.
 
-작업 경로 계약: 순차 구현은 기존 작업 위치를 유지하고 create/reserve/register를 호출하지 않는다. 새 worktree 생성은 wrapper가 병렬 격리를 배정할 때만 허용한다. standalone 구현도 사용자가 지정한 기존 루트를 사용한다. `implement-wrapper`가 전달한 절대 `workspace_root`를 사용한다. 새 명령마다 그 경로를 working directory로 지정하고, 저장소 파일을 읽거나 수정하기 전에 `pwd`와 `git rev-parse --show-toplevel`이 일치하는지 검증한다. 실제 E2E runner에도 같은 루트를 전달하며, 완료 결과에 검증된 경로를 보고한다. 병렬 구현 worktree라면 `workspace_branch`도 확인해 그 브랜치에 구현 커밋을 남기고 완료 결과에 브랜치명을 보고한다.
+## 실행 방식별 작업 위치
+
+wrapper가 전달한 `workspace_mode`와 절대 `workspace_reference`를 확인하고 그 파일 하나만 읽는다. 방식별 위치 확인·브랜치·소유권·종료 절차는 해당 reference를 따른다. standalone 구현은 `workspace_mode=sequential`로 [순차 구현](../session-worktree/references/sequential.md)을 읽는다. wrapper가 전달한 방식이 없거나 reference와 다르면 파일 수정 전에 중단한다. review·검증·계약·PR에도 같은 방식과 reference를 전달한다.
+
+모든 명령은 전달받은 절대 `workspace_root`를 cwd로 지정한다. 파일 접근 전에 `pwd`와 `git rev-parse --show-toplevel`을 대조하고, 완료 결과에 확인한 루트와 브랜치를 보고한다.
 
 1. Read `.codex/harness.yaml` and resolve the selected tracker mode. Before implementation dispatch, require an actual `agents.implementation_model` value; before runtime/E2E verification, resolve and explicitly pass actual `agents.execution_model` and `agents.execution_reasoning_effort` values. Missing values stop the workflow and require `setup`; never inherit the parent model.
 2. Resolve exactly one approved, executable split plan:
@@ -81,7 +85,7 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 
 ## 소유 worktree 종료
 
-`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 병렬 owned plan worktree만 WorktreeManager가 개별 정리한다. 순차 execution_line은 생성·소유권 등록·삭제하지 않고 후속 구현에서도 같은 경로를 유지한다. 다른 workflow가 실제 생성·소유한 worktree는 해당 소유자만 정리하고 branch/HEAD/recovery_path/return_root를 남긴다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
 
 ## 세션 출력
 

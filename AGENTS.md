@@ -32,7 +32,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
 
-`spec-me`, `to-ticket`, E2E runner는 단계/agent/서버를 시작하기 전에 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --json`을 실행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
+`spec-me`, `to-ticket`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 한 번 실행한다. `spec-me`는 worktree 생성 직후 이 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
 
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
@@ -62,9 +62,11 @@ This project has a Beads workspace for durable tasks and shared handoff. `to-tic
 
 ## Workflow worktree 종료
 
-workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 공통 finish로 관리한다. 완료·실패·사용자 중단·handoff에서 writer/agent/서버를 종료하고 기록을 보존·검증한 뒤 worktree를 제거한다. branch/recovery는 유지하고 primary/비소유 workspace는 지우지 않는다. cleanup 실패는 완료 실패다. 다음 진입에서는 pending receipt를 확인하고 중단된 실행만 복구 정리한다.
+workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 finish로 관리한다. `spec-me` 완료 뒤 `to-ticket`으로 이어질 때는 같은 worktree를 유지하고, `to-ticket` 완료나 실패·사용자 중단에서는 기록을 보존·검증한 뒤 worktree를 제거한다. branch/recovery는 유지하고 primary/비소유 workspace는 지우지 않는다. cleanup 실패는 완료 실패다. 다음 진입에서는 pending `worktree.json`을 확인하고 중단된 실행만 복구 정리한다.
 
-공통 completion receipt의 `state=completed`는 `completion_kind`가 지정하는 단계 산출물만 완료됐다는 뜻이다: Spec은 `spec_ready_for_planning`, 계획 발행은 `plan_set_ready_for_implementation`, 개별 plan은 `plan_implemented`, 최종 통합은 `feature_implemented`. 대기 중에는 상태를 `waiting`으로 두고 session/worktree를 유지한다. handoff·취소·실패는 각각 worktree receipt의 `outcome=handoff|aborted|failed`로 남기며 `completed`로 치환하지 않는다.
+소유 worktree의 canonical context와 lifecycle은 `<session_directory>/worktree.json` 하나로 관리한다. `session-worktree` CLI가 생성·갱신하고, workflow 진입은 이 파일을 읽는다. 하위 agent/tool에는 `workspace_root`와 `session_directory`를 전달해 같은 파일을 읽게 한다. 개별 worktree 필드를 요청마다 복사하지 않는다.
+
+공통 completion receipt의 `state=completed`는 `completion_kind`가 지정하는 단계 산출물만 완료됐다는 뜻이다: Spec은 `spec_ready_for_planning`, 계획 발행은 `plan_set_ready_for_implementation`, 개별 plan은 `plan_implemented`, 최종 통합은 `feature_implemented`. `spec-me`의 완료 receipt 뒤 `to-ticket`은 같은 worktree에서 계획을 이어간다. 취소·실패로 종료한 실행은 `worktree.json`의 `outcome=aborted|failed`로 기록한다.
 
 ## Session output
 

@@ -58,18 +58,27 @@ class ModelTierContractTest(unittest.TestCase):
 
     def test_spec_me_routes_parent_high_and_writers_low(self):
         spec_me = self.read(".codex/skills/spec-me/SKILL.md")
+        product = self.read(".codex/internal-skills/product-spec/GUIDE.md")
+        architecture = self.read(".codex/skills/spec-me/references/architecture-decision.md")
+        phases = "\n".join((spec_me, product, architecture))
 
         self.assertIn("agents.high_performance_model", spec_me)
         self.assertIn("agents.high_performance_reasoning_effort", spec_me)
-        self.assertIn('agent_type="spec_document_writer"', spec_me)
+        self.assertIn('agent_type="spec_document_writer"', phases)
         self.assertIn("model: resolved_low_performance_model_id", spec_me)
         self.assertIn("reasoning_effort: resolved_low_performance_reasoning_effort", spec_me)
-        self.assertIn("settled Product decisions", spec_me)
-        self.assertIn("settled Architecture decisions", spec_me)
-        self.assertIn("planned diagram inventory", spec_me)
+        self.assertIn("Product Spec", product)
+        self.assertIn("Architecture 결정", architecture)
+        self.assertIn("diagram inventory", product)
+        self.assertIn("diagram inventory", architecture)
 
     def test_spec_me_resolves_low_model_and_fails_closed(self):
         spec_me = self.read(".codex/skills/spec-me/SKILL.md")
+        phases = "\n".join((
+            spec_me,
+            self.read(".codex/internal-skills/product-spec/GUIDE.md"),
+            self.read(".codex/skills/spec-me/references/architecture-decision.md"),
+        ))
 
         self.assertRegex(spec_me, r"(?i)resolve.{0,120}(actual|resolved).{0,120}model")
         self.assertRegex(spec_me, r"(?i)(never|do not|must not).{0,120}(literal|config key)")
@@ -77,7 +86,7 @@ class ModelTierContractTest(unittest.TestCase):
         self.assertRegex(spec_me, r"(?i)low.?performance.{0,180}(missing|invalid|unavailable).{0,180}(stop|block|setup)")
         self.assertRegex(spec_me, r"(?i)(never|must not|do not).{0,140}(omit|inherit|fallback).{0,180}(parent|high.?performance)")
         for role in ("spec_document_writer", "diagram_creator"):
-            self.assertRegex(spec_me, rf'agent_type="{role}"')
+            self.assertRegex(phases, rf'agent_type="{role}"')
 
     def test_lightweight_roles_require_resolved_low_model(self):
         for relative in (

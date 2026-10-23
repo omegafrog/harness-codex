@@ -35,7 +35,7 @@ test("lifecycle hook returns a deterministic pass verdict for all checks", async
       workspace_root: root,
       dependencies: { all_satisfied: true },
       resource_conflict: { present: false },
-      workspace: { valid: true, expected_root: "/repo", cwd: "/repo", git_root: "/repo", worktree_registered: true },
+      workspace: { valid: true, workspace_root: "/repo", cwd: "/repo", git_root: "/repo", worktree_registered: true },
       permission_preflight: { passed: true },
     },
     eventWriter: eventWriter(),

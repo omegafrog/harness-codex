@@ -231,6 +231,9 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     for (const key of ["TMPDIR", "TMP", "TEMP"]) assert.equal(calls[0].env[key], temp);
     assert.equal(calls[0].workspace_root, executionLine);
     assert.equal(calls[0].cwd, executionLine);
+    assert.ok(calls[0].prompt.includes("workspace_mode: sequential"));
+    assert.ok(calls[0].prompt.includes(`workspace_reference: ${join(executionLine, ".codex/internal-skills/session-worktree/references/sequential.md")}`));
+    assert.equal(calls[0].prompt.includes("references/parallel.md"), false);
     assert.notEqual(calls[0].context_id, calls[1].context_id);
     assert.equal(first.attempt, 1);
     assert.equal(second.attempt, 2);
@@ -307,6 +310,9 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace_root, result.workspace.workspace);
     assert.equal(result.child.workspace_root, result.workspace.workspace);
     assert.equal(result.child.cwd, result.workspace.workspace);
+    assert.ok(result.prompt.includes("workspace_mode: parallel"));
+    assert.ok(result.prompt.includes(`workspace_reference: ${join(result.workspace.workspace, ".codex/internal-skills/session-worktree/references/parallel.md")}`));
+    assert.equal(result.prompt.includes("references/sequential.md"), false);
     assert.ok(result.prompt.includes(`Active workspace root: ${result.workspace.workspace}`));
     assert.equal((await manager.verify(result.workspace)).valid, true);
     slots.release(result.slot);

@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildHarnessLock, updateProject, writeHarnessLock } from "../src/installer/update.mjs";
+import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 import { writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { runDoctor } from "../src/doctor/index.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
@@ -230,7 +231,12 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     const internalSource = await readFile(join(REPOSITORY_ROOT, ".codex/skills/spec-me/references/decision-knowledge.md"), "utf8");
     assert.equal(await readFile(internalSkill, "utf8"), internalSource);
     const specSkill = await readFile(join(targetRoot, ".agents/skills/spec-me/SKILL.md"), "utf8");
-    assert.ok(specSkill.includes("references/decision-knowledge.md"));
+    const architectureReference = join(targetRoot, ".agents/skills/spec-me/references/architecture-decision.md");
+    assert.equal(await readFile(architectureReference, "utf8"), await readFile(join(REPOSITORY_ROOT, ".codex/skills/spec-me/references/architecture-decision.md"), "utf8"));
+    const productGuide = join(targetRoot, ".codex/internal-skills/product-spec/GUIDE.md");
+    assert.equal(await readFile(productGuide, "utf8"), await readFile(join(REPOSITORY_ROOT, ".codex/internal-skills/product-spec/GUIDE.md"), "utf8"));
+    assert.ok(specSkill.includes("internal-skills/product-spec/GUIDE.md"));
+    assert.ok(specSkill.includes("references/architecture-decision.md"));
     await assert.rejects(readFile(join(targetRoot, ".agents/skills/decision-knowledge/SKILL.md")), { code: "ENOENT" });
     await writeFile(internalSkill, "stale internal guidance\n");
     const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, (?:and )?update/;
@@ -291,6 +297,61 @@ test("fresh installation includes the runtime required by the decision gate CLI"
   }
 });
 
+test("installed consumer creates an automatically identified owned worktree without hiding application changes", async () => {
+  const { root, cleanup } = await makeContractsFixture();
+  try {
+    await protectLocalInstallArtifacts(root, REPOSITORY_ROOT);
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+    const baseline = spawnSync("git", ["add", ".github/pull_request_template.md"], { cwd: root, encoding: "utf8" });
+    assert.equal(baseline.status, 0, baseline.stderr);
+    const baselineCommit = spawnSync("git", ["commit", "-m", "install consumer baseline"], { cwd: root, encoding: "utf8" });
+    assert.equal(baselineCommit.status, 0, baselineCommit.stderr);
+    const runtime = join(root, ".codex/harness-runtime/src/workflow/worktrees.mjs");
+    const source = await readFile(join(REPOSITORY_ROOT, "src/workflow/worktrees.mjs"), "utf8");
+    await writeFile(runtime, "export const staleRuntime = true;\n");
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+    const updated = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+    assert.ok(updated.updated.includes(".codex/harness-runtime/src/workflow/worktrees.mjs"));
+    assert.equal(await readFile(runtime, "utf8"), source);
+
+    const cli = join(root, ".codex/scripts/harness-workflow-worktree.mjs");
+    const created = spawnSync(process.execPath, [cli, "create", "--root", root], { cwd: root, encoding: "utf8" });
+    assert.equal(created.status, 0, created.stderr);
+    const handle = JSON.parse(created.stdout);
+    assert.match(handle.worktree_id, /^[0-9a-f-]{36}$/);
+    assert.equal(handle.source_workspace, root);
+    assert.notEqual(handle.workspace, root);
+    assert.equal(handle.state, "active");
+    assert.doesNotMatch(created.stdout, /workflow_id/);
+    const sessionRecord = JSON.parse(await readFile(join(handle.session_directory, "worktree.json"), "utf8"));
+    assert.equal(sessionRecord.worktree_id, handle.worktree_id);
+    const preflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--workspace-root", handle.workspace, "--json"], { cwd: handle.workspace, encoding: "utf8" });
+    assert.equal(preflight.status, 0, preflight.stderr);
+    assert.equal(JSON.parse(preflight.stdout).is_linked_worktree, true);
+
+    const unrelatedSession = join(root, ".git/harness-workflows/sessions", "f".repeat(64));
+    await mkdir(unrelatedSession, { recursive: true });
+    await writeFile(join(unrelatedSession, "receipt.json"), JSON.stringify({ schema_version: 1, workflow_id: "execution-run", state: "completed" }));
+    const activeList = spawnSync(process.execPath, [cli, "list", "--root", root], { cwd: root, encoding: "utf8" });
+    assert.equal(activeList.status, 0, activeList.stderr);
+    assert.deepEqual(JSON.parse(activeList.stdout).map(({ worktree_id }) => worktree_id), [handle.worktree_id]);
+
+    const finished = spawnSync(process.execPath, [cli, "finish", "--root", handle.workspace, "--repository", root, "--worktree-id", handle.worktree_id, "--outcome", "completed"], { cwd: root, encoding: "utf8" });
+    assert.equal(finished.status, 0, finished.stderr);
+    assert.equal(JSON.parse(finished.stdout).state, "removed");
+    const remaining = spawnSync(process.execPath, [cli, "list", "--root", root], { cwd: root, encoding: "utf8" });
+    assert.equal(remaining.status, 0, remaining.stderr);
+    assert.deepEqual(JSON.parse(remaining.stdout), []);
+    assert.match(spawnSync("git", ["branch", "--list", handle.branch], { cwd: root, encoding: "utf8" }).stdout, new RegExp(handle.branch));
+
+    await writeFile(join(root, "src/app.mjs"), "export const app = 'user change';\n");
+    const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
+    assert.equal(status.status, 0, status.stderr);
+    assert.deepEqual(status.stdout.trimEnd().split("\n"), [" M src/app.mjs"]);
+  } finally { await cleanup(); }
+});
+
 test("updated consumer defers only source snapshot drift until final contract synchronization", async (t) => {
   const { root, cleanup } = await makeContractsFixture();
   t.after(cleanup);
@@ -305,7 +366,7 @@ test("updated consumer defers only source snapshot drift until final contract sy
   const deferred = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
   assert.equal(deferred.status, "pass", JSON.stringify(deferred));
   assert.equal(deferred.contract_sync.status, "deferred");
-  const preflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--expected-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
+  const preflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--workspace-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
   assert.equal(preflight.status, 0, preflight.stderr || preflight.stdout);
   assert.equal(JSON.parse(preflight.stdout).contract_sync.status, "deferred");
 
@@ -313,7 +374,7 @@ test("updated consumer defers only source snapshot drift until final contract sy
   const invalid = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
   assert.equal(invalid.status, "blocked");
   assert.notEqual(invalid.contract_sync?.status, "deferred");
-  const invalidPreflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--expected-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
+  const invalidPreflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--workspace-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
   assert.equal(invalidPreflight.status, 1);
 });
 

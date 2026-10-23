@@ -4,7 +4,11 @@
 
 ## 역할
 
-`architecture_review_lead`는 Learning mode에서만 사용자의 제안과 방어를 검토한다. Reviewer는 답을 대신 만들거나 사용자 대신 선택하지 않는다. Normal mode에서는 사용자가 공통 체크리스트를 직접 평가한다.
+`architecture_review_lead`는 `spec-me`의 Architecture Decision이 준비된 뒤 Learning mode에서 사용자의 제안과 방어를 검토한다. Reviewer는 답을 대신 만들거나 사용자 대신 선택하지 않는다. Normal mode에서는 reviewer challenge stage를 건너뛰고 사용자가 공통 체크리스트를 직접 평가한다. 두 mode 모두 decision evidence와 review gate를 통과한다.
+
+## 근거 정책
+
+Architecture 대안을 선택하기 전에 `spec-me`의 [결정 근거 조회·수집](../../skills/spec-me/references/decision-knowledge.md)을 완료한다. hash가 유효한 승인 Principle과 승인된 project Evidence만 권위 있는 결정 근거로 사용한다. 근거가 적용되지 않거나 충분하지 않으면 결정을 보류한다. Reviewer가 새로 찾은 자료는 사용자에게 정확한 내용을 먼저 제시해 use approval을 받은 뒤 사용한다. `spec-me`와 Reviewer는 Principle을 직접 생성·수정·승인·폐기하지 않는다.
 
 ## 진행 순서
 

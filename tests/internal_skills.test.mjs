@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { runDoctor } from "../src/doctor/index.mjs";
@@ -18,6 +18,16 @@ test("internal skills reach installed workflows without public skill entrypoints
   const root = await mkdtemp(join(tmpdir(), "harness-internal-consumer-"));
   try {
     await updateProject({ sourceRoot: SOURCE, targetRoot: root, initialize: true });
+    const { buildImplementPrompt } = await import(pathToFileURL(join(root, ".codex/harness-runtime/src/wrapper/scheduler.mjs")));
+    for (const mode of ["sequential", "parallel"]) {
+      const prompt = buildImplementPrompt({ repository: root, planSetId: "example", planId: "slice", workspaceMode: mode });
+      const selected = join(root, `.codex/internal-skills/session-worktree/references/${mode}.md`);
+      assert.ok(prompt.includes(`workspace_mode: ${mode}`));
+      assert.ok(prompt.includes(`workspace_reference: ${selected}`));
+      assert.equal(prompt.includes(`references/${mode === "sequential" ? "parallel" : "sequential"}.md`), false);
+      await readFile(selected);
+    }
+    assert.throws(() => buildImplementPrompt({ repository: root, planSetId: "example", planId: "slice", workspaceMode: "unknown" }), /workspaceMode/);
     const names = await readdir(join(SOURCE, ".codex/internal-skills"));
     const owned = await discoverHarnessOwnedFiles(root);
     for (const name of names) {
@@ -34,7 +44,7 @@ test("internal skills reach installed workflows without public skill entrypoints
       }
     }
     // Cross-boundary links must resolve from the installed tree as well as the source.
-    for (const relative of owned.filter((path) => path.endsWith("/GUIDE.md") || path.endsWith("/SKILL.md"))) {
+    for (const relative of owned.filter((path) => path.endsWith("/GUIDE.md") || path.endsWith("/SKILL.md") || path.startsWith(".codex/internal-skills/session-worktree/references/"))) {
       const text = await readFile(join(root, relative), "utf8");
       for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
         const target = match[1].split("#")[0];
@@ -94,8 +104,12 @@ test("fresh and updated consumers receive the existing-root implementation polic
     return result.stdout;
   };
   const paths = [
-    [".codex/skills/implement-wrapper/SKILL.md", ".agents/skills/implement-wrapper/SKILL.md"],
-    ...["implement", "session-worktree", "sync-contracts"].map((name) => {
+    ...["implement-wrapper/SKILL.md", "to-ticket/SKILL.md", "to-ticket/references/execution-evidence.md", "to-ticket/references/github-issue-template.md"].map((path) => [`.codex/skills/${path}`, `.agents/skills/${path}`]),
+    ...["sequential", "parallel", "worktree-creation", "worktree-cli"].map((name) => {
+      const path = `.codex/internal-skills/session-worktree/references/${name}.md`;
+      return [path, path];
+    }),
+    ...["implement", "session-worktree", "sync-contracts", "plan-review"].map((name) => {
       const path = `.codex/internal-skills/${name}/GUIDE.md`;
       return [path, path];
     }),

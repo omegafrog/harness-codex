@@ -17,13 +17,13 @@ export function completionKindForWorkflow(workflowId) {
   })[workflowId] || 'workflow_completed';
 }
 
-export async function completeWorkflow({ workflow_id, workspace_root, base_ref, state = {}, signal = null } = {}) {
+export async function completeWorkflow({ workflow_id, worktree_id = null, workspace_root, base_ref, state = {}, signal = null } = {}) {
   let writer, result, failure;
   try {
     signal?.throwIfAborted();
     if (!isAbsolute(workspace_root || '')) throw new Error('Absolute workspace_root is required');
     if (!/^[a-f0-9]{40}$/.test(base_ref || '')) throw new Error('Starting commit SHA is required');
-    const workspace = await inspectWorkspace({ expectedRoot: workspace_root, cwd: process.cwd() });
+    const workspace = await inspectWorkspace({ workspaceRoot: workspace_root, cwd: process.cwd() });
     if (!workspace.valid) throw new Error(`Workspace preflight failed: ${workspace.reason}`);
     const workflow = await loadNamedWorkflow(workflow_id, { root: workspace_root });
     const completion_kind = completionKindForWorkflow(workflow.id);
@@ -41,13 +41,16 @@ export async function completeWorkflow({ workflow_id, workspace_root, base_ref, 
   } catch (error) { failure = error; }
   finally {
     try { await writer?.close(); } catch (error) { failure ||= error; }
-    let cleanup;
-    try { cleanup = await finishWorkflowWorktree({ workspace_root, workflow_id, outcome: signal?.aborted ? 'aborted' : !failure && result?.state === 'completed' ? 'completed' : 'failed' }); }
-    catch (error) { cleanup = { state: 'failed', error: error.message, workspace_root }; }
-    if (failure) failure.worktree_cleanup = cleanup;
-    else {
-      result.worktree_cleanup = cleanup;
-      if (cleanup.state === 'failed') result.state = 'in-progress';
+    const retainForPlanning = !failure && !signal?.aborted && result?.state === 'completed' && result.completion_kind === 'spec_ready_for_planning';
+    if (!retainForPlanning) {
+      let cleanup;
+      try { cleanup = await finishWorkflowWorktree({ workspace_root, worktree_id, outcome: signal?.aborted ? 'aborted' : !failure && result?.state === 'completed' ? 'completed' : 'failed' }); }
+      catch (error) { cleanup = { state: 'failed', error: error.message, workspace_root }; }
+      if (failure) failure.worktree_cleanup = cleanup;
+      else {
+        result.worktree_cleanup = cleanup;
+        if (cleanup.state === 'failed') result.state = 'in-progress';
+      }
     }
   }
   if (failure) throw failure;

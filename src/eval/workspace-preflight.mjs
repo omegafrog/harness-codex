@@ -11,27 +11,27 @@ function worktreePaths(listing) {
     .filter(Boolean);
 }
 
-export async function inspectWorkspace({ expectedRoot, cwd = process.cwd() } = {}) {
-  if (typeof expectedRoot !== "string" || !expectedRoot.trim()) throw new TypeError("expectedRoot is required");
+export async function inspectWorkspace({ workspaceRoot, cwd = process.cwd() } = {}) {
+  if (typeof workspaceRoot !== "string" || !workspaceRoot.trim()) throw new TypeError("workspaceRoot is required");
   if (typeof cwd !== "string" || !cwd.trim()) throw new TypeError("cwd is required");
 
-  let expected;
+  let workspacePath;
   let actualCwd;
   try {
-    [expected, actualCwd] = await Promise.all([realpath(resolve(expectedRoot)), realpath(resolve(cwd))]);
+    [workspacePath, actualCwd] = await Promise.all([realpath(resolve(workspaceRoot)), realpath(resolve(cwd))]);
   } catch (error) {
     return {
       valid: false,
       reason: "workspace_path_unavailable",
-      expected_root: resolve(expectedRoot),
+      workspace_root: resolve(workspaceRoot),
       cwd: resolve(cwd),
       git_root: null,
       worktree_registered: false,
       error: error.message,
     };
   }
-  if (expected !== actualCwd) {
-    return { valid: false, reason: "cwd_mismatch", expected_root: expected, cwd: actualCwd, git_root: null, worktree_registered: false };
+  if (workspacePath !== actualCwd) {
+    return { valid: false, reason: "cwd_mismatch", workspace_root: workspacePath, cwd: actualCwd, git_root: null, worktree_registered: false };
   }
 
   let topLevel;
@@ -46,18 +46,18 @@ export async function inspectWorkspace({ expectedRoot, cwd = process.cwd() } = {
     const isLinkedWorktree = await realpath(resolve(gitDir.trim())) !== await realpath(resolve(commonDir.trim()));
     const gitRoot = await realpath(resolve(topLevel.trim()));
     const registeredRoots = await Promise.all(worktreePaths(listing).map((path) => realpath(path).catch(() => resolve(path))));
-    const worktreeRegistered = registeredRoots.includes(expected);
-    const valid = gitRoot === expected && worktreeRegistered;
+    const worktreeRegistered = registeredRoots.includes(workspacePath);
+    const valid = gitRoot === workspacePath && worktreeRegistered;
     return {
       valid,
-      reason: valid ? null : gitRoot !== expected ? "git_root_mismatch" : "worktree_not_registered",
-      expected_root: expected,
+      reason: valid ? null : gitRoot !== workspacePath ? "git_root_mismatch" : "worktree_not_registered",
+      workspace_root: workspacePath,
       cwd: actualCwd,
       git_root: gitRoot,
       worktree_registered: worktreeRegistered,
       is_linked_worktree: isLinkedWorktree,
     };
   } catch (error) {
-    return { valid: false, reason: "not_a_git_worktree", expected_root: expected, cwd: actualCwd, git_root: null, worktree_registered: false, error: error.message };
+    return { valid: false, reason: "not_a_git_worktree", workspace_root: workspacePath, cwd: actualCwd, git_root: null, worktree_registered: false, error: error.message };
   }
 }

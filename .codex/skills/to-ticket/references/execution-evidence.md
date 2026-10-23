@@ -2,6 +2,24 @@
 
 계획은 검증할 결과를 정의하고 구현은 같은 기준의 관측 결과를 제출한다. 로그 개수, 클래스 수, 테스트 개수로 완료를 판단하지 않는다. 기존 ID·테스트·관측 도구와 checkpoint journal을 재사용한다.
 
+## 실행 위치
+
+모든 canonical per-plan 문서는 `## 범위`의 첫 두 항목에 아래 실행 위치를 실제 값으로 기록한다. GitHub structured-source도 기존 `scope` 배열의 첫 두 문자열에 같은 값을 넣어 renderer가 Issue 본문에 보존하게 한다. 새로운 structured-source key나 리뷰 session.json으로 대체하지 않는다.
+
+```markdown
+## 범위
+
+- workspace_root: `/absolute/existing/project-worktree`
+- workspace_branch: `existing-implementation-branch`
+- 구현할 vertical slice 범위
+```
+
+`workspace_root`는 구현 대상인 기존 Git worktree의 절대 경로, `workspace_branch`는 그 위치에서 검증한 브랜치명이다. branch는 파일 경로가 아니며 detached HEAD를 허용하지 않는다. 계획 작성용 임시 `session_worktree`가 종료 시 제거되면 그 경로를 구현 위치로 기록하지 않는다. 사용자가 지정한 기존 구현 위치를 우선하고, 없으면 원래 작업 위치 `return_root`를 확인한다. 실제 대상의 `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list --porcelain`을 대조해 경로·브랜치·등록을 확인한다. 대상이나 브랜치가 불명확하면 계획 리뷰·발행 전에 확인하며 경로를 추측하거나 이를 채우려고 worktree를 생성하지 않는다.
+
+`docs/plans/<plan-set-id>/plans.md`의 `## 실행 위치`에도 같은 두 항목을 기록한다. 각 plan과 index의 값은 일치해야 한다. 병렬 계획에서도 이 값은 최종 통합 대상인 기존 `execution_line`을 뜻한다. 실제 병렬 worker의 임시 경로·브랜치는 dispatch 후 checkpoint에 기록하며 canonical plan의 통합 대상을 덮어쓰지 않는다.
+
+계획 종료 뒤에도 기록한 기존 위치를 유지한다. Spec·계획이 다른 계획 branch에 남아 있다면 해당 branch/HEAD와 필요한 통합을 인계하고, 실행 대상에 승인 산출물이 반영되기 전에는 구현 dispatch를 하지 않는다. 제거된 planning worktree를 복원한다는 이유로 구현용 worktree를 새로 만들지 않는다. 실행 위치 변경은 plan과 index를 함께 고치고 fresh review를 갱신한 뒤 허용한다.
+
 ## 계획 시
 
 각 slice의 기존 `수용 기준`에 `UC/BR/INV 또는 기존 requirement ID → Context/모델 owner → 실행 진입점 → 기대 결과 → 검증 명령`을 기록한다. 전역 ID 체계나 별도 task board를 새로 만들지 않는다. `테스트 계약`에는 아래 항목을 필요한 만큼 기록한다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.

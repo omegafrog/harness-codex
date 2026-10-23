@@ -252,25 +252,25 @@ export class WorktreeManager {
     const workspace = sessionOutputPath(this.repoRoot, relative(sessionDirectory(this.repoRoot), join(this.runtimeRoot, "worktrees", this.runtimeNamespace, safeGroupPath(groupId), safePlanPath(planId))));
     const branch = `harness/${this.runtimeNamespace}/${safeGroupPath(groupId)}/${safePlanPath(planId)}-${process.pid}-${++branchInstance}`;
     await ensureDir(join(this.runtimeRoot, "worktrees"));
-    await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", branch });
+    const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, branch });
     let allocatedBase;
     let added = false;
     try {
       await this.runGit(this.repoRoot, ["worktree", "add", "-b", branch, workspace, fixedGroupBase]);
       added = true;
-      await registerWorkflowWorktree({ workspace_root: workspace, workflow_id: "implement-wrapper", return_root: this.repoRoot });
+      await registerWorkflowWorktree({ workspace_root: workspace, return_root: this.repoRoot });
       allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
       if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
     } catch (error) {
       this.blockedPools.add(groupId);
       if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
       if (added) {
-        const handle = { planId, mode: "parallel", workspace, branch, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+        const handle = { planId, mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
         this.poolHandles.get(groupId).add(workspace);
         try {
           const observed = await this.observe(handle);
           error.worktree_evidence = observed;
-          const cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: "failed" });
+          const cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, worktree_id: ownership.worktree_id, outcome: "failed" });
           error.worktree_cleanup = cleanup;
           if (cleanup.state === "removed") this.poolHandles.get(groupId).delete(workspace);
           else error.worktree_leak = true;
@@ -279,7 +279,7 @@ export class WorktreeManager {
           error.cleanup_error = cleanupError.message;
         }
       } else {
-        try { error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: "failed" }); }
+        try { error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, worktree_id: ownership.worktree_id, outcome: "failed" }); }
         catch (cleanupError) { error.cleanup_error = cleanupError.message; }
       }
       throw error;
@@ -287,7 +287,7 @@ export class WorktreeManager {
     this.groupBases.set(groupId, fixedGroupBase);
     if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
     this.poolHandles.get(groupId).add(workspace);
-    return { planId, mode: "parallel", workspace, branch, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+    return { planId, mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
   }
 
   async observe(handle) {
@@ -347,7 +347,7 @@ export class WorktreeManager {
     let observed = handle;
     try {
       observed = await this.observe(handle);
-      const cleanup = await finishWorkflowWorktree({ workspace_root: handle.workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: evidencePersisted ? "completed" : "failed" });
+      const cleanup = await finishWorkflowWorktree({ workspace_root: handle.workspace, repository_root: this.repoRoot, worktree_id: handle.worktree_id, outcome: evidencePersisted ? "completed" : "failed" });
       if (cleanup.state !== "removed") throw Object.assign(new Error(cleanup.error || cleanup.reason || "Owned worktree was not removed"), { worktree_cleanup: cleanup });
       const handles = this.poolHandles.get(handle.groupId);
       handles?.delete(handle.workspace);

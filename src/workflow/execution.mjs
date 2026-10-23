@@ -87,7 +87,7 @@ async function execute(argv, { root, env, path, timeout, signal }) {
 export async function runExecution({ workspace_root, profile_id, environment = process.env, signal } = {}) {
   requireValue(isAbsolute(workspace_root || '') && ID.test(profile_id || ''), 'Absolute workspace_root and profile_id are required');
   const root = await realpath(workspace_root);
-  const workspace = await inspectWorkspace({ expectedRoot: root, cwd: process.cwd() });
+  const workspace = await inspectWorkspace({ workspaceRoot: root, cwd: process.cwd() });
   requireValue(workspace.valid, `Workspace preflight failed: ${workspace.reason}`);
   const directory = sessionOutputPath(root, `runtime/execution/${profile_id}-${randomUUID()}`);
   await mkdir(directory, { mode: 0o700 });

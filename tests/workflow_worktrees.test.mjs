@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { finishWorkflowWorktree, registerWorkflowWorktree, reserveWorkflowWorktree } from "../src/workflow/worktrees.mjs";
+import { finishWorkflowWorktree, listWorkflowWorktrees, registerWorkflowWorktree, reserveWorkflowWorktree } from "../src/workflow/worktrees.mjs";
 import { completeWorkflow } from "../src/workflow/completion.mjs";
 import { createWorkflowWorktree } from "../src/workflow/worktrees.mjs";
+import { inspectWorkspace } from "../src/eval/workspace-preflight.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
 import { sessionOutputPath } from "../src/workflow/session-output.mjs";
 
@@ -29,7 +30,9 @@ const cleanup = (root) => rm(root, { recursive: true, force: true });
 for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${outcome} archives dirty worktree and removes only its registration`, async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "flow-1", return_root: main });
+    const registered = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
+    assert.match(registered.worktree_id, /^[0-9a-f-]{36}$/);
+    assert.ok(await lstat(tree));
     await writeFile(join(tree, "tracked"), "tracked");
     await git(tree, "add", "tracked");
     await writeFile(join(tree, "tracked"), "staged version");
@@ -39,7 +42,7 @@ for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${out
     await writeFile(join(tree, ".ignored"), "ignored");
     await writeFile(join(tree, ".gitignore"), ".ignored\n");
     await writeFile(sessionOutputPath(tree, "state.json", { repositoryRoot: main }), "runtime");
-    const result = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, workflow_id: "flow-1", outcome });
+    const result = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, outcome });
     assert.equal(result.state, "removed");
     assert.equal(await readFile(join(result.recovery_path, "files", "tracked"), "utf8"), "modified");
     assert.equal(await readFile(join(result.recovery_path, "files", "untracked"), "utf8"), "untracked");
@@ -48,7 +51,7 @@ for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${out
     assert.ok((await lstat(join(result.recovery_path, "index"))).size > 0);
     assert.match(await git(main, "show-ref", "--verify", result.recovery_ref).then(x => x.stdout), /refs\/harness\/recovery\//);
     await git(main, "gc", "--prune=now");
-    const archived = JSON.parse(await readFile(sessionOutputPath(tree, "receipt.json", { repositoryRoot: main }), "utf8"));
+    const archived = JSON.parse(await readFile(sessionOutputPath(tree, "worktree.json", { repositoryRoot: main }), "utf8"));
     assert.equal(archived.outcome, outcome);
     const stagedEntry = await git(main, "ls-tree", `${archived.staged_ref}^{tree}`);
     const stagedBlob = stagedEntry.stdout.match(/blob ([a-f0-9]+)/)?.[1];
@@ -56,7 +59,7 @@ for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${out
     assert.equal((await git(main, "cat-file", "blob", stagedBlob)).stdout, "staged version");
     assert.match(await git(main, "branch", "--list", "workflow").then(x => x.stdout), /workflow/);
     assert.equal(await lstat(tree).then(() => true, () => false), false);
-    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, workflow_id: "flow-1" })).already_removed, true);
+    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, worktree_id: registered.worktree_id })).already_removed, true);
   } finally { await cleanup(root); }
 });
 
@@ -65,20 +68,33 @@ test("CLI creates new and existing branches and finish aborts both", async () =>
   try {
     await git(main, "branch", "existing");
     for (const branch of [null, "existing"]) {
-      const args = [cli, "create", "--root", main, "--workflow", "cli-flow"];
+      const args = [cli, "create", "--root", main];
       if (branch) args.push("--branch", branch);
       const created = JSON.parse((await run(process.execPath, args)).stdout);
       assert.equal(created.state, "active");
-      const finished = JSON.parse((await run(process.execPath, [cli, "finish", "--root", created.workspace, "--repository", main, "--workflow", "cli-flow", "--outcome", "aborted"])).stdout);
+      assert.match(created.worktree_id, /^[0-9a-f-]{36}$/);
+      assert.equal(created.source_workspace, main);
+      assert.notEqual(created.workspace, created.source_workspace);
+      const record = JSON.parse(await readFile(join(created.session_directory, "worktree.json"), "utf8"));
+      assert.equal(record.worktree_id, created.worktree_id);
+      const preflight = await inspectWorkspace({ workspaceRoot: created.workspace, cwd: created.workspace });
+      assert.equal(preflight.valid, true);
+      assert.equal(preflight.is_linked_worktree, true);
+      const finished = JSON.parse((await run(process.execPath, [cli, "finish", "--root", created.workspace, "--repository", main, "--worktree-id", created.worktree_id, "--outcome", "aborted"])).stdout);
       assert.equal(finished.state, "removed");
+      await assert.rejects(lstat(created.workspace), { code: "ENOENT" });
+      assert.match(await git(main, "branch", "--list", branch || created.branch).then((result) => result.stdout), new RegExp(branch || created.branch));
     }
+    const suppliedId = await run(process.execPath, [cli, "create", "--root", main, "--worktree-id", "manual"]).then(() => null, (error) => error);
+    assert.equal(suppliedId.code, 1);
+    assert.match(suppliedId.stderr, /create generates worktree_id/);
   } finally { await cleanup(root); }
 });
 
 test("failed Git allocation removes its pre-reserved ownership receipt", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await assert.rejects(createWorkflowWorktree({ workspace_root: main, workflow_id: "allocation", branch: "workflow" }), (error) => {
+    await assert.rejects(createWorkflowWorktree({ workspace_root: main, branch: "workflow" }), (error) => {
       assert.equal(error.worktree_cleanup?.state, "removed");
       return /allocation cleanup=removed/.test(error.message);
     });
@@ -93,25 +109,37 @@ test("concurrent reservations have one owner and the losing attempt preserves it
   const workspace = join(root, "reserved");
   try {
     const attempts = await Promise.allSettled([
-      reserveWorkflowWorktree({ workspace_root: workspace, repository_root: main, workflow_id: "first", branch: "first" }),
-      reserveWorkflowWorktree({ workspace_root: workspace, repository_root: main, workflow_id: "second", branch: "second" }),
+      reserveWorkflowWorktree({ workspace_root: workspace, repository_root: main, branch: "first" }),
+      reserveWorkflowWorktree({ workspace_root: workspace, repository_root: main, branch: "second" }),
     ]);
     assert.equal(attempts.filter((item) => item.status === "fulfilled").length, 1);
     const winner = attempts.find((item) => item.status === "fulfilled");
     const loser = attempts.find((item) => item.status === "rejected");
-    const owner = JSON.parse(await readFile(join(main, ".git", "harness-workflows", "sessions", createHash("sha256").update(workspace).digest("hex"), "receipt.json"), "utf8"));
-    assert.equal(owner.workflow_id, winner === attempts[0] ? "first" : "second");
+    const owner = JSON.parse(await readFile(join(main, ".git", "harness-workflows", "sessions", createHash("sha256").update(workspace).digest("hex"), "worktree.json"), "utf8"));
+    assert.match(owner.worktree_id, /^[0-9a-f-]{36}$/);
     assert.match(loser.reason.message, /Cleanup is already running|Allocation already has a pending owner/);
     assert.equal(owner.state, "allocating");
+  } finally { await cleanup(root); }
+});
+
+test("worktree listing skips unrelated session receipts and returns active ownership records", async () => {
+  const { root, main, tree } = await fixture();
+  try {
+    const owner = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
+    const unrelated = join(main, ".git", "harness-workflows", "sessions", "1".repeat(64));
+    await mkdir(unrelated, { recursive: true });
+    await writeFile(join(unrelated, "receipt.json"), JSON.stringify({ schema_version: 1, workflow_id: "test-run", state: "completed" }));
+    const listed = await listWorkflowWorktrees({ workspace_root: main });
+    assert.deepEqual(listed.map(({ worktree_id }) => worktree_id), [owner.worktree_id]);
   } finally { await cleanup(root); }
 });
 
 test("aborted completeWorkflow removes an owned linked worktree", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "implement", return_root: main });
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
     const controller = new AbortController(); controller.abort(new Error("stop"));
-    await assert.rejects(completeWorkflow({ workflow_id: "implement", workspace_root: tree, base_ref: "bad", signal: controller.signal }), (error) => {
+    await assert.rejects(completeWorkflow({ workflow_id: "implement", worktree_id: owned.worktree_id, workspace_root: tree, base_ref: "bad", signal: controller.signal }), (error) => {
       assert.equal(error.worktree_cleanup?.state, "removed"); return /stop/.test(error.message);
     });
     await assert.rejects(lstat(tree), { code: "ENOENT" });
@@ -121,9 +149,9 @@ test("aborted completeWorkflow removes an owned linked worktree", async () => {
 test("completion CLI removes an owned tree when its state JSON is invalid", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "implement", return_root: main });
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
     await writeFile(join(tree, "bad.json"), "{");
-    const failure = await run(process.execPath, [join(import.meta.dirname, "../.codex/scripts/harness-workflow-complete.mjs"), "--root", tree, "--workflow", "implement", "--state", "bad.json"]).then(() => null, (error) => error);
+    const failure = await run(process.execPath, [join(import.meta.dirname, "../.codex/scripts/harness-workflow-complete.mjs"), "--root", tree, "--workflow", "implement", "--worktree-id", owned.worktree_id, "--state", "bad.json"]).then(() => null, (error) => error);
     assert.ok(failure);
     assert.equal(JSON.parse(failure.stderr).worktree_cleanup.state, "removed");
     await assert.rejects(lstat(tree), { code: "ENOENT" });
@@ -133,23 +161,23 @@ test("completion CLI removes an owned tree when its state JSON is invalid", asyn
 test("locked worktree cleanup reports its archive and succeeds after unlock", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "locked", return_root: main });
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
     await writeFile(join(tree, "dirty"), "preserve");
     await git(main, "worktree", "lock", "--reason", "test", tree);
-    const failed = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, workflow_id: "locked" });
+    const failed = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, worktree_id: owned.worktree_id });
     assert.equal(failed.state, "failed");
     assert.equal(await readFile(join(failed.recovery_path, "files", "dirty"), "utf8"), "preserve");
     assert.ok(await lstat(tree));
     await git(main, "worktree", "unlock", tree);
-    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, workflow_id: "locked" })).state, "removed");
+    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, worktree_id: owned.worktree_id })).state, "removed");
   } finally { await cleanup(root); }
 });
 
 test("completeWorkflow removes a registered tree after an early invalid-base error", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "implement", return_root: main });
-    await assert.rejects(completeWorkflow({ workflow_id: "implement", workspace_root: tree, base_ref: "bad" }), (error) => {
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
+    await assert.rejects(completeWorkflow({ workflow_id: "implement", worktree_id: owned.worktree_id, workspace_root: tree, base_ref: "bad" }), (error) => {
       assert.equal(error.worktree_cleanup?.state, "removed");
       return /Starting commit SHA/.test(error.message);
     });
@@ -192,10 +220,10 @@ test("normal completion passes gates and removes its owned linked worktree", asy
     await writeFile(join(root, ".codex", "workflows", "minimal.yaml"), "schema_version: 1\nid: minimal\nroles: [runner]\nskills: [alpha]\nhooks:\n  before_complete: []\nstages:\n  - id: run\n    role: runner\n    skill: alpha\n    model_tier: implementation\n    needs: []\n");
     await git(root, "add", ".codex", ".agents"); await git(root, "commit", "-q", "-m", "workflow fixture");
     await git(root, "worktree", "add", "-q", "-b", "session", tree);
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "minimal", return_root: root });
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: root });
     const base = (await git(tree, "rev-parse", "HEAD")).stdout.trim();
     const completeCli = join(import.meta.dirname, "../.codex/scripts/harness-workflow-complete.mjs");
-    const result = await run(process.execPath, [completeCli, "--root", tree, "--workflow", "minimal", "--base-ref", base], { cwd: tree });
+    const result = await run(process.execPath, [completeCli, "--root", tree, "--workflow", "minimal", "--worktree-id", owned.worktree_id, "--base-ref", base], { cwd: tree });
     const completion = JSON.parse(result.stdout);
     assert.equal(completion.state, "completed");
     assert.equal(completion.completion_kind, "workflow_completed");
@@ -209,8 +237,8 @@ test("unowned linked and primary worktrees are preserved; active ownership is ex
   const { root, main, tree } = await fixture();
   try {
     assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main })).state, "not-owned");
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "one", return_root: main });
-    await assert.rejects(registerWorkflowWorktree({ workspace_root: tree, workflow_id: "two", return_root: main }), /another active workflow/);
+    const owner = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
+    assert.equal((await registerWorkflowWorktree({ workspace_root: tree, return_root: main })).worktree_id, owner.worktree_id);
     assert.equal((await finishWorkflowWorktree({ workspace_root: main, repository_root: main })).state, "not-owned");
     assert.equal(await lstat(main).then(() => true), true);
   } finally { await cleanup(root); }
@@ -219,13 +247,13 @@ test("unowned linked and primary worktrees are preserved; active ownership is ex
 test("branch tampering refuses cleanup and symlinks are archived without dereferencing", async () => {
   const { root, main, tree } = await fixture();
   try {
-    await registerWorkflowWorktree({ workspace_root: tree, workflow_id: "flow", return_root: main });
+    const owned = await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
     await git(tree, "checkout", "-b", "tampered");
-    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main })).state, "failed");
+    assert.equal((await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, worktree_id: owned.worktree_id })).state, "failed");
     await git(tree, "checkout", "workflow");
     const outside = join(root, "outside"); await writeFile(outside, "secret");
     await symlink(outside, join(tree, "link"));
-    const result = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, workflow_id: "flow" });
+    const result = await finishWorkflowWorktree({ workspace_root: tree, repository_root: main, worktree_id: owned.worktree_id });
     assert.equal(result.state, "removed");
     assert.equal(await readlink(join(result.recovery_path, "files", "link")), outside);
   } finally { await cleanup(root); }
