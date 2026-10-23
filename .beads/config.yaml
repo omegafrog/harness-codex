@@ -73,3 +73,9 @@
 
 sync:
     remote: "git+ssh://git@github.com/omegafrog/harness-codex.git"
+backup:
+    # interval: 1s
+
+# interval: 1s
+
+# interval: 1s

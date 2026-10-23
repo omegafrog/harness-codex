@@ -11,7 +11,7 @@ description: GitHub의 alexgreensh/attention-span 스타일 스킬을 찾아 설
 
 - 사용자가 검색·목록을 요청하면 저장소 트리의 `skills/` 아래에서 `SKILL.md`가 있는 디렉터리를 찾아 이름과 설명을 보여준다.
 - 설치 대상이 모호하면 먼저 목록을 제시하고 어떤 스킬을 설치할지 묻는다.
-- 설치 위치가 모호하면 프로젝트 범위(`.agents/skills/`)를 기본으로 제안한다. 사용자 전역 설치는 `skill-installer`가 정한 `$CODEX_HOME/skills/`를 사용하며, `CODEX_HOME`이 없으면 기본값은 `~/.codex/skills/`이다. 사용자가 이미 위치를 지정했으면 그대로 따른다.
+- 설치 위치가 모호하면 프로젝트 범위(`.agents/skills/`)를 기본으로 제안한다. 사용자 전역 설치는 `skill-installer`가 정한 `$CODEX_HOME/skills/`를 사용하며, `CODEX_HOME`이 없으면 기본값은 `~/.agents/skills/`이다. 사용자가 이미 위치를 지정했으면 그대로 따른다.
 - `attention-kind`, `spartan`, `rundown`은 응답 스타일이다. `tldr`은 사용자가 지정한 내용을 요약하는 작업 스킬이다.
 
 ## GitHub에서 찾기
@@ -26,7 +26,7 @@ https://api.github.com/repos/alexgreensh/attention-span/git/trees/main?recursive
 
 ## 설치 및 업데이트
 
-사용자가 선택한 스킬만 설치한다. 설치 위치는 프로젝트 `.agents/skills/<slug>/` 또는 사용자 `$CODEX_HOME/skills/<slug>/`이다. `CODEX_HOME`이 없으면 전역 기본 경로는 `~/.codex/skills/<slug>/`이다.
+사용자가 선택한 스킬만 설치한다. 설치 위치는 프로젝트 `.agents/skills/<slug>/` 또는 사용자 `$CODEX_HOME/skills/<slug>/`이다. `CODEX_HOME`이 없으면 전역 기본 경로는 `~/.agents/skills/<slug>/`이다.
 
 1. Codex 환경에 `skill-installer`가 있으면 해당 스킬의 GitHub 설치 절차를 사용해 `alexgreensh/attention-span`의 `skills/<slug>`를 지정된 위치에 설치한다.
 2. 설치 도구를 사용할 수 없으면 공식 GitHub 원본의 `skills/<slug>/SKILL.md`를 받아 대상 폴더에 둔다. 원본의 YAML frontmatter와 `disable-model-invocation` 설정을 보존한다.
