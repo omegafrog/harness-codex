@@ -1,11 +1,11 @@
 schema_version: 1
 id: spec-me
 roles: [spec_document_writer, diagram_creator, architecture_review_lead, code_researcher, spec_adversarial_reviewer]
-skills: [sync-contracts, session-worktree, spec-me, product-spec, code-research, domain-modeling, ddd-design, codebase-design, architecture-spec, plantuml-diagrams, architecture-review, spec-review]
+skills: [session-worktree, spec-me, product-spec, code-research, domain-modeling, ddd-design, codebase-design, architecture-spec, plantuml-diagrams, architecture-review, spec-review]
 hooks:
   before_dispatch: [session_worktree, tracker_sync]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [tracker_sync, contract_docs, spec_reviews]
+  before_complete: [tracker_sync, spec_reviews]
   after_merge: []
 stages:
   - id: product

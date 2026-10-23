@@ -58,6 +58,31 @@ test("doctor reports project readiness separately from a valid workflow", async 
   assert.equal(report.diagnostics[0].readiness.status, "blocked");
 });
 
+test("doctor identifies a canonical-contract gate declared on a non-final workflow", async () => {
+  const root = await makeProject();
+  await writeFile(join(root, ".codex", "workflows", "spec-me.yaml"), `
+schema_version: 1
+id: spec-me
+roles: [reviewer]
+skills: [review]
+hooks:
+  before_complete: [contract_docs]
+stages:
+  - id: review
+    role: reviewer
+    skill: review
+    model_tier: low
+    needs: []
+`, "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+  const gateDiagnostic = report.diagnostics.find((entry) => entry.code === "completion_gate_scope");
+
+  assert.equal(gateDiagnostic?.completion_kind, "spec_ready_for_planning");
+  assert.match(gateDiagnostic?.message, /ignores that gate/);
+  assert.equal(gateDiagnostic?.severity, "warning");
+});
+
 test("doctor reports broken references, stale legacy skills, and permission conflicts", async () => {
   const root = await makeProject();
   await writeFile(join(root, ".codex", "workflows", "broken.yaml"), `

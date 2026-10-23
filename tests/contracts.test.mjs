@@ -106,17 +106,17 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
     await mkdir(join(root, ".codex/internal-skills/sync-contracts"), { recursive: true });
     await writeFile(join(root, ".codex/agents/runner.toml"), "# local runner\n");
     await writeFile(join(root, ".codex/internal-skills/sync-contracts/GUIDE.md"), "# local skill\n");
-    const workflowPath = join(root, ".codex/workflows/minimal.yaml");
-    const workflow = (checks) => `schema_version: 1\nid: minimal\nroles: [runner]\nskills: [sync-contracts]\nhooks:\n  before_complete: [${checks}]\nstages:\n  - id: run\n    role: runner\n    skill: sync-contracts\n    model_tier: implementation\n    needs: []\n`;
+    const workflowPath = join(root, ".codex/workflows/frontend-design.yaml");
+    const workflow = (checks) => `schema_version: 1\nid: frontend-design\nroles: [runner]\nskills: [sync-contracts]\nhooks:\n  before_complete: [${checks}]\nstages:\n  - id: run\n    role: runner\n    skill: sync-contracts\n    model_tier: implementation\n    needs: []\n`;
     await writeFile(workflowPath, workflow("contract_docs"));
     const { stdout: base } = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
     const baseRef = base.trim();
-    const run = (args = ["--root", root, "--workflow", "minimal", "--base-ref", baseRef], cwd = root) => spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8" });
+    const run = (args = ["--root", root, "--workflow", "frontend-design", "--base-ref", baseRef], cwd = root) => spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8" });
 
     const passed = run();
     assert.equal(passed.status, 0, passed.stderr);
     assert.equal(JSON.parse(passed.stdout).state, "completed");
-    const firstJournal = (await readFile(sessionOutputPath(root, `runtime/workflow-completion/minimal-${baseRef}.jsonl`), "utf8")).trim().split("\n").map(JSON.parse);
+    const firstJournal = (await readFile(sessionOutputPath(root, `runtime/workflow-completion/frontend-design-${baseRef}.jsonl`), "utf8")).trim().split("\n").map(JSON.parse);
     assert.ok(firstJournal.some((event) => event.type === "workflow_completion" && event.payload.state === "completed"));
 
     await writeFile(join(root, "src/app.mjs"), "export const app = 'stale';\n");
@@ -124,8 +124,8 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
     assert.equal(stale.status, 1);
     assert.equal(JSON.parse(stale.stdout).state, "in-progress");
     assert.equal(JSON.parse(stale.stdout).verdict.checks.find((check) => check.rule_id === "contract_docs").status, "fail");
-    assert.match(run(["--root", root, "--workflow", "minimal"]).stderr, /Starting commit SHA is required/);
-    assert.match(run(["--root", root, "--workflow", "minimal", "--base-ref", baseRef], process.cwd()).stderr, /Workspace preflight failed/);
+    assert.match(run(["--root", root, "--workflow", "frontend-design"]).stderr, /Starting commit SHA is required/);
+    assert.match(run(["--root", root, "--workflow", "frontend-design", "--base-ref", baseRef], process.cwd()).stderr, /Workspace preflight failed/);
 
     await sealContracts({ workspace_root: root, change_summary: "영향 검토", no_contract_change: "구현 변경의 계약 영향 검토 완료" });
     const e2eStatePath = sessionOutputPath(root, "state/e2e-learning.json");
@@ -136,7 +136,7 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
       verification_path: "verification/checkout.test.mjs", prevention_paths: ["src/checkout.mjs"],
     }], null]) {
       await writeFile(e2eStatePath, JSON.stringify({ tests: { status, e2e_failures } }));
-      const blocked = run(["--root", root, "--workflow", "minimal", "--base-ref", baseRef, "--state", "state/e2e-learning.json"]);
+      const blocked = run(["--root", root, "--workflow", "frontend-design", "--base-ref", baseRef, "--state", "state/e2e-learning.json"]);
       assert.equal(blocked.status, expectedStatus, blocked.stderr);
       const result = JSON.parse(blocked.stdout);
       assert.equal(result.state, status === "passed" ? "completed" : "in-progress");
@@ -148,7 +148,7 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(JSON.parse(removed.stdout).state, "completed");
     assert.ok(JSON.parse(removed.stdout).verdict.checks.some((check) => check.rule_id === "contract_docs"));
-    const journal = (await readFile(sessionOutputPath(root, `runtime/workflow-completion/minimal-${baseRef}.jsonl`), "utf8")).trim().split("\n").map(JSON.parse);
+    const journal = (await readFile(sessionOutputPath(root, `runtime/workflow-completion/frontend-design-${baseRef}.jsonl`), "utf8")).trim().split("\n").map(JSON.parse);
     assert.ok(journal.some((event) => event.type === "workflow_completion" && event.payload.state === "completed"));
     assert.ok(journal.some((event) => event.type === "workflow_completion" && event.payload.state === "in-progress"));
   } finally { await cleanup(); }
@@ -189,6 +189,7 @@ test("installed completion CLI blocks spec-me without independent reviews and re
     const reviewed = run(["--state", "state/reviews.json"]);
     assert.equal(reviewed.status, 0, reviewed.stderr);
     assert.equal(JSON.parse(reviewed.stdout).state, "completed");
+    assert.equal(JSON.parse(reviewed.stdout).completion_kind, "spec_ready_for_planning");
 
     const workflowPath = join(root, ".codex/workflows/spec-me.yaml");
     const installedWorkflow = await readFile(workflowPath, "utf8");
@@ -205,6 +206,15 @@ test("installed completion CLI blocks spec-me without independent reviews and re
     await writeFile(sessionOutputPath(root, "state/valid.json"), JSON.stringify({ ticket_id: ticketId, spec_reviews }));
     const statePassed = run(["--state", "state/valid.json"]);
     assert.equal(statePassed.status, 0, statePassed.stderr);
+    assert.equal(JSON.parse(statePassed.stdout).completion_kind, "spec_ready_for_planning");
+
+    const toTicketWorkflowPath = join(root, ".codex/workflows/to-ticket.yaml");
+    const toTicketWorkflow = await readFile(toTicketWorkflowPath, "utf8");
+    await writeFile(toTicketWorkflowPath, toTicketWorkflow.replace("before_complete: [", "before_complete: [contract_docs, "));
+    const toTicket = spawnSync(process.execPath, [installedCli, "--root", root, "--workflow", "to-ticket", "--base-ref", baseRef], { cwd: root, encoding: "utf8" });
+    assert.equal(toTicket.status, 1);
+    assert.equal(JSON.parse(toTicket.stdout).completion_kind, "plan_set_ready_for_implementation");
+    assert.ok(!JSON.parse(toTicket.stdout).verdict.checks.some((check) => check.rule_id === "contract_docs"));
     await symlink("valid.json", sessionOutputPath(root, "state/linked.json"));
     const linked = run(["--state", "state/linked.json"]);
     assert.equal(linked.status, 1);

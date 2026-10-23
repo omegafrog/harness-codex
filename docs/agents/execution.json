@@ -109,6 +109,7 @@
         "src/installer/local-exclude.mjs",
         ".codex/internal-skills/implement/GUIDE.md",
         "src/doctor/doctor.mjs",
+        "src/workflow/completion.mjs",
         "docs/agents/EXEC.md",
         "src/workflow/project-readiness.mjs",
         "src/workflow/execution.mjs",
@@ -120,7 +121,8 @@
         ".codex/skills/victorialogs-local-setup/assets/compose.yaml",
         ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml",
         "tests/test_project_local_installer.py",
-        "tests/installer_update.test.mjs"
+        "tests/installer_update.test.mjs",
+        "tests/doctor.test.mjs"
       ],
       "prepare": [],
       "verify_config": [
@@ -237,7 +239,9 @@
         "src/workflow/project-readiness.mjs",
         "src/workflow/execution.mjs",
         "src/gates/lifecycle.mjs",
-        ".codex/scripts/workspace-preflight-cli.mjs"
+        ".codex/scripts/workspace-preflight-cli.mjs",
+        "tests/project_readiness.test.mjs",
+        "tests/installer_update.test.mjs"
       ],
       "prepare": [],
       "verify_config": [
@@ -333,10 +337,13 @@
         "src/workflow/plan-traceability.mjs",
         "src/gates/lifecycle.mjs",
         "src/workflow/completion.mjs",
+        "src/workflow/project-readiness.mjs",
         "src/wrapper/dispatch.mjs",
         "src/wrapper/scheduler.mjs",
         "src/wrapper/reconciliation.mjs",
         "tests/plan_traceability.test.mjs",
+        "tests/project_readiness.test.mjs",
+        "tests/installer_update.test.mjs",
         "tests/wrapper_dispatch.test.mjs",
         "tests/workflow_worktrees.test.mjs",
         "docs/agents/EXEC.md"
@@ -374,7 +381,24 @@
         "src/workflow/loader.mjs",
         "tests/internal_skills.test.mjs",
         "tests/workflow_loader.test.mjs",
-        "docs/agents/EXEC.md"
+        "tests/contracts.test.mjs",
+        "tests/workflow_worktrees.test.mjs",
+        "docs/agents/EXEC.md",
+        "AGENTS.md",
+        ".codex/internal-skills/session-worktree/GUIDE.md",
+        ".codex/internal-skills/plan-review/GUIDE.md",
+        ".codex/internal-skills/sync-contracts/GUIDE.md",
+        ".codex/skills/spec-me/SKILL.md",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/skills/to-ticket/references/traceability-ledger.md",
+        ".codex/workflows/spec-me.yaml",
+        ".codex/workflows/to-ticket.yaml",
+        ".codex/workflows/code-review.yaml",
+        ".codex/workflows/knowledge-harvest-workflow.yaml",
+        "src/workflow/completion.mjs",
+        "src/gates/lifecycle.mjs",
+        "src/workflow/project-readiness.mjs",
+        ".codex/scripts/workspace-preflight-cli.mjs"
       ],
       "prepare": [],
       "verify_config": [

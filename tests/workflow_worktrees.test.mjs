@@ -49,6 +49,7 @@ for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${out
     assert.match(await git(main, "show-ref", "--verify", result.recovery_ref).then(x => x.stdout), /refs\/harness\/recovery\//);
     await git(main, "gc", "--prune=now");
     const archived = JSON.parse(await readFile(sessionOutputPath(tree, "receipt.json", { repositoryRoot: main }), "utf8"));
+    assert.equal(archived.outcome, outcome);
     const stagedEntry = await git(main, "ls-tree", `${archived.staged_ref}^{tree}`);
     const stagedBlob = stagedEntry.stdout.match(/blob ([a-f0-9]+)/)?.[1];
     assert.ok(stagedBlob);
@@ -174,6 +175,7 @@ test("completeWorkflow requires live plan traceability even when the workflow ho
     const result = await run(process.execPath, ["-e", `import { completeWorkflow } from ${JSON.stringify(new URL("../src/workflow/completion.mjs", import.meta.url).href)}; const result = await completeWorkflow({ workflow_id: "implement-wrapper", workspace_root: process.cwd(), base_ref: ${JSON.stringify(baseRef)}, state: {} }); console.log(JSON.stringify(result));`], { cwd: tree, encoding: "utf8" });
     const completion = JSON.parse(result.stdout);
     assert.equal(completion.state, "in-progress");
+    assert.equal(completion.completion_kind, "feature_implemented");
     assert.ok(completion.verdict.checks.some((check) => check.rule_id === "plan_traceability" && check.status === "blocked"));
   } finally { await cleanup(root); }
 });
@@ -196,6 +198,7 @@ test("normal completion passes gates and removes its owned linked worktree", asy
     const result = await run(process.execPath, [completeCli, "--root", tree, "--workflow", "minimal", "--base-ref", base], { cwd: tree });
     const completion = JSON.parse(result.stdout);
     assert.equal(completion.state, "completed");
+    assert.equal(completion.completion_kind, "workflow_completed");
     assert.equal(completion.verdict.status, "pass");
     assert.equal(completion.worktree_cleanup.state, "removed");
     await assert.rejects(lstat(tree), { code: "ENOENT" });

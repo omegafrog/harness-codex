@@ -85,7 +85,7 @@ async function collectInputs(root, planSetId, ledger, { trackerPort = null, stri
     try { inputs[path] = (await safeFile(root, path)).sha256; }
     catch (error) { if (strict || error.code !== 'ENOENT') throw error; inputs[path] = null; }
   }
-  inputs[`${base}/traceability.json#planning`] = hash(JSON.stringify({ schema_version: ledger.schema_version, plan_set_id: ledger.plan_set_id, ticket_id: ledger.ticket_id, spec_paths: ledger.spec_paths, product_spec_path: ledger.product_spec_path || null, architecture_spec_path: ledger.architecture_spec_path || null, requirements: ledger.requirements, plans: ledger.plans }));
+  inputs[`${base}/traceability.json#planning`] = hash(JSON.stringify({ schema_version: ledger.schema_version, plan_set_id: ledger.plan_set_id, ticket_id: ledger.ticket_id, spec_paths: ledger.spec_paths, product_spec_path: ledger.product_spec_path || null, architecture_spec_path: ledger.architecture_spec_path || null, requirements: ledger.requirements, plans: ledger.plans, handoffs: ledger.handoffs || [] }));
   for (const plan of ledger.plans || []) {
     const body = canonicalBodies.has(plan.id) ? canonicalBodies.get(plan.id) : await canonicalPlanBody(root, plan, trackerPort, strict);
     inputs[`${base}/plans/${plan.id}#canonical`] = body === null ? null : hash(normalizePlanBody(body));
@@ -110,7 +110,7 @@ export async function snapshotPlanTraceability({ root, planSetId, trackerPort = 
   const ledgerPath = `${base}/traceability.json`;
   const ledgerFile = await safeFile(root, ledgerPath);
   const ledger = JSON.parse(ledgerFile.content.toString('utf8'));
-  requireValue(ledger.schema_version === 1 && ledger.plan_set_id === planSetId, 'Unsupported or mismatched traceability ledger');
+  requireValue([1, 2].includes(ledger.schema_version) && ledger.plan_set_id === planSetId, 'Unsupported or mismatched traceability ledger');
   requireValue(Array.isArray(ledger.spec_paths) && ledger.spec_paths.length > 0, 'spec_paths must list current review inputs');
   requireValue(Array.isArray(ledger.requirements) && ledger.requirements.length > 0, 'Requirements inventory is empty');
   requireValue(Array.isArray(ledger.plans) && ledger.plans.length > 0, 'Plan inventory is empty');
@@ -154,6 +154,38 @@ export async function snapshotPlanTraceability({ root, planSetId, trackerPort = 
     for (const id of req.plan_ids) requireValue(planIds.has(id) && ledger.plans.find((plan) => plan.id === id).requirement_ids.includes(`${req.source_path}#${req.id}`), `Requirement ${req.id} has dangling plan mapping ${id}`);
     if (req.plan_ids.length > 1) requireValue(req.integration_owner_plan_id && req.plan_ids.includes(req.integration_owner_plan_id) && typeof req.integration_verification === 'string' && req.integration_verification.trim(), `Cross-plan requirement ${req.id} needs integration owner and scenario`);
   }
+  if (ledger.schema_version === 2) {
+    requireValue(Array.isArray(ledger.handoffs), 'Version 2 traceability ledgers need a handoffs list');
+    for (const req of ledger.requirements) {
+      requireValue(Array.isArray(req.coverage), `Requirement ${req.id} needs explicit plan coverage`);
+      if (req.disposition === 'excluded') {
+        requireValue(req.coverage.length === 0, `Excluded requirement ${req.id} cannot have plan coverage`);
+        continue;
+      }
+      const coveredPlans = req.coverage.map((entry) => entry?.plan_id);
+      requireValue(coveredPlans.length === req.plan_ids.length && new Set(coveredPlans).size === coveredPlans.length && req.plan_ids.every((id) => coveredPlans.includes(id)), `Requirement ${req.id} must map criteria and verification for every owning plan`);
+      for (const entry of req.coverage) {
+        const plan = ledger.plans.find((item) => item.id === entry.plan_id);
+        requireValue(plan && Array.isArray(entry.acceptance_criteria) && entry.acceptance_criteria.length > 0 && entry.acceptance_criteria.every((criterion) => plan.acceptance_criteria.includes(criterion)), `Requirement ${req.id} needs matching acceptance criteria in ${entry.plan_id}`);
+        requireValue(Array.isArray(entry.verification_cases) && entry.verification_cases.length > 0 && entry.verification_cases.every((scenario) => plan.verification_cases.includes(scenario)), `Requirement ${req.id} needs matching verification cases in ${entry.plan_id}`);
+      }
+      if (req.plan_ids.length > 1) {
+        const owner = ledger.plans.find((plan) => plan.id === req.integration_owner_plan_id);
+        requireValue(owner?.verification_cases.includes(req.integration_verification), `Cross-plan requirement ${req.id} integration scenario must be a verification case of its owner`);
+      }
+    }
+    const handoffIds = new Set();
+    for (const handoff of ledger.handoffs) {
+      requireValue(handoff && ID.test(handoff.id || '') && !handoffIds.has(handoff.id), `Invalid or duplicate handoff ID: ${handoff?.id}`);
+      handoffIds.add(handoff.id);
+      const producer = ledger.plans.find((plan) => plan.id === handoff.producer_plan_id);
+      const consumer = ledger.plans.find((plan) => plan.id === handoff.consumer_plan_id);
+      requireValue(producer && consumer && producer.id !== consumer.id, `Handoff ${handoff.id} needs distinct producer and consumer plans`);
+      requireValue(typeof handoff.produces === 'string' && handoff.produces.trim() && producer.acceptance_criteria.includes(handoff.produces), `Handoff ${handoff.id} producer responsibility must match its acceptance criteria`);
+      requireValue(typeof handoff.consumes === 'string' && handoff.consumes.trim() && consumer.acceptance_criteria.includes(handoff.consumes), `Handoff ${handoff.id} consumer responsibility must match its acceptance criteria`);
+      requireValue(typeof handoff.verification_case === 'string' && consumer.verification_cases.includes(handoff.verification_case), `Handoff ${handoff.id} needs a consumer verification case`);
+    }
+  }
   const planIndex = await safeFile(root, `${base}/plans.md`);
   for (const plan of ledger.plans) {
     const body = canonicalBodies.get(plan.id);
@@ -178,6 +210,7 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
   try {
     requireValue(['planning', 'dispatch', 'completion'].includes(phase), 'Valid traceability phase is required');
     const snapshot = await snapshotPlanTraceability({ root, planSetId, trackerPort });
+    if (phase === 'planning') requireValue(snapshot.ledger.schema_version === 2, 'New plans must use traceability schema_version 2 with explicit requirement coverage');
     checkReview(snapshot, snapshot.ledger);
     if (phase === 'dispatch') requireValue(snapshot.ledger.plans.some((plan) => plan.id === planId), `Dispatch plan ${planId || '(missing)'} is not in the reviewed plan set`);
     if (phase === 'completion') {

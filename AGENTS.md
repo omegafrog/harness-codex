@@ -54,7 +54,7 @@ This project has a Beads workspace for durable tasks and shared handoff. `to-tic
 - Version/inventory: `docs/contracts/manifest.json`
 - Clickable diagram/detail view: `docs/contracts/architecture.html`
 
-모든 정상 workflow 종료는 `sync-contracts` 스킬과 실제 `contract_docs` 검사를 적용한다. 다음 설계는 위 현행 계약·용어 index·Context map과 source를 먼저 읽는다. ticket Spec은 변경 이력이며 통합 계약을 대신하지 않는다. 문서·모델·용어·diagram·source가 어긋나면 완료/Done/종속 plan 해제를 차단한다.
+`spec-me`와 `to-ticket`은 제안·계획 단계이므로 ticket-scoped Spec과 계획만 갱신하고 `docs/contracts/`는 수정하거나 seal하지 않는다. 구현 ticket이 모두 완료·통합된 최종 `implement-wrapper` 완료와 독립 최종 구현 workflow에서만 `sync-contracts`와 실제 `contract_docs` 검사를 수행한다. 구현 중에는 contract snapshot drift를 preflight에서 명시적으로 deferred로 기록하되, 구조 오류·실행 준비 실패는 계속 차단한다. 다음 설계는 현행 계약·용어 index·Context map과 source를 먼저 읽는다. ticket Spec은 변경 이력이며 통합 계약을 대신하지 않는다. 문서·모델·용어·diagram·source가 어긋나면 최종 완료/Done/종속 plan 해제를 차단한다.
 
 ## Tracker lifecycle
 
@@ -63,6 +63,8 @@ This project has a Beads workspace for durable tasks and shared handoff. `to-tic
 ## Workflow worktree 종료
 
 workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 공통 finish로 관리한다. 완료·실패·사용자 중단·handoff에서 writer/agent/서버를 종료하고 기록을 보존·검증한 뒤 worktree를 제거한다. branch/recovery는 유지하고 primary/비소유 workspace는 지우지 않는다. cleanup 실패는 완료 실패다. 다음 진입에서는 pending receipt를 확인하고 중단된 실행만 복구 정리한다.
+
+공통 completion receipt의 `state=completed`는 `completion_kind`가 지정하는 단계 산출물만 완료됐다는 뜻이다: Spec은 `spec_ready_for_planning`, 계획 발행은 `plan_set_ready_for_implementation`, 개별 plan은 `plan_implemented`, 최종 통합은 `feature_implemented`. 대기 중에는 상태를 `waiting`으로 두고 session/worktree를 유지한다. handoff·취소·실패는 각각 worktree receipt의 `outcome=handoff|aborted|failed`로 남기며 `completed`로 치환하지 않는다.
 
 ## Session output
 

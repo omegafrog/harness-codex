@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import test from 'node:test';
 import { inspectProjectReadiness } from '../src/workflow/project-readiness.mjs';
 import { LifecycleGateRegistry, runLifecycleHook } from '../src/gates/lifecycle.mjs';
+import { makeContractsFixture } from './contracts-fixture.mjs';
 
 const execFileAsync = promisify(execFile);
 const sourceRoot = new URL('..', import.meta.url).pathname;
@@ -45,9 +46,47 @@ test('validates profile shape without executing arbitrary configured commands', 
   await assert.rejects(readFile(join(root, 'must-not-run')));
 });
 
-test('the real canonical project fixture passes readiness', async () => {
-  const result = await inspectProjectReadiness({ workspace_root: sourceRoot });
-  assert.equal(result.status, 'pass', JSON.stringify(result.next_steps));
+test('the real project defers only its existing source snapshot drift during implementation readiness', async () => {
+  const strict = await inspectProjectReadiness({ workspace_root: sourceRoot });
+  assert.equal(strict.status, 'blocked');
+  assert.equal(strict.contracts.reason, 'contracts_out_of_sync');
+  assert.deepEqual(strict.contracts.violations, ['Contract/source snapshot changed; reconcile and seal']);
+  const implementation = await inspectProjectReadiness({ workspace_root: sourceRoot, deferContractSync: true });
+  assert.equal(implementation.status, 'pass', JSON.stringify(implementation));
+  assert.equal(implementation.contract_sync.status, 'deferred');
+});
+
+test('implementation preflight defers only a source snapshot drift until final contract synchronization', async (t) => {
+  const { root, cleanup } = await makeContractsFixture();
+  t.after(cleanup);
+  await mkdir(join(root, 'docs/agents'), { recursive: true });
+  await writeFile(join(root, 'docs/agents/EXEC.md'), 'Execution instructions\n');
+  await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({ schema_version: 1, profiles: { focused: profile(['node', '-e', 'process.exit(0)']) } }));
+  await writeFile(join(root, 'src/app.mjs'), "export const app = 'implementation changes contract snapshot';\n");
+
+  const strict = await inspectProjectReadiness({ workspace_root: root });
+  assert.equal(strict.status, 'blocked');
+  assert.equal(strict.contracts.reason, 'contracts_out_of_sync');
+
+  const deferred = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
+  assert.equal(deferred.status, 'pass');
+  assert.equal(deferred.reason, 'project_ready_contract_sync_deferred');
+  assert.equal(deferred.contract_sync.status, 'deferred');
+  assert.equal(deferred.contract_sync.reason, 'sync_after_implementation_complete');
+
+  const gate = await runLifecycleHook({
+    hook: 'before_dispatch',
+    registry: new LifecycleGateRegistry({ hooks: { before_dispatch: ['project_readiness'], before_handoff: [], before_complete: [], after_merge: [] } }),
+    state: { workspace_root: root },
+    eventWriter: { append: async () => ({ seq: 1 }) },
+  });
+  assert.equal(gate.status, 'pass');
+  assert.equal(gate.checks.find((entry) => entry.rule_id === 'project_readiness').details.contract_sync.status, 'deferred');
+
+  await writeFile(join(root, 'docs/contracts/manifest.json'), '{');
+  const invalid = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
+  assert.equal(invalid.status, 'blocked');
+  assert.equal(invalid.contracts.reason, 'contracts_invalid');
 });
 
 test('dispatch lifecycle recomputes readiness instead of trusting claimed pass evidence', async (t) => {

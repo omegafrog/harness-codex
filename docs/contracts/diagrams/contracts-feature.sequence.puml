@@ -16,14 +16,20 @@ participant "Owned Git worktree" as worktree
 cli -> complete : workflow_id, workspace_root, base_ref, state
 complete -> complete : workspace preflight
 complete -> load : workflow manifest 로드
-complete -> complete : before_complete에 contract_docs 강제 포함
+complete -> complete : workflow ID에 따라 필수 완료 gate 구성
 complete -> lifecycle : before_complete 실행
-lifecycle -> contractGate : contract_docs 검사
-contractGate -> inspect : workspace_root, contract_base_ref
-inspect --> contractGate : pass 또는 fail + violations
-contractGate --> lifecycle : gate verdict
+alt 최종 구현 workflow
+  lifecycle -> contractGate : contract_docs 검사
+  contractGate -> inspect : workspace_root, contract_base_ref
+  inspect --> contractGate : pass 또는 fail + violations
+  contractGate --> lifecycle : gate verdict
+else Spec·계획·개별 plan·review·knowledge workflow
+  note over lifecycle,contractGate
+    contract_docs gate는 manifest 선언 여부와 관계없이 생략한다.
+  end note
+end
 lifecycle --> complete : pass 또는 fail verdict
-complete -> journal : workflow_completion 결과 append
+complete -> journal : workflow_completion(completion_kind, state) append
 ... 모든 성공·실패 경로의 finally ...
 complete -> journal : close()
 complete -> finish : finishWorkflowWorktree(outcome)
@@ -38,14 +44,19 @@ else unowned sequential cleanup
 end
 finish --> complete : removed / failed / not-owned
 alt verdict가 pass
-  complete --> cli : state=completed 또는 cleanup 실패 시 in-progress
+  complete --> cli : completion_kind + state=completed 또는 cleanup 실패 시 in-progress
   cli --> 사용자 : 결과 출력, exit code 0
 else verdict가 fail 또는 blocked
   complete --> cli : state=in-progress, verdict, receipt 경로
   cli --> 사용자 : 결과 출력, exit code 1
 end
 note right of journal
+  Spec·계획·plan·기능 구현은 completion_kind로 구분한다.
   pass/fail 결과 모두 journal에 기록
+end note
+note over complete,finish
+  waiting은 종료하지 않고 세션을 유지한다.
+  handoff·aborted·failed는 worktree receipt outcome으로 구분한다.
 end note
 note right of archive
   SIGKILL 중에는 finally가 실행되지 않을 수 있다.

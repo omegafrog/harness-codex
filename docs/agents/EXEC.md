@@ -101,7 +101,7 @@ node .codex/scripts/harness-workflow-worktree.mjs create --root /absolute/reposi
 node .codex/scripts/harness-workflow-worktree.mjs finish --root /absolute/owned-worktree --repository /absolute/repository --workflow spec-me --outcome aborted
 ```
 
-`create`의 workspace/branch/return_root를 보존한다. register를 별도로 사용할 때는 workflow가 직접 만든 linked worktree만 명시적으로 등록한다. Git add 전 reservation을 기록하므로 설치/preflight 이전 오류도 추적할 수 있다. `completeWorkflow`는 검증·기록의 outer finally에서 finish를 실행한다. 중간 종료·사용자 취소·설치 실패·handoff는 소유 agent/서버/writer 종료를 확인한 뒤 finish를 호출한다. 하위 단계/subagent는 상위 공유 session worktree를 정리하지 않는다.
+`create`의 workspace/branch/return_root를 보존한다. register를 별도로 사용할 때는 workflow가 직접 만든 linked worktree만 명시적으로 등록한다. Git add 전 reservation을 기록하므로 설치/preflight 이전 오류도 추적할 수 있다. `completeWorkflow` receipt의 `state=completed`는 `completion_kind`에 지정된 단계만 완료한다: Spec 검토(`spec_ready_for_planning`), 계획 발행(`plan_set_ready_for_implementation`), 단일 plan 구현(`plan_implemented`), 최종 통합 구현(`feature_implemented`). 중간 종료·사용자 취소·설치 실패·handoff는 소유 agent/서버/writer 종료를 확인한 뒤 finish하고 각각 `failed`·`aborted`·`handoff` outcome으로 기록한다. 질문/외부 조건을 기다리는 `waiting`은 workflow 종료가 아니며 worktree를 유지한다. 하위 단계/subagent는 상위 공유 session worktree를 정리하지 않는다.
 
 복구 자료는 Git common directory의 `harness-workflows/sessions/<workspace-hash>/recovery/<id>`에 생성된다. 상위 directory는 0700이며 files/에 tracked/untracked/ignored 데이터를 보존한다. local runtime 증거는 같은 세션 디렉터리에 그대로 남아 경로가 바뀌지 않는다. index 파일과 HEAD/staged blob의 보호 ref도 유지한다. 민감한 ignored 파일이 포함될 수 있으므로 commit/push/외부 게시하지 않는다. cache도 포함되므로 보관 공간이 필요하다. 백업 공간이 부족하면 삭제하지 않고 실패로 보고한다.
 
@@ -176,7 +176,7 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 
 ## 구현 준비 회귀 검증
 
-`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. `tracker-lifecycle-check`는 tracker lifecycle/CLI 회귀, `plan-traceability-check`는 검토 snapshot의 현재성과 dispatch gate 회귀를 실행한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. `tracker-lifecycle-check`는 tracker lifecycle/CLI 회귀, `plan-traceability-check`는 검토 snapshot의 현재성과 dispatch gate 회귀를 실행한다. 구현 준비 시 source snapshot drift만 마지막 통합 계약 동기화까지 지연하며, 계약 bundle 오류와 실행 준비 실패는 계속 차단한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.
 
 ## E2E 실패의 재발 방지
 
@@ -186,7 +186,7 @@ E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 
 
 ## 명세·계획·구현 추적 회귀 검사
 
-`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, plan coverage, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다.
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, 요구사항별 수용 기준·검증 사례 연결, plan 간 producer/consumer handoff, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다. 연결된 문장의 의미상 충족 여부는 독립 plan review가 확인한다.
 
 ## VictoriaLogs 개발 관측성 설치
 

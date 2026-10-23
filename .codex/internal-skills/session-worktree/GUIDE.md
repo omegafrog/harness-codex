@@ -2,7 +2,7 @@
 
 # Session worktree
 
-workflow의 소유 worktree를 첫 단계 전에 준비하고, 정상 완료·실패·사용자 중단·top-level handoff가 끝날 때 반드시 정리한다. 내부 단계 전환이나 단순 질문 대기는 종료가 아니다. 사용자 취소/중단으로 workflow를 끝내면 `aborted`로 정리한다.
+workflow의 소유 worktree를 첫 단계 전에 준비하고, 정상 완료·실패·사용자 중단·top-level handoff가 끝날 때 반드시 정리한다. `completed`는 해당 workflow의 completion kind가 뜻하는 산출물만 완료됐다는 뜻이지, 다음 workflow나 기능 구현 전체가 끝났다는 뜻이 아니다. 내부 단계 전환이나 단순 질문 대기는 종료가 아니다. 사용자 결정·외부 조건을 기다리면 상태를 `waiting`으로 기록하고 세션/worktree를 유지한다. 사용자 취소/중단으로 workflow를 끝내면 `aborted`로 정리한다.
 
 ## 준비
 
@@ -19,6 +19,7 @@ workflow의 소유 worktree를 첫 단계 전에 준비하고, 정상 완료·�
 
 - 정상 완료는 `harness-workflow-complete.mjs`를 호출한다. 이 명령은 gate 결과와 관계없이 outer finally에서 소유 worktree를 archive·검증·제거한다. cleanup 실패 시 정상 완료로 보고하지 않는다.
 - 실패·중간 중단·사용자 취소·설치 실패·handoff 시 소유 child agent/서버/쓰기 작업을 먼저 종료하고 결과를 기다린다. 실패 원인과 재개 지점을 기록한 뒤 **보존한 return_root를 cwd로** `harness-workflow-worktree.mjs finish --root <session_worktree> --repository <return_root> --workflow <workflow-id> --outcome failed|aborted|handoff`를 실제 실행한다.
+- 종료 receipt의 `outcome`은 `completed`, `failed`, `aborted`, `handoff`를 구분한다. 대기 중에는 finish/cleanup하지 않는다. handoff는 현재 단계 완료가 아니며, recovery 자료와 downstream 재개 경로만 전달한다.
 - 종료 결과의 `state: removed`와 Git 등록 해제를 확인하고 recovery_path·branch·HEAD·return_root를 전달한다. 다음 작업은 삭제된 경로를 쓰지 않는다. downstream은 보존한 branch로 새 worktree를 만든다. branch와 복구 ref는 삭제하지 않는다.
 - tracked/untracked/ignored 파일과 staged index는 세션 디렉터리의 recovery/에 보존한다. journal과 로그는 같은 세션의 원래 경로에 남긴다. tree/HEAD/index 검증 후에만 삭제한다. archive 실패·활성 writer·Git lock 등으로 제거가 실패하면 정확한 경로·오류·재시도 명령을 보고하고 완료하지 않는다. `--force`로 백업 실패를 우회하지 않는다.
 - SIGINT/SIGTERM을 받은 공통 CLI는 안전한 종료 처리를 끝낸다. SIGKILL·전원 종료에서는 즉시 finally를 실행할 수 없다. 소유 receipt와 cleanup lock은 남으므로 다음 진입에서 중단 실행을 확인하고 list→finish로 재시도한다. 잠금 해제나 다른 실행의 중단을 추정하지 않는다.

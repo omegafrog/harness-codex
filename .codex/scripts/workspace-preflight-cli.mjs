@@ -25,7 +25,8 @@ export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd
     const installed = new URL('../harness-runtime/src/workflow/project-readiness.mjs', import.meta.url);
     const source = new URL('../../src/workflow/project-readiness.mjs', import.meta.url);
     const { inspectProjectReadiness } = await import(existsSync(installed) ? installed.href : source.href);
-    result.project_readiness = await inspectProjectReadiness({ workspace_root: result.expected_root });
+    result.project_readiness = await inspectProjectReadiness({ workspace_root: result.expected_root, deferContractSync: true });
+    if (result.project_readiness.contract_sync?.status === "deferred") result.contract_sync = result.project_readiness.contract_sync;
     if (result.project_readiness.status !== 'pass') { result.valid = false; result.reason = result.project_readiness.reason; }
   }
   if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);

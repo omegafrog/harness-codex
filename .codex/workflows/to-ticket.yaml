@@ -1,11 +1,11 @@
 schema_version: 1
 id: to-ticket
 roles: [to_ticket, plan_reviewer]
-skills: [sync-contracts, beads, to-ticket, plan-review]
+skills: [beads, to-ticket, plan-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight, spec_reviews]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [tracker_sync, contract_docs, required_outcome, evidence, plans_index, spec_reviews, plan_traceability]
+  before_complete: [tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_traceability]
   after_merge: []
 stages:
   - id: tickets

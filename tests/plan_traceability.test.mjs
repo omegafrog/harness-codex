@@ -34,9 +34,9 @@ async function fixture() {
     const pathTarget = join(root, path); await mkdir(join(pathTarget, '..'), { recursive: true }); await writeFile(pathTarget, content);
   }
   let ledger = {
-    schema_version: 1, plan_set_id: 'set-9', ticket_id: 'ticket-9',
+    schema_version: 2, plan_set_id: 'set-9', ticket_id: 'ticket-9', handoffs: [],
     spec_paths: [`${spec}/product-spec.md`, `${spec}/architecture-spec.md`],
-    requirements: [{ id: 'BR-38', source_path: `${spec}/product-spec.md`, source_anchor: 'BR-38', statement: 'Prevent uncovered execution rules.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered' }],
+    requirements: [{ id: 'BR-38', source_path: `${spec}/product-spec.md`, source_anchor: 'BR-38', statement: 'Prevent uncovered execution rules.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered', coverage: [{ plan_id: 'plan-a', acceptance_criteria: ['all requirements map'], verification_cases: ['focused test rejects missing coverage'] }] }],
     plans: [{ id: 'plan-a', requirement_ids: [`${spec}/product-spec.md#BR-38`], content_path: `${base}/plan-a.md`, verification_profile: 'focused', acceptance_criteria: ['all requirements map'], counterexamples: ['valid criteria can still miss source rules'], verification_cases: ['focused test rejects missing coverage'] }],
   };
   const ledgerPath = join(root, base, 'traceability.json');
@@ -65,6 +65,59 @@ test('planning traceability validates full source-to-plan coverage and independe
     assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).reason, /independent/);
     f.ledger.review.reviewer_id = 'independent'; f.ledger.plans[0].requirement_ids = []; await f.save();
     assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).reason, /changed|unknown|coverage|requirement_ids/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('planning blocks a requirement ID whose acceptance or verification is not explicitly mapped', async () => {
+  const f = await fixture();
+  try {
+    f.ledger.requirements[0].coverage[0].verification_cases = [];
+    await f.save();
+    const result = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' });
+    assert.equal(result.status, 'blocked');
+    assert.match(result.reason, /explicit requirement coverage|verification cases/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('legacy schema v1 remains readable for reviewed dispatch but cannot start new planning', async () => {
+  const f = await fixture();
+  try {
+    f.ledger.schema_version = 1;
+    delete f.ledger.handoffs;
+    delete f.ledger.requirements[0].coverage;
+    await f.save();
+    f.ledger.review.inputs = (await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' })).inputs;
+    await f.save();
+
+    assert.equal((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' })).status, 'pass');
+    const planning = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' });
+    assert.equal(planning.status, 'blocked');
+    assert.match(planning.reason, /schema_version 2/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('planning requires producer and consumer responsibilities plus a consumer verification case for handoffs', async () => {
+  const f = await fixture();
+  try {
+    const consumerPath = `${f.base}/plan-b.md`;
+    const sourcePath = `${f.spec}/product-spec.md`;
+    await writeFile(join(f.root, sourcePath), '# Product\n- **BR-38:** Prevent uncovered execution rules.\n- **BR-39:** Consume the produced plan data.\n');
+    await writeFile(join(f.root, consumerPath), 'Plan plan-b implements BR-39. Consume plan data. Reject missing producer data. Consumer rejects missing producer output.\n');
+    await writeFile(join(f.root, f.base, 'plans.md'), 'plan-a\nplan-b\n');
+    f.ledger.requirements.push({ id: 'BR-39', source_path: sourcePath, source_anchor: 'BR-39', statement: 'Consume the produced plan data.', owner: 'plan-b', plan_ids: ['plan-b'], disposition: 'covered', coverage: [{ plan_id: 'plan-b', acceptance_criteria: ['Consume plan data.'], verification_cases: ['Consumer rejects missing producer output.'] }] });
+    f.ledger.plans.push({ id: 'plan-b', content_path: consumerPath, requirement_ids: [`${sourcePath}#BR-39`], acceptance_criteria: ['Consume plan data.'], counterexamples: ['Reject missing producer data.'], verification_cases: ['Consumer rejects missing producer output.'], verification_profile: 'focused' });
+    f.ledger.handoffs = [{ id: 'handoff-1', producer_plan_id: 'plan-a', consumer_plan_id: 'plan-b', produces: 'all requirements map', consumes: 'Consume plan data.', verification_case: 'Consumer rejects missing producer output.' }];
+    await f.save();
+    const passing = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    f.ledger.review.inputs = passing.inputs;
+    await f.save();
+    assert.equal((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).status, 'pass');
+
+    f.ledger.handoffs[0].verification_case = 'generic integration test';
+    await f.save();
+    const blocked = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' });
+    assert.equal(blocked.status, 'blocked');
+    assert.match(blocked.reason, /consumer verification case/);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
@@ -105,7 +158,7 @@ test('requirement references in prose and diagram inventories are not declaratio
   try {
     const productPath = join(f.root, f.spec, 'product-spec.md');
     await writeFile(productPath, '# Product\n### UC-001 Prepare an ability definition.\n- UC-001 diagram inventory entry.\n- **BR-38:** Prevent uncovered execution rules.\n');
-    f.ledger.requirements.push({ id: 'UC-001', source_path: `${f.spec}/product-spec.md`, source_anchor: 'UC-001', statement: 'Prepare an ability definition.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered' });
+    f.ledger.requirements.push({ id: 'UC-001', source_path: `${f.spec}/product-spec.md`, source_anchor: 'UC-001', statement: 'Prepare an ability definition.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered', coverage: [{ plan_id: 'plan-a', acceptance_criteria: ['all requirements map'], verification_cases: ['focused test rejects missing coverage'] }] });
     f.ledger.plans[0].requirement_ids.push(`${f.spec}/product-spec.md#UC-001`);
     await writeFile(join(f.root, f.base, 'plan-a.md'), 'Plan plan-a implements BR-38 and UC-001. all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage.\n');
     await f.save();

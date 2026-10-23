@@ -9,6 +9,8 @@
 ## 검토 항목
 
 - Every declared source requirement is inventoried once and maps to a plan or a justified explicit exclusion.
+- For each covered requirement, verify that every owning plan has explicitly mapped acceptance criteria and executable verification cases; requirement IDs alone are insufficient.
+- For each cross-plan handoff, verify the producer's output responsibility, the consumer's input responsibility, the dependency ordering, and a consumer-side verification scenario.
 - Every plan has testable acceptance criteria, prohibited behavior/counterexamples, and executable verification cases.
 - Ask whether an implementation could pass every plan acceptance criterion while violating the original rule. If so, report a major finding.
 - Multi-plan requirements have an integration owner and concrete end-to-end scenario.

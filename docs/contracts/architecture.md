@@ -104,7 +104,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 <a id="installer-service"></a>
 ## src/installer/update.mjs
-수정일: 2026-10-22
+수정일: 2026-10-23
 
 ### 설명
 설치 CLI는 프로젝트 자산 동기화를 수행한다. setup CLI가 live model/effort, tracker, Beads, OTel 관측성 사용 여부·세 endpoint 포트·저장소별 보존 기간·프로젝트/서비스별 실제 Actuator URL을 Codex CLI 내부 native UI에서 수집한다. harness-setup.mjs --answers는 session 안의 답 파일과 configuration_hash를 검증하고, 다음 needs_input 질문의 안정적인 ID·prompt·type·options/current/context 또는 configured 결과를 JSON으로 반환한 뒤 종료한다. 입력용 stdin/PTY를 남기지 않는다. 스킬은 실제 노출된 request_user_input_async/request_user_input 도구를 통해 제출된 value만 답 파일에 전달한다. 잘못된 선택과 stale config는 거부하고, 최종 확인에는 실제 선택 요약을 표시한다. 수동 CLI는 유지하되 $setup은 별도 GUI·설치기 메뉴를 호출하지 않는다. 선택 시 harness-victorialogs.mjs가 compose·Collector·scrape·개발 Spring/OTel config·공식 MCP 두 개 설정과 실행 profile을 준비하고 victorialogs-local-setup이 실제 앱 개발 profile을 source에 맞춰 연결한다. SigNoz marketplace 자동 등록은 제거했다. [자산 동기화](../../src/installer/update.mjs) · [설치 CLI](../../bin/harness-install.mjs) · [Native setup engine](../../.codex/scripts/harness-setup.mjs) · [관측성 설정](../../.codex/scripts/harness-victorialogs.mjs).
@@ -116,11 +116,11 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 사용자 파일·source descriptor·managed lock (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-관리 자산 발견→hash 비교→백업/교체→lock 반영. exclude 변경은 실제 Git root가 설치 대상 root와 일치할 때만 수행해 초기화 전 하위 디렉터리 설치가 부모 저장소에 영향을 주지 않는다. install/update는 원본 checkout에서 설치를 건너뛰기 전 낡은 로컬 .codex exclude를 정리한다. 설치에는 VictoriaLogs helper·스킬·assets를 포함하고 소비 프로젝트 setup에서 선택할 때 설정을 생성한다. backend는 별도 harness-exec foreground profile로 시작한다. 관리 lock으로 식별한 폐기 signoz-local-setup 스킬은 session backup 후 제거한다. 이전 사용자 데이터·서버·전역 plugin/MCP는 임의 제거하지 않는다.
+관리 자산 발견→hash 비교→백업/교체→lock 반영. `src/**/*.mjs`는 installed runtime 경로로 자동 배포되어 workflow completion 정책도 fresh install/update에 전달된다. exclude 변경은 실제 Git root가 설치 대상 root와 일치할 때만 수행해 초기화 전 하위 디렉터리 설치가 부모 저장소에 영향을 주지 않는다. install/update는 원본 checkout에서 설치를 건너뛰기 전 낡은 로컬 .codex exclude를 정리한다. 설치에는 VictoriaLogs helper·스킬·assets를 포함하고 소비 프로젝트 setup에서 선택할 때 설정을 생성한다. backend는 별도 harness-exec foreground profile로 시작한다. 관리 lock으로 식별한 폐기 signoz-local-setup 스킬은 session backup 후 제거한다. 이전 사용자 데이터·서버·전역 plugin/MCP는 임의 제거하지 않는다.
 
 <a id="update-method"></a>
 ## updateProject
-수정일: 2026-10-22
+수정일: 2026-10-23
 
 ### 설명
 updateProject의 실제 public entrypoint. [소스](../../src/installer/update.mjs).
@@ -129,7 +129,7 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 사용자 파일·source descriptor·managed lock
 
 ### 동작
-관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영.
+관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. workflow completion runtime을 업데이트할 때는 이전 설치본과 같은 tracked asset 경로를 사용한다.
 
 설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
 
@@ -161,7 +161,7 @@ Timestamp·EventName·Resource·Attributes, 일곱 catalog별 required/outcome, 
 
 <a id="doctor-service"></a>
 ## src/doctor/doctor.mjs
-수정일: 2026-10-19
+수정일: 2026-10-23
 
 ### 설명
 현재 src/doctor/doctor.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/doctor/doctor.mjs).
@@ -173,11 +173,11 @@ Timestamp·EventName·Resource·Attributes, 일곱 catalog별 required/outcome, 
 설치 설정·runtime·진단 결과 (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-프로젝트 설정을 읽고 진단을 조립하며 오류와 복구 항목을 반환한다.
+프로젝트 설정·workflow manifest·설치 lock을 읽고 진단을 조립한다. 비최종 `completion_kind` workflow가 무시될 `contract_docs`를 선언하면 `completion_gate_scope` warning과 해당 완료 범위를 반환한다.
 
 <a id="doctor-method"></a>
 ## runDoctor
-수정일: 2026-10-19
+수정일: 2026-10-23
 
 ### 설명
 runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
@@ -186,7 +186,7 @@ runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
 설치 설정·runtime·진단 결과
 
 ### 동작
-프로젝트 설정을 읽고 진단을 조립하며 오류와 복구 항목을 반환한다.
+프로젝트 설정·workflow manifest·설치 lock을 읽고 진단을 조립한다. 비최종 `completion_kind` workflow가 무시될 `contract_docs`를 선언하면 `completion_gate_scope` warning과 해당 완료 범위를 반환한다.
 
 eval permission_profile은 실행 event label로 취급하고 실제 sandbox/network 설정과 일관성을 검사한다. 명시적 agent permission_profile 및 eval.codex.command의 --permission-profile/-P만 native inventory 확인 대상으로 둔다. 실제 미검증/누락 참조는 계속 실패한다. 최신 자산 inventory는 skill supporting files·tools·contracts·CI·PR을 포함해 잘못된 stale lock 경고를 방지한다.
 
@@ -425,7 +425,7 @@ journal을 읽고 replay하여 checkpoint를 복원한다.
 
 <a id="workflow-completion-service"></a>
 ## src/workflow/completion.mjs
-수정일: 2026-10-17
+수정일: 2026-10-23
 
 ### 설명
 모든 manifest workflow의 정상 완료를 판정하는 공통 실행 경계. [소스](../../src/workflow/completion.mjs).
@@ -434,14 +434,14 @@ journal을 읽고 replay하여 checkpoint를 복원한다.
 시작 commit SHA·workflow ID·검증된 workspace·기존 lifecycle evidence·journal writer.
 
 ### 동작
-workspace preflight→manifest 로드→필수 tracker_sync·contract_docs와 선언된 before_complete 실행→pass만 completed→실제 verdict journal 보존. 로컬 manifest가 contract_docs를 지워도 필수 검사를 복원한다. 시작 commit과 evidence가 없으면 정상 완료하지 않는다.
+workspace preflight→manifest 로드→필수 tracker_sync·workflow별 완료 gate와 선언된 before_complete 실행→pass만 completed→실제 verdict journal 보존. Receipt는 workflow ID에서 `completion_kind`를 계산해 Spec 검토(`spec_ready_for_planning`), 계획 발행(`plan_set_ready_for_implementation`), 개별 plan 구현(`plan_implemented`), 최종 기능 통합(`feature_implemented`)을 구분한다. `feature_implemented`에서만 contract_docs를 필수화하며, 비최종 workflow에 선언된 contract_docs도 무시한다. 시작 commit과 evidence가 없으면 정상 완료하지 않는다.
 
 ### 메서드
 [completeWorkflow](architecture.md#complete-workflow-method)
 
 <a id="complete-workflow-method"></a>
 ## completeWorkflow
-수정일: 2026-10-17
+수정일: 2026-10-23
 
 ### 설명
 전체 workflow 완료 명령이 호출하는 public 함수.
@@ -450,7 +450,7 @@ workspace preflight→manifest 로드→필수 tracker_sync·contract_docs와 �
 workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state.
 
 ### 동작
-공통 lifecycle hook과 계약 검사에 조립을 위임한다. pass/fail 모두 journal에 기록하고, preflight/manifest/hook/기록 오류를 포함한 outer finally가 소유 worktree를 archive·검증·제거한다. journal은 worktree 바깥 영속 session_directory/runtime/workflow-completion/에 직접 기록하며 삭제 후에도 경로를 유지한다. cleanup 실패도 in-progress이며 정상 완료가 아니다. 다음 단계는 보존 branch로 새 worktree를 만든다.
+공통 lifecycle hook과 workflow별 완료 gate에 조립을 위임한다. 반환 receipt의 `completion_kind`는 workflow별 완료 범위를 식별하고 기존 `state`는 해당 범위의 gate 통과 여부를 나타낸다. `completion_kind=feature_implemented`일 때만 계약 검사를 필수화하며 Spec·계획을 포함한 비최종 workflow는 manifest에 contract_docs가 선언되어도 실행하지 않는다. pass/fail 모두 journal에 기록하고, preflight/manifest/hook/기록 오류를 포함한 outer finally가 소유 worktree를 archive·검증·제거한다. 별도 worktree receipt의 outcome은 completed·failed·aborted·handoff를 보존한다. 대기 중에는 cleanup하지 않는다. journal은 worktree 바깥 영속 session_directory/runtime/workflow-completion/에 직접 기록하며 삭제 후에도 경로를 유지한다. cleanup 실패도 in-progress이며 정상 완료가 아니다. 다음 단계는 보존 branch로 새 worktree를 만든다.
 
 <a id="tracker-lifecycle"></a>
 ## src/tracker/lifecycle.mjs
@@ -694,7 +694,7 @@ axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fo
 
 <a id="plan-traceability-service"></a>
 ## src/workflow/plan-traceability.mjs
-수정일: 2026-10-20
+수정일: 2026-10-23
 
 ### 설명
 기존 control-plane에서 plan set의 요구사항 coverage, 독립 리뷰의 현재성, 구현 evidence를 조립하는 책임이다. 별도 Context·Aggregate·서비스를 추가하지 않는다. [소스](../../src/workflow/plan-traceability.mjs).
@@ -703,7 +703,7 @@ axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fo
 plan set ID·ticket ID·Spec/요청/결정/다이어그램/계약 입력·canonical plan·review metadata·실행 profile/receipt. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
-`docs/plans/<plan-set-id>/traceability.json`을 읽어 requirement 선언과 `source_path#ID` coverage, canonical per-plan 본문, 수용 조건·반례·검증 사례, 독립 리뷰와 snapshot freshness를 검사한다. impact는 stale coverage에서도 변경된 ID와 영향 계획을 보고하며 불확실 시 전체 계획을 보수적으로 지목한다. dispatch는 검증 전 spawn을 차단하고 completion은 선택 profile의 harness-exec receipt 및 현재 source/test hash를 확인한다. 해시는 의미적 정확성이나 reviewer/tool 신원을 증명하지 않는다.
+`docs/plans/<plan-set-id>/traceability.json`을 읽어 requirement 선언과 `source_path#ID` coverage, canonical per-plan 본문, 수용 조건·반례·검증 사례, 독립 리뷰와 snapshot freshness를 검사한다. 새 planning 원장은 schema_version 2이며 각 covered requirement를 소유 plan별 수용 기준과 검증 사례에 연결하고, cross-plan integration 검증은 owner plan에 연결한다. handoff 기록은 생산·소비 plan의 기준과 소비 측 검증 사례를 연결한다. 구형 schema_version 1은 기존 reviewed dispatch/completion에서 읽지만 새 planning에는 허용하지 않는다. impact는 stale coverage에서도 변경된 ID와 영향 계획을 보고하며 불확실 시 전체 계획을 보수적으로 지목한다. dispatch는 검증 전 spawn을 차단하고 completion은 선택 profile의 harness-exec receipt 및 현재 source/test hash를 확인한다. 해시는 의미적 정확성이나 reviewer/tool 신원을 증명하지 않는다.
 
 ### 메서드
 [snapshotPlanTraceability](architecture.md#snapshot-plan-traceability-method) · [inspectPlanTraceability](architecture.md#inspect-plan-traceability-method) · [inspectTraceabilityImpact](architecture.md#inspect-traceability-impact-method)

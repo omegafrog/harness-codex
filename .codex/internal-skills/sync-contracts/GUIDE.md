@@ -14,12 +14,12 @@
 4. 바뀐 규칙을 소유한 객체/함수와 실제 호출 경로를 대조한다. Aggregate 외부 규칙 누수·공개 setter 우회·불필요한 추상화·구형 경로 잔존을 독립 reviewer가 확인한다. 삭제한 기능은 `retired`와 대체 경로를 남기고, 역사 Spec을 현재 계약으로 재사용하지 않는다.
 5. `plantuml-diagrams`의 `diagram_creator`로 전체 DDD 구조·클래스·기능별 sequence·상태 관점을 갱신한다. 원본과 SVG를 함께 보존한다. DDD 구조에는 이름만 두고 모든 이름을 해당 architecture section에 링크한다. 설명·속성·타입·규칙은 문서와 class diagram에 둔다. 적용할 상태/클래스가 없으면 manifest에 구체적 이유를 기록하며 형식적인 모델을 만들지 않는다.
 6. 기능 ID → 규칙 → 모델/메서드 → source → 검증 근거를 연결한다. 영향 있는 성능 목표는 동일 workload·단위·환경·오류율로 before/after를 비교한다. 실행하지 않은 증거를 통과로 쓰지 않는다. `maintain-verification`은 이 통합 Product 계약을 기준으로 구현 drift를 조사하고, 회귀를 계약 수정으로 숨기지 않는다.
-7. 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
-8. workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존한다. 모든 workflow의 **정상 종료 직전** 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. 해당 workflow가 요구하는 outcome/test/review/evidence 등은 `--state` JSON에 기존 lifecycle 형식으로 전달한다. `spec-me`와 `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함해야 하며 계약 seal이 리뷰를 대체하지 않는다.
+7. `sync-contracts`는 전체 feature 구현이 완료되고 변경 branch에 모든 plan이 통합된 최종 workflow에서만 실행한다. `spec-me`, `to-ticket`, 개별 plan 구현·리뷰, knowledge 작업은 공통 계약을 수정하거나 seal하지 않는다. 최종 구현 workflow는 독립 code review·검증·계약 영향 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 실제 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
+8. 최종 구현 workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존하고, 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. `contract_docs`는 최종 `implement-wrapper` 또는 완결된 단일 구현 workflow에만 적용한다. `spec-me`와 `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함하되 `contract_docs`를 요구하지 않는다. 계약 seal이 독립 리뷰나 다른 완료 gate를 대체하지 않는다.
 
    `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --base-ref <시작 commit SHA> [--state <session-relative completion evidence.json>]`
 
-    pass 전에는 완료 선언·tracker Done·종속 plan 해제를 하지 않는다. 실패는 변경 파일/원인과 복구 행동을 남긴다. 완료 조건에 계약 반영과 독립 의미 검토를 포함한다. 중단·질문 대기·실패는 정상 완료가 아니다.
+   pass 전에는 완료 선언·tracker Done·종속 plan 해제를 하지 않는다. `state=completed`는 `completion_kind`가 말하는 산출물만 완료한다: Spec 검토 완료는 `spec_ready_for_planning`, 계획 발행 완료는 `plan_set_ready_for_implementation`, 개별 plan 완료는 `plan_implemented`, 모든 구현을 통합한 완료는 `feature_implemented`다. 기능 계약 갱신은 마지막 종류에서만 수행한다. 실패는 변경 파일/원인과 복구 행동을 남긴다. 완료 조건에 계약 반영과 독립 의미 검토를 포함한다. 사용자 결정/외부 조건 대기는 `waiting`으로 세션을 유지하며, handoff·취소·실패는 각각 `handoff`·`aborted`·`failed`로 기록한다. 이들은 정상 완료가 아니다.
 
 ## 자동 검사와 의미 검토
 

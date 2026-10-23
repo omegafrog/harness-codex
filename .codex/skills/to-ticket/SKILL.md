@@ -3,7 +3,7 @@ name: to-ticket
 description: Split approved product and architecture specifications into vertical implementation tickets and plans.
 ---
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [code-research](../../../.codex/internal-skills/code-research/GUIDE.md) · [implement](../../../.codex/internal-skills/implement/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [spec-review](../../../.codex/internal-skills/spec-review/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md) · [testing-guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md).
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [code-research](../../../.codex/internal-skills/code-research/GUIDE.md) · [implement](../../../.codex/internal-skills/implement/GUIDE.md) · [plan-review](../../../.codex/internal-skills/plan-review/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [spec-review](../../../.codex/internal-skills/spec-review/GUIDE.md) · [testing-guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md).
 
 # to-ticket
 
@@ -28,12 +28,12 @@ For test planning, read `<shared_guidance_root>/docs/agents/testing-guidance.md`
 7. 승인 후 `session_worktree`에서 `bd version`, `bd where`, `bd status`를 실행해 Beads CLI와 초기화된 workspace가 있는지 확인한다. CLI나 workspace가 없으면 ticket을 만들지 말고 `$setup`을 안내한다. database를 초기화하지 않는다. `.codex/harness.yaml`에서 tracker mode를 확인한다. 모든 ticket은 tracker mode와 관계없이 Beads에도 기록한다.
 8. Beads issue를 생성하거나 기존 항목을 재사용한다. `harness_plan_id`는 parent에 `$PLAN_SET_ID:parent`, child에 `$PLAN_SET_ID:$TICKET_ID`처럼 안정적으로 지정하고, `bd list --all --json --metadata-field "harness_plan_id=$BEADS_PLAN_ID"`로 먼저 확인한다. 중복 결과는 중단한다. GitHub mode에서는 parent를 `epic`으로 만들고 child에 `--parent <beads-parent-id>`를 지정한다. 각 description에는 제목, 구현 목적, 범위, acceptance criteria, test contract를 담는다. `bd dep add <beads-ticket-id> <depends-on-beads-id>`로 의존성도 기록한다. 이 단계에서 external_ref와 lifecycle marker를 붙이지 않는다. Beads 기록 실패 시 계획을 중단한다.
 9. 사용자 승인 뒤 모든 canonical 계획을 작성한다. 각 child의 complete plan은 `docs/plans/<plan-set-id>/<plan-id>.md`에 두고, `plans.md`는 로컬 plan 링크·요약·의존성만 담는 index로 작성한다. GitHub mode에서도 이 per-plan 문서가 리뷰 대상이자 게시 전 canonical source다. Issue 제목·본문 초안과 structured-source는 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. GitHub에서 아직 조회하지 않은 issue number/link를 추측하지 않는다.
-10. 전체 source 규칙을 `docs/plans/<plan-set-id>/traceability.json`에 기록하고 requirement를 canonical per-plan 문서에 연결한다. 모든 계획에 requirement IDs, acceptance criteria, counterexamples, verification cases를 담는다. traceability snapshot을 만든 뒤 작성 맥락을 상속하지 않는 `plan_reviewer`가 전체 source와 계획을 직접 리뷰한다. blocker/major 수정 후에는 새 reviewer로 재검토하고 snapshot을 갱신한다. `check --phase planning`, plans-index gate, spec-review check까지 통과시킨다. 이 리뷰와 gate가 끝날 때까지 GitHub Issue/Project API를 호출하거나 Issue/Project 상태를 조회·변경하지 않는다.
+10. 전체 source 규칙을 schema_version 2의 `docs/plans/<plan-set-id>/traceability.json`에 기록한다. 각 covered requirement는 소유 plan마다 구체 수용 기준과 검증 사례를 연결하고, 계획 간 handoff는 생산 plan의 산출 기준·소비 plan의 수신 기준·소비 측 검증 사례를 명시한다. 제외 requirement는 이유를 기록한다. 모든 계획에 requirement IDs, acceptance criteria, counterexamples, verification cases를 담고 canonical per-plan 문서와 대응표가 일치하는지 `harness-plan-traceability.mjs check --phase planning`으로 리뷰 전에 확인한다. 작성 맥락을 상속하지 않는 `plan_reviewer`는 대응표의 의미적 완전성, 반례, 인계 경계를 원문과 대조한다. blocker/major 수정 후에는 새 reviewer로 재검토하고 snapshot을 갱신한다. `check --phase planning`, plans-index gate, spec-review check까지 통과시킨다. 이 리뷰와 gate가 끝날 때까지 GitHub Issue/Project API를 호출하거나 Issue/Project 상태를 조회·변경하지 않는다.
 11. 모든 계획과 리뷰 gate가 통과한 뒤에만 tracker에 발행한다. `local-markdown` mode는 이 시점에 ticket 파일을 `planned` 상태로 만들고 index를 갱신한다. GitHub mode는 [GitHub batch publish](references/github-batch-publish.md)의 단일 publish phase로 parent/child Issues 생성, Project 등록, `Workflow Status: Planned` 설정, 최종 상태 조회를 수행한다. publish 중 일부만 성공하면 기존 Issue를 다시 만들지 않는다. 각 API 응답을 `<session_directory>/runtime/to-ticket/publish-state.json`에 보존하고 완료되지 않은 단계만 재개한다.
 12. GitHub 발행이 확인된 뒤 Beads 항목에 `external_ref`, `harness_tracker_version=1`, `harness_classification=committed`, `harness_phase=planning`을 연결한다. 초기 발행에서 ticket별 `harness-tracker sync`를 실행하지 않는다. 완료 state의 `tracker_sync.ticket_refs`에 이 plan set의 parent와 모든 child `owner/repo#number`를 넣는다. 완료 lifecycle gate는 이 목록만 batch 조회해 Beads mirror와 대조한다. 목록을 빠뜨리면 기존 전역 검사가 실행되므로 누락하지 않는다. 실패 시 완료를 차단한다.
 13. blocking edge는 선택한 tracker와 Beads 양쪽에 기록한다. GitHub mode는 batch publish의 parent-child 연결을 사용한다.
 14. 모든 산출물은 진입 시 확인한 session branch에 둔다. 관리형 `spec-me` 세션에서는 기존 Spec branch를 이어간다. branch를 새로 만들거나 전환하거나 원격에 push하지 않는다. 종료 시 branch/HEAD/recovery_path/return_root를 보존해 `implement`에 인계한다.
-15. `to-ticket`에서는 계획 PR을 만들지 않는다. GitHub mode의 최종 PR은 downstream 구현에서 모든 분할 계획을 통합한 후 만든다.
+15. `to-ticket`에서는 계획 PR을 만들지 않는다. GitHub mode의 최종 PR은 downstream 구현에서 모든 분할 계획을 통합한 후 만든다. 완료 receipt의 `completion_kind`는 `plan_set_ready_for_implementation`이며, 발행된 계획을 구현에 넘길 준비가 된 것만 뜻한다. 관련 구현 티켓이 모두 통합되고 최종 구현 gate를 통과하기 전까지 기능 구현 완료나 공통 계약 갱신으로 기록하지 않는다.
 
 ## 작업 루트 전달과 검증
 
@@ -100,7 +100,7 @@ Read [execution-evidence.md](references/execution-evidence.md) before splitting.
 
 ## 통합 계약 연속성
 
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽기 전용으로 확인한다. 계획 단계에서는 통합 계약·diagram·manifest를 수정하거나 seal하지 않는다. 구현 전체가 통합된 최종 `implement-wrapper`에서만 이를 갱신하고 seal한다.
 
 ## 종료 정리
 

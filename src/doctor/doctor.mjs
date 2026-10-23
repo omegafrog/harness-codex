@@ -6,6 +6,7 @@ import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from 
 import { discoverManagedAssetPaths } from "../installer/update.mjs";
 import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
+import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
@@ -90,6 +91,9 @@ async function inspectWorkflows(root, diagnostics) {
     const path = join(directory, name);
     try {
       const workflow = await loadWorkflowFile(path, { root });
+      if (workflow.hooks.before_complete.includes("contract_docs") && completionKindForWorkflow(workflow.id) !== "feature_implemented") {
+        diagnostics.push(diagnostic("completion_gate_scope", "warning", `Workflow ${workflow.id} declares contract_docs, but this completion scope ignores that gate`, path, { completion_kind: completionKindForWorkflow(workflow.id) }));
+      }
       const legacySkillRoot = resolve(root, ".codex/skills");
       for (const [skill, skillPath] of Object.entries(workflow.references.skills)) {
         if (isWithin(legacySkillRoot, skillPath)) diagnostics.push(diagnostic("stale_skill_path", "warning", `Workflow ${workflow.id} resolves skill ${skill} from legacy .codex/skills`, skillPath));

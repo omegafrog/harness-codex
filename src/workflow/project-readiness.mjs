@@ -5,7 +5,7 @@ import { inspectContracts } from '../contracts/contracts.mjs';
 import { readExecutionManifest } from './execution.mjs';
 
 // This checks preparation without launching commands or inventing consumer business contracts.
-export async function inspectProjectReadiness({ workspace_root } = {}) {
+export async function inspectProjectReadiness({ workspace_root, deferContractSync = false } = {}) {
   let execution;
   try {
     if (!isAbsolute(workspace_root || '')) throw new Error('Absolute workspace_root is required');
@@ -17,6 +17,19 @@ export async function inspectProjectReadiness({ workspace_root } = {}) {
     execution = { status: 'fail', reason: 'execution_contract_invalid', violations: [error.message] };
   }
   const contracts = await inspectContracts({ workspace_root });
+  const contractDriftOnly = contracts.reason === 'contracts_out_of_sync'
+    && contracts.violations.length === 1
+    && contracts.violations[0] === 'Contract/source snapshot changed; reconcile and seal';
+  if (deferContractSync && execution.status === 'pass' && contractDriftOnly) {
+    return {
+      status: 'pass',
+      reason: 'project_ready_contract_sync_deferred',
+      execution,
+      contracts,
+      contract_sync: { status: 'deferred', reason: 'sync_after_implementation_complete', evidence_path: contracts.evidence_path, violations: contracts.violations },
+      next_steps: [],
+    };
+  }
   const next_steps = [];
   if (execution.status !== 'pass') next_steps.push('setup: inspect actual entrypoints/config/CI/infrastructure and prepare docs/agents/EXEC.md + execution.json; preserve existing profiles');
   if (contracts.status !== 'pass') next_steps.push('sync-contracts: reconcile actual source/specs/model and create or repair the complete docs/contracts bundle, diagrams and sealed manifest');

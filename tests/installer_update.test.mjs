@@ -4,11 +4,12 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildHarnessLock, updateProject, writeHarnessLock } from "../src/installer/update.mjs";
 import { writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { runDoctor } from "../src/doctor/index.mjs";
+import { makeContractsFixture } from "./contracts-fixture.mjs";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -217,6 +218,13 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     const implementSkill = join(targetRoot, ".codex/internal-skills/implement/GUIDE.md");
+    const completionModule = join(targetRoot, ".codex/harness-runtime/src/workflow/completion.mjs");
+    const completionSource = await readFile(join(REPOSITORY_ROOT, "src/workflow/completion.mjs"), "utf8");
+    await writeFile(completionModule, "export const staleCompletion = true;\n");
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    const completionUpdate = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(completionUpdate.updated.includes(".codex/harness-runtime/src/workflow/completion.mjs"));
+    assert.equal(await readFile(completionModule, "utf8"), completionSource);
     const internalRelativePath = ".agents/skills/spec-me/references/decision-knowledge.md";
     const internalSkill = join(targetRoot, internalRelativePath);
     const internalSource = await readFile(join(REPOSITORY_ROOT, ".codex/skills/spec-me/references/decision-knowledge.md"), "utf8");
@@ -281,6 +289,32 @@ test("fresh installation includes the runtime required by the decision gate CLI"
   } finally {
     await rm(targetRoot, { recursive: true, force: true });
   }
+});
+
+test("updated consumer defers only source snapshot drift until final contract synchronization", async (t) => {
+  const { root, cleanup } = await makeContractsFixture();
+  t.after(cleanup);
+  await mkdir(join(root, "docs/agents"), { recursive: true });
+  await writeFile(join(root, "docs/agents/EXEC.md"), "Execution instructions\n");
+  await writeFile(join(root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: { focused: { command: ["node", "-e", "process.exit(0)"], required_env: [], config_inputs: ["docs/agents/execution.json"], prepare: [["node", "-e", "process.exit(0)"]], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 } } }));
+  await writeFile(join(root, "src/app.mjs"), "export const app = 'changed after contract seal';\n");
+  await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+  await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot: root });
+
+  const { inspectProjectReadiness } = await import(pathToFileURL(join(root, ".codex/harness-runtime/src/workflow/project-readiness.mjs")));
+  const deferred = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
+  assert.equal(deferred.status, "pass", JSON.stringify(deferred));
+  assert.equal(deferred.contract_sync.status, "deferred");
+  const preflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--expected-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
+  assert.equal(preflight.status, 0, preflight.stderr || preflight.stdout);
+  assert.equal(JSON.parse(preflight.stdout).contract_sync.status, "deferred");
+
+  await writeFile(join(root, "docs/contracts/manifest.json"), "{");
+  const invalid = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
+  assert.equal(invalid.status, "blocked");
+  assert.notEqual(invalid.contract_sync?.status, "deferred");
+  const invalidPreflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--expected-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
+  assert.equal(invalidPreflight.status, 1);
 });
 
 test("update installs standalone contracts runtime and preserves a locally edited workflow", async () => {

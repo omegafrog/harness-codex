@@ -254,7 +254,7 @@ export async function checkTrackerSync(state) {
 const DEFAULT_CHECKS = Object.freeze({
   tracker_sync: checkTrackerSync,
   project_readiness: async (state) => {
-    const readiness = await inspectProjectReadiness({ workspace_root: state?.workspace_root || state?.workspace?.expected_root });
+    const readiness = await inspectProjectReadiness({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, deferContractSync: true });
     return readiness.status === 'pass' ? passed(readiness.reason, readiness) : blocked(readiness.reason, readiness);
   },
   contract_docs: checkContractDocs,
