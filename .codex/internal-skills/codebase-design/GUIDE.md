@@ -1,6 +1,6 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [code-research](../code-research/GUIDE.md) · [ddd-design](../ddd-design/GUIDE.md) · [event-storming](../event-storming/GUIDE.md) · [implement](../implement/GUIDE.md) · [sync-contracts](../sync-contracts/GUIDE.md).
+내부 절차: [ddd-design](../ddd-design/GUIDE.md) · [event-storming](../event-storming/GUIDE.md).
 
 # codebase-design
 
@@ -88,7 +88,3 @@ Read [model-continuity.md](../ddd-design/references/model-continuity.md) for the
 - New modules have passed the Module Granularity gate.
 - No module exists solely because a feature, aggregate, domain service, or named capability exists.
 - Policy behavior is covered by unit tests.
-
-## 통합 계약 연속성
-
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.

@@ -1,6 +1,6 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [codebase-design](../codebase-design/GUIDE.md) · [event-storming](../event-storming/GUIDE.md) · [implement](../implement/GUIDE.md) · [sync-contracts](../sync-contracts/GUIDE.md).
+내부 절차: [event-storming](../event-storming/GUIDE.md).
 
 # ddd-design
 
@@ -66,7 +66,3 @@ For every proposed bounded-context candidate, document why modeling it as an int
 - The established vocabulary is not destabilized.
 - Bounded-context candidates are supported by ownership and lifecycle evidence rather than feature naming or implementation structure alone.
 - Remaining structural questions are deferred to `codebase-design`.
-
-## 통합 계약 연속성
-
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.

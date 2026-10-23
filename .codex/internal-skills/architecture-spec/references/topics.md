@@ -37,39 +37,15 @@ Use these topics as the coverage checklist for the architecture interview. The c
 11. **Security and Observability**
     Resolve authentication/authorization impact, input validation, sensitive data handling, secrets, logs, metrics, tracing, and alerts when relevant to the change.
 
-12. **Change and Verification Boundaries**
+12. **Quantitative Targets and Technology Basis**
+    Establish applicable performance and capacity targets with metric, unit, representative workload, provenance, confidence, and acceptance boundary. Review existing ADRs, approved project constraints, technical-team standards, formal standards, official/primary technical documentation, and valid project measurements. Compare viable options against those targets and standards; preserve source IDs or exact URLs and locators with each option rationale. Record the accepted option, rejected alternatives, trade-offs, and user/owner agreement in the Architecture Decision and Architecture Spec. Record unresolved targets with their owner and resolution method.
+
+13. **Change and Verification Boundaries**
     Resolve allowed, forbidden, and conditional changes plus the verification evidence required for domain, program, technical, runtime, recovery, and boundary-promotion contracts.
-    Preserve requirement/rule/target IDs into each slice's code owner and verification command. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger; no invented scale numbers.
+    Preserve requirement/rule/target/decision IDs into each slice's code owner and verification command. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger.
 
-13. **Alternatives, Trade-offs, Risks, and Open Questions**
+14. **Alternatives, Trade-offs, Risks, and Open Questions**
     Resolve material alternatives, expensive-to-reverse decisions, risks, and every blocking open question. Include the trade-off between the chosen boundary strength and the next weaker viable boundary for every newly introduced bounded context, module, or service.
-
-## Boundary evidence rule
-
-Boundary creation is promotion, not decomposition. A named capability is not evidence by itself that a new bounded context, module, or service is required.
-
-The default is to place a capability inside an existing bounded context when its language, business rules, state/data lifecycle, consistency requirements, and change pattern fit that context.
-
-Strong evidence for promotion may include:
-
-- a distinct ubiquitous language or model,
-- independent business rules or invariants,
-- independent state or data lifecycle,
-- independent consistency or transaction boundaries,
-- meaningful change independence,
-- required model translation across an upstream/downstream relationship,
-- or, for deployment boundaries, a plausible need for independent deployment, scaling, failure isolation, ownership, or operational lifecycle.
-
-Strong evidence against promotion includes:
-
-- the capability primarily supports another context's workflow,
-- it has no independent state or data lifecycle,
-- most interactions would be synchronous inside a parent workflow,
-- correctness requires frequent cross-boundary transactions,
-- it shares the same vocabulary and model meaning as the parent context,
-- or the proposed boundary is mainly around an algorithm, technical operation, or named feature.
-
-For every proposed stronger boundary, explain why the next weaker boundary is insufficient.
 
 ## Evidence rule
 
