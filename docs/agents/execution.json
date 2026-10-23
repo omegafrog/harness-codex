@@ -398,7 +398,9 @@
         "src/workflow/completion.mjs",
         "src/gates/lifecycle.mjs",
         "src/workflow/project-readiness.mjs",
-        ".codex/scripts/workspace-preflight-cli.mjs"
+        ".codex/scripts/workspace-preflight-cli.mjs",
+        ".codex/skills/implement-wrapper/SKILL.md",
+        ".codex/internal-skills/implement/GUIDE.md"
       ],
       "prepare": [],
       "verify_config": [

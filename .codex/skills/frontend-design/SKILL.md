@@ -293,7 +293,7 @@ tracker, 기존 implementation plan status, PR은 변경하지 않는다.
 
 ## 소유 worktree 종료
 
-`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 owned plan worktree는 WorktreeManager가 개별 정리하고, sequential execution_line은 상위 workflow 종료 시 정리한다. branch/HEAD/recovery_path/return_root를 남기고 downstream은 보존한 branch로 새 경로를 만든다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 병렬 owned plan worktree만 WorktreeManager가 개별 정리한다. 순차 execution_line은 생성·소유권 등록·삭제하지 않고 후속 구현에서도 같은 경로를 유지한다. 다른 workflow가 실제 생성·소유한 worktree는 해당 소유자만 정리하고 branch/HEAD/recovery_path/return_root를 남긴다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
 
 ## 세션 출력
 

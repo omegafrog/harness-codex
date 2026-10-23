@@ -233,7 +233,7 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     assert.ok(specSkill.includes("references/decision-knowledge.md"));
     await assert.rejects(readFile(join(targetRoot, ".agents/skills/decision-knowledge/SKILL.md")), { code: "ENOENT" });
     await writeFile(internalSkill, "stale internal guidance\n");
-    const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, and update/;
+    const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, (?:and )?update/;
     assert.match(await readFile(implementSkill, "utf8"), distributionRule);
     await writeFile(implementSkill, "stale consumer copy\n");
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });

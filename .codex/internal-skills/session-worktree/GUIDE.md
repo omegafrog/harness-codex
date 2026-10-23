@@ -4,6 +4,14 @@
 
 workflow의 소유 worktree를 첫 단계 전에 준비하고, 정상 완료·실패·사용자 중단·top-level handoff가 끝날 때 반드시 정리한다. `completed`는 해당 workflow의 completion kind가 뜻하는 산출물만 완료됐다는 뜻이지, 다음 workflow나 기능 구현 전체가 끝났다는 뜻이 아니다. 내부 단계 전환이나 단순 질문 대기는 종료가 아니다. 사용자 결정·외부 조건을 기다리면 상태를 `waiting`으로 기록하고 세션/worktree를 유지한다. 사용자 취소/중단으로 workflow를 끝내면 `aborted`로 정리한다.
 
+## 구현 workflow의 예외
+
+`implement-wrapper`와 `implement`에서는 병렬 계획의 격리가 필요한 경우에만 새 worktree를 생성한다. 순차 구현은 사용자가 지정한 기존 작업 위치를 `execution_line`/`workspace_root`로 재사용하며, 아래 준비 절차의 create/reserve/register를 적용하지 않는다. workflow 소유 receipt가 없다는 이유로 별도 session worktree를 만들거나 기존 위치에 소유권을 붙이지 않는다. 이 예외는 구현 중 호출하는 `sync-contracts`, review, E2E, PR 절차에도 적용한다.
+
+작업 위치는 현재 요청과 plan의 명시적인 실행 경로를 대조해 확정한다. 과거 checkpoint·receipt·Architecture review의 `session_worktree`는 이력이며 현재 경로를 바꾸는 근거가 아니다. 경로가 충돌하면 쓰기 전에 확인하고, 순차 재개·plan 전환·병합 후에도 확정한 경로를 유지한다. preflight의 `expected-root`는 그 경로를 사용하며 검사 통과를 위해 다른 경로로 바꾸지 않는다.
+
+순차 `execution_line`은 구현 workflow의 생성·삭제 대상이 아니다. 병렬 계획 worktree만 `WorktreeManager`로 생성·통합·정리한다. 상위 Spec/계획 workflow가 소유한 worktree는 해당 소유자의 lifecycle을 따르며, 구현 하위 단계가 소유권을 가져오거나 제거하지 않는다.
+
 ## 준비
 
 1. 실제 Git root·branch·HEAD·porcelain·등록 worktree를 확인한다. `harness-workflow-worktree.mjs list --root <return_root>`로 이전 미종료 receipt를 확인한다. 이전 실행이 끝난 것이 확인된 소유 worktree만 `finish`로 복구 정리하며 다른 실행의 활성 worktree를 지우지 않는다.

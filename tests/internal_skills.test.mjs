@@ -4,6 +4,9 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { runDoctor } from "../src/doctor/index.mjs";
+import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 
 import { updateProject } from "../src/installer/update.mjs";
 import { discoverHarnessOwnedFiles } from "../src/installer/lock.mjs";
@@ -79,5 +82,54 @@ test("internal skill migration backs up and removes managed public copies on ski
   } finally {
     await rm(source, { recursive: true, force: true });
     await rm(target, { recursive: true, force: true });
+  }
+});
+
+
+test("fresh and updated consumers receive the existing-root implementation policy without hiding application changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-implementation-policy-"));
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  const paths = [
+    [".codex/skills/implement-wrapper/SKILL.md", ".agents/skills/implement-wrapper/SKILL.md"],
+    ...["implement", "session-worktree", "sync-contracts"].map((name) => {
+      const path = `.codex/internal-skills/${name}/GUIDE.md`;
+      return [path, path];
+    }),
+  ];
+  try {
+    git("init", "--quiet");
+    await writeFile(join(root, "app.txt"), "original application\n");
+    git("add", "app.txt");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "initial");
+    await writeFile(join(root, "app.txt"), "application edit\n");
+    await writeFile(join(root, "new-app.txt"), "new application file\n");
+    const before = git("worktree", "list", "--porcelain");
+    for (const operation of ["install", "update"]) {
+      await protectLocalInstallArtifacts(root, SOURCE);
+      await updateProject({ sourceRoot: SOURCE, targetRoot: root, initialize: operation === "install", scope: "skills" });
+      const inventory = await discoverHarnessOwnedFiles(root);
+      const lock = JSON.parse(await readFile(join(root, ".codex/harness-lock.json"), "utf8"));
+      for (const [source, target] of paths) {
+        assert.equal(await readFile(join(root, target), "utf8"), (await readFile(join(SOURCE, source), "utf8")).replaceAll(".codex/skills/", ".agents/skills/"));
+        assert.ok(inventory.includes(target), target);
+        assert.ok(lock.files[target], target);
+      }
+      const doctor = await runDoctor({ root, sourceRoot: SOURCE });
+      assert.equal(doctor.diagnostics.some((item) => paths.some(([, target]) => item.path.endsWith(target))), false, JSON.stringify(doctor.diagnostics));
+      assert.equal(git("worktree", "list", "--porcelain"), before);
+      assert.equal(git("status", "--short", "--untracked-files=all"), " M app.txt\n?? new-app.txt\n");
+      assert.equal(await readFile(join(root, "app.txt"), "utf8"), "application edit\n");
+      if (operation === "install") {
+        for (const [, target] of paths) await writeFile(join(root, target), "stale implementation policy\n");
+        const stale = await runDoctor({ root, sourceRoot: SOURCE });
+        for (const [, target] of paths) assert.ok(stale.diagnostics.some((item) => item.path.endsWith(target)), target);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

@@ -16,14 +16,14 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## 작업 루트 전달과 검증
 
-- 활성 세션 worktree를 절대 `execution_line`으로 확정한다. 모든 실행 슬롯은 모드와 관계없이 절대 `workspace_root`와 `cwd`를 받는다. 병렬 계획은 계획별 격리 worktree를 받고, 순차 계획은 `execution_line`을 재사용한다.
+- 사용자가 지정한 기존 작업 위치와 plan의 명시적인 실행 경로를 대조해 절대 `execution_line`으로 확정한다. 충돌하면 쓰기 전에 확인한다. 순차 구현에서는 workflow 소유 receipt 유무와 관계없이 새 worktree를 생성하거나 기존 위치에 소유권을 등록하지 않는다. 이전 숨김 worktree·checkpoint·리뷰 기록으로 실행 위치를 바꾸지 않는다. 모든 실행 슬롯은 모드와 관계없이 절대 `workspace_root`와 `cwd`를 받는다. 병렬 계획은 계획별 격리 worktree를 받고, 순차 계획은 `execution_line`을 재사용한다.
 - 구현 에이전트와 E2E runner는 파일 접근이나 서비스 시작 전에 `pwd`와 `git rev-parse --show-toplevel`을 전달받은 루트와 대조한다. 구현 결과에 확인한 루트를 포함하고 wrapper가 일치 여부를 검사한다.
 
 - Read `docs/plans/<plan-set-id>/plans.md` when present for split-plan backlinks and summaries. Each plan set has its own directory; never read or write a shared `docs/plans/plans.md`. In GitHub mode, resolve approval, status, dependencies, and shared resources from the linked parent/child Issues and GitHub Project; in local-markdown mode, resolve them from the linked plan documents. If an Issue is absent from the index, reconcile the index only from an existing reviewed traceability ledger and verified parent/child mapping. Project membership or `Planned` status alone does not approve a plan; if the ledger/review or mapping is missing, identify that exact missing evidence and keep dispatch blocked. An API/read failure leaves approval or status unknown and is reported as such, not as proof the Issue is absent.
 - Read `.codex/harness.yaml` first. A `Planned` GitHub Project item or `planned` local ticket with no incomplete blockers is a candidate; dependencies wait for completion in the selected tracker.
 - Keep model and reasoning selection under caller/runtime policy. Do not infer or force a model tier for plan execution.
 - Shared resource conflict or uncertainty means sequential execution; independent plans spawn in parallel.
-- Resolve one absolute `execution_line` root for the plan set from the active session worktree. Every plan dispatch must pass an explicit absolute `workspace_root` and `cwd`: parallel plans receive their allocated isolated worktree, while sequential plans receive the same `execution_line` root. Sequential mode does not allocate a new per-plan worktree, but it still receives and verifies its working root.
+- Resolve one absolute `execution_line` root for the plan set from the active session worktree. Every plan dispatch must pass an explicit absolute `workspace_root` and `cwd`: parallel plans receive their allocated isolated worktree, while sequential plans receive the same `execution_line` root. Sequential mode creates no workflow or per-plan worktree; it reuses the existing execution_line without create/reserve/register and verifies that root. Only parallel plans requiring isolation allocate new worktrees.
 - Give each plan one execution slot. A slot limits concurrent work; it does not reserve an agent identity or permit an agent to execute another plan. Return `ready_plans`, `waiting_plans`, `parallel_groups`, `single_slot_plan_ids`, and reasons.
 - In GitHub mode, when at least one child plan is ready for dispatch, find the Beads parent epic using `harness_plan_id=$PLAN_SET_ID:parent`, set it to `in_progress`, and verify it. After each completion, close the epic only when every Beads child is `closed`. Do not create an epic for local-markdown mode.
 - Start every plan ticket with a newly spawned `implement` subagent whose execution context contains no prior plan work. Never reuse a completed, handed-off, or blocked plan's subagent for the next plan.
@@ -91,7 +91,7 @@ Do not auto-merge or auto-prioritize. When an applicable, planned `ui ~ entity` 
 
 ## 소유 worktree 종료
 
-`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 owned plan worktree는 WorktreeManager가 개별 정리하고, sequential execution_line은 상위 workflow 종료 시 정리한다. branch/HEAD/recovery_path/return_root를 남기고 downstream은 보존한 branch로 새 경로를 만든다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 병렬 owned plan worktree만 WorktreeManager가 개별 정리한다. 순차 execution_line은 생성·소유권 등록·삭제하지 않고 후속 구현에서도 같은 경로를 유지한다. 다른 workflow가 실제 생성·소유한 worktree는 해당 소유자만 정리하고 branch/HEAD/recovery_path/return_root를 남긴다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
 
 ## 세션 출력
 
