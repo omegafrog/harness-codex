@@ -6,7 +6,7 @@ This repo is a Node.js Codex harness for ChangeSet/use-case workflows.
 
 ## Harness source changes
 
-When changing Harness behavior, update the consumer installation and update path in the same change. Trace the feature from its source through managed asset discovery/transforms, fresh install, and update; change the installer where required and add an installed-consumer regression check. Do not assume that changing a source file alone makes the feature available to installed projects. Follow `.codex/internal-skills/implement/GUIDE.md` for the complete implementation check.
+When changing Harness behavior, update the consumer installation and update path in the same change. Trace the feature from its source through managed asset discovery/transforms, fresh install, update, Doctor inventory/diagnostics, and Git ignore rules (`.git/info/exclude` or `.gitignore`, according to ownership). Change the installer and Doctor wherever required, and add an installed-consumer regression check that verifies the installed behavior and `git status`: Harness-owned generated files must stay out of commits while application-owned changes remain visible and untouched. Do not assume that changing a source file alone makes the feature available to installed projects. Follow `.codex/internal-skills/implement/GUIDE.md` for the complete implementation check.
 
 If you want some settings or instruction about setting, running server or infra, then write below `docs/agents/EXEC.md`.
 

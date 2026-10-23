@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
-import { discoverManagedAssetPaths } from "../installer/update.mjs";
+import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
@@ -230,8 +230,12 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
     const installedFiles = new Set(await discoverHarnessOwnedFiles(root));
     const managedPaths = sourceRoot ? new Set(await discoverManagedAssetPaths(sourceRoot)) : installedFiles;
-    // Validate all canonical paths above, but only current upstream assets belong in the lock.
-    const ownedFiles = new Set([...installedFiles].filter((file) => managedPaths.has(file)));
+    const currentAssets = sourceRoot ? (await buildHarnessLock({ sourceRoot, targetRoot: root })).files : {};
+    // A divergent, unregistered agent profile was preserved as consumer-owned during install.
+    const preservedAgentProfile = (file) => file.startsWith(".codex/agents/") && !lock.files[file]
+      && currentAssets[file] && currentAssets[file].installed_sha256 !== currentAssets[file].upstream_sha256;
+    const ownedFiles = new Set([...installedFiles].filter((file) => managedPaths.has(file)
+      && !preservedAgentProfile(file)));
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) diagnostics.push(diagnostic("installer_unlocked_file", "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
@@ -308,7 +312,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
   const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot });
-  if (readiness.status !== 'pass') diagnostics.push(diagnostic('project_preparation_required', 'error', 'Prepare consumer execution and canonical contracts before implementation', repositoryRoot, { readiness }));
+  if (readiness.status !== 'pass') diagnostics.push(diagnostic('project_preparation_required', 'error', `Project preparation required: ${readiness.next_steps.join('; ')}`, repositoryRoot, { readiness }));
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
     const rightKey = `${right.path}:${right.code}`;

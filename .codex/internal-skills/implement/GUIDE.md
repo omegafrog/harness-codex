@@ -11,7 +11,7 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 
 ## Harness source distribution
 
-When implementing a Harness feature or runtime change in the Harness source repository, trace it through managed asset discovery and transforms, fresh installation, and update. Change the installer whenever the new or changed asset would otherwise be omitted or installed at the wrong path. Add a regression check that verifies the behavior from an installed consumer tree; source-only tests do not prove the feature reaches installed projects. Keep consumer-owned project guidance and configuration out of forced managed assets unless the installer explicitly treats them as safe templates.
+When implementing a Harness feature or runtime change in the Harness source repository, trace it through managed asset discovery and transforms, fresh installation, update, Doctor inventory/diagnostics, and Git ignore rules (`.git/info/exclude` or `.gitignore`, according to ownership). Change the installer and Doctor wherever the new or changed behavior requires it. Add an installed-consumer regression check that verifies the behavior and `git status`: Harness-owned generated files stay out of commits while application-owned changes remain visible and untouched. Source-only tests do not prove the feature reaches installed projects. Keep consumer-owned project guidance and configuration out of forced managed assets unless the installer explicitly treats them as safe templates.
 
 ## Flow
 

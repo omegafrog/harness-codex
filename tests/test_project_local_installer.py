@@ -132,6 +132,12 @@ class ProjectLocalInstallerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
             subprocess.run(["git", "init", "-q", str(target)], check=True)
+            app = target / "apps" / "web" / "src" / "App.tsx"
+            app.parent.mkdir(parents=True)
+            app.write_text("export default function App() { return null; }\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(target), "add", "apps/web/src/App.tsx"], check=True)
+            subprocess.run(["git", "-C", str(target), "-c", "user.name=Harness Test", "-c", "user.email=harness-test@example.com", "commit", "-qm", "Add app"], check=True)
+            app.write_text("export default function App() { return <main>local work</main>; }\n", encoding="utf-8")
             self.configure_target(target)
 
             result = self.run_full_installer(target)
@@ -139,6 +145,13 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Project readiness: blocked (project_preparation_required)", result.stdout)
             self.assertIn("Required preparation:", result.stdout)
+            exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertIn(".harness/", exclude.splitlines())
+            self.assertIn(".github/workflows/harness-contracts.yml", exclude.splitlines())
+            status = subprocess.run(["git", "-C", str(target), "status", "--short"], text=True, capture_output=True, check=True).stdout
+            self.assertIn(" M apps/web/src/App.tsx", status)
+            self.assertNotIn(".harness/", status)
+            self.assertNotIn(".github/workflows/harness-contracts.yml", status)
             report = self.run_doctor(target)
             self.assertFalse(report["passed"])
             self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
@@ -378,6 +391,8 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertIn(".codex/agents/spec_reviewer.toml (unlocked)", result.stdout)
             lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
             self.assertNotIn(".codex/agents/spec_reviewer.toml", lock["files"])
+            report = self.run_doctor(target)
+            self.assertFalse(any(item["code"] == "installer_unlocked_file" and item["path"].endswith("spec_reviewer.toml") for item in report["diagnostics"]))
 
     def test_force_overwrites_existing_profile(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -23,13 +23,15 @@ async function readExclude(root) {
 
 test("source checkout installation keeps tracked .codex assets out of local exclude", async () => {
   const sourceRoot = await createGitRepository("harness-source-");
-  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n.codex/agents/\n", "utf8");
+  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n.codex/agents/\n.harness/\n.github/workflows/harness-contracts.yml\n", "utf8");
 
   await protectLocalInstallArtifacts(sourceRoot, sourceRoot);
 
   const exclude = await readExclude(sourceRoot);
   assert.doesNotMatch(exclude, /^\.codex\/$/m);
   assert.doesNotMatch(exclude, /^\.codex\/agents\/$/m);
+  assert.doesNotMatch(exclude, /^\.harness\/$/m);
+  assert.doesNotMatch(exclude, /^\.github\/workflows\/harness-contracts\.yml$/m);
   assert.match(exclude, /^\.agents\/$/m);
   assert.match(exclude, /^skills-lock\.json$/m);
 });
@@ -40,7 +42,16 @@ test("consumer installation excludes its local .codex runtime", async () => {
 
   await protectLocalInstallArtifacts(consumerRoot, sourceRoot);
 
-  assert.match(await readExclude(consumerRoot), /^\.codex\/$/m);
+  let exclude = await readExclude(consumerRoot);
+  assert.match(exclude, /^\.codex\/$/m);
+  assert.match(exclude, /^\.harness\/$/m);
+  assert.match(exclude, /^\.github\/workflows\/harness-contracts\.yml$/m);
+  assert.match(exclude, /^\.agents\/$/m);
+  assert.match(exclude, /^skills-lock\.json$/m);
+  await protectLocalInstallArtifacts(consumerRoot, sourceRoot);
+  exclude = await readExclude(consumerRoot);
+  assert.equal((exclude.match(/^\.harness\/$/gm) || []).length, 1);
+  assert.equal((exclude.match(/^\.github\/workflows\/harness-contracts\.yml$/gm) || []).length, 1);
 });
 
 test("skill-only installation copies bundled skills without invoking npx", async () => {

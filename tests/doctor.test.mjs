@@ -56,6 +56,7 @@ test("doctor reports project readiness separately from a valid workflow", async 
   assert.deepEqual(report.summary, { errors: 1, warnings: 0, info: 0 });
   assert.deepEqual(report.diagnostics.map((entry) => entry.code), ["project_preparation_required"]);
   assert.equal(report.diagnostics[0].readiness.status, "blocked");
+  assert.equal(report.diagnostics[0].message, `Project preparation required: ${report.diagnostics[0].readiness.next_steps.join('; ')}`);
 });
 
 test("doctor identifies a canonical-contract gate declared on a non-final workflow", async () => {
