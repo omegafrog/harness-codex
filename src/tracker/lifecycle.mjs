@@ -51,20 +51,8 @@ async function githubProjectMetadata(root, settings, run, context) {
   })();
   return context.githubProjectMetadata;
 }
-async function githubTicket(root, config, ref, run, context) {
-  const settings = config.github;
-  if (!settings || !/^[\w.-]+\/[\w.-]+$/.test(settings.repository || '') || !/^[\w-]+$/.test(settings.project_owner || '') || !Number.isInteger(settings.project_number) || settings.project_number <= 0 || !settings.status_field || settings.status_field === 'Status') throw new Error('Invalid configured GitHub Workflow Status project');
-  const match = ref.match(/^([\w.-]+\/[\w.-]+)#([1-9]\d*)$/);
-  if (!match || match[1] !== settings.repository) throw new Error('Ticket reference must match configured repository');
-  const { project, field } = await githubProjectMetadata(root, settings, run, context);
-  const [owner, repo] = settings.repository.split('/');
-  const query = 'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){state projectItems(first:100){pageInfo{hasNextPage} nodes{id project{id} fieldValues(first:100){pageInfo{hasNextPage} nodes{... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{id}}}}}}}}}}';
-  let response;
-  try { response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${match[2]}`], root); }
-  catch (error) { throw new Error(`GitHub issue query failed for ${ref}: ${error.message}`); }
-  if (response.errors?.length) throw new Error(`GitHub issue query failed for ${ref}: ${response.errors.map((error) => error.message).filter(Boolean).join('; ') || 'API returned errors'}`);
-  const issue = response.data?.repository?.issue;
-  if (!issue || issue.projectItems.pageInfo.hasNextPage) throw new Error('Missing issue or incomplete project item pagination');
+function githubIssueStatus(issue, ref, project, field) {
+  if (!issue || issue.projectItems.pageInfo.hasNextPage) throw new Error(`Missing issue or incomplete project item pagination: ${ref}`);
   const item = single(issue.projectItems.nodes.filter((i) => i.project.id === project.id), 'Configured project item');
   if (item.fieldValues.pageInfo.hasNextPage) throw new Error('Incomplete project field pagination');
   const value = single(item.fieldValues.nodes.filter((v) => v.field?.id === field.id), 'Configured status value');
@@ -72,6 +60,38 @@ async function githubTicket(root, config, ref, run, context) {
   if (!status) throw new Error(`Unsupported Workflow Status: ${value.name}`);
   if (issue.state !== 'OPEN' && status !== 'completed') throw new Error('A closed GitHub issue cannot have an unfinished Workflow Status');
   return { status, project, field, item, issue_state: issue.state };
+}
+
+function githubReference(config, ref) {
+  const settings = config.github;
+  if (!settings || !/^[\w.-]+\/[\w.-]+$/.test(settings.repository || '') || !/^[\w-]+$/.test(settings.project_owner || '') || !Number.isInteger(settings.project_number) || settings.project_number <= 0 || !settings.status_field || settings.status_field === 'Status') throw new Error('Invalid configured GitHub Workflow Status project');
+  const match = ref.match(/^([\w.-]+\/[\w.-]+)#([1-9]\d*)$/);
+  if (!match || match[1] !== settings.repository) throw new Error('Ticket reference must match configured repository');
+  return { settings, owner: match[1].split('/')[0], repo: match[1].split('/')[1], number: Number(match[2]) };
+}
+
+async function githubTickets(root, config, refs, run, context) {
+  const { settings } = githubReference(config, refs[0]);
+  const { project, field } = await githubProjectMetadata(root, settings, run, context);
+  const parsed = refs.map((ref) => ({ ref, ...githubReference(config, ref) }));
+  const results = new Map();
+  for (let offset = 0; offset < parsed.length; offset += 10) {
+    const batch = parsed.slice(offset, offset + 10), first = batch[0];
+    const issues = batch.map(({ number }, index) => `issue_${index}:issue(number:${number}){state projectItems(first:20){pageInfo{hasNextPage} nodes{id project{id} fieldValues(first:20){pageInfo{hasNextPage} nodes{... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{id}}}}}}}}`).join(' ');
+    const query = `query{repository(owner:${JSON.stringify(first.owner)},name:${JSON.stringify(first.repo)}){${issues}}}`;
+    let response;
+    try { response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`], root); }
+    catch (error) { throw new Error(`GitHub batched issue query failed (${batch.map((item) => item.ref).join(', ')}): ${error.message}`); }
+    if (response.errors?.length) throw new Error(`GitHub batched issue query failed: ${response.errors.map((error) => error.message).filter(Boolean).join('; ') || 'API returned errors'}`);
+    const repository = response.data?.repository;
+    if (!repository) throw new Error('GitHub batched issue query returned no repository');
+    batch.forEach((item, index) => results.set(item.ref, githubIssueStatus(repository[`issue_${index}`], item.ref, project, field)));
+  }
+  return results;
+}
+
+async function githubTicket(root, config, ref, run, context) {
+  return (await githubTickets(root, config, [ref], run, context)).get(ref);
 }
 async function readTracker(root, config, ref, run, context = {}) {
   if (config?.mode === 'github') return githubTicket(root, config, ref, run, context);
@@ -119,8 +139,9 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
     if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
     const config = await projectConfig(root), tickets = [], context = {};
+    const githubStatuses = config.mode === 'github' ? await githubTickets(root, config, refs, run, context) : null;
     for (const ref of refs) {
-      const bead = await mirror(root, ref, run), tracker = await readTracker(root, config, ref, run, context);
+      const bead = await mirror(root, ref, run), tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);

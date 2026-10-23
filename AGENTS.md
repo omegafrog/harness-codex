@@ -32,7 +32,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
 
-`spec-me`, `to-ticket`, E2E runner는 단계/agent/서버를 시작하기 전에 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --json`을 실행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
+`spec-me`, `to-ticket`, E2E runner는 단계/agent/서버를 시작하기 전에 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --json`을 실행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
 
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
@@ -58,7 +58,7 @@ This project has a Beads workspace for durable tasks and shared handoff. `to-tic
 
 ## Tracker lifecycle
 
-신규 tracker mirror는 `beads` 스킬의 lifecycle v1과 `harness-tracker.mjs` 공통 코드로 관리한다. canonical 상태는 네 개이며 backlog 분류와 test/review 단계는 metadata다. workflow 시작 workspace preflight/dispatch와 종료 hook의 실제 tracker_sync 검사를 통과해야 한다. 기존 데이터 migration과 자동 연결은 하지 않는다.
+신규 tracker mirror는 `beads` 스킬의 lifecycle v1과 `harness-tracker.mjs` 공통 코드로 관리한다. canonical 상태는 네 개이며 backlog 분류와 test/review 단계는 metadata다. workflow 시작 preflight/dispatch와 종료 hook의 실제 tracker_sync 검사를 통과해야 한다. 단, `to-ticket`은 모든 계획과 fresh review 완료 전 외부 Issue 조회를 미루고, publish 후 완료 hook에서 해당 plan set 전체를 batch 확인한다. 기존 데이터 migration과 자동 연결은 하지 않는다.
 
 ## Workflow worktree 종료
 

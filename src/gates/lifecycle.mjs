@@ -247,7 +247,8 @@ export async function checkContractDocs(state) {
 }
 
 export async function checkTrackerSync(state) {
-  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.expected_root });
+  const ticketRefs = Array.isArray(state?.tracker_sync?.ticket_refs) ? state.tracker_sync.ticket_refs : null;
+  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, ticket_refs: ticketRefs });
 }
 
 const DEFAULT_CHECKS = Object.freeze({

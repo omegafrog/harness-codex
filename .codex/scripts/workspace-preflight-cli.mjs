@@ -2,17 +2,19 @@ import { existsSync } from "node:fs";
 import { inspectWorkspace } from "./workspace-preflight-core.mjs";
 
 export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd = process.cwd()) {
-  const options = { expectedRoot: null, json: false, forImplementation: false };
+  const options = { expectedRoot: null, json: false, forImplementation: false, deferTrackerSync: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--expected-root" && argv[index + 1]) options.expectedRoot = argv[++index];
     else if (token === "--json") options.json = true;
     else if (token === "--for-implementation") options.forImplementation = true;
+    else if (token === "--defer-tracker-sync") options.deferTrackerSync = true;
     else throw new Error(`Unknown or incomplete argument: ${token}`);
   }
-  if (!options.expectedRoot) throw new Error("Usage: harness-workspace-preflight.mjs --expected-root <absolute-worktree-root> [--for-implementation] [--json]");
+  if (!options.expectedRoot || (options.deferTrackerSync && options.forImplementation)) throw new Error("Usage: harness-workspace-preflight.mjs --expected-root <absolute-worktree-root> [--for-implementation | --defer-tracker-sync] [--json]");
   const result = await inspectWorkspace({ expectedRoot: options.expectedRoot, cwd });
-  if (result.valid) {
+  if (result.valid && options.deferTrackerSync) result.tracker_sync = { status: "deferred", reason: "to_ticket_batch_publish" };
+  if (result.valid && !options.deferTrackerSync) {
     const installed = new URL("../harness-runtime/src/tracker/lifecycle.mjs", import.meta.url);
     const source = new URL("../../src/tracker/lifecycle.mjs", import.meta.url);
     const { inspectTrackerSync } = await import(existsSync(installed) ? installed.href : source.href);
