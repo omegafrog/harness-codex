@@ -47,6 +47,7 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
     component "[[../architecture.md#complete-workflow-method completeWorkflow]]" as completeWorkflow
   }
   component "[[../architecture.md#spec-review-service src/workflow/spec-review.mjs]]" as specReview {
+    component "[[../architecture.md#inspect-review-history-method inspectReviewHistory]]" as inspectReviewHistory
     component "[[../architecture.md#snapshot-spec-review-method snapshotSpecReview]]" as snapshotSpecReview
     component "[[../architecture.md#inspect-spec-reviews-method inspectSpecReviews]]" as inspectSpecReviews
     component "[[../architecture.md#update-review-attempt-method updateReviewAttempt]]" as updateReviewAttempt

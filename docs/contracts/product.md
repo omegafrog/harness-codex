@@ -69,6 +69,10 @@ AC-session-output: 잘못된 출력 경로는 쓰기 전에 거부된다. instal
 Product→DDD Architecture→ticket→plan→구현·독립 리뷰·완료의 추적 가능한 흐름을 제공한다.
 
 ### 비즈니스 규칙
+BR-delivery-review-coordination: 각 소유 리뷰의 독립성·Product→Architecture 순서·한도를 유지하면서, 실행 중인 관련 reviewer 결과를 모두 모아 동일 원인과 영향 경로를 한 수정표로 정리한다. 사용자 결정 요청에는 관찰된 Spec·계획·구현의 미해결 지적·pending·한도·필요 결정을 함께 제시한다. harness-review-status는 기존 원장과 선택한 현재 구현 리뷰만 읽어 파생 요약을 반환하며 파일·session·권한을 변경하지 않는다. 조회 성공은 업무 gate pass와 구분한다. 변경된 planning snapshot은 재승인됐어도 이전 코드 리뷰의 repair 예약·완료에 재사용할 수 없다. 실제 편집 중단·지적 묶음과 승인 범위 판정은 caller의 책임이다.
+
+BR-delivery-review-input: 상태 보유 Architecture 변경은 정상·경쟁 저장·부분 실패·재시도·재시작·복구 전이와 다음 허용 명령을 함께 검토한다. 의미적 완전성은 작성자/reviewer가 판단한다. 구현 중 새 명령·업무 상태·규칙·경계 또는 Spec 결정이 필요하면 구현 repair 예약 전에 spec-me로 전환하고, 변경 Spec·영향 계획의 fresh 승인 뒤 기존 기준 commit으로 재개한다. reviewer 생성 전 canonical plan의 정본 참조·SHA-256·정규화 식별자를 검사하고 raw 파일 hash와 구분한다. Spec begin은 입력 snapshot과 같은 workspace·session·ticket·axis·attempt 대상을 반환한다.
+
 BR-implementation-review: 개별 plan의 코드 리뷰는 두 축의 state와 kind·severity·근거를 기록하고 실제 결함/검증 부족, 결정 필요, 통합 계약 동기화, 권고를 구분한다. 수정 횟수는 원본 저장소의 plan별 실행 기록을 정본으로 기본 1회·승인 설정 최대 2회 예약한다. 같은 커밋의 중복 예약, 재개 시 한도 상향, worktree 교체에 따른 초기화와 이전 reviewer context 재사용을 차단한다. checkpoint의 review_fixed_point는 최초 기준을 유지한다. 변경 규칙의 최초·후속·직접 API·재시도·저장 복구 경로를 함께 수정·검증한 뒤 새 commit을 두 fresh reviewer가 검토한다. 한도 소진 뒤 명시적 사용자 범위/결정 변경은 원문과 위치를 기록해 재개한다. 개별 plan은 snapshot-only drift를 최종 통합으로 연결하며 계약 구조·실행 준비 실패는 계속 차단한다. 최종 feature 완료는 실제 계약 pass를 요구한다. canonical_plan.reference는 file/GitHub 정본을, input_key는 가상 hash 키를 나타낸다.
 
 BR-review-admission: Spec의 ticket·축별, 계획의 plan set별로 최초 검토와 재검토 2회를 기록한다. begin은 실행 중 중복 요청, 입력 변경 없는 재요청과 한도 초과를 차단한다. record는 실제 fresh reviewer의 판정·지적과 현재 snapshot을 보존하며 입력 변경은 stale로 기록한다. 종료·취소는 사유와 함께 기록하고 횟수에 포함한다. Architecture 검토 시작은 현재 Product pass를 요구한다. 시작된 리뷰는 pass 결과 기록 뒤 다음 gate를 통과한다. 한도 도달 시 사용자에게 쟁점과 필요한 결정을 제시하고, 명시적 범위·결정 변경 원문을 기록해 새 검토 묶음을 시작한다. 사용자 결정의 진위·역할 선택·검토 중 문서 고정은 호출자의 검토 계약이며, 기존 receipt는 당시 검증 형식을 유지한다.

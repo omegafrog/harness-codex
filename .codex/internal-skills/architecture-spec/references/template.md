@@ -198,9 +198,13 @@ SVG: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.svg`
 
 ## 3.8 Aggregate State Transitions
 
-| Current State | Command / Event     | Next State     | Owner         | Preconditions  | Emitted Event |
-| ------------- | ------------------- | -------------- | ------------- | -------------- | ------------- |
-| `<state>`     | `<command / event>` | `<next state>` | `<aggregate>` | `<conditions>` | `<event>`     |
+변경되는 상태 보유 operation은 아래 표에 정상·중복/재시도·경쟁 저장·부분 실패·재시작·취소/복구 경로를 함께 기록한다. 단순 무상태 조회 등 적용되지 않는 경로는 근거를 적는다. 기존 전이·실패 표를 확장해 한 곳에서 관리한다.
+
+| 현재 상태·사건 | 허용 전이·거부 조건·발행 event | 규칙 owner·최종 저장의 원자적 조건 | 실패 후 보존 상태 | 재시도·복구 주체와 다음 허용 명령 | 요구 ID·검증 사례 |
+|---|---|---|---|---|---|
+| `<state / command / competing writer / restart>` | `<next state / guard>` | `<method / transaction / CAS / version>` | `<durable state / external result>` | `<owner / recovery input / next command>` | `<UC/BR/AC / observable oracle>` |
+
+예약·잠금·version을 도입하거나 변경할 때는 이미 시작한 writer, 예약 중 허용할 하위 처리, 외부 성공 뒤 로컬 저장 실패, 미확인 상태 복구, 해제 후 새 작업 시작을 같은 표에서 대조한다. 재시도 횟수 소진 뒤 도달 가능한 복구·종료 상태를 명시한다. 중대한 미결정은 Architecture 결정 단계에서 해결한 뒤 reviewer에 넘긴다. 이 표의 의미적 완전성은 작성자·reviewer가 판단한다.
 
 ## 3.8.1 State Diagram
 

@@ -28,6 +28,16 @@ async function optionalFile(root, path) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
+const PLAN_NORMALIZATION = 'frontmatter-status-excluded-v1';
+export function validateCanonicalPlanReference(reference) {
+  requireValue(reference && ['file', 'github'].includes(reference.kind), 'Canonical plan kind is required');
+  requireValue(typeof reference.reference === 'string' && reference.reference, 'Canonical plan reference is required');
+  requireValue(reference.hash_algorithm === 'sha256' && reference.normalization === PLAN_NORMALIZATION && DIGEST.test(reference.sha256 || ''), 'Canonical plan hash algorithm, normalization and digest are required');
+  requireValue(typeof reference.input_key === 'string' && reference.input_key.endsWith('#canonical'), 'Canonical plan input_key must identify the normalized snapshot');
+  if (reference.kind === 'file') requireValue(!isAbsolute(reference.reference) && !reference.reference.split(/[\\/]/).some((part) => !part || part === '.' || part === '..') && !reference.reference.includes('#'), 'Canonical plan file must be workspace-relative');
+  else requireValue(/^[^/\s]+\/[^/#\s]+#[1-9][0-9]*$/.test(reference.reference), 'Canonical plan GitHub reference must identify an Issue');
+}
+
 function normalizePlanBody(body) { return body.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/, (frontmatter) => frontmatter.replace(/^status:\s*[^\r\n]+\r?\n/gm, '')); }
 
 async function canonicalPlanBody(root, plan, trackerPort, strict) {
@@ -266,6 +276,7 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
       }
     }
     return { status: 'pass', reason: `plan_traceability_${phase}_current`, violations: [], details: {
+      review_snapshot_sha256: hash(JSON.stringify(Object.keys(snapshot.inputs).sort().map((key) => [key, snapshot.inputs[key]]))),
       plan_set_id: planSetId,
       ticket_id: snapshot.ledger.ticket_id,
       plan_id: planId || null,
@@ -277,7 +288,7 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
       canonical_plan: planId ? (() => {
         const plan = snapshot.ledger.plans.find((item) => item.id === planId);
         const input_key = `${planSetPath(planSetId)}/plans/${plan.id}#canonical`;
-        return { kind: plan.content_path ? 'file' : 'github', reference: plan.content_path || `${plan.canonical.repository}#${plan.canonical.issue}`, input_key, sha256: snapshot.inputs[input_key] };
+        return { kind: plan.content_path ? 'file' : 'github', reference: plan.content_path || `${plan.canonical.repository}#${plan.canonical.issue}`, input_key, hash_algorithm: 'sha256', normalization: PLAN_NORMALIZATION, sha256: snapshot.inputs[input_key] };
       })() : null,
     } };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['plan_traceability'] }; }

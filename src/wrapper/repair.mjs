@@ -1,6 +1,7 @@
 import { updateReviewAttempt } from '../workflow/review-attempts.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { inspectPlanTraceability } from '../workflow/plan-traceability.mjs';
 
 const REPAIRABLE_KINDS = new Set([
   "implementation_defect",
@@ -58,6 +59,7 @@ function validReviewInput(input, implementationCommitSha, expected = null) {
     || !input.diff_range || input.diff_range.from !== input.fixed_point || input.diff_range.to !== implementationCommitSha
     || typeof input.product_spec_path !== "string" || !input.product_spec_path
     || typeof input.architecture_spec_path !== "string" || !input.architecture_spec_path) return false;
+  if ((input.plan_set_id || input.canonical_plan) && (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input.plan_set_id || '') || !/^[a-f0-9]{64}$/.test(input.planning_snapshot_sha256 || ''))) return false;
   if (expected && (input.repository !== expected.repository
     || input.fixed_point !== expected.fixed_point
     || input.implementation_commit_sha !== expected.implementation_commit_sha
@@ -65,11 +67,12 @@ function validReviewInput(input, implementationCommitSha, expected = null) {
     || input.architecture_spec_path !== expected.architecture_spec_path
     || input.diff !== expected.diff
     || JSON.stringify(input.commit_list) !== JSON.stringify(expected.commit_list)
+    || input.plan_set_id !== expected.plan_set_id || input.planning_snapshot_sha256 !== expected.planning_snapshot_sha256
     || JSON.stringify(input.diff_range) !== JSON.stringify(expected.diff_range))) return false;
   return true;
 }
 
-function validReviewProvenance(reviews, implementationCommitSha = null, expectedReviewInput = null) {
+export function validReviewProvenance(reviews, implementationCommitSha = null, expectedReviewInput = null) {
   if (!Array.isArray(reviews) || reviews.length !== 2) return false;
   const roles = new Set(reviews.map((review) => review?.role));
   if (roles.size !== 2 || !roles.has("standards") || !roles.has("spec")) return false;
@@ -115,16 +118,27 @@ export function classifyReviewFindings(reviews = []) {
   return { repairable, blockers, deferred, advisory, has_findings: repairable.length > 0 || blockers.length > 0 };
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution }) {
-  // Anchor the budget to the primary checkout so recreating a worktree cannot reset it.
+export function implementationReviewRoot(root) {
   const primary = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' }).split('\0')[0];
   if (!primary.startsWith('worktree ')) throw new Error('Cannot resolve the primary review workspace');
-  const scope = { root: primary.slice(9), scope: `implementation-${planId}` };
+  return primary.slice(9);
+}
+
+export async function assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort = null }) {
+  if (!reviewInput.plan_set_id) return;
+  const current = await inspectPlanTraceability({ root, planSetId: reviewInput.plan_set_id, planId, phase: 'dispatch', trackerPort });
+  if (current.status !== 'pass' || current.details.review_snapshot_sha256 !== reviewInput.planning_snapshot_sha256) throw Object.assign(new Error('Review planning snapshot changed; collect all findings, reconcile the affected documents and admit a fresh review'), { code: 'review_snapshot_changed' });
+}
+
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null }) {
+  const primaryRoot = implementationReviewRoot(root);
+  const scope = { root: primaryRoot, scope: `implementation-${planId}` };
   if (resolution !== undefined) return updateReviewAttempt({ ...scope, action: 'resolve-repair', reason: resolution });
   if (resolve(reviewInput?.repository || '') !== resolve(root)) throw new TypeError('Review input must belong to the active implementation workspace');
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decision = planRepairRound({ reviews, maxRounds });
   if (decision.action !== 'repair') return decision;
+  await assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort });
   return updateReviewAttempt({ ...scope, action: 'repair', inputs: { ...reviewInput, reviewer_ids: reviews.map((item) => item.context_id) }, maxRounds, findings: decision.classification.repairable });
 }
 
@@ -139,6 +153,7 @@ export function planRepairRound({ reviews = [], round = 0, maxRounds = 1 } = {})
     reason: classification.blockers[0].kind,
     round,
     classification,
+    ...(classification.blockers.some((finding) => BLOCKER_KINDS.has(finding.kind)) ? { next_action: "spec-me", resume_condition: "Approve the changed Specs and refresh the affected plans before implementation resumes" } : {}),
   };
   if (round >= maxRounds) return {
     action: "block",
@@ -219,7 +234,7 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
     const decision = planRepairRound({ reviews, round, maxRounds });
     history.push(decision);
     if (decision.action === "complete") return { state: "passed", reason: null, rounds: round, implementation, reviews, history };
-    if (decision.action === "block") return { state: "blocked", reason: decision.reason, rounds: round, implementation, reviews, history, blocker: decision.classification.blockers[0] || null };
+    if (decision.action === "block") return { state: "blocked", reason: decision.reason, rounds: round, implementation, reviews, history, blocker: decision.classification.blockers[0] || null, ...(decision.next_action ? { next_action: decision.next_action, resume_condition: decision.resume_condition } : {}) };
     if (typeof dispatchRepair !== "function" || typeof runReviewers !== "function") return {
       state: "blocked",
       reason: "repair_adapter_unavailable",

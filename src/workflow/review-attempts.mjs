@@ -5,12 +5,24 @@ import { sessionOutputPath } from './session-output.mjs';
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const same = (a, b) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
 function requireValue(value, message) { if (!value) throw new Error(message); }
-function historyPath(root, scope) {
+function historyPath(root, scope, options = {}) {
   requireValue(ID.test(scope || ''), 'Valid review scope is required');
-  return sessionOutputPath(root, `runtime/reviews/${scope}.json`);
+  return sessionOutputPath(root, `runtime/reviews/${scope}.json`, options);
+}
+function validateHistory(history) {
+  requireValue(Array.isArray(history.attempts) && (history.repairs === undefined || Array.isArray(history.repairs)), 'Invalid review history');
+  requireValue(!history.resolution || Number.isSafeInteger(history.resolution.after) && history.resolution.after > 0 && history.resolution.after <= history.attempts.length && history.attempts[history.resolution.after - 1].round === 3 && !['active', 'pass'].includes(history.attempts[history.resolution.after - 1].status) && typeof history.resolution.reason === 'string' && history.resolution.reason.trim(), 'Invalid review resolution');
+  const repairs = history.repairs || [];
+  requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && Number.isSafeInteger(item.limit) && item.limit >= item.round && item.limit <= 2 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
+  requireValue(!history.repair_resolution || Number.isSafeInteger(history.repair_resolution.after) && history.repair_resolution.after > 0 && history.repair_resolution.after <= repairs.length && repairs[history.repair_resolution.after - 1].round === repairs[history.repair_resolution.after - 1].limit && typeof history.repair_resolution.reason === 'string' && history.repair_resolution.reason.trim(), 'Invalid repair resolution');
+  requireValue(history.attempts.every((item) => item && ['active', 'pass', 'revise', 'stale', 'aborted'].includes(item.status) && Number.isSafeInteger(item.round) && item.round >= 1 && item.round <= 3 && (!item.review || Array.isArray(item.review.findings))), 'Invalid recorded review');
+  requireValue(repairs.every((item, index) => !index ? item.round === 1 : item.round === 1 ? repairs[index - 1].round === repairs[index - 1].limit : item.round === repairs[index - 1].round + 1 && item.limit === repairs[index - 1].limit), 'Invalid historical repair cycle');
+  const cycle = repairs.slice(history.repair_resolution?.after || 0);
+  requireValue(cycle.every((item, index) => item.round === index + 1 && item.limit === cycle[0].limit), 'Invalid current repair cycle');
+  return history;
 }
 async function readHistory(path) {
-  try { return JSON.parse(await readFile(path, 'utf8')); }
+  try { return validateHistory(JSON.parse(await readFile(path, 'utf8'))); }
   catch (error) { if (error.code === 'ENOENT') return { attempts: [] }; throw error; }
 }
 
@@ -92,4 +104,23 @@ export async function assertReviewAttempt({ root, scope, review }) {
   // Existing receipts predate admission history; newly admitted reviews must finish their slot.
   if (!last) return;
   requireValue(last.status === 'pass' && last.review?.reviewer_id === review?.reviewer_id && same(last.review.inputs, review.inputs), 'Record a passing result for the current review attempt before advancing');
+}
+
+
+export async function inspectReviewHistory({ root, scope }) {
+  const path = historyPath(root, scope, { create: false });
+  const history = await readHistory(path);
+  const last = history.attempts.at(-1);
+  const repair = scope.startsWith('implementation-');
+  const cycle = repair ? (history.repairs || []).slice(history.repair_resolution?.after || 0) : null;
+  const reset = history.resolution?.after === history.attempts.length;
+  const used = repair ? cycle.length : !last || last.status === 'pass' || reset ? 0 : last.round;
+  const limit = repair ? cycle[0]?.limit ?? null : 3;
+  requireValue(Number.isSafeInteger(used) && used >= 0 && (limit === null || Number.isSafeInteger(limit) && limit >= 0), 'Invalid review budget');
+  return { root, scope, evidence_path: path, recorded_state: repair ? cycle.length ? 'repair-reserved' : 'no-current-reservation' : last?.status || 'not-started',
+    budget: { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) },
+    next_admission_requires_resolution: repair ? cycle.length > 0 && used >= limit : Boolean(last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
+    findings: repair ? cycle.at(-1)?.findings || [] : last?.review?.findings || [],
+    findings_source: repair ? 'last-repair-reservation' : 'last-recorded-review',
+    reason: last?.reason || null, resolution: repair ? history.repair_resolution || null : history.resolution || null };
 }

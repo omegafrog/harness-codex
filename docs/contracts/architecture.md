@@ -237,7 +237,7 @@ inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후�
 plan·checkpoint·fixed point·review 결과·tracker snapshot (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-구현 reviewer 입력은 completion_kind:plan_implemented와 canonical_plan의 kind/reference/input_key/sha256를 전달한다. 공유 원장의 가상 키와 실제 파일·GitHub 정본을 구분한다. source·실행 프로필은 지정된 구현 commit을, Spec·계획은 승인 snapshot을 기준으로 검토한다. 수정 전 영속 예약을 확보하고 구조화 지적 전체를 수정한다.
+구현 reviewer 입력은 completion_kind:plan_implemented와 canonical_plan의 kind/reference/input_key/hash_algorithm/normalization/sha256를 전달한다. 공유 원장의 가상 키와 실제 파일·GitHub 정본을 구분한다. validateCanonicalPlanReference가 metadata 누락·지원하지 않는 정규화·잘못된 참조를 spawn 전에 거부한다. 정본 본문 hash는 frontmatter-status-excluded-v1로 시작 YAML frontmatter의 status 행만 제외하며 실제 내용 일치는 traceability snapshot gate가 검사한다. source·실행 프로필은 지정된 구현 commit을, Spec·계획은 승인 snapshot을 기준으로 검토한다. 수정 전 영속 예약을 확보하고 구조화 지적 전체를 수정한다. 두 축을 Promise.all로 수집한 뒤 동일 planning snapshot을 기준으로 수정한다. 입력에 plan_set_id·planning_snapshot_sha256을 전달하고 reviewer 생성 전·repair 예약 전 현재 dispatch 승인 및 fingerprint를 검사한다. 최종 completion traceability의 fingerprint도 비교해 검토 중 바뀌고 재승인된 계획으로 옛 리뷰를 통과시키는 경로를 차단한다.
 
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
@@ -252,7 +252,7 @@ executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dis
 plan·checkpoint·fixed point·review 결과·tracker snapshot
 
 ### 동작
-재진입은 checkpoint의 원래 review_fixed_point를 재사용한다. 수정 전 reserveImplementationRepair를 호출해 원본 저장소의 plan별 budget을 소비한다. 새 commit은 이전과 다른 두 reviewer context로 검토하며, 코드로 해결할 수 있는 구현/테스트/검증 결함만 수정 경로로 보낸다. 명시적 minor advisory와 최종 통합의 contract_sync만 비차단 항목으로 분리한다. 중간 plan 완료는 inspectProjectReadiness의 snapshot-only deferred를 허용하고 구조·실행 오류는 계속 차단한다. 최초 fixed point를 계약 비교 기준으로 전달해 revision 증가 위반도 차단한다. 최종 feature 완료의 실제 계약 pass 조건은 유지한다.
+재진입은 checkpoint의 원래 review_fixed_point를 재사용한다. 수정 전 reserveImplementationRepair를 호출해 원본 저장소의 plan별 budget을 소비한다. 새 commit은 이전과 다른 두 reviewer context로 검토하며, 코드로 해결할 수 있는 구현/테스트/검증 결함만 수정 경로로 보낸다. 명시적 minor advisory와 최종 통합의 contract_sync만 비차단 항목으로 분리한다. 중간 plan 완료는 inspectProjectReadiness의 snapshot-only deferred를 허용하고 구조·실행 오류는 계속 차단한다. 최초 fixed point를 계약 비교 기준으로 전달해 revision 증가 위반도 차단한다. 요구 모호성·설계 결정·범위 확장·Spec 충돌은 repair 예약 전에 next_action:spec-me와 resume_condition을 반환하고 checkpoint에 보존한다. 변경 Spec과 영향 계획의 승인 뒤 기존 fixed point로 재개한다. 구현 중 spec-me 재진입은 caller의 workspace/session과 worktree lifecycle을 유지하고 검토된 변경을 상위 caller에 반환한다. 최종 feature 완료의 실제 계약 pass 조건은 유지한다.
 
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
@@ -271,7 +271,7 @@ wrapper runtime과 수동 구현 workflow의 수정 예약을 같은 영속 기�
 실행 workspace·plan ID·fixed point/구현 commit/diff/Spec 경로를 담은 reviewInput·두 독립 fresh reviewer 응답·설정된 수정 한도·명시적 사용자 재개 사유.
 
 ### 동작
-Git worktree 목록의 primary checkout에 저장 위치를 고정한다. reviewInput이 현재 workspace에 속하는지와 두 reviewer의 commit·입력·격리 metadata를 검사한다. planRepairRound로 수정/결정 대기/완료를 분류한 뒤 수정인 경우 공통 updateReviewAttempt에 repair를 예약한다. 기본 1회·최대 2회이고 commit 중복·이전 reviewer 재사용·fixed point 변경·한도 상향을 거부한다. side effect 전에 횟수를 소비하므로 실행 실패나 context 교체로 초기화되지 않는다. 사용자 범위·결정 변경의 진위는 호출자가 확인하고 소진된 묶음의 resolve-repair 사유를 보존한다. 테스트는 delivery 항목의 구현 리뷰·설치 검사를 따른다.
+Git worktree 목록의 primary checkout에 저장 위치를 고정한다. reviewInput이 현재 workspace에 속하는지와 두 reviewer의 commit·입력·격리 metadata를 검사한다. planRepairRound로 수정/결정 대기/완료를 분류한 뒤, 계획된 구현은 assertPlanningReviewSnapshot으로 현재 승인과 review_input의 planning fingerprint 일치를 검사하고 공통 updateReviewAttempt에 repair를 예약한다. 기본 1회·최대 2회이고 commit 중복·이전 reviewer 재사용·fixed point 변경·한도 상향을 거부한다. side effect 전에 횟수를 소비하므로 실행 실패나 context 교체로 초기화되지 않는다. 사용자 범위·결정 변경의 진위는 호출자가 확인하고 소진된 묶음의 resolve-repair 사유를 보존한다. 테스트는 delivery 항목의 구현 리뷰·설치 검사를 따른다.
 
 <a id="decision-service"></a>
 ## src/decision/review.mjs
@@ -598,7 +598,7 @@ allocating/active/archived/cleanup-failed receipt를 조회한다. 이전 실행
 
 <a id="session-output-service"></a>
 ## src/workflow/session-output.mjs
-수정일: 2026-10-17
+수정일: 2026-10-24
 
 ### 설명
 기존 control-plane 내부의 파일 출력 경계 조립 책임이다. 별도 Context·Aggregate·서버를 만들지 않는다. [소스](../../src/workflow/session-output.mjs).
@@ -614,7 +614,7 @@ worktree별 영속 세션 디렉터리를 결정하고 task 소유 로그·임�
 
 <a id="session-directory-method"></a>
 ## sessionDirectory
-수정일: 2026-10-17
+수정일: 2026-10-24
 
 ### 설명
 worktree 제거 후에도 보존되는 canonical 세션 디렉터리를 반환한다.
@@ -623,11 +623,11 @@ worktree 제거 후에도 보존되는 canonical 세션 디렉터리를 반환�
 절대 workspaceRoot와 선택 repositoryRoot(삭제되거나 예약 중인 workspace를 대신하여 Git common directory를 찾을 살아 있는 root).
 
 ### 동작
-Git common directory/harness-workflows/sessions/SHA256(절대 workspace root)를 0700으로 생성한다. 비Git fixture만 project/.codex/sessions/hash를 사용한다. 경로 구성요소의 symlink와 비디렉터리를 거부한다. 기존 자료를 이동하거나 삭제하지 않는다.
+기본 호출은 Git common directory/harness-workflows/sessions/SHA256(절대 workspace root)를 0700으로 생성한다. create:false 조회는 같은 경로와 기존 경로의 안전성만 확인하며 mkdir·chmod를 수행하지 않는다. 비Git fixture만 project/.codex/sessions/hash를 사용한다. 경로 구성요소의 symlink와 비디렉터리를 거부한다. 기존 자료를 이동하거나 삭제하지 않는다.
 
 <a id="session-output-path-method"></a>
 ## sessionOutputPath
-수정일: 2026-10-17
+수정일: 2026-10-24
 
 ### 설명
 세션 아래의 출력 대상 경로를 구하는 공통 함수와 CLI의 경계다.
@@ -636,7 +636,7 @@ Git common directory/harness-workflows/sessions/SHA256(절대 workspace root)를
 절대 workspaceRoot·상대 output·선택 repositoryRoot.
 
 ### 동작
-절대 경로·빈 segment·상위 이탈·symlink·공유 hardlink·특수 파일 leaf를 거부하고 부모 디렉터리를 생성한다. 디렉터리 자체도 출력 위치로 사용할 수 있다. 로그/runtime 파일은 session/runtime/, 임시 파일은 session/tmp/, 소유 receipt는 session/receipt.json, 복구 자료는 session/recovery/에 둔다. 각 process의 TMPDIR/TMP/TEMP와 browser output directory도 이 경계를 사용한다. 최종 제품 문서의 저장 위치를 바꾸는 함수는 아니다.
+절대 경로·빈 segment·상위 이탈·symlink·공유 hardlink·특수 파일 leaf를 거부하고 부모 디렉터리를 생성한다. create:false 조회는 부모 경로를 만들거나 권한을 바꾸지 않고 같은 symlink·hardlink·이탈 검사를 적용한다. 디렉터리 자체도 출력 위치로 사용할 수 있다. 로그/runtime 파일은 session/runtime/, 임시 파일은 session/tmp/, 소유 receipt는 session/receipt.json, 복구 자료는 session/recovery/에 둔다. 각 process의 TMPDIR/TMP/TEMP와 browser output directory도 이 경계를 사용한다. 최종 제품 문서의 저장 위치를 바꾸는 함수는 아니다.
 
 <a id="execution-service"></a>
 ## src/workflow/execution.mjs
@@ -687,7 +687,20 @@ workspace root·ticket ID·review axis·사용자 원문 request.md·Spec/diagra
 spec-me의 Product 작성/diagram 후 고성능 모델의 새 reviewer를 생성하고 pass 후 설계한다. 최종 계약/용어/diagram이 안정된 뒤 stale Product를 갱신하고 다른 새 reviewer가 Architecture를 검토한다. 매 수정본은 새 agent/fork_turns:none으로 보내며 의미 변경은 기존 interview로 돌아간다. reviewer는 읽기 전용으로 JSON 판정과 근거를 반환하고 caller가 원본 응답을 session/runtime/spec-reviews/에 attempt별 보존한다. 이 흐름은 Learning mode 여부와 무관하다. stage gate 및 lifecycle spec_reviews는 기록·입력 hash·작성자 독립성·미해결 중대 지적을 검사한다. completeWorkflow는 로컬 manifest가 spec_reviews를 제거해도 spec-me/to-ticket 필수 검사를 복원한다. to-ticket은 새 worktree의 현재 파일로 검증하고 stale/missing이면 계획 전에 중단한다. 실제 spawn의 진위나 의미적 완전성은 hash만으로 증명하지 않으며 caller가 실제 tool 결과와 대조한다.
 
 ### 메서드
-[updateReviewAttempt](architecture.md#update-review-attempt-method) · [assertReviewAttempt](architecture.md#assert-review-attempt-method) · [snapshotSpecReview](architecture.md#snapshot-spec-review-method) · [inspectSpecReviews](architecture.md#inspect-spec-reviews-method)
+[inspectReviewHistory](architecture.md#inspect-review-history-method) · [updateReviewAttempt](architecture.md#update-review-attempt-method) · [assertReviewAttempt](architecture.md#assert-review-attempt-method) · [snapshotSpecReview](architecture.md#snapshot-spec-review-method) · [inspectSpecReviews](architecture.md#inspect-spec-reviews-method)
+
+<a id="inspect-review-history-method"></a>
+## inspectReviewHistory
+수정일: 2026-10-24
+
+### 설명
+기존 리뷰 원장의 상태·지적·현재 묶음 한도를 읽는 파생 조회다. [소스](../../src/workflow/review-attempts.mjs), [CLI](../../.codex/scripts/harness-review-status.mjs), [조정 절차](../../.codex/internal-skills/spec-review/references/review-coordination.md).
+
+### 필요 엔티티
+workspace root·Spec ticket/axis·plan set·구현 plan scope와 기존 history. 선택한 현재 구현 리뷰는 원본 응답의 두 축·동일 입력 metadata를 검사한다.
+
+### 동작
+create:false 경로 조회로 파일·session·권한을 바꾸지 않고 active/pass/revise/stale/aborted와 예약 이력을 읽는다. pass·승인된 resolve 뒤 새 묶음의 사용량과 다음 admission의 한도 해제 필요 여부를 구분한다. CLI는 Spec/계획 workspace와 원본 저장소의 구현 budget을 함께 조회하며 손상된 scope도 오류 행으로 보존하고 나머지 결과를 반환한다. 기록 당시 지적과 현재 미해결 판정, 조회 성공과 업무 gate pass를 구분한다. caller는 현재 결과·commit·snapshot을 대조하고 한 번의 질문에 영향 scope별 결정·한도·재개 조건을 제시한다. 승인 기록은 기존 scope별 resolve가 소유하며 summary를 새 상태 정본으로 저장하지 않는다.
 
 <a id="snapshot-spec-review-method"></a>
 ## snapshotSpecReview
@@ -729,6 +742,8 @@ workspace root·ticket/axis 또는 plan set scope·입력 snapshot·attempt ID·
 
 ### 동작
 구현 repair 예약은 implementation-<plan-id> scope의 repairs 기록에 fixed point·commit·reviewer IDs·지적·round·한도를 보존한다. 같은 commit·이전 reviewer IDs와 한도 상향을 거부하고, 최초·후속 예약을 원본 저장소에 고정한다. resolve-repair는 소진된 묶음의 사용자 범위·결정 변경 사유를 기록한다.
+
+Spec CLI begin은 원장 admission 결과에 workspace_root·session_directory·ticket_id·axis·attempt_id target을 붙여 caller가 동일 대상으로 reviewer를 호출하게 한다.
 
 session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begin은 활성 슬롯·동일 입력·최초 검토와 재검토 2회 한도를 검사하고 attempt ID와 이전 지적을 반환한다. record는 독립 fresh reviewer와 시작 입력을 확인하고 pass/revise/stale 판정과 원본 응답을 보존한다. abort는 사유와 횟수를 보존하며 슬롯을 해제한다. resolve는 한도에 도달한 묶음에 대한 사용자의 명시적 범위·결정 변경 사유를 보존하고 새 묶음을 열며 사용자 발화의 진위는 호출자가 확인한다. pass 이후 변경 입력도 새 묶음으로 검토한다. 검증은 Product의 delivery 항목에 연결된 회귀 검사를 따른다.
 

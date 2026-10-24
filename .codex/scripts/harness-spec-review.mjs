@@ -6,7 +6,7 @@ const installed = new URL('../harness-runtime/src/workflow/spec-review.mjs', imp
 const source = new URL('../../src/workflow/spec-review.mjs', import.meta.url);
 const { snapshotSpecReview, inspectSpecReviews } = await import(existsSync(installed) ? installed.href : source.href);
 const outputModule = new URL('./session-output.mjs', existsSync(installed) ? installed : source);
-const { sessionOutputPath } = await import(outputModule.href);
+const { sessionOutputPath, sessionDirectory } = await import(outputModule.href);
 const { updateReviewAttempt } = await import(new URL('./review-attempts.mjs', existsSync(installed) ? installed : source).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() }, inputs = [];
@@ -29,6 +29,7 @@ try {
     if (action === 'record' && (review?.axis !== options.axis || review?.ticket_id !== options.ticketId)) throw new Error('Review axis and ticket must match the admitted target');
     const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotSpecReview({ ...options, input_paths: action === 'record' ? Object.keys(review?.inputs || {}) : inputs });
     result = await updateReviewAttempt({ root: options.root, scope: `spec-${options.ticketId}-${options.axis}`, action, inputs: snapshot, attemptId: options.attempt, review, reason: options.reason });
+    if (action === 'begin') result.target = { workspace_root: options.root, session_directory: sessionDirectory(options.root), ticket_id: options.ticketId, axis: options.axis, attempt_id: result.attempt_id };
   } else if (action === 'snapshot') result = await snapshotSpecReview({ ...options, input_paths: inputs });
   else if (action === 'check') {
     const reviews = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));

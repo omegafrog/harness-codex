@@ -4,6 +4,8 @@
 
 호출자는 작성자 대화 맥락을 상속하지 않는 새 reviewer agent를 실제로 생성하고, 실제 reviewer/context ID와 모든 작성자 ID를 보존한다. parent나 계획 작성자는 자신의 계획을 승인할 수 없다. plan set, 정확한 `workspace_root`, `session_directory`, 허용된 source 경로를 확인한 뒤 canonical request, Product/Architecture Spec, 결정, 다이어그램, 현행 계약, 추적 원장, 각 canonical plan 전체를 직접 읽는다. 프로젝트 파일을 수정하거나 다른 agent를 생성하지 않는다.
 
+수정이나 사용자 결정 요청 전에 [공통 리뷰 조정](../spec-review/references/review-coordination.md)을 적용한다.
+
 ## 실행 절차
 
 1. 호출자는 확정 답변·Spec·다이어그램·canonical plan·추적 원장의 변경을 함께 반영하고 실제 작업 경로·브랜치를 대조한다. `harness-plan-traceability.mjs begin --root <workspace_root> --plan-set <plan-set-id>`를 실행한다. 이 명령의 기존 snapshot 검사가 요구 inventory·정본·대응표를 검사한다. `status: pass`와 `attempt_id`·`inputs`를 보존한 뒤 fresh reviewer를 생성한다.

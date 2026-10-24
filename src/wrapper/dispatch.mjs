@@ -10,10 +10,10 @@ import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
 import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
 import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
 import { reconcileCompletion } from "./reconciliation.mjs";
-import { runBoundedReviewRepair, reserveImplementationRepair } from "./repair.mjs";
+import { runBoundedReviewRepair, reserveImplementationRepair, assertPlanningReviewSnapshot } from "./repair.mjs";
 import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
 import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
-import { inspectPlanTraceability } from "../workflow/plan-traceability.mjs";
+import { inspectPlanTraceability, validateCanonicalPlanReference } from "../workflow/plan-traceability.mjs";
 
 const WORKSPACE_PREFLIGHT_REGISTRY = new LifecycleGateRegistry({
   hooks: {
@@ -288,6 +288,7 @@ export async function runIndependentReviewers({
   config = null,
   reviewerProfile = null,
   traceabilityRefs = null,
+  trackerPort = null,
 } = {}) {
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
@@ -308,6 +309,7 @@ export async function runIndependentReviewers({
   if (traceabilityRefs?.repository_root && resolvePath(repository) !== resolvePath(traceabilityRefs.repository_root)) throw new TypeError("Reviewer repository must be the workspace whose traceability refs were checked");
   if (productSpecPath && productSpecPath !== approvedProductPath) throw new TypeError(`productSpecPath must be ${approvedProductPath}`);
   if (architectureSpecPath && architectureSpecPath !== approvedArchitecturePath) throw new TypeError(`architectureSpecPath must be ${approvedArchitecturePath}`);
+  if (traceabilityRefs) validateCanonicalPlanReference(traceabilityRefs.canonical_plan);
   const reviewInput = {
     repository,
     fixed_point: reviewFixedPoint,
@@ -318,9 +320,11 @@ export async function runIndependentReviewers({
     product_spec_path: productSpecPath || approvedProductPath,
     architecture_spec_path: architectureSpecPath || approvedArchitecturePath,
     completion_kind: 'plan_implemented',
+    ...(traceabilityRefs ? { plan_set_id: resolvedPlanSetId, planning_snapshot_sha256: traceabilityRefs.review_snapshot_sha256 } : {}),
     ...(traceabilityRefs?.canonical_plan ? { canonical_plan: traceabilityRefs.canonical_plan } : {}),
     ...(traceabilityRefs ? { traceability_ledger_path: traceabilityRefs.ledger_path, requirement_ids: traceabilityRefs.requirement_ids } : {}),
   };
+  await assertPlanningReviewSnapshot({ root: repository, planId: plan.id, reviewInput, trackerPort });
   const roles = [
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
@@ -458,6 +462,7 @@ export async function executeImplementPlan({
       productSpecPath: dispatched.traceability_refs.product_spec_path,
       architectureSpecPath: dispatched.traceability_refs.architecture_spec_path,
       traceabilityRefs: dispatched.traceability_refs,
+      trackerPort: dispatchOptions.trackerPort,
       commitList: reviewCommitList,
       diff: reviewDiff,
       config: dispatchOptions.config || null,
@@ -473,7 +478,7 @@ export async function executeImplementPlan({
       maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
       dispatchRepair: repairConfig.dispatch || null,
       runReviewers: repairConfig.review || null,
-      reserveRepair: (input) => reserveImplementationRepair({ root: dispatched.workspace_root, planId: dispatchOptions.plan.id, ...input }),
+      reserveRepair: (input) => reserveImplementationRepair({ root: dispatched.workspace_root, planId: dispatchOptions.plan.id, trackerPort: dispatchOptions.trackerPort, ...input }),
     });
     implementation = reviewRepair.implementation;
     reviews = reviewRepair.reviews;
@@ -512,7 +517,9 @@ export async function executeImplementPlan({
   const readiness = await inspectProjectReadiness({ workspace_root: dispatched.workspace_root, deferContractSync: true, base_ref: typeof fixedPoint === 'string' ? fixedPoint : fixedPoint.commit_sha || null });
   const contractDocs = readiness.execution.status !== 'pass' ? readiness.execution : readiness.contract_sync || readiness.contracts;
   const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
-  const planTraceability = await inspectPlanTraceability({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
+  let planTraceability = await inspectPlanTraceability({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
+  const reviewedSnapshot = reviews[0]?.review_input?.planning_snapshot_sha256;
+  if (planTraceability.status === 'pass' && reviewedSnapshot && planTraceability.details.review_snapshot_sha256 !== reviewedSnapshot) planTraceability = { status: 'blocked', reason: 'review_snapshot_changed', violations: ['plan_traceability'] };
   const completionEvidence = {
     trackerSync,
     planTraceability,
@@ -526,6 +533,7 @@ export async function executeImplementPlan({
     required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
     ...(retirement ? { retirement } : {}),
   };
+  const existingBlocker = actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? { ...(reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason }), ...(reviewRepair.resume_condition ? { unblock_condition: reviewRepair.resume_condition } : {}) } : null);
   let completion = reconcileCompletion({
     completionKind: 'plan_implemented',
     plan: dispatchOptions.plan,
@@ -539,7 +547,7 @@ export async function executeImplementPlan({
     contractDocs,
     trackerSync,
     planTraceability,
-    blocker: actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null),
+    blocker: existingBlocker,
     pr,
     trackerSnapshot,
     trackerMode,
@@ -548,7 +556,6 @@ export async function executeImplementPlan({
   if (originalWorkspaceCheck?.valid === false) {
     completion = { ...completion, can_complete: false, state: "blocked", unresolved: [...completion.unresolved, "workspace:original-workspace-changed"] };
   }
-  const existingBlocker = actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null);
   let workspaceCleanup = null;
   let completionEvidencePersisted = false;
   try {
@@ -557,7 +564,7 @@ export async function executeImplementPlan({
     orchestration_state: actual.orchestration_state || "running",
     last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
     blocker: completion.can_complete ? null : existingBlocker || { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
-    next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : "resolve completion gate findings",
+    next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : reviewRepair?.next_action || "resolve completion gate findings",
     lifecycle_evidence: {
       fixed_point: fixedPoint,
       contract_docs: contractDocs,

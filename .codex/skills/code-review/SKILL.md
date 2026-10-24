@@ -84,16 +84,19 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 - If subagent isolation is unavailable, report that limitation instead of pretending it ran normally.
 - Treat a caller-specified supported model as higher priority than `.codex/harness.yaml` and the lightest-model fallback.
 
+수정이나 사용자 결정 요청 전에 [공통 리뷰 조정](../../../.codex/internal-skills/spec-review/references/review-coordination.md)을 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 traceability check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
+
 ## 판정과 수정 절차
 
 1. 현재 plan의 requirement IDs·canonical plan·실행 증거를 두 reviewer에게 전달한다. 추가로 발견한 상위 요구의 누락은 해당 요구의 plan owner를 확인해 기록한다. 다른 plan의 미구현 동작은 그 owner로 연결하고, 현재 plan의 인계 계약 위반은 현재 지적으로 보고한다.
-2. `canonical_plan.kind`가 file이면 reference 파일을 읽고 github이면 reference Issue 본문을 읽는다. `input_key`는 정본 본문의 hash 키이며 `#canonical` 접미사는 가상 snapshot 식별자다. 실제 파일의 존재 여부는 reference를 기준으로 판단한다.
+2. reviewer를 생성하기 전에 traceability check의 현재 pass 결과와 canonical_plan의 kind·reference·input_key·hash_algorithm·normalization·sha256을 확인한다. wrapper runtime은 필수 metadata를 spawn 전에 검사한다. `hash_algorithm:sha256`, `normalization:frontmatter-status-excluded-v1`은 본문을 UTF-8로 읽고 시작 YAML frontmatter의 status 행만 제외한 hash이며 raw 파일 SHA와 비교하지 않는다. canonical hash 판정은 `harness-plan-traceability.mjs check` 결과를 사용한다. `canonical_plan.kind`가 file이면 reference 파일을 읽고 github이면 reference Issue 본문을 읽는다. `input_key`는 정본 본문의 hash 키이며 `#canonical` 접미사는 가상 snapshot 식별자다. 실제 파일의 존재 여부는 reference를 기준으로 판단한다.
 3. 검토 대상 코드·설정·실행 프로필은 지정된 implementation commit의 `git show <SHA>:<path>`와 diff를 기준으로 읽는다. Spec·plan의 승인 snapshot도 함께 보존하고 검토 중 변경 여부를 확인한다. 변경된 작업공간 내용을 특정 커밋의 구현 증거로 섞으면 입력을 다시 고정한다.
 4. reviewer는 아래 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. 권고는 kind:advisory·severity:minor·blocking:false로 기록한다.
 5. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합은 실제 계약 검사 pass를 확인한다. Learning의 자료 사용 승인 절차는 Architecture 선택 토론에서 적용한다.
 6. caller는 session JSON의 최상위 `review_input`에 repository, fixed_point, implementation_commit_sha, commit_list, diff_range, diff, product_spec_path, architecture_spec_path를 보존한다. `reviews` 배열은 role이 standards/spec인 두 객체를 포함한다. 각 객체에 실제 도구의 context_id·independent·fresh_context·implementation_commit_sha, 같은 review_input, reviewer의 state와 report.findings를 붙인다. 실제 agent ID와 원본 응답을 대조한다.
 7. 수정 전 `node .codex/scripts/harness-code-review.mjs repair --root <workspace_root> --plan <plan-id> --reviews <session-relative JSON>`을 실행한다. 기본 한도는 1회이며 승인된 설정이 2회이면 `--max-rounds 2`를 사용한다. 실제 원본 저장소에 연결된 runtime/reviews/implementation-<plan-id>.json이 횟수·fixed point·지적의 정본이다. 같은 커밋의 중복 예약·재개를 통한 한도 상향·worktree 재생성에 따른 초기화를 차단한다. wrapper runtime도 같은 예약 함수를 사용한다.
-8. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 한도를 소진하면 현재 지적·반박 근거·필요한 범위/결정을 사용자에게 제시한다. 사용자가 명시적으로 범위·결정을 바꾼 경우 원문과 위치를 `resolve --root <workspace_root> --plan <plan-id> --reason '<사용자 원문과 위치>'`로 보존하고 재개한다. 사용자 결정의 진위는 caller가 확인한다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
+8. requirement_ambiguity·architecture_decision·scope_expansion·spec_conflict이면 구현 수정을 보류하고 spec-me로 전환한다. 새 명령·새 업무 상태·새 규칙·새 경계가 필요한지와 현재 구현 결함을 구분하고, 발견한 경로 전체·필요 결정·기존 fixed point·commit·repair 기록을 checkpoint에 보존한다. 승인된 Spec과 영향 계획의 fresh review 뒤 같은 구현 기준으로 재개한다. 설계 재검토 중 구현 repair를 먼저 예약하지 않는다.
+9. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 한도를 소진하면 현재 지적·반박 근거·필요한 범위/결정을 사용자에게 제시한다. 사용자가 명시적으로 범위·결정을 바꾼 경우 원문과 위치를 `resolve --root <workspace_root> --plan <plan-id> --reason '<사용자 원문과 위치>'`로 보존하고 재개한다. 사용자 결정의 진위는 caller가 확인한다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
 
 ## Output
 

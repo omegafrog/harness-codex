@@ -4,6 +4,8 @@
 
 완성된 Spec의 결함을 찾는 독립 리뷰다. Normal/Learning 모두 실행하며, Learning의 사용자 결정/자료 승인 리뷰나 구현 후 code-review를 대체하지 않는다. 검토를 위해 외부 자료를 새로 채택하지 않고 전달된 사용자 원문·현행 프로젝트 근거로 판단한다.
 
+수정이나 사용자 결정 요청 전에 [공통 리뷰 조정](references/review-coordination.md)을 적용한다.
+
 ## 리뷰 준비와 실행
 
 1. 확정된 사용자 답변을 `request.md`에 모으고, 해당 답변이 바꾸는 Product/Architecture Spec·다이어그램을 함께 반영한다. 미확정 결정은 interview에서 해결한 뒤 해당 축을 검토한다. 계획 단계의 변경은 canonical plan과 추적 원장도 함께 반영한다. 통합 계약은 현행 구현 기준으로 읽고 최종 구현 통합 단계에서 갱신한다.
@@ -11,6 +13,8 @@
 3. 같은 축의 입력을 고정한 상태에서 리뷰 결과를 수집한다. reviewer에게 변경 범위와 이전 지적의 식별·해결 기록을 전달하되, 이전 판정 대조는 독립 검토 뒤 수행한다. caller는 새 지적과 기존 지적의 재발을 구분해 해결 여부를 기록한다.
 4. 원본 응답과 실제 agent metadata를 합친 리뷰 JSON을 저장하고 `harness-spec-review.mjs record --root <workspace_root> --ticket <id> --axis <axis> --attempt <attempt_id> --reviews <session-relative JSON>`을 실행한다. `record`는 pass·수정 필요·검토 중 입력 변경을 구분해 보존한다. reviewer 종료·취소는 먼저 agent를 종료한 뒤 `abort ... --attempt <attempt_id> --reason '<사유>'`로 기록한다.
 5. 수정 필요 시 지적 전체와 영향 문서를 함께 고친 뒤 다음 `begin`을 실행한다. 최초 검토와 재검토 2회가 한 묶음이며 취소·stale도 횟수에 포함한다. CLI는 실행 중 중복 요청, 수정 없는 재요청, 한도 초과를 차단한다. 한도에 도달하면 남은 쟁점·근거·필요한 결정을 사용자에게 제시하고 범위를 재결정한다. pass 이후 다른 변경은 새 묶음으로 검토한다. 실행 기록은 session의 `runtime/reviews/`가 관리한다.
+
+`begin`이 반환한 `target`의 workspace_root·session_directory·ticket_id·axis·attempt_id와 `inputs`를 reviewer 입력의 기준으로 사용한다. caller는 spawn 전에 요청한 대상과 일치하는지 대조한다. Architecture 진입은 현재 Product pass 등록을 CLI가 확인한 뒤 수행하며, 검토 중 해당 snapshot 파일 수정이 끝나면 새 admission으로 검토한다.
 
 ## 호출과 독립성
 
@@ -28,7 +32,7 @@
 
 Product: Product topics/template·요청 원문·확정 답변·현행 Product 계약·용어를 대조한다. source/test를 읽거나 구현 구조를 결정하지 않는다. 누락된 actor/전제/정상·실패·권한·경계 경로, 모순된 규칙, 기존 기능 회귀, 검증 불가능한 수용 조건, 의미가 달라진 용어, 사용자 확인 없는 범위/우선순위/구현 선택을 찾는다.
 
-Architecture: Product의 모든 UC/BR/수용 조건을 설계 owner·호출/실패 경로로 추적한다. 현행 Context/Aggregate·source·ADR과 대조하여 기존 owner 확장 대신 근거 없이 생긴 모듈/서버, 객체 밖 규칙 누수·불변식 우회, 경계 간 transaction/통신/배포 근거 누락, 구형 용어/경로 잔존, 불필요한 추상화, 성능 workload/측정·기능 추적성 누락, 인프라/필수 인자/설정 갱신·readiness 누락, 문서와 diagram 불일치를 찾는다. 구현 전 설계이므로 계획된 동작이 아직 코드에 없다는 이유만으로 결함 처리하지 않는다.
+Architecture: 전이·실패·복구 표의 경쟁 writer·하위 처리·부분 성공·재시작·해제 후 새 작업을 함께 대조하고, 신규 guard가 복구 명령을 차단해 영구 대기를 만드는지 확인한다. 개별 수정안이 다른 경로에 만드는 major도 같은 응답에 모은다. Product의 모든 UC/BR/수용 조건을 설계 owner·호출/실패 경로로 추적한다. 현행 Context/Aggregate·source·ADR과 대조하여 기존 owner 확장 대신 근거 없이 생긴 모듈/서버, 객체 밖 규칙 누수·불변식 우회, 경계 간 transaction/통신/배포 근거 누락, 구형 용어/경로 잔존, 불필요한 추상화, 성능 workload/측정·기능 추적성 누락, 인프라/필수 인자/설정 갱신·readiness 누락, 문서와 diagram 불일치를 찾는다. 구현 전 설계이므로 계획된 동작이 아직 코드에 없다는 이유만으로 결함 처리하지 않는다.
 
 지적은 실제 실패 시나리오/요청/규칙과 파일:행 등 근거를 연결한다. 불확실한 추정은 사실로 단정하지 않는다. 취향·형식 변경으로 findings 수를 채우지 않는다. 실제 문제가 없으면 `pass`와 빈 findings가 올바른 결과다.
 

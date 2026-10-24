@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import test from 'node:test';
-import { inspectPlanTraceability, inspectTraceabilityImpact, snapshotPlanTraceability } from '../src/workflow/plan-traceability.mjs';
+import { inspectPlanTraceability, inspectTraceabilityImpact, snapshotPlanTraceability, validateCanonicalPlanReference } from '../src/workflow/plan-traceability.mjs';
 import { sessionDirectory } from '../src/workflow/session-output.mjs';
 import { PlanCheckpointStore } from '../src/wrapper/checkpoint.mjs';
 import { dispatchImplementPlan } from '../src/wrapper/dispatch.mjs';
@@ -64,6 +64,9 @@ test('planning traceability validates full source-to-plan coverage and independe
     assert.match(cli.stdout, /plan_traceability_dispatch_current/);
     const reference = JSON.parse(cli.stdout).details.canonical_plan;
     assert.equal(reference.kind, 'file');
+    assert.equal(reference.hash_algorithm, 'sha256');
+    assert.equal(reference.normalization, 'frontmatter-status-excluded-v1');
+    assert.doesNotThrow(() => validateCanonicalPlanReference(reference));
     assert.equal(reference.reference, `${f.base}/plan-a.md`);
     assert.equal(reference.input_key, `${f.base}/plans/plan-a#canonical`);
     assert.match(reference.sha256, /^[a-f0-9]{64}$/);
@@ -289,4 +292,23 @@ test('failed traceability completion cannot mark a ticket done or release depend
   assert.equal(result.can_complete, false);
   assert.notEqual(result.tracker_reconciliation.requested_status, 'Done');
   assert.deepEqual(result.dependents.ready, []);
+});
+
+
+test('canonical plan hash excludes lifecycle status and still detects changed approved content', async () => {
+  const f = await fixture();
+  try {
+    const plan = f.ledger.plans[0];
+    const path = join(f.root, plan.content_path);
+    const body = await readFile(path, 'utf8');
+    await writeFile(path, '---\nstatus: planned\n---\n' + body);
+    const before = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    const key = 'docs/plans/set-9/plans/plan-a#canonical';
+    await writeFile(path, '---\nstatus: in-progress\n---\n' + body);
+    const after = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    assert.equal(before.inputs[key], after.inputs[key]);
+    assert.notEqual(after.inputs[key], digest(await readFile(path)));
+    await writeFile(path, '---\nstatus: in-progress\n---\n' + body + '\nChanged approved behavior');
+    assert.notEqual((await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' })).inputs[key], before.inputs[key]);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
 });

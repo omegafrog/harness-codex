@@ -242,3 +242,16 @@ test("bounded repair stops after max rounds and never repairs a blocker", async 
   assert.equal(blocker.reason, "scope_expansion");
   assert.equal(dispatches, 0);
 });
+
+
+test('design changes return to Spec planning before consuming implementation repair', async () => {
+  const reviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'spec' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: role, implementation_commit_sha: 'impl-1', review_input: REVIEW_INPUT, report: { findings: role === 'spec' ? [{ kind: 'architecture_decision', summary: 'New command and reservation lifecycle require an approved design' }] : [] } }));
+  let reserved = 0, dispatched = 0;
+  const result = await runBoundedReviewRepair({ initialImplementation: { commit_sha: 'impl-1' }, initialReviews: reviews, reviewInput: REVIEW_INPUT, plan: { id: 'plan-a' }, reserveRepair: async () => { reserved++; }, dispatchRepair: async () => { dispatched++; } });
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.next_action, 'spec-me');
+  assert.match(result.resume_condition, /Approve the changed Specs/);
+  assert.equal(result.rounds, 0);
+  assert.equal(reserved, 0);
+  assert.equal(dispatched, 0);
+});

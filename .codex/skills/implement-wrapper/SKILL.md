@@ -12,6 +12,10 @@ description: Schedule approved plans into dependency-safe, single-slot subagent 
 
 Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and routes; `implement` subagents implement, verify, review, commit, and update status. Model and reasoning selection belong to the caller/runtime; this skill does not force either.
 
+구현 review 결과의 next_action이 `spec-me`이면 checkpoint의 blocker·unblock_condition·기존 fixed point와 commit을 인계하고 설계 변경 절차로 전환한다. 변경 Spec과 영향 계획의 fresh review가 승인된 뒤 같은 plan 실행을 재개한다. 구현 repair 한도와 설계 결정 대기를 구분한다.
+
+관련 reviewer의 결과를 모은 뒤 수정·결정 요청은 [공통 리뷰 조정](../../../.codex/internal-skills/spec-review/references/review-coordination.md)을 따른다. 통합 조회에서 현재 pending·손상·각 축의 한도를 함께 제시하고 승인된 scope별 재개 절차를 적용한다.
+
 ## Schedule
 
 기존 Spec·계획을 보정할 때 확정 답변과 영향 문서 수정을 먼저 모아 반영하고, `spec-review`와 `plan-review`의 `begin/record` 절차로 해당 검토를 수행한다. Architecture 선택에 대한 사용자 방어 토론은 Learning 전용 `architecture-review` 절차를 적용한다. 통합 계약은 최종 구현 통합 완료 단계에서 갱신한다.

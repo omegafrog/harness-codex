@@ -33,6 +33,11 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     const started = cli('begin', '--axis', 'product');
     assert.equal(started.status, 0, started.stderr);
     const attempt = JSON.parse(started.stdout);
+    assert.equal(attempt.target.workspace_root, targetRoot);
+    assert.equal(attempt.target.ticket_id, 'review-install');
+    assert.equal(attempt.target.axis, 'product');
+    assert.equal(attempt.target.attempt_id, attempt.attempt_id);
+    assert.ok(attempt.target.session_directory.startsWith(targetRoot));
     assert.match(cli('begin', '--axis', 'product').stderr, /already active/);
     const reviews = { product: { axis: 'product', ticket_id: 'review-install', reviewer_id: 'fresh-product-reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs: attempt.inputs, findings: [] } };
     const evidence = 'runtime/spec-reviews/install.json';
@@ -46,8 +51,24 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     const implementationReviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'standards' ? 'failed' : 'passed', context_id: role, independent: true, fresh_context: true, implementation_commit_sha: 'impl-1', review_input: reviewInput, report: { findings: role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Repair the complete replay path' }] : [] } }));
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
     const repair = () => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-code-review.mjs'), 'repair', '--root', targetRoot, '--plan', 'plan-a', '--reviews', implementationEvidence], { cwd: targetRoot, encoding: 'utf8' });
+    const designReviews = implementationReviews.map((review) => review.role === 'standards' ? { ...review, report: { findings: [{ kind: 'architecture_decision', summary: 'New state needs an approved design' }] } } : review);
+    await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: designReviews }));
+    const design = repair();
+    assert.equal(design.status, 1);
+    assert.equal(JSON.parse(design.stdout).next_action, 'spec-me');
+    await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
     assert.equal(repair().status, 0);
     assert.match(repair().stderr, /already has a reserved repair/);
+    const reviewStatusPath = '.codex/scripts/harness-review-status.mjs';
+    const statusCli = () => spawnSync(process.execPath, [join(targetRoot, reviewStatusPath), '--root', targetRoot, '--ticket', 'review-install', '--plan-set', 'review-set', '--plan', 'plan-a', '--reviews', implementationEvidence], { cwd: targetRoot, encoding: 'utf8' });
+    const freshStatus = statusCli();
+    assert.equal(freshStatus.status, 0, freshStatus.stderr);
+    assert.equal(JSON.parse(freshStatus.stdout).records.at(-1).budget.used, 1);
+    assert.equal(JSON.parse(freshStatus.stdout).implementation_findings.repairable.length, 1);
+    await unlink(join(targetRoot, reviewStatusPath));
+    const missingStatusCli = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(missingStatusCli.diagnostics.some((item) => item.code === 'installer_missing_file' && item.path === join(targetRoot, reviewStatusPath)));
+
 
     await writeFile(join(targetRoot, runtimePath), 'old runtime\n');
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
@@ -59,6 +80,26 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(lock.files[runtimePath]);
     assert.ok(lock.files['.codex/scripts/harness-code-review.mjs']);
+    assert.ok(lock.files[reviewStatusPath]);
+    assert.equal(statusCli().status, 0);
+    const staleInput = { ...reviewInput, plan_set_id: 'missing-plan-set', planning_snapshot_sha256: 'a'.repeat(64), completion_kind: 'plan_implemented' };
+    await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: staleInput, reviews: implementationReviews.map((review) => ({ ...review, review_input: staleInput })) }));
+    assert.match(repair().stderr, /planning snapshot changed/);
+    await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
+
+    assert.equal(JSON.parse(statusCli().stdout).records.at(-1).budget.used, 1);
+    const coordination = '.codex/internal-skills/spec-review/references/review-coordination.md';
+    assert.equal(await readFile(join(targetRoot, coordination), 'utf8'), await readFile(join(REPOSITORY_ROOT, coordination), 'utf8'));
+    const doctorAfterStatusRestore = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(!doctorAfterStatusRestore.diagnostics.some((item) => item.path === join(targetRoot, reviewStatusPath)));
+    assert.equal(spawnSync('git', ['check-ignore', '-v', reviewStatusPath], { cwd: targetRoot }).status, 0);
+
+    const installedReference = pathToFileURL(join(targetRoot, '.codex/harness-runtime/src/workflow/plan-traceability.mjs')).href;
+    const referenceCheck = spawnSync(process.execPath, ['--input-type=module', '-e', `import { validateCanonicalPlanReference } from ${JSON.stringify(installedReference)}; const ref = {kind:'file',reference:'docs/plans/plan.md',input_key:'plan#canonical',hash_algorithm:'sha256',normalization:'frontmatter-status-excluded-v1',sha256:'a'.repeat(64)}; validateCanonicalPlanReference(ref); try { validateCanonicalPlanReference({...ref, normalization:'raw-file'}); process.exit(1); } catch {}`], { cwd: targetRoot, encoding: 'utf8' });
+    assert.equal(referenceCheck.status, 0, referenceCheck.stderr);
+    for (const path of ['.codex/internal-skills/architecture-spec/GUIDE.md', '.codex/internal-skills/architecture-spec/references/template.md', '.codex/internal-skills/spec-review/GUIDE.md']) assert.equal(await readFile(join(targetRoot, path), 'utf8'), await readFile(join(REPOSITORY_ROOT, path), 'utf8'));
+    assert.equal(await readFile(join(targetRoot, '.agents/skills/spec-me/SKILL.md'), 'utf8'), (await readFile(join(REPOSITORY_ROOT, '.codex/skills/spec-me/SKILL.md'), 'utf8')).replaceAll('.codex/skills/', '.agents/skills/'));
+
     const doctor = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
     assert.ok(!doctor.diagnostics.some((item) => item.severity === 'error' && item.path.endsWith('review-attempts.mjs')));
     const status = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: targetRoot, encoding: 'utf8' }).stdout;

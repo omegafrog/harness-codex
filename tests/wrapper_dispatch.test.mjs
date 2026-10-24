@@ -454,6 +454,75 @@ test('repair reviewers retain the original completion scope and canonical refere
   } finally { await cleanup(); }
 });
 
+test('design blockers preserve the Spec handoff in the execution checkpoint', async () => {
+  const { root, cleanup } = await makeReadyProject();
+  try {
+    await recordImplementationEvidence(root, 'plan-contracts');
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
+    const base = stdout.trim(), initial = 'implementation-contracts', fixed = 'implementation-contracts-fixed';
+    const store = new PlanCheckpointStore({ root, planId: 'plan-contracts' });
+    try {
+      const result = await executeImplementPlan({
+        plan: { id: 'plan-contracts' }, plans: [{ id: 'plan-contracts', status: 'planned', dependencies: [], resources: ['filesystem:src/a'] }],
+        planSetId: '496', repository: root, executionLine: root, checkpointStore: store,
+        readGitState: async () => ({ changed_files: [] }), readTestState: async () => ({ status: 'passed' }),
+        slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
+        spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
+        waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
+        config: { agents: { implementation_model: 'implementation-model' } },
+        spawnReviewer: async ({ agent_type }) => ({ state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'architecture_decision', summary: 'Fix replay' }] : [] }),
+        trackerSnapshot: { status: 'Done', project_status: 'Done' },
+      });
+      assert.equal(result.review_repair.state, 'blocked');
+      assert.equal(result.review_repair.rounds, 0);
+      assert.equal(result.review_repair.next_action, 'spec-me');
+      assert.equal(result.completion.state, 'blocked');
+      const checkpoint = await store.read();
+      assert.equal(checkpoint.next_action, 'spec-me');
+      assert.match(checkpoint.blocker.unblock_condition, /Approve the changed Specs/);
+    } finally { await store.close(); }
+  } finally { await cleanup(); }
+});
+
+test('changed and reapproved planning inputs block repair before a reservation', async () => {
+  const { root, cleanup } = await makeReadyProject();
+  try {
+    await recordImplementationEvidence(root, 'plan-contracts');
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
+    const base = stdout.trim(), initial = 'implementation-contracts', fixed = 'implementation-contracts-fixed';
+    const store = new PlanCheckpointStore({ root, planId: 'plan-contracts' });
+    try {
+      const result = await executeImplementPlan({
+        plan: { id: 'plan-contracts' }, plans: [{ id: 'plan-contracts', status: 'planned', dependencies: [], resources: ['filesystem:src/a'] }],
+        planSetId: '496', repository: root, executionLine: root, checkpointStore: store,
+        readGitState: async () => ({ changed_files: [] }), readTestState: async () => ({ status: 'passed' }),
+        slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
+        spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
+        waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
+        config: { agents: { implementation_model: 'implementation-model' } },
+        spawnReviewer: async ({ agent_type }) => {
+          if (agent_type === 'spec_reviewer') {
+            const spec = join(root, 'docs/specs/496/product-spec.md');
+            await writeFile(spec, (await readFile(spec, 'utf8')) + '\nChanged decision evidence after admission.\n');
+            const ledgerPath = join(root, 'docs/plans/496/traceability.json');
+            const ledger = JSON.parse(await readFile(ledgerPath, 'utf8'));
+            ledger.review.inputs = (await snapshotPlanTraceability({ root, planSetId: '496' })).inputs;
+            await writeFile(ledgerPath, JSON.stringify(ledger));
+          }
+          return { state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'implementation_defect', summary: 'Fix replay' }] : [] };
+        },
+        reviewRepair: { dispatch: async () => { throw new Error('Repair must not start'); }, review: async () => [] },
+        trackerSnapshot: { status: 'Done', project_status: 'Done' },
+      });
+      assert.equal(result.review_repair.state, 'blocked');
+      assert.equal(result.review_repair.reason, 'review_snapshot_changed');
+      assert.equal(result.review_repair.rounds, 0);
+      assert.equal(result.completion.state, 'blocked');
+      await assert.rejects(readFile(sessionOutputPath(root, 'runtime/reviews/implementation-plan-contracts.json')), { code: 'ENOENT' });
+    } finally { await store.close(); }
+  } finally { await cleanup(); }
+});
+
 test("implementation lifecycle completes with sealed canonical contracts", async () => {
   const { root, cleanup } = await makeReadyProject();
   try {
@@ -619,6 +688,13 @@ test("review input rejects an empty diff and cross-ticket spec path", async () =
     spawnReviewer: async () => ({ state: "passed" }),
   };
   await assert.rejects(() => runIndependentReviewers({ ...input, diff: "   " }), /non-empty string/);
+  let spawned = 0;
+  const canonical = { kind: 'file', reference: 'docs/plans/496/plan-a.md', input_key: 'docs/plans/496/plans/plan-a#canonical', hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: 'a'.repeat(64) };
+  for (const broken of [null, { ...canonical, normalization: 'raw-file' }, { ...canonical, sha256: 'invalid' }, { ...canonical, reference: '../other-plan.md' }]) {
+    await assert.rejects(() => runIndependentReviewers({ ...input, diff: 'diff', traceabilityRefs: { canonical_plan: broken }, spawnReviewer: async () => { spawned++; } }), /Canonical plan/);
+  }
+  assert.equal(spawned, 0);
+
   await assert.rejects(() => runIndependentReviewers({ ...input, diff: "diff", productSpecPath: "docs/specs/487/product-spec.md" }), /productSpecPath must be docs\/specs\/496\/product-spec\.md/);
 });
 
@@ -701,4 +777,23 @@ test("intermediate readiness preserves contract revision checks against the orig
       assert.equal(result.contract_sync, undefined);
     }
   } finally { await cleanup(); }
+});
+
+
+test('review aggregation waits for both axes before returning an early failed result', async () => {
+  const releases = new Map();
+  let bothStarted;
+  const started = new Promise((resolve) => { bothStarted = resolve; });
+  let returned = false;
+  const pending = runIndependentReviewers({ plan: { id: 'plan-a' }, implementation: { commit_sha: 'impl' }, fixedPoint: 'base', planSetId: '496', repository: '/workspace/repo', commitList: ['base', 'impl'], diff: 'diff', config: { agents: { implementation_model: 'review-model' } },
+    spawnReviewer: ({ agent_type }) => new Promise((resolve) => { releases.set(agent_type, () => resolve({ state: 'failed', independent: true, fresh_context: true, context_id: agent_type, implementation_commit_sha: 'impl', findings: [{ kind: 'test_defect', summary: agent_type }] })); if (releases.size === 2) bothStarted(); }),
+  }).then((reviews) => { returned = true; return reviews; });
+  await started;
+  releases.get('standards_reviewer')();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(returned, false);
+  releases.get('spec_reviewer')();
+  const reviews = await pending;
+  assert.equal(reviews.length, 2);
+  assert.deepEqual(reviews.map((review) => review.report.findings[0].summary), ['standards_reviewer', 'spec_reviewer']);
 });
