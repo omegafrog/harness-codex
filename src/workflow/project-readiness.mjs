@@ -5,7 +5,7 @@ import { inspectContracts } from '../contracts/contracts.mjs';
 import { readExecutionManifest } from './execution.mjs';
 
 // This checks preparation without launching commands or inventing consumer business contracts.
-export async function inspectProjectReadiness({ workspace_root, deferContractSync = false } = {}) {
+export async function inspectProjectReadiness({ workspace_root, deferContractSync = false, base_ref = null } = {}) {
   let execution;
   try {
     if (!isAbsolute(workspace_root || '')) throw new Error('Absolute workspace_root is required');
@@ -16,7 +16,7 @@ export async function inspectProjectReadiness({ workspace_root, deferContractSyn
   } catch (error) {
     execution = { status: 'fail', reason: 'execution_contract_invalid', violations: [error.message] };
   }
-  const contracts = await inspectContracts({ workspace_root });
+  const contracts = await inspectContracts({ workspace_root, base_ref });
   const contractDriftOnly = contracts.reason === 'contracts_out_of_sync'
     && contracts.violations.length === 1
     && contracts.violations[0] === 'Contract/source snapshot changed; reconcile and seal';

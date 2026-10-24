@@ -64,7 +64,7 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for spawning the reviewer.
 8. Keep the two subagent contexts isolated and read-only.
 9. Wait long enough for both review subagents to finish before aggregating.
-10. Aggregate the two reports without merging or reranking them.
+10. Aggregate the two reports without merging or reranking them. Preserve each axis and structured findings; use the repair decision below to route the next action.
 
 ## Waiting
 
@@ -84,17 +84,26 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 - If subagent isolation is unavailable, report that limitation instead of pretending it ran normally.
 - Treat a caller-specified supported model as higher priority than `.codex/harness.yaml` and the lightest-model fallback.
 
+## 판정과 수정 절차
+
+1. 현재 plan의 requirement IDs·canonical plan·실행 증거를 두 reviewer에게 전달한다. 추가로 발견한 상위 요구의 누락은 해당 요구의 plan owner를 확인해 기록한다. 다른 plan의 미구현 동작은 그 owner로 연결하고, 현재 plan의 인계 계약 위반은 현재 지적으로 보고한다.
+2. `canonical_plan.kind`가 file이면 reference 파일을 읽고 github이면 reference Issue 본문을 읽는다. `input_key`는 정본 본문의 hash 키이며 `#canonical` 접미사는 가상 snapshot 식별자다. 실제 파일의 존재 여부는 reference를 기준으로 판단한다.
+3. 검토 대상 코드·설정·실행 프로필은 지정된 implementation commit의 `git show <SHA>:<path>`와 diff를 기준으로 읽는다. Spec·plan의 승인 snapshot도 함께 보존하고 검토 중 변경 여부를 확인한다. 변경된 작업공간 내용을 특정 커밋의 구현 증거로 섞으면 입력을 다시 고정한다.
+4. reviewer는 아래 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. 권고는 kind:advisory·severity:minor·blocking:false로 기록한다.
+5. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합은 실제 계약 검사 pass를 확인한다. Learning의 자료 사용 승인 절차는 Architecture 선택 토론에서 적용한다.
+6. caller는 session JSON의 최상위 `review_input`에 repository, fixed_point, implementation_commit_sha, commit_list, diff_range, diff, product_spec_path, architecture_spec_path를 보존한다. `reviews` 배열은 role이 standards/spec인 두 객체를 포함한다. 각 객체에 실제 도구의 context_id·independent·fresh_context·implementation_commit_sha, 같은 review_input, reviewer의 state와 report.findings를 붙인다. 실제 agent ID와 원본 응답을 대조한다.
+7. 수정 전 `node .codex/scripts/harness-code-review.mjs repair --root <workspace_root> --plan <plan-id> --reviews <session-relative JSON>`을 실행한다. 기본 한도는 1회이며 승인된 설정이 2회이면 `--max-rounds 2`를 사용한다. 실제 원본 저장소에 연결된 runtime/reviews/implementation-<plan-id>.json이 횟수·fixed point·지적의 정본이다. 같은 커밋의 중복 예약·재개를 통한 한도 상향·worktree 재생성에 따른 초기화를 차단한다. wrapper runtime도 같은 예약 함수를 사용한다.
+8. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 한도를 소진하면 현재 지적·반박 근거·필요한 범위/결정을 사용자에게 제시한다. 사용자가 명시적으로 범위·결정을 바꾼 경우 원문과 위치를 `resolve --root <workspace_root> --plan <plan-id> --reason '<사용자 원문과 위치>'`로 보존하고 재개한다. 사용자 결정의 진위는 caller가 확인한다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
+
 ## Output
 
-- fixed point
-- Standards findings
-- Spec findings
-- per-axis summary
-- unresolved blockers
+- fixed point와 implementation commit
+- 축별 state·구조화 findings·실제 reviewer metadata
+- 현재 plan의 미해결 blocker와 최종 통합으로 연결한 항목
 
 ## 통합 계약 연속성
 
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+각 plan은 현행 계약을 기준으로 담당 구현·인계·검증을 검토한다. 통합 계약의 본문·diagram·version·seal 갱신은 모든 구현 plan을 통합한 최종 workflow에서 수행한다. 중간 plan은 snapshot drift만 deferred로 기록하고 구조 오류와 실행 준비 실패는 계속 차단한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치를 확인한다.
 
 ## 소유 worktree 종료
 

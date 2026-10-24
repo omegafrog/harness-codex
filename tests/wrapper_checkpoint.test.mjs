@@ -18,6 +18,7 @@ test("checkpoint store writes and reads the durable handoff contract", async () 
     await store.write({
       orchestration_state: "handoff-required",
       attempt: 2,
+      review_fixed_point: 'original-base',
       last_completed_step: "focused verification",
       changed_files: ["src/a.js"],
       tests: { command: "npm test", passed: true },
@@ -29,6 +30,8 @@ test("checkpoint store writes and reads the durable handoff contract", async () 
     const checkpoint = await store.read();
     assert.equal(checkpoint.plan_id, "plan-a");
     assert.equal(checkpoint.attempt, 2);
+    assert.equal(checkpoint.review_fixed_point, 'original-base');
+    await assert.rejects(store.write({ review_fixed_point: 'new-head' }), /original review_fixed_point/);
     assert.deepEqual(checkpoint.changed_files, ["src/a.js"]);
     assert.equal(checkpoint.orchestration_state, "handoff-required");
     assert.match(await readFile(store.paths.checkpoint_path, "utf8"), /handoff_reason:/);

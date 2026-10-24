@@ -16,6 +16,8 @@ import { sealContracts } from "../src/contracts/contracts.mjs";
 import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
 import { snapshotPlanTraceability } from "../src/workflow/plan-traceability.mjs";
 
+import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
+
 const execFileAsync = promisify(execFile);
 
 test("implementation prompt accepts canonical GitHub plans and separate ticket IDs", () => {
@@ -416,6 +418,42 @@ test("implementation lifecycle blocks completion and dependents when contracts a
   }
 });
 
+test('repair reviewers retain the original completion scope and canonical reference', async () => {
+  const { root, cleanup } = await makeReadyProject();
+  try {
+    await recordImplementationEvidence(root, 'plan-contracts');
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
+    const base = stdout.trim(), initial = 'implementation-contracts', fixed = 'implementation-contracts-fixed';
+    const store = new PlanCheckpointStore({ root, planId: 'plan-contracts' });
+    try {
+      const result = await executeImplementPlan({
+        plan: { id: 'plan-contracts' }, plans: [{ id: 'plan-contracts', status: 'planned', dependencies: [], resources: ['filesystem:src/a'] }],
+        planSetId: '496', repository: root, executionLine: root, checkpointStore: store,
+        readGitState: async () => ({ changed_files: [] }), readTestState: async () => ({ status: 'passed' }),
+        slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
+        spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
+        waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
+        config: { agents: { implementation_model: 'implementation-model' } },
+        spawnReviewer: async ({ agent_type }) => ({ state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'implementation_defect', summary: 'Fix replay' }] : [] }),
+        reviewRepair: {
+          dispatch: async () => ({ plan_id: 'plan-contracts', state: 'completed', commit_sha: fixed, commit_list: [base, initial, fixed], diff: 'diff --git a/src/a b/src/a', fresh_context: true, empty_context: true }),
+          review: async ({ review_input }) => {
+            assert.equal(review_input.completion_kind, 'plan_implemented');
+            assert.equal(review_input.canonical_plan.kind, 'file');
+            assert.equal(review_input.canonical_plan.reference, 'docs/plans/496/plan-contracts.md');
+            assert.equal(review_input.implementation_commit_sha, fixed);
+            return ['standards', 'spec'].map((role) => ({ role, state: 'passed', independent: true, fresh_context: true, context_id: `${role}-corrected`, implementation_commit_sha: fixed, review_input }));
+          },
+        },
+        trackerSnapshot: { status: 'Done', project_status: 'Done' },
+      });
+      assert.equal(result.review_repair.state, 'passed');
+      assert.equal(result.review_repair.rounds, 1);
+      assert.equal(result.completion.state, 'completed');
+    } finally { await store.close(); }
+  } finally { await cleanup(); }
+});
+
 test("implementation lifecycle completes with sealed canonical contracts", async () => {
   const { root, cleanup } = await makeReadyProject();
   try {
@@ -423,7 +461,7 @@ test("implementation lifecycle completes with sealed canonical contracts", async
     const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root });
     const base = stdout.trim();
     const store = new PlanCheckpointStore({ root, planId: "plan-contracts" });
-    const result = await executeImplementPlan({
+    const run = () => executeImplementPlan({
       plan: { id: "plan-contracts" }, plans: [{ id: "plan-contracts", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496", repository: root, executionLine: root, checkpointStore: store,
       readGitState: async () => ({ changed_files: [] }), readTestState: async () => ({ status: "passed", command: "npm test" }),
@@ -434,9 +472,14 @@ test("implementation lifecycle completes with sealed canonical contracts", async
       spawnReviewer: async ({ agent_type }) => ({ state: "passed", independent: true, fresh_context: true, context_id: `${agent_type}-contracts`, implementation_commit_sha: "implementation-contracts" }),
       pr: { merged: false }, trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
     });
+    const result = await run();
     assert.equal(result.completion.state, "completed");
     assert.equal(result.completion.tracker_reconciliation.requested_status, "Done");
     assert.equal((await store.read()).lifecycle_evidence.contract_docs.status, "pass");
+    await writeFile(join(root, 'src/integration-pending.mjs'), 'export const pending = true;\n');
+    const deferred = await run();
+    assert.equal(deferred.completion.state, 'completed');
+    assert.equal((await store.read()).lifecycle_evidence.contract_docs.status, 'deferred');
     await store.close();
   } finally { await cleanup(); }
 });
@@ -637,4 +680,25 @@ test("duplicate dispatch is recorded as a retry blocker instead of stale running
   } finally {
     await fixture.cleanup();
   }
+});
+
+
+test("intermediate readiness preserves contract revision checks against the original base", async () => {
+  const { root, cleanup } = await makeReadyProject();
+  try {
+    const base = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+    const path = join(root, "docs/contracts/manifest.json");
+    const manifest = JSON.parse(await readFile(path, "utf8"));
+    manifest.change_summary = "Changed contract metadata without increasing revision";
+    await writeFile(path, JSON.stringify(manifest, null, 2) + "\n");
+    await execFileAsync("git", ["add", "docs/contracts/manifest.json"], { cwd: root });
+    await execFileAsync("git", ["commit", "-qm", "Invalid unchanged revision"], { cwd: root });
+    for (const drift of [false, true]) {
+      if (drift) await writeFile(join(root, "src/implementation.mjs"), "export const implemented = false;\n");
+      const result = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true, base_ref: base });
+      assert.equal(result.status, "blocked");
+      assert.ok(result.contracts.violations.includes("Contract revision must increase from base"));
+      assert.equal(result.contract_sync, undefined);
+    }
+  } finally { await cleanup(); }
 });

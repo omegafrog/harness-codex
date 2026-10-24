@@ -104,7 +104,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 <a id="installer-service"></a>
 ## src/installer/update.mjs
-수정일: 2026-10-23
+수정일: 2026-10-24
 
 ### 설명
 설치 CLI는 프로젝트 자산 동기화를 수행한다. setup CLI가 live model/effort, tracker, Beads, OTel 관측성 사용 여부·세 endpoint 포트·저장소별 보존 기간·프로젝트/서비스별 실제 Actuator URL을 Codex CLI 내부 native UI에서 수집한다. harness-setup.mjs --answers는 session 안의 답 파일과 configuration_hash를 검증하고, 다음 needs_input 질문의 안정적인 ID·prompt·type·options/current/context 또는 configured 결과를 JSON으로 반환한 뒤 종료한다. 입력용 stdin/PTY를 남기지 않는다. 스킬은 실제 노출된 request_user_input_async/request_user_input 도구를 통해 제출된 value만 답 파일에 전달한다. 잘못된 선택과 stale config는 거부하고, 최종 확인에는 실제 선택 요약을 표시한다. 수동 CLI는 유지하되 $setup은 별도 GUI·설치기 메뉴를 호출하지 않는다. 선택 시 harness-victorialogs.mjs가 compose·Collector·scrape·개발 Spring/OTel config·공식 MCP 두 개 설정과 실행 profile을 준비하고 victorialogs-local-setup이 실제 앱 개발 profile을 source에 맞춰 연결한다. SigNoz marketplace 자동 등록은 제거했다. [자산 동기화](../../src/installer/update.mjs) · [설치 CLI](../../bin/harness-install.mjs) · [Native setup engine](../../.codex/scripts/harness-setup.mjs) · [관측성 설정](../../.codex/scripts/harness-victorialogs.mjs).
@@ -117,6 +117,8 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 ### 동작
 관리 자산 발견→hash 비교→백업/교체→lock 반영. `src/**/*.mjs`는 installed runtime 경로로 자동 배포되어 workflow completion 정책도 fresh install/update에 전달된다. exclude 변경은 실제 Git root가 설치 대상 root와 일치할 때만 수행해 초기화 전 하위 디렉터리 설치가 부모 저장소에 영향을 주지 않는다. install/update는 원본 checkout에서 설치를 건너뛰기 전 낡은 로컬 .codex exclude를 정리한다. 설치에는 VictoriaLogs helper·스킬·assets를 포함하고 소비 프로젝트 setup에서 선택할 때 설정을 생성한다. backend는 별도 harness-exec foreground profile로 시작한다. 관리 lock으로 식별한 폐기 signoz-local-setup 스킬은 session backup 후 제거한다. 이전 사용자 데이터·서버·전역 plugin/MCP는 임의 제거하지 않는다.
+
+`harness-recover`의 [스킬 지침](../../.codex/skills/harness-recover/SKILL.md)은 기존 doctor·preflight·tracker·worktree CLI를 증상별로 조회하고 사용자 승인 후 해당 소유 절차를 호출한다. 별도 runtime 상태나 복구 실행기를 추가하지 않는다. installer의 재귀 skill discovery와 경로 변환으로 소비 프로젝트에 설치·갱신하고, Doctor의 lock inventory 검사와 기존 ignore 경로를 적용한다. [설치 회귀 검사](../../tests/installer_update.test.mjs)는 최초 배포·누락 진단·업데이트 복원·lock·Git 비노출과 준비 문서 보존을 확인한다.
 
 <a id="update-method"></a>
 ## updateProject
@@ -223,23 +225,25 @@ inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후�
 
 <a id="wrapper-service"></a>
 ## src/wrapper/dispatch.mjs
-수정일: 2026-10-20
+수정일: 2026-10-24
 
 ### 설명
 현재 src/wrapper/dispatch.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/wrapper/dispatch.mjs).
 
 ### 메서드
-[executeImplementPlan](architecture.md#execute-method)
+[reserveImplementationRepair](architecture.md#reserve-implementation-repair-method) · [executeImplementPlan](architecture.md#execute-method)
 
 ### 필요 엔티티
 plan·checkpoint·fixed point·review 결과·tracker snapshot (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
+구현 reviewer 입력은 completion_kind:plan_implemented와 canonical_plan의 kind/reference/input_key/sha256를 전달한다. 공유 원장의 가상 키와 실제 파일·GitHub 정본을 구분한다. source·실행 프로필은 지정된 구현 commit을, Spec·계획은 승인 snapshot을 기준으로 검토한다. 수정 전 영속 예약을 확보하고 구조화 지적 전체를 수정한다.
+
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
 <a id="execute-method"></a>
 ## executeImplementPlan
-수정일: 2026-10-22
+수정일: 2026-10-24
 
 ### 설명
 executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dispatch.mjs).
@@ -248,11 +252,26 @@ executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dis
 plan·checkpoint·fixed point·review 결과·tracker snapshot
 
 ### 동작
+재진입은 checkpoint의 원래 review_fixed_point를 재사용한다. 수정 전 reserveImplementationRepair를 호출해 원본 저장소의 plan별 budget을 소비한다. 새 commit은 이전과 다른 두 reviewer context로 검토하며, 코드로 해결할 수 있는 구현/테스트/검증 결함만 수정 경로로 보낸다. 명시적 minor advisory와 최종 통합의 contract_sync만 비차단 항목으로 분리한다. 중간 plan 완료는 inspectProjectReadiness의 snapshot-only deferred를 허용하고 구조·실행 오류는 계속 차단한다. 최초 fixed point를 계약 비교 기준으로 전달해 revision 증가 위반도 차단한다. 최종 feature 완료의 실제 계약 pass 조건은 유지한다.
+
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
 dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. managed worktree caller는 source project root(`return_root`)를 absolute `shared_guidance_root`로 구현/test worker에 전달하고, 동일 Git common directory인지 검증한다. implementer는 공유 구현·테스트 지침을 읽고, test runner는 공유 테스트 지침을 읽는다. worker는 branch-local copy를 참조하지 않는다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
 
 구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eLearningComplete](../../src/eval/contracts.mjs)는 학습 상태만 별도로 보고한다. lifecycle tests gate와 wrapper testsPassed는 현재 필수 테스트의 실제 결과로 판정한다. 학습 분류·대상 파일·lesson·예방 조치가 미완료이면 e2e_learning을 pending으로 남기되 테스트 통과와 workflow 완료를 막지 않는다. 재사용할 교훈이 없으면 not_reusable과 판단 근거만 기록하고 파일 갱신을 요구하지 않는다. 실패 이력은 다음 성공 뒤에도 보존한다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
+
+<a id="reserve-implementation-repair-method"></a>
+## reserveImplementationRepair
+수정일: 2026-10-24
+
+### 설명
+wrapper runtime과 수동 구현 workflow의 수정 예약을 같은 영속 기록으로 연결한다. [소스](../../src/wrapper/repair.mjs), [CLI](../../.codex/scripts/harness-code-review.mjs)
+
+### 필요 엔티티
+실행 workspace·plan ID·fixed point/구현 commit/diff/Spec 경로를 담은 reviewInput·두 독립 fresh reviewer 응답·설정된 수정 한도·명시적 사용자 재개 사유.
+
+### 동작
+Git worktree 목록의 primary checkout에 저장 위치를 고정한다. reviewInput이 현재 workspace에 속하는지와 두 reviewer의 commit·입력·격리 metadata를 검사한다. planRepairRound로 수정/결정 대기/완료를 분류한 뒤 수정인 경우 공통 updateReviewAttempt에 repair를 예약한다. 기본 1회·최대 2회이고 commit 중복·이전 reviewer 재사용·fixed point 변경·한도 상향을 거부한다. side effect 전에 횟수를 소비하므로 실행 실패나 context 교체로 초기화되지 않는다. 사용자 범위·결정 변경의 진위는 호출자가 확인하고 소진된 묶음의 resolve-repair 사유를 보존한다. 테스트는 delivery 항목의 구현 리뷰·설치 검사를 따른다.
 
 <a id="decision-service"></a>
 ## src/decision/review.mjs
@@ -381,7 +400,7 @@ BR-contracts-feature: source만 바뀌면 계약 수정 또는 영향 없음의 
 
 <a id="checkpoint-store"></a>
 ## PlanCheckpointStore
-수정일: 2026-10-16
+수정일: 2026-10-24
 
 ### 설명
 append-only journal로 plan 상태를 보존하는 실제 class. Aggregate root로 선언하지 않는다. [소스](../../src/wrapper/checkpoint.mjs).
@@ -390,6 +409,8 @@ append-only journal로 plan 상태를 보존하는 실제 class. Aggregate root�
 plan ID·workflow status·tests·lifecycle evidence·event writer.
 
 ### 동작
+review_fixed_point는 최초 구현 기준을 journal과 projection에 보존하며 이후 변경 요청을 거부한다. handoff는 같은 기준과 수정 예약 결과·정본 실행 기록 위치를 전달한다.
+
 write는 event를 보존하고 read는 replay/projection을 복구한다. 이전 traceability/measurements는 생략 시 보존하되 새 테스트 실패는 이전 pass로 가리지 않는다.
 
 ### 메서드
@@ -707,6 +728,8 @@ Spec·계획 CLI가 공유하는 검토 시작·판정 기록·종료·사용자
 workspace root·ticket/axis 또는 plan set scope·입력 snapshot·attempt ID·실제 reviewer 응답·취소/사용자 결정 사유.
 
 ### 동작
+구현 repair 예약은 implementation-<plan-id> scope의 repairs 기록에 fixed point·commit·reviewer IDs·지적·round·한도를 보존한다. 같은 commit·이전 reviewer IDs와 한도 상향을 거부하고, 최초·후속 예약을 원본 저장소에 고정한다. resolve-repair는 소진된 묶음의 사용자 범위·결정 변경 사유를 기록한다.
+
 session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begin은 활성 슬롯·동일 입력·최초 검토와 재검토 2회 한도를 검사하고 attempt ID와 이전 지적을 반환한다. record는 독립 fresh reviewer와 시작 입력을 확인하고 pass/revise/stale 판정과 원본 응답을 보존한다. abort는 사유와 횟수를 보존하며 슬롯을 해제한다. resolve는 한도에 도달한 묶음에 대한 사용자의 명시적 범위·결정 변경 사유를 보존하고 새 묶음을 열며 사용자 발화의 진위는 호출자가 확인한다. pass 이후 변경 입력도 새 묶음으로 검토한다. 검증은 Product의 delivery 항목에 연결된 회귀 검사를 따른다.
 
 <a id="assert-review-attempt-method"></a>

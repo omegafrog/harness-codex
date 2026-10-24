@@ -15,7 +15,7 @@ async function readHistory(path) {
 }
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
-export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason }) {
+export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, maxRounds = 1, findings = [] }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
     if (error.code === 'EEXIST') throw new Error('Review history is being updated; retry after the current command finishes');
@@ -24,7 +24,30 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
   try {
     const history = await readHistory(path), last = history.attempts.at(-1);
     let result;
-    if (action === 'begin') {
+    if (action === 'repair' || action === 'resolve-repair') {
+      requireValue(scope.startsWith('implementation-'), 'Implementation repair scope is required');
+      history.repairs ||= [];
+      if (action === 'resolve-repair') {
+        requireValue(history.repairs.length > 0 && typeof reason === 'string' && reason.trim(), 'Explicit user scope/decision resolution is required');
+        const cycle = history.repairs.slice(history.repair_resolution?.after || 0);
+        requireValue(cycle.length && cycle.length >= cycle[0].limit, 'Resolve requires an exhausted implementation repair cycle');
+        history.repair_resolution = { after: history.repairs.length, reason };
+        result = { status: 'pass', reason: 'user_resolution_recorded' };
+      } else {
+        requireValue(Number.isSafeInteger(maxRounds) && maxRounds >= 0 && maxRounds <= 2, 'Repair limit must be an integer from zero to two');
+        requireValue(inputs?.fixed_point && inputs?.implementation_commit_sha, 'Fixed point and implementation commit are required');
+        const start = history.repair_resolution?.after || 0;
+        const cycle = history.repairs.slice(start);
+        requireValue(!cycle.length || cycle[0].inputs.fixed_point === inputs.fixed_point, 'Keep the original review fixed point across repair and resume');
+        requireValue(!cycle.some((item) => item.inputs.implementation_commit_sha === inputs.implementation_commit_sha), 'This commit already has a reserved repair; resume that correction before requesting another');
+        requireValue(!cycle.some((item) => item.inputs.reviewer_ids?.some((id) => inputs.reviewer_ids?.includes(id))), 'Each implementation repair review requires fresh reviewer contexts');
+        const limit = cycle.length ? Math.min(cycle[0].limit, maxRounds) : maxRounds;
+        if (cycle.length >= limit) throw Object.assign(new Error('Implementation repair budget exhausted; present unresolved findings for a user scope/decision resolution'), { code: 'max_repair_rounds_exceeded', rounds: cycle.length });
+        const reservation = { round: cycle.length + 1, limit, inputs, findings };
+        history.repairs.push(reservation);
+        result = { status: 'pass', ...reservation };
+      }
+    } else if (action === 'begin') {
       requireValue(inputs && Object.keys(inputs).length > 0, 'Review inputs are required');
       requireValue(last?.status !== 'active', 'A review is already active; record its result or abort it before dispatch');
       requireValue(!last || last.status === 'aborted' || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');

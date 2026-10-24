@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "revision": 62,
+  "revision": 64,
   "updated_at": "2026-10-24",
-  "change_summary": "Spec·계획 리뷰의 중복 실행과 재검토 한도를 실행 기록으로 검사하고 Learning 역할·준비 절차를 정리",
+  "change_summary": "사용자 승인 후 기존 CLI로 설치·ticket·workflow·worktree를 복구하는 harness-recover 스킬과 설치 소비자 회귀 검사 추가",
   "source_roots": [
     "src",
     "bin",
@@ -22,7 +22,7 @@
     {
       "id": "install",
       "name": "프로젝트 설치와 갱신",
-      "updated_at": "2026-10-22",
+      "updated_at": "2026-10-24",
       "status": "implemented"
     },
     {
@@ -136,7 +136,7 @@
       "id": "installer-service",
       "name": "src/installer/update.mjs",
       "kind": "composition-service",
-      "updated_at": "2026-10-23",
+      "updated_at": "2026-10-24",
       "features": [
         "install"
       ],
@@ -228,20 +228,21 @@
       "id": "wrapper-service",
       "name": "src/wrapper/dispatch.mjs",
       "kind": "composition-service",
-      "updated_at": "2026-10-20",
+      "updated_at": "2026-10-24",
       "features": [
         "delivery"
       ],
       "owner": "control-plane",
       "sources": [
-        "src/wrapper/dispatch.mjs"
+        "src/wrapper/dispatch.mjs",
+        "src/wrapper/repair.mjs"
       ]
     },
     {
       "id": "execute-method",
       "name": "executeImplementPlan",
       "kind": "composition-method",
-      "updated_at": "2026-10-22",
+      "updated_at": "2026-10-24",
       "features": [
         "delivery"
       ],
@@ -371,7 +372,7 @@
       "id": "checkpoint-store",
       "name": "PlanCheckpointStore",
       "kind": "composition-service",
-      "updated_at": "2026-10-16",
+      "updated_at": "2026-10-24",
       "features": [
         "delivery"
       ],
@@ -782,6 +783,19 @@
       "sources": [
         "src/workflow/review-attempts.mjs"
       ]
+    },
+    {
+      "id": "reserve-implementation-repair-method",
+      "name": "reserveImplementationRepair",
+      "kind": "composition-method",
+      "owner": "wrapper-service",
+      "updated_at": "2026-10-24",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/wrapper/repair.mjs"
+      ]
     }
   ],
   "diagrams": [
@@ -886,7 +900,7 @@
   ],
   "no_contract_change": null,
   "hashes": {
-    "@model": "cc64cc9c003d42a74cebdadc59ccf854645adbe7b5bb15a0d3c3a3c268768738",
+    "@model": "60a318a09aab715793c743f36edd029611b49da62fba9360c0b2549853365fa2",
     ".codex/agents/architecture_review_lead.toml": "18b467b4b420337f862cfe1b46eb942a76aa4de10b901814fca3c38d8f2fce56",
     ".codex/agents/code_researcher.toml": "52e4201b70a813d226d60b699d869c7a86ab6d02689be3d82c217f95b9fd7bad",
     ".codex/agents/diagram_creator.toml": "2c410e27b0288b60abb26a227b28175b8ec3b6287e304f2bd25d7c076ca11653",
@@ -904,8 +918,8 @@
     ".codex/agents/plan_reviewer.toml": "0af3da1341e1fddf154f476cc39ba852276d74fcf2d86ca355ba8a927a84f638",
     ".codex/agents/spec_adversarial_reviewer.toml": "0ff07e5f098b158b000a799483e40b2f5b12f5ee44cb31d7014430b9e0c0ec0b",
     ".codex/agents/spec_document_writer.toml": "e4a0821e5f95701ad2fbe171b4e8ec837ab551ae215ce7cdd2d634f01e98a190",
-    ".codex/agents/spec_reviewer.toml": "76b30c986741195649b0b6bd9dae867cbad17dca6d6e00da5743cd0d2253daaf",
-    ".codex/agents/standards_reviewer.toml": "208d5b72c7c0a3a5c4c907c184c67e05525f37a58ea3ef8cace733ccc5a1c6c3",
+    ".codex/agents/spec_reviewer.toml": "7d3bb31b6b6761f9669f8d000af40f8ca67a8683deb96c0f783cc19a97392ee3",
+    ".codex/agents/standards_reviewer.toml": "5fa7b52994c68e90bdd7d3f9da825e49f465ef7b52c27f0918114f24acf07169",
     ".codex/agents/to_ticket.toml": "703f593e426aaa76b52720644597d2797daafe78bcc02db58d61bb41b482e7ce",
     ".codex/internal-skills/architecture-review/GUIDE.md": "9cb26e21de413df6d9db250a31579fd2870e9aeb91ec7934d57bf99d2fcf2280",
     ".codex/internal-skills/architecture-spec/GUIDE.md": "f140a512ce816b5f92f68f06b923868b8a1989834cd6dca5e5867e75bf52e13b",
@@ -924,7 +938,7 @@
     ".codex/internal-skills/frontend-visual-review/GUIDE.md": "eb2342386845357b96cb141253aa84b95dd18fee215e2edd8dc8897f130f75a1",
     ".codex/internal-skills/grill-with-docs/GUIDE.md": "d7c5bfb79467a6b3f7183cabfda0ff66b35b282d2835d6aeaf840103ea160ab4",
     ".codex/internal-skills/grill-with-docs/references/how-to-grill.md": "41b6c9758d94c47723ce2826f3dd353037de766c93522fa0bbc2dcfc634f846d",
-    ".codex/internal-skills/implement/GUIDE.md": "aac8214edeaae98278327f2ecb5804095a58e2fe1823ce74e37239d6a2ced0f4",
+    ".codex/internal-skills/implement/GUIDE.md": "498026da94b76ce6a52b742e7e598b68d5740bab979a03cb4937b928b5d6167f",
     ".codex/internal-skills/implementation-guidance/GUIDE.md": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
     ".codex/internal-skills/implementation-guidance/references/template.md": "84efa5ccf94c0823f33cf8503fb1f77062b8f173ae7e0aacebfcd1b048313efe",
     ".codex/internal-skills/plan-review/GUIDE.md": "2d3c2f99da7b7c0ab8828c2c2b5aa11ba51b1ae640d2f0e2a4d452c1786ac719",
@@ -942,6 +956,7 @@
     ".codex/internal-skills/testing-guidance/GUIDE.md": "169d7a16803795b2477177e353e90cc1e67fd7db25b99ee472c062237cc284ed",
     ".codex/internal-skills/testing-guidance/references/template.md": "14af4a8d169906e234d8668f95411f31df6daf965b6d0ca307d35a7a72fe67b8",
     ".codex/internal-skills/worktree-create/GUIDE.md": "f4c0860fdd8309da8fbfd5f8cd68948479b869d05e547cbf38c53ec84727949f",
+    ".codex/scripts/harness-code-review.mjs": "4292847df82561354c21cc8ae5108c919ae97ece841d29835c20c8e9832a3881",
     ".codex/scripts/harness-contracts.mjs": "0bf17fe7c6540c450b485baf3a73c5e846eed0a4f662db454047f4b8eff31be5",
     ".codex/scripts/harness-decision-gate.mjs": "037bd3d51ef175d10a464876bd7164cfac0d8352f1ca62a5c56eed83876309c5",
     ".codex/scripts/harness-exec.mjs": "5054dda18d42c7aaef8440804eef60c45546ae69070695158f5add5ec3306723",
@@ -960,7 +975,7 @@
     ".codex/scripts/workspace-preflight-core.mjs": "27d1aff6c71d09225f8fbe5b07c58b73daa5ab50cfb322169f8540ba266a40f3",
     ".codex/skills/attention-span/SKILL.md": "962fa619b6083beb000d48ffb4f908e2e79a6953486207a44920d6418ec07884",
     ".codex/skills/beads/SKILL.md": "3ef9f0fa9acf89fb15dba1c51962904ad39ca514a525a141c423dbf43bfb8b26",
-    ".codex/skills/code-review/SKILL.md": "bbe96d8647d0b70ddd38b5aef2388649c35662e3f81c60122a8f79447a2b3b42",
+    ".codex/skills/code-review/SKILL.md": "ce06e58eba91205d1bb942567b072f5e8a6437932c6eeabe114084759ce398b9",
     ".codex/skills/code-review/references/default-rules.md": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
     ".codex/skills/correct/SKILL.md": "e78db74e1f106991ef9cddc095470fdd5c84a0fd01b1b69be1b5116b77b41f7f",
     ".codex/skills/diagnosing-bugs/SKILL.md": "9f500b6708ee70c4af8cf5e7662c2f0edc9b0f1a0341c3194f4fb27eba1edb7b",
@@ -978,7 +993,8 @@
     ".codex/skills/grilling/SKILL.md": "8489a8d9be690d66a54619c50952d5b72f6bb3a4a8ac533f15d720f32d82d4be",
     ".codex/skills/harness-maintenance/SKILL.md": "75cb9c0780e1552567a64037d1ae201eb22f6de466843adad1a53fb0c1ca5991",
     ".codex/skills/harness-maintenance/agents/openai.yaml": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
-    ".codex/skills/implement-wrapper/SKILL.md": "45da9cf6da0903008eeae75a97ae6953f315bb4d051a8c08a2b0cdce17a91100",
+    ".codex/skills/harness-recover/SKILL.md": "62251193d4beea930a71f3b737e293e6edc27635a6231048c38a9352d4dbe2fc",
+    ".codex/skills/implement-wrapper/SKILL.md": "5461eeaca22193fedc6ae70d94edae47515eaee3507ce0db2218ef1aec6bf11e",
     ".codex/skills/knowledge-harvest/SKILL.md": "27f917c716b2f034ac91ca5a9282ee75a39938ead9c9f88c237b3561e07bcac3",
     ".codex/skills/maintain-verification/SKILL.md": "58fc05891bd5b19930128df6e97269784915c8dba569ef16e930d68dd14a37ce",
     ".codex/skills/setup/SKILL.md": "d24e6dfcdeb29718e6e5dea9524a58480da0cc1fcbc374159d84769aa8d3fa11",
@@ -1021,21 +1037,21 @@
     "bin/harness-workspace-preflight.mjs": "c350abec56ab09511c9f0b60916ff2e24ec82c1987a769b04f4b7d87a7bb351b",
     "bin/plantuml-bootstrap.mjs": "d3236faa2cbcb0f629b127ab57a360318547c1aec6957a93ec167a85c3602fcf",
     "bin/plantuml-render.mjs": "7955523851844218c54e3255341f6d8a0b325e67fb770474bfdc9f768f4bf4c2",
-    "docs/agents/EXEC.md": "1e3f8f8a521c491e596d77d5f313a104489bd7d7f78117c1ecc5594d472fda41",
-    "docs/agents/execution.json": "70331f66dcdf1b31d8c7bde9628cd6675813b783363372e58700a15de5ea933a",
+    "docs/agents/EXEC.md": "bf624a2e8f3d2f9c9e1abb2e0dc42e93e501e2b2d2ff9ba829606f4f5572dbae",
+    "docs/agents/execution.json": "df7fabd4429f2e2de8e148d2c641d950a0071b9b73650d0a9da9b25d62a55679",
     "docs/agents/implementation-guidance.md": "dfc0904df9b0f748579390635ca38e75f04aa9d3b378be6785344896e5e3e885",
     "docs/agents/testing-guidance.md": "81cd39bde6cdb3b9a11524afc71e5898aefd328613c1bf2dfcab67f4a28cdeab",
-    "docs/contracts/architecture.md": "bbcd9aff5f8aed878fe987e9fcdd7994f419137402b80062bbd010e3a1904e89",
+    "docs/contracts/architecture.md": "54f66985d9cc4257658acc013d499ac38b1162a0ef81ea43097d28f3234de3c9",
     "docs/contracts/diagrams/checkpoint.state.puml": "c76c4a1012be957d2c58642adbdfd50deec14fe7eeb21fb72e14c764653ee757",
     "docs/contracts/diagrams/checkpoint.state.svg": "45acfccd25c5e6388918e3decd477bd19df0f5c41d40cf4a3f88b8edfbce375d",
     "docs/contracts/diagrams/contracts-feature.sequence.puml": "8d5c5da4eb2310daf132c93a203a4f39036c7468155f558792bcc34579f03ea6",
     "docs/contracts/diagrams/contracts-feature.sequence.svg": "6b175281bd0aeb3d1bec41b37dc98337398407eabc34e515ce7c7a4d31848c50",
-    "docs/contracts/diagrams/ddd.puml": "f7f0192e0a0b80b750b780b95ce8d81ceb3d4ce1683c4a485cffc64504fb3109",
-    "docs/contracts/diagrams/ddd.svg": "68dcfcd95fcc78a2e43e0eefae9d33db125021045b070797df76473fe1df11f2",
+    "docs/contracts/diagrams/ddd.puml": "3772263591dc5c837109395889df2a1e3e3d7b126092d08f438a683a16507b1f",
+    "docs/contracts/diagrams/ddd.svg": "cbe4d1def2a05778e542026f4cd0347ac483dfc0b5c63170ec2acf72cf9fbf87",
     "docs/contracts/diagrams/decisions.sequence.puml": "7dda7dd89ced4c14b555e23a84ff9be937d083debf7f04bea8a65ac2e9e9a745",
     "docs/contracts/diagrams/decisions.sequence.svg": "c834299db41199f7333efb6a88439a3dc552cd8a255d54e2a77f70398b9c2597",
-    "docs/contracts/diagrams/delivery.sequence.puml": "5687c045acdfedd195bc1d325fc02c983f4b2c728c370b8b39d13e84bf45b1a9",
-    "docs/contracts/diagrams/delivery.sequence.svg": "5069d90b113b09dae5ce5e56fbccabde9d1ce678126db0943be9a445fa853367",
+    "docs/contracts/diagrams/delivery.sequence.puml": "a7a387b6d702ffd2d9d66ba6da84e3900e0af8abed647a588a5a61db4135018f",
+    "docs/contracts/diagrams/delivery.sequence.svg": "6ec9a1cc07d502dbc1d020f35a8e54a7b4a4b6b55742d7119c0a68de69065d70",
     "docs/contracts/diagrams/diagnose.sequence.puml": "7a82ed06cb2cf5afbdb4a7bc993eb5794abccb53e256bd075605f8da097362b6",
     "docs/contracts/diagrams/diagnose.sequence.svg": "61dcaf309651e1617cefaaebb2bf135fcd29dd4feff75505f435efa6c4ca49ff",
     "docs/contracts/diagrams/evaluate.sequence.puml": "5e1e87b5e50b865b559df9cb5cfb1e023c0b11dae269aed1482737706fa98805",
@@ -1056,7 +1072,7 @@
     "docs/contracts/diagrams/workspace.sequence.svg": "9bacafa5a9b24c05c41a36ba0dcb48c5fe0803a51de4bf1b67da88dd935f898d",
     "docs/contracts/diagrams/workspace.state.puml": "1ac66987a88f8235a26dfe2f47f2369c2c7c8509e4be02f8fb6ca3d476217462",
     "docs/contracts/diagrams/workspace.state.svg": "2fec4cf0efcb636178c47d52df793f110358395017c9a481dc1625e03c75864c",
-    "docs/contracts/product.md": "1d8d0ebcc070ae40282d7823d0453d209bf271ba2d80d1116cbd1814395db945",
+    "docs/contracts/product.md": "684cbb5e36b3c10a573994a67cdf1bedd938c41a0839fe833321da1ff6c70e1d",
     "docs/plans/496/plans.md": "846aa0727d4f7995331ce98a4b1f6b699ac3f59070f9dece5d49a134889616b7",
     "docs/plans/506-engineering-decision-layer/plans.md": "65a46b8d5b107de0550f8a08595d7938624a52b8bb86d83ffbc97260b1222653",
     "docs/plans/spec-plan-traceability/implementation-plan.md": "57d4c98ed5d5edbe17174b2cbc1bc42a12c77c0009fffc0b7d50c6a3f10e6b9d",
@@ -1163,20 +1179,20 @@
     "src/workflow/execution.mjs": "8ec531898e5c1f4e940eea47ee734526217f0daf16839c7154703db031c674a4",
     "src/workflow/index.mjs": "af0ac688dea987552bf2d319a90f320f980541d67c19d5a93f176c5a8fdc1818",
     "src/workflow/loader.mjs": "24ca95475d25532a280903a53b0a50e43f2f47ce4921651779b4df85f0f2d431",
-    "src/workflow/plan-traceability.mjs": "d99163b1ef4f1ff969c2c610a0c89aa94d2bf79ea100a535a11e84a8c6118b30",
-    "src/workflow/project-readiness.mjs": "d0c9c4c4d1807227a5616f22d007c71723bd26b3476bc134f6c6506282d8062c",
-    "src/workflow/review-attempts.mjs": "7a535f2c182f3eeac313af060c6c68937fd37a893d46e364de10983a3db705d8",
+    "src/workflow/plan-traceability.mjs": "91139ded54f87aeb55ff733f1d41dde6257d0f1bbff8769c7b451c18df7f0b09",
+    "src/workflow/project-readiness.mjs": "2c7895780bea133f9fb294f0dbbaad2176ff9f1427460875b62d10bfb343e58f",
+    "src/workflow/review-attempts.mjs": "1aca53ccdf4a7af29189089899a27446053d086c057f4098fdea187cfbe9bb1f",
     "src/workflow/session-output.mjs": "c2cf413c6b3127d336e2916171bda21e96d5cf76597f59d6db1a027467022989",
     "src/workflow/spec-review.mjs": "d8326822375492cc081f29d6c792d49dee711aed81809ddb349874f2cd8574f9",
     "src/workflow/stage-gates.mjs": "5aaa0e6e1335d8b6bd3781197572257e993b88256fa46b5cb03bfe9a9ffeadca",
     "src/workflow/worktrees.mjs": "be4a4c299357bfe0687390d19dde9dac434da94119e86aca1a2250c5a7de6252",
-    "src/wrapper/checkpoint.mjs": "50f5abeaada64ffb00c2820e30044ae5d5b6938ba605fc39372aa7d255eda695",
+    "src/wrapper/checkpoint.mjs": "1bbbb900527789e39b2b9da0b92892cf9882b5c5523fa882dd36acb08564d084",
     "src/wrapper/conflict.mjs": "a1431b1223db9569342d4f6134c3936d92edfaab584d2631fcce4c3892e1eaf3",
     "src/wrapper/context-policy.mjs": "aee2a18e58eae264b8ba194bc5d11f9b2aa3f3a5ec0682f693249fd4a4259b8e",
-    "src/wrapper/dispatch.mjs": "ea3fc512737934648e3a4f3ed37eb58bcc0a3791b642d2acdac81c71901a4724",
+    "src/wrapper/dispatch.mjs": "e13ed5a322dd0540d3a7761aa8708889fbded8b2a8983a1e9e137b6c3e5413fd",
     "src/wrapper/index.mjs": "906049474c7efc5c54feb58f54347b217f237eaa7215d957254d0ce020b74cc5",
-    "src/wrapper/reconciliation.mjs": "5e66395b158e68af0c8500dee36e31471f459fe7998407d160d19ebc43f44ca4",
-    "src/wrapper/repair.mjs": "22cbb35b4b5806b0166d5f648e96a5f8920aa7ba53170dd5ba1315bf231bf8b7",
+    "src/wrapper/reconciliation.mjs": "02fff33dc21d906a6c8bcbe69fd0490ad56b333b1261328a378bcbc0e991bc68",
+    "src/wrapper/repair.mjs": "8adc63658592b5edf0e3a2d4351466e12a32c83e325f1e3b7cd6f822b3c4601e",
     "src/wrapper/scheduler.mjs": "47a2d17ba8335f984cc3f155c50d7e62cfca2f250cc1ad41f162c9b9c98c5b14"
   }
 }

@@ -9,9 +9,9 @@ import { ResourceGraph } from "../eval/plan-workspace.mjs";
 import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
 import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
 import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
-import { inspectContracts } from "../contracts/contracts.mjs";
 import { reconcileCompletion } from "./reconciliation.mjs";
-import { runBoundedReviewRepair } from "./repair.mjs";
+import { runBoundedReviewRepair, reserveImplementationRepair } from "./repair.mjs";
+import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
 import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
 import { inspectPlanTraceability } from "../workflow/plan-traceability.mjs";
 
@@ -139,6 +139,7 @@ export async function dispatchImplementPlan({
     ...(previous || {}),
     orchestration_state: "running",
     attempt,
+    review_fixed_point: fixedPoint || previous?.review_fixed_point || null,
     smart_zone: smartZone,
     handoff_reason: null,
     blocker: null,
@@ -316,6 +317,8 @@ export async function runIndependentReviewers({
     diff,
     product_spec_path: productSpecPath || approvedProductPath,
     architecture_spec_path: architectureSpecPath || approvedArchitecturePath,
+    completion_kind: 'plan_implemented',
+    ...(traceabilityRefs?.canonical_plan ? { canonical_plan: traceabilityRefs.canonical_plan } : {}),
     ...(traceabilityRefs ? { traceability_ledger_path: traceabilityRefs.ledger_path, requirement_ids: traceabilityRefs.requirement_ids } : {}),
   };
   const roles = [
@@ -389,7 +392,8 @@ export async function executeImplementPlan({
   if (typeof captureFixedPoint !== "function") throw new TypeError("captureFixedPoint is required");
   if (typeof waitForImplementation !== "function") throw new TypeError("waitForImplementation is required");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer is required");
-  const fixedPoint = await captureFixedPoint();
+  const checkpoint = await dispatchOptions.checkpointStore.read();
+  const fixedPoint = checkpoint?.review_fixed_point || checkpoint?.lifecycle_evidence?.fixed_point || await captureFixedPoint();
   if (!fixedPoint) throw new TypeError("captureFixedPoint must return a fixed point");
   const dispatched = await dispatchImplementPlan({ ...dispatchOptions, fixedPoint, spawnImplement: dispatchOptions.spawnImplement });
   if (!dispatched.dispatched) return { fixed_point: fixedPoint, dispatch: dispatched, state: dispatched.state };
@@ -460,18 +464,7 @@ export async function executeImplementPlan({
       reviewerProfile: dispatchOptions.reviewerProfile || null,
     });
     const repairConfig = dispatchOptions.reviewRepair || {};
-    const reviewInput = {
-      repository: dispatched.workspace_root,
-      fixed_point: fixedPoint,
-      implementation_commit_sha: implementation.commit_sha,
-      commit_list: reviewCommitList,
-      diff_range: { from: fixedPoint, to: implementation.commit_sha },
-      diff: reviewDiff,
-      product_spec_path: dispatched.traceability_refs.product_spec_path,
-      architecture_spec_path: dispatched.traceability_refs.architecture_spec_path,
-      traceability_ledger_path: dispatched.traceability_refs.ledger_path,
-      requirement_ids: dispatched.traceability_refs.requirement_ids,
-    };
+    const reviewInput = reviews.find((review) => review.review_input)?.review_input;
     reviewRepair = await runBoundedReviewRepair({
       plan: dispatchOptions.plan,
       initialImplementation: implementation,
@@ -480,6 +473,7 @@ export async function executeImplementPlan({
       maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
       dispatchRepair: repairConfig.dispatch || null,
       runReviewers: repairConfig.review || null,
+      reserveRepair: (input) => reserveImplementationRepair({ root: dispatched.workspace_root, planId: dispatchOptions.plan.id, ...input }),
     });
     implementation = reviewRepair.implementation;
     reviews = reviewRepair.reviews;
@@ -515,7 +509,8 @@ export async function executeImplementPlan({
   }
   const retirement = dispatchOptions.retirement === undefined ? null
     : await checkRetirement({ retirement: { ...dispatchOptions.retirement, workspace_root: dispatched.workspace_root } });
-  const contractDocs = await inspectContracts({ workspace_root: dispatched.workspace_root, base_ref: typeof fixedPoint === "string" ? fixedPoint : fixedPoint.commit_sha || null });
+  const readiness = await inspectProjectReadiness({ workspace_root: dispatched.workspace_root, deferContractSync: true, base_ref: typeof fixedPoint === 'string' ? fixedPoint : fixedPoint.commit_sha || null });
+  const contractDocs = readiness.execution.status !== 'pass' ? readiness.execution : readiness.contract_sync || readiness.contracts;
   const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
   const planTraceability = await inspectPlanTraceability({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
   const completionEvidence = {
@@ -532,6 +527,7 @@ export async function executeImplementPlan({
     ...(retirement ? { retirement } : {}),
   };
   let completion = reconcileCompletion({
+    completionKind: 'plan_implemented',
     plan: dispatchOptions.plan,
     implementation,
     reviews,

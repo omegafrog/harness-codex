@@ -21,6 +21,7 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
   }
   component "[[../architecture.md#wrapper-service src/wrapper/dispatch.mjs]]" as wrapper {
     component "[[../architecture.md#execute-method executeImplementPlan]]" as execute
+    component "[[../architecture.md#reserve-implementation-repair-method reserveImplementationRepair]]" as reserveImplementationRepair
   }
   component "[[../architecture.md#decision-service src/decision/review.mjs]]" as decision {
     component "[[../architecture.md#decision-method evaluateDecisionGate]]" as decisionEval

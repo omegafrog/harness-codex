@@ -41,20 +41,65 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
     assert.equal(cli('begin', '--axis', 'architecture', '--reviews', evidence).status, 0);
 
+    const reviewInput = { repository: targetRoot, fixed_point: 'base', implementation_commit_sha: 'impl-1', commit_list: ['base', 'impl-1'], diff_range: { from: 'base', to: 'impl-1' }, diff: 'diff --git a/src/a b/src/a', product_spec_path: 'docs/specs/review-install/product-spec.md', architecture_spec_path: 'docs/specs/review-install/architecture-spec.md' };
+    const implementationEvidence = 'runtime/spec-reviews/implementation.json';
+    const implementationReviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'standards' ? 'failed' : 'passed', context_id: role, independent: true, fresh_context: true, implementation_commit_sha: 'impl-1', review_input: reviewInput, report: { findings: role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Repair the complete replay path' }] : [] } }));
+    await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
+    const repair = () => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-code-review.mjs'), 'repair', '--root', targetRoot, '--plan', 'plan-a', '--reviews', implementationEvidence], { cwd: targetRoot, encoding: 'utf8' });
+    assert.equal(repair().status, 0);
+    assert.match(repair().stderr, /already has a reserved repair/);
+
     await writeFile(join(targetRoot, runtimePath), 'old runtime\n');
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     const update = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(update.updated.includes(runtimePath));
     assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
     assert.match(cli('begin', '--axis', 'architecture', '--reviews', evidence).stderr, /already active/);
+    assert.match(repair().stderr, /already has a reserved repair/);
     const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(lock.files[runtimePath]);
+    assert.ok(lock.files['.codex/scripts/harness-code-review.mjs']);
     const doctor = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
     assert.ok(!doctor.diagnostics.some((item) => item.severity === 'error' && item.path.endsWith('review-attempts.mjs')));
     const status = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: targetRoot, encoding: 'utf8' }).stdout;
     assert.match(status, /docs\/specs\/review-install\/request.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|runtime\/reviews/);
     assert.equal(await readFile(join(spec, 'request.md'), 'utf8'), 'Application-owned specification\n');
+  } finally { await rm(targetRoot, { recursive: true, force: true }); }
+});
+
+test("recovery skill survives fresh install, diagnosed loss and update while project files remain visible", async () => {
+  const targetRoot = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), "recovery-install-"));
+  const skillPath = ".agents/skills/harness-recover/SKILL.md";
+  try {
+    assert.equal(spawnSync("git", ["init", "-q"], { cwd: targetRoot }).status, 0);
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot, initialize: true });
+    await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
+    const expected = (await readFile(join(REPOSITORY_ROOT, ".codex/skills/harness-recover/SKILL.md"), "utf8")).replaceAll(".codex/skills/", ".agents/skills/");
+    assert.equal(await readFile(join(targetRoot, skillPath), "utf8"), expected);
+    const docs = ["docs/agents/EXEC.md", "docs/agents/execution.json", "docs/contracts/product.md"];
+    for (const path of docs) {
+      await mkdir(dirname(join(targetRoot, path)), { recursive: true });
+      await writeFile(join(targetRoot, path), "Application-owned preparation\n");
+    }
+    await unlink(join(targetRoot, skillPath));
+    const broken = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(broken.diagnostics.some((item) => item.code === "installer_missing_file" && item.path === join(targetRoot, skillPath)));
+    const updated = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(updated.updated.includes(skillPath) || updated.added.includes(skillPath));
+    assert.equal(await readFile(join(targetRoot, skillPath), "utf8"), expected);
+    const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(lock.files[skillPath]);
+    const healthy = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(!healthy.diagnostics.some((item) => item.path === join(targetRoot, skillPath)));
+    const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: targetRoot, encoding: "utf8" }).stdout;
+    assert.doesNotMatch(status, /\.agents\/|\.codex\/|\.harness\//);
+    assert.equal(spawnSync("git", ["check-ignore", "-v", skillPath], { cwd: targetRoot }).status, 0);
+    for (const path of docs) {
+      assert.ok(status.includes(path));
+      assert.equal(spawnSync("git", ["check-ignore", "-v", path], { cwd: targetRoot }).status, 1);
+      assert.equal(await readFile(join(targetRoot, path), "utf8"), "Application-owned preparation\n");
+    }
   } finally { await rm(targetRoot, { recursive: true, force: true }); }
 });
 

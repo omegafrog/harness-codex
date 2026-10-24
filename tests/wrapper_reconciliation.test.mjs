@@ -7,6 +7,19 @@ import {
   reconcileCompletion,
 } from "../src/wrapper/reconciliation.mjs";
 
+test('only a split plan can defer contract snapshot sync; final integration and structural failures stay blocked', () => {
+  const options = {
+    completionKind: 'plan_implemented',
+    contractDocs: { status: 'deferred', reason: 'sync_after_implementation_complete' },
+  };
+  const plan = evaluateCompletion(options);
+  assert.ok(!plan.unresolved.some((item) => item.startsWith('contract_docs:')));
+  const feature = evaluateCompletion({ ...options, completionKind: 'feature_implemented' });
+  assert.ok(feature.unresolved.some((item) => item.startsWith('contract_docs:')));
+  const invalid = evaluateCompletion({ ...options, contractDocs: { status: 'fail', reason: 'contracts_invalid' } });
+  assert.ok(invalid.unresolved.includes('contract_docs:contracts_invalid'));
+});
+
 test("split-plan completion does not wait for the plan-set integration PR and recalculates dependents", () => {
   const passed = evaluateCompletion({
     planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },

@@ -274,6 +274,11 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
       architecture_spec_path: snapshot.ledger.architecture_spec_path || `docs/specs/${snapshot.ledger.ticket_id}/architecture-spec.md`,
       requirement_ids: planId ? snapshot.ledger.plans.find((item) => item.id === planId).requirement_ids : [],
       plan_reference: planId ? (() => { const plan = snapshot.ledger.plans.find((item) => item.id === planId); return plan.content_path || `${plan.canonical.repository}#${plan.canonical.issue}`; })() : null,
+      canonical_plan: planId ? (() => {
+        const plan = snapshot.ledger.plans.find((item) => item.id === planId);
+        const input_key = `${planSetPath(planSetId)}/plans/${plan.id}#canonical`;
+        return { kind: plan.content_path ? 'file' : 'github', reference: plan.content_path || `${plan.canonical.repository}#${plan.canonical.issue}`, input_key, sha256: snapshot.inputs[input_key] };
+      })() : null,
     } };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['plan_traceability'] }; }
 }

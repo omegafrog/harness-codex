@@ -60,6 +60,53 @@
       "readiness_timeout_ms": 5000,
       "poll_interval_ms": 100
     },
+    "implementation-review-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/wrapper_repair.test.mjs",
+        "tests/wrapper_dispatch.test.mjs",
+        "tests/wrapper_reconciliation.test.mjs",
+        "tests/wrapper_checkpoint.test.mjs",
+        "tests/plan_traceability.test.mjs",
+        "tests/installer_update.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/wrapper/repair.mjs",
+        "src/wrapper/checkpoint.mjs",
+        "src/wrapper/dispatch.mjs",
+        "src/wrapper/reconciliation.mjs",
+        "src/workflow/review-attempts.mjs",
+        "src/workflow/project-readiness.mjs",
+        "src/workflow/plan-traceability.mjs",
+        ".codex/scripts/harness-code-review.mjs",
+        ".codex/skills/harness-recover/SKILL.md",
+        ".codex/skills/code-review/SKILL.md",
+        ".codex/internal-skills/implement/GUIDE.md",
+        ".codex/skills/implement-wrapper/SKILL.md",
+        "docs/agents/EXEC.md",
+        "tests/wrapper_repair.test.mjs",
+        "tests/wrapper_dispatch.test.mjs",
+        "tests/wrapper_reconciliation.test.mjs",
+        "tests/wrapper_checkpoint.test.mjs",
+        "tests/plan_traceability.test.mjs",
+        "tests/installer_update.test.mjs"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
     "spec-review-check": {
       "command": [
         "node",

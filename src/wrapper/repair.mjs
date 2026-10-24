@@ -1,7 +1,12 @@
+import { updateReviewAttempt } from '../workflow/review-attempts.mjs';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
 const REPAIRABLE_KINDS = new Set([
   "implementation_defect",
   "test_defect",
   "in_scope_spec_mismatch",
+  "verification_gap",
 ]);
 
 const BLOCKER_KINDS = new Set([
@@ -83,6 +88,8 @@ export function classifyReviewFindings(reviews = []) {
   if (!Array.isArray(reviews)) throw new TypeError("reviews must be an array");
   const repairable = [];
   const blockers = [];
+  const deferred = [];
+  const advisory = [];
   if (!validReviewProvenance(reviews)) blockers.push({ kind: "reviewer_isolation_violation", summary: "both reviewers must provide independent fresh-context provenance for one implementation commit" });
   for (const review of reviews) {
     const findings = findingList(review);
@@ -96,13 +103,29 @@ export function classifyReviewFindings(reviews = []) {
     }
     findings.forEach((rawFinding, index) => {
       const finding = normalizeFinding(rawFinding, review, index);
-      if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) repairable.push(finding);
+      const hasEvidence = typeof finding.evidence === 'string' && finding.evidence.trim();
+      if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
+      else if (finding.kind === 'advisory' && finding.severity === 'minor' && finding.blocking === false && hasEvidence) advisory.push(finding);
+      else if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) repairable.push(finding);
       else if (finding.kind === "in_scope_spec_mismatch" && finding.in_scope !== true) blockers.push({ ...finding, kind: "in_scope_required" });
       else if (BLOCKER_KINDS.has(finding.kind) || finding.kind === "unclassified_review_finding" || finding.repairable === false || finding.in_scope === false) blockers.push(finding);
       else blockers.push({ ...finding, kind: "unclassified_review_finding", original_kind: finding.kind });
     });
   }
-  return { repairable, blockers, has_findings: repairable.length > 0 || blockers.length > 0 };
+  return { repairable, blockers, deferred, advisory, has_findings: repairable.length > 0 || blockers.length > 0 };
+}
+
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution }) {
+  // Anchor the budget to the primary checkout so recreating a worktree cannot reset it.
+  const primary = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' }).split('\0')[0];
+  if (!primary.startsWith('worktree ')) throw new Error('Cannot resolve the primary review workspace');
+  const scope = { root: primary.slice(9), scope: `implementation-${planId}` };
+  if (resolution !== undefined) return updateReviewAttempt({ ...scope, action: 'resolve-repair', reason: resolution });
+  if (resolve(reviewInput?.repository || '') !== resolve(root)) throw new TypeError('Review input must belong to the active implementation workspace');
+  if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
+  const decision = planRepairRound({ reviews, maxRounds });
+  if (decision.action !== 'repair') return decision;
+  return updateReviewAttempt({ ...scope, action: 'repair', inputs: { ...reviewInput, reviewer_ids: reviews.map((item) => item.context_id) }, maxRounds, findings: decision.classification.repairable });
 }
 
 export function planRepairRound({ reviews = [], round = 0, maxRounds = 1 } = {}) {
@@ -166,7 +189,7 @@ function validFreshReviews(reviews, implementation, expectedReviewInput = null) 
     && (!expectedReviewInput || validReviewProvenance(reviews, implementation.commit_sha, expectedReviewInput));
 }
 
-export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null } = {}) {
+export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null, reserveRepair = null } = {}) {
   if (!initialImplementation?.commit_sha) throw new TypeError("initialImplementation.commit_sha is required");
   const expectedReviewInput = reviewInput || initialReviews.find((review) => review?.review_input)?.review_input || null;
   if (!expectedReviewInput || !validReviewInput(expectedReviewInput, initialImplementation.commit_sha)) return {
@@ -189,6 +212,7 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
   };
   let implementation = initialImplementation;
   let reviews = initialReviews;
+  const reviewContexts = new Set(initialReviews.map((item) => item.context_id));
   let round = 0;
   const history = [];
   while (true) {
@@ -206,6 +230,16 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
       blocker: { kind: "repair_adapter_unavailable", summary: "bounded repair requires injected repair and reviewer adapters" },
     };
     let repaired;
+    if (reserveRepair) {
+      try {
+        const reservation = await reserveRepair({ reviewInput: reviews[0].review_input, reviews, maxRounds });
+        if (reservation.status !== 'pass') throw new Error(reservation.reason || 'Repair reservation failed');
+        decision.round = reservation.round;
+        round = reservation.round;
+      } catch (error) {
+        return { state: 'blocked', reason: error.code || 'repair_admission_failed', rounds: error.rounds ?? round, implementation, reviews, history, blocker: { kind: 'review-repair-admission', summary: error.message } };
+      }
+    }
     try {
       repaired = await dispatchRepair({
         plan,
@@ -249,7 +283,7 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
     } catch (error) {
       return { state: "blocked", reason: "repair_review_failed", rounds: round, implementation: repaired, reviews, history, blocker: { kind: "repair_review_failed", summary: error.message } };
     }
-    if (!validFreshReviews(nextReviews, repaired, nextReviewInput)) return {
+    if (!validFreshReviews(nextReviews, repaired, nextReviewInput) || nextReviews.some((item) => reviewContexts.has(item.context_id))) return {
       state: "blocked",
       reason: "reviewer_isolation_violation",
       rounds: round,
@@ -259,6 +293,7 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
       blocker: { kind: "reviewer_isolation_violation", summary: "repair must be followed by independent fresh reviewers for the new commit" },
     };
     implementation = repaired;
+    nextReviews.forEach((item) => reviewContexts.add(item.context_id));
     reviews = nextReviews;
     round = decision.round;
   }

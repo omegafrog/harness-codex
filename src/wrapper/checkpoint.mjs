@@ -14,6 +14,7 @@ const FIELDS = [
   "plan_id",
   "orchestration_state",
   "attempt",
+  "review_fixed_point",
   "last_completed_step",
   "changed_files",
   "tests",
@@ -60,6 +61,7 @@ function normalizeState(planId, state = {}) {
     plan_id: planId,
     orchestration_state: state.orchestration_state || "running",
     attempt: state.attempt === undefined ? 1 : state.attempt,
+    review_fixed_point: state.review_fixed_point ?? null,
     last_completed_step: state.last_completed_step || "none",
     changed_files: Array.isArray(state.changed_files) ? state.changed_files : [],
     tests: state.tests ?? { status: "not-run" },
@@ -72,6 +74,7 @@ function normalizeState(planId, state = {}) {
   };
   if (!STATES.has(result.orchestration_state)) throw new TypeError(`Unsupported orchestration state: ${result.orchestration_state}`);
   if (!Number.isInteger(result.attempt) || result.attempt < 1) throw new TypeError("attempt must be a positive integer");
+  if (result.review_fixed_point !== null && (typeof result.review_fixed_point !== 'string' || !result.review_fixed_point.trim())) throw new TypeError('review_fixed_point must be a nonempty ref or null');
   if (!Array.isArray(result.changed_files) || result.changed_files.some((file) => typeof file !== "string")) throw new TypeError("changed_files must be a string list");
   if (!result.smart_zone || typeof result.smart_zone !== "object" || Array.isArray(result.smart_zone) || !SMART_ZONE_PHASES.has(result.smart_zone.phase) || !SMART_ZONE_STATES.has(result.smart_zone.state) || typeof result.smart_zone.evidence !== "string") throw new TypeError("smart_zone must contain a valid phase, state, and evidence");
   if (result.lifecycle_evidence !== null && (typeof result.lifecycle_evidence !== "object" || Array.isArray(result.lifecycle_evidence))) throw new TypeError("lifecycle_evidence must be an object or null");
@@ -132,6 +135,7 @@ export class PlanCheckpointStore {
 
   async write(state = {}) {
     const previous = await this.read();
+    if (previous?.review_fixed_point && state.review_fixed_point !== undefined && state.review_fixed_point !== previous.review_fixed_point) throw new TypeError('Preserve the original review_fixed_point across handoff and repair');
     const normalized = normalizeState(this.planId, {
       ...(previous || {}),
       ...state,

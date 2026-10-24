@@ -62,6 +62,11 @@ test('planning traceability validates full source-to-plan coverage and independe
     const cli = spawnSync(process.execPath, [join(f.root, '.codex/scripts/harness-plan-traceability.mjs'), 'check', '--root', f.root, '--plan-set', 'set-9', '--phase', 'dispatch', '--plan', 'plan-a'], { encoding: 'utf8' });
     assert.equal(cli.status, 0, cli.stderr || cli.stdout);
     assert.match(cli.stdout, /plan_traceability_dispatch_current/);
+    const reference = JSON.parse(cli.stdout).details.canonical_plan;
+    assert.equal(reference.kind, 'file');
+    assert.equal(reference.reference, `${f.base}/plan-a.md`);
+    assert.equal(reference.input_key, `${f.base}/plans/plan-a#canonical`);
+    assert.match(reference.sha256, /^[a-f0-9]{64}$/);
     f.ledger.review.reviewer_id = 'writer'; await f.save();
     assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).reason, /independent/);
     f.ledger.review.reviewer_id = 'independent'; f.ledger.plans[0].requirement_ids = []; await f.save();

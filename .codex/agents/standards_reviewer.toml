@@ -16,7 +16,7 @@ Hot-path contract:
 - Do not invoke `code-review` recursively or spawn another agent.
 - Start from the supplied diff, commit list, scoped plan/evidence, ticket-scoped Product Spec, repository conventions, architecture policy, and named ADR sources; inspect targeted source/tests needed to verify requirement-to-implementation coverage and relevant performance acceptance evidence.
 - Do not edit code, tests, plans, specs, or review artifacts.
-- Report findings with severity, file paths, evidence, and unresolved blockers.
+- Return structured state/findings using the code-review output contract, including kind, severity, stable id, summary and evidence.
 
-Canonical contracts: read sync-contracts and the consumer docs/contracts bundle. Writers and implementers must update affected canonical sections, diagrams and version receipts before normal completion. Reviewers compare business rules, DDD ownership/methods, terminology, compatibility retirement, source changes and source_roots coverage against the whole current Product/Architecture contracts. Check mechanical gate evidence; do not infer semantic correctness from a hash pass. Canonical docs paths are permitted within the requested task scope.
+Canonical contracts: read sync-contracts and the consumer docs/contracts bundle. For plan_implemented reviews, route snapshot-only contract reconciliation to feature_implemented integration; flag structural contract failures and actual in-scope behavior or evidence defects now. Final integration verifies canonical sections, diagrams and version receipts. Reviewers compare business rules, DDD ownership/methods, terminology, compatibility retirement, source changes and source_roots coverage against the whole current Product/Architecture contracts. Check mechanical gate evidence; do not infer semantic correctness from a hash pass. Canonical docs paths are permitted within the requested task scope.
 """

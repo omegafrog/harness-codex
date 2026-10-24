@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { sessionDirectory } from '../src/workflow/session-output.mjs';
 
 import {
   classifyReviewFindings,
   planRepairRound,
   runBoundedReviewRepair,
+  reserveImplementationRepair,
 } from "../src/wrapper/repair.mjs";
 
 const REVIEW_INPUT = {
@@ -17,6 +22,50 @@ const REVIEW_INPUT = {
   product_spec_path: "docs/specs/496/product-spec.md",
   architecture_spec_path: "docs/specs/496/architecture-spec.md",
 };
+
+test('implementation repair budget survives re-entry and replacement worktrees', async () => {
+  const base = await mkdtemp(join(sessionDirectory(process.cwd()), 'tmp-implementation-review-'));
+  const root = join(base, 'root'), linked = join(base, 'linked');
+  await mkdir(root);
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    git('init', '-q');
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '--allow-empty', '-qm', 'fixture');
+    git('worktree', 'add', '-qb', 'linked', linked);
+    const make = (repository, sha) => {
+      const reviewInput = { ...REVIEW_INPUT, repository, implementation_commit_sha: sha, commit_list: ['base-1', sha], diff_range: { from: 'base-1', to: sha } };
+      const reviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'standards' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${role}-${sha}`, implementation_commit_sha: sha, review_input: reviewInput, report: { findings: role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Fix all request and recovery paths' }] : [] } }));
+      return { root: repository, planId: 'plan-a', reviewInput, reviews };
+    };
+    const first = await reserveImplementationRepair(make(root, 'impl-1'));
+    assert.equal(first.round, 1);
+    await assert.rejects(reserveImplementationRepair(make(root, 'impl-1')), /already has a reserved repair/);
+    await assert.rejects(reserveImplementationRepair({ ...make(linked, 'impl-2'), maxRounds: 2 }), /budget exhausted/);
+    await reserveImplementationRepair({ root: linked, planId: 'plan-a', resolution: 'User changed the approved recovery scope; request.md:19' });
+    assert.equal((await reserveImplementationRepair(make(linked, 'impl-2'))).round, 1);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});
+
+test('only explicit advisory and integration contract sync findings are nonblocking', () => {
+  const reviews = ['standards', 'spec'].map((role) => ({ role, state: 'passed', independent: true, fresh_context: true, context_id: role, implementation_commit_sha: 'impl-1', report: { findings: [] } }));
+  reviews[0].report.findings.push({ kind: 'contract_sync', severity: 'minor', disposition: 'integration_deferred', completion_kind: 'feature_implemented', summary: 'Seal at final integration', evidence: 'docs/contracts/manifest.json:1 / snapshot-only drift' });
+  reviews[1].report.findings.push({ kind: 'advisory', severity: 'minor', blocking: false, summary: 'Optional simplification', evidence: 'src/a:1' });
+  assert.equal(planRepairRound({ reviews }).action, 'complete');
+  reviews[0].report.findings[0].severity = 'major';
+  assert.equal(planRepairRound({ reviews }).action, 'block');
+  reviews[0].report.findings[0].kind = 'implementation_defect';
+  assert.equal(planRepairRound({ reviews }).action, 'repair');
+});
+
+test('a correction rejects follow-up reviews in the previous reviewer contexts', async () => {
+  const reviewsFor = (input) => ['standards', 'spec'].map((role) => ({ role, state: input.implementation_commit_sha === 'impl-1' && role === 'standards' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: role, implementation_commit_sha: input.implementation_commit_sha, review_input: input, report: { findings: input.implementation_commit_sha === 'impl-1' && role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Fix the replay path' }] : [] } }));
+  const result = await runBoundedReviewRepair({
+    plan: { id: 'plan-a' }, initialImplementation: { commit_sha: 'impl-1' }, initialReviews: reviewsFor(REVIEW_INPUT), reviewInput: REVIEW_INPUT,
+    dispatchRepair: async () => ({ plan_id: 'plan-a', commit_sha: 'impl-2', diff: REVIEW_INPUT.diff, commit_list: ['base-1', 'impl-1', 'impl-2'], fresh_context: true, empty_context: true }),
+    runReviewers: async ({ review_input }) => reviewsFor(review_input),
+  });
+  assert.equal(result.reason, 'reviewer_isolation_violation');
+});
 
 test("review findings classify only bounded implementation repairs as repairable", () => {
   const result = classifyReviewFindings([

@@ -374,6 +374,8 @@ npx --yes github:omegafrog/harness-codex update --project /path/to/your-project
 
 이 버전으로 새로 설치하거나 한 번 업데이트한 프로젝트에서는 Codex에게 `하네스 업데이트해` 또는 `Harness 업그레이드해`라고 요청해도 된다. 함께 설치되는 `harness-maintenance` skill이 현재 Git worktree의 lock 파일을 확인한 뒤, 위 업데이트와 진단을 수행한다. 아직 이 skill이 없는 기존 설치본은 이 명령을 한 번 직접 실행해 업데이트해야 한다. 아직 설치 기준선이 없는 checkout에서는 설치를 임의로 대신 실행하지 않고 이를 알린다.
 
+설치·ticket 동기화·workflow 재개·worktree 문제로 Harness를 실행할 수 없으면 `$harness-recover`를 사용한다. 먼저 읽기 전용으로 진단하고, 파일·ticket·상태·worktree 변경은 구체적인 복구안을 제시해 사용자 확인을 받은 뒤 수행한다. 새 설치와 업데이트에 함께 배포된다.
+
 업데이트는 `.codex/harness-lock.json`의 설치 기준선을 사용한다.
 
 - Harness가 설치한 뒤 프로젝트에서 바꾸지 않은 관리 파일은 최신 버전으로 갱신한다.
