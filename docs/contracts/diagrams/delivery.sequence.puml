@@ -16,6 +16,7 @@ participant "E2E runner" as e2e
 participant "snapshotSpecReview" as snapshotReview
 participant "Product Spec reviewer" as productReviewer
 participant "Architecture Spec reviewer" as architectureReviewer
+participant "review-attempts.mjs" as reviewAttempts
 participant "inspectSpecReviews" as inspectReviews
 participant "inspectPlanTraceability" as traceability
 participant "독립 plan reviewer" as planReviewer
@@ -38,20 +39,52 @@ else 검증 통과
   사용자 -> execute : plan·workspace·evidence
   사용자 -> snapshotReview : raw user request·Product draft·diagrams
   snapshotReview -> snapshotReview : content hash 고정, fresh reviewer 입력 snapshot 구성
-  snapshotReview -> productReviewer : 독립 검토 (parent context 미상속)
-  productReviewer --> snapshotReview : material findings 또는 승인
+  snapshotReview -> reviewAttempts : updateReviewAttempt(action=begin, Product snapshot)
+  alt admission 거부
+    reviewAttempts --> snapshotReview : active slot·변경 없는 입력·재시도 한도 초과
+    snapshotReview --> 사용자 : 검토 보류와 재시도 시점 안내
+  else admission 허용
+    reviewAttempts --> snapshotReview : attempt 허용
+    snapshotReview -> productReviewer : 독립 검토 (parent context 미상속)
+    productReviewer --> snapshotReview : material findings 또는 승인
+    snapshotReview -> reviewAttempts : updateReviewAttempt(action=record, Product 결과)
+    reviewAttempts --> snapshotReview : 기록 완료
+  end
   alt material findings
     loop 최대 2회 correction rounds
       snapshotReview --> 사용자 : 의미 확인용 질문 또는 수정 요구
       사용자 -> snapshotReview : 답변·수정 Product draft
-      snapshotReview -> productReviewer : 새 content hash snapshot으로 재검토
-      productReviewer --> snapshotReview : findings 또는 승인
+      snapshotReview -> reviewAttempts : updateReviewAttempt(action=begin, 새 Product snapshot)
+      alt admission 거부
+        reviewAttempts --> snapshotReview : active slot·변경 없는 입력·재시도 한도 초과
+        snapshotReview --> 사용자 : 미해결 findings와 재시도 시점 안내
+      else admission 허용
+        reviewAttempts --> snapshotReview : attempt 허용
+        snapshotReview -> productReviewer : 새 content hash snapshot으로 재검토
+        productReviewer --> snapshotReview : findings 또는 승인
+        snapshotReview -> reviewAttempts : updateReviewAttempt(action=record, Product 결과)
+        reviewAttempts --> snapshotReview : 기록 완료
+      end
+    end
+    opt correction budget 소진 후 미해결 findings
+      snapshotReview --> 사용자 : 미해결 findings 반환
     end
   end
-  snapshotReview --> 사용자 : Product Spec reviewer 승인
-  사용자 -> snapshotReview : Architecture draft·source baseline
-  snapshotReview -> architectureReviewer : 서로 다른 fresh reviewer (parent context 미상속)
-  architectureReviewer --> snapshotReview : material findings 또는 승인
+  opt Product pass
+    snapshotReview --> 사용자 : Product Spec reviewer 승인
+    사용자 -> snapshotReview : Architecture draft·source baseline
+    snapshotReview -> reviewAttempts : updateReviewAttempt(action=begin, Architecture snapshot)
+    alt admission 거부
+      reviewAttempts --> snapshotReview : active slot·변경 없는 입력·재시도 한도 초과
+      snapshotReview --> 사용자 : 검토 보류와 재시도 시점 안내
+    else admission 허용
+      reviewAttempts --> snapshotReview : attempt 허용
+      snapshotReview -> architectureReviewer : 서로 다른 fresh reviewer (parent context 미상속)
+      architectureReviewer --> snapshotReview : material findings 또는 승인
+      snapshotReview -> reviewAttempts : updateReviewAttempt(action=record, Architecture 결과)
+      reviewAttempts --> snapshotReview : 기록 완료
+    end
+  end
   snapshotReview -> inspectReviews : inspectSpecReviews()
   alt material findings 또는 stale inputs
     inspectReviews --> 사용자 : spec-me 완료 차단
@@ -61,8 +94,17 @@ else 검증 통과
     inspectReviews --> toTicket : planning 허용
     toTicket -> traceability : snapshot(plan_set_id, ticket_id, source·계획 본문)
     traceability --> toTicket : 규칙 inventory·canonical 참조·현재 hash
-    toTicket -> planReviewer : 전체 원문·전체 계획·원장 리뷰 (context 미상속)
-    planReviewer --> toTicket : pass 또는 근거 포함 finding
+    toTicket -> reviewAttempts : updateReviewAttempt(action=begin, plan set snapshot)
+    alt admission 거부
+      reviewAttempts --> toTicket : active slot·변경 없는 입력·재시도 한도 초과
+      toTicket --> 사용자 : 계획 검토 보류와 재시도 시점 안내
+    else admission 허용
+      reviewAttempts --> toTicket : attempt 허용
+      toTicket -> planReviewer : 전체 원문·전체 계획·원장 리뷰 (context 미상속)
+      planReviewer --> toTicket : pass 또는 근거 포함 finding
+      toTicket -> reviewAttempts : updateReviewAttempt(action=record, plan 결과)
+      reviewAttempts --> toTicket : 기록 완료
+    end
     toTicket -> traceability : check(planning, 독립 리뷰 입력 hash)
     traceability --> toTicket : 누락·stale 차단 또는 planning pass
   end

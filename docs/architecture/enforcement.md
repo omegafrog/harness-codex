@@ -15,8 +15,11 @@
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
 | E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
+| Harness 갱신 후 정리는 설치 산출물과 프로젝트 변경을 구분하고 미커밋 준비 문서를 보존한다 | `AGENTS.md`, `setup/SKILL.md`, `implement/GUIDE.md`의 정리 절차; 설치형 Harness 경로는 `git check-ignore -v`로 확인 | `.gitignore`/`.git/info/exclude`는 tracked modifications를 보호하지 않으므로 변경·미추적 파일 백업과 소유권 분류는 정리 주체가 확인한다 |
 
 ## 통합 계약 완료 gate
+
+Spec·계획 리뷰의 반복 제한은 `src/workflow/review-attempts.mjs`와 두 리뷰 CLI의 `begin/record/abort/resolve`가 관리한다. 대상·축별 실행 중복, 미변경 입력 재요청, 최초 검토 후 재검토 2회 초과를 차단하고 원본 판정·지적·stale을 session에 보존한다. 시작된 검토의 pass 기록은 기존 Spec·계획 gate에서 확인한다. 사용자 결정의 진위, 리뷰 전 문서 일괄 반영과 reviewer 역할 선택은 호출자의 검토 계약이다. 근거: 세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 반복 Spec·계획 리뷰 및 Learning 자료 승인 대기. 신규·업데이트 설치의 실행·Git 가시성은 `spec-review-check` profile로 확인한다. 기존 실행의 receipt는 당시 검증 형식을 유지하며 새 검토부터 실행 기록을 생성한다.
 
 `src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
 

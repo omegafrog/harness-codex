@@ -7,21 +7,34 @@ const source = new URL('../../src/workflow/spec-review.mjs', import.meta.url);
 const { snapshotSpecReview, inspectSpecReviews } = await import(existsSync(installed) ? installed.href : source.href);
 const outputModule = new URL('./session-output.mjs', existsSync(installed) ? installed : source);
 const { sessionOutputPath } = await import(outputModule.href);
+const { updateReviewAttempt } = await import(new URL('./review-attempts.mjs', existsSync(installed) ? installed : source).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() }, inputs = [];
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
-    if (!['--root', '--ticket', '--axis', '--reviews', '--input'].includes(flag) || !value) throw new Error('Invalid review arguments');
+    if (!['--root', '--ticket', '--axis', '--reviews', '--input', '--attempt', '--reason'].includes(flag) || !value) throw new Error('Invalid review arguments');
     if (flag === '--input') inputs.push(value);
     else options[flag === '--ticket' ? 'ticketId' : flag.slice(2)] = value;
   }
   options.root = resolve(options.root);
   let result;
-  if (action === 'snapshot') result = await snapshotSpecReview({ ...options, input_paths: inputs });
+  if (['begin', 'record', 'abort', 'resolve'].includes(action)) {
+    if (!['product', 'architecture'].includes(options.axis)) throw new Error('Review axis is required');
+    const reviews = options.reviews ? JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8')) : null;
+    if (action === 'begin' && options.axis === 'architecture') {
+      const product = await inspectSpecReviews({ ...options, reviews, axes: ['product'] });
+      if (product.status !== 'pass') throw new Error(`Product review must pass before Architecture dispatch: ${product.reason}`);
+    }
+    const review = reviews?.[options.axis];
+    if (action === 'record' && (review?.axis !== options.axis || review?.ticket_id !== options.ticketId)) throw new Error('Review axis and ticket must match the admitted target');
+    const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotSpecReview({ ...options, input_paths: action === 'record' ? Object.keys(review?.inputs || {}) : inputs });
+    result = await updateReviewAttempt({ root: options.root, scope: `spec-${options.ticketId}-${options.axis}`, action, inputs: snapshot, attemptId: options.attempt, review, reason: options.reason });
+  } else if (action === 'snapshot') result = await snapshotSpecReview({ ...options, input_paths: inputs });
   else if (action === 'check') {
     const reviews = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
     result = await inspectSpecReviews({ ...options, reviews, ...(options.axis ? { axes: [options.axis] } : {}) });
     if (result.status !== 'pass') process.exitCode = 1;
-  } else throw new Error('Usage: harness-spec-review.mjs snapshot|check --root DIR --ticket ID [--axis product|architecture] [--input RELATIVE] [--reviews SESSION-RELATIVE-JSON]');
+  } else throw new Error('Usage: harness-spec-review.mjs begin|record|abort|resolve|snapshot|check --root DIR --ticket ID [--axis product|architecture] [--input RELATIVE] [--reviews SESSION-RELATIVE-JSON] [--attempt ID] [--reason TEXT]');
+  if (result.status && result.status !== 'pass') process.exitCode = 1;
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

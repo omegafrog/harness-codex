@@ -146,7 +146,7 @@ node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <profile-
 
 ## Fresh Spec 리뷰 검사
 
-`spec-review-check` profile은 새 Spec 리뷰 gate·workflow stage·설치형 완료 CLI 회귀 검사를 실행한다. 임시 Git/file fixture만 사용하여 별도 서버/DB·생성 설정이 없으며 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile spec-review-check`로 실행한다.
+`spec-review-check` profile은 Spec·계획 리뷰의 중복 실행·입력 고정·재검토 한도, workflow stage, 설치·업데이트된 CLI와 Git 가시성 회귀 검사를 실행한다. 임시 Git/file fixture만 사용하여 별도 서버/DB·생성 설정이 없으며 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile spec-review-check`로 실행한다.
 
 reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> --ticket <id> --axis product|architecture [--input <직접 읽은 source/ADR 상대 파일>]`로 구한다. raw request/확정 사용자 답변은 ticket의 request.md에 보존한다. caller는 실제 각 reviewer JSON과 spawn metadata를 session/runtime/spec-reviews/에 attempt별 저장한다. `harness-spec-review.mjs check --root <workspace_root> --ticket <id> --reviews <session-relative-json>`가 최신 전체 리뷰를 검사하며 completion state에는 ticket_id/spec_reviews를 전달한다. source/Spec/diagram/용어/계약 갱신 후에는 이전 pass를 재사용하지 않는다. canonical 내용은 최종 fresh 리뷰 전에 안정화하고 seal의 기계 산출물 갱신 후 완료 gate를 실행한다.
 

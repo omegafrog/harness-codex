@@ -652,7 +652,7 @@ required_env와 모든 `${VAR}`를 prepare 전 검증한다. 재실행 가능한
 
 <a id="spec-review-service"></a>
 ## src/workflow/spec-review.mjs
-수정일: 2026-10-17
+수정일: 2026-10-24
 
 ### 설명
 기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [소스](../../src/workflow/spec-review.mjs).
@@ -661,10 +661,12 @@ required_env와 모든 `${VAR}`를 prepare 전 검증한다. 재실행 가능한
 workspace root·ticket ID·review axis·사용자 원문 request.md·Spec/diagram·현행 계약/용어/모델·검토한 추가 근거 파일·실제 agent metadata·reviewer 판정/지적. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
+호출자는 확정 답변·Spec·다이어그램을 함께 반영한 뒤 begin으로 검토 슬롯과 snapshot을 확보한다. Architecture begin은 현재 Product pass를 확인한다. 공통 실행 기록은 [review-attempts](../../src/workflow/review-attempts.mjs)가 관리하며 Spec·계획 CLI가 함께 사용한다. Learning의 설계 방어는 해당 Decision 검토 단계가 담당한다.
+
 spec-me의 Product 작성/diagram 후 고성능 모델의 새 reviewer를 생성하고 pass 후 설계한다. 최종 계약/용어/diagram이 안정된 뒤 stale Product를 갱신하고 다른 새 reviewer가 Architecture를 검토한다. 매 수정본은 새 agent/fork_turns:none으로 보내며 의미 변경은 기존 interview로 돌아간다. reviewer는 읽기 전용으로 JSON 판정과 근거를 반환하고 caller가 원본 응답을 session/runtime/spec-reviews/에 attempt별 보존한다. 이 흐름은 Learning mode 여부와 무관하다. stage gate 및 lifecycle spec_reviews는 기록·입력 hash·작성자 독립성·미해결 중대 지적을 검사한다. completeWorkflow는 로컬 manifest가 spec_reviews를 제거해도 spec-me/to-ticket 필수 검사를 복원한다. to-ticket은 새 worktree의 현재 파일로 검증하고 stale/missing이면 계획 전에 중단한다. 실제 spawn의 진위나 의미적 완전성은 hash만으로 증명하지 않으며 caller가 실제 tool 결과와 대조한다.
 
 ### 메서드
-[snapshotSpecReview](architecture.md#snapshot-spec-review-method) · [inspectSpecReviews](architecture.md#inspect-spec-reviews-method)
+[updateReviewAttempt](architecture.md#update-review-attempt-method) · [assertReviewAttempt](architecture.md#assert-review-attempt-method) · [snapshotSpecReview](architecture.md#snapshot-spec-review-method) · [inspectSpecReviews](architecture.md#inspect-spec-reviews-method)
 
 <a id="snapshot-spec-review-method"></a>
 ## snapshotSpecReview
@@ -681,7 +683,7 @@ request/Product Spec을 필수 포함하고 Architecture는 Architecture Spec도
 
 <a id="inspect-spec-reviews-method"></a>
 ## inspectSpecReviews
-수정일: 2026-10-17
+수정일: 2026-10-24
 
 ### 설명
 stage/lifecycle/CLI가 사용하는 Spec 리뷰 완료 검사다.
@@ -690,11 +692,39 @@ stage/lifecycle/CLI가 사용하는 Spec 리뷰 완료 검사다.
 root·ticketId·product/architecture review records·선택 axes.
 
 ### 동작
+실행 기록이 있는 축은 assertReviewAttempt로 현재 검토의 pass 결과 기록을 확인한다. 기존 receipt는 기존 독립성·입력 검사를 그대로 적용한다.
+
 axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fork_turns:none, pass verdict, 유효한 severity/근거, 미해결 blocker/major 부재, 필수/추가 입력의 현재 hash를 검사한다. Product 변경은 Product와 Architecture 양쪽 snapshot을 무효화한다. 위반이나 누락은 blocked이며 부모의 자기 검토·state의 pass 선언만으로 통과하지 않는다. 기계적 독립성 검사는 보존된 metadata를 대상으로 하므로 실제 tool 응답과의 대조 책임을 유지한다.
+
+<a id="update-review-attempt-method"></a>
+## updateReviewAttempt
+수정일: 2026-10-24
+
+### 설명
+Spec·계획 CLI가 공유하는 검토 시작·판정 기록·종료·사용자 결정에 따른 재개 처리다. [소스](../../src/workflow/review-attempts.mjs)
+
+### 필요 엔티티
+workspace root·ticket/axis 또는 plan set scope·입력 snapshot·attempt ID·실제 reviewer 응답·취소/사용자 결정 사유.
+
+### 동작
+session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begin은 활성 슬롯·동일 입력·최초 검토와 재검토 2회 한도를 검사하고 attempt ID와 이전 지적을 반환한다. record는 독립 fresh reviewer와 시작 입력을 확인하고 pass/revise/stale 판정과 원본 응답을 보존한다. abort는 사유와 횟수를 보존하며 슬롯을 해제한다. resolve는 한도에 도달한 묶음에 대한 사용자의 명시적 범위·결정 변경 사유를 보존하고 새 묶음을 열며 사용자 발화의 진위는 호출자가 확인한다. pass 이후 변경 입력도 새 묶음으로 검토한다. 검증은 Product의 delivery 항목에 연결된 회귀 검사를 따른다.
+
+<a id="assert-review-attempt-method"></a>
+## assertReviewAttempt
+수정일: 2026-10-24
+
+### 설명
+기존 Spec·계획 gate에서 시작된 검토의 완료 여부를 확인한다. [소스](../../src/workflow/review-attempts.mjs)
+
+### 필요 엔티티
+workspace root·scope·gate가 검사 중인 reviewer 응답.
+
+### 동작
+실행 원장이 있으면 마지막 attempt의 pass 상태와 reviewer ID·입력 hash가 검사 중인 응답과 일치해야 한다. 실행 원장이 없는 기존 receipt는 기존 gate의 독립성·freshness·지적 검사를 적용한다. 원장이 active/revise/stale/aborted이면 진행을 차단한다.
 
 <a id="plan-traceability-service"></a>
 ## src/workflow/plan-traceability.mjs
-수정일: 2026-10-23
+수정일: 2026-10-24
 
 ### 설명
 기존 control-plane에서 plan set의 요구사항 coverage, 독립 리뷰의 현재성, 구현 evidence를 조립하는 책임이다. 별도 Context·Aggregate·서비스를 추가하지 않는다. [소스](../../src/workflow/plan-traceability.mjs).
@@ -703,6 +733,8 @@ axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fo
 plan set ID·ticket ID·Spec/요청/결정/다이어그램/계약 입력·canonical plan·review metadata·실행 profile/receipt. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
+begin은 기존 snapshot의 정본·요구 inventory·coverage 검사를 먼저 수행하고 공통 실행 기록에 검토 슬롯을 확보한다. record는 reviewer 응답과 현행 입력을 대조한다. planning/dispatch/completion은 시작된 검토의 pass 기록을 확인한다.
+
 `docs/plans/<plan-set-id>/traceability.json`을 읽어 requirement 선언과 `source_path#ID` coverage, canonical per-plan 본문, 수용 조건·반례·검증 사례, 독립 리뷰와 snapshot freshness를 검사한다. 새 planning 원장은 schema_version 2이며 각 covered requirement를 소유 plan별 수용 기준과 검증 사례에 연결하고, cross-plan integration 검증은 owner plan에 연결한다. handoff 기록은 생산·소비 plan의 기준과 소비 측 검증 사례를 연결한다. 구형 schema_version 1은 기존 reviewed dispatch/completion에서 읽지만 새 planning에는 허용하지 않는다. impact는 stale coverage에서도 변경된 ID와 영향 계획을 보고하며 불확실 시 전체 계획을 보수적으로 지목한다. dispatch는 검증 전 spawn을 차단하고 completion은 선택 profile의 harness-exec receipt 및 현재 source/test hash를 확인한다. 해시는 의미적 정확성이나 reviewer/tool 신원을 증명하지 않는다.
 
 ### 메서드

@@ -7,6 +7,7 @@ import { inspectSpecReviews, snapshotSpecReview } from "../src/workflow/spec-rev
 import { evaluateStageGates } from "../src/workflow/stage-gates.mjs";
 import { loadNamedWorkflow } from "../src/workflow/loader.mjs";
 import { sessionDirectory } from "../src/workflow/session-output.mjs";
+import { updateReviewAttempt, assertReviewAttempt } from "../src/workflow/review-attempts.mjs";
 
 const REPOSITORY_ROOT = process.cwd();
 const ticketId = "spec-review-fixture";
@@ -97,5 +98,76 @@ test("stage gates route product and architecture reviews; spec-me orders reviews
     assert.equal((await evaluateStageGates({ workflow, stageId: "product-review", root, ticketId, specReviews: productOnly }))[0].status, "pass");
     assert.equal((await evaluateStageGates({ workflow, stageId: "architecture-review", root, ticketId, specReviews: productOnly }))[0].status, "pass");
     assert.equal((await evaluateStageGates({ workflow, stageId: "product-review", root, ticketId, specReviews: {} }))[0].status, "blocked");
+  } finally { await cleanup(); }
+});
+
+test("review admission serializes dispatch, requires changes and bounds fresh reviewer retries", async () => {
+  const { root, cleanup } = await fixture();
+  const scope = `spec-${ticketId}-product`;
+  const options = { root, scope };
+  try {
+    const inputs = await snapshotSpecReview({ root, ticketId, axis: 'product' });
+    const starts = await Promise.allSettled([1, 2].map(() => updateReviewAttempt({ ...options, action: 'begin', inputs })));
+    assert.equal(starts.filter((item) => item.status === 'fulfilled').length, 1);
+    let attempt = starts.find((item) => item.status === 'fulfilled').value;
+    await assert.rejects(updateReviewAttempt({ ...options, action: 'begin', inputs }), /already active/);
+    for (let round = 1; round <= 3; round++) {
+      const review = await record(root, 'product', `independent-${round}`);
+      review.verdict = 'revise';
+      review.findings = [{ severity: 'major', description: 'Missing failure case', evidence: 'product-spec.md:1' }];
+      const result = await updateReviewAttempt({ ...options, action: 'record', attemptId: attempt.attempt_id, review, inputs: review.inputs });
+      assert.equal(result.status, 'blocked');
+      assert.equal(result.round, round);
+      await assert.rejects(updateReviewAttempt({ ...options, action: 'begin', inputs: review.inputs }), /unchanged/);
+      await writeFile(join(root, `docs/specs/${ticketId}/product-spec.md`), `Product revision ${round}\n`);
+      const nextInputs = await snapshotSpecReview({ root, ticketId, axis: 'product' });
+      if (round < 3) {
+        attempt = await updateReviewAttempt({ ...options, action: 'begin', inputs: nextInputs });
+        assert.deepEqual(attempt.previous_findings, review.findings);
+      } else await assert.rejects(updateReviewAttempt({ ...options, action: 'begin', inputs: nextInputs }), /budget exhausted/);
+    }
+    await assert.rejects(updateReviewAttempt({ ...options, action: 'resolve', reason: '' }), /Explicit user/);
+    await updateReviewAttempt({ ...options, action: 'resolve', reason: 'User narrowed the failure scope; request.md:12' });
+    const resumed = await updateReviewAttempt({ ...options, action: 'begin', inputs: await snapshotSpecReview({ root, ticketId, axis: 'product' }) });
+    assert.equal(resumed.round, 1);
+    const passing = await record(root, 'product', 'independent-resumed');
+    await updateReviewAttempt({ ...options, action: 'record', attemptId: resumed.attempt_id, review: passing, inputs: passing.inputs });
+    await assertReviewAttempt({ ...options, review: passing });
+  } finally { await cleanup(); }
+});
+
+test("review results preserve stale inputs and require recorded completion before gates advance", async () => {
+  const { root, cleanup } = await fixture();
+  const options = { root, scope: `spec-${ticketId}-product` };
+  try {
+    const review = await record(root, 'product');
+    const attempt = await updateReviewAttempt({ ...options, action: 'begin', inputs: review.inputs });
+    assert.equal((await inspectSpecReviews({ root, ticketId, reviews: { product: review }, axes: ['product'] })).status, 'blocked');
+    await assert.rejects(updateReviewAttempt({ ...options, action: 'record', attemptId: 'wrong', review, inputs: review.inputs }), /No active review/);
+    await writeFile(join(root, `docs/specs/${ticketId}/product-spec.md`), 'Changed during review\n');
+    const changed = await snapshotSpecReview({ root, ticketId, axis: 'product' });
+    const result = await updateReviewAttempt({ ...options, action: 'record', attemptId: attempt.attempt_id, review, inputs: changed });
+    assert.equal(result.reason, 'stale');
+    const next = await updateReviewAttempt({ ...options, action: 'begin', inputs: changed });
+    const refreshed = await record(root, 'product');
+    await assert.rejects(updateReviewAttempt({ ...options, action: 'record', attemptId: next.attempt_id, review: refreshed, inputs: changed }), /new reviewer/);
+    refreshed.reviewer_id = 'second-independent-reviewer';
+    assert.equal((await updateReviewAttempt({ ...options, action: 'record', attemptId: next.attempt_id, review: refreshed, inputs: changed })).status, 'pass');
+    assert.equal((await inspectSpecReviews({ root, ticketId, reviews: { product: refreshed }, axes: ['product'] })).status, 'pass');
+  } finally { await cleanup(); }
+});
+
+test("aborted reviewers release the slot and consume the same retry budget", async () => {
+  const { root, cleanup } = await fixture();
+  const options = { root, scope: `spec-${ticketId}-product` };
+  try {
+    const inputs = await snapshotSpecReview({ root, ticketId, axis: 'product' });
+    for (let round = 1; round <= 3; round++) {
+      const attempt = await updateReviewAttempt({ ...options, action: 'begin', inputs });
+      assert.equal(attempt.round, round);
+      await assert.rejects(updateReviewAttempt({ ...options, action: 'abort', attemptId: attempt.attempt_id, reason: '' }), /Abort reason/);
+      await updateReviewAttempt({ ...options, action: 'abort', attemptId: attempt.attempt_id, reason: 'Reviewer process terminated' });
+    }
+    await assert.rejects(updateReviewAttempt({ ...options, action: 'begin', inputs }), /budget exhausted/);
   } finally { await cleanup(); }
 });

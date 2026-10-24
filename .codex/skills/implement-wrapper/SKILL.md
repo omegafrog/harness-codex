@@ -14,6 +14,8 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## Schedule
 
+기존 Spec·계획을 보정할 때 확정 답변과 영향 문서 수정을 먼저 모아 반영하고, `spec-review`와 `plan-review`의 `begin/record` 절차로 해당 검토를 수행한다. Architecture 선택에 대한 사용자 방어 토론은 Learning 전용 `architecture-review` 절차를 적용한다. 통합 계약은 최종 구현 통합 완료 단계에서 갱신한다.
+
 ## 실행 방식 선택
 
 승인된 계획의 의존성과 공유 자원을 먼저 확인한다. 공유 자원이 충돌하거나 불명확하면 `workspace_mode=sequential`, 독립 계획을 실제 동시 실행할 때만 `workspace_mode=parallel`을 선택한다. 각 실행 슬롯에서 아래 해당 파일 하나만 읽는다. 전체 reference 디렉터리를 읽거나 두 파일을 함께 로드하지 않는다.

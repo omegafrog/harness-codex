@@ -13,6 +13,7 @@ import { dispatchImplementPlan } from '../src/wrapper/dispatch.mjs';
 import { reconcileCompletion } from '../src/wrapper/reconciliation.mjs';
 import { ExecutionSlotRegistry } from '../src/wrapper/scheduler.mjs';
 import { makeContractsFixture } from './contracts-fixture.mjs';
+import { updateReviewAttempt } from '../src/workflow/review-attempts.mjs';
 
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 async function fixture() {
@@ -65,6 +66,20 @@ test('planning traceability validates full source-to-plan coverage and independe
     assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).reason, /independent/);
     f.ledger.review.reviewer_id = 'independent'; f.ledger.plans[0].requirement_ids = []; await f.save();
     assert.match((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' })).reason, /changed|unknown|coverage|requirement_ids/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('plan dispatch waits for the admitted review result to be recorded', async () => {
+  const f = await fixture();
+  try {
+    const options = { root: f.root, scope: 'plan-set-9' };
+    const snapshot = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    const start = await updateReviewAttempt({ ...options, action: 'begin', inputs: snapshot.inputs });
+    const blocked = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' });
+    assert.equal(blocked.status, 'blocked');
+    assert.match(blocked.reason, /Record a passing/);
+    await updateReviewAttempt({ ...options, action: 'record', attemptId: start.attempt_id, inputs: snapshot.inputs, review: f.ledger.review });
+    assert.equal((await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' })).status, 'pass');
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 

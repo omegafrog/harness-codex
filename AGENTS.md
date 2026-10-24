@@ -8,6 +8,8 @@ This repo is a Node.js Codex harness for ChangeSet/use-case workflows.
 
 When changing Harness behavior, update the consumer installation and update path in the same change. Trace the feature from its source through managed asset discovery/transforms, fresh install, update, Doctor inventory/diagnostics, and Git ignore rules (`.git/info/exclude` or `.gitignore`, according to ownership). Change the installer and Doctor wherever required, and add an installed-consumer regression check that verifies the installed behavior and `git status`: Harness-owned generated files must stay out of commits while application-owned changes remain visible and untouched. Do not assume that changing a source file alone makes the feature available to installed projects. Follow `.codex/internal-skills/implement/GUIDE.md` for the complete implementation check.
 
+Before cleaning a workspace after Harness installation or update, inspect `git status --short` and classify every changed path as Harness-managed generated output or project-owned content. Synchronize consumer ignore rules for Harness-managed paths through the installer and verify representative paths with `git check-ignore -v`; keep project-owned preparation documents, including `docs/agents/EXEC.md`, `docs/agents/execution.json`, and `docs/contracts/**`, visible to Git. Back up every changed or untracked path before cleanup, including tracked modifications because ignore rules do not protect tracked files. Remove only enumerated Harness-generated paths after confirming their ownership, then inspect `git status --short` and verify the backup.
+
 If you want some settings or instruction about setting, running server or infra, then write below `docs/agents/EXEC.md`.
 
 ## Agent skills

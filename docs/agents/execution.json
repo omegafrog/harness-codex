@@ -67,7 +67,9 @@
         "tests/spec_review.test.mjs",
         "tests/contracts.test.mjs",
         "tests/workflow_loader.test.mjs",
-        "tests/workflow_system_targets.test.mjs"
+        "tests/workflow_system_targets.test.mjs",
+        "tests/plan_traceability.test.mjs",
+        "tests/installer_update.test.mjs"
       ],
       "required_env": [],
       "config_inputs": [
@@ -77,7 +79,16 @@
         "src/workflow/stage-gates.mjs",
         ".codex/workflows/spec-me.yaml",
         ".codex/workflows/to-ticket.yaml",
-        "docs/agents/EXEC.md"
+        "docs/agents/EXEC.md",
+        "src/workflow/review-attempts.mjs",
+        "src/workflow/plan-traceability.mjs",
+        ".codex/scripts/harness-spec-review.mjs",
+        ".codex/scripts/harness-plan-traceability.mjs",
+        "src/installer/lock.mjs",
+        "src/installer/update.mjs",
+        "tests/spec_review.test.mjs",
+        "tests/plan_traceability.test.mjs",
+        "tests/installer_update.test.mjs"
       ],
       "prepare": [],
       "verify_config": [

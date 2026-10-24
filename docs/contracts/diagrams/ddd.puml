@@ -48,6 +48,8 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
   component "[[../architecture.md#spec-review-service src/workflow/spec-review.mjs]]" as specReview {
     component "[[../architecture.md#snapshot-spec-review-method snapshotSpecReview]]" as snapshotSpecReview
     component "[[../architecture.md#inspect-spec-reviews-method inspectSpecReviews]]" as inspectSpecReviews
+    component "[[../architecture.md#update-review-attempt-method updateReviewAttempt]]" as updateReviewAttempt
+    component "[[../architecture.md#assert-review-attempt-method assertReviewAttempt]]" as assertReviewAttempt
   }
   component "[[../architecture.md#plan-traceability-service src/workflow/plan-traceability.mjs]]" as planTraceability {
     component "[[../architecture.md#snapshot-plan-traceability-method snapshotPlanTraceability]]" as snapshotPlanTraceability

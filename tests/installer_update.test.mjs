@@ -11,8 +11,52 @@ import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs
 import { writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { runDoctor } from "../src/doctor/index.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
+import { sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+test("fresh and updated consumer review CLI enforces admission and preserves Git visibility", async () => {
+  const targetRoot = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), 'review-install-'));
+  const runtimePath = '.codex/harness-runtime/src/workflow/review-attempts.mjs';
+  try {
+    assert.equal(spawnSync('git', ['init', '-q'], { cwd: targetRoot }).status, 0);
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
+    const spec = join(targetRoot, 'docs/specs/review-install');
+    await mkdir(spec, { recursive: true });
+    for (const file of ['request.md', 'product-spec.md', 'architecture-spec.md']) await writeFile(join(spec, file), 'Application-owned specification\n');
+    const cli = (action, ...args) => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-spec-review.mjs'), action, '--root', targetRoot, '--ticket', 'review-install', ...args], { cwd: targetRoot, encoding: 'utf8' });
+    const architecture = cli('begin', '--axis', 'architecture');
+    assert.equal(architecture.status, 1);
+    assert.match(architecture.stderr, /Product review must pass/);
+    const started = cli('begin', '--axis', 'product');
+    assert.equal(started.status, 0, started.stderr);
+    const attempt = JSON.parse(started.stdout);
+    assert.match(cli('begin', '--axis', 'product').stderr, /already active/);
+    const reviews = { product: { axis: 'product', ticket_id: 'review-install', reviewer_id: 'fresh-product-reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs: attempt.inputs, findings: [] } };
+    const evidence = 'runtime/spec-reviews/install.json';
+    await writeFile(sessionOutputPath(targetRoot, evidence), JSON.stringify(reviews));
+    assert.equal(cli('record', '--axis', 'product', '--attempt', attempt.attempt_id, '--reviews', evidence).status, 0);
+    assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
+    assert.equal(cli('begin', '--axis', 'architecture', '--reviews', evidence).status, 0);
+
+    await writeFile(join(targetRoot, runtimePath), 'old runtime\n');
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    const update = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(update.updated.includes(runtimePath));
+    assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
+    assert.match(cli('begin', '--axis', 'architecture', '--reviews', evidence).stderr, /already active/);
+    const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(lock.files[runtimePath]);
+    const doctor = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(!doctor.diagnostics.some((item) => item.severity === 'error' && item.path.endsWith('review-attempts.mjs')));
+    const status = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: targetRoot, encoding: 'utf8' }).stdout;
+    assert.match(status, /docs\/specs\/review-install\/request.md/);
+    assert.doesNotMatch(status, /\.codex\/|\.agents\/|runtime\/reviews/);
+    assert.equal(await readFile(join(spec, 'request.md'), 'utf8'), 'Application-owned specification\n');
+  } finally { await rm(targetRoot, { recursive: true, force: true }); }
+});
 
 async function makeSourceAndTarget() {
   const sourceRoot = await mkdtemp(join(tmpdir(), "harness-installer-source-"));

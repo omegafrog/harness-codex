@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
+import { assertReviewAttempt } from './review-attempts.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DECLARATION = /^(?:#{1,6}\s+((?:BR|UC|AC|INV)-[A-Za-z0-9._-]+)(?=\s|:|—|–|-|$)|[-*]\s+\*\*((?:BR|UC|AC|INV)-[A-Za-z0-9._-]+)(?::\*\*|\*\*:))/;
@@ -212,6 +213,7 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
     const snapshot = await snapshotPlanTraceability({ root, planSetId, trackerPort });
     if (phase === 'planning') requireValue(snapshot.ledger.schema_version === 2, 'New plans must use traceability schema_version 2 with explicit requirement coverage');
     checkReview(snapshot, snapshot.ledger);
+    await assertReviewAttempt({ root, scope: `plan-${planSetId}`, review: snapshot.ledger.review });
     if (phase === 'dispatch') requireValue(snapshot.ledger.plans.some((plan) => plan.id === planId), `Dispatch plan ${planId || '(missing)'} is not in the reviewed plan set`);
     if (phase === 'completion') {
       const plans = planId ? snapshot.ledger.plans.filter((item) => item.id === planId) : snapshot.ledger.plans;

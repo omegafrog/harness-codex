@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { assertReviewAttempt } from './review-attempts.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
@@ -57,6 +58,7 @@ export async function inspectSpecReviews({ root, ticketId, reviews, axes = ['pro
       requireValue(record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs), 'Reviewed input hashes are required');
       const current = await snapshotSpecReview({ root, ticketId, axis, input_paths: Object.keys(record.inputs) });
       requireValue(Object.keys(current).length === Object.keys(record.inputs).length && Object.entries(current).every(([path, digest]) => record.inputs[path] === digest), `${axis} review inputs changed or required inputs were omitted`);
+      await assertReviewAttempt({ root, scope: `spec-${ticketId}-${axis}`, review: record });
     }
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }
