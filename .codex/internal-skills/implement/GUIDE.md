@@ -34,9 +34,9 @@ wrapper가 전달한 `workspace_mode`와 절대 `workspace_reference`를 확인�
 3. Resolve the ticket-scoped Product Spec and Architecture Spec.
 4. Read `docs/architecture/constraints.md` when present, then reload the current spec, resolved plan representation, and Git state.
 5. Read the explicit `workspace_root` passed by `implement-wrapper`; do not infer it from a prior command or the parent session's default directory. Set every command's working directory to that root and verify `pwd` plus `git rev-parse --show-toplevel` before reading or editing plan files. Stop before editing if they do not match. Capture the pre-implementation `HEAD` there as the code-review fixed point, then execute the plan in that workspace.
-6. 테스트 범위를 먼저 정한다. Product Spec의 use case, business rule, acceptance criteria와 Architecture Spec의 module responsibility를 근거로 이 변경이 맡은 동작을 고른다. 기능이나 메서드 수에 맞춰 테스트를 늘리지 않는다.
-7. 해당 module이 소유한 business rule, invariant, 또는 외부에 약속한 contract의 관찰 가능한 결과를 검증하는 focused test만 작성한다. 별도 module이 소유하는 인증·권한·입력 validation 알고리즘을 여기서 다시 검증하지 않는다. 필요한 경우 그 module의 실제 contract나 controlled fixture를 사용하고, 현재 module이 의존 결과를 업무 규칙에 맞게 처리하는지만 확인한다. 테스트가 의미 있는 회귀를 잡지 못하거나 범위 내 business behavior가 바뀌지 않았다면 새 테스트를 만들지 않는다.
-8. 구현은 테스트가 표현한 business outcome을 만족하는 최소 변경으로 한다. 테스트가 먼저 필요한 경우에도 테스트 이름과 assertion은 내부 구현이 아니라 해당 use case, rule, 또는 module contract를 표현한다.
+6. 승인된 Product Spec의 UC/BR/AC와 Architecture Spec의 규칙 owner를 확인해 변경할 비즈니스 로직을 정한다.
+7. 승인 Spec을 만족하는 최소 구현을 진행한다.
+8. [비즈니스 로직 단위 테스트](../testing-guidance/GUIDE.md#비즈니스-로직-단위-테스트)에 따라 소유한 업무 규칙의 조건·행위·기대 결과를 요구사항 사례로 작성·갱신한다. 단위 테스트는 해당 비즈니스 로직에 한정하고 구현과 사례의 명세 일치를 확인한다.
 9. Run focused plan-relevant checks and typecheck. Invoke E2E only when explicitly requested as E2E/full-stack/browser end-to-end, or required by the approved contract under the shared verification policy; a UI change alone is not sufficient. Pass the approved minimal scenario, observable oracle, profile, timeout, and remaining attempt budget to the runner. Report executed and omitted verification with reasons.
 10. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
 11. `review_fixed_point`는 구현 시작 직전 캡처한 `HEAD`다. `code-review`를 이 fixed point에 대해 실행하고 Standards·Spec 두 독립 결과를 모두 수집한다. `standards_reviewer`에는 ticket-scoped Product Spec을, `spec_reviewer`에는 ticket-scoped Architecture Spec을 전달한다.

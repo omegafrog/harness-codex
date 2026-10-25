@@ -26,6 +26,8 @@ Standards checks whether the implementation satisfies the ticket-scoped Product 
 Standards also checks the repo’s documented conventions, user-managed `docs/architecture/constraints.md` when present, Repository Architecture Policy, related ADR, naming, structure, and code smell.
 If there is no executable code in scope, treat automated-test-based evaluation as not applicable.
 
+단위 테스트는 [비즈니스 로직 단위 테스트](../../../.codex/internal-skills/testing-guidance/GUIDE.md#비즈니스-로직-단위-테스트)의 요구 ID·규칙 owner·조건·행위·기대 결과와 대조한다. 검토 기준은 업무 규칙의 명세와 관찰 가능한 동작이다.
+
 ## Spec
 
 Spec checks the diff against the ticket-scoped Architecture Spec and asks:

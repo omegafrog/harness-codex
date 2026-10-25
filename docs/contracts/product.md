@@ -69,6 +69,8 @@ AC-session-output: 잘못된 출력 경로는 쓰기 전에 거부된다. instal
 Product→DDD Architecture→ticket→plan→구현·독립 리뷰·완료의 추적 가능한 흐름을 제공한다.
 
 ### 비즈니스 규칙
+BR-delivery-unit-specifications: 단위 테스트는 소유 모듈의 비즈니스 로직을 UC/BR/AC와 연결한 조건·행위·기대 결과 사례로 관리한다. 구현은 승인 Spec에 따라 진행하고 변경 규칙을 사례에 반영한다. 작성·선실행·Red 확인 순서를 필수 절차로 요구하는 대신 업무 명세·구현·사례 일치를 확인한다. 단위 테스트 범위와 경계 검증의 분류는 testing-guidance가 소유한다.
+
 BR-delivery-review-coordination: 각 소유 리뷰의 독립성·Product→Architecture 순서·한도를 유지하면서, 실행 중인 관련 reviewer 결과를 모두 모아 동일 원인과 영향 경로를 한 수정표로 정리한다. 사용자 결정 요청에는 관찰된 Spec·계획·구현의 미해결 지적·pending·한도·필요 결정을 함께 제시한다. harness-review-status는 기존 원장과 선택한 현재 구현 리뷰만 읽어 파생 요약을 반환하며 파일·session·권한을 변경하지 않는다. 조회 성공은 업무 gate pass와 구분한다. 변경된 planning snapshot은 재승인됐어도 이전 코드 리뷰의 repair 예약·완료에 재사용할 수 없다. 실제 편집 중단·지적 묶음과 승인 범위 판정은 caller의 책임이다.
 
 BR-delivery-review-input: 상태 보유 Architecture 변경은 정상·경쟁 저장·부분 실패·재시도·재시작·복구 전이와 다음 허용 명령을 함께 검토한다. 의미적 완전성은 작성자/reviewer가 판단한다. 구현 중 새 명령·업무 상태·규칙·경계 또는 Spec 결정이 필요하면 구현 repair 예약 전에 spec-me로 전환하고, 변경 Spec·영향 계획의 fresh 승인 뒤 기존 기준 commit으로 재개한다. reviewer 생성 전 canonical plan의 정본 참조·SHA-256·정규화 식별자를 검사하고 raw 파일 hash와 구분한다. Spec begin은 입력 snapshot과 같은 workspace·session·ticket·axis·attempt 대상을 반환한다.

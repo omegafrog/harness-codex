@@ -4,6 +4,14 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
+### business-rule-unit-specifications
+- Status: active
+- Applies to: 이 프로젝트의 구현·단위 테스트 작성·계획·리뷰
+- Guidance: 단위 테스트는 해당 모듈이 소유한 비즈니스 로직만 대상으로 UC/BR/AC와 연결된 조건·업무 행위·기대 결과 사례로 관리한다. 구현은 승인 Spec에 따라 진행하고 변경 규칙을 사례에 반영한다. 테스트 우선 작성·선실행·Red 확인을 작업 순서나 완료 조건으로 요구하지 않는다. 세부 기준은 `.codex/internal-skills/testing-guidance/GUIDE.md`의 비즈니스 로직 단위 테스트 절을 따른다.
+- Rationale: 단위 테스트를 구현 세부사항 검사가 아닌 실행 가능한 업무 요구사항 명세로 유지한다.
+- Source: 2026-10-25 사용자 요청 — “tdd 형식의 테스트부터 우선 작성 후 실행 후 검증 이거 하지 마. 단위 테스트는 비즈니스 로직에 대해서만 작성해서 요구사항 명세서처럼 단위테스트를 관리하게 해”
+- Updated: 2026-10-25
+
 ### opentelemetry-local-observability-v2
 - Status: active
 - Applies to: Spring Boot 로컬 관측성 설치·개발 실행·수집 검증
