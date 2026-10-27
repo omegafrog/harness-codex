@@ -1,6 +1,5 @@
 name = "frontend_visual_reviewer"
 description = "Independently run and visually review implemented frontend flows in a real browser"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

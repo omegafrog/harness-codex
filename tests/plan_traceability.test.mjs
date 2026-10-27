@@ -14,6 +14,7 @@ import { reconcileCompletion } from '../src/wrapper/reconciliation.mjs';
 import { ExecutionSlotRegistry } from '../src/wrapper/scheduler.mjs';
 import { makeContractsFixture } from './contracts-fixture.mjs';
 import { updateReviewAttempt } from '../src/workflow/review-attempts.mjs';
+import { reserveImplementationRepair } from '../src/wrapper/repair.mjs';
 
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 async function fixture() {
@@ -26,19 +27,19 @@ async function fixture() {
   const planText = 'Plan plan-a implements BR-38. all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage.\n';
   execFileSync('git', ['init', '-q', root]);
   const executionProfile = {
-    command: ['node', '-e', 'process.exit(0)'], required_env: [], config_inputs: ['src/feature.mjs', 'tests/feature.test.mjs'],
+    command: ['node', '--test', 'tests/feature.test.mjs'], required_env: [], config_inputs: ['src/feature.mjs', 'tests/feature.test.mjs'],
     prepare: [], verify_config: [['node', '-e', 'process.exit(0)']],
     dependencies: [{ id: 'service', check: ['node', '-e', "const fs=require('node:fs');const p=process.env.HARNESS_SESSION_DIR+'/tmp/trace-ready';if(!fs.existsSync(p)){fs.writeFileSync(p,'ready');process.exit(1)}"] }],
     timeout_ms: 5000, readiness_timeout_ms: 2000, poll_interval_ms: 20,
   };
-  for (const [path, content] of [[`${spec}/product-spec.md`, specText], [`${spec}/architecture-spec.md`, archText], [`${base}/plans.md`, 'Plan plan-a\n'], [`${base}/plan-a.md`, planText], ['src/feature.mjs', 'export const feature = true;\n'], ['tests/feature.test.mjs', 'assert.equal(true, true);\n'], ['docs/agents/execution.json', JSON.stringify({ schema_version: 1, profiles: { focused: executionProfile } })]]) {
+  for (const [path, content] of [[`${spec}/product-spec.md`, specText], [`${spec}/architecture-spec.md`, archText], [`${base}/plans.md`, 'Plan plan-a\n'], [`${base}/plan-a.md`, `${planText} tests/feature.test.mjs\n`], ['src/feature.mjs', 'export const feature = true;\n'], ['tests/feature.test.mjs', "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('business rule fixture', () => assert.equal(true, true));\n"], ['docs/agents/execution.json', JSON.stringify({ schema_version: 1, profiles: { focused: executionProfile } })]]) {
     const pathTarget = join(root, path); await mkdir(join(pathTarget, '..'), { recursive: true }); await writeFile(pathTarget, content);
   }
   let ledger = {
     schema_version: 2, plan_set_id: 'set-9', ticket_id: 'ticket-9', handoffs: [],
     spec_paths: [`${spec}/product-spec.md`, `${spec}/architecture-spec.md`],
     requirements: [{ id: 'BR-38', source_path: `${spec}/product-spec.md`, source_anchor: 'BR-38', statement: 'Prevent uncovered execution rules.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered', coverage: [{ plan_id: 'plan-a', acceptance_criteria: ['all requirements map'], verification_cases: ['focused test rejects missing coverage'] }] }],
-    plans: [{ id: 'plan-a', requirement_ids: [`${spec}/product-spec.md#BR-38`], content_path: `${base}/plan-a.md`, verification_profile: 'focused', acceptance_criteria: ['all requirements map'], counterexamples: ['valid criteria can still miss source rules'], verification_cases: ['focused test rejects missing coverage'] }],
+    plans: [{ id: 'plan-a', requirement_ids: [`${spec}/product-spec.md#BR-38`], content_path: `${base}/plan-a.md`, verification_profile: 'focused', verification_files: ['tests/feature.test.mjs'], acceptance_criteria: ['all requirements map'], counterexamples: ['valid criteria can still miss source rules'], verification_cases: ['focused test rejects missing coverage'] }],
   };
   const ledgerPath = join(root, base, 'traceability.json');
   const save = async () => writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
@@ -68,6 +69,7 @@ test('planning traceability validates full source-to-plan coverage and independe
     assert.equal(reference.normalization, 'frontmatter-status-excluded-v1');
     assert.doesNotThrow(() => validateCanonicalPlanReference(reference));
     assert.equal(reference.reference, `${f.base}/plan-a.md`);
+    assert.deepEqual(JSON.parse(cli.stdout).details.verification_files, ['tests/feature.test.mjs']);
     assert.equal(reference.input_key, `${f.base}/plans/plan-a#canonical`);
     assert.match(reference.sha256, /^[a-f0-9]{64}$/);
     f.ledger.review.reviewer_id = 'writer'; await f.save();
@@ -91,6 +93,29 @@ test('plan dispatch waits for the admitted review result to be recorded', async 
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
+test('implementation repair budget resets only after an approved planning snapshot changes', async () => {
+  const f = await fixture();
+  try {
+    const before = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' });
+    const make = (sha, snapshot) => {
+      const reviewInput = { repository: f.root, fixed_point: 'base', implementation_commit_sha: sha, commit_list: ['base', sha], diff_range: { from: 'base', to: sha }, diff: 'diff --git a/src/feature.mjs b/src/feature.mjs', product_spec_path: 'docs/specs/ticket-9/product-spec.md', architecture_spec_path: 'docs/specs/ticket-9/architecture-spec.md', plan_set_id: 'set-9', planning_snapshot_sha256: snapshot };
+      const reviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'standards' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${role}-${sha}`, implementation_commit_sha: sha, review_input: reviewInput, report: { findings: role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Fix the implementation finding.' }] : [] } }));
+      return { root: f.root, planId: 'plan-a', reviewInput, reviews };
+    };
+    assert.equal((await reserveImplementationRepair(make('impl-1', before.details.review_snapshot_sha256))).round, 1);
+    await assert.rejects(reserveImplementationRepair({ root: f.root, planId: 'plan-a', resolution: '계속 해' }), /scope\/spec change and a new planning snapshot/);
+
+    await writeFile(join(f.root, f.base, 'plan-a.md'), `Plan plan-a ${f.ledger.plans[0].requirement_ids[0]} all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage. tests/feature.test.mjs Approved scope clarification.\n`);
+    const changed = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
+    f.ledger.review.inputs = changed.inputs;
+    await f.save();
+    const current = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'dispatch', planId: 'plan-a' });
+    assert.equal(current.status, 'pass', current.reason);
+    await reserveImplementationRepair({ root: f.root, planId: 'plan-a', resolution: '사용자 승인으로 수정 범위를 갱신함, request.md:4' });
+    assert.equal((await reserveImplementationRepair(make('impl-2', current.details.review_snapshot_sha256))).round, 1);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
 test('planning blocks a requirement ID whose acceptance or verification is not explicitly mapped', async () => {
   const f = await fixture();
   try {
@@ -99,6 +124,19 @@ test('planning blocks a requirement ID whose acceptance or verification is not e
     const result = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' });
     assert.equal(result.status, 'blocked');
     assert.match(result.reason, /explicit requirement coverage|verification cases/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('planning blocks a unit-test file omitted from the selected execution profile', async () => {
+  const f = await fixture();
+  try {
+    const configPath = join(f.root, 'docs/agents/execution.json');
+    const config = JSON.parse(await readFile(configPath, 'utf8'));
+    config.profiles.focused.config_inputs = ['src/feature.mjs'];
+    await writeFile(configPath, JSON.stringify(config));
+    const result = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'planning' });
+    assert.equal(result.status, 'blocked');
+    assert.match(result.reason, /tests\/feature\.test\.mjs.*missing from profile focused config_inputs/);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 
@@ -128,7 +166,7 @@ test('planning requires producer and consumer responsibilities plus a consumer v
     await writeFile(join(f.root, consumerPath), 'Plan plan-b implements BR-39. Consume plan data. Reject missing producer data. Consumer rejects missing producer output.\n');
     await writeFile(join(f.root, f.base, 'plans.md'), 'plan-a\nplan-b\n');
     f.ledger.requirements.push({ id: 'BR-39', source_path: sourcePath, source_anchor: 'BR-39', statement: 'Consume the produced plan data.', owner: 'plan-b', plan_ids: ['plan-b'], disposition: 'covered', coverage: [{ plan_id: 'plan-b', acceptance_criteria: ['Consume plan data.'], verification_cases: ['Consumer rejects missing producer output.'] }] });
-    f.ledger.plans.push({ id: 'plan-b', content_path: consumerPath, requirement_ids: [`${sourcePath}#BR-39`], acceptance_criteria: ['Consume plan data.'], counterexamples: ['Reject missing producer data.'], verification_cases: ['Consumer rejects missing producer output.'], verification_profile: 'focused' });
+    f.ledger.plans.push({ id: 'plan-b', content_path: consumerPath, requirement_ids: [`${sourcePath}#BR-39`], acceptance_criteria: ['Consume plan data.'], counterexamples: ['Reject missing producer data.'], verification_cases: ['Consumer rejects missing producer output.'], verification_files: [], verification_profile: 'focused' });
     f.ledger.handoffs = [{ id: 'handoff-1', producer_plan_id: 'plan-a', consumer_plan_id: 'plan-b', produces: 'all requirements map', consumes: 'Consume plan data.', verification_case: 'Consumer rejects missing producer output.' }];
     await f.save();
     const passing = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
@@ -183,7 +221,7 @@ test('requirement references in prose and diagram inventories are not declaratio
     await writeFile(productPath, '# Product\n### UC-001 Prepare an ability definition.\n- UC-001 diagram inventory entry.\n- **BR-38:** Prevent uncovered execution rules.\n');
     f.ledger.requirements.push({ id: 'UC-001', source_path: `${f.spec}/product-spec.md`, source_anchor: 'UC-001', statement: 'Prepare an ability definition.', owner: 'plan-a', plan_ids: ['plan-a'], disposition: 'covered', coverage: [{ plan_id: 'plan-a', acceptance_criteria: ['all requirements map'], verification_cases: ['focused test rejects missing coverage'] }] });
     f.ledger.plans[0].requirement_ids.push(`${f.spec}/product-spec.md#UC-001`);
-    await writeFile(join(f.root, f.base, 'plan-a.md'), 'Plan plan-a implements BR-38 and UC-001. all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage.\n');
+    await writeFile(join(f.root, f.base, 'plan-a.md'), 'Plan plan-a implements BR-38 and UC-001. all requirements map. valid criteria can still miss source rules. focused test rejects missing coverage. tests/feature.test.mjs\n');
     await f.save();
 
     const snapshot = await snapshotPlanTraceability({ root: f.root, planSetId: 'set-9' });
@@ -244,7 +282,7 @@ test('completion requires current evidence and successful selected-profile recei
   try {
     const result = await inspectPlanTraceability({ root: f.root, planSetId: 'set-9', phase: 'completion', planId: 'plan-a' });
     assert.match(result.reason, /Implementation evidence missing/);
-    const sourceHash = digest('export const feature = true;\n'), testHash = digest('assert.equal(true, true);\n');
+    const sourceHash = digest('export const feature = true;\n'), testHash = digest("import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('business rule fixture', () => assert.equal(true, true));\n");
     const execCli = new URL('../.codex/scripts/harness-exec.mjs', import.meta.url).pathname;
     const run = spawnSync(process.execPath, [execCli, '--root', f.root, '--profile', 'focused'], { cwd: f.root, encoding: 'utf8', env: process.env });
     assert.equal(run.status, 0, run.stderr || run.stdout);

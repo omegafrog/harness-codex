@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "tiers": {
+    "high_performance": {
+      "model_key": "agents.high_performance_model",
+      "reasoning_effort_key": "agents.high_performance_reasoning_effort"
+    },
+    "implementation": {
+      "model_key": "agents.implementation_model",
+      "reasoning_effort_key": "agents.implementation_reasoning_effort"
+    },
+    "execution": {
+      "model_key": "agents.execution_model",
+      "reasoning_effort_key": "agents.execution_reasoning_effort"
+    },
+    "low": {
+      "model_key": "agents.low_performance_model",
+      "reasoning_effort_key": "agents.low_performance_reasoning_effort"
+    }
+  },
+  "skills": {
+    "architecture-review": "high_performance",
+    "architecture-spec": "low",
+    "attention-span": "low",
+    "beads": "low",
+    "code-research": "low",
+    "code-review": "implementation",
+    "codebase-design": "high_performance",
+    "correct": "high_performance",
+    "ddd-design": "high_performance",
+    "diagnosing-bugs": "high_performance",
+    "domain-modeling": "high_performance",
+    "e2e-test": "execution",
+    "eli5": "low",
+    "evaluate-harness": "execution",
+    "event-storming": "high_performance",
+    "frontend-design": "high_performance",
+    "frontend-figma": "high_performance",
+    "frontend-implement": "implementation",
+    "frontend-visual-review": "high_performance",
+    "gh-open-pr": "low",
+    "grill-with-docs": "high_performance",
+    "grilling": "high_performance",
+    "harness-maintenance": "execution",
+    "harness-recover": "high_performance",
+    "implement": "implementation",
+    "implement-wrapper": "implementation",
+    "knowledge-harvest": "low",
+    "maintain-verification": "high_performance",
+    "plan-review": "high_performance",
+    "plantuml-diagrams": "low",
+    "product-spec": "low",
+    "session-worktree": "execution",
+    "setup": "execution",
+    "spec-me": "high_performance",
+    "spec-review": "high_performance",
+    "sync-contracts": "implementation",
+    "to-ticket": "high_performance",
+    "victorialogs-local-setup": "execution",
+    "workflow-compose": "low",
+    "worktree-create": "execution"
+  },
+  "main_session_skills": [
+    "orchestrator"
+  ]
+}

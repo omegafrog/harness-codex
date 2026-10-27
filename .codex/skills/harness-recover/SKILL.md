@@ -5,6 +5,10 @@ description: Diagnose and recover an installed project's blocked Harness install
 
 # Harness 복구
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 설치된 프로젝트에서 Harness를 실행·재개할 수 없는 원인을 진단하고 사용 가능한 상태로 복구한다. 일반 업데이트 요청은 `harness-maintenance`, 업무 구현은 해당 구현 스킬을 사용한다.
 
 ## 1. 읽기 전용 진단

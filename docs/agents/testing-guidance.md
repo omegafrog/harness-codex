@@ -4,12 +4,28 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
-### business-rule-unit-specifications
+### planning-and-implementation-unit-tests-only
+- Status: superseded
+- Applies to: 계획·구현 단계의 테스트 계획·작성·갱신
+- Guidance: 계획과 구현은 비즈니스 로직 단위 테스트만 추가·수정한다. 테스트는 해당 모듈이 소유한 UC/BR/AC의 조건·행위·기대 업무 결과만 검증한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. 통합·계약·E2E 테스트와 프레임워크 배선·직렬화·mock 호출·단순 위임 테스트를 만들지 않는다. 기존 필수 검증 명령·완료 gate는 테스트 작성 범위와 분리해 실행할 수 있다. 상세 기준은 `.codex/internal-skills/testing-guidance/GUIDE.md`를 따른다.
+- Rationale: 테스트를 업무 규칙의 실행 가능한 명세로 한정하고 비즈니스 로직에 대한 오판을 줄인다.
+- Source: 2026-10-26 사용자 요청 — “단위 테스트만 만들도록 해 플랜 및 구현에서. 그리고 단위 테스트는 비즈니스 로직만 테스트해. 비즈니스 로직이 제대로 동작하는지에 대해서만 해”
+- Updated: 2026-10-26
+
+### per-plan-unit-tests-and-final-e2e
 - Status: active
+- Applies to: split-plan test planning, implementation, and final feature verification
+- Guidance: `to-ticket` plans owned business-rule unit tests per split plan and one feature-level E2E scenario at the plan-set parent. Each implementation writes/updates and runs its unit tests before that split plan completes; unit tests mock external dependencies and remain independent. After all split plans pass review and verification and are integrated, run the parent E2E once as the final test step using real required dependencies in test-only containers. Do not run E2E at individual plan boundaries.
+- Rationale: Specify business behavior per implementation slice and verify the integrated user journey once when the complete feature exists.
+- Source: 2026-10-27 user request — each split plan gets unit tests during implementation; run E2E last after implementing all split plans
+- Updated: 2026-10-27
+
+### business-rule-unit-specifications
+- Status: superseded
 - Applies to: 이 프로젝트의 구현·단위 테스트 작성·계획·리뷰
-- Guidance: 단위 테스트는 해당 모듈이 소유한 비즈니스 로직만 대상으로 UC/BR/AC와 연결된 조건·업무 행위·기대 결과 사례로 관리한다. 구현은 승인 Spec에 따라 진행하고 변경 규칙을 사례에 반영한다. 테스트 우선 작성·선실행·Red 확인을 작업 순서나 완료 조건으로 요구하지 않는다. 세부 기준은 `.codex/internal-skills/testing-guidance/GUIDE.md`의 비즈니스 로직 단위 테스트 절을 따른다.
-- Rationale: 단위 테스트를 구현 세부사항 검사가 아닌 실행 가능한 업무 요구사항 명세로 유지한다.
-- Source: 2026-10-25 사용자 요청 — “tdd 형식의 테스트부터 우선 작성 후 실행 후 검증 이거 하지 마. 단위 테스트는 비즈니스 로직에 대해서만 작성해서 요구사항 명세서처럼 단위테스트를 관리하게 해”
+- Guidance: 단위 테스트는 해당 모듈이 소유한 비즈니스 로직만 대상으로 UC/BR/AC와 연결된 조건·업무 행위·기대 결과 사례로 관리한다. 테스트 우선 작성·선실행·Red 확인을 요구하지 않는다.
+- Rationale: 새 기준은 비즈니스 로직 단위 테스트만 계획·작성하도록 범위를 더 좁혔다.
+- Source: 2026-10-25 사용자 요청
 - Updated: 2026-10-25
 
 ### opentelemetry-local-observability-v2
@@ -37,10 +53,10 @@ This provider-neutral document stores durable project-specific testing preferenc
 - Updated: 2026-10-20
 
 ### selective-e2e-and-dynamic-agent-oracles
-- Status: active
+- Status: superseded
 - Applies to: test planning, implementation verification, and E2E runner handoffs
-- Guidance: Default to focused unit/integration/contract checks. Use E2E only on explicit request or a changed critical cross-boundary path that cheaper checks cannot establish. For dynamic agent services, verify stable transport/UI states and goal/state/tool/permission/persistence/side-effect evidence; do not assert exact prose, ordering, or counts without a canonical contract. Keep E2E attempts bounded and do not let a runner edit tests or source.
-- Rationale: Avoid repeated slow E2E runs against intentionally dynamic agent responses and prevent retry-driven expectation weakening.
+- Guidance: Use focused unit/integration/contract checks by default; E2E is limited to explicit requests or approved critical cross-boundary risk.
+- Rationale: Planning and implementation now create business-logic unit tests only under the newer user instruction.
 - Source: 2026-10-21, explicit user preference on unnecessary E2E execution and dynamic agent response assertions
 - Updated: 2026-10-21
 

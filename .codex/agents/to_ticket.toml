@@ -1,6 +1,5 @@
 name = "to_ticket"
 description = "Split approved Product and Architecture Specs into vertical implementation tickets"
-model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

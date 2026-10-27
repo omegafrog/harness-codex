@@ -7,6 +7,10 @@ description: Evaluate Harness workflow changes with the repo's eval suites, comp
 
 # evaluate-harness
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 ## Purpose
 
 Use `evaluate-harness` to answer: **did this Harness change make the agent/workflow better, worse, or inconclusive?**
@@ -120,6 +124,10 @@ Required dimensions:
 - latency regression vs suite baseline
 - per-case token/latency regressions when present
 - inconclusive rate and reasons
+
+Also report `evaluation_coverage` from `report.json`. It groups cases, outcomes, and efficiency by `skill_selection`, `subagent_utilization`, `context_management`, and `tool_execution_policy`. An axis marked `unmeasured` is an explicit coverage gap; do not describe the suite as evaluating that axis. Coverage labels describe declared case scope and do not prove a behavior beyond each case's actual evidence.
+
+A suite may set `baseline: null` while collecting its first exploratory run. In that state, report absolute efficiency values and say baseline regression is unavailable; do not treat unavailable regressions as evidence of improvement. Promote a measured run to a baseline only under the existing baseline approval rule.
 
 Use each suite's own `thresholds` and `baseline`. Do not hardcode alternative thresholds in the skill.
 

@@ -125,12 +125,13 @@ test('a valid two-round repair cycle remains readable before and after explicit 
   const scope = 'implementation-plan-a';
   try {
     for (let round = 1; round <= 2; round++) {
-      await updateReviewAttempt({ root, scope, action: 'repair', maxRounds: 2, inputs: { fixed_point: 'base', implementation_commit_sha: `impl-${round}` } });
+      await updateReviewAttempt({ root, scope, action: 'repair', maxRounds: 2, inputs: { fixed_point: 'base', implementation_commit_sha: `impl-${round}`, plan_set_id: 'set-a', planning_snapshot_sha256: 'a'.repeat(64) } });
       const row = await inspectReviewHistory({ root, scope });
       assert.equal(row.budget.remaining, 2 - round);
       assert.equal(row.next_admission_requires_resolution, round === 2);
     }
-    await updateReviewAttempt({ root, scope, action: 'resolve-repair', reason: 'User approved changed recovery scope, request.md:9' });
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'resolve-repair', resolution: { reason: '계속 해', previous_snapshot_sha256: 'a'.repeat(64), current_snapshot_sha256: 'a'.repeat(64) } }), /different passing planning snapshot/);
+    await updateReviewAttempt({ root, scope, action: 'resolve-repair', resolution: { reason: 'User approved changed recovery scope, request.md:9', previous_snapshot_sha256: 'a'.repeat(64), current_snapshot_sha256: 'b'.repeat(64) } });
     assert.equal((await inspectReviewHistory({ root, scope })).budget.used, 0);
     await updateReviewAttempt({ root, scope, action: 'repair', inputs: { fixed_point: 'base', implementation_commit_sha: 'impl-3' } });
     assert.equal((await inspectReviewHistory({ root, scope })).budget.limit, 1);

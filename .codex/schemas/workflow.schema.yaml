@@ -10,6 +10,9 @@ properties:
   id:
     type: string
     pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+  orchestrator:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
   roles:
     type: array
     min_items: 1

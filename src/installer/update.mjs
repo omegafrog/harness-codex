@@ -6,6 +6,7 @@ import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./loc
 import { isWithin } from "../eval/util.mjs";
 import { sessionOutputPath } from "../workflow/session-output.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
+import { syncOrchestratorHook } from './orchestrator-hook.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const SOURCE_TRANSFORM = "project-local-paths-v1";
@@ -283,7 +284,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     if (!descriptor) {
       if (!selected(entry.path)) continue;
       const internalReplacement = entry.path.replace(/^\.agents\/skills\//, ".codex/internal-skills/").replace(/\/SKILL\.md$/, "/GUIDE.md");
-      if (selected(entry.path) && (entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
+      if (selected(entry.path) && (entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || entry.path === '.codex/internal-skills/spec-review/references/review-coordination.md' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
         const target = await readTarget(targetRoot, entry.path);
         if (target) actions.push({ descriptor: sourceDescriptor(entry.source_path, entry.path), retired: true, backup: target.content });
       }
@@ -348,5 +349,6 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
+  if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) await syncOrchestratorHook(targetRoot);
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
 }

@@ -17,7 +17,7 @@ const CORROBORATION_FIELDS = new Set(["independent_authority_id", "claim_ids", "
 const PRINCIPLE_REVIEW_FIELDS = new Set(["actor", "outcome", "assessment"]);
 const PRINCIPLE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "body_sha256"]);
 const PRINCIPLE_HISTORY_FIELDS = new Set(["status", "at", "actor"]);
-const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "execution_purpose", "decision_ids", "summary", "approval"]);
+const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "source_sha256", "execution_purpose", "decision_ids", "summary", "approval"]);
 const EVIDENCE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "summary_sha256"]);
 const EVIDENCE_OBSERVATION_FIELDS = new Set(["metric", "value", "unit", "context"]);
 const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret|credential)\s*[:=]\s*["']?[^\s"']{4,}|\bBearer\s+[A-Za-z0-9._~-]+|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b|:\/\/[^/\s:@]+:[^/\s@]+@|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout|^(?:\[[A-Z]+\]\s*)?(?:\d{4}-\d{2}-\d{2}[T ][\d:.+-]+Z?\s+)?(?:DEBUG|INFO|WARN|ERROR|TRACE)\b|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+|^\{\s*"(?:timestamp|time|level|event|message|run_id)"\s*:)/i;
@@ -168,6 +168,10 @@ export function validateEvidence(evidence) {
   if (!EVIDENCE_TYPES.includes(evidence.type)) issue(errors, "invalid_evidence_type", "$.type", "Evidence type is not supported.");
   if (!EVIDENCE_EXECUTION_STATUSES.includes(evidence.execution_status)) issue(errors, "invalid_execution_status", "$.execution_status", "execution_status is not supported.");
   if (!EVIDENCE_MEASUREMENT_VALIDITIES.includes(evidence.measurement_validity)) issue(errors, "invalid_measurement_validity", "$.measurement_validity", "measurement_validity is not supported.");
+  if (evidence.type === "documentary") {
+    if (evidence.execution_status !== "not_applicable" || evidence.measurement_validity !== "not_applicable" || evidence.execution_purpose !== "decision_validation") issue(errors, "invalid_documentary_evidence", "$", "Documentary evidence is decision evidence, not an execution or measurement.");
+    if (!/^[a-f0-9]{64}$/.test(evidence.source_sha256 || "")) issue(errors, "missing_document_hash", "$.source_sha256", "Documentary evidence requires the SHA-256 of its source snapshot.");
+  } else if (evidence.execution_status === "not_applicable" || evidence.source_sha256 !== undefined) issue(errors, "invalid_execution_evidence", "$", "Execution evidence requires an execution status and does not use documentary source hashes.");
   if (evidence.execution_status !== "completed" && evidence.measurement_validity === "valid") issue(errors, "failed_run_valid_measurement", "$.measurement_validity", "Failed or interrupted execution cannot be valid measurement evidence.");
   if (!Array.isArray(evidence.observations) || evidence.observations.length === 0) issue(errors, "invalid_observations", "$.observations", "Evidence requires at least one observation.");
   else for (const [index, observation] of evidence.observations.entries()) {

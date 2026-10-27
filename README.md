@@ -4,9 +4,11 @@
 
 주요 기능:
 
+- `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
+- 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
 - `$spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `$to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
-- `$implement-wrapper` — 독립 Plan은 병렬, 충돌 Plan은 순차 실행하고 fresh context로 handoff
+- `$implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
 - `$implement` + `$code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `$diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
 - `$frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
@@ -36,9 +38,10 @@ Codex에서는 skill을 `$skill-name`으로 호출한다.
 | 명령 | 용도 |
 | --- | --- |
 | `$setup` | context, model tier, tracker 초기 설정 |
+| `$orchestrator <요청>` | workflow 최상위에서 skill 실행·리뷰·회귀·사용자 결정을 조율 |
 | `$spec-me <요청>` | 새 기능이나 구조 변경의 Product / Architecture Spec 작성 |
 | `$to-ticket` | 승인된 Spec을 vertical plan과 dependency로 분할 |
-| `$implement-wrapper` | 여러 Plan의 실행 순서·병렬성·충돌 조율 |
+| `$implement-wrapper` | 선택된 Plan의 구현·단위 테스트·결과 반환 |
 | `$implement` | 승인된 Plan 하나를 test-first로 구현 |
 | `$diagnosing-bugs <문제>` | 장애·regression 원인 분석과 수정 |
 | `$frontend-design <요청>` | 프런트엔드 전용 reference-first 설계·구현·시각 검증 |
@@ -122,7 +125,7 @@ Parent Issue
 
 ### 4. `$implement-wrapper`
 
-Plan의 dependency와 shared resource를 보고 실행 가능성을 계산한다.
+orchestrator가 Plan의 dependency와 shared resource로 실행 순서를 정하고, 각 worker는 선택된 Plan 하나를 구현한다.
 
 ```text
 독립 Plan      → 병렬 실행 가능
@@ -130,7 +133,7 @@ resource 충돌 → 순차 실행
 dependency     → 선행 Plan 완료까지 대기
 ```
 
-Plan마다 새로운 `implementation_agent`를 사용한다. Context가 길어지면 checkpoint를 남기고 같은 Plan을 새 context에서 이어간다.
+Plan마다 새로운 `implementation_agent`를 사용한다. setup에서 확인한 `.codex/context-budget.json`의 수치로 to-ticket은 계획을 분할하고 orchestrator는 실행 중 인계 여부를 판단한다.
 
 ### 5. `$implement`
 
@@ -206,6 +209,12 @@ correctness / quality / tokens / latency / inconclusive 판정
 
 Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으로 선택하고, 매핑이 불명확하면 `p0`를 smoke/regression suite로 사용한다. Baseline은 실패를 없애기 위해 자동 갱신하지 않는다.
 
+`meta-harness-pilot`은 Codex 구독으로 Harness 동작을 점검하는 8-case suite다. 자체 4개 파일 중심 사례에 기존 `p0` 기준선의 `spec-me-ambiguity-gate`, `implement-wrapper-dependency`, `code-review-isolation`을 재사용해 범위를 넓혔다. 초기 `baseline: null` 상태에서는 품질·정책 verdict와 절대 비용만 보고하며 회귀율은 계산하지 않는다. subagent 축은 격리된 reviewer spawn이 불가능할 때 올바르게 차단하는 `code-review-isolation` 동작만 측정한다.
+
+```sh
+node bin/harness-eval.mjs run --suite meta-harness-pilot
+```
+
 ---
 
 ## Skill Catalog
@@ -217,9 +226,10 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | Skill | 역할 |
 | --- | --- |
 | [`setup`](.codex/skills/setup/SKILL.md) | repository 초기 설정 |
+| [`orchestrator`](.codex/skills/orchestrator/SKILL.md) | subagent skill 실행과 파일 기반 결과·상태 전이 조율 |
 | [`spec-me`](.codex/skills/spec-me/SKILL.md) | Product + Architecture Spec orchestration |
 | [`to-ticket`](.codex/skills/to-ticket/SKILL.md) | Spec → vertical plan |
-| [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | multi-plan scheduling / handoff |
+| [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | 승인된 단일 plan 구현과 실행 증거 반환 |
 | [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
 | [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
 | [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |

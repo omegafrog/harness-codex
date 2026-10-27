@@ -1,6 +1,5 @@
 name = "architecture_review_lead"
 description = "Challenge architecture decisions in Learning mode using the shared evidence review checklist"
-model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 
 developer_instructions = """

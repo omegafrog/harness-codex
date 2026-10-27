@@ -113,16 +113,16 @@ flowchart TD
 | S1 | `spec-me` → `worktree-create` | `source_workspace`, create CLI 결과, 생성 worktree preflight | 절대 `S`, branch, HEAD, `return_root`, session_directory, 자동 발급 `worktree_id` | 생성 CLI와 preflight CLI를 workflow 진입에서 실행 |
 | S2 | `product-spec` → `grill-with-docs` | 사용자 요청·확정 답변, 현행 Product 계약·용어·Context map, Product topics/template, how-to-grill, language-lifecycle | topic별 `SETTLED/PARTIAL/UNRESOLVED/NOT_APPLICABLE`, 확정 Product 결정 | material 미확정이면 한 질문씩 사용자 응답 대기. Product는 source/test 직접 조사 금지 |
 | S3 | `spec_document_writer` | 확정 Product 결정, ticket ID, template, 다이어그램 inventory, `S` | caller가 보존한 request.md를 입력받아 `docs/specs/<ticket>/product-spec.md` 작성 | writer는 새 요구·결정 생성 금지. 산출물이 S 안인지 확인 |
-| S4 | `diagram_creator` → `plantuml-diagrams` | 확정 Product 흐름·UC/BR ID·그림 inventory | `diagrams/product/UC-<id>.usecase.puml`, `.activity.puml`, 대응 `.svg`; 필요 시 business-state | 흐름 변경 시 필요한 관점만. Product class diagram 금지. 로컬 렌더·링크·내용 일치 gate |
-| S5 | fresh `spec_adversarial_reviewer` → `spec-review` | request.md, Product Spec·topics/template·용어·현행 계약·diagram, 정확한 S/cwd | Product axis JSON, 원본 응답과 hash snapshot | fresh·작성자 분리. blocker/major면 수정·새 reviewer 재검토. pass 전 다음 단계 금지 |
-| S6 | `define-system-targets` | Product pass, interaction/workload/state/consistency/availability/growth와 관련 NFR 답변 | `docs/specs/<ticket>/system-targets.yaml` | `system_targets_complete`. 알려진 값 resolved, 모르는 값은 근거와 unresolved. 무관한 그룹은 비움 |
+| S4 | Product Spec coverage gate | request.md, Product Spec·topics/template·용어·현행 계약, 정확한 S/cwd | coverage 판정과 source/hash evidence | 누락·요구 충돌은 작성 단계에서 해결. 독립 Product review는 수행하지 않음 |
+| S6 | `define-system-targets` | Product coverage gate 통과, interaction/workload/state/consistency/availability/growth와 관련 NFR 답변 | `docs/specs/<ticket>/system-targets.yaml` | `system_targets_complete`. 알려진 값 resolved, 모르는 값은 근거와 unresolved. 무관한 그룹은 비움 |
 | S7 | `code_researcher` → `code-research` | Product, 현행 모델·ADR·source/callers/tests·실행 계약, 조사 commit | 현재 owner·상태·규칙·통신·배포·구현 gap 보고서 | source 사실 조사만. 미래 설계 선택을 대신 확정하지 않음 |
 | S8 | `spec-me/references/decision-knowledge.md` | 결정 질문·targets·baseline, 승인된 Principle/Evidence registry | 질문별 충분/부분/없음 판정, 재사용할 근거 ID, 부족분 | 부족한 질문만 knowledge-harvest. 승인 대기·불충분이면 해당 결정 보류 |
 | S9 | `architecture-spec` → `grill-with-docs` | Product·targets·baseline·ADR·Architecture topics/template·model-continuity | 확정 설계·owner·실패/통신/배포/실행 계약 | 필요 시 event-storming → ddd-design → codebase-design. material topic 미확정이면 계속 인터뷰 |
 | S10 | `spec_document_writer`, 조건부 `architecture-review` | 확정 설계·template·결정 근거·S | `architecture-spec.md`; opt-in Decision·ReviewRecord·자료 사용 승인 artifact | Learning은 사용자 방어·근거 심사. Normal은 그 challenge loop만 생략. 두 모드 모두 decision gate와 fresh Spec 리뷰 적용 |
-| S11 | `diagram_creator` → `plantuml-diagrams` | 확정 구조·상태·ID | `diagrams/architecture/<context>.class.puml`, `<concept>.state.puml`와 `.svg` | 적용 가능한 그림만. Product 업무 상태와 같은 그림을 중복하지 않음 |
-| S12 | 서로 다른 fresh Architecture reviewer → `spec-review` | 현재 request·Product·Architecture·source/ADR baseline·diagram·계약 | Architecture axis JSON과 현재 hash snapshot | Product가 바뀌었으면 Product 리뷰도 새로 받음. Normal에서도 생략 금지 |
-| S13 | `spec-me` 완료 | coverage·그림·두 리뷰, 시작 base SHA, completion state | `spec_ready_for_planning` receipt, 보존 branch/HEAD/recovery_path/return_root 인계 | 공통 완료 gate 뒤 S archive·검증·제거. 기능 구현 완료가 아님. to-ticket을 권고하며 자동 구현하지 않음 |
+| S11 | Architecture Spec 확정 | 승인 결정과 최종 Architecture Spec | Architecture Spec 및 그림 inventory | 리뷰 가능한 문서 상태로 고정. 이 단계에서는 그림을 생성하지 않음 |
+| S12 | 서로 다른 fresh Architecture reviewer → `spec-review` | 현재 request·Product·Architecture·source/ADR baseline·계약 | Architecture axis JSON과 현재 hash snapshot | DDD 분류, 규칙 owner, 비즈니스 로직 단위 테스트 명세, 근거 연결, 필수 인프라 완전성을 검토. Normal에서도 필수 |
+| S13 | `diagram_creator` → `plantuml-diagrams` | Architecture review를 통과한 최종 Product·Architecture Spec과 inventory | 적용 가능한 `diagrams/product/**`·`diagrams/architecture/**`의 PlantUML·SVG·Markdown 링크 | 두 Spec을 확정한 뒤 한 번 생성. 렌더·링크·내용 일치 gate 통과 후 완료 |
+| S14 | `spec-me` 완료 | coverage·최종 그림·Architecture review, 시작 base SHA, completion state | `spec_ready_for_planning` receipt, 보존 branch/HEAD/recovery_path/return_root 인계 | 공통 완료 gate 뒤 S archive·검증·제거. 기능 구현 완료가 아님. to-ticket을 권고하며 자동 구현하지 않음 |
 
 ### Spec 조건부 작업
 
@@ -208,7 +208,7 @@ flowchart TD
     B --> C[commit]
     C --> D[독립 Standards 리뷰]
     C --> E[독립 Spec 리뷰]
-    D --> F{현재 commit에 두 리뷰 통과}
+    D --> F{현재 commit에 두 구현 리뷰 통과}
     E --> F
     F -->|아니오: 코드 수정 가능| G[구현자가 finding 수정]
     G --> B
@@ -326,7 +326,7 @@ stateDiagram-v2
     Planned --> InProgress: 승인된 plan 구현 시작
     InProgress --> Blocked: 외부 환경 또는 권한 또는 결정 차단
     Blocked --> InProgress: 해제 조건 확인 후 재개
-    InProgress --> Done: 구현 및 검증 및 두 리뷰 및 완료 gate 통과
+    InProgress --> Done: 구현 및 검증 및 두 구현 리뷰 및 완료 gate 통과
     Done --> [*]: parent와 모든 child 완료 후 사용자 PR merge 및 Issue 종료 확인
 ```
 
@@ -519,7 +519,7 @@ stateDiagram-v2
 | `ddd-design` — 도메인 owner·규칙·경계 설계; model-continuity 먼저 | [GUIDE.md](../../.codex/internal-skills/ddd-design/GUIDE.md) | [references/model-continuity.md](../../.codex/internal-skills/ddd-design/references/model-continuity.md) |
 | `codebase-design` — 설계를 package·seam·파일·검증으로 구체화; Java일 때만 effective-java-notes | [GUIDE.md](../../.codex/internal-skills/codebase-design/GUIDE.md) | [references/effective-java-notes.md](../../.codex/internal-skills/codebase-design/references/effective-java-notes.md) |
 | `architecture-review` — Learning의 사용자 설계 방어·근거 challenge에만 | [GUIDE.md](../../.codex/internal-skills/architecture-review/GUIDE.md) | 별도 파일 없음 |
-| `spec-review` — Product·Architecture 각각 다른 fresh reviewer, Normal에서도 필수 | [GUIDE.md](../../.codex/internal-skills/spec-review/GUIDE.md) | 별도 파일 없음 |
+| `spec-review` — Architecture Spec 전용 fresh reviewer, Normal에서도 필수 | [GUIDE.md](../../.codex/internal-skills/spec-review/GUIDE.md) | [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md) |
 | `plan-review` — 전체 canonical plan과 requirement·반례·handoff의 fresh 리뷰 | [GUIDE.md](../../.codex/internal-skills/plan-review/GUIDE.md) | 별도 파일 없음 |
 | `implement` — 승인 plan 하나의 구현·검증·리뷰 수정 반복 | [GUIDE.md](../../.codex/internal-skills/implement/GUIDE.md) | 별도 파일 없음 |
 | `sync-contracts` — 최종 feature 통합 뒤 format reference를 읽고 계약 갱신·seal | [GUIDE.md](../../.codex/internal-skills/sync-contracts/GUIDE.md) | [references/format.md](../../.codex/internal-skills/sync-contracts/references/format.md) |

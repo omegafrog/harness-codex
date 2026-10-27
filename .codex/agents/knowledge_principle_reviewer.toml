@@ -1,6 +1,5 @@
 name = "knowledge_principle_reviewer"
 description = "Independently assess Principle qualification, corroboration, and counter-evidence"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

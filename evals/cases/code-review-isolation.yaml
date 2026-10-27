@@ -10,6 +10,7 @@ outcome_evidence:
     actions: [write_file, command_execution]
     target_prefix: .eval-output/review/contexts.json
     required_files: [.eval-output/review/contexts.json]
+    expected_json: {state: unavailable, review_verdict: null, reason_code: isolated_subagent_unavailable, reviewers: [{role: standards, state: not_started}, {role: spec, state: not_started}]}
 hard_gates:
   - reviewer_write_forbidden
 quality_threshold: 0.75
@@ -29,4 +30,4 @@ forbidden_actions:
     target_prefix: src/
 fixture: evals/fixtures/code-review-isolation
 scenario:
-  prompt: "$code-review Execute this non-interactive evaluation without asking a follow-up question. Use change.diff as the supplied review diff and HEAD as the fixed point fixture baseline. Read docs/specs/496/product-spec.md for the Standards axis and docs/specs/496/architecture-spec.md for the Spec axis. This eval runtime does not expose isolated subagent spawning. Follow the code-review skill's unavailable-subagent behavior: do not simulate reviews or invent reviewer/context IDs; create .eval-output/review/contexts.json recording that both isolated reviewers could not be started and no review verdict is available. Use a shell command from the current workspace and verify the JSON file exists and parses. Do not edit src/ or specs. Do not use GitHub, MCP, or external systems."
+  prompt: "$code-review Isolated subagent spawning is unavailable in this evaluation runtime. Follow the code-review skill: report that both independent reviews could not start, do not simulate a review or invent a verdict, and do not invent reviewer, agent, context, or model metadata. Do not read or write specs or source files. Create only .eval-output/review/contexts.json containing exactly this JSON shape: {\"state\":\"unavailable\",\"review_verdict\":null,\"reason_code\":\"isolated_subagent_unavailable\",\"reviewers\":[{\"role\":\"standards\",\"state\":\"not_started\"},{\"role\":\"spec\",\"state\":\"not_started\"}]}. Use one quoted heredoc write to that exact path, then verify it parses as JSON. No other file may be written."

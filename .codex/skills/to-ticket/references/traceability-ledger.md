@@ -38,6 +38,7 @@
       "acceptance_criteria": ["모든 선언 규칙이 계획에 연결된다."],
       "counterexamples": ["수용 조건을 만족해도 원 규칙을 어기는 구현"],
       "verification_cases": ["누락 규칙을 검출하는 focused test"],
+      "verification_files": ["tests/feature.test.mjs"],
       "verification_profile": "unit"
     }
   ],
@@ -57,6 +58,7 @@
 - 계획은 원문인 local `content_path` 또는 `{ "canonical": { "kind": "github", "repository": "owner/repo", "issue": 456 } }` 중 하나를 가리킨다. `plans.md`는 ID index일 뿐 canonical 본문이 아니다.
 - 다중 계획 규칙에는 `integration_owner_plan_id`와 `integration_verification`을 요구사항 항목에 추가한다.
 - schema_version 2의 각 covered 요구사항은 모든 `plan_ids`별 `coverage` 항목을 가진다. 항목의 수용 기준과 검증 사례는 해당 plan의 목록과 정확히 일치해야 한다. 제외 요구사항은 빈 `coverage`와 구체적 제외 이유를 가진다.
+- 각 plan은 업무 규칙을 검증할 단위 테스트 경로를 `verification_files`에 명시한다. 업무 로직 테스트를 추가하지 않는 계획은 빈 배열을 쓴다. 경로는 정본 계획 본문에도 적고 선택한 `verification_profile.config_inputs`에 포함한다. 이 프로필 설정은 planning snapshot에 포함되므로, 파일이나 실행 프로필 변경은 구현 dispatch 전에 새 독립 계획 리뷰를 요구한다. 프로필 명령이 명시된 테스트 파일을 실제로 실행하는지는 plan reviewer가 확인한다.
 - `handoffs`에는 계획 간 생산자·소비자 plan, 생산 기준, 소비 기준, 소비 측 검증 사례를 기록한다. 각 문구는 해당 plan의 acceptance criteria 또는 verification cases에 실제로 있어야 한다.
 - schema_version 2는 새 계획의 `planning` gate에서 필수다. 기존 schema_version 1은 이미 승인된 계획의 dispatch/completion 호환성을 위해 계속 읽지만 새 계획 검토에는 사용할 수 없다.
 - `snapshot` 명령 결과의 `inputs` 전체를 fresh reviewer가 실제 원문과 함께 읽은 후 `review.inputs`에 저장한다. 직접 입력을 요약하거나 수동 hash를 만들어 넣지 않는다.

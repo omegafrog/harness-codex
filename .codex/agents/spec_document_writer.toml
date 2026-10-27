@@ -1,6 +1,5 @@
 name = "spec_document_writer"
 description = "Write settled Product or Architecture Specs from supplied decisions and templates"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

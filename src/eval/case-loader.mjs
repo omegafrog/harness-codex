@@ -123,6 +123,10 @@ function validateOutcomeEvidence(value, requiredOutcome, label) {
     if (!Array.isArray(rule.required_files) || rule.required_files.length === 0 || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isPortableAbsolutePath(file) || file.split(/[\\/]/).includes(".."))) {
       throw new ManifestValidationError(`${label}.${id}.required_files must contain at least one repository-relative path`);
     }
+    if (rule.expected_json !== undefined) {
+      asObject(rule.expected_json, `${label}.${id}.expected_json`);
+      if (rule.required_files.length !== 1) throw new ManifestValidationError(`${label}.${id}.expected_json requires exactly one required file`);
+    }
   }
   return evidence;
 }
@@ -224,6 +228,7 @@ export function validateCaseManifest(raw, source = "case") {
   if (document.schema_version !== 1) throw new ManifestValidationError(`${source}.schema_version must be 1`);
   const id = asSafeIdentifier(document.id, `${source}.id`);
   const workflow = asNonEmptyString(document.workflow, `${source}.workflow`);
+  if (document.dispatch_workflow !== undefined && typeof document.dispatch_workflow !== "boolean") throw new ManifestValidationError(`${source}.dispatch_workflow must be a boolean`);
   if (document.execution_purpose !== undefined) asNonEmptyString(document.execution_purpose, `${source}.execution_purpose`);
   if (document.decision_ids !== undefined && (!Array.isArray(document.decision_ids) || document.decision_ids.some((id) => typeof id !== "string" || !id.trim()))) {
     throw new ManifestValidationError(`${source}.decision_ids must be a list of non-empty strings`);
@@ -247,6 +252,7 @@ export function validateCaseManifest(raw, source = "case") {
     schema_version: 1,
     id,
     workflow,
+    dispatch_workflow: document.dispatch_workflow !== false,
     critical: document.critical === true,
     required_outcome: requiredOutcome,
     hard_gates: hardGates,
@@ -303,6 +309,8 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
 }
 
 function validateBaseline(baseline) {
+  if (baseline === null) return null;
+  if (baseline === undefined) throw new ManifestValidationError("suite.baseline is required; use null only for an exploratory suite without a measured baseline");
   const value = asObject(baseline, "suite.baseline");
   for (const key of ["id", "harness_version", "harness_commit", "model", "model_config", "environment_profile", "source_run_id"]) asNonEmptyString(value[key], `suite.baseline.${key}`);
   const validateMetrics = (metrics, label, required = false) => {
@@ -353,6 +361,20 @@ function validateRetryPolicy(retry) {
   return { runner: { automatic: false }, owner: [...owner], max_attempts: value.max_attempts, retry_on: [...value.retry_on], retry_on_failed: false, new_run_id_per_attempt: true };
 }
 
+const EVALUATION_AXES = new Set(["skill_selection", "subagent_utilization", "context_management", "tool_execution_policy"]);
+
+function validateEvaluationAxes(axes, caseIds) {
+  const value = axes === undefined ? {} : asObject(axes, "suite.evaluation_axes");
+  for (const [axis, ids] of Object.entries(value)) {
+    if (!EVALUATION_AXES.has(axis)) throw new ManifestValidationError(`suite.evaluation_axes has unsupported axis: ${axis}`);
+    if (!Array.isArray(ids)) throw new ManifestValidationError(`suite.evaluation_axes.${axis} must be a list of case ids`);
+    for (const id of ids) {
+      if (!caseIds.has(id)) throw new ManifestValidationError(`suite.evaluation_axes.${axis} references a case outside suite.cases: ${id}`);
+    }
+  }
+  return Object.fromEntries([...EVALUATION_AXES].map((axis) => [axis, value[axis] || []]));
+}
+
 export async function loadSuite(root, suiteId, config) {
   asSafeIdentifier(suiteId, "suite id");
   const path = resolvePortablePath(root, `${config.eval.suite_paths}/${suiteId}.yaml`);
@@ -372,10 +394,12 @@ export async function loadSuite(root, suiteId, config) {
       seen.add(safeCaseId);
       cases.push(await loadCase(root, safeCaseId, config));
     }
+    const evaluationAxes = validateEvaluationAxes(document.evaluation_axes, new Set(seen));
     return {
       ...document,
       id,
       cases,
+      evaluation_axes: evaluationAxes,
       baseline: validateBaseline(document.baseline),
       thresholds: validateThresholds(merge(config.eval.thresholds, document.thresholds || {})),
       retry: validateRetryPolicy(document.retry),

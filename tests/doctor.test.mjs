@@ -15,6 +15,16 @@ hooks:
   after_merge: [tracker_reconciliation]
 `;
 
+test('doctor reports an impossible context budget without modifying project settings', async () => {
+  const root = await makeProject();
+  const path = join(root, '.codex/context-budget.json');
+  const text = JSON.stringify({ schema_version: 1, context_window_tokens: 10000, max_plan_tokens: 9000, handoff_reserve_tokens: 2000 });
+  await writeFile(path, text);
+  const result = await runDoctor({ root });
+  assert.ok(result.diagnostics.some((item) => item.code === 'context_budget_invalid'));
+  assert.equal(await readFile(path, 'utf8'), text);
+});
+
 async function makeProject() {
   const root = await mkdtemp(join(tmpdir(), "harness-doctor-"));
   await mkdir(join(root, ".codex", "workflows"), { recursive: true });

@@ -20,7 +20,7 @@ try {
   const primary = implementationReviewRoot(root);
   if (implementationReviewRoot(specRoot) !== primary) throw new Error('Spec and plan roots must share the same repository');
   const scopes = [];
-  if (options['--ticket']) for (const axis of ['product', 'architecture']) scopes.push({ root: specRoot, scope: `spec-${options['--ticket']}-${axis}` });
+  if (options['--ticket']) scopes.push({ root: specRoot, scope: `spec-${options['--ticket']}-architecture` });
   if (options['--plan-set']) scopes.push({ root, scope: `plan-${options['--plan-set']}` });
   if (options['--plan']) scopes.push({ root: primary, scope: `implementation-${options['--plan']}` });
   const records = await Promise.all(scopes.map(async (scope) => {

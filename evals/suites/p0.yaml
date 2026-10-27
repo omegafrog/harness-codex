@@ -5,6 +5,11 @@ cases:
   - spec-me-ambiguity-gate
   - implement-wrapper-dependency
   - code-review-isolation
+evaluation_axes:
+  skill_selection: []
+  subagent_utilization: []
+  context_management: []
+  tool_execution_policy: [spec-me-source-policy, code-review-isolation]
 baseline:
   id: p0-baseline
   harness_version: 0.1.0

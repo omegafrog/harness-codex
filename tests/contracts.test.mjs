@@ -179,11 +179,10 @@ test("installed completion CLI blocks spec-me without independent reviews and re
     await writeFile(join(specRoot, "diagrams/product/product.puml"), "@startuml\n@enduml\n");
     await writeFile(join(specRoot, "diagrams/architecture/architecture.puml"), "@startuml\n@enduml\n");
     // Fixture-only review metadata exercises completion validation; it does not represent a production review.
-    const spec_reviews = {};
-    for (const axis of ["product", "architecture"]) spec_reviews[axis] = {
-      axis, ticket_id: ticketId, reviewer_id: `reviewer-${axis}`, author_ids: ["fixture-writer"], fork_turns: "none",
-      verdict: "pass", findings: [], inputs: await snapshotSpecReview({ root, ticketId, axis }),
-    };
+    const spec_reviews = { architecture: {
+      axis: "architecture", ticket_id: ticketId, reviewer_id: "reviewer-architecture", author_ids: ["fixture-writer"], fork_turns: "none",
+      verdict: "pass", findings: [], inputs: await snapshotSpecReview({ root, ticketId }),
+    } };
     await sealContracts({ workspace_root: root, change_summary: "fixture Spec added", no_contract_change: "테스트용 Spec fixture는 계약 외부 항목임" });
     await writeFile(sessionOutputPath(root, "state/reviews.json"), JSON.stringify({ ticket_id: ticketId, spec_reviews }));
     const reviewed = run(["--state", "state/reviews.json"]);

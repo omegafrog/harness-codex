@@ -15,7 +15,7 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { aggregateSuiteAttempts, evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
-import { resolveCodexHome, runCase, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
+import { buildCasePrompt, resolveCodexHome, runCase, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, buildParallelGroupId, integrateParallelPlanBranches, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
@@ -48,8 +48,77 @@ test("loads versioned suite and registry-backed case contracts", async () => {
   assert.equal(suite.baseline.case_metrics["spec-me-source-policy"].tokens, 38444);
   assert.equal(suite.baseline.metrics.tokens, 379707);
   assert.equal(suite.baseline.metrics.latency_ms, 224091);
+  assert.deepEqual(suite.evaluation_axes, {
+    skill_selection: [],
+    subagent_utilization: [],
+    context_management: [],
+    tool_execution_policy: ["spec-me-source-policy", "code-review-isolation"],
+  });
   assert.equal(suite.retry.runner.automatic, false);
   assert.deepEqual(suite.retry.owner, ["suite", "ci"]);
+});
+
+test("suite reports measured and unmeasured evaluation axes explicitly", () => {
+  const report = evaluateSuite({
+    suite: {
+      id: "coverage-test",
+      evaluation_axes: { tool_execution_policy: ["first"], skill_selection: [] },
+      baseline: { id: "baseline", metrics: { tokens: 100, latency_ms: 100 } },
+      thresholds: {
+        hard_gate_failures: 0, critical_case_pass_rate: 1, pass_rate: 1,
+        mean_quality: 0, p10_quality: 0, max_token_regression: 1,
+        max_latency_regression: 1, max_inconclusive_rate: 0, minimum_conclusive_cases: 1,
+      },
+    },
+    caseResults: [{ case_id: "first", state: "passed", critical: false, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 20, latency_ms: 30 } }],
+  });
+  assert.equal(report.evaluation_coverage.tool_execution_policy.state, "measured");
+  assert.deepEqual(report.evaluation_coverage.tool_execution_policy.counts, { passed: 1, failed: 0, inconclusive: 0 });
+  assert.equal(report.evaluation_coverage.tool_execution_policy.efficiency.tokens, 20);
+  assert.equal(report.evaluation_coverage.skill_selection.state, "unmeasured");
+});
+
+test("pilot suite loads with an explicit pending baseline and varied axes", async () => {
+  const suite = await loadSuite(root, "meta-harness-pilot", await loadHarnessConfig(root));
+  assert.equal(suite.baseline, null);
+  assert.equal(suite.cases.length, 16);
+  assert.deepEqual(suite.evaluation_axes.subagent_utilization, ["code-review-isolation"]);
+  assert.deepEqual(suite.evaluation_axes.skill_selection, ["pilot-skill-selection-design", "pilot-skill-selection-planning", "public-skill-routing-o10", "public-skill-routing-o45", "public-skill-routing-o47", "public-skill-routing-m36", "public-skill-routing-m39", "public-skill-routing-m40", "public-skill-routing-m44", "public-skill-routing-m45"]);
+  assert.ok(suite.cases.some((item) => item.id === "spec-me-ambiguity-gate"));
+  assert.ok(suite.cases.some((item) => item.id === "implement-wrapper-dependency"));
+  assert.ok(suite.cases.some((item) => item.id === "code-review-isolation"));
+  assert.equal(suite.cases.find((item) => item.id === "pilot-skill-selection-design").dispatch_workflow, false);
+});
+
+test("classification cases do not dispatch the workflow they are evaluating", () => {
+  assert.equal(buildCasePrompt({ id: "route", workflow: "spec-me", dispatch_workflow: false, scenario: { prompt: "Classify this request." } }), "Classify this request.");
+  assert.equal(buildCasePrompt({ id: "execute", workflow: "spec-me", scenario: { prompt: "Write the spec." } }), "$spec-me\nWrite the spec.");
+});
+
+test("artifact outcome can match business-relevant JSON exactly", () => {
+  const caseSpec = { required_outcome: ["artifact_written"], outcome_evidence: { artifact_written: { actions: ["write_file"], required_files: [".eval-output/result.json"], expected_json: { skills: ["alpha", "beta"] } } } };
+  const trajectory = [
+    { kind: "tool_call", actor: "codex", correlation_id: "write-1", action: "write_file", target: ".eval-output/result.json" },
+    { kind: "tool_result", actor: "codex", correlation_id: "write-1", action: "write_file", target: ".eval-output/result.json", status: "success" },
+  ];
+  const result = gradeOutcome({ caseSpec, trajectory, artifactEvidence: { files: [".eval-output/result.json"], contents: { ".eval-output/result.json": JSON.stringify({ skills: ["alpha", "beta"] }) } } });
+  assert.equal(result.passed, true);
+  assert.equal(result.evidence.artifact_written.expected_json_matched, true);
+  const mismatch = gradeOutcome({ caseSpec, trajectory, artifactEvidence: { files: [".eval-output/result.json"], contents: { ".eval-output/result.json": JSON.stringify({ skills: ["alpha", "beta", "extra"] }) } } });
+  assert.equal(mismatch.passed, false);
+});
+
+test("pilot reports quality without claiming an efficiency baseline", () => {
+  const report = evaluateSuite({
+    suite: {
+      id: "pilot", evaluation_axes: { skill_selection: ["route"] }, baseline: null,
+      thresholds: { hard_gate_failures: 0, critical_case_pass_rate: 1, pass_rate: 1, mean_quality: 0, p10_quality: 0, max_token_regression: 1, max_latency_regression: 1, max_inconclusive_rate: 0, minimum_conclusive_cases: 1 },
+    },
+    caseResults: [{ case_id: "route", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 30, latency_ms: 40 } }],
+  });
+  assert.equal(report.state, "passed");
+  assert.equal(report.baseline, null);
+  assert.equal(report.regressions.tokens.available, false);
 });
 
 test("suite compares efficiency against a versioned baseline", () => {
@@ -1244,6 +1313,33 @@ test("Codex adapter does not classify stderr redirection to dev null as a write"
     });
     await trajectory.close();
     assert.notEqual(execution.records[0].action, "write_file");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter ignores git push text inside a local script but detects shell commands", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-git-push-inference-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-git-push-inference" }).init();
+    const commands = [
+      "/bin/zsh -lc \"node -e 'console.log(\\\"git push origin main\\\")'\"",
+      "/bin/zsh -lc 'cd repo && git push origin main'",
+      "/bin/zsh -lc \"node -e 'fs.writeFileSync(\\\".eval-output/result.json\\\", \\\"{}\\\")'\"",
+    ];
+    const output = commands.flatMap((command, index) => [
+      JSON.stringify({ type: "item.started", item: { id: `command-${index}`, type: "command_execution", command } }),
+      JSON.stringify({ type: "item.completed", item: { id: `command-${index}`, type: "command_execution", command, exit_code: 0 } }),
+    ]).map((line) => `console.log(${JSON.stringify(line)})`).join("; ");
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].action, "command_execution");
+    assert.equal(execution.records[2].action, "git_push");
+    assert.equal(execution.records[4].action, "write_file");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

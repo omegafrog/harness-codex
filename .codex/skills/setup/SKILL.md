@@ -7,6 +7,10 @@ description: Initialize a repository for the harness workflow. Use when setting 
 
 # Harness Setup
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 Initialize repository-owned context, agent model tiers, and tracker settings before running `spec-me` or `to-ticket`. **Codex CLI 내부의 네이티브 선택 UI**로 설정한다. 외부 터미널·설치기 메뉴·agent-only PTY·일반 채팅의 번호 질문으로 대체하지 않는다.
 
 ## Codex 내부 선택 흐름
@@ -81,6 +85,12 @@ Keep the Harness runtime local to each checkout. During installation, the instal
 ## Agent Model Setup
 
 Model and reasoning-effort options come from the live Codex app-server schema through `harness-setup.mjs --answers`. Collect the user selection through Codex native choice UI; never hardcode a model list or substitute plain-chat questions. The CLI preserves unrelated `.codex/harness.yaml` keys and confirms before writing.
+
+## Context budget
+
+모델 선택 뒤 CLI가 공통 context 한도, plan 하나의 최대 예상 토큰, checkpoint·인계용 예비 토큰을 사용자에게 확인하고 `.codex/context-budget.json`에 저장한다. 숫자를 추측하거나 자동 기본값으로 채우지 않는다. 공통 한도는 선택한 모델들에서 실제 사용 가능한 범위로 확인한다.
+
+`max_plan_tokens + handoff_reserve_tokens <= context_window_tokens`여야 한다. `to-ticket`은 원본 프로젝트의 이 파일을 읽어 각 plan의 예상 토큰과 policy hash를 기록하고 한도 안으로 분할한다. orchestrator는 같은 기준으로 실제 사용량과 다음 작업 예상량을 비교해 인계를 결정한다. 구현 worker에는 Smart Zone 판정을 맡기지 않는다. 파일이 없으면 해당 caller가 설정 누락으로 반환하며 setup을 자동 호출하지 않는다.
 
 ## Beads Project Board
 

@@ -18,39 +18,58 @@ const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 test("fresh and updated consumer review CLI enforces admission and preserves Git visibility", async () => {
   const targetRoot = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), 'review-install-'));
   const runtimePath = '.codex/harness-runtime/src/workflow/review-attempts.mjs';
+  const specReviewRuntimePath = '.codex/harness-runtime/src/workflow/spec-review.mjs';
   try {
     assert.equal(spawnSync('git', ['init', '-q'], { cwd: targetRoot }).status, 0);
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
+    const installedKnowledgeSkill = await readFile(join(targetRoot, '.agents/skills/knowledge-harvest/SKILL.md'), 'utf8');
+    assert.match(installedKnowledgeSkill, /^---\nname: knowledge-harvest\ndescription: .+\n---\n/);
+    const criteriaPath = '.codex/internal-skills/spec-review/references/review-criteria.md';
+    const installedCriteria = await readFile(join(targetRoot, criteriaPath), 'utf8');
+    assert.match(installedCriteria, /필수 capability 완전성 점검/);
+    assert.match(await readFile(join(targetRoot, '.codex/internal-skills/architecture-spec/GUIDE.md'), 'utf8'), /review-criteria\.md/);
+    assert.match(await readFile(join(targetRoot, '.codex/internal-skills/spec-review/GUIDE.md'), 'utf8'), /review-criteria\.md/);
     const spec = join(targetRoot, 'docs/specs/review-install');
     await mkdir(spec, { recursive: true });
-    for (const file of ['request.md', 'product-spec.md', 'architecture-spec.md']) await writeFile(join(spec, file), 'Application-owned specification\n');
+    await writeFile(join(spec, 'request.md'), 'Application-owned request\n');
+    await writeFile(join(spec, 'product-spec.md'), 'Application-owned specification: (diagrams/product/UC-1.usecase.svg)\n');
+    await writeFile(join(spec, 'architecture-spec.md'), 'Application-owned architecture specification\n');
     const cli = (action, ...args) => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-spec-review.mjs'), action, '--root', targetRoot, '--ticket', 'review-install', ...args], { cwd: targetRoot, encoding: 'utf8' });
-    const architecture = cli('begin', '--axis', 'architecture');
-    assert.equal(architecture.status, 1);
-    assert.match(architecture.stderr, /Product review must pass/);
-    const started = cli('begin', '--axis', 'product');
+    const productReview = cli('begin', '--axis', 'product');
+    assert.equal(productReview.status, 1);
+    assert.match(productReview.stderr, /Only Architecture Spec review/);
+    const started = cli('begin', '--axis', 'architecture');
     assert.equal(started.status, 0, started.stderr);
     const attempt = JSON.parse(started.stdout);
     assert.equal(attempt.target.workspace_root, targetRoot);
     assert.equal(attempt.target.ticket_id, 'review-install');
-    assert.equal(attempt.target.axis, 'product');
+    assert.equal(attempt.target.axis, 'architecture');
     assert.equal(attempt.target.attempt_id, attempt.attempt_id);
     assert.ok(attempt.target.session_directory.startsWith(targetRoot));
-    assert.match(cli('begin', '--axis', 'product').stderr, /already active/);
-    const reviews = { product: { axis: 'product', ticket_id: 'review-install', reviewer_id: 'fresh-product-reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs: attempt.inputs, findings: [] } };
+    assert.ok(!Object.keys(attempt.inputs).some((path) => path.includes('/diagrams/')));
+    await mkdir(join(spec, 'diagrams/product'), { recursive: true });
+    await writeFile(join(spec, 'diagrams/product/UC-1.usecase.puml'), '@startuml\n@enduml\n');
+    await writeFile(join(spec, 'diagrams/product/UC-1.usecase.svg'), '<svg></svg>\n');
+    assert.match(cli('begin', '--axis', 'product').stderr, /Only Architecture Spec review/);
+    const reviews = { architecture: { axis: 'architecture', ticket_id: 'review-install', reviewer_id: 'fresh-architecture-reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs: attempt.inputs, findings: [] } };
     const evidence = 'runtime/spec-reviews/install.json';
     await writeFile(sessionOutputPath(targetRoot, evidence), JSON.stringify(reviews));
-    assert.equal(cli('record', '--axis', 'product', '--attempt', attempt.attempt_id, '--reviews', evidence).status, 0);
-    assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
-    assert.equal(cli('begin', '--axis', 'architecture', '--reviews', evidence).status, 0);
+    assert.equal(cli('record', '--axis', 'architecture', '--attempt', attempt.attempt_id, '--reviews', evidence).status, 0);
+    assert.equal(cli('check', '--axis', 'architecture', '--reviews', evidence).status, 0);
+    const { evaluateStageGates } = await import(pathToFileURL(join(targetRoot, '.codex/harness-runtime/src/workflow/stage-gates.mjs')).href);
+    const { loadNamedWorkflow } = await import(pathToFileURL(join(REPOSITORY_ROOT, 'src/workflow/loader.mjs')).href);
+    const installedWorkflow = await loadNamedWorkflow('spec-me', { root: targetRoot });
+    assert.equal((await evaluateStageGates({ workflow: installedWorkflow, stageId: 'product_diagram', root: targetRoot, ticketId: 'review-install' }))[0].status, 'pass');
+    assert.match(cli('begin', '--axis', 'architecture').stderr, /Review inputs are unchanged/);
 
     const reviewInput = { repository: targetRoot, fixed_point: 'base', implementation_commit_sha: 'impl-1', commit_list: ['base', 'impl-1'], diff_range: { from: 'base', to: 'impl-1' }, diff: 'diff --git a/src/a b/src/a', product_spec_path: 'docs/specs/review-install/product-spec.md', architecture_spec_path: 'docs/specs/review-install/architecture-spec.md' };
     const implementationEvidence = 'runtime/spec-reviews/implementation.json';
     const implementationReviews = ['standards', 'spec'].map((role) => ({ role, state: role === 'standards' ? 'failed' : 'passed', context_id: role, independent: true, fresh_context: true, implementation_commit_sha: 'impl-1', review_input: reviewInput, report: { findings: role === 'standards' ? [{ kind: 'implementation_defect', summary: 'Repair the complete replay path' }] : [] } }));
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
     const repair = () => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-code-review.mjs'), 'repair', '--root', targetRoot, '--plan', 'plan-a', '--reviews', implementationEvidence], { cwd: targetRoot, encoding: 'utf8' });
+    const resolveRepair = (...args) => spawnSync(process.execPath, [join(targetRoot, '.codex/scripts/harness-code-review.mjs'), 'resolve', '--root', targetRoot, '--plan', 'plan-a', ...args], { cwd: targetRoot, encoding: 'utf8' });
     const designReviews = implementationReviews.map((review) => review.role === 'standards' ? { ...review, report: { findings: [{ kind: 'architecture_decision', summary: 'New state needs an approved design' }] } } : review);
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: designReviews }));
     const design = repair();
@@ -59,6 +78,9 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
     assert.equal(repair().status, 0);
     assert.match(repair().stderr, /already has a reserved repair/);
+    const genericContinuation = resolveRepair('--reason', '계속 해');
+    assert.equal(genericContinuation.status, 1);
+    assert.match(genericContinuation.stderr, /reviewed plan-set snapshot/);
     const reviewStatusPath = '.codex/scripts/harness-review-status.mjs';
     const statusCli = () => spawnSync(process.execPath, [join(targetRoot, reviewStatusPath), '--root', targetRoot, '--ticket', 'review-install', '--plan-set', 'review-set', '--plan', 'plan-a', '--reviews', implementationEvidence], { cwd: targetRoot, encoding: 'utf8' });
     const freshStatus = statusCli();
@@ -74,21 +96,28 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     const update = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(update.updated.includes(runtimePath));
-    assert.equal(cli('check', '--axis', 'product', '--reviews', evidence).status, 0);
-    assert.match(cli('begin', '--axis', 'architecture', '--reviews', evidence).stderr, /already active/);
+    assert.equal(cli('check', '--axis', 'architecture', '--reviews', evidence).status, 0);
+    assert.match(cli('begin', '--axis', 'architecture').stderr, /Review inputs are unchanged/);
     assert.match(repair().stderr, /already has a reserved repair/);
     const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(lock.files[runtimePath]);
+    assert.ok(lock.files[specReviewRuntimePath]);
+    assert.equal(spawnSync('git', ['check-ignore', '-v', specReviewRuntimePath], { cwd: targetRoot }).status, 0);
+    assert.ok(lock.files[criteriaPath]);
+    assert.equal(spawnSync('git', ['check-ignore', '-v', criteriaPath], { cwd: targetRoot }).status, 0);
+    const consumerStatus = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: targetRoot, encoding: 'utf8' }).stdout;
+    assert.match(consumerStatus, /docs\/specs\/review-install\/product-spec\.md/);
     assert.ok(lock.files['.codex/scripts/harness-code-review.mjs']);
     assert.ok(lock.files[reviewStatusPath]);
     assert.equal(statusCli().status, 0);
+    assert.equal(resolveRepair('--reason', '계속 해').status, 1);
     const staleInput = { ...reviewInput, plan_set_id: 'missing-plan-set', planning_snapshot_sha256: 'a'.repeat(64), completion_kind: 'plan_implemented' };
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: staleInput, reviews: implementationReviews.map((review) => ({ ...review, review_input: staleInput })) }));
     assert.match(repair().stderr, /planning snapshot changed/);
     await writeFile(sessionOutputPath(targetRoot, implementationEvidence), JSON.stringify({ review_input: reviewInput, reviews: implementationReviews }));
 
     assert.equal(JSON.parse(statusCli().stdout).records.at(-1).budget.used, 1);
-    const coordination = '.codex/internal-skills/spec-review/references/review-coordination.md';
+    const coordination = '.codex/internal-skills/review-coordination/GUIDE.md';
     assert.equal(await readFile(join(targetRoot, coordination), 'utf8'), await readFile(join(REPOSITORY_ROOT, coordination), 'utf8'));
     const doctorAfterStatusRestore = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
     assert.ok(!doctorAfterStatusRestore.diagnostics.some((item) => item.path === join(targetRoot, reviewStatusPath)));
@@ -105,7 +134,40 @@ test("fresh and updated consumer review CLI enforces admission and preserves Git
     const status = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: targetRoot, encoding: 'utf8' }).stdout;
     assert.match(status, /docs\/specs\/review-install\/request.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|runtime\/reviews/);
-    assert.equal(await readFile(join(spec, 'request.md'), 'utf8'), 'Application-owned specification\n');
+    assert.equal(await readFile(join(spec, 'request.md'), 'utf8'), 'Application-owned request\n');
+  } finally { await rm(targetRoot, { recursive: true, force: true }); }
+});
+
+test("installed traceability runtime blocks a unit-test/profile mismatch before dispatch", async () => {
+  const targetRoot = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), "traceability-profile-install-"));
+  try {
+    assert.equal(spawnSync("git", ["init", "-q"], { cwd: targetRoot }).status, 0);
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot, initialize: true });
+    await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
+    await mkdir(join(targetRoot, "docs/agents"), { recursive: true });
+    await mkdir(join(targetRoot, "docs/specs/profile-case"), { recursive: true });
+    await mkdir(join(targetRoot, "docs/plans/profile-set"), { recursive: true });
+    await writeFile(join(targetRoot, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: { focused: { command: ["node", "-e", "process.exit(0)"], required_env: [], config_inputs: [], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 } } }));
+    await writeFile(join(targetRoot, "docs/specs/profile-case/product-spec.md"), "# Product\n- **BR-01:** Apply the owned business rule.\n");
+    await writeFile(join(targetRoot, "docs/specs/profile-case/architecture-spec.md"), "# Architecture\nNo additional declarations.\n");
+    await writeFile(join(targetRoot, "docs/plans/profile-set/plans.md"), "plan-a\n");
+    await writeFile(join(targetRoot, "docs/plans/profile-set/plan-a.md"), "plan-a BR-01 acceptance counterexample verification tests/owned-rule.test.mjs\n");
+    await writeFile(join(targetRoot, "docs/plans/profile-set/traceability.json"), JSON.stringify({
+      schema_version: 2,
+      plan_set_id: "profile-set",
+      ticket_id: "profile-case",
+      spec_paths: ["docs/specs/profile-case/product-spec.md", "docs/specs/profile-case/architecture-spec.md"],
+      requirements: [{ id: "BR-01", source_path: "docs/specs/profile-case/product-spec.md", source_anchor: "BR-01", statement: "Apply the owned business rule.", owner: "plan-a", plan_ids: ["plan-a"], disposition: "covered", coverage: [{ plan_id: "plan-a", acceptance_criteria: ["acceptance"], verification_cases: ["verification"] }] }],
+      handoffs: [],
+      plans: [{ id: "plan-a", content_path: "docs/plans/profile-set/plan-a.md", requirement_ids: ["docs/specs/profile-case/product-spec.md#BR-01"], acceptance_criteria: ["acceptance"], counterexamples: ["counterexample"], verification_cases: ["verification"], verification_files: ["tests/owned-rule.test.mjs"], verification_profile: "focused" }],
+    }));
+
+    const installedRuntime = await import(pathToFileURL(join(targetRoot, ".codex/harness-runtime/src/workflow/plan-traceability.mjs")));
+    await assert.rejects(installedRuntime.snapshotPlanTraceability({ root: targetRoot, planSetId: "profile-set" }), /tests\/owned-rule\.test\.mjs.*missing from profile focused config_inputs/);
+    const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: targetRoot, encoding: "utf8" }).stdout;
+    assert.match(status, /docs\/plans\/profile-set\/traceability\.json/);
+    assert.doesNotMatch(status, /\.codex\/|\.agents\//);
+    assert.equal(spawnSync("git", ["check-ignore", "-v", ".codex/harness-runtime/src/workflow/plan-traceability.mjs"], { cwd: targetRoot }).status, 0);
   } finally { await rm(targetRoot, { recursive: true, force: true }); }
 });
 
@@ -118,29 +180,95 @@ test("recovery skill survives fresh install, diagnosed loss and update while pro
     await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
     const expected = (await readFile(join(REPOSITORY_ROOT, ".codex/skills/harness-recover/SKILL.md"), "utf8")).replaceAll(".codex/skills/", ".agents/skills/");
     assert.equal(await readFile(join(targetRoot, skillPath), "utf8"), expected);
+    const implementSkillPath = ".agents/skills/implement-wrapper/SKILL.md";
+    const expectedImplementSkill = (await readFile(join(REPOSITORY_ROOT, ".codex/skills/implement-wrapper/SKILL.md"), "utf8")).replaceAll(".codex/skills/", ".agents/skills/");
+    assert.equal(await readFile(join(targetRoot, implementSkillPath), "utf8"), expectedImplementSkill);
+    const trackerReferences = ["github", "local-markdown"].map((mode) => `.agents/skills/implement-wrapper/references/tracker/${mode}.md`);
+    for (const relativePath of trackerReferences) {
+      const sourcePath = relativePath.replace(".agents/skills/", ".codex/skills/");
+      const expectedReference = (await readFile(join(REPOSITORY_ROOT, sourcePath), "utf8")).replaceAll(".codex/skills/", ".agents/skills/");
+      assert.equal(await readFile(join(targetRoot, relativePath), "utf8"), expectedReference);
+    }
     const docs = ["docs/agents/EXEC.md", "docs/agents/execution.json", "docs/contracts/product.md"];
     for (const path of docs) {
       await mkdir(dirname(join(targetRoot, path)), { recursive: true });
       await writeFile(join(targetRoot, path), "Application-owned preparation\n");
     }
     await unlink(join(targetRoot, skillPath));
+    await writeFile(join(targetRoot, implementSkillPath), "stale implementation skill\n");
+    await writeFile(join(targetRoot, trackerReferences[0]), "stale tracker reference\n");
     const broken = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
     assert.ok(broken.diagnostics.some((item) => item.code === "installer_missing_file" && item.path === join(targetRoot, skillPath)));
     const updated = await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(updated.updated.includes(skillPath) || updated.added.includes(skillPath));
+    assert.ok(updated.updated.includes(implementSkillPath));
+    assert.ok(updated.updated.includes(trackerReferences[0]));
     assert.equal(await readFile(join(targetRoot, skillPath), "utf8"), expected);
+    assert.equal(await readFile(join(targetRoot, implementSkillPath), "utf8"), expectedImplementSkill);
+    assert.equal(await readFile(join(targetRoot, trackerReferences[0]), "utf8"), (await readFile(join(REPOSITORY_ROOT, ".codex/skills/implement-wrapper/references/tracker/github.md"), "utf8")).replaceAll(".codex/skills/", ".agents/skills/"));
     const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.ok(lock.files[skillPath]);
+    for (const path of trackerReferences) assert.ok(lock.files[path]);
     const healthy = await runDoctor({ root: targetRoot, sourceRoot: REPOSITORY_ROOT });
     assert.ok(!healthy.diagnostics.some((item) => item.path === join(targetRoot, skillPath)));
+    assert.ok(!healthy.diagnostics.some((item) => item.path === join(targetRoot, implementSkillPath)));
+    for (const path of trackerReferences) assert.ok(!healthy.diagnostics.some((item) => item.path === join(targetRoot, path)));
     const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: targetRoot, encoding: "utf8" }).stdout;
     assert.doesNotMatch(status, /\.agents\/|\.codex\/|\.harness\//);
     assert.equal(spawnSync("git", ["check-ignore", "-v", skillPath], { cwd: targetRoot }).status, 0);
+    assert.equal(spawnSync("git", ["check-ignore", "-v", implementSkillPath], { cwd: targetRoot }).status, 0);
+    for (const path of trackerReferences) assert.equal(spawnSync("git", ["check-ignore", "-v", path], { cwd: targetRoot }).status, 0);
     for (const path of docs) {
       assert.ok(status.includes(path));
       assert.equal(spawnSync("git", ["check-ignore", "-v", path], { cwd: targetRoot }).status, 1);
       assert.equal(await readFile(join(targetRoot, path), "utf8"), "Application-owned preparation\n");
     }
+  } finally { await rm(targetRoot, { recursive: true, force: true }); }
+});
+
+test("installed eval runtime grades pilot artifacts and remains out of consumer Git", async () => {
+  const targetRoot = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), "eval-runtime-install-"));
+  try {
+    assert.equal(spawnSync("git", ["init", "-q"], { cwd: targetRoot }).status, 0);
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot, initialize: true });
+    await protectLocalInstallArtifacts(targetRoot, REPOSITORY_ROOT);
+    const runtime = join(targetRoot, ".codex/harness-runtime/src/eval");
+    const installedContracts = await import(pathToFileURL(join(runtime, "contracts.mjs")).href);
+    const { CodexProcessAdapter } = await import(pathToFileURL(join(runtime, "codex-adapter.mjs")).href);
+    const { TrajectoryWriter } = await import(pathToFileURL(join(runtime, "journal.mjs")).href);
+    const { buildCasePrompt } = await import(pathToFileURL(join(runtime, "runner.mjs")).href);
+    const { gradeOutcome } = await import(pathToFileURL(join(runtime, "graders/outcome.mjs")).href);
+    assert.ok(installedContracts.REQUIRED_OUTCOME_IDS.has("artifact_written"));
+    assert.equal(buildCasePrompt({ id: "route", workflow: "spec-me", dispatch_workflow: false, scenario: { prompt: "Classify this request." } }), "Classify this request.");
+    assert.equal(gradeOutcome({
+      caseSpec: { required_outcome: ["artifact_written"], outcome_evidence: { artifact_written: { actions: ["write_file"], required_files: [".eval-output/result.json"] } } },
+      trajectory: [
+        { kind: "tool_call", actor: "codex", correlation_id: "write-1", action: "write_file", target: ".eval-output/result.json" },
+        { kind: "tool_result", actor: "codex", correlation_id: "write-1", action: "write_file", target: ".eval-output/result.json", status: "success" },
+      ],
+      artifactEvidence: { files: [".eval-output/result.json"] },
+    }).passed, true);
+
+    const trajectory = await new TrajectoryWriter(join(targetRoot, "trajectory.jsonl"), { streamId: "installed-git-push-inference" }).init();
+    const command = "/bin/zsh -lc \"node -e 'console.log(\\\"git push origin main\\\")'\"";
+    const event = JSON.stringify({ type: "item.started", item: { id: "local-script", type: "command_execution", command } });
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", `console.log(${JSON.stringify(event)})`],
+      cwd: targetRoot,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].action, "command_execution");
+
+    await mkdir(join(targetRoot, "docs/agents"), { recursive: true });
+    await writeFile(join(targetRoot, "docs/agents/EXEC.md"), "Project-owned execution contract\n");
+    await writeFile(join(targetRoot, "app.js"), "Project-owned application file\n");
+    const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: targetRoot, encoding: "utf8" }).stdout;
+    assert.doesNotMatch(status, /\.codex\/|\.agents\//);
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /app\.js/);
+    assert.equal(spawnSync("git", ["check-ignore", "-v", ".codex/harness-runtime/src/eval/contracts.mjs"], { cwd: targetRoot }).status, 0);
+    assert.equal(spawnSync("git", ["check-ignore", "-v", "docs/agents/EXEC.md"], { cwd: targetRoot }).status, 1);
   } finally { await rm(targetRoot, { recursive: true, force: true }); }
 });
 
@@ -349,6 +477,17 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     const implementSkill = join(targetRoot, ".codex/internal-skills/implement/GUIDE.md");
+    const outcomeGrader = join(targetRoot, ".codex/harness-runtime/src/eval/graders/outcome.mjs");
+    const outcomeGraderSource = await readFile(join(REPOSITORY_ROOT, "src/eval/graders/outcome.mjs"), "utf8");
+    assert.equal(await readFile(outcomeGrader, "utf8"), outcomeGraderSource);
+    const toTicketSkill = join(targetRoot, ".agents/skills/to-ticket/SKILL.md");
+    const installedToTicketSkill = await readFile(toTicketSkill, "utf8");
+    assert.match(installedToTicketSkill, /plan-set.*feature-level E2E scenario/s);
+    assert.match(installedToTicketSkill, /after all split plans are implemented, individually verified, and integrated/);
+    assert.match(installedToTicketSkill, /소유한 UC\/BR\/AC의 조건·업무 행위·기대 결과/);
+    const installedIssueTemplate = await readFile(join(targetRoot, ".agents/skills/to-ticket/references/github-issue-template.md"), "utf8");
+    assert.match(installedIssueTemplate, /verification_files/);
+    assert.match(installedIssueTemplate, /verification_profile/);
     const completionModule = join(targetRoot, ".codex/harness-runtime/src/workflow/completion.mjs");
     const completionSource = await readFile(join(REPOSITORY_ROOT, "src/workflow/completion.mjs"), "utf8");
     await writeFile(completionModule, "export const staleCompletion = true;\n");
@@ -370,7 +509,18 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     await assert.rejects(readFile(join(targetRoot, ".agents/skills/decision-knowledge/SKILL.md")), { code: "ENOENT" });
     await writeFile(internalSkill, "stale internal guidance\n");
     const distributionRule = /trace it through managed asset discovery and transforms, fresh installation, (?:and )?update/;
-    assert.match(await readFile(implementSkill, "utf8"), distributionRule);
+    const installedImplementGuide = await readFile(implementSkill, "utf8");
+    assert.match(installedImplementGuide, distributionRule);
+    assert.match(installedImplementGuide, /workflow runtime dispatch의 `before_dispatch` workspace gate가 수행한다/);
+    assert.doesNotMatch(installedImplementGuide, /node \.codex\/scripts\/harness-workspace-preflight\.mjs/);
+    assert.match(installedImplementGuide, /구현 agent는 setup 복구 절차를 호출하지 않는다/);
+    assert.doesNotMatch(installedImplementGuide, /setup의 준비 복구/);
+    assert.match(installedImplementGuide, /<shared_guidance_root>\/docs\/agents\/testing-guidance\.md.*before planning, writing, modifying, selecting, or running any test/);
+    assert.match(installedImplementGuide, /plan's unit tests in this implementation slot/);
+    assert.match(installedImplementGuide, /Do not run feature-level E2E at an individual plan boundary/);
+    const installedWrapperSkill = await readFile(join(targetRoot, ".agents/skills/implement-wrapper/SKILL.md"), "utf8");
+    const installedReusableTestingGuide = await readFile(join(targetRoot, ".codex/internal-skills/testing-guidance/GUIDE.md"), "utf8");
+    assert.equal(installedReusableTestingGuide, await readFile(join(REPOSITORY_ROOT, ".codex/internal-skills/testing-guidance/GUIDE.md"), "utf8"));
     await writeFile(implementSkill, "stale consumer copy\n");
     await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
     assert.equal(await readFile(internalSkill, "utf8"), internalSource);
@@ -445,6 +595,12 @@ test("installed consumer creates an automatically identified owned worktree with
     assert.ok(updated.updated.includes(".codex/harness-runtime/src/workflow/worktrees.mjs"));
     assert.equal(await readFile(runtime, "utf8"), source);
 
+    await mkdir(join(root, "docs/agents"), { recursive: true });
+    await writeFile(join(root, "docs/agents/EXEC.md"), "Project execution and diagram preparation\n");
+    await writeFile(join(root, "docs/agents/execution.json"), '{"profiles":{}}\n');
+    assert.equal(spawnSync("git", ["add", "docs/agents/EXEC.md", "docs/agents/execution.json"], { cwd: root }).status, 0);
+    assert.equal(spawnSync("git", ["commit", "-m", "record execution guidance"], { cwd: root }).status, 0);
+
     const cli = join(root, ".codex/scripts/harness-workflow-worktree.mjs");
     const created = spawnSync(process.execPath, [cli, "create", "--root", root], { cwd: root, encoding: "utf8" });
     assert.equal(created.status, 0, created.stderr);
@@ -453,6 +609,10 @@ test("installed consumer creates an automatically identified owned worktree with
     assert.equal(handle.source_workspace, root);
     assert.notEqual(handle.workspace, root);
     assert.equal(handle.state, "active");
+    assert.equal(await readFile(join(handle.workspace, "docs/agents/EXEC.md"), "utf8"), "Project execution and diagram preparation\n");
+    assert.equal(await readFile(join(handle.workspace, "docs/agents/execution.json"), "utf8"), '{"profiles":{}}\n');
+    assert.ok((await readFile(join(handle.workspace, ".codex/tools/plantuml-render.mjs"), "utf8")).includes("PlantUML"));
+    assert.equal(spawnSync("git", ["check-ignore", "docs/agents/EXEC.md"], { cwd: handle.workspace }).status, 1);
     assert.doesNotMatch(created.stdout, /workflow_id/);
     const sessionRecord = JSON.parse(await readFile(join(handle.session_directory, "worktree.json"), "utf8"));
     assert.equal(sessionRecord.worktree_id, handle.worktree_id);
@@ -478,7 +638,8 @@ test("installed consumer creates an automatically identified owned worktree with
     await writeFile(join(root, "src/app.mjs"), "export const app = 'user change';\n");
     const status = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
     assert.equal(status.status, 0, status.stderr);
-    assert.deepEqual(status.stdout.trimEnd().split("\n"), [" M src/app.mjs"]);
+    assert.ok(status.stdout.includes(" M src/app.mjs"));
+    assert.equal(spawnSync("git", ["check-ignore", "docs/agents/EXEC.md"], { cwd: root }).status, 1);
   } finally { await cleanup(); }
 });
 

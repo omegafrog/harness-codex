@@ -1,6 +1,5 @@
 name = "frontend_designer"
 description = "Create a reference-grounded frontend design direction and implementation brief without editing product source"
-model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 
 developer_instructions = """

@@ -50,6 +50,8 @@ class EvaluateHarnessSkillContractTest(unittest.TestCase):
             "inconclusive rate",
         ]:
             self.assertIn(expected, skill)
+        self.assertIn("evaluation_coverage", skill)
+        self.assertIn("unmeasured", skill)
 
     def test_skill_has_safe_selection_retry_and_baseline_rules(self):
         skill = self.read(".codex/skills/evaluate-harness/SKILL.md")

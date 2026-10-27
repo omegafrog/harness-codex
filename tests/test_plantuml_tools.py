@@ -63,6 +63,20 @@ class PlantUmlToolsTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("bootstrap", result.stderr.lower())
 
+    def test_reports_renderer_failure_and_preserves_child_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, jar = root / "diagram.puml", root / "plantuml.jar"
+            source.write_text("@startuml\nAlice -> Bob\n@enduml\n")
+            jar.write_bytes(b"fake jar")
+            java = root / "java"
+            java.write_text('#!/bin/sh\n[ "$1" = -version ] && exit 0\necho "render problem" >&2\nexit 7\n')
+            java.chmod(0o755)
+            result = self.run_renderer("--workspace", root, "--jar", jar, source, env=os.environ | {"PATH": f"{root}:{os.environ['PATH']}"})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("render problem", result.stderr)
+            self.assertIn("exit 7", result.stderr)
+
     def test_rejects_jar_checksum_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

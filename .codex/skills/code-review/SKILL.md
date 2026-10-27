@@ -7,6 +7,10 @@ description: Review the diff between HEAD and a fixed point with independent Sta
 
 # code-review
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 ## What it does
 
 `code-review` reviews the diff between `HEAD` and a caller-supplied fixed point using two independent, read-only subagents:
@@ -57,8 +61,8 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 ## Process
 
 1. Confirm the fixed point first.
-2. Read `.codex/harness.yaml`, resolve `agents.implementation_model` (then legacy low/default values), and pass the resolved model ID explicitly to both reviewer spawns. Do not pass a config-key literal or omit the model.
-3. If no model resolves, stop and require `setup`; never inherit the parent model. Reviewer reasoning effort remains the fixed `medium` value of the reviewer profiles.
+2. Read `.codex/harness.yaml`, resolve `agents.implementation_model` and `agents.implementation_reasoning_effort`, and pass both actual values explicitly to the reviewer spawns. Do not pass config-key literals or inherit the parent model/effort. Managed calls return `REVIEW_REQUIRED`; the orchestrator performs these spawns.
+3. If either value is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys. Model configuration belongs to the caller; do not invoke setup automatically.
 4. Call `multi_agent_v1.spawn_agent` with `agent_type="standards_reviewer"`, `fork_context: false`, and the resolved model ID. Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
 5. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_reviewer"`, `fork_context: false`, and the resolved model ID. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
    For every planned implementation, include the current traceability ledger and require the reviewer to compare the complete source rules with requirement coverage and canonical plan bodies. A complete implementation plan may still omit a source rule.
@@ -86,7 +90,7 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 - If subagent isolation is unavailable, report that limitation instead of pretending it ran normally.
 - Treat a caller-specified supported model as higher priority than `.codex/harness.yaml` and the lightest-model fallback.
 
-수정이나 사용자 결정 요청 전에 [공통 리뷰 조정](../../../.codex/internal-skills/spec-review/references/review-coordination.md)을 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 traceability check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
+수정이나 사용자 결정 요청 전에 호출한 구현 workflow가 [공통 리뷰 조정](../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 traceability check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
 
 ## 판정과 수정 절차
 
@@ -98,7 +102,7 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 6. caller는 session JSON의 최상위 `review_input`에 repository, fixed_point, implementation_commit_sha, commit_list, diff_range, diff, product_spec_path, architecture_spec_path를 보존한다. `reviews` 배열은 role이 standards/spec인 두 객체를 포함한다. 각 객체에 실제 도구의 context_id·independent·fresh_context·implementation_commit_sha, 같은 review_input, reviewer의 state와 report.findings를 붙인다. 실제 agent ID와 원본 응답을 대조한다.
 7. 수정 전 `node .codex/scripts/harness-code-review.mjs repair --root <workspace_root> --plan <plan-id> --reviews <session-relative JSON>`을 실행한다. 기본 한도는 1회이며 승인된 설정이 2회이면 `--max-rounds 2`를 사용한다. 실제 원본 저장소에 연결된 runtime/reviews/implementation-<plan-id>.json이 횟수·fixed point·지적의 정본이다. 같은 커밋의 중복 예약·재개를 통한 한도 상향·worktree 재생성에 따른 초기화를 차단한다. wrapper runtime도 같은 예약 함수를 사용한다.
 8. requirement_ambiguity·architecture_decision·scope_expansion·spec_conflict이면 구현 수정을 보류하고 spec-me로 전환한다. 새 명령·새 업무 상태·새 규칙·새 경계가 필요한지와 현재 구현 결함을 구분하고, 발견한 경로 전체·필요 결정·기존 fixed point·commit·repair 기록을 checkpoint에 보존한다. 승인된 Spec과 영향 계획의 fresh review 뒤 같은 구현 기준으로 재개한다. 설계 재검토 중 구현 repair를 먼저 예약하지 않는다.
-9. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 한도를 소진하면 현재 지적·반박 근거·필요한 범위/결정을 사용자에게 제시한다. 사용자가 명시적으로 범위·결정을 바꾼 경우 원문과 위치를 `resolve --root <workspace_root> --plan <plan-id> --reason '<사용자 원문과 위치>'`로 보존하고 재개한다. 사용자 결정의 진위는 caller가 확인한다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
+9. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 한도를 소진하면 현재 지적·반박 근거·필요한 범위/결정을 사용자에게 제시한다. 한도 초기화는 실제 수정 범위/설계 결정 변경, 그에 따른 새 planning snapshot, 독립 계획 리뷰와 dispatch pass가 모두 있을 때만 허용한다. `resolve --root <workspace_root> --plan <plan-id> --reason '<사용자 결정 원문과 위치>'`는 현재 snapshot이 기존 repair 예약의 snapshot과 달라야 통과한다. 일반 진행 지시, 동일 범위에서의 추가 수정 허용, 근거 없는 요청은 reset하지 않는다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
 
 ## Output
 

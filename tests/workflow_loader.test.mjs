@@ -39,6 +39,13 @@ stages:
 `;
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
+test('workflow declares a top-level orchestrator without allowing it as its own child', () => {
+  const text = VALID_WORKFLOW.replace('id: spec-me', 'id: spec-me\norchestrator: orchestrator').replace('skills: [', 'skills: [orchestrator, ');
+  assert.equal(loadWorkflowText(text).orchestrator, 'orchestrator');
+  assert.throws(() => loadWorkflowText(text.replace('skills: [orchestrator, ', 'skills: [')), /Undeclared orchestrator/);
+  assert.throws(() => loadWorkflowText(text.replace('skill: product-spec', 'skill: orchestrator')), /own child/);
+});
+
 async function makeProject() {
   const root = await mkdtemp(join(tmpdir(), "harness-workflow-"));
   await mkdir(join(root, ".codex", "workflows"), { recursive: true });

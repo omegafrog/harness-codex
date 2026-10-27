@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "execution_id",
+    "skill",
+    "status",
+    "code",
+    "result_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "execution_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "skill": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "action_required",
+        "blocked",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "code": {
+      "enum": [
+        "OK",
+        "REVIEW_REQUIRED",
+        "SUBTASK_REQUIRED",
+        "SPEC_REVISION_REQUIRED",
+        "PLAN_REVISION_REQUIRED",
+        "IMPLEMENTATION_REVISION_REQUIRED",
+        "USER_DECISION_REQUIRED",
+        "ENVIRONMENT_UNAVAILABLE",
+        "PERMISSION_REQUIRED",
+        "DEPENDENCY_INCOMPLETE",
+        "INPUT_MISSING",
+        "MODEL_BINDING_UNAVAILABLE",
+        "EXECUTION_ERROR",
+        "INVALID_INPUT",
+        "ARTIFACT_WRITE_FAILED",
+        "CANCELLED"
+      ]
+    },
+    "result_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    }
+  }
+}

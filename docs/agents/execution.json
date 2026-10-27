@@ -2,11 +2,28 @@
   "schema_version": 1,
   "profiles": {
     "tracker-lifecycle-check": {
-      "command": ["node", "--test", "tests/tracker_lifecycle.test.mjs", "tests/tracker_contract.test.mjs"],
+      "command": [
+        "node",
+        "--test",
+        "tests/tracker_lifecycle.test.mjs",
+        "tests/tracker_contract.test.mjs"
+      ],
       "required_env": [],
-      "config_inputs": ["package.json", "src/tracker/lifecycle.mjs", ".codex/scripts/harness-tracker.mjs", "tests/tracker_lifecycle.test.mjs", "docs/agents/EXEC.md"],
+      "config_inputs": [
+        "package.json",
+        "src/tracker/lifecycle.mjs",
+        ".codex/scripts/harness-tracker.mjs",
+        "tests/tracker_lifecycle.test.mjs",
+        "docs/agents/EXEC.md"
+      ],
       "prepare": [],
-      "verify_config": [["node", "-e", "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"]],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
       "dependencies": [],
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
@@ -60,6 +77,58 @@
       "readiness_timeout_ms": 5000,
       "poll_interval_ms": 100
     },
+    "harness-eval-contract": {
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=loads versioned suite|reports measured and unmeasured|pilot suite loads|artifact outcome|pilot reports quality",
+        "tests/eval_contract.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        ".codex/harness.yaml",
+        "src/eval/case-loader.mjs",
+        "src/eval/contracts.mjs",
+        "src/eval/report.mjs",
+        "src/eval/graders/outcome.mjs",
+        "evals/suites/p0.yaml",
+        "evals/suites/meta-harness-pilot.yaml",
+        "evals/cases/pilot-skill-selection-design.yaml",
+        "evals/cases/pilot-skill-selection-planning.yaml",
+        "evals/cases/pilot-context-precedence.yaml",
+        "evals/cases/pilot-untrusted-instruction.yaml",
+        "evals/cases/spec-me-source-policy.yaml",
+        "evals/cases/code-review-isolation.yaml",
+        "evals/fixtures/pilot-context-precedence/docs/context/current.md",
+        "evals/fixtures/pilot-context-precedence/docs/context/history.md",
+        "evals/fixtures/pilot-untrusted-instruction/request.txt",
+        "evals/cases/public-skill-routing-o10.yaml",
+        "evals/cases/public-skill-routing-o45.yaml",
+        "evals/cases/public-skill-routing-o47.yaml",
+        "evals/cases/public-skill-routing-m36.yaml",
+        "evals/cases/public-skill-routing-m39.yaml",
+        "evals/cases/public-skill-routing-m40.yaml",
+        "evals/cases/public-skill-routing-m44.yaml",
+        "evals/cases/public-skill-routing-m45.yaml",
+        "evals/fixtures/public-skill-routing/samples.json",
+        "evals/fixtures/public-skill-routing/README.md",
+        "tests/eval_contract.test.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
     "implementation-review-check": {
       "command": [
         "node",
@@ -71,14 +140,17 @@
         "tests/wrapper_reconciliation.test.mjs",
         "tests/wrapper_checkpoint.test.mjs",
         "tests/plan_traceability.test.mjs",
-        "tests/installer_update.test.mjs"
+        "tests/installer_update.test.mjs",
+        "tests/tracker_contract.test.mjs"
       ],
       "required_env": [],
       "config_inputs": [
         "package.json",
+        "bin/harness-install.mjs",
         "src/wrapper/repair.mjs",
         "src/wrapper/checkpoint.mjs",
         "src/wrapper/dispatch.mjs",
+        "src/wrapper/scheduler.mjs",
         "src/wrapper/reconciliation.mjs",
         "src/workflow/review-attempts.mjs",
         "src/workflow/session-output.mjs",
@@ -90,8 +162,12 @@
         ".codex/internal-skills/architecture-spec/GUIDE.md",
         ".codex/internal-skills/architecture-spec/references/template.md",
         ".codex/internal-skills/spec-review/GUIDE.md",
-        ".codex/internal-skills/spec-review/references/review-coordination.md",
+        ".codex/internal-skills/review-coordination/GUIDE.md",
         ".codex/internal-skills/plan-review/GUIDE.md",
+        "docs/architecture/enforcement.md",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/skills/to-ticket/references/github-issue-template.md",
+        ".codex/skills/to-ticket/references/traceability-ledger.md",
         ".codex/skills/spec-me/SKILL.md",
         ".codex/skills/harness-recover/SKILL.md",
         ".codex/skills/code-review/SKILL.md",
@@ -105,7 +181,9 @@
         "tests/wrapper_reconciliation.test.mjs",
         "tests/wrapper_checkpoint.test.mjs",
         "tests/plan_traceability.test.mjs",
-        "tests/installer_update.test.mjs"
+        "tests/installer_update.test.mjs",
+        "tests/tracker_contract.test.mjs",
+        "src/tracker/render.mjs"
       ],
       "prepare": [],
       "verify_config": [
@@ -142,13 +220,22 @@
         "docs/agents/EXEC.md",
         "src/workflow/review-attempts.mjs",
         "src/workflow/plan-traceability.mjs",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/skills/to-ticket/references/traceability-ledger.md",
+        ".codex/internal-skills/plan-review/GUIDE.md",
         ".codex/scripts/harness-spec-review.mjs",
         ".codex/scripts/harness-plan-traceability.mjs",
         "src/installer/lock.mjs",
         "src/installer/update.mjs",
         "tests/spec_review.test.mjs",
         "tests/plan_traceability.test.mjs",
-        "tests/installer_update.test.mjs"
+        "tests/installer_update.test.mjs",
+        "bin/harness-install.mjs",
+        ".codex/internal-skills/product-spec/GUIDE.md",
+        ".codex/internal-skills/architecture-spec/GUIDE.md",
+        ".codex/internal-skills/spec-review/references/review-criteria.md",
+        ".codex/internal-skills/spec-review/GUIDE.md",
+        ".codex/skills/spec-me/references/adversarial-spec-review.md"
       ],
       "prepare": [],
       "verify_config": [
@@ -178,6 +265,8 @@
         "src/installer/update.mjs",
         "src/installer/lock.mjs",
         "src/installer/local-exclude.mjs",
+        "src/eval/graders/outcome.mjs",
+        "src/eval/case-loader.mjs",
         ".codex/internal-skills/implement/GUIDE.md",
         "src/doctor/doctor.mjs",
         "src/workflow/completion.mjs",
@@ -193,6 +282,13 @@
         ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml",
         "tests/test_project_local_installer.py",
         "tests/installer_update.test.mjs",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/skills/to-ticket/references/execution-evidence.md",
+        ".codex/skills/to-ticket/references/github-issue-template.md",
+        ".codex/skills/implement-wrapper/SKILL.md",
+        ".codex/internal-skills/testing-guidance/GUIDE.md",
+        ".codex/agents/implementation_agent.toml",
+        "docs/agents/testing-guidance.md",
         "tests/doctor.test.mjs"
       ],
       "prepare": [],
@@ -417,6 +513,10 @@
         "src/wrapper/dispatch.mjs",
         "src/wrapper/scheduler.mjs",
         "src/wrapper/reconciliation.mjs",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/skills/to-ticket/references/traceability-ledger.md",
+        ".codex/internal-skills/plan-review/GUIDE.md",
+        "docs/architecture/enforcement.md",
         "tests/plan_traceability.test.mjs",
         "tests/project_readiness.test.mjs",
         "tests/installer_update.test.mjs",
@@ -439,11 +539,42 @@
       "poll_interval_ms": 100
     },
     "worktree-skill-routing-check": {
-      "command": ["python3", "-B", "-m", "unittest", "discover", "-s", "tests", "-p", "test_spec_diagram_workflow.py", "-k", "test_spec_me_prepares_the_session_worktree_before_spawning_agents"],
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_spec_diagram_workflow.py",
+        "-k",
+        "test_spec_me_prepares_the_session_worktree_before_spawning_agents"
+      ],
       "required_env": [],
-      "config_inputs": ["tests/test_spec_diagram_workflow.py", "src/workflow/worktrees.mjs", ".codex/scripts/harness-workflow-worktree.mjs", ".codex/skills/spec-me/SKILL.md", ".codex/internal-skills/product-spec/GUIDE.md", ".codex/skills/spec-me/references/architecture-decision.md", ".codex/skills/to-ticket/SKILL.md", ".codex/internal-skills/worktree-create/GUIDE.md", ".codex/internal-skills/session-worktree/GUIDE.md", ".codex/internal-skills/session-worktree/references/worktree-cli.md", ".codex/internal-skills/session-worktree/references/sequential.md", ".codex/internal-skills/session-worktree/references/parallel.md", "docs/agents/EXEC.md"],
+      "config_inputs": [
+        "tests/test_spec_diagram_workflow.py",
+        "src/workflow/worktrees.mjs",
+        ".codex/scripts/harness-workflow-worktree.mjs",
+        ".codex/skills/spec-me/SKILL.md",
+        ".codex/internal-skills/product-spec/GUIDE.md",
+        ".codex/skills/spec-me/references/architecture-decision.md",
+        ".codex/skills/to-ticket/SKILL.md",
+        ".codex/internal-skills/worktree-create/GUIDE.md",
+        ".codex/internal-skills/session-worktree/GUIDE.md",
+        ".codex/internal-skills/session-worktree/references/worktree-cli.md",
+        ".codex/internal-skills/session-worktree/references/sequential.md",
+        ".codex/internal-skills/session-worktree/references/parallel.md",
+        "docs/agents/EXEC.md"
+      ],
       "prepare": [],
-      "verify_config": [["python3", "--version"]],
+      "verify_config": [
+        [
+          "python3",
+          "--version"
+        ]
+      ],
       "dependencies": [],
       "timeout_ms": 10000,
       "readiness_timeout_ms": 1000,
@@ -462,7 +593,9 @@
         "tests/installer_exclude.test.mjs",
         "tests/doctor.test.mjs",
         "tests/workflow_worktrees.test.mjs",
-        "tests/contracts.test.mjs"
+        "tests/contracts.test.mjs",
+        "tests/skill_execution.test.mjs",
+        "tests/orchestrator_hook.test.mjs"
       ],
       "required_env": [],
       "config_inputs": [
@@ -509,7 +642,39 @@
         ".codex/skills/to-ticket/references/execution-evidence.md",
         ".codex/skills/to-ticket/references/github-issue-template.md",
         "src/wrapper/scheduler.mjs",
-        "src/wrapper/dispatch.mjs"
+        "src/wrapper/dispatch.mjs",
+        "src/workflow/skill-execution.mjs",
+        ".codex/scripts/harness-skill-execution.mjs",
+        ".codex/scripts/harness-skill-exec.mjs",
+        ".codex/internal-skills/skill-execution/GUIDE.md",
+        ".codex/internal-skills/skill-execution/bindings.json",
+        ".codex/internal-skills/review-coordination/GUIDE.md",
+        ".codex/internal-skills/skill-execution/schemas/input.schema.json",
+        ".codex/internal-skills/skill-execution/schemas/result.schema.json",
+        ".codex/internal-skills/skill-execution/schemas/return.schema.json",
+        ".codex/internal-skills/skill-execution/schemas/question.schema.json",
+        ".codex/skills/orchestrator/SKILL.md",
+        ".codex/skills/orchestrator/agents/openai.yaml",
+        "tests/skill_execution.test.mjs",
+        ".codex/schemas/workflow.schema.yaml",
+        ".codex/workflows/implement-wrapper.yaml",
+        ".codex/workflows/frontend-design.yaml",
+        ".codex/scripts/harness-setup.mjs",
+        ".codex/skills/setup/SKILL.md",
+        ".codex/skills/orchestrator/references/implementation.md",
+        "src/doctor/doctor.mjs",
+        "src/installer/orchestrator-hook.mjs",
+        "src/installer/worktree-runtime.mjs",
+        ".codex/scripts/harness-orchestrator-hook.mjs",
+        ".codex/internal-skills/workflow-compose/GUIDE.md",
+        "tests/orchestrator_hook.test.mjs",
+        ".codex/harness.yaml",
+        "src/workflow/startup-state.mjs",
+        "src/workflow/execution-state.mjs",
+        "src/workflow/composer-workspace.mjs",
+        "src/workflow/stage-input.mjs",
+        ".codex/skills/orchestrator/references/session-state.md",
+        ".codex/internal-skills/workflow-compose/schemas/workflow.schema.json"
       ],
       "prepare": [],
       "verify_config": [
@@ -517,6 +682,72 @@
           "node",
           "--check",
           "src/installer/update.mjs"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 1000,
+      "poll_interval_ms": 100
+    },
+    "model-binding-check": {
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_model_tiers.py"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "tests/test_model_tiers.py",
+        ".codex/harness.yaml",
+        ".codex/internal-skills/skill-execution/bindings.json",
+        ".codex/workflows/spec-me.yaml",
+        ".codex/workflows/to-ticket.yaml",
+        ".codex/workflows/code-review.yaml",
+        ".codex/workflows/implement-wrapper.yaml"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "python3",
+          "-B",
+          "-c",
+          "import sys; assert sys.version_info >= (3, 10)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 30000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "documentary-evidence-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/knowledge_evidence.test.mjs",
+        "tests/knowledge_integration.test.mjs",
+        "tests/internal_skills.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "src/knowledge/model.mjs",
+        "src/knowledge/validation.mjs",
+        "src/knowledge/evidence.mjs",
+        ".codex/schemas/knowledge/evidence.schema.yaml",
+        "tests/knowledge_evidence.test.mjs",
+        "tests/internal_skills.test.mjs"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "--check",
+          "src/knowledge/evidence.mjs"
         ]
       ],
       "dependencies": [],

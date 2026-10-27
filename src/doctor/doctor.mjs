@@ -5,6 +5,8 @@ import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
+import { validateContextBudget } from "../workflow/skill-execution.mjs";
+import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { isWithin } from "../eval/util.mjs";
@@ -307,6 +309,23 @@ async function inspectAuthoring(root, diagnostics) {
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
+  const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');
+  if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+    try {
+      const hook = await inspectOrchestratorHook(repositoryRoot);
+      if (!hook.valid) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
+    } catch (error) {
+      diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
+    }
+  }
+  const budgetPath = join(repositoryRoot, '.codex/context-budget.json');
+  try {
+    const information = await lstat(budgetPath);
+    if (!information.isFile()) throw new Error('Context budget must be a regular file');
+    validateContextBudget(JSON.parse(await readFile(budgetPath, 'utf8')));
+  } catch (error) {
+    if (error.code !== 'ENOENT') diagnostics.push(diagnostic('context_budget_invalid', 'error', safeMessage(error, 'Invalid context budget'), budgetPath));
+  }
   await inspectWorkflows(repositoryRoot, diagnostics);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);

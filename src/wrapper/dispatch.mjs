@@ -50,7 +50,8 @@ export function resolveImplementationProfile({ config = null, model = null, reas
 
 export function resolveReviewerProfile({ config = null, profile = null } = {}) {
   const resolvedModel = profile?.model || config?.agents?.implementation_model || config?.agents?.low_performance_model || config?.agents?.default_model || null;
-  return { model: resolvedModel };
+  const resolvedEffort = profile?.reasoning_effort || config?.agents?.implementation_reasoning_effort || config?.agents?.low_performance_reasoning_effort || null;
+  return { model: resolvedModel, reasoning_effort: resolvedEffort };
 }
 
 /**
@@ -330,7 +331,7 @@ export async function runIndependentReviewers({
     { role: "spec", agent_type: "spec_reviewer" },
   ];
   const reviewerModel = resolveReviewerProfile({ config, profile: reviewerProfile });
-  if (!reviewerModel.model) throw new TypeError("reviewer model is unresolved; run setup before review");
+  if (!reviewerModel.model || !reviewerModel.reasoning_effort) throw new TypeError("reviewer model or reasoning effort is unresolved; configure both before review");
   const contextPolicy = resolveContextPolicy({ config, profile: reviewerProfile });
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
     let report;
@@ -339,6 +340,7 @@ export async function runIndependentReviewers({
       report = await spawnReviewer({
         agent_type,
         model: reviewerModel.model,
+        reasoning_effort: reviewerModel.reasoning_effort,
         plan_id: plan.id,
         implementation,
         ...reviewInput,

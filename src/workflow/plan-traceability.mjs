@@ -68,6 +68,7 @@ async function collectInputs(root, planSetId, ledger, { trackerPort = null, stri
   const architecturePath = ledger.architecture_spec_path || `docs/specs/${ticketId}/architecture-spec.md`;
   requireValue(ledger.spec_paths.includes(productPath) && ledger.spec_paths.includes(architecturePath), 'Product and Architecture Specs are required review inputs');
   const paths = new Set(ledger.spec_paths);
+  if (ledger.schema_version === 2) paths.add('docs/agents/execution.json');
   for (const path of [
     `docs/specs/${ticketId}/request.md`, `docs/specs/${ticketId}/runtime-decisions.md`,
     `docs/specs/${ticketId}/system-targets.yaml`, `docs/specs/${ticketId}/system-targets.md`,
@@ -128,6 +129,9 @@ export async function snapshotPlanTraceability({ root, planSetId, trackerPort = 
   const canonicalBodies = new Map();
   for (const plan of ledger.plans) canonicalBodies.set(plan.id, await canonicalPlanBody(root, plan, trackerPort, true));
   const inputs = await collectInputs(root, planSetId, ledger, { trackerPort, canonicalBodies });
+  const executionConfig = ledger.schema_version === 2
+    ? JSON.parse((await safeFile(root, 'docs/agents/execution.json')).content.toString('utf8'))
+    : null;
   const declared = new Map();
   for (const path of ledger.spec_paths) {
     const file = await safeFile(root, path);
@@ -159,6 +163,13 @@ export async function snapshotPlanTraceability({ root, planSetId, trackerPort = 
     requireValue(Array.isArray(plan.acceptance_criteria) && plan.acceptance_criteria.some((v) => typeof v === 'string' && v.trim()), `Plan ${plan.id} needs acceptance criteria`);
     requireValue(Array.isArray(plan.counterexamples) && plan.counterexamples.some((v) => typeof v === 'string' && v.trim()), `Plan ${plan.id} needs counterexamples`);
     requireValue(Array.isArray(plan.verification_cases) && plan.verification_cases.some((v) => typeof v === 'string' && v.trim()), `Plan ${plan.id} needs verification cases`);
+    if (ledger.schema_version === 2) {
+      requireValue(Array.isArray(plan.verification_files) && plan.verification_files.every((path) => typeof path === 'string' && path && !path.startsWith('/') && !path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) && new Set(plan.verification_files).size === plan.verification_files.length, `Plan ${plan.id} needs unique workspace-relative verification_files`);
+      requireValue(typeof plan.verification_profile === 'string' && ID.test(plan.verification_profile), `Plan ${plan.id} must select a configured verification_profile`);
+      const profile = executionConfig.profiles?.[plan.verification_profile];
+      requireValue(profile && Array.isArray(profile.config_inputs), `Unknown or invalid execution profile ${plan.verification_profile}`);
+      for (const path of plan.verification_files) requireValue(profile.config_inputs.includes(path), `Verification file ${path} for ${plan.id} is missing from profile ${plan.verification_profile} config_inputs`);
+    }
   }
   for (const plan of ledger.plans) for (const key of plan.requirement_ids) requireValue(seen.has(key) && ledger.requirements.find((item) => `${item.source_path}#${item.id}` === key)?.disposition === 'covered' && ledger.requirements.find((item) => `${item.source_path}#${item.id}` === key)?.plan_ids.includes(plan.id), `Plan ${plan.id} references unknown or unassigned requirement ${key}`);
   for (const req of ledger.requirements.filter((item) => item.disposition === 'covered')) {
@@ -203,6 +214,7 @@ export async function snapshotPlanTraceability({ root, planSetId, trackerPort = 
     requireValue(body.includes(plan.id) && planIndex.content.toString('utf8').includes(plan.id), `Canonical plan content/index missing ${plan.id}`);
     for (const key of plan.requirement_ids) requireValue(body.includes(key.split('#').at(-1)), `Canonical plan ${plan.id} does not link requirement ${key}`);
     for (const field of ['acceptance_criteria', 'counterexamples', 'verification_cases']) for (const item of plan[field]) requireValue(body.includes(item), `Canonical plan ${plan.id} content is missing ${field} entry`);
+    if (ledger.schema_version === 2) for (const path of plan.verification_files) requireValue(body.includes(path), `Canonical plan ${plan.id} content is missing verification file ${path}`);
   }
   return { plan_set_id: planSetId, ledger, inputs, declarations: [...declared.keys()].sort() };
 }
@@ -284,6 +296,8 @@ export async function inspectPlanTraceability({ root, planSetId, phase, planId, 
       product_spec_path: snapshot.ledger.product_spec_path || `docs/specs/${snapshot.ledger.ticket_id}/product-spec.md`,
       architecture_spec_path: snapshot.ledger.architecture_spec_path || `docs/specs/${snapshot.ledger.ticket_id}/architecture-spec.md`,
       requirement_ids: planId ? snapshot.ledger.plans.find((item) => item.id === planId).requirement_ids : [],
+      verification_files: planId ? snapshot.ledger.plans.find((item) => item.id === planId).verification_files || [] : [],
+      verification_profile: planId ? snapshot.ledger.plans.find((item) => item.id === planId).verification_profile || null : null,
       plan_reference: planId ? (() => { const plan = snapshot.ledger.plans.find((item) => item.id === planId); return plan.content_path || `${plan.canonical.repository}#${plan.canonical.issue}`; })() : null,
       canonical_plan: planId ? (() => {
         const plan = snapshot.ledger.plans.find((item) => item.id === planId);

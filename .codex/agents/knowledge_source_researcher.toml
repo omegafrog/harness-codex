@@ -1,6 +1,5 @@
 name = "knowledge_source_researcher"
 description = "Discover, classify, qualify, and collect source material for engineering questions"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

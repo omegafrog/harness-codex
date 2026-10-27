@@ -38,14 +38,15 @@ function detectInconclusiveReason({ exitCode, stdout, stderr }) {
 
 function inferCommandAction(command) {
   const text = String(command || "");
-  if (/\bgit\s+push\b/i.test(text)) return "git_push";
+  // Match an executable shell command, not text embedded in an argument such as `node -e`.
+  if (/(?:^|[;&|]\s*|(?:-c)\s+["']?)git\s+push\b/i.test(text)) return "git_push";
   if (/\bgh\s+(issue|pr)\s+(create|edit|close|comment|merge|reopen)\b/i.test(text)) return "external_mutation";
   if (/(^|[;&|]\s*)(rm|rmdir|unlink)\b/i.test(text)) return "delete";
   const outputRedirect = text.match(/(?:^|[\s;&|])(?:\d+)?>>?\s*([^\s;&|]+)/);
   if (/(^|[;&|]\s*)(tee|touch|mkdir|cp|mv|install|dd)\b/i.test(text)
     || (outputRedirect && !outputRedirect[1].startsWith("&") && !outputRedirect[1].startsWith("/dev/null"))) return "write_file";
   if (/(^|[;&|]\s*)(cat|head|tail|sed|awk|grep|rg|find|ls|tree|stat)\b/i.test(text) || /\bgit\s+(show|diff|status|log)\b/i.test(text)) return "read_file";
-  if (/\b(?:write_text|writeFile|write_bytes)\s*\(/i.test(text) && /\.eval-output\//.test(text)) return "write_file";
+  if (/\b(?:write_text|writeFile\w*|write_bytes)\s*\(/i.test(text) && /\.eval-output\//.test(text)) return "write_file";
   return null;
 }
 

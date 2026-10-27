@@ -46,7 +46,7 @@ QualityGrader는 `task_quality`, `trajectory_quality`, dimension별 score, ratio
 
 Grader는 artifact만 평가하며 실행 제어, workflow 변경, repair 지시, Hard Gate/Outcome override를 하지 않는다.
 
-`OutcomeGrader`는 versioned artifact bundle에 포함된 correlation으로 연결된 성공한 `tool_call`/`tool_result`, case manifest의 `outcome_evidence` 규칙, 그리고 수집된 repository-relative artifact 목록만 사용한다. final text나 self-reported process event는 Required Outcome 증거가 아니다.
+`OutcomeGrader`는 versioned artifact bundle에 포함된 correlation으로 연결된 성공한 `tool_call`/`tool_result`, case manifest의 `outcome_evidence` 규칙, 그리고 수집된 repository-relative artifact 목록만 사용한다. 단일 JSON artifact의 rule이 `expected_json`을 선언하면 파싱한 JSON 구조를 기대값과 결정적으로 비교한다. final text나 self-reported process event는 Required Outcome 증거가 아니다.
 
 ## Consequences
 

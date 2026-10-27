@@ -2,6 +2,10 @@
 
 # Architecture Review
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 ## 역할
 
 `architecture_review_lead`는 `spec-me`의 Architecture Decision이 준비된 뒤 Learning mode에서 사용자의 제안과 방어를 검토한다. Reviewer는 답을 대신 만들거나 사용자 대신 선택하지 않는다. Normal mode에서는 reviewer challenge stage를 건너뛰고 사용자가 공통 체크리스트를 직접 평가한다. 두 mode 모두 decision evidence와 review gate를 통과한다.

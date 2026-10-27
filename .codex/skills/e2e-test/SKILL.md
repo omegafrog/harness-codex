@@ -7,7 +7,11 @@ description: Run full-stack end-user E2E tests in the active worktree, following
 
 # E2E 테스트 실행
 
-먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. 이 정책은 의미적 수동 판단이며 자동 런타임 집행이 아니다. 호출자는 E2E/full-stack/browser end-to-end를 명시적으로 요청했거나 저비용 검사로 실패를 확인할 수 없는 변경된 critical cross-boundary 경로에 대해서만 실행한다. 승인된 E2E plan과 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다.
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
+먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. implement-wrapper가 split plan set의 최종 검증으로 호출하면 모든 split plan 구현·개별 검증·통합이 끝난 뒤 feature-level E2E를 한 번 실행한다. 개별 plan 구현 중에는 실행하지 않는다. 승인된 시나리오와 oracle을 사용하며, plan/test contract에 정의된 시나리오와 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다. 그 밖의 독립 작업에서는 명시된 E2E 요청 또는 저비용 검사로 판정할 수 없는 승인된 critical cross-boundary 위험에 대해서만 실행한다.
 
 실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 사용한다. 호출자는 활성 worktree의 절대 `workspace_root`와 세션을 시작한 원본 프로젝트의 절대 `shared_guidance_root`(`return_root`)를 모두 확정하고, 두 경로가 같은 Git common directory인지 확인한다. `<shared_guidance_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. `.codex/harness.yaml`의 `agents.execution_model`, `agents.execution_reasoning_effort`를 해석한 뒤 `multi_agent_v1.spawn_agent`로 `agent_type="e2e_test_runner"`를 호출한다. `workspace_root`와 `cwd`에 동일한 경로를 지정하고 두 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달하며 해석한 model/reasoning 값을 명시한다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
 

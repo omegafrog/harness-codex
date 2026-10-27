@@ -45,7 +45,7 @@ recording:
   fixture: recordings/spec-me-source-policy.jsonl
 ```
 
-`required_outcome`과 `hard_gates`는 registry ID를 참조한다. Free-form rule 문자열은 허용하지 않는다. 모든 Required Outcome은 `outcome_evidence`에 하나의 구조화된 rule을 가져야 하며, correlation으로 연결된 성공한 normalized trajectory action과 하나 이상의 repository-relative artifact 존재로 증명한다. 최종 텍스트의 self-report는 증거로 인정하지 않는다. `recording.mode`는 `replay`, `none`, `live` 중 하나이며 live는 `integration: true`와 dedicated test resource 조건을 함께 만족해야 한다.
+`required_outcome`과 `hard_gates`는 registry ID를 참조한다. Free-form rule 문자열은 허용하지 않는다. 모든 Required Outcome은 `outcome_evidence`에 하나의 구조화된 rule을 가져야 하며, correlation으로 연결된 성공한 normalized trajectory action과 하나 이상의 repository-relative artifact 존재로 증명한다. 단일 JSON artifact에 대해서는 선택적 `expected_json`으로 구조화된 기대값을 선언해 artifact 내용을 deterministic하게 대조할 수 있다. 최종 텍스트의 self-report는 증거로 인정하지 않는다. `recording.mode`는 `replay`, `none`, `live` 중 하나이며 live는 `integration: true`와 dedicated test resource 조건을 함께 만족해야 한다.
 
 Suite manifest는 case IDs, baseline ID, suite thresholds와 retry policy를 선언한다. Baseline은 aggregate metrics뿐 아니라 각 case의 token/latency snapshot도 보유하며 `harness_commit`과 `source_run_id`로 생성 조건을 고정한다.
 

@@ -2,6 +2,10 @@
 
 # Session worktree
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 구현 실행 방식을 확인할 때 아래 해당 파일 하나만 읽는다. 작업 단위의 worktree 생성은 `worktree-create` skill을 사용한다. 디렉터리 전체나 모든 reference를 한 번에 읽지 않는다.
 
 소유 session worktree의 정보는 해당 `session_directory/worktree.json`이 정본이다. worktree 생성 CLI가 파일을 만들고 lifecycle 상태를 갱신한다. workflow는 진입 시 파일을 읽고, 하위 stage·agent에는 필요한 경우 `session_directory` 경로만 전달해 같은 파일을 읽게 한다. worktree 메타데이터를 매 요청마다 복사해 입력하지 않는다.

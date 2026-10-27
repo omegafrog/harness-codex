@@ -7,6 +7,10 @@ description: Build or materially redesign user-facing web UI through a standalon
 
 # frontend-design
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.
 
 새 UI와 UI/UX 재설계의 단일 시작점이다. `frontend-implement`와 `frontend-visual-review`는 이 흐름의 내부 단계이며, 독립적으로 시작하지 않는다.

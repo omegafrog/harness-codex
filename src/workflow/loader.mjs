@@ -10,12 +10,11 @@ import { isHarnessSourceCheckout } from "../installer/source-checkout.mjs";
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
-const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
+const WORKFLOW_FIELDS = new Set(["schema_version", "id", "orchestrator", "roles", "skills", "hooks", "stages"]);
 const STAGE_FIELDS = new Set(["id", "role", "skill", "model_tier", "needs", "condition", "gates"]);
 const WORKFLOW_MODEL_TIERS = new Set(["high_performance", "implementation", "execution", "low"]);
 export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "product_coverage",
-  "product_adversarial_review",
   "architecture_adversarial_review",
   "material_ambiguity_resolved",
   "product_diagram_completion",
@@ -161,11 +160,16 @@ export function validateWorkflowDocument(raw, { registry = new LifecycleGateRegi
   const id = asId(document.id, "workflow.id");
   const roles = asIdList(document.roles, "workflow.roles");
   const skills = asIdList(document.skills, "workflow.skills");
+  if (document.orchestrator !== undefined) {
+    const orchestrator = asId(document.orchestrator, "workflow.orchestrator");
+    if (!skills.includes(orchestrator)) throw new WorkflowManifestError(`Undeclared orchestrator skill: ${orchestrator}`);
+  }
   const hooks = validateHookConfiguration(document.hooks, registry);
   const stages = validateStages(document.stages);
   const roleSet = new Set(roles);
   const skillSet = new Set(skills);
   for (const stage of stages) {
+    if (stage.skill === document.orchestrator) throw new WorkflowManifestError('Orchestrator cannot run as its own child stage');
     if (!roleSet.has(stage.role)) throw new WorkflowManifestError(`Stage ${stage.id} references undeclared role: ${stage.role}`);
     if (!skillSet.has(stage.skill)) throw new WorkflowManifestError(`Stage ${stage.id} references undeclared skill: ${stage.skill}`);
   }

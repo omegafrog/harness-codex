@@ -54,6 +54,22 @@ function reasonCounts(results) {
   }, {});
 }
 
+function evaluationCoverage(suite, caseResults) {
+  return Object.fromEntries(Object.entries(suite.evaluation_axes || {}).map(([axis, caseIds]) => {
+    const results = caseIds.map((id) => caseResults.find((result) => result.case_id === id)).filter(Boolean);
+    return [axis, {
+      state: results.length ? "measured" : "unmeasured",
+      cases: caseIds,
+      counts: {
+        passed: results.filter((result) => result.state === "passed").length,
+        failed: results.filter((result) => result.state === "failed").length,
+        inconclusive: results.filter((result) => result.state === "inconclusive").length,
+      },
+      efficiency: sumEfficiency(results),
+    }];
+  }));
+}
+
 export function makePreflightSuiteResult({ suiteId, runId, reason, phase = "preflight", message, runDir = null, attempt = 1, retryOf = null }) {
   const attemptNumber = Number.isInteger(attempt) && attempt > 0 ? attempt : 1;
   const result = {
@@ -154,9 +170,10 @@ export function evaluateSuite({ suite, caseResults, attempt = 1, retryOf = null 
   const meanQuality = qualityValues.length ? qualityValues.reduce((sum, value) => sum + value, 0) / qualityValues.length : 0;
   const p10Quality = p10(qualityValues);
   const efficiency = sumEfficiency(caseResults);
+  const coverage = evaluationCoverage(suite, caseResults);
   const thresholds = suite.thresholds;
-  const baselineMetrics = suite.baseline.metrics || null;
-  const perCaseRegressions = caseRegressions(caseResults, suite.baseline.case_metrics, thresholds);
+  const baselineMetrics = suite.baseline?.metrics || null;
+  const perCaseRegressions = caseRegressions(caseResults, suite.baseline?.case_metrics, thresholds);
   const tokenRegression = regression(efficiency, baselineMetrics, "tokens", thresholds.max_token_regression);
   const latencyRegression = regression(efficiency, baselineMetrics, "latency_ms", thresholds.max_latency_regression);
   const attemptNumber = Number.isInteger(attempt) && attempt > 0 ? attempt : 1;
@@ -181,7 +198,8 @@ export function evaluateSuite({ suite, caseResults, attempt = 1, retryOf = null 
     counts: { total, passed: passed.length, failed: caseResults.filter((result) => result.state === "failed").length, inconclusive: total - conclusive.length, conclusive: conclusive.length },
     quality: { mean: Number(meanQuality.toFixed(4)), p10: Number(p10Quality.toFixed(4)) },
     efficiency,
-    baseline: { ...suite.baseline, metrics: baselineMetrics },
+    evaluation_coverage: coverage,
+    baseline: suite.baseline ? { ...suite.baseline, metrics: baselineMetrics } : null,
     regressions: { tokens: tokenRegression, latency_ms: latencyRegression, cases: perCaseRegressions },
     attempt: { number: attemptNumber, kind: attemptNumber === 1 ? "first" : "retry", retry_of: attemptNumber === 1 ? null : retryOf },
     attempt_stats: {
@@ -212,6 +230,7 @@ export async function persistReport(runDir, report) {
     attempt: report.attempt,
     attempt_stats: report.attempt_stats,
     inconclusive_reasons: report.inconclusive_reasons,
+    evaluation_coverage: report.evaluation_coverage,
     regressions: report.regressions,
   });
   return report;

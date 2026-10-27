@@ -181,8 +181,13 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
     ".codex/harness-runtime/src/workflow/stage-gates.mjs",
+    ".codex/harness-runtime/src/workflow/spec-review.mjs",
+    ".codex/harness-runtime/src/workflow/review-attempts.mjs",
+    ".codex/harness-runtime/src/wrapper/repair.mjs",
     ".codex/harness-runtime/src/knowledge/evidence.mjs",
     ".codex/scripts/harness-plan-traceability.mjs",
+    ".codex/scripts/harness-code-review.mjs",
+    ".codex/scripts/harness-review-status.mjs",
     ".codex/harness-runtime/src/workflow/plan-traceability.mjs",
   ]) {
     await stat(join(projectRoot, path));

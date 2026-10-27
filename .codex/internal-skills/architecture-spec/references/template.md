@@ -23,6 +23,7 @@
 | `<invariant>`        | `<owner / enforcement point>`    |
 | `<state transition>` | `<command / event / component>`  |
 | `<failure case>`     | `<error handling / recovery>`    |
+| `<persistence / query / external capability>` | `<data owner / technology / infrastructure / query path>` |
 
 ---
 
@@ -549,9 +550,13 @@ stop
 
 ## 5.11 Infrastructure Dependencies
 
-| Dependency                    | Responsibility     | Accessed By   | Isolation Boundary |
-| ----------------------------- | ------------------ | ------------- | ------------------ |
-| `<DB / cache / broker / API>` | `<responsibility>` | `<component>` | `<adapter>`        |
+각 requirement에 필요한 저장·조회·비동기·파일·외부 provider capability를 기존 자원 재사용 또는 신규 infrastructure로 빠짐없이 연결한다.
+
+| Requirement / Target | Required Capability | Selected Existing / New Dependency | Owner / Query or Call Path | Evidence / Decision | Failure / Operations |
+| -------------------- | ------------------- | ---------------------------------- | ------------------------- | ------------------- | -------------------- |
+| `<REQ / UC / BR / target>` | `<persist / relational query / queue / blob / provider>` | `<technology / existing platform capability>` | `<domain owner → port/repository → adapter → schema/query/runtime>` | `<source ID or exact URL + locator; decision ID>` | `<consistency / recovery / config / readiness>` |
+
+관계 데이터와 질의 조건이 Product 요구에 있으면 저장소 종류, 관계/schema, query path와 검증 사례를 적는다. 해당 capability가 불필요하면 그 근거를 기록한다.
 
 ## 5.12 External Dependency Isolation
 
@@ -810,11 +815,11 @@ stop
 
 ## 11.1 Domain Verification
 
-| Target                  | Verification         |
-| ----------------------- | -------------------- |
-| `<business rule>`       | `<test / assertion>` |
-| `<aggregate invariant>` | `<test / assertion>` |
-| `<state transition>`    | `<test / assertion>` |
+| UC / BR / AC | Domain Owner / Behavior | Business Condition / Action | Expected Business Result | Unit Test Intent |
+| ------------ | ----------------------- | --------------------------- | ------------------------ | ---------------- |
+| `<ID>`       | `<aggregate/entity/value object/domain service>` | `<meaningful rule branch>` | `<domain result / next state / business refusal>` | `<independent example; external dependencies mocked>` |
+
+단위 테스트 사례는 업무 판단·행위·결과를 실행 가능한 명세로 표현한다. 일반적인 자료형 오류, framework/serialization/wiring, 단순 위임, mock 호출 횟수는 이 표에 포함하지 않는다. 해당 business rule이 없는 항목에는 테스트를 강제하지 않는다.
 
 ## 11.2 Program Verification
 

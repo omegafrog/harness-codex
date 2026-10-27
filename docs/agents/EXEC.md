@@ -1,5 +1,7 @@
 # 실행 환경 안내
 
+문서 기반 Architecture Decision 근거는 `documentary-evidence-check` profile로 검사한다. 문서 원문 snapshot의 SHA-256과 위치를 보존하고 실행·측정은 `not_applicable`로 기록하며, 기존 Evidence 승인·게시 검증을 적용한다. 설치된 runtime의 같은 검증과 프로젝트 문서의 Git 가시성도 함께 확인한다.
+
 플랫폼별 설정과 실행 방법은 이 문서에 기록한다. `AGENTS.md`에는 공통 agent 규칙만 둔다.
 
 ## 기록 대상
@@ -46,6 +48,7 @@ E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 �
 
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile unit`. 사용자 경로 live 검증과 별개다.
+- Harness eval 계약의 집중 검사는 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile harness-eval-contract`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.
 - 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 설치기는 Ponytail plugin 준비를 위해 Codex/network를 사용할 수 있으므로 실제 실행 권한과 의존성을 먼저 확인한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
 - 진단: 원본 루트를 cwd로 `node bin/harness-doctor.mjs --project <consumer 경로> --json`. `passed`, diagnostics와 exit code를 함께 확인한다.
 - workspace 검사: 검사할 저장소를 cwd로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <절대 worktree 경로> --json`. 관리형 spec-me는 등록된 linked worktree를 사용한다.
@@ -146,11 +149,17 @@ node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <profile-
 
 ## Fresh Spec 리뷰 검사
 
-`spec-review-check` profile은 Spec·계획 리뷰의 중복 실행·입력 고정·재검토 한도, workflow stage, 설치·업데이트된 CLI와 Git 가시성 회귀 검사를 실행한다. 임시 Git/file fixture만 사용하여 별도 서버/DB·생성 설정이 없으며 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile spec-review-check`로 실행한다.
+`spec-review-check` profile은 Spec·계획 리뷰의 중복 실행·입력 고정·재검토 한도, Spec 리뷰 후 diagram stage 순서, 최종 diagram 산출물 gate, 설치·업데이트된 CLI와 Git 가시성 회귀 검사를 실행한다. 임시 Git/file fixture만 사용하여 별도 서버/DB·생성 설정이 없으며 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile spec-review-check`로 실행한다.
 
 reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> --ticket <id> --axis product|architecture [--input <직접 읽은 source/ADR 상대 파일>]`로 구한다. raw request/확정 사용자 답변은 ticket의 request.md에 보존한다. caller는 실제 각 reviewer JSON과 spawn metadata를 session/runtime/spec-reviews/에 attempt별 저장한다. `harness-spec-review.mjs check --root <workspace_root> --ticket <id> --reviews <session-relative-json>`가 최신 전체 리뷰를 검사하며 completion state에는 ticket_id/spec_reviews를 전달한다. source/Spec/diagram/용어/계약 갱신 후에는 이전 pass를 재사용하지 않는다. canonical 내용은 최종 fresh 리뷰 전에 안정화하고 seal의 기계 산출물 갱신 후 완료 gate를 실행한다.
 
 ## 설치·업데이트 회귀 검사와 스킬 갱신
+
+native `.codex/hooks.json`의 `UserPromptSubmit`에는 `harness-orchestrator-hook.mjs`가 등록된다. 명령 hook은 canonical `worktree.json`·같은 Codex session ID의 orchestrator 상태와 Git worktree 등록·경로·branch를 읽기 전용으로 대조하고 `resume_candidate`, `compose_candidate`, `inspect_required`를 전달한다. 기록 생성·legacy 이전·복구·Git 변경은 수행하지 않는다. 새 요청 여부는 메인이 메시지와 관측 상태를 함께 보고 판단하며, 생성 작업은 workflow-compose subagent에 맡긴다. installer는 다른 hook을 보존하고 해당 등록만 동기화하며 변경 전 설정을 session에 백업한다. Doctor가 등록 누락·손상을 진단한다. 새 hook은 Codex의 `/hooks`에서 신뢰 검토를 거쳐야 실행된다. protocol·신뢰 규칙은 [공식 hook 문서](https://learn.chatgpt.com/docs/hooks)를 따른다.
+
+setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-skill-execution.mjs budget --root <shared_guidance_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
+
+`model-binding-check`는 공개 skill의 binding 등록과 설정·workflow tier inventory를 검사한다. `internal-skills-check`는 skill 설치·업데이트·Doctor·Git 가시성, model/effort binding, 작은 반환 envelope와 파일 기반 결과 검증을 포함한다. `harness-skill-execution.mjs binding`은 실제 설정을 해석하고 `validate-return`은 session의 입력·반환·상세 결과·산출물을 대조한다. 이 명령들은 agent를 생성하거나 외부 tracker를 변경하지 않는다. orchestrator skill이 실제 spawn 도구와 기존 workflow lifecycle을 사용한다.
 
 `installer-maintenance`는 installer/doctor/exclude Node 회귀 검사를, `installer-maintenance-python`과 `installer-runtime-python`은 해당 CLI Python 검사를 실행한다. 로컬 Git/file fixture와 외부 명령 stub만 사용하며 서버/DB가 필요 없고 생성 설정도 없어 prepare/dependencies는 빈 배열이다. 모든 검사는 harness-exec의 해당 profile로 실행하고 임시 consumer·backup·로그는 세션 안에 둔다.
 
@@ -170,7 +179,7 @@ E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 
 
 ## 명세·계획·구현 추적 회귀 검사
 
-`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, 요구사항별 수용 기준·검증 사례 연결, plan 간 producer/consumer handoff, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다. 연결된 문장의 의미상 충족 여부는 독립 plan review가 확인한다.
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, 요구사항별 수용 기준·검증 사례 연결, plan 간 producer/consumer handoff, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. schema_version 2 계획은 단위 테스트 파일을 `verification_files`로 선언하고 선택 profile의 `config_inputs`에 포함해야 한다. profile 설정도 계획 snapshot에 묶여 정합성 오류는 리뷰/dispatch 전에 차단된다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다. 연결된 문장의 의미상 충족 여부와 profile 명령의 실제 테스트 실행 여부는 독립 plan review가 확인한다.
 
 ## VictoriaLogs 개발 관측성 설치
 
@@ -205,4 +214,20 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## 구현 리뷰 회귀 검사
 
-`implementation-review-check` profile은 plan별 영속 수정 한도, 재개·worktree 교체, 지적 분류, 중간 plan과 최종 계약 gate, 설치·업데이트된 CLI와 Git 가시성, 읽기 전용 통합 리뷰 조회, 양쪽 결과 수집과 planning snapshot 변경 차단을 검사한다. 임시 Git/file fixture를 사용하며 별도 서버·DB와 생성 설정이 없어 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile implementation-review-check`로 실행한다.
+`implementation-review-check` profile은 plan별 영속 수정 한도, 재개·worktree 교체, 지적 분류, 중간 plan과 최종 계약 gate, 설치·업데이트된 CLI와 Git 가시성, 읽기 전용 통합 리뷰 조회, 양쪽 결과 수집과 planning snapshot 변경 차단을 검사한다. 수정 한도 reset은 새 독립 계획 리뷰와 dispatch를 통과한 planning snapshot 변경이 있을 때만 허용하고, 일반 진행 지시로는 초기화되지 않는지도 검사한다. 임시 Git/file fixture를 사용하며 별도 서버·DB와 생성 설정이 없어 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile implementation-review-check`로 실행한다.
+
+
+### Orchestrator 작업 실행
+
+메인 orchestrator의 하위 작업은 `node .codex/scripts/harness-skill-exec.mjs --root <workspace_root> --session-directory <session_directory> --input <session-relative input.json>`으로 실행한다. 실행기는 `codex exec --output-schema`로 공통 반환 envelope를 받고 상세 결과를 검증한다. 각 실행은 새 execution ID를 사용하며 기존 반환 파일을 덮어쓰지 않는다. model·effort는 Harness binding에서, 인증·sandbox는 해당 Codex 실행 환경에서 가져온다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략한다. CLI 오류 로그는 해당 execution의 `exec.stderr.json`에 보존한다.
+
+
+단계 실행기는 시작·결과·실패 상태와 진행률을 자동 기록한다. `context.codex_session_id`, `context.stage_id`와 필요한 제어 session 경로를 입력에 지정한다. 실제 모델 검증은 제품 변경 없는 입력과 새 execution ID를 사용해 임시 실행 프로필로 수행하고, 프로필과 receipt는 session에 보존한다.
+
+
+구성된 workflow 실행은 `harness-skill-exec.mjs --root <작업 root> --session-directory <제어 session> --request-workflow runtime/orchestrator/workflow.json --stage <stage-id> --codex-session-id <메인 session ID>`를 사용한다. 입력 파일과 실행 ID는 실행기가 생성한다. 최초 workflow-compose만 기존 `--input` 진입을 사용한다.
+
+
+workflow-compose 진입의 worktree 생성은 실행기에서 기존 lifecycle 코드로 수행한다. 원본 프로세스 권한은 이 결정적 준비 작업에 사용하고, 모델은 `workspace-write`를 유지한다. 생성된 작업 위치와 session 출력만 추가 쓰기 경로로 전달한다. agent는 `context.worktree_ref`의 정본 기록을 읽고 preflight·문서 작업을 수행한다.
+
+exec worker의 질문은 `user_question` artifact로 저장하고 `USER_DECISION_REQUIRED`로 반환한다. 사용자 답변 JSON을 session에 보존한 뒤 같은 stage 실행 명령에 `--answer <session-relative answer.json>`을 추가한다. 실행기는 질문 ID와 답변을 확인해 이전 checkpoint와 함께 다음 호출에 전달한다.

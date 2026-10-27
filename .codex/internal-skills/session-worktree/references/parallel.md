@@ -4,7 +4,7 @@
 
 ## 통합 대상과 worker 배정
 
-- canonical per-plan `## 범위`의 `workspace_root`·`workspace_branch`와 index `## 실행 위치`는 기존 통합 대상 `execution_line`이다. 사용자 지정 위치, Git root·등록·실제 브랜치와 대조한다. 누락·충돌·제거된 경로·detached HEAD는 tracker 전환이나 생성 전에 중단한다. 과거 `worktree.json`·checkpoint·리뷰 경로로 대체하지 않는다.
+- `docs/plans/<plan-set-id>/<plan-id>.md`의 `## 범위`에 있는 `workspace_root`·`workspace_branch`와 `docs/plans/<plan-set-id>/plans.md`의 `## 실행 위치`가 기존 통합 대상 `execution_line`이다. 사용자 지정 위치, Git root·등록·실제 브랜치와 대조한다. 누락·충돌·제거된 경로·detached HEAD는 tracker 전환이나 생성 전에 중단한다.
 - `WorktreeManager.allocate`에 승인된 parallel group과 `fixed_group_base`를 전달한다. 계획마다 전용 `harness/<run>/<group>/<plan>-<instance>` branch와 격리 worktree를 생성한다. 생성 전 reserve, 생성 후 register는 manager가 소유권 기록을 관리한다. 사용자 작업 위치를 workflow 소유로 등록하지 않는다.
 - manager가 반환한 worker 경로를 `workspace_root`와 `cwd`로 사용한다. worker의 branch와 ID는 manager가 저장한 `<session_directory>/worktree.json`에서 읽는다. group·고정 base·Git root·등록 검사를 통과해야 spawn한다. canonical plan의 통합 대상은 worker 경로로 덮어쓰지 않는다.
 - 모든 agent/tool에 `workspace_mode=parallel`, 이 파일의 절대 `workspace_reference`, worker의 절대 루트, 원래 프로젝트의 `shared_guidance_root`, `session_directory`를 전달한다. worker는 필요할 때 `worktree.json`을 읽는다. 두 루트의 Git common directory가 같아야 한다. 구현자는 worker branch에 커밋하고 검증한 경로·브랜치를 보고한다.

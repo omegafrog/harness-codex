@@ -51,7 +51,7 @@ export function normalizeEvidence(input) {
   if (!EVIDENCE_EXECUTION_STATUSES.includes(execution_status)) throw new TypeError("Evidence execution_status is not supported.");
   let measurement_validity = input.measurement_validity;
   if (!EVIDENCE_MEASUREMENT_VALIDITIES.includes(measurement_validity)) throw new TypeError("Evidence measurement_validity is not supported.");
-  if (execution_status !== "completed") measurement_validity = "invalid";
+  if (input.type !== "documentary" && execution_status !== "completed") measurement_validity = "invalid";
   const evidence = createEvidence({
     id: input.id,
     origin_project: requiredText(input.origin_project, "origin_project"),
@@ -62,6 +62,7 @@ export function normalizeEvidence(input) {
     measurement_validity,
     observations: safeObservations(input.observations),
     source_reference: requiredText(input.source_reference, "source_reference"),
+    ...(input.source_sha256 !== undefined ? { source_sha256: input.source_sha256 } : {}),
     ...(input.execution_purpose !== undefined ? { execution_purpose: input.execution_purpose } : {}),
     decision_ids: Array.isArray(input.decision_ids) ? input.decision_ids.map((id, index) => requiredText(id, `decision_ids[${index}]`)) : input.decision_ids,
   });

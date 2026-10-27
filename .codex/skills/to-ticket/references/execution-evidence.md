@@ -16,15 +16,17 @@
 
 `workspace_root`는 구현 대상인 기존 Git worktree의 절대 경로, `workspace_branch`는 그 위치에서 검증한 브랜치명이다. branch는 파일 경로가 아니며 detached HEAD를 허용하지 않는다. 계획 작성용 임시 `session_worktree`가 종료 시 제거되면 그 경로를 구현 위치로 기록하지 않는다. 사용자가 지정한 기존 구현 위치를 우선하고, 없으면 원래 작업 위치 `return_root`를 확인한다. 실제 대상의 `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list --porcelain`을 대조해 경로·브랜치·등록을 확인한다. 대상이나 브랜치가 불명확하면 계획 리뷰·발행 전에 확인하며 경로를 추측하거나 이를 채우려고 worktree를 생성하지 않는다.
 
+Child plan의 테스트 계약은 비즈니스 로직 단위 테스트만 정의한다. UC/BR/AC의 조건·행위·기대 결과를 기준으로 소유 업무 규칙을 검증하고, 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. Parent plan-set 계약에는 전체 split plan 구현·검증·통합 뒤 마지막에 실행할 단일 feature-level E2E 시나리오와 oracle을 기록한다. 개별 child에 통합·계약·E2E 테스트를 배정하지 않는다. 그 밖의 기존 필수 검증 명령과 완료 gate는 별도 검증 절차로 기록할 수 있다.
+
 `docs/plans/<plan-set-id>/plans.md`의 `## 실행 위치`에도 같은 두 항목을 기록한다. 각 plan과 index의 값은 일치해야 한다. 병렬 계획에서도 이 값은 최종 통합 대상인 기존 `execution_line`을 뜻한다. 실제 병렬 worker의 임시 경로·브랜치는 dispatch 후 checkpoint에 기록하며 canonical plan의 통합 대상을 덮어쓰지 않는다.
 
 계획 종료 뒤에도 기록한 기존 위치를 유지한다. Spec·계획이 다른 계획 branch에 남아 있다면 해당 branch/HEAD와 필요한 통합을 인계하고, 실행 대상에 승인 산출물이 반영되기 전에는 구현 dispatch를 하지 않는다. 제거된 planning worktree를 복원한다는 이유로 구현용 worktree를 새로 만들지 않는다. 실행 위치 변경은 plan과 index를 함께 고치고 fresh review를 갱신한 뒤 허용한다.
 
 ## 계획 시
 
-각 slice의 기존 `수용 기준`에 `UC/BR/INV 또는 기존 requirement ID → Context/모델 owner → 실행 진입점 → 기대 결과 → 검증 명령`을 기록한다. 전역 ID 체계나 별도 task board를 새로 만들지 않는다. `테스트 계약`에는 아래 항목을 필요한 만큼 기록한다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.
+각 slice의 기존 `수용 기준`에 `UC/BR/INV 또는 기존 requirement ID → Context/모델 owner → 실행 진입점 → 기대 결과 → 비즈니스 로직 단위 테스트 명령`을 기록한다. 전역 ID 체계나 별도 task board를 새로 만들지 않는다. `테스트 계약`에는 소유 UC/BR/AC의 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. plan-set parent의 `ui ~ entity E2E` 필드에는 모든 split plan 통합 후 마지막에 실행할 feature-level 사용자 시나리오, oracle, profile, timeout, attempt budget을 기록하며 개별 slice에는 E2E를 배정하지 않는다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.
 
-E2E 선택은 [공통 검증 정책](../../e2e-test/references/verification-policy.md)을 따른다. 각 slice의 E2E 필드는 형식상 유지하되, 기본은 `해당 없음 — 사유, 선택한 저비용 검증`이다. E2E가 필요한 경우에만 변경 requirement/risk, 저비용 검사가 부족한 이유, 최소 시나리오와 oracle, profile, timeout, 총 시도 budget을 기존 문자열에 기록한다. UI 표면의 변경만으로 충분한 사유가 되지 않는다.
+plan-set parent의 E2E 필드에는 feature-level 시나리오를 기록한다. 각 child slice는 “plan-set 최종 통합 E2E에서 확인”으로 parent 시나리오를 참조하고, 중복 E2E를 만들지 않는다. 기존 필수 실행·완료 gate는 테스트 생성과 분리해 검증 명령으로 보존한다.
 
 Live agent 확인이 필요한 경우에는 사전 승인한 task와 task/environment budget, trace/correlation ID로 볼 결과를 함께 고정한다. UI stub은 request/stream/loading/done 같은 안정 상태만 검증하며 live 품질로 표시하지 않는다.
 

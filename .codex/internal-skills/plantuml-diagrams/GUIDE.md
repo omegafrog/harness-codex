@@ -4,6 +4,10 @@
 
 # plantuml-diagrams
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 `plantuml-diagrams`는 Spec에 필요한 다이어그램만 독립 `.puml` 편집 원본으로 만들고, 기존 로컬 renderer를 통해 SVG를 생성·검증한다.
 
 Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬을 실행한다. 호출자는 settled 요구사항·설계와 ticket scope를 제공하고, 상위 Spec 에이전트는 산출물과 내용 일치를 검토한다.

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "execution_id",
+    "skill",
+    "workspace_root",
+    "shared_guidance_root",
+    "session_directory",
+    "scope",
+    "input_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "execution_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "skill": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "workspace_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "shared_guidance_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_directory": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "base",
+          "path"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "enum": [
+              "workspace",
+              "session"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object"
+    }
+  }
+}

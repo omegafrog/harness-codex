@@ -285,6 +285,12 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     value = "fixture-model"
                 elif "추론 강도 선택" in prompt:
                     value = "low"
+                elif prompt == "선택 모델 공통 context 한도(tokens)":
+                    value = "100000"
+                elif prompt == "plan 하나의 최대 예상 토큰":
+                    value = "30000"
+                elif prompt == "checkpoint·인계용 예비 토큰":
+                    value = "20000"
                 elif prompt == "Tracker 선택":
                     value = "local-markdown"
                 elif prompt == "티켓 디렉터리":
@@ -296,6 +302,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     cancelled = subprocess.run(command, cwd=target, env=self.command_env(), capture_output=True, text=True)
                     self.assertNotEqual(cancelled.returncode, 0)
                     self.assertEqual(config.read_bytes(), original)
+                    self.assertFalse((target / ".codex/context-budget.json").exists())
                     value = "y"
                 else:
                     self.assertEqual({option["value"] for option in question["options"]}, {"y", "n"})
@@ -303,6 +310,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 document["answers"][question["id"]] = value
             else:
                 self.fail("Native setup did not complete")
+            self.assertEqual(json.loads((target / ".codex/context-budget.json").read_text()), {"schema_version": 1, "context_window_tokens": 100000, "max_plan_tokens": 30000, "handoff_reserve_tokens": 20000})
             self.assertIn('implementation_model: "fixture-model"', config.read_text())
             self.assertIn('directory: ".scratch/native-issues"', config.read_text())
             # Completed configuration makes the old question snapshot stale.

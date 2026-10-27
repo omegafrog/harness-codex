@@ -1,7 +1,8 @@
 schema_version: 1
 id: to-ticket
+orchestrator: orchestrator
 roles: [to_ticket, plan_reviewer]
-skills: [beads, worktree-create, to-ticket, plan-review]
+skills: [orchestrator, beads, worktree-create, to-ticket, plan-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight, spec_reviews]
   before_handoff: [checkpoint_completeness, evidence_flush]

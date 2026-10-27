@@ -1,3 +1,4 @@
+import { provisionWorktreeRuntime } from '../installer/worktree-runtime.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -17,7 +18,7 @@ async function durableJson(path, value) {
   try { await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); }
   await rename(temp, path);
 }
-function parseWorktreeRecord(text) {
+export function parseWorktreeRecord(text) {
   const record = JSON.parse(text);
   if (!record || record.schema_version !== 1 || !WORKTREE_ID.test(record.worktree_id || '') || !WORKTREE_STATES.has(record.state)
     || !['workspace', 'common', 'return_root', 'session_directory'].every((key) => isAbsolute(record[key] || ''))
@@ -109,11 +110,12 @@ export async function registerWorkflowWorktree(options = {}) {
   return withWorktreeLock(place, () => registerWorktree(options));
 }
 
-export async function createWorkflowWorktree({ workspace_root, branch = null, signal = null } = {}) {
+export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, signal = null } = {}) {
   if (!isAbsolute(workspace_root || '')) throw new Error('Absolute source workspace is required');
-  await storage(workspace_root);
   const sourceWorkspace = await realpath(workspace_root);
-  const returnRoot = sourceWorkspace;
+  const returnRoot = await realpath(return_root || sourceWorkspace);
+  const [sourceStore, returnStore] = await Promise.all([storage(sourceWorkspace), storage(returnRoot)]);
+  if (sourceStore.common !== returnStore.common) throw new Error('Source and return roots must share a Git common directory');
   const worktreeId = randomUUID();
   const workspace = join(dirname(returnRoot), '.harness-worktrees', basename(returnRoot), worktreeId);
   const sessionBranch = branch || `harness/worktree/${worktreeId}`;
@@ -126,6 +128,7 @@ export async function createWorkflowWorktree({ workspace_root, branch = null, si
     else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'HEAD']);
     signal?.throwIfAborted();
     const record = await registerWorkflowWorktree({ workspace_root: workspace, return_root: returnRoot });
+    await provisionWorktreeRuntime(sourceWorkspace, workspace);
     return { ...record, source_workspace: sourceWorkspace };
   } catch (error) {
     error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, worktree_id: ownership.worktree_id, outcome: 'failed' });

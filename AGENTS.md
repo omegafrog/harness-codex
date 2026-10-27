@@ -34,7 +34,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
 
-`spec-me`, `to-ticket`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 한 번 실행한다. `spec-me`는 worktree 생성 직후 이 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
+`spec-me`, `to-ticket`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 한 번 실행한다. `workflow-compose`가 worktree 생성·재사용과 생성 직후 검사를 맡고, `spec-me`는 전달받은 `worktree.json`의 작업 위치에서 진입 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
 
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
@@ -80,4 +80,4 @@ workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/regis
 
 ## Fresh Spec review
 
-새 Product/Architecture Spec은 `spec-review`의 서로 다른 fresh subagent가 요청 원문과 근거를 직접 읽고 적대적으로 검토한다. parent/writer 맥락을 상속하지 않으며 Normal mode도 생략하지 않는다. 중대 지적·stale snapshot·리뷰 누락은 spec-me 완료/to-ticket 인계를 막고 수정본은 새 reviewer로 재검토한다.
+새 Architecture Spec은 `spec-review`의 작성자와 분리된 fresh subagent 한 명이 요청 원문, Product Spec, Architecture Spec과 근거를 직접 읽고 적대적으로 검토한다. Product Spec은 요구사항 기준으로 검토 입력에 포함하며 별도 Product 리뷰를 수행하지 않는다. parent/writer 맥락을 상속하지 않으며 Normal mode도 생략하지 않는다. DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결 및 요구사항 구현에 필요한 인프라 완전성을 평가한다. 중대 지적·stale snapshot·리뷰 누락은 spec-me 완료/to-ticket 인계를 막고 수정본은 새 reviewer로 재검토한다.

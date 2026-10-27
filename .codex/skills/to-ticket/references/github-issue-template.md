@@ -70,8 +70,8 @@ Planned
 
 ## 테스트 계약
 
-- 단위/정책: [검증 대상]
-- `ui ~ entity` E2E: [해당 없음 — 사유 및 저비용 검증, 또는 필요한 경우 공통 정책의 계획 근거와 budget]
+- 단위/정책: [업무 규칙 검증 대상; verification_files: 경로 또는 none; verification_profile: 실행 프로필]
+- `ui ~ entity` E2E: [parent에는 plan-set 전체 통합 후 실행할 사용자 시나리오·oracle·profile·timeout·attempt budget; child에는 parent의 최종 E2E 참조]
 
 ## 관련 명세
 
@@ -90,7 +90,7 @@ Planned
 - 각 child의 `범위` 첫 두 항목에 [실행 위치 계약](execution-evidence.md#실행-위치)의 `workspace_root`, `workspace_branch`를 기록한다. structured-source는 같은 내용을 기존 `scope` 문자열에 담는다. canonical plan·index·렌더된 Issue 값의 일치와 실제 Git 등록·브랜치를 확인한다.
 
 - `수용 기준`에는 관련 UC/BR/INV ID, 소유 모델과 enforcement operation, 관찰 가능한 결과를 보존한다.
-- `테스트 계약`에는 재현 명령과 관련 System Target을 연결한다. 성능이 관련되면 workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 포함하고, 무관하면 이유를 적는다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.
+- Child `테스트 계약`에는 소유 UC/BR/AC의 업무 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. `verification_files`의 정확한 경로와 선택한 `verification_profile`도 `단위/정책`에 보존하고, traceability ledger 및 canonical plan과 발행 직전 대조한다. 불일치·누락은 tracker mutation을 막는다. 비즈니스 로직 변경이 없으면 경로는 `none`으로 하고 테스트를 추가하지 않는다. Parent의 `ui ~ entity E2E`에는 plan-set 전체 통합 후 마지막에 한 번 실행할 feature-level 시나리오와 oracle/profile/timeout/budget을 기록하고 child는 이를 참조한다. 성능 측정은 테스트와 별도 검증 evidence로 관련 System Target, workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 연결한다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.
 
 - parent와 child 본문을 서로 바꾸지 않는다.
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.

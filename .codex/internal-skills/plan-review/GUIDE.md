@@ -2,9 +2,13 @@
 
 # Plan Review
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 호출자는 작성자 대화 맥락을 상속하지 않는 새 reviewer agent를 실제로 생성하고, 실제 reviewer/context ID와 모든 작성자 ID를 보존한다. parent나 계획 작성자는 자신의 계획을 승인할 수 없다. plan set, 정확한 `workspace_root`, `session_directory`, 허용된 source 경로를 확인한 뒤 canonical request, Product/Architecture Spec, 결정, 다이어그램, 현행 계약, 추적 원장, 각 canonical plan 전체를 직접 읽는다. 프로젝트 파일을 수정하거나 다른 agent를 생성하지 않는다.
 
-수정이나 사용자 결정 요청 전에 [공통 리뷰 조정](../spec-review/references/review-coordination.md)을 적용한다.
+이 절차의 caller는 to-ticket workflow의 최상위 orchestrator다. caller가 reviewer 생성·결과 기록·계획 수정 지시·사용자 질문·재검토를 관리하고 [공통 리뷰 조정](../review-coordination/GUIDE.md)을 적용한다. reviewer는 읽기 전용 검토 결과를 파일에 보존하고 공통 envelope로 반환한다. 아래 원본 review JSON은 결과 파일에 저장하며 envelope로 대체하지 않는다.
 
 ## 실행 절차
 
@@ -14,6 +18,8 @@
 4. 수정 필요 시 지적 전체와 영향 문서를 함께 고치고 다음 `begin`을 실행한다. 최초 검토와 재검토 2회를 적용하고 이전 지적의 해결·재발·새 결함을 구분한다. 취소·stale도 횟수에 포함한다. 종료·취소된 reviewer는 agent 종료 뒤 `abort ... --attempt <attempt_id> --reason '<사유>'`로 기록한다. 중복 실행·미변경 재요청·한도 초과는 CLI가 차단하며 한도 도달 시 남은 쟁점과 필요한 결정을 사용자에게 제시한다. pass 이후 다른 변경은 새 묶음으로 검토한다.
 
 ## 검토 항목
+
+원본 프로젝트의 `.codex/context-budget.json`과 각 plan에 기록한 policy hash·예상 토큰·산정 근거를 비교한다. 한도 초과, 설정 변경 뒤 갱신하지 않은 추정, 구현·단위 테스트를 빠뜨린 분할은 수정 지적으로 반환한다. wrapper에 계획 규모 판단을 미루지 않는다.
 
 한도 도달 후 사용자가 범위·결정을 명시적으로 바꾸면 원문을 요청 기록에 보존하고 `resolve --root <workspace_root> --plan-set <plan-set-id> --reason '<사용자 결정 원문과 위치>'`로 재개 근거를 기록한다. 변경된 입력으로 다음 `begin`을 실행한다. 사용자의 실제 결정·권한 확인은 호출자가 담당한다.
 
@@ -26,6 +32,7 @@
 - For each accepted Architecture Decision, verify that the implementing plan follows the selected option and its constraints, preserves the cited standards/source references, and has a verification case for the decision's required behavior or quality attribute.
 - For each cross-plan handoff, verify the producer's output responsibility, the consumer's input responsibility, the dependency ordering, and a consumer-side verification scenario.
 - Every plan has testable acceptance criteria, prohibited behavior/counterexamples, and executable verification cases.
+- Every schema_version 2 plan maps its planned business-logic unit-test files to `verification_files`; each path is also in the selected execution profile's `config_inputs`, and that profile command runs the listed tests. An empty list is valid only when no business-logic test is needed. Profile configuration is part of the reviewed planning snapshot.
 - Ask whether an implementation could pass every plan acceptance criterion while violating the original rule. If so, report a major finding.
 - Multi-plan requirements have an integration owner and concrete end-to-end scenario.
 - Ordering, ownership, retries, errors, resumption, and state/data preservation are unambiguous.

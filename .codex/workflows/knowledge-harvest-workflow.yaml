@@ -1,7 +1,8 @@
 schema_version: 1
 id: knowledge-harvest-workflow
+orchestrator: orchestrator
 roles: [knowledge_source_researcher, knowledge_claim_extractor, knowledge_principle_synthesizer, knowledge_principle_reviewer, human_approver]
-skills: [knowledge-harvest]
+skills: [orchestrator, knowledge-harvest]
 hooks:
   before_dispatch: [tracker_sync]
   before_handoff: []

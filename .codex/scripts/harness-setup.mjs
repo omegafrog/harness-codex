@@ -177,7 +177,9 @@ async function main() {
   const { parseYaml } = await import(parserUrl.href);
   const configPath = join(root, '.codex/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  configurationHash = createHash('sha256').update(oldConfig).digest('hex');
+  const budgetPath = join(root, '.codex/context-budget.json');
+  const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  configurationHash = createHash('sha256').update(oldConfig).update(oldBudget).digest('hex');
   if (native && Object.keys(document.answers).length && document.configuration_hash !== configurationHash) throw new Error('Project configuration changed; restart native setup with current choices');
   const config = parseYaml(oldConfig);
   const selection = {};
@@ -197,6 +199,16 @@ async function main() {
     selection[`${key}_reasoning_effort`] = effort;
   }
   selection.default_model = selection.low_performance_model;
+
+  const previousBudget = oldBudget ? JSON.parse(oldBudget) : {};
+  const contextBudget = { schema_version: 1 };
+  for (const [key, prompt] of [['context_window_tokens', '선택 모델 공통 context 한도(tokens)'], ['max_plan_tokens', 'plan 하나의 최대 예상 토큰'], ['handoff_reserve_tokens', 'checkpoint·인계용 예비 토큰']]) {
+    const answer = await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
+    contextBudget[key] = answer.trim() ? Number(answer) : NaN;
+  }
+  const budgetModule = new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/skill-execution.mjs')) ? '../harness-runtime/src/workflow/skill-execution.mjs' : '../../src/workflow/skill-execution.mjs', import.meta.url);
+  const { validateContextBudget } = await import(budgetModule.href);
+  validateContextBudget(contextBudget);
 
   console.log('\n티켓 추적 방식');
   const mode = await choose('Tracker 선택', [
@@ -284,7 +296,7 @@ async function main() {
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, tracker, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
   if (useBeads) await setupBeads();
 
   let configText = oldConfig || '';
@@ -313,10 +325,14 @@ async function main() {
   const backup = output.sessionOutputPath(root, `runtime/setup/backups/harness-${Date.now()}.yaml`);
   await mkdir(dirname(backup), { recursive: true });
   if (oldConfig) await writeFile(backup, oldConfig, { mode: 0o600 });
+  if (oldBudget) await writeFile(`${backup}.context-budget.json`, oldBudget, { mode: 0o600 });
   await mkdir(dirname(configPath), { recursive: true });
   const temporary = output.sessionOutputPath(root, `tmp/setup-${Date.now()}.yaml`);
   await writeFile(temporary, configText, { mode: 0o600 });
   await rename(temporary, configPath);
+  const temporaryBudget = output.sessionOutputPath(root, `tmp/context-budget-${Date.now()}.json`);
+  await writeFile(temporaryBudget, `${JSON.stringify(contextBudget, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporaryBudget, budgetPath);
 
   const seedFiles = [
     ['CONTEXT.md', '.codex/skills/setup/assets/CONTEXT.md'],

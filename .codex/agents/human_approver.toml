@@ -1,6 +1,5 @@
 name = "human_approver"
 description = "Pause for an explicit human decision on a reviewed Principle"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

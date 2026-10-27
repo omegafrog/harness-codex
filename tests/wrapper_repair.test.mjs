@@ -41,8 +41,8 @@ test('implementation repair budget survives re-entry and replacement worktrees',
     assert.equal(first.round, 1);
     await assert.rejects(reserveImplementationRepair(make(root, 'impl-1')), /already has a reserved repair/);
     await assert.rejects(reserveImplementationRepair({ ...make(linked, 'impl-2'), maxRounds: 2 }), /budget exhausted/);
-    await reserveImplementationRepair({ root: linked, planId: 'plan-a', resolution: 'User changed the approved recovery scope; request.md:19' });
-    assert.equal((await reserveImplementationRepair(make(linked, 'impl-2'))).round, 1);
+    await assert.rejects(reserveImplementationRepair({ root: linked, planId: 'plan-a', resolution: '계속 해' }), /reviewed plan-set snapshot/);
+    await assert.rejects(reserveImplementationRepair({ ...make(linked, 'impl-2'), maxRounds: 2 }), /budget exhausted/);
   } finally { await rm(base, { recursive: true, force: true }); }
 });
 
