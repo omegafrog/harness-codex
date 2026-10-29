@@ -21,7 +21,7 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
    npx --yes github:omegafrog/harness-codex update --project <repository-root>
    ```
 
-4. `Project readiness: blocked` 또는 doctor의 `project_preparation_required`이면 [setup의 준비 복구](../setup/SKILL.md#설치업데이트-및-구현-전-준비-복구)를 실행해 실제 실행 프로필과 통합 계약을 보완한다. 런타임 파일 배치 성공을 workflow 완료로 보고하지 않는다. 기존 업무 코드·stash·tracker 상태는 보존한다. 그런 다음 진단을 재실행한다.
+4. Doctor로 설치 상태를 확인한다. 프로젝트 실행 준비와 통합 계약은 해당 workflow의 실행 전 검사와 최종 통합 gate에서 확인한다. 업데이트만으로 통합 계약을 갱신하거나 seal하지 않는다.
 
    Run the installed version's diagnostic command:
 

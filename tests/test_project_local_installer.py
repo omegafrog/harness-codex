@@ -201,8 +201,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             result = self.run_full_installer(target)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("Project readiness: blocked (project_preparation_required)", result.stdout)
-            self.assertIn("Required preparation:", result.stdout)
+            self.assertNotIn("Project readiness:", result.stdout)
             exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertIn(".harness/", exclude.splitlines())
             self.assertIn(".github/workflows/harness-contracts.yml", exclude.splitlines())
@@ -211,8 +210,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertNotIn(".harness/", status)
             self.assertNotIn(".github/workflows/harness-contracts.yml", status)
             report = self.run_doctor(target)
-            self.assertFalse(report["passed"])
-            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
             self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
             preflight = target / ".codex" / "scripts" / "harness-workspace-preflight.mjs"
             self.assertTrue(preflight.is_file())
@@ -497,8 +495,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             backup = Path(backup_line.removeprefix("Local backups: ")) / ".agents" / "skills" / "spec-me" / "SKILL.md"
             self.assertEqual(backup.read_text(encoding="utf-8"), "local skill\n")
             report = self.run_doctor(target)
-            self.assertFalse(report["passed"])
-            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
             self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
 
     def test_lock_command_rejects_force(self):

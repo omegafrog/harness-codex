@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 import { isHarnessSourceCheckout } from "../src/installer/source-checkout.mjs";
-import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -256,12 +255,6 @@ async function main() {
     if (result.backup_directory) console.log(`Local backups: ${result.backup_directory}`);
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
-  }
-  if (options.command !== 'lock') {
-    const readiness = await inspectProjectReadiness({ workspace_root: projectRoot, deferActiveWorktree: true });
-    console.log(`Project readiness: ${readiness.status} (${readiness.reason})`);
-    for (const step of readiness.next_steps) console.log(`Required preparation: ${step}`);
-    if (readiness.status !== 'pass') console.log('Runtime files are installed; the calling agent must complete preparation and rerun doctor before reporting workflow completion or starting implementation.');
   }
 }
 

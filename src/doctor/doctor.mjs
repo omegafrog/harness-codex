@@ -5,7 +5,6 @@ import { spawnSync } from "node:child_process";
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
-import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
@@ -336,9 +335,6 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
-  const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot, deferActiveWorktree: true });
-  if (readiness.status !== 'pass') diagnostics.push(diagnostic('project_preparation_required', 'error', `Project preparation required: ${readiness.next_steps.join('; ')}`, repositoryRoot, { readiness }));
-  else if (readiness.contract_sync?.status === 'deferred') diagnostics.push(diagnostic('contract_sync_deferred', 'info', 'Contract snapshot synchronization is deferred until final implementation integration', repositoryRoot, { readiness }));
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
     const rightKey = `${right.path}:${right.code}`;

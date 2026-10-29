@@ -1084,7 +1084,6 @@ test("installed consumer defers contract drift in its verified active worktree o
     const activeReadiness = await installed.inspectProjectReadiness({ workspace_root: tree.workspace, deferActiveWorktree: true });
     assert.equal(activeReadiness.reason, "project_ready_contract_sync_deferred", JSON.stringify(activeReadiness));
     const doctor = await runDoctor({ root: tree.workspace, sourceRoot: REPOSITORY_ROOT });
-    assert.ok(doctor.diagnostics.some((item) => item.code === "contract_sync_deferred" && item.severity === "info"));
     assert.ok(!doctor.diagnostics.some((item) => item.code === "project_preparation_required"));
     assert.equal((await installed.inspectProjectReadiness({ workspace_root: tree.workspace })).status, "blocked");
     assert.equal((await installed.inspectProjectReadiness({ workspace_root: root, deferActiveWorktree: true })).status, "pass");
