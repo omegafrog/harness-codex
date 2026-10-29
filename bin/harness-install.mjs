@@ -258,7 +258,7 @@ async function main() {
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
   }
   if (options.command !== 'lock') {
-    const readiness = await inspectProjectReadiness({ workspace_root: projectRoot });
+    const readiness = await inspectProjectReadiness({ workspace_root: projectRoot, deferActiveWorktree: true });
     console.log(`Project readiness: ${readiness.status} (${readiness.reason})`);
     for (const step of readiness.next_steps) console.log(`Required preparation: ${step}`);
     if (readiness.status !== 'pass') console.log('Runtime files are installed; the calling agent must complete preparation and rerun doctor before reporting workflow completion or starting implementation.');

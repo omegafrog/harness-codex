@@ -13,6 +13,7 @@ import { computeApprovalHash } from "../src/decision/approval.mjs";
 import { runDoctor } from "../src/doctor/index.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
 import { sessionOutputPath } from "../src/workflow/session-output.mjs";
+import { createWorkflowWorktree, finishWorkflowWorktree } from "../src/workflow/worktrees.mjs";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1064,6 +1065,35 @@ test("updated consumer defers only source snapshot drift until final contract sy
   assert.notEqual(invalid.contract_sync?.status, "deferred");
   const invalidPreflight = spawnSync(process.execPath, [join(root, ".codex/scripts/harness-workspace-preflight.mjs"), "--workspace-root", root, "--for-implementation", "--json"], { cwd: root, encoding: "utf8" });
   assert.equal(invalidPreflight.status, 1);
+});
+
+test("installed consumer defers contract drift in its verified active worktree only", async (t) => {
+  const { root, cleanup } = await makeContractsFixture();
+  t.after(cleanup);
+  await mkdir(join(root, "docs/agents"), { recursive: true });
+  await writeFile(join(root, "docs/agents/EXEC.md"), "Execution instructions\n");
+  await writeFile(join(root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: { focused: { purpose: "e2e", command: ["node", "-e", "process.exit(0)"], required_env: [], config_inputs: ["docs/agents/execution.json"], prepare: [["node", "-e", "process.exit(0)"]], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 } } }));
+  assert.equal(spawnSync("git", ["add", "docs/agents"], { cwd: root }).status, 0);
+  assert.equal(spawnSync("git", ["commit", "-qm", "prepare"], { cwd: root }).status, 0);
+  await protectLocalInstallArtifacts(root, REPOSITORY_ROOT);
+  await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot: root, initialize: true });
+  const tree = await createWorkflowWorktree({ workspace_root: root, return_root: root });
+  try {
+    await writeFile(join(tree.workspace, "src/app.mjs"), "export const app = 'draft';\n");
+    const installed = await import(pathToFileURL(join(tree.workspace, ".codex/harness-runtime/src/workflow/project-readiness.mjs")));
+    const activeReadiness = await installed.inspectProjectReadiness({ workspace_root: tree.workspace, deferActiveWorktree: true });
+    assert.equal(activeReadiness.reason, "project_ready_contract_sync_deferred", JSON.stringify(activeReadiness));
+    const doctor = await runDoctor({ root: tree.workspace, sourceRoot: REPOSITORY_ROOT });
+    assert.ok(doctor.diagnostics.some((item) => item.code === "contract_sync_deferred" && item.severity === "info"));
+    assert.ok(!doctor.diagnostics.some((item) => item.code === "project_preparation_required"));
+    assert.equal((await installed.inspectProjectReadiness({ workspace_root: tree.workspace })).status, "blocked");
+    assert.equal((await installed.inspectProjectReadiness({ workspace_root: root, deferActiveWorktree: true })).status, "pass");
+    const status = spawnSync("git", ["status", "--short"], { cwd: tree.workspace, encoding: "utf8" }).stdout;
+    assert.match(status, /src\/app\.mjs/);
+    assert.doesNotMatch(status, /\.codex\//);
+    await writeFile(join(tree.workspace, "docs/contracts/manifest.json"), "{");
+    assert.equal((await installed.inspectProjectReadiness({ workspace_root: tree.workspace, deferActiveWorktree: true })).status, "blocked");
+  } finally { await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root, worktree_id: tree.worktree_id, outcome: "aborted" }); }
 });
 
 test("update installs standalone contracts runtime and preserves a locally edited workflow", async () => {
