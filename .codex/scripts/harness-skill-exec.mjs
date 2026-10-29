@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 const installed = new URL('../harness-runtime/src/workflow/skill-execution.mjs', import.meta.url);
 const { validateSkillInput, resolveSkillSession, readSkillSessionJson, resolveSkillBinding, validateSkillReturn } = await import(existsSync(installed) ? installed.href : new URL('../../src/workflow/skill-execution.mjs', import.meta.url).href);
 const stateModule = new URL('../harness-runtime/src/workflow/execution-state.mjs', import.meta.url);
-const { recordExecutionState } = await import(existsSync(stateModule) ? stateModule.href : new URL('../../src/workflow/execution-state.mjs', import.meta.url).href);
+const { recordExecutionState, processIdentity } = await import(existsSync(stateModule) ? stateModule.href : new URL('../../src/workflow/execution-state.mjs', import.meta.url).href);
 let lifecycle = null;
 try {
   const options = {};
@@ -65,7 +65,8 @@ try {
   returnSchema.properties.result = { type: 'string' };
   if (!returnSchema.required.includes('result')) returnSchema.required.push('result');
   await writeFile(schema, JSON.stringify(returnSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  await recordExecutionState({ root, input, binding, status: 'running' });
+  const owner = await processIdentity(process.pid);
+  await recordExecutionState({ root, input, binding, status: 'running', owner });
   lifecycle = { root, input, binding };
   let preparedWorkspace = null;
   if (input.skill === 'workflow-compose') {
@@ -107,6 +108,7 @@ try {
   const consumeEvent = (line) => { try { const event = JSON.parse(line); if (event.type === 'error' || event.type === 'turn.failed') codexErrors.push(event); if (event.type === 'thread.started') { threadId = event.thread_id; if (worktreeManager) sessionSave = sessionSave.then(() => worktreeManager.recordWorkflowSession({ workspace_root: worktreeRecord.workspace, repository_root: worktreeRecord.return_root, key: sessionKey, session_id: threadId, execution_id: input.execution_id })); } } catch {} };
   const stop = () => child.kill('SIGTERM');
   const child = spawn('codex', args, { cwd: root, env: { ...process.env, HARNESS_SESSION_DIR: outputSession, HARNESS_CONTROL_SESSION_DIR: controlSession, HARNESS_SKILL_EXECUTION_ID: input.execution_id }, stdio: ['pipe', 'pipe', 'pipe'] });
+  await recordExecutionState({ root, input, binding, status: 'running', owner, child: await processIdentity(child.pid) });
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   child.stderr.on('data', (data) => { stderr += data; });

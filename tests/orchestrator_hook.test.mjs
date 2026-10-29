@@ -10,7 +10,7 @@ import { protectLocalInstallArtifacts } from '../src/installer/local-exclude.mjs
 import { inspectOrchestratorHook } from '../src/installer/orchestrator-hook.mjs';
 import { runDoctor } from '../src/doctor/index.mjs';
 import { prepareComposerWorkspace } from '../src/workflow/composer-workspace.mjs';
-import { recordExecutionState } from '../src/workflow/execution-state.mjs';
+import { recordExecutionState, processIdentity } from '../src/workflow/execution-state.mjs';
 import { inspectStartupState, refreshWorkflowProgress } from '../src/workflow/startup-state.mjs';
 import { createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree } from '../src/workflow/worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from '../src/workflow/session-output.mjs';
@@ -52,6 +52,16 @@ test('installed startup hook routes workflow composition before any request work
       await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  low_performance_model: fixture-model\n  low_performance_reasoning_effort: low\n');
       const executionId = initialize ? 'exec-fresh' : 'exec-update';
       const execSession = sessionDirectory(root);
+      const installedState = await import(`${new URL(`file://${join(root, '.codex/harness-runtime/src/workflow/execution-state.mjs')}`).href}?install=${initialize}`);
+      const live = await installedState.processIdentity(process.pid);
+      const dead = { ...live, pid: 2147483647, start: '1' };
+      const prior = { execution_id: `recovery-old-${initialize}`, skill: 'beads', session_directory: execSession, context: { codex_session_id: 'fixture-session', stage_id: 'recovery' } };
+      const binding = { model: 'fixture-model', reasoning_effort: 'low' };
+      await installedState.recordExecutionState({ root, input: prior, binding, status: 'running', owner: dead, child: dead });
+      await installedState.recordExecutionState({ root, input: { ...prior, execution_id: `recovery-new-${initialize}` }, binding, status: 'running', owner: live });
+      const recoveryState = JSON.parse(await readFile(join(execSession, 'runtime/orchestrator/state.json'), 'utf8'));
+      assert.equal(recoveryState.stages.recovery.attempts[0].status, 'failed');
+      await rm(join(execSession, 'runtime/orchestrator/state.json'));
       const execInput = { schema_version: 1, execution_id: executionId, skill: 'beads', workspace_root: root, shared_guidance_root: root, session_directory: execSession, scope: 'Fixture structured dispatch', input_refs: [], context: { codex_session_id: 'fixture-session', stage_id: 'fixture-task' } };
       const inputPath = `runtime/executions/${executionId}/input.json`;
       await writeFile(sessionOutputPath(root, inputPath), JSON.stringify(execInput));
@@ -383,5 +393,25 @@ test('execution lifecycle preserves retries and permits a new Codex session with
     const duplicateCompose = { ...input, execution_id: 'duplicate-workflow', skill: 'workflow-compose', context: { codex_session_id: 'new-session', stage_id: 'workflow-compose' } };
     await assert.rejects(recordExecutionState({ ...args, input: duplicateCompose, status: 'running' }), /Workflow already active/);
     assert.deepEqual(JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')), resumed);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('interrupted execution recovers only after both recorded processes exit', async () => {
+  const { root } = await worktreeFixture();
+  try {
+    const session = sessionDirectory(root);
+    const input = { execution_id: 'old', skill: 'beads', session_directory: session, context: { codex_session_id: 'owner', stage_id: 'check' } };
+    const binding = { model: 'fixture', reasoning_effort: 'low' };
+    const live = await processIdentity(process.pid);
+    const dead = { ...live, pid: 2147483647, start: '1' };
+    await recordExecutionState({ root, input, binding, status: 'running', owner: dead, child: live });
+    const next = { ...input, execution_id: 'new' };
+    await assert.rejects(recordExecutionState({ root, input: next, binding, status: 'running', owner: live }), /Stage already running/);
+    await recordExecutionState({ root, input, binding, status: 'running', owner: dead, child: dead });
+    await recordExecutionState({ root, input: next, binding, status: 'running', owner: live });
+    const state = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8'));
+    assert.equal(state.stages.check.execution_id, 'new');
+    assert.equal(state.stages.check.attempts[0].status, 'failed');
+    assert.match(state.stages.check.attempts[0].reason, /interrupted/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

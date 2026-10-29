@@ -12,6 +12,8 @@ orchestrator는 `node .codex/scripts/harness-skill-exec.mjs --root <workspace_ro
 
 실행기는 input 객체를 Codex 세션 메시지에 직접 전달하고 `codex exec`의 구조화 응답에서 전체 result 객체를 받는다. worker는 `input.json`, `return.json`, `result.json`을 읽거나 쓰지 않는다. 실행기는 반환을 검증한 뒤 기존 recovery/audit 경로에 보존하므로 legacy workflow 기록도 계속 읽을 수 있다. `HARNESS_SKILL_EXECUTION_ID`가 있는 실행은 하위 작업이며 startup hook은 메인 orchestrator를 다시 시작하지 않는다.
 
+Linux에서 실행기는 자신의 PID와 자식 PID에 부팅 ID 및 프로세스 시작 시각을 기록한다. 동일 stage 재진입 시 두 프로세스가 모두 종료된 것이 확인되면 잠금 안에서 이전 시도를 실패 이력으로 남기고 기록된 Codex session을 재개한다. 프로세스 식별 정보가 없거나 확인할 수 없는 기존 실행은 자동 복구하지 않고 검사를 요구한다.
+
 고정 effort를 가진 내장 role이 선택된 값과 충돌하면, 같은 역할 지침을 읽는 configurable general agent로 실행한다. 해당 adapter에서 그것도 지원하지 않으면 `MODEL_BINDING_UNAVAILABLE`로 반환한다. skill이 실행 중인 자신의 모델을 바꾸거나 설정 누락을 복구하려고 setup을 자동 호출하지 않는다. 최초 setup처럼 모델 설정 자체가 없는 진입은 현재 세션에서 사용자 선택을 수집하고 설정을 완료한 뒤에만 모델을 지정한 subagent 실행을 시작한다.
 
 ## 입력과 저장
