@@ -4,7 +4,7 @@
 
 ## 실행 모델과 입력
 
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`과 `agents.low_performance_reasoning_effort`의 실제 값을 caller의 codex exec 실행기가 CLI에 전달한다. [공통 실행 계약](../skill-execution/GUIDE.md)을 따른다.
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`과 `agents.low_performance_reasoning_effort`의 실제 값을 caller의 codex exec 실행기가 CLI에 전달한다. [정적 호출기](../static-caller/GUIDE.md)를 따른다.
 
 입력은 `execution_id`, `workspace_root`, `shared_guidance_root`, `session_directory`, 요청 원문·확정 답변·이미 존재하는 산출물의 `input_refs`, 승인된 범위다. 최초 호출에 workflow 파일이 있다고 가정하지 않는다. 기존 workflow 수정 요청이면 caller가 현재 workflow와 변경 요청을 입력으로 전달한다.
 

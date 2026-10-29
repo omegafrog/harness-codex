@@ -4,7 +4,7 @@
 
 ## 기준
 
-최초 독립 리뷰는 요청 원문, Product Spec, Architecture Spec, 관련 결정·다이어그램·현행 계약과 모든 canonical plan을 직접 읽고 대조한다. 재리뷰는 아래 변경 범위 규칙을 따른다. Spec의 동작·제약·DDD 경계, 각 slice의 `max_plan_tokens`, plan 간 의존·인계, 업무 규칙 단위 테스트와 통합 후 단일 feature E2E 계약을 검토한다.
+최초 독립 리뷰는 요청 원문, review snapshot이 지정한 Product Spec·Architecture Spec, 관련 결정·다이어그램·현행 계약과 모든 canonical plan을 직접 읽고 대조한다. Spec 경로가 별도로 지정되지 않은 기본 위치는 `docs/specs/<plan-set-id>/product-spec.md`, `docs/specs/<plan-set-id>/architecture-spec.md`다. 재리뷰는 아래 변경 범위 규칙을 따른다. Spec의 동작·제약·DDD 경계, 각 slice의 `max_plan_tokens`, plan 간 의존·인계, 업무 규칙 단위 테스트와 통합 후 단일 feature E2E 계약을 검토한다.
 
 자동 검사는 전체 입력 snapshot과 이전 내용을 보존한다. 최초 리뷰는 전체를 읽고, 재리뷰는 `review_delta`의 변경 구간, 미해결 지적과 직접 영향을 받는 Spec·plan 관계만 새 reviewer가 확인한다. 이전에 통과한 무관한 항목은 유지한다. 이전 내용이 없거나 구간이 모호하면 해당 파일을 전체 검토한다. 변경 영향 판단은 reviewer가 수행하며 전체 snapshot gate는 계속 현재성을 확인한다.
 

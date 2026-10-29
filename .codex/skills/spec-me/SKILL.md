@@ -7,7 +7,7 @@ description: Turn a user request into Product Spec and Architecture Spec, then r
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
 
 ## What it does
 
@@ -30,7 +30,7 @@ If the request is about broken behavior, flaky regression, or performance regres
 3. 리뷰와 완료 gate를 통과한 Specs와 근거를 작업 branch에 보존한다. 신규 Spec 요청은 같은 worktree를 [`to-ticket`](../to-ticket/SKILL.md)에 넘긴다. 구현 중 설계 변경은 변경 Spec·결정·영향 요구 ID를 상위 구현 caller에 반환한다. caller는 영향 계획의 갱신과 리뷰를 `to-ticket`에 인계하고 승인 근거를 받은 뒤 보존한 fixed point에서 구현을 재개한다.
 ## Documents
 
-- Create `docs/specs/<plan-set-id>/` when missing.
+- Create `docs/specs/<plan-set-id>/` when missing. Product Spec은 `docs/specs/<plan-set-id>/product-spec.md`, Architecture Spec은 `docs/specs/<plan-set-id>/architecture-spec.md`에 둔다.
 - Spec artifacts use the selected `session_worktree`. Before accepting any writer/diagram result, verify every output resolves inside that directory. New Spec sessions preserve artifacts on the session branch until integration; design changes during implementation use the caller-owned workspace and return their approved artifacts to that caller.
 - Resolve the source tracker ticket before writing the Specs, then derive a short, human-readable English feature name from the agreed scope (for example, `solo-trpg-d6-narration`). Do not use the ticket number as `plan_set_id`.
 - Before dispatching the first Spec writer, bind the ID once to the active worktree with `node .codex/scripts/harness-workflow-worktree.mjs bind-plan-set-id --root <workspace_root> --feature-name <feature-name>`. The CLI creates a lowercase kebab-case slug from the agreed feature name. Read the returned canonical `worktree.json` value and use it for every Spec, diagram, System Target, Architecture Decision, plan, review, and handoff path. A fresh Spec worktree starts without this value; do not reuse an ID from an unrelated worktree. If `worktree.json` already has an ID, preserve it; never regenerate or overwrite it. Worktrees continuing this same plan set must receive its existing ID when they are created.
@@ -53,4 +53,4 @@ workflow 실행의 `session_directory`는 현재 작업을 위해 준비된 work
 
 ## Exec 호출의 질문 전달
 
-사용자 결정이 필요한 실행은 [공통 질문·답변 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md#질문과-답변)에 따라 질문 하나를 파일에 저장하고 `action_required / USER_DECISION_REQUIRED`로 반환한다. 질문 내용과 순서는 이 skill이 결정한다. 메인 orchestrator가 사용자에게 제시하고 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어간다. checkpoint와 이미 확정된 답변을 결과 파일에 보존한다.
+사용자 결정이 필요한 실행은 [질문 스키마](../../../.codex/internal-skills/skill-execution/schemas/question.schema.json)에 따라 질문을 결과의 `details.question`에 넣고 `action_required / USER_DECISION_REQUIRED`로 반환한다. 질문 내용과 순서는 이 skill이 결정한다. 메인 orchestrator가 사용자에게 제시하고 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어간다. checkpoint와 이미 확정된 답변을 결과 파일에 보존한다.

@@ -5,7 +5,7 @@
 ## 입력과 분석
 
 1. 전달된 `<session_directory>/worktree.json`에서 `workspace`, `branch`, `head`, `return_root`, `plan_set_id`를 읽는다. `plan_set_id`는 `spec-me`가 feature name에서 생성해 canonical `worktree.json`에 한 번 바인딩한 값이어야 하며 없으면 중단한다. Tracker ticket ID와 같을 필요는 없다. `workspace`를 `workspace_root`로 사용하고 명령의 `cwd` 및 하위 agent/tool에 전달한다. 진입 시 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --defer-tracker-sync --json`을 실행해 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다.
-2. 요청 원문, Product/Architecture Spec, 현행 `docs/contracts/`와 연결 다이어그램, 관련 System Target·accepted Architecture Decision을 읽는다. split 경계·기존 owner·실행 전제를 Spec에서 판별할 수 있는 만큼 현재 코드 조사가 필요하면 `code-research`를 실행한다.
+2. 요청 원문, Product/Architecture Spec, 현행 `docs/contracts/`와 연결 다이어그램, 관련 System Target·accepted Architecture Decision을 읽는다. 전달된 Spec 경로를 우선하고, 별도 지정이 없으면 `docs/specs/<plan-set-id>/request.md`, `docs/specs/<plan-set-id>/product-spec.md`, `docs/specs/<plan-set-id>/architecture-spec.md`를 읽는다. split 경계·기존 owner·실행 전제를 Spec에서 판별할 수 있는 만큼 현재 코드 조사가 필요하면 `code-research`를 실행한다.
 3. 원본 프로젝트의 `<shared_guidance_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 plan 예상 토큰과 산정 근거를 기록하고, 각 plan이 한도 안에 들도록 나눈다. Architecture Spec에 material technology choice가 있으면 `system-targets.yaml`의 `decision_metadata.decision_layer_version: 1`과 Architecture Decision ID, 승인 `decision_evidence_complete` 및 `decision_review_complete` 결과를 확인한다.
 
 ## 분할 제안과 승인

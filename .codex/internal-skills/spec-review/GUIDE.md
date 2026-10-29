@@ -4,7 +4,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
 
 완성된 Architecture Spec의 결함을 찾는 독립 리뷰다. Product Spec은 승인 요구의 기준으로 읽지만 Product 축 review는 실행하지 않는다. Normal/Learning 모두 실행하며, Learning의 사용자 결정/자료 승인 리뷰나 구현 후 code-review를 대체하지 않는다.
 
@@ -14,7 +14,7 @@ Architecture 작성자와 reviewer는 반드시 [Architecture Spec 리뷰 기준
 
 ## 리뷰 준비와 실행
 
-1. 확정된 사용자 답변과 Product/Architecture Spec을 안정화한다. Architecture 결정은 review 전에 해결한다. spec-me의 Architecture 리뷰는 두 Spec과 근거를 대상으로 다이어그램 생성 전에 한 번 수행하며, 렌더·링크·내용 일치는 후속 완료 gate에서 확인한다. 계획 단계의 변경은 canonical plan도 함께 반영한다. 통합 계약은 현행 구현 기준으로 읽고 최종 구현 통합 단계에서 갱신한다.
+1. `docs/specs/<plan-set-id>/request.md`에 보존된 요청·확정 답변과 `docs/specs/<plan-set-id>/product-spec.md`, `docs/specs/<plan-set-id>/architecture-spec.md`를 안정화한다. Architecture 결정은 review 전에 해결한다. spec-me의 Architecture 리뷰는 두 Spec과 근거를 대상으로 다이어그램 생성 전에 한 번 수행하며, 렌더·링크·내용 일치는 후속 완료 gate에서 확인한다. 계획 단계의 변경은 canonical plan도 함께 반영한다. 통합 계약은 현행 구현 기준으로 읽고 최종 구현 통합 단계에서 갱신한다.
 2. `harness-spec-review.mjs begin --root <workspace_root> --ticket <id> --axis architecture`를 실행한다. 추가 근거는 `--input <상대 경로>`로 포함한다. CLI가 반환한 `attempt_id`·`inputs`를 보존하고 `status: pass`일 때 fresh reviewer를 실행한다.
 3. 같은 축의 입력을 고정한 상태에서 리뷰 결과를 수집한다. reviewer에게 변경 범위와 이전 지적의 식별·해결 기록을 전달하되, 이전 판정 대조는 독립 검토 뒤 수행한다. caller는 새 지적과 기존 지적의 재발을 구분해 해결 여부를 기록한다.
 4. 원본 응답과 실제 agent metadata를 합친 리뷰 JSON을 저장하고 `harness-spec-review.mjs record --root <workspace_root> --ticket <id> --axis <axis> --attempt <attempt_id> --reviews <session-relative JSON>`을 실행한다. `record`는 pass·수정 필요·검토 중 입력 변경을 구분해 보존한다. reviewer 종료·취소는 먼저 agent를 종료한 뒤 `abort ... --attempt <attempt_id> --reason '<사유>'`로 기록한다.
