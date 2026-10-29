@@ -4,7 +4,6 @@ import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./lock.mjs";
 import { isWithin } from "../eval/util.mjs";
-import { sessionOutputPath } from "../workflow/session-output.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
 
@@ -327,11 +326,13 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     };
   }
   let backup_directory = null;
-  const backupPrefix = `runtime/installer-backups/${randomUUID()}`;
+  const backupPrefix = `.codex/installer-backups/${randomUUID()}`;
   for (const action of actions) {
     if (!action.backup) continue;
-    backup_directory ||= sessionOutputPath(resolve(targetRoot), backupPrefix);
-    await writeFile(sessionOutputPath(resolve(targetRoot), `${backupPrefix}/${action.descriptor.target_path}`), action.backup, { flag: "wx", mode: 0o600 });
+    const backup = await containedPath(targetRoot, `${backupPrefix}/${action.descriptor.target_path}`);
+    backup_directory ||= resolve(targetRoot, backupPrefix);
+    await mkdir(dirname(backup.path), { recursive: true, mode: 0o700 });
+    await writeFile(backup.path, action.backup, { flag: "wx", mode: 0o600 });
   }
   for (const action of actions) {
     if (action.retired) {

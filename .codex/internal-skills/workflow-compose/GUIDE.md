@@ -1,6 +1,6 @@
 # Workflow 준비
 
-사용자의 최초 요청 원문을 입력받는다.
+사용자의 최초 요청 원문은 실행 입력의 `scope`에서 읽는다. 준비 명령은 main 브랜치에서 worktree를 만든 뒤 그 안에 입력을 작성한다. 메인 workspace에는 `.io`를 만들지 않는다.
 
 1. 실행 입력의 `context.worktree_ref`로 준비된 정본 `worktree.json`을 읽는다. worktree 준비는 호출자의 `harness-compose-workspace.mjs`가 담당한다.
 2. 사용자 요청에 필요한 skill, 단계와 의존 관계를 결정하고 `.codex/internal-skills/workflow-compose/schemas/workflow.schema.json`에 맞는 `runtime/orchestrator/workflow.json`을 실행 session에 작성한다. 기존 파일에 `state`가 있으면 그대로 보존한다.

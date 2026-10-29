@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sessionOutputPath } from '../workflow/session-output.mjs';
+import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 
 const STATUS = 'Preparing Harness workflow composition';
 const EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
@@ -53,8 +53,13 @@ export async function syncOrchestratorHook(root) {
     });
     config.hooks[event] = [...groups, { hooks: [orchestratorHook(root)] }];
   }
-  if (text !== null) await writeFile(sessionOutputPath(root, `runtime/installer-backups/hooks-${randomUUID()}/hooks.json`), text, { mode: 0o600 });
-  const temporary = sessionOutputPath(root, `tmp/hooks-${randomUUID()}.json`);
+  if (text !== null) {
+    const backup = `.codex/installer-backups/hooks-${randomUUID()}`;
+    await assertWorkspaceTarget(root, `${backup}/hooks.json`);
+    await mkdir(join(root, backup), { recursive: true, mode: 0o700 });
+    await writeFile(join(root, backup, 'hooks.json'), text, { mode: 0o600 });
+  }
+  const temporary = join(root, '.codex', `.hooks-${randomUUID()}.json`);
   await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, path);
 }

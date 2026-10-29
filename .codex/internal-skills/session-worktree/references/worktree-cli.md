@@ -45,3 +45,5 @@ node .codex/scripts/harness-workflow-worktree.mjs create --root <source_workspac
 node .codex/scripts/harness-workflow-worktree.mjs bind-plan-set-id --root <workspace> --feature-name "Solo TRPG D6 narration"
 node .codex/scripts/harness-workflow-worktree.mjs finish --root <workspace> --outcome aborted
 ```
+
+신규 worktree는 `main`에서 생성한다. 생성 전 소유 예약과 잠금은 Git common directory의 `harness-reservations/`에서 lifecycle CLI가 관리한다. 메인 workspace의 `.io`를 예약 저장소로 쓰지 않는다. 요청·입력·workflow·실행 기록은 생성된 worktree의 `.io`에만 둔다.

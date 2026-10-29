@@ -47,7 +47,7 @@ export function parseWorktreeRecord(text) {
 }
 async function storage(repository) {
   const common = await realpath(resolve(repository, await git(repository, ['rev-parse', '--git-common-dir'])));
-  const directory = join(sessionDirectory(repository), 'reservations');
+  const directory = join(common, 'harness-reservations');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   return { common, directory };
 }
@@ -207,7 +207,7 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, branch: sessionBranch, plan_set_id });
   try {
     if (branch) await git(workspace_root, ['worktree', 'add', '--', workspace, branch]);
-    else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'HEAD']);
+    else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'main']);
     signal?.throwIfAborted();
     const record = await registerWorkflowWorktree({ workspace_root: workspace, return_root: returnRoot, plan_set_id });
     await provisionWorktreeRuntime(sourceWorkspace, workspace);

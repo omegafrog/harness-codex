@@ -1,5 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 export async function writeOutputSchema({ root, input, prefix, path }) {
   const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
@@ -13,5 +13,6 @@ export async function writeOutputSchema({ root, input, prefix, path }) {
   delete schema.$schema;
   delete schema.properties.result.$schema;
   if (!schema.required.includes('result')) schema.required.push('result');
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, JSON.stringify(schema, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 }

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -21,10 +20,8 @@ export async function writeExecutionInput(root, input, planSetId) {
 
 export async function findExecutionInput(root, executionId) {
   if (!ID.test(executionId || '')) throw new Error('Invalid execution ID');
-  const listing = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' });
-  const primary = listing.split('\0').find((item) => item.startsWith('worktree '))?.slice(9);
   const matches = [];
-  for (const workspace of new Set([resolve(root), ...(primary ? [resolve(primary)] : [])])) {
+  for (const workspace of [resolve(root)]) {
     const directory = join(workspace, '.io');
     const plans = await readdir(directory, { withFileTypes: true }).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
     for (const plan of plans.filter((entry) => entry.isDirectory() && ID.test(entry.name))) {

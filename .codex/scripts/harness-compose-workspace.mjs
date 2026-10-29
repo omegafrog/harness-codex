@@ -8,17 +8,22 @@ const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
 const source = new URL('../../src/workflow/', import.meta.url);
 const base = existsSync(new URL('composer-workspace.mjs', installed)) && !sourceCheckout ? installed : source;
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
-const { prepareComposerWorkspace } = await import(new URL('composer-workspace.mjs', base));
+const { createComposerWorkspace, prepareComposerWorkspace } = await import(new URL('composer-workspace.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
     const k = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
+    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'plan-set-id', 'request', 'codex-session-id'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
   if (!isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute root and execution-id are required');
+  if (opts.request !== undefined) {
+    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], codex_session_id: opts['codex-session-id'] });
+    process.stdout.write(`${JSON.stringify(record)}\n`);
+    process.exit(0);
+  }
   const session = await cliSession(opts.root, opts['worktree-ref']);
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');
