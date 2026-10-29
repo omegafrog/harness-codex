@@ -14,34 +14,32 @@ import { ExecutionSlotRegistry, buildImplementPrompt } from "../src/wrapper/sche
 import { makeContractsFixture } from "./contracts-fixture.mjs";
 import { sealContracts } from "../src/contracts/contracts.mjs";
 import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
-import { snapshotPlanTraceability } from "../src/workflow/plan-traceability.mjs";
+import { updatePlanReview } from "../src/workflow/plan-review.mjs";
 
 import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
 
 const execFileAsync = promisify(execFile);
 
-test("implementation prompt accepts canonical GitHub plans and separate ticket IDs", () => {
+test("implementation prompt uses the reviewed canonical plan file and linked Spec paths", () => {
   const prompt = buildImplementPrompt({
     repository: process.cwd(),
     workspaceRoot: process.cwd(),
     planSetId: "plan-set",
     planId: "plan-a",
-    planPath: "owner/repo#456",
-    traceabilityRefs: {
-      plan_reference: "owner/repo#456",
+    planPath: "docs/plans/plan-set/plan-a.md",
+    planReviewRefs: {
+      plan_reference: "docs/plans/plan-set/plan-a.md",
       ticket_id: "ticket-123",
       product_spec_path: "docs/specs/ticket-123/product-spec.md",
       architecture_spec_path: "docs/specs/ticket-123/architecture-spec.md",
-      ledger_path: "docs/plans/plan-set/traceability.json",
-      requirement_ids: ["BR-1"],
     },
   });
-  assert.match(prompt, /Plan: owner\/repo#456/);
+  assert.match(prompt, /Plan: docs\/plans\/plan-set\/plan-a\.md/);
   assert.match(prompt, /Product Spec: docs\/specs\/ticket-123\/product-spec\.md/);
+  assert.match(prompt, /Compare the selected plan directly with the Product and Architecture Specs/);
 });
 
 async function makeSessionTemp(prefix) {
-  assert.ok(process.env.HARNESS_SESSION_DIR, "Run this test through harness-exec");
   const directory = sessionOutputPath(process.cwd(), "tmp");
   await mkdir(directory, { recursive: true });
   return mkdtemp(join(directory, prefix));
@@ -55,13 +53,11 @@ async function makeReadyProject() {
   const fixture = await makeContractsFixture({ root: await makeSessionTemp("wrapper-ready-") });
   await mkdir(join(fixture.root, "docs/agents"), { recursive: true });
   await writeFile(join(fixture.root, "docs/agents/EXEC.md"), "Project execution instructions.\n");
-  await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {
-    test: { command: ["node", "-e", "process.exit(0)"], required_env: [], config_inputs: ["src/implementation.mjs", "tests/implementation.test.mjs"], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 },
-  } }));
+  await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {} }));
   const root = fixture.root;
   await mkdir(join(root, "tests"), { recursive: true });
   await writeFile(join(root, "src/implementation.mjs"), "export const implemented = true;\n");
-  await writeFile(join(root, "tests/implementation.test.mjs"), "assert.equal(true, true);\n");
+  await writeFile(join(root, "tests/implementation.test.mjs"), "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('business rule fixture', () => assert.equal(true, true));\n");
   const spec = "docs/specs/496";
   const base = "docs/plans/496";
   const ids = ["plan-a", "plan-b", "plan-contracts"];
@@ -74,36 +70,22 @@ async function makeReadyProject() {
   await writeFile(join(root, `${spec}/product-spec.md`), `# Product\n${requirements.map(({ id, statement }) => `- **${id}:** ${statement}`).join("\n")}\n`);
   await writeFile(join(root, `${spec}/architecture-spec.md`), "# Architecture\nNo additional declared IDs.\n");
   const plans = ids.map((id, index) => ({
-    id, requirement_ids: [`${spec}/product-spec.md#BR-${index + 1}`], content_path: `${base}/${id}.md`, verification_profile: "test",
+    id, requirement_ids: [`${spec}/product-spec.md#BR-${index + 1}`], content_path: `${base}/${id}.md`, verification_command: "node --test tests/implementation.test.mjs", verification_files: ["tests/implementation.test.mjs"],
     acceptance_criteria: [`Acceptance for ${id}.`], counterexamples: [`Counterexample for ${id}.`], verification_cases: [`Verification for ${id}.`],
   }));
-  await writeFile(join(root, `${base}/plans.md`), `# Plans\n${ids.join("\n")}\n`);
-  for (const plan of plans) await writeFile(join(root, plan.content_path), `${plan.id} BR-${plan.requirement_ids[0].split("#").at(-1).split("-").at(-1)}\n${plan.acceptance_criteria[0]}\n${plan.counterexamples[0]}\n${plan.verification_cases[0]}\n`);
-  const ledgerPath = join(root, base, "traceability.json");
-  const ledger = { schema_version: 1, plan_set_id: "496", ticket_id: "496", spec_paths: [`${spec}/product-spec.md`, `${spec}/architecture-spec.md`], requirements, plans };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  ledger.review = { reviewer_id: "independent-reviewer", author_ids: ["plan-author"], fork_turns: "none", verdict: "pass", findings: [], inputs: (await snapshotPlanTraceability({ root, planSetId: "496" })).inputs };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Traceability dispatch fixture", no_contract_change: "Add temporary plan/spec fixture inputs" })).status, "pass");
+  await writeFile(join(root, `${base}/plans.md`), `# Plans\n- Product Spec: \`${spec}/product-spec.md\`\n- Architecture Spec: \`${spec}/architecture-spec.md\`\n${ids.map((id) => `- ${id}`).join("\n")}\n`);
+  for (const plan of plans) await writeFile(join(root, plan.content_path), `${plan.id} BR-${plan.requirement_ids[0].split("#").at(-1).split("-").at(-1)}\n${plan.acceptance_criteria[0]}\n${plan.counterexamples[0]}\n${plan.verification_cases[0]}\ntests/implementation.test.mjs\n`);
+  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Plan review dispatch fixture", no_contract_change: "Add temporary plan/spec fixture inputs" })).status, "pass");
+  const admission = await updatePlanReview({ root, planSetId: "496", action: "begin" });
+  await updatePlanReview({ root, planSetId: "496", action: "record", attemptId: admission.attempt_id, review: { plan_set_id: "496", reviewer_id: "independent-reviewer", author_ids: ["plan-author"], fork_turns: "none", verdict: "pass", findings: [], inputs: admission.inputs } });
   await execFileAsync("git", ["add", "docs/agents", "docs/specs", "docs/plans", "docs/contracts", "src/implementation.mjs", "tests/implementation.test.mjs"], { cwd: root });
-  await execFileAsync("git", ["commit", "-qm", "traceability test plans"], { cwd: root });
+  await execFileAsync("git", ["commit", "-qm", "plan review dispatch fixture"], { cwd: root });
   return fixture;
 }
 
 async function recordImplementationEvidence(root, planId) {
-  const { stdout } = await execFileAsync(process.execPath, [new URL("../.codex/scripts/harness-exec.mjs", import.meta.url).pathname, "--root", root, "--profile", "test"], { cwd: root, encoding: "utf8", env: process.env });
-  const execution = JSON.parse(stdout);
-  const ledgerPath = join(root, "docs/plans/496/traceability.json");
-  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-  const plan = ledger.plans.find((item) => item.id === planId);
-  const requirementId = plan.requirement_ids[0];
-  const evidence = async (path) => ({ path, sha256: createHash("sha256").update(await readFile(join(root, path))).digest("hex") });
-  ledger.implementation = {
-    ...(ledger.implementation || {}),
-    [planId]: { requirements: [{ requirement_id: requirementId, files: [await evidence("src/implementation.mjs")], verification: [await evidence("tests/implementation.test.mjs")], receipt: execution.evidence_path.replace(`${sessionDirectory(root)}/`, "") }] },
-  };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Record implementation evidence", no_contract_change: "Add execution evidence to the plan ledger" })).status, "pass");
+  assert.ok(planId);
+  return execFileAsync(process.execPath, ["--test", "tests/implementation.test.mjs"], { cwd: root, encoding: "utf8", env: process.env });
 }
 
 test("sequential dispatch requires the caller's explicit execution line", async () => {
@@ -312,6 +294,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace_root, result.workspace.workspace);
     assert.equal(result.child.workspace_root, result.workspace.workspace);
     assert.equal(result.child.cwd, result.workspace.workspace);
+    assert.equal(JSON.parse(await readFile(sessionOutputPath(result.workspace.workspace, "worktree.json"), "utf8")).plan_set_id, "496");
     assert.ok(result.prompt.includes("workspace_mode: parallel"));
     assert.ok(result.prompt.includes(`workspace_reference: ${join(result.workspace.workspace, ".codex/internal-skills/session-worktree/references/parallel.md")}`));
     assert.equal(result.prompt.includes("references/sequential.md"), false);
@@ -336,13 +319,14 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     repository: "/workspace/repo",
     commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
-    config: { agents: { implementation_model: "review-model" } },
+    config: { agents: { implementation_model: "review-model", implementation_reasoning_effort: "medium" } },
     spawnReviewer: async (input) => {
       calls.push(input);
       return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha, independent: true, fresh_context: true, context_id: `${input.agent_type}-context` };
     },
   });
   assert.deepEqual(reports.map(({ role }) => role), ["standards", "spec"]);
+  assert.ok(calls.every((call) => call.model === "review-model" && call.reasoning_effort === "medium"));
   assert.deepEqual(reports.map(({ implementation_commit_sha }) => implementation_commit_sha), ["abc123", "abc123"]);
   assert.deepEqual(calls.map(({ agent_type, fresh_context, empty_context }) => ({ agent_type, fresh_context, empty_context })), [
     { agent_type: "standards_reviewer", fresh_context: true, empty_context: true },
@@ -380,7 +364,7 @@ test("implementation lifecycle blocks completion and dependents when contracts a
         if (++runCount === 2) await unlink(join(root, "docs/contracts/manifest.json"));
         return { state: "completed", workspace_root: root, commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" };
       },
-      config: { agents: { implementation_model: "implementation-model" } },
+      config: { agents: { implementation_model: "implementation-model", implementation_reasoning_effort: "medium" } },
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
         independent: true,
@@ -433,7 +417,7 @@ test('repair reviewers retain the original completion scope and canonical refere
         slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
         spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
         waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
-        config: { agents: { implementation_model: 'implementation-model' } },
+        config: { agents: { implementation_model: 'implementation-model', implementation_reasoning_effort: "medium" } },
         spawnReviewer: async ({ agent_type }) => ({ state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'implementation_defect', summary: 'Fix replay' }] : [] }),
         reviewRepair: {
           dispatch: async () => ({ plan_id: 'plan-contracts', state: 'completed', commit_sha: fixed, commit_list: [base, initial, fixed], diff: 'diff --git a/src/a b/src/a', fresh_context: true, empty_context: true }),
@@ -469,7 +453,7 @@ test('design blockers preserve the Spec handoff in the execution checkpoint', as
         slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
         spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
         waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
-        config: { agents: { implementation_model: 'implementation-model' } },
+        config: { agents: { implementation_model: 'implementation-model', implementation_reasoning_effort: "medium" } },
         spawnReviewer: async ({ agent_type }) => ({ state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'architecture_decision', summary: 'Fix replay' }] : [] }),
         trackerSnapshot: { status: 'Done', project_status: 'Done' },
       });
@@ -499,15 +483,11 @@ test('changed and reapproved planning inputs block repair before a reservation',
         slotRegistry: new ExecutionSlotRegistry(), model: 'test-model', smartZone: { phase: 'dispatch', state: 'fits', evidence: 'dispatch fits' },
         spawnImplement: async () => ({ context_id: 'implement-contracts' }), captureFixedPoint: async () => base,
         waitForImplementation: async () => ({ state: 'completed', workspace_root: root, commit_sha: initial, commit_list: [base, initial], diff: 'diff --git a/src/a b/src/a' }),
-        config: { agents: { implementation_model: 'implementation-model' } },
+        config: { agents: { implementation_model: 'implementation-model', implementation_reasoning_effort: "medium" } },
         spawnReviewer: async ({ agent_type }) => {
           if (agent_type === 'spec_reviewer') {
             const spec = join(root, 'docs/specs/496/product-spec.md');
             await writeFile(spec, (await readFile(spec, 'utf8')) + '\nChanged decision evidence after admission.\n');
-            const ledgerPath = join(root, 'docs/plans/496/traceability.json');
-            const ledger = JSON.parse(await readFile(ledgerPath, 'utf8'));
-            ledger.review.inputs = (await snapshotPlanTraceability({ root, planSetId: '496' })).inputs;
-            await writeFile(ledgerPath, JSON.stringify(ledger));
           }
           return { state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'implementation_defect', summary: 'Fix replay' }] : [] };
         },
@@ -537,7 +517,7 @@ test("implementation lifecycle completes with sealed canonical contracts", async
       slotRegistry: new ExecutionSlotRegistry(), model: "test-model", smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       spawnImplement: async () => ({ context_id: "implement-contracts" }), captureFixedPoint: async () => base,
       waitForImplementation: async () => ({ state: "completed", workspace_root: root, commit_sha: "implementation-contracts", commit_list: [base, "implementation-contracts"], diff: "diff --git a/src/a b/src/a" }),
-      config: { agents: { implementation_model: "implementation-model" } },
+      config: { agents: { implementation_model: "implementation-model", implementation_reasoning_effort: "medium" } },
       spawnReviewer: async ({ agent_type }) => ({ state: "passed", independent: true, fresh_context: true, context_id: `${agent_type}-contracts`, implementation_commit_sha: "implementation-contracts" }),
       pr: { merged: false }, trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
     });
@@ -573,7 +553,7 @@ test("implementation lifecycle blocks a result reported from a different workspa
       spawnImplement: async () => ({ context_id: "implement-wrong-root" }),
       captureFixedPoint: async () => "base-1",
       waitForImplementation: async () => ({ state: "completed", workspace_root: join(root, "elsewhere"), commit_sha: "implementation-1" }),
-      config: { agents: { implementation_model: "implementation-model" } },
+      config: { agents: { implementation_model: "implementation-model", implementation_reasoning_effort: "medium" } },
       spawnReviewer: async () => { throw new Error("review must not run after workspace mismatch"); },
     }), (error) => error.reason === "workspace_mismatch");
     await store.close();
@@ -590,10 +570,10 @@ test("implementation profile is optional and accepts configured or explicit valu
 });
 
 test("reviewer model binding resolves configured model and fails without setup", () => {
-  assert.deepEqual(resolveReviewerProfile({ config: { agents: { implementation_model: "configured-review-model" } } }), { model: "configured-review-model" });
-  assert.deepEqual(resolveReviewerProfile({ config: { agents: { low_performance_model: "legacy-review-model" } } }), { model: "legacy-review-model" });
-  assert.deepEqual(resolveReviewerProfile({ profile: { model: "explicit-review-model" }, config: { agents: { implementation_model: "configured-review-model" } } }), { model: "explicit-review-model" });
-  assert.deepEqual(resolveReviewerProfile(), { model: null });
+  assert.deepEqual(resolveReviewerProfile({ config: { agents: { implementation_model: "configured-review-model", implementation_reasoning_effort: "medium" } } }), { model: "configured-review-model", reasoning_effort: "medium" });
+  assert.deepEqual(resolveReviewerProfile({ config: { agents: { low_performance_model: "legacy-review-model" } } }), { model: "legacy-review-model", reasoning_effort: null });
+  assert.deepEqual(resolveReviewerProfile({ profile: { model: "explicit-review-model" }, config: { agents: { implementation_model: "configured-review-model", implementation_reasoning_effort: "medium" } } }), { model: "explicit-review-model", reasoning_effort: "medium" });
+  assert.deepEqual(resolveReviewerProfile(), { model: null, reasoning_effort: null });
 });
 
 test("loaded harness configuration exposes agent model bindings to dispatch", async () => {
@@ -601,7 +581,7 @@ test("loaded harness configuration exposes agent model bindings to dispatch", as
   const config = await loadHarnessConfig(process.cwd());
   assert.equal(config.agents.low_performance_model, "gpt-6-luna");
   assert.equal(config.agents.implementation_model, "gpt-6-luna");
-  assert.deepEqual(resolveReviewerProfile({ config }), { model: "gpt-6-luna" });
+  assert.deepEqual(resolveReviewerProfile({ config }), { model: "gpt-6-luna", reasoning_effort: "high" });
 });
 
 test("explicit implementation model can override configured default", () => {
@@ -622,7 +602,7 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
     repository: "/workspace/repo",
     commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
-    config: { agents: { implementation_model: "review-model" } },
+    config: { agents: { implementation_model: "review-model", implementation_reasoning_effort: "medium" } },
     spawnReviewer: async ({ agent_type }) => {
       await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
       completed.push(agent_type);
@@ -691,7 +671,7 @@ test("review input rejects an empty diff and cross-ticket spec path", async () =
   let spawned = 0;
   const canonical = { kind: 'file', reference: 'docs/plans/496/plan-a.md', input_key: 'docs/plans/496/plans/plan-a#canonical', hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: 'a'.repeat(64) };
   for (const broken of [null, { ...canonical, normalization: 'raw-file' }, { ...canonical, sha256: 'invalid' }, { ...canonical, reference: '../other-plan.md' }]) {
-    await assert.rejects(() => runIndependentReviewers({ ...input, diff: 'diff', traceabilityRefs: { canonical_plan: broken }, spawnReviewer: async () => { spawned++; } }), /Canonical plan/);
+    await assert.rejects(() => runIndependentReviewers({ ...input, diff: 'diff', planReviewRefs: { canonical_plan: broken }, spawnReviewer: async () => { spawned++; } }), /Canonical plan/);
   }
   assert.equal(spawned, 0);
 
@@ -785,7 +765,7 @@ test('review aggregation waits for both axes before returning an early failed re
   let bothStarted;
   const started = new Promise((resolve) => { bothStarted = resolve; });
   let returned = false;
-  const pending = runIndependentReviewers({ plan: { id: 'plan-a' }, implementation: { commit_sha: 'impl' }, fixedPoint: 'base', planSetId: '496', repository: '/workspace/repo', commitList: ['base', 'impl'], diff: 'diff', config: { agents: { implementation_model: 'review-model' } },
+  const pending = runIndependentReviewers({ plan: { id: 'plan-a' }, implementation: { commit_sha: 'impl' }, fixedPoint: 'base', planSetId: '496', repository: '/workspace/repo', commitList: ['base', 'impl'], diff: 'diff', config: { agents: { implementation_model: 'review-model', implementation_reasoning_effort: "medium" } },
     spawnReviewer: ({ agent_type }) => new Promise((resolve) => { releases.set(agent_type, () => resolve({ state: 'failed', independent: true, fresh_context: true, context_id: agent_type, implementation_commit_sha: 'impl', findings: [{ kind: 'test_defect', summary: agent_type }] })); if (releases.size === 2) bothStarted(); }),
   }).then((reviews) => { returned = true; return reviews; });
   await started;

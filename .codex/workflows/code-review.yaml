@@ -1,7 +1,8 @@
 schema_version: 1
 id: code-review
+orchestrator: orchestrator
 roles: [standards_reviewer, spec_reviewer]
-skills: [code-review]
+skills: [orchestrator, code-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]

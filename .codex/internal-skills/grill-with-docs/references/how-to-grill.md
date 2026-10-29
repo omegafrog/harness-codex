@@ -93,7 +93,7 @@ Examples:
     Confirmation questions should be used selectively when a decision is important or when misunderstanding it would materially affect the Product Spec. The agent should not repeatedly restate every answer.
 
 11. **Completion Questions**
-    Use completion questions near the end of the interview to detect missing requirements, exceptions, or concerns before generating the Product Spec.
+    Use a completion question only when available context leaves a material stakeholder decision unresolved. Do not ask a generic final confirmation when the request, prior answers, or explicit delegation already settle the scope.
 
     Examples:
 

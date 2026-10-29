@@ -127,6 +127,6 @@ completed-only 통계는 성공 표본이다. 실패·취소를 포함한 전체
 
 ## 검사
 
-설치된 `victorialogs-diagnostic-logs` 실행 profile은 `HARNESS_DIAGNOSTIC_LOG_FILE`이 가리키는 원본 JSONL 또는 단일 JSON 예시를 검사한다. 이 검사는 Docker/서버 없이 실행된다. profile의 인자·env·설정 원본은 EXEC/execution.json에서 함께 관리한다. 예시 파일만 통과한 결과로 실제 앱 emitter/context propagation·redaction·수집·MCP 연결까지 검증됐다고 주장하지 않는다.
+기본 `harness-victorialogs.mjs validate-logs` CLI는 지정한 원본 JSONL 또는 단일 JSON 예시를 검사한다. 이 검사는 Docker/서버 없이 실행된다. profile의 인자·env·설정 원본은 EXEC/execution.json에서 함께 관리한다. 예시 파일만 통과한 결과로 실제 앱 emitter/context propagation·redaction·수집·MCP 연결까지 검증됐다고 주장하지 않는다.
 
 Source: [OTel LogRecord](https://opentelemetry.io/docs/specs/otel/logs/data-model/) · [VictoriaLogs OTLP ingestion](https://docs.victoriametrics.com/victorialogs/data-ingestion/opentelemetry/) · [VictoriaLogs 중첩 필드 저장](https://docs.victoriametrics.com/victorialogs/keyconcepts/).

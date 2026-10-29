@@ -66,6 +66,28 @@ test("approval hash sorts keys and excludes approval, status, history, derived r
   assert.equal(computeApprovalHash({ evidence_ids: ["e-1"] }), computeApprovalHash({ evidence_ids: ["e-1"] }), "referenced evidence bodies are never included in the subject hash");
 });
 
+test("decision hash CLI uses the gate's canonical object for draft and changed decisions", async () => {
+  const root = await mkdtemp(join(process.env.HARNESS_SESSION_DIR || tmpdir(), 'decision-hash-'));
+  try {
+    const proposed = { ...structuredClone(DECISION), status: 'proposed' };
+    delete proposed.approval;
+    await writeArchitectureDecision({ root, ticketId: 'feature', decision: proposed });
+    const cli = () => spawnSync(process.execPath, [join(ROOT, '.codex/scripts/harness-decision-gate.mjs'), 'decision_subject_hash', '--ticket', 'feature', '--decision', proposed.id], { cwd: root, encoding: 'utf8' });
+    const draft = cli();
+    assert.equal(draft.status, 0, draft.stderr);
+    const approvedHash = JSON.parse(draft.stdout).subject_hash;
+    assert.equal(approvedHash, computeApprovalHash(proposed));
+    const accepted = { ...proposed, status: 'accepted', approval: { approver: 'user', approved_at: '2026-01-01T00:00:00Z', subject_hash: approvedHash } };
+    await writeArchitectureDecision({ root, ticketId: 'feature', decision: accepted });
+    assert.equal(JSON.parse(cli().stdout).subject_hash, approvedHash);
+    await writeFile(join(root, 'docs/specs/feature/architecture-decisions', `${proposed.id}.yaml`), JSON.stringify({ ...accepted, rationale: 'A different substantive reason' }));
+    const changed = cli();
+    assert.equal(changed.status, 0, changed.stderr);
+    assert.notEqual(JSON.parse(changed.stdout).subject_hash, approvedHash);
+    await assert.rejects(readArchitectureDecision({ root, ticketId: 'feature', decisionId: proposed.id }), /content changed after approval/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("decision validation requires code or infrastructure, refs, alternatives and reviewable content", () => {
   const result = validateArchitectureDecision(withValidApproval(), { targetIds: ["growth-boundary"] });
   assert.equal(result.valid, true, JSON.stringify(result.errors));

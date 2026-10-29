@@ -1,6 +1,5 @@
 name = "diagram_creator"
 description = "Create and validate ticket-scoped PlantUML diagrams and SVG artifacts"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

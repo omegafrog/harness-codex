@@ -52,7 +52,8 @@ function model(manifest) {
 }
 async function snapshot(root, manifest) {
   const files = new Set([`${DIRECTORY}/product.md`, `${DIRECTORY}/architecture.md`, "CONTEXT.md", "CONTEXT-MAP.md"]);
-  if (!Array.isArray(manifest.source_roots) || !manifest.source_roots.length) throw new Error("source_roots must cover the implementation");
+  const emptyInventory = Array.isArray(manifest.features) && manifest.features.length === 0 && Array.isArray(manifest.components) && manifest.components.length === 0;
+  if (!Array.isArray(manifest.source_roots) || (!manifest.source_roots.length && !(emptyInventory && text(manifest.empty_project_reason)))) throw new Error("source_roots must cover the implementation or document an empty project");
   for (const path of new Set([...manifest.source_roots, "docs/specs", "docs/plans"])) {
     if (path === "." || path.startsWith(DIRECTORY) || path.startsWith(".git/")) throw new Error(`Invalid source root: ${path}`);
     if (manifest.source_roots.includes(path)) await safePath(root, path);
@@ -95,8 +96,10 @@ async function validate(root, manifest) {
   require(Number.isInteger(manifest.revision) && manifest.revision > 0, "revision must be a positive integer");
   require(validDate(manifest.updated_at), "updated_at must be YYYY-MM-DD");
   require(text(manifest.change_summary), "change_summary is required");
-  require(Array.isArray(manifest.features) && manifest.features.length > 0, "features are required");
-  require(Array.isArray(manifest.components) && manifest.components.length > 0, "components are required");
+  require(Array.isArray(manifest.features), "features must be an array");
+  require(Array.isArray(manifest.components), "components must be an array");
+  const emptyInventory = Array.isArray(manifest.features) && manifest.features.length === 0 && Array.isArray(manifest.components) && manifest.components.length === 0;
+  require(emptyInventory ? text(manifest.empty_project_reason) : !Object.hasOwn(manifest, "empty_project_reason"), "An empty project reason is required only when no features or components exist");
   require(Array.isArray(manifest.diagrams), "diagrams are required");
   if (errors.length) return errors;
   const productText = await read(root, `${DIRECTORY}/product.md`);
@@ -141,11 +144,11 @@ async function validate(root, manifest) {
     for (const child of manifest.components.filter((c) => c.owner === component.id)) require(body.includes(`architecture.md#${child.id})`), `Missing child link: ${component.id} -> ${child.id}`);
     for (const source of component.sources || []) await safePath(root, source);
   }
-  require(manifest.diagrams.some((d) => d.kind === "ddd" && d.source), "Missing DDD diagram");
+  require(manifest.diagrams.some((d) => d.kind === "ddd" && (d.source || (emptyInventory && text(d.reason)))), "Missing DDD diagram or empty-model reason");
   require(manifest.diagrams.some((d) => d.kind === "class" && (d.source || text(d.reason))), "Missing class diagram or reason");
   for (const diagram of manifest.diagrams) {
     require(["ddd", "class", "sequence", "state"].includes(diagram.kind), `Unknown diagram kind: ${diagram.kind}`);
-    if (!diagram.source) { require(diagram.kind !== "ddd" && diagram.kind !== "sequence" && text(diagram.reason), "Diagram omission needs a reason"); continue; }
+    if (!diagram.source) { require(diagram.kind !== "sequence" && (diagram.kind !== "ddd" || emptyInventory) && text(diagram.reason), "Diagram omission needs a reason"); continue; }
     require(diagram.source.startsWith(`${DIRECTORY}/diagrams/`) && diagram.source.endsWith(".puml"), `Invalid diagram path: ${diagram.source}`);
     const source = await read(root, diagram.source), svg = await read(root, diagram.source.replace(/\.puml$/, ".svg"));
     require(!/^\s*!include/m.test(source), `Canonical diagrams must be self-contained: ${diagram.source}`);

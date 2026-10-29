@@ -1,6 +1,5 @@
 name = "knowledge_claim_extractor"
 description = "Extract atomic, source-located Claims for engineering knowledge harvest"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

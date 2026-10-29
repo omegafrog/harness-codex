@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { inspectContracts, sealContracts } from "../src/contracts/contracts.mjs";
+import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 import { updateProject, writeHarnessLock } from "../src/installer/update.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
 import { sessionOutputPath } from "../src/workflow/session-output.mjs";
@@ -34,6 +35,42 @@ test("first seal creates the HTML view in a fresh repository without HEAD", asyn
     assert.equal((await inspectContracts({ workspace_root: root })).status, "pass");
     assert.match(await readFile(join(root, "docs/contracts/architecture.html"), "utf8"), /DDD 아키텍처/);
   } finally { await cleanup(); }
+});
+
+test("an explicitly empty project contract seals and passes from the installed consumer runtime", async () => {
+  const temp = sessionOutputPath(process.cwd(), "tmp");
+  await mkdir(temp, { recursive: true });
+  const root = await mkdtemp(join(temp, "empty-contracts-"));
+  try {
+    const run = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(run(["init", "-q"]).status, 0);
+    await mkdir(join(root, "docs/contracts"), { recursive: true });
+    await writeFile(join(root, "CONTEXT.md"), "# 용어\n아직 구현된 제품 용어가 없습니다.\n");
+    await writeFile(join(root, "CONTEXT-MAP.md"), "# Context Map\n아직 구현된 bounded context가 없습니다.\n");
+    await writeFile(join(root, "docs/contracts/product.md"), "# Product 계약\n현재 구현된 제품 기능이 없습니다.\n");
+    await writeFile(join(root, "docs/contracts/architecture.md"), "# Architecture 계약\n현재 구현된 제품 구성요소가 없습니다.\n");
+    await writeFile(join(root, "docs/contracts/manifest.json"), `${JSON.stringify({
+      schema_version: 1, revision: 0, updated_at: "2026-10-28", change_summary: "초기 빈 프로젝트 기준선",
+      empty_project_reason: "저장소에 제품 구현 코드·기능·도메인 구성요소가 아직 없다.",
+      source_roots: [], features: [], components: [],
+      diagrams: [
+        { kind: "ddd", reason: "구현된 domain component가 없어 DDD diagram을 생략한다." },
+        { kind: "class", reason: "구현된 class가 없어 class diagram을 생략한다." },
+      ], hashes: {},
+    }, null, 2)}\n`);
+    const sealed = await sealContracts({ workspace_root: root, change_summary: "초기 빈 프로젝트 계약 기준선" });
+    assert.equal(sealed.status, "pass", sealed.violations.join("; "));
+
+    await protectLocalInstallArtifacts(root, process.cwd());
+    await updateProject({ sourceRoot: process.cwd(), targetRoot: root, initialize: true });
+    const installed = spawnSync(process.execPath, [".harness/contracts.mjs", "check", "--root", root], { cwd: root, encoding: "utf8" });
+    assert.equal(installed.status, 0, installed.stderr || installed.stdout);
+    const status = run(["status", "--short", "--untracked-files=all"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /docs\/contracts\/manifest\.json/);
+    assert.doesNotMatch(status.stdout, /\.codex\/|\.agents\/|\.harness\//);
+    assert.equal(run(["check-ignore", ".harness/contracts.mjs"]).status, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("Spec edits require reconciliation while runtime receipts stay outside the snapshot", async () => {
@@ -179,11 +216,10 @@ test("installed completion CLI blocks spec-me without independent reviews and re
     await writeFile(join(specRoot, "diagrams/product/product.puml"), "@startuml\n@enduml\n");
     await writeFile(join(specRoot, "diagrams/architecture/architecture.puml"), "@startuml\n@enduml\n");
     // Fixture-only review metadata exercises completion validation; it does not represent a production review.
-    const spec_reviews = {};
-    for (const axis of ["product", "architecture"]) spec_reviews[axis] = {
-      axis, ticket_id: ticketId, reviewer_id: `reviewer-${axis}`, author_ids: ["fixture-writer"], fork_turns: "none",
-      verdict: "pass", findings: [], inputs: await snapshotSpecReview({ root, ticketId, axis }),
-    };
+    const spec_reviews = { architecture: {
+      axis: "architecture", ticket_id: ticketId, reviewer_id: "reviewer-architecture", author_ids: ["fixture-writer"], fork_turns: "none",
+      verdict: "pass", findings: [], inputs: await snapshotSpecReview({ root, ticketId }),
+    } };
     await sealContracts({ workspace_root: root, change_summary: "fixture Spec added", no_contract_change: "테스트용 Spec fixture는 계약 외부 항목임" });
     await writeFile(sessionOutputPath(root, "state/reviews.json"), JSON.stringify({ ticket_id: ticketId, spec_reviews }));
     const reviewed = run(["--state", "state/reviews.json"]);

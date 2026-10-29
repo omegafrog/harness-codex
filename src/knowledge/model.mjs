@@ -26,8 +26,8 @@ export function createPrinciple(fields = {}) {
   return { schema_version: 1, ...fields };
 }
 
-export const EVIDENCE_TYPES = Object.freeze(["loadtest", "benchmark", "incident", "production_metric", "failure_test"]);
-export const EVIDENCE_EXECUTION_STATUSES = Object.freeze(["completed", "failed", "interrupted"]);
+export const EVIDENCE_TYPES = Object.freeze(["loadtest", "benchmark", "incident", "production_metric", "failure_test", "documentary"]);
+export const EVIDENCE_EXECUTION_STATUSES = Object.freeze(["completed", "failed", "interrupted", "not_applicable"]);
 export const EVIDENCE_MEASUREMENT_VALIDITIES = Object.freeze(["valid", "invalid", "not_applicable"]);
 
 export function createEvidence(fields = {}) {

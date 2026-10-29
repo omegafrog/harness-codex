@@ -32,7 +32,13 @@ function actionEvidenceMatches(record, rule, trajectory) {
 function artifactEvidenceMatches(rule, artifactEvidence) {
   const requiredFiles = Array.isArray(rule.required_files) ? rule.required_files : [];
   const actualFiles = new Set(Array.isArray(artifactEvidence?.files) ? artifactEvidence.files : []);
-  return requiredFiles.every((file) => actualFiles.has(file));
+  if (!requiredFiles.every((file) => actualFiles.has(file))) return false;
+  if (rule.expected_json === undefined) return true;
+  try {
+    return sameValue(JSON.parse(artifactEvidence.contents?.[requiredFiles[0]]), rule.expected_json);
+  } catch {
+    return false;
+  }
 }
 
 export function gradeOutcome({ caseSpec, trajectory = [], artifactEvidence = {} }) {
@@ -47,6 +53,7 @@ export function gradeOutcome({ caseSpec, trajectory = [], artifactEvidence = {} 
       action_matched: actionMatched,
       required_files: rule?.required_files || [],
       observed_files: (artifactEvidence.files || []).filter((file) => rule?.required_files?.includes(file)),
+      expected_json_matched: rule?.expected_json === undefined ? null : artifactMatched,
     };
   }
   return {

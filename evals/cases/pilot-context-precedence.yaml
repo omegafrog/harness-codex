@@ -1,0 +1,25 @@
+schema_version: 1
+execution_purpose: code_validation
+id: pilot-context-precedence
+workflow: spec-me
+dispatch_workflow: false
+critical: true
+required_outcome: [artifact_written]
+outcome_evidence:
+  artifact_written:
+    actions: [write_file]
+    target_prefix: .eval-output/pilot/context-decision.json
+    required_files: [.eval-output/pilot/context-decision.json]
+hard_gates: [workflow_order_violation]
+quality_threshold: 0.85
+hard_caps:
+  max_turns: 8
+  max_tool_calls: 16
+  max_tokens: 100000
+  max_latency_ms: 60000
+environment_profile: p0-default
+integration: false
+recording: { mode: none }
+fixture: evals/fixtures/pilot-context-precedence
+scenario:
+  prompt: "Read docs/context/current.md and docs/context/history.md. Report the active default workspace theme, cite the authoritative relative path, and explain briefly why the other value is stale. Write .eval-output/pilot/context-decision.json as valid JSON with keys theme, source, and rationale. Do not edit the fixture."

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { validateDiagnosticLog } from '../src/observability/diagnostic-logs.mjs';
+import { sessionOutputPath } from '../src/workflow/session-output.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = join(root, '.codex/skills/victorialogs-local-setup/assets');
@@ -67,8 +68,7 @@ test('business-failure severity overrides, structured Body, project extensions a
 });
 
 test('offline CLI validates source JSONL without requiring VictoriaLogs or leaking record values', async () => {
-  assert.ok(process.env.HARNESS_SESSION_DIR, 'Use harness-exec diagnostic-log-check');
-  const directory = await mkdtemp(join(process.env.HARNESS_SESSION_DIR, 'tmp/diagnostic-logs-'));
+  const directory = await mkdtemp(join(sessionOutputPath(root, 'tmp'), 'diagnostic-logs-'));
   try {
     const input = join(directory, 'diagnostic.jsonl');
     const run = () => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'validate-logs', '--root', root, '--input', input], { cwd: root, encoding: 'utf8' });

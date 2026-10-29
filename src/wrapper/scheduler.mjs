@@ -174,7 +174,7 @@ export function buildImplementPrompt({
   planPath = null,
   productSpecPath = null,
   architectureSpecPath = null,
-  traceabilityRefs = null,
+  planReviewRefs = null,
   dependencyFacts = {},
   resourceFacts = {},
   smartZone = "unknown",
@@ -183,15 +183,14 @@ export function buildImplementPrompt({
   if (!repository || !planSetId || !planId) throw new TypeError("repository, planSetId, and planId are required");
   if (!["sequential", "parallel"].includes(workspaceMode)) throw new TypeError("workspaceMode must be sequential or parallel");
   const planSetPath = `docs/plans/${planSetId}/plans.md`;
-  const ticketId = traceabilityRefs?.ticket_id || planSetId;
+  const ticketId = planReviewRefs?.ticket_id || planSetId;
   const expectedProductSpecPath = `docs/specs/${ticketId}/product-spec.md`;
   const expectedArchitectureSpecPath = `docs/specs/${ticketId}/architecture-spec.md`;
-  const approvedProductPath = traceabilityRefs?.product_spec_path || expectedProductSpecPath;
-  const approvedArchitecturePath = traceabilityRefs?.architecture_spec_path || expectedArchitectureSpecPath;
-  const approvedPlanPath = traceabilityRefs?.plan_reference || planSetPath;
+  const approvedProductPath = planReviewRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const approvedPlanPath = planReviewRefs?.plan_reference || planSetPath;
   const safePath = (value) => typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
-  const safePlanReference = (value) => safePath(value) || /^[^/\\\s]+\/[^/\\\s]+#\d+$/.test(value);
-  if (!safePath(approvedProductPath) || !safePath(approvedArchitecturePath) || !safePlanReference(approvedPlanPath)) throw new TypeError("Traceability references must be safe workspace paths or canonical GitHub issue references");
+  if (!safePath(approvedProductPath) || !safePath(approvedArchitecturePath) || !safePath(approvedPlanPath)) throw new TypeError("Plan review references must be safe workspace-relative paths");
   if (planPath && planPath !== approvedPlanPath && planPath !== planSetPath) throw new TypeError(`planPath must match the reviewed canonical plan ${approvedPlanPath}`);
   if (productSpecPath && productSpecPath !== approvedProductPath) throw new TypeError(`productSpecPath must be ${approvedProductPath}`);
   if (architectureSpecPath && architectureSpecPath !== approvedArchitecturePath) throw new TypeError(`architectureSpecPath must be ${approvedArchitecturePath}`);
@@ -210,15 +209,14 @@ export function buildImplementPrompt({
     `Plan set: ${planSetPath}`,
     `Product Spec: ${productSpecPath || approvedProductPath}`,
     `Architecture Spec: ${architectureSpecPath || approvedArchitecturePath}`,
-    ...(traceabilityRefs ? [`Traceability ledger: ${traceabilityRefs.ledger_path}`, `Requirement IDs: ${(traceabilityRefs.requirement_ids || []).join(", ")}`, "Read each original requirement source and mapped verification case before editing; this exact plan and spec set passed the live traceability dispatch gate."] : []),
+    ...(planReviewRefs ? ["Compare the selected plan directly with the Product and Architecture Specs. Write or update only the business-logic unit tests required by the plan's test contract, and run its declared verification command/profile.", "The current complete plan set and its Specs passed an independent plan review; reread the canonical files before editing."] : []),
     "Implementation contract: .codex/internal-skills/implement/GUIDE.md",
     `Checkpoint: ${checkpointPath || planRuntimePaths({ root: workspaceRoot || repository, planId }).checkpoint_path}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,
     `Resource facts: ${JSON.stringify(resourceFacts)}`,
-    `Context Smart Zone assessment: ${smartZone}`,
     "Before reading or editing plan files, verify `pwd` and `git rev-parse --show-toplevel` resolve to the Active workspace root. Run every command, test, server, and E2E verification from that workspace. If the root does not match, stop and report a workspace mismatch before editing.",
     ...(workspaceMode !== "parallel" && workspaceBranch ? ["Commit implementation changes to the Active workspace branch; do not detach, rename, or delete it."] : []),
-    "Run tests/services/infrastructure only through harness-exec.mjs with a project execution.json profile. Missing args, stale config, or failed dependency readiness block launch. Update execution profiles and EXEC.md when implementation changes launch requirements; never bypass with direct shell commands.",
+    "Run ordinary checks with the project native CLI documented in EXEC.md. Reserve harness-exec.mjs and execution.json profiles for explicit end-user E2E, where missing args, stale config, or failed dependency readiness block launch. Update E2E profiles and EXEC.md when launch requirements change.",
     "Stay strictly within this plan's scope and report implementation evidence, including the verified workspace root and, when provided, the verified workspace branch.",
     "Do not implement checkpoint, conflict, or reconciliation orchestration.",
   ].join("\n");

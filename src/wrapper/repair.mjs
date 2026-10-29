@@ -1,7 +1,7 @@
-import { updateReviewAttempt } from '../workflow/review-attempts.mjs';
+import { inspectReviewHistory, updateReviewAttempt } from '../workflow/review-attempts.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { inspectPlanTraceability } from '../workflow/plan-traceability.mjs';
+import { inspectPlanSet } from '../workflow/plan-review.mjs';
 
 const REPAIRABLE_KINDS = new Set([
   "implementation_defect",
@@ -126,14 +126,22 @@ export function implementationReviewRoot(root) {
 
 export async function assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort = null }) {
   if (!reviewInput.plan_set_id) return;
-  const current = await inspectPlanTraceability({ root, planSetId: reviewInput.plan_set_id, planId, phase: 'dispatch', trackerPort });
+  const current = await inspectPlanSet({ root, planSetId: reviewInput.plan_set_id, planId, phase: 'dispatch', trackerPort });
   if (current.status !== 'pass' || current.details.review_snapshot_sha256 !== reviewInput.planning_snapshot_sha256) throw Object.assign(new Error('Review planning snapshot changed; collect all findings, reconcile the affected documents and admit a fresh review'), { code: 'review_snapshot_changed' });
 }
 
 export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null }) {
   const primaryRoot = implementationReviewRoot(root);
   const scope = { root: primaryRoot, scope: `implementation-${planId}` };
-  if (resolution !== undefined) return updateReviewAttempt({ ...scope, action: 'resolve-repair', reason: resolution });
+  if (resolution !== undefined) {
+    const prior = await inspectReviewHistory(scope);
+    if (!prior.plan_set_id || !prior.planning_snapshot_sha256) throw new Error('Repair budget reset requires a reviewed plan-set snapshot; a general continue instruction cannot reset it');
+    const current = await inspectPlanSet({ root, planSetId: prior.plan_set_id, phase: 'dispatch', planId, trackerPort });
+    if (current.status !== 'pass') throw Object.assign(new Error(`Repair budget reset requires a passing updated plan review: ${current.reason}`), { code: 'repair_resolution_review_required' });
+    const currentSnapshot = current.details.review_snapshot_sha256;
+    if (currentSnapshot === prior.planning_snapshot_sha256) throw new Error('Repair budget reset requires an approved scope/spec change and a new planning snapshot; continue alone is not a scope resolution');
+    return updateReviewAttempt({ ...scope, action: 'resolve-repair', resolution: { reason: resolution, previous_snapshot_sha256: prior.planning_snapshot_sha256, current_snapshot_sha256: currentSnapshot } });
+  }
   if (resolve(reviewInput?.repository || '') !== resolve(root)) throw new TypeError('Review input must belong to the active implementation workspace');
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decision = planRepairRound({ reviews, maxRounds });

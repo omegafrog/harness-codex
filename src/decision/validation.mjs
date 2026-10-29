@@ -129,7 +129,7 @@ function knownReferences(values, available, path, code, errors) {
   for (const [index, id] of values.entries()) if (!ids.has(id)) issue(errors, code, `${path}[${index}]`, `Unknown reference: ${id}`);
 }
 
-export function validateArchitectureDecision(decision, refs = {}) {
+export function validateArchitectureDecision(decision, refs = {}, { checkApproval = true } = {}) {
   const errors = [];
   if (!isRecord(decision)) return { valid: false, errors: [{ code: "invalid_decision", path: "$", message: "Architecture Decision must be an object." }] };
   for (const key of Object.keys(decision)) if (!DECISION_FIELDS.has(key)) issue(errors, "unknown_decision_field", `$.${key}`, `Unsupported decision field: ${key}`);
@@ -166,7 +166,7 @@ export function validateArchitectureDecision(decision, refs = {}) {
   knownReferences(decision.target_ids ?? [], refs.targetIds, "$.target_ids", "unknown_target_ref", errors);
   knownReferences(decision.evidence_ids ?? [], refs.evidenceIds, "$.evidence_ids", "unknown_evidence_ref", errors);
   if (!["proposed", "held", "accepted"].includes(decision.status)) issue(errors, "invalid_decision_status", "$.status", "Decision status must be proposed, held, or accepted.");
-  if (decision.status === "accepted") for (const error of verifyApproval(decision, decision.approval).errors) issue(errors, error.code, error.path, error.message);
+  if (decision.status === "accepted" && checkApproval) for (const error of verifyApproval(decision, decision.approval).errors) issue(errors, error.code, error.path, error.message);
   return { valid: errors.length === 0, errors };
 }
 

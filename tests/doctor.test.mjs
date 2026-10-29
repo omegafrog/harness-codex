@@ -15,6 +15,16 @@ hooks:
   after_merge: [tracker_reconciliation]
 `;
 
+test('doctor reports an impossible context budget without modifying project settings', async () => {
+  const root = await makeProject();
+  const path = join(root, '.codex/context-budget.json');
+  const text = JSON.stringify({ schema_version: 1, context_window_tokens: 10000, max_plan_tokens: 9000, handoff_reserve_tokens: 2000 });
+  await writeFile(path, text);
+  const result = await runDoctor({ root });
+  assert.ok(result.diagnostics.some((item) => item.code === 'context_budget_invalid'));
+  assert.equal(await readFile(path, 'utf8'), text);
+});
+
 async function makeProject() {
   const root = await mkdtemp(join(tmpdir(), "harness-doctor-"));
   await mkdir(join(root, ".codex", "workflows"), { recursive: true });
@@ -48,15 +58,12 @@ stages:
   return root;
 }
 
-test("doctor reports project readiness separately from a valid workflow", async () => {
+test("doctor does not block installation on project readiness", async () => {
   const root = await makeProject();
   const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
 
-  assert.equal(report.passed, false);
-  assert.deepEqual(report.summary, { errors: 1, warnings: 0, info: 0 });
-  assert.deepEqual(report.diagnostics.map((entry) => entry.code), ["project_preparation_required"]);
-  assert.equal(report.diagnostics[0].readiness.status, "blocked");
-  assert.equal(report.diagnostics[0].message, `Project preparation required: ${report.diagnostics[0].readiness.next_steps.join('; ')}`);
+  assert.equal(report.passed, true);
+  assert.deepEqual(report.diagnostics, []);
 });
 
 test("doctor identifies a canonical-contract gate declared on a non-final workflow", async () => {
@@ -135,8 +142,7 @@ test("doctor verifies agent permission references against supplied native profil
 test("doctor treats eval permission_profile as event metadata and checks explicit agent references", async () => {
   const root = await makeProject();
   const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
-  assert.equal(report.passed, false);
-  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "project_preparation_required"));
+  assert.equal(report.passed, true);
   assert.equal(report.diagnostics.some((diagnostic) => diagnostic.code.startsWith("permission_profile_")), false);
 
   await writeFile(join(root, ".codex", "agents", "reviewer.toml"), "permission_profile = 'missing-native'\n", "utf8");

@@ -19,7 +19,7 @@ async function fixture(t) {
   return root;
 }
 function profile(overrides = {}) {
-  return { command: ['node', 'main.mjs', '--port', '${PORT}'], required_env: ['PORT'], config_inputs: ['settings.json'], prepare: [], verify_config: [['node', 'verify.mjs']], dependencies: [], timeout_ms: 3000, readiness_timeout_ms: 500, poll_interval_ms: 10, ...overrides };
+  return { purpose: 'e2e', command: ['node', 'main.mjs', '--port', '${PORT}'], required_env: ['PORT'], config_inputs: ['settings.json'], prepare: [], verify_config: [['node', 'verify.mjs']], dependencies: [], timeout_ms: 3000, readiness_timeout_ms: 500, poll_interval_ms: 10, ...overrides };
 }
 async function run(root, env = {}, launcher = cli) {
   try {
@@ -33,6 +33,14 @@ async function run(root, env = {}, launcher = cli) {
 async function setup(root, p) {
   await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({ schema_version: 1, profiles: { test: p } }));
 }
+
+test('rejects non-E2E profiles even when their native command is otherwise valid', async (t) => {
+  const root = await fixture(t);
+  await setup(root, profile({ purpose: 'unit-test' }));
+  const result = await run(root, { PORT: '4312' });
+  assert.equal(result.status, 'blocked');
+  assert.match(result.error, /reserved for end-to-end tests/);
+});
 
 test('blocks missing env or unresolved command variables before preparation', async (t) => {
   const root = await fixture(t);

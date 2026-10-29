@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 import { isHarnessSourceCheckout } from "../src/installer/source-checkout.mjs";
-import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -181,9 +180,17 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
     ".codex/harness-runtime/src/workflow/stage-gates.mjs",
+    ".codex/harness-runtime/src/workflow/startup-state.mjs",
+    ".codex/harness-runtime/src/workflow/execution-state.mjs",
+    ".codex/harness-runtime/src/workflow/stage-input.mjs",
+    ".codex/harness-runtime/src/workflow/spec-review.mjs",
+    ".codex/harness-runtime/src/workflow/review-attempts.mjs",
+    ".codex/harness-runtime/src/wrapper/repair.mjs",
     ".codex/harness-runtime/src/knowledge/evidence.mjs",
-    ".codex/scripts/harness-plan-traceability.mjs",
-    ".codex/harness-runtime/src/workflow/plan-traceability.mjs",
+    ".codex/scripts/harness-plan-review.mjs",
+    ".codex/scripts/harness-code-review.mjs",
+    ".codex/scripts/harness-review-status.mjs",
+    ".codex/harness-runtime/src/workflow/plan-review.mjs",
   ]) {
     await stat(join(projectRoot, path));
   }
@@ -248,12 +255,6 @@ async function main() {
     if (result.backup_directory) console.log(`Local backups: ${result.backup_directory}`);
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
-  }
-  if (options.command !== 'lock') {
-    const readiness = await inspectProjectReadiness({ workspace_root: projectRoot });
-    console.log(`Project readiness: ${readiness.status} (${readiness.reason})`);
-    for (const step of readiness.next_steps) console.log(`Required preparation: ${step}`);
-    if (readiness.status !== 'pass') console.log('Runtime files are installed; the calling agent must complete preparation and rerun doctor before reporting workflow completion or starting implementation.');
   }
 }
 

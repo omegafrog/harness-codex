@@ -1,10 +1,12 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
-import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
+import { validateContextBudget } from "../workflow/skill-execution.mjs";
+import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { isWithin } from "../eval/util.mjs";
@@ -307,12 +309,32 @@ async function inspectAuthoring(root, diagnostics) {
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
+  const gitRoot = spawnSync('git', ['-C', repositoryRoot, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (gitRoot.status === 0 && resolve(gitRoot.stdout.trim()) === repositoryRoot) {
+    const ignored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.harness-workflows/sessions/probe/input.json'], { encoding: 'utf8' });
+    if (ignored.status !== 0) diagnostics.push(diagnostic('runtime_not_ignored', 'error', 'Harness workflow session files are not ignored by Git', join(repositoryRoot, '.harness-workflows')));
+  }
+  const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');
+  if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+    try {
+      const hook = await inspectOrchestratorHook(repositoryRoot);
+      if (!hook.valid) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
+    } catch (error) {
+      diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
+    }
+  }
+  const budgetPath = join(repositoryRoot, '.codex/context-budget.json');
+  try {
+    const information = await lstat(budgetPath);
+    if (!information.isFile()) throw new Error('Context budget must be a regular file');
+    validateContextBudget(JSON.parse(await readFile(budgetPath, 'utf8')));
+  } catch (error) {
+    if (error.code !== 'ENOENT') diagnostics.push(diagnostic('context_budget_invalid', 'error', safeMessage(error, 'Invalid context budget'), budgetPath));
+  }
   await inspectWorkflows(repositoryRoot, diagnostics);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
-  const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot });
-  if (readiness.status !== 'pass') diagnostics.push(diagnostic('project_preparation_required', 'error', `Project preparation required: ${readiness.next_steps.join('; ')}`, repositoryRoot, { readiness }));
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
     const rightKey = `${right.path}:${right.code}`;

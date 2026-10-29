@@ -28,9 +28,9 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const workflow = await loadNamedWorkflow(workflow_id, { root: workspace_root });
     const completion_kind = completionKindForWorkflow(workflow.id);
     const finalImplementation = completion_kind === 'feature_implemented';
-    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['spec-me', 'to-ticket'].includes(workflow.id) ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_traceability'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_traceability'] : [])];
-    if (workflow.id === 'to-ticket') state = { ...state, plan_traceability: { ...state.plan_traceability, phase: 'planning' } };
-    if (['implement', 'implement-wrapper'].includes(workflow.id)) state = { ...state, ...(workflow.id === 'implement-wrapper' ? { plan_id: undefined } : {}), plan_traceability: { ...state.plan_traceability, plan_id: workflow.id === 'implement-wrapper' ? null : state.plan_traceability?.plan_id || state.plan_id, phase: 'completion' } };
+    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['spec-me', 'to-ticket'].includes(workflow.id) ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
+    if (workflow.id === 'to-ticket') state = { ...state, plan_review: { ...state.plan_review, phase: 'planning' } };
+    if (['implement', 'implement-wrapper'].includes(workflow.id)) state = { ...state, ...(workflow.id === 'implement-wrapper' ? { plan_id: undefined } : {}), plan_review: { ...state.plan_review, plan_id: workflow.id === 'implement-wrapper' ? null : state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };
     const evidence_path = sessionOutputPath(workspace_root, `runtime/workflow-completion/${workflow.id}-${base_ref}.jsonl`);
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();

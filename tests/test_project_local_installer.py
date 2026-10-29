@@ -143,6 +143,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 "schema_version": 1,
                 "profiles": {
                     "unlimited": {
+                        "purpose": "e2e",
                         "command": ["node", "-e", "setTimeout(() => require('node:fs').writeFileSync('application-output.txt', 'done'), 150)"],
                         "required_env": [],
                         "config_inputs": ["docs/agents/EXEC.md"],
@@ -167,6 +168,13 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["status"], "passed")
             self.assertEqual((target / "application-output.txt").read_text(encoding="utf-8"), "done")
+            execution["profiles"]["unlimited"]["purpose"] = "unit-test"
+            (agents / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
+            rejected = subprocess.run(["node", ".codex/scripts/harness-exec.mjs", "--root", str(target), "--profile", "unlimited"], cwd=target, text=True, capture_output=True, check=False)
+            self.assertEqual(json.loads(rejected.stdout)["status"], "blocked")
+            self.assertIn("reserved for end-to-end tests", json.loads(rejected.stdout)["error"])
+            execution["profiles"]["unlimited"]["purpose"] = "e2e"
+            (agents / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
 
             harness_file = ".codex/harness-runtime/src/workflow/execution.mjs"
             ignored = subprocess.run(["git", "check-ignore", "-q", harness_file], cwd=target, check=False)
@@ -193,8 +201,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             result = self.run_full_installer(target)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("Project readiness: blocked (project_preparation_required)", result.stdout)
-            self.assertIn("Required preparation:", result.stdout)
+            self.assertNotIn("Project readiness:", result.stdout)
             exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertIn(".harness/", exclude.splitlines())
             self.assertIn(".github/workflows/harness-contracts.yml", exclude.splitlines())
@@ -203,8 +210,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertNotIn(".harness/", status)
             self.assertNotIn(".github/workflows/harness-contracts.yml", status)
             report = self.run_doctor(target)
-            self.assertFalse(report["passed"])
-            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
             self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
             preflight = target / ".codex" / "scripts" / "harness-workspace-preflight.mjs"
             self.assertTrue(preflight.is_file())
@@ -285,6 +291,12 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     value = "fixture-model"
                 elif "추론 강도 선택" in prompt:
                     value = "low"
+                elif prompt == "선택 모델 공통 context 한도(tokens)":
+                    value = "100000"
+                elif prompt == "plan 하나의 최대 예상 토큰":
+                    value = "30000"
+                elif prompt == "checkpoint·인계용 예비 토큰":
+                    value = "20000"
                 elif prompt == "Tracker 선택":
                     value = "local-markdown"
                 elif prompt == "티켓 디렉터리":
@@ -296,6 +308,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     cancelled = subprocess.run(command, cwd=target, env=self.command_env(), capture_output=True, text=True)
                     self.assertNotEqual(cancelled.returncode, 0)
                     self.assertEqual(config.read_bytes(), original)
+                    self.assertFalse((target / ".codex/context-budget.json").exists())
                     value = "y"
                 else:
                     self.assertEqual({option["value"] for option in question["options"]}, {"y", "n"})
@@ -303,6 +316,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 document["answers"][question["id"]] = value
             else:
                 self.fail("Native setup did not complete")
+            self.assertEqual(json.loads((target / ".codex/context-budget.json").read_text()), {"schema_version": 1, "context_window_tokens": 100000, "max_plan_tokens": 30000, "handoff_reserve_tokens": 20000})
             self.assertIn('implementation_model: "fixture-model"', config.read_text())
             self.assertIn('directory: ".scratch/native-issues"', config.read_text())
             # Completed configuration makes the old question snapshot stale.
@@ -392,13 +406,11 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 self.assertTrue(argv[argv.index("--network") + 1].endswith("_default"))
                 self.assertIn(endpoint, argv)
             profiles = json.loads((target / "docs/agents/execution.json").read_text())["profiles"]
-            self.assertIn("victorialogs-infrastructure", profiles)
-            self.assertIn("victorialogs-check", profiles)
-            self.assertIn("victorialogs-diagnostic-logs", profiles)
+            self.assertEqual(profiles, {})
             self.assertTrue((config_dir / "diagnostic-log.schema.json").exists())
             self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/implementation-guidance.md").read_text())
             self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/testing-guidance.md").read_text())
-            validated = subprocess.run(["node", str(target / ".codex/scripts/harness-exec.mjs"), "--root", str(target), "--profile", "victorialogs-diagnostic-logs"], cwd=target, env={**os.environ, "HARNESS_DIAGNOSTIC_LOG_FILE": str(config_dir / "diagnostic-log.example.json")}, text=True, capture_output=True)
+            validated = subprocess.run(["node", str(helper), "validate-logs", "--root", str(target), "--input", str(config_dir / "diagnostic-log.example.json")], cwd=target, text=True, capture_output=True)
             self.assertEqual(validated.returncode, 0, validated.stderr + validated.stdout)
             validation = subprocess.run(["node", "--input-type=module", "-e", "const {readExecutionManifest}=await import(process.argv[1]);await readExecutionManifest(process.argv[2]);", (target / ".codex/harness-runtime/src/workflow/execution.mjs").as_uri(), str(target)], cwd=target, text=True, capture_output=True)
             self.assertEqual(validation.returncode, 0, validation.stderr)
@@ -417,7 +429,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             migrated = subprocess.run(setup, cwd=target, text=True, capture_output=True)
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             self.assertNotIn("fluent-bit:", (config_dir / "compose.yaml").read_text())
-            self.assertTrue(any("image: legacy" in path.read_text() for path in (target / ".git/harness-workflows/sessions").glob("*/runtime/setup/backups/compose.yaml-*")))
+            self.assertTrue(any("image: legacy" in path.read_text() for path in (target / ".harness-workflows/sessions").glob("*/runtime/setup/backups/compose.yaml-*")))
             self.assertEqual((target / "docs/agents/testing-guidance.md").read_text().count("### spring-boot-diagnostic-log-v1"), 1)
             invalid = subprocess.run(["node", str(helper), "setup", "--root", str(target), "--metrics-port", "70000"], cwd=target, text=True, capture_output=True)
             self.assertNotEqual(invalid.returncode, 0)
@@ -483,8 +495,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             backup = Path(backup_line.removeprefix("Local backups: ")) / ".agents" / "skills" / "spec-me" / "SKILL.md"
             self.assertEqual(backup.read_text(encoding="utf-8"), "local skill\n")
             report = self.run_doctor(target)
-            self.assertFalse(report["passed"])
-            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
             self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
 
     def test_lock_command_rejects_force(self):

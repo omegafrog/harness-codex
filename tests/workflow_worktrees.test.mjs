@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readlink, lstat, symlink, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readlink, lstat, readdir, symlink, writeFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { finishWorkflowWorktree, listWorkflowWorktrees, registerWorkflowWorktree, reserveWorkflowWorktree } from "../src/workflow/worktrees.mjs";
+import { bindWorkflowPlanSetId, finishWorkflowWorktree, listWorkflowWorktrees, registerWorkflowWorktree, reserveWorkflowWorktree } from "../src/workflow/worktrees.mjs";
 import { completeWorkflow } from "../src/workflow/completion.mjs";
 import { createWorkflowWorktree } from "../src/workflow/worktrees.mjs";
 import { inspectWorkspace } from "../src/eval/workspace-preflight.mjs";
@@ -21,11 +21,28 @@ async function fixture() {
   const main = join(root, "main"), tree = join(root, "tree");
   await mkdir(main);
   await git(main, "init", "-q", "-b", "main");
+  await writeFile(join(main, ".git/info/exclude"), ".harness-workflows/\n", { flag: "a" });
   await git(main, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "base");
   await git(main, "worktree", "add", "-q", "-b", "workflow", tree);
   return { root, main, tree };
 }
 const cleanup = (root) => rm(root, { recursive: true, force: true });
+
+test("feature names bind one readable plan-set ID and linked worktrees reuse it without a global allocator lock", async () => {
+  const { root, main, tree } = await fixture();
+  const otherTree = join(root, "other-tree");
+  try {
+    await registerWorkflowWorktree({ workspace_root: tree, return_root: main });
+    const bound = await bindWorkflowPlanSetId({ workspace_root: tree, repository_root: main, feature_name: "Solo TRPG: D6 Narration!" });
+    assert.equal(bound.plan_set_id, "solo-trpg-d6-narration");
+    await assert.rejects(lstat(join(main, ".git/harness-workflows/plan-set-id")), { code: "ENOENT" });
+    assert.equal((await bindWorkflowPlanSetId({ workspace_root: tree, repository_root: main, feature_name: "A different name" })).plan_set_id, bound.plan_set_id);
+    await assert.rejects(bindWorkflowPlanSetId({ workspace_root: tree, repository_root: main, plan_set_id: "manual-id" }), /immutable once set/);
+    await git(main, "worktree", "add", "-q", "-b", "same-plan-set", otherTree);
+    await registerWorkflowWorktree({ workspace_root: otherTree, return_root: main, plan_set_id: bound.plan_set_id });
+    assert.equal((await bindWorkflowPlanSetId({ workspace_root: otherTree, repository_root: main, plan_set_id: bound.plan_set_id })).plan_set_id, bound.plan_set_id);
+  } finally { await cleanup(root); }
+});
 
 for (const outcome of ["completed", "aborted", "failed", "handoff"]) test(`${outcome} archives dirty worktree and removes only its registration`, async () => {
   const { root, main, tree } = await fixture();
@@ -115,7 +132,7 @@ test("concurrent reservations have one owner and the losing attempt preserves it
     assert.equal(attempts.filter((item) => item.status === "fulfilled").length, 1);
     const winner = attempts.find((item) => item.status === "fulfilled");
     const loser = attempts.find((item) => item.status === "rejected");
-    const owner = JSON.parse(await readFile(join(main, ".git", "harness-workflows", "sessions", createHash("sha256").update(workspace).digest("hex"), "worktree.json"), "utf8"));
+    const owner = JSON.parse(await readFile(join(main, ".harness-workflows", "sessions", createHash("sha256").update(workspace).digest("hex"), "worktree.json"), "utf8"));
     assert.match(owner.worktree_id, /^[0-9a-f-]{36}$/);
     assert.match(loser.reason.message, /Cleanup is already running|Allocation already has a pending owner/);
     assert.equal(owner.state, "allocating");
@@ -204,7 +221,7 @@ test("completeWorkflow requires live plan traceability even when the workflow ho
     const completion = JSON.parse(result.stdout);
     assert.equal(completion.state, "in-progress");
     assert.equal(completion.completion_kind, "feature_implemented");
-    assert.ok(completion.verdict.checks.some((check) => check.rule_id === "plan_traceability" && check.status === "blocked"));
+    assert.ok(completion.verdict.checks.some((check) => check.rule_id === "plan_review" && check.status === "blocked"));
   } finally { await cleanup(root); }
 });
 

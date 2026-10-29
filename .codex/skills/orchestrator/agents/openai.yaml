@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow 오케스트레이터"
+  short_description: "모델을 지정한 subagent로 skill을 실행하고 결과 파일과 상태 코드로 workflow를 조율합니다."
+  default_prompt: "Run orchestrator in this main session. Follow the startup hook by dispatching workflow-compose first for a new request; validate its file-backed workflow before task execution. Keep orchestration in this session and resolve model and effort only for child skills and reviewers. Resume existing requests from their saved state."

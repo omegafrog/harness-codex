@@ -42,7 +42,7 @@ Use these topics as the coverage checklist for the architecture interview. The c
 
 13. **Change and Verification Boundaries**
     Resolve allowed, forbidden, and conditional changes plus the verification evidence required for domain, program, technical, runtime, recovery, and boundary-promotion contracts.
-    Preserve requirement/rule/target/decision IDs into each slice's code owner and verification command. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger.
+    Preserve requirement/rule/target/decision IDs into each slice's domain owner, business-rule unit-test intent and verification command. Unit-test intent specifies the owned rule, meaningful condition/action, and expected business result; exclude generic type/format failures and framework wiring. Trace Product persistence, query and external-capability requirements into selected/existing technology and infrastructure. For each material technology choice, link requirement/target → decision criteria → source-located evidence → options/trade-offs → selected choice → owner/path → verification. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger.
 
 14. **Alternatives, Trade-offs, Risks, and Open Questions**
     Resolve material alternatives, expensive-to-reverse decisions, risks, and every blocking open question. Include the trade-off between the chosen boundary strength and the next weaker viable boundary for every newly introduced bounded context, module, or service.
@@ -51,4 +51,4 @@ Use these topics as the coverage checklist for the architecture interview. The c
 
 Current code, tests, Product Spec, ADRs, and project documents may settle descriptive facts about the existing system. They do not by themselves settle a target architecture decision when multiple valid futures remain.
 
-Ask the user only when a material target decision, trade-off, product interpretation, irreversible architecture choice, or unresolved boundary-promotion decision remains unresolved after the available evidence is read.
+Use the [grilling](../../../../.codex/skills/grilling/SKILL.md) question criteria to distinguish stakeholder decisions from implementation details. Record the engineering rationale without inventing a user statement.

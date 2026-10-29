@@ -1,8 +1,16 @@
 # 리뷰 수정과 결정 요청 조정
 
-Spec·계획·구현 리뷰의 호출자가 적용하는 공통 절차다. 각 리뷰의 독립성·순서·한도·승인 gate는 해당 소유 절차를 따른다.
+독립 reviewer를 호출하는 orchestrator가 적용하는 공통 절차다. reviewer는 입력을 읽고 판정·근거·findings를 반환한다. reviewer 생성·결과 수집·수정 지시·사용자 결정 요청·재검토·완료 gate는 아래 소유 orchestrator가 관리한다.
 
-1. 현재 실행 중인 관련 reviewer 결과를 모두 수집·기록한 뒤 수정 범위를 정한다. Product pass 이후 Architecture를 시작하는 순서는 유지한다. 결과가 아직 없으면 해당 축을 pending으로 표시하고, 종료된 reviewer의 누락은 해당 재시도 절차로 처리한다.
+| 리뷰 대상 | 소유 orchestrator | 리뷰 절차 |
+|---|---|---|
+| Architecture Spec | spec-me workflow의 최상위 orchestrator | `spec-review` |
+| split plan 집합 | to-ticket workflow의 최상위 orchestrator | `plan-review` |
+| 구현 코드 | `code-review`를 호출한 구현 workflow | `code-review` |
+
+각 orchestrator는 자신의 리뷰 대상에 해당하는 기록과 CLI만 사용한다. 다른 대상의 변경이 필요하면 해당 소유 workflow에 인계하고 현재 실행을 보류한다. 각 리뷰의 독립성·순서·한도·승인 gate는 해당 소유 절차를 따른다.
+
+1. 현재 실행 중인 관련 reviewer 결과를 모두 수집·기록한 뒤 수정 범위를 정한다. 결과가 아직 없으면 해당 scope를 pending으로 표시하고, 종료된 reviewer의 누락은 해당 재시도 절차로 처리한다.
 2. 원본 finding을 축별로 보존하고 같은 원인의 지적을 연결해 수정표를 대화 또는 기존 checkpoint 근거로 제시한다. `지적 ID·근거 / 원인 / 영향 Spec·plan·diagram·코드·테스트 / 수정 또는 반박 근거 / 필요한 사용자 결정`을 함께 적는다. 새 guard·예약·상태가 다른 정상·경쟁·복구 경로에 만드는 영향을 같은 수정 범위에 포함한다.
 3. 사용자 결정이 필요하면 아래 통합 조회로 관련 축의 기록과 한도를 함께 읽는다. 실제 사용자에게는 해결할 쟁점과 영향을 받는 scope별 현재/남은 한도·필요 결정·재개 조건을 한 번에 제시한다. 이미 관찰한 다른 한도 문제도 같은 요청에 포함한다. 추가 검토로 새 쟁점이 발견되면 그 근거를 별도로 설명한다.
 4. 사용자가 승인한 결정의 원문·범위를 보존하고, 해당하는 소유 CLI의 resolve를 각 scope에 적용한다. 기록된 pass는 현재 snapshot gate로 재확인한다. 아직 실행 중인 검토는 기다리며, 사용자의 범위 결정과 기술적 한도 재개 승인을 구분한다.

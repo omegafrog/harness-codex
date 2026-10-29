@@ -40,6 +40,16 @@ const evidence = (overrides = {}) => ({
   ...overrides,
 });
 
+test("Documentary evidence records source snapshots without claiming execution or measured results", () => {
+  const doc = evidence({ type: "documentary", execution_status: "not_applicable", measurement_validity: "not_applicable", execution_purpose: "decision_validation", source_reference: "docs/specs/demo/product-spec.md#REQ-1", source_sha256: "a".repeat(64), observations: [{ metric: "requirement", value: "One local player", unit: "documented constraint" }] });
+  const normalized = { ...normalizeEvidence(doc), summary: doc.summary };
+  assert.equal(validateEvidence(normalized).valid, true);
+  assert.equal(normalized.measurement_validity, "not_applicable");
+  for (const change of [{ source_sha256: undefined }, { measurement_validity: "valid" }, { execution_status: "completed" }, { execution_purpose: "code_validation" }]) assert.equal(validateEvidence({ ...normalized, ...change }).valid, false);
+  assert.equal(validateEvidence(evidence({ execution_status: "not_applicable" })).valid, false);
+  assert.notEqual(computeEvidenceApprovalHash(normalized), computeEvidenceApprovalHash({ ...normalized, source_sha256: "b".repeat(64) }));
+});
+
 test("Evidence stays local until its presented summary is explicitly approved and published", async () => {
   const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-cli-"));
   try {

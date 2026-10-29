@@ -23,6 +23,13 @@ function runId() {
   return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17)}-${process.pid}-${randomUUID().slice(0, 8)}`;
 }
 
+export function buildCasePrompt(caseSpec) {
+  const scenarioPrompt = caseSpec.scenario?.prompt || `Execute eval case ${caseSpec.id}`;
+  if (caseSpec.dispatch_workflow === false) return scenarioPrompt;
+  const workflowEntrypoint = `$${caseSpec.workflow}`;
+  return scenarioPrompt.includes(workflowEntrypoint) ? scenarioPrompt : `${workflowEntrypoint}\n${scenarioPrompt}`;
+}
+
 async function currentGitHead(root) {
   try {
     const result = await execFileAsync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
@@ -303,12 +310,9 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
       }
     };
     const command = resolveCodexCommand({ caseSpec, config, commandOverride });
-    const workflowEntrypoint = `$${caseSpec.workflow}`;
-    const scenarioPrompt = caseSpec.scenario?.prompt || `Execute eval case ${caseSpec.id}`;
-    const prompt = scenarioPrompt.includes(workflowEntrypoint)
-      ? scenarioPrompt
-      : `${workflowEntrypoint}\n${scenarioPrompt}`;
-    await events.append("workflow_dispatch_requested", { workflow: caseSpec.workflow, entrypoint: workflowEntrypoint }, { critical: true });
+    const workflowEntrypoint = caseSpec.dispatch_workflow === false ? null : `$${caseSpec.workflow}`;
+    const prompt = buildCasePrompt(caseSpec);
+    if (workflowEntrypoint) await events.append("workflow_dispatch_requested", { workflow: caseSpec.workflow, entrypoint: workflowEntrypoint }, { critical: true });
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,

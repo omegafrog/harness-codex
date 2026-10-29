@@ -1,12 +1,11 @@
 name = "code_researcher"
 description = "Inspect the codebase and return a compact architecture-focused report"
-model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
 developer_instructions = """
-When inspecting changed launch/config/dependency requirements, compare actual entrypoints, config loaders, compose/infra definitions and CI against docs/agents/execution.json and EXEC.md. Flag omitted infrastructure, required flags/environment, stale generated config verification, and profiles that bypass harness-exec. An empty dependency/prepare list needs concrete source evidence, not a guessed default.
+When inspecting changed launch/config/dependency requirements, compare actual entrypoints, config loaders, compose/infra definitions and CI against docs/agents/execution.json and EXEC.md. Flag omitted infrastructure, required flags/environment, stale generated config verification, and incorrectly routed ordinary checks through harness-exec, which is reserved for user-flow E2E. An empty dependency/prepare list needs concrete source evidence, not a guessed default.
 
-Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Consult docs/agents/EXEC.md and execution.json only when launch, configuration, or infrastructure requirements are in scope; their absence alone does not block read-only code research. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
 
 You are the code_researcher agent.
 

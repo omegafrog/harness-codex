@@ -23,6 +23,7 @@
 | `<invariant>`        | `<owner / enforcement point>`    |
 | `<state transition>` | `<command / event / component>`  |
 | `<failure case>`     | `<error handling / recovery>`    |
+| `<persistence / query / external capability>` | `<data owner / technology / infrastructure / query path>` |
 
 ---
 
@@ -173,8 +174,8 @@ Aggregate 경계는 Bounded Context 경계를 자동으로 의미하지 않는�
 
 클래스·Aggregate·Value Object·Domain Service의 책임과 의존 관계를 구현 대상 기준으로 표현한다. 변경 대상이 없으면 `해당 없음`과 근거를 적는다. 다이어그램은 독립 `.puml` 원본으로 작성하고 생성된 SVG를 아래 링크에 연결한다.
 
-원본: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.puml`
-SVG: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.svg`
+원본: `docs/specs/<plan-set-id>/diagrams/architecture/<context>.class.puml`
+SVG: `docs/specs/<plan-set-id>/diagrams/architecture/<context>.class.svg`
 
 ## 3.5 Value Objects
 
@@ -210,8 +211,8 @@ SVG: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.svg`
 
 Aggregate 또는 핵심 도메인 객체의 모든 허용 상태, 전이 트리거, guard 조건, 결과 이벤트를 표현한다. 상태가 없으면 `해당 없음`과 근거를 적는다.
 
-원본: `docs/specs/<ticket-id>/diagrams/architecture/<concept>.state.puml`
-SVG: `docs/specs/<ticket-id>/diagrams/architecture/<concept>.state.svg`
+원본: `docs/specs/<plan-set-id>/diagrams/architecture/<concept>.state.puml`
+SVG: `docs/specs/<plan-set-id>/diagrams/architecture/<concept>.state.svg`
 
 ## 3.9 Repository Boundaries
 
@@ -549,9 +550,13 @@ stop
 
 ## 5.11 Infrastructure Dependencies
 
-| Dependency                    | Responsibility     | Accessed By   | Isolation Boundary |
-| ----------------------------- | ------------------ | ------------- | ------------------ |
-| `<DB / cache / broker / API>` | `<responsibility>` | `<component>` | `<adapter>`        |
+각 requirement에 필요한 저장·조회·비동기·파일·외부 provider capability를 기존 자원 재사용 또는 신규 infrastructure로 빠짐없이 연결한다.
+
+| Requirement / Target | Required Capability | Selected Existing / New Dependency | Owner / Query or Call Path | Evidence / Decision | Failure / Operations |
+| -------------------- | ------------------- | ---------------------------------- | ------------------------- | ------------------- | -------------------- |
+| `<REQ / UC / BR / target>` | `<persist / relational query / queue / blob / provider>` | `<technology / existing platform capability>` | `<domain owner → port/repository → adapter → schema/query/runtime>` | `<source ID or exact URL + locator; decision ID>` | `<consistency / recovery / config / readiness>` |
+
+관계 데이터와 질의 조건이 Product 요구에 있으면 저장소 종류, 관계/schema, query path와 검증 사례를 적는다. 해당 capability가 불필요하면 그 근거를 기록한다.
 
 ## 5.12 External Dependency Isolation
 
@@ -810,11 +815,11 @@ stop
 
 ## 11.1 Domain Verification
 
-| Target                  | Verification         |
-| ----------------------- | -------------------- |
-| `<business rule>`       | `<test / assertion>` |
-| `<aggregate invariant>` | `<test / assertion>` |
-| `<state transition>`    | `<test / assertion>` |
+| UC / BR / AC | Domain Owner / Behavior | Business Condition / Action | Expected Business Result | Unit Test Intent |
+| ------------ | ----------------------- | --------------------------- | ------------------------ | ---------------- |
+| `<ID>`       | `<aggregate/entity/value object/domain service>` | `<meaningful rule branch>` | `<domain result / next state / business refusal>` | `<independent example; external dependencies mocked>` |
+
+단위 테스트 사례는 업무 판단·행위·결과를 실행 가능한 명세로 표현한다. 일반적인 자료형 오류, framework/serialization/wiring, 단순 위임, mock 호출 횟수는 이 표에 포함하지 않는다. 해당 business rule이 없는 항목에는 테스트를 강제하지 않는다.
 
 ## 11.2 Program Verification
 
@@ -920,7 +925,7 @@ stop
 | `<question>` | Yes / No | `<resolution>` |
 ## Architecture 다이어그램 계약
 
-- 구조 모델이 적용되면 독립적인 `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.puml`과 같은 basename의 `.svg`를 만든다. 원본에는 관련 요구사항 또는 유스케이스 ID를 기록한다.
+- 구조 모델이 적용되면 독립적인 `docs/specs/<plan-set-id>/diagrams/architecture/<context>.class.puml`과 같은 basename의 `.svg`를 만든다. 원본에는 관련 요구사항 또는 유스케이스 ID를 기록한다.
 - 클래스 다이어그램의 클래스·컴포넌트·인터페이스·열거형 이름, 메서드·변수·상수 명, 타입, 매개변수, 반환 타입, 전체 시그니처는 원문 그대로 작성한다. 이를 번역하거나 한글 음역·변환하지 않는다. visibility 심볼과 타입·제네릭·연산자·관계 심볼도 코드 및 PlantUML 원문 그대로 유지하고, 한글은 note 또는 관계 라벨 같은 설명 텍스트에만 사용한다.
 - 설계 상태(design-state)는 설계 책임의 상태 전이가 Product 업무 상태와 다른 목적을 가질 때만 `<concept>.state.puml`과 `.svg`로 만든다. 같은 상태 모델이면 중복하지 않고 `해당 없음 — Product business-state와 동일한 목적`을 기록한다.
 - `.puml`가 유일한 편집 원본이며 문서에는 생성된 SVG 링크만 둔다. 렌더·링크·내용 일치 검토가 완료 조건이고, 렌더 실패는 완료를 막는다.

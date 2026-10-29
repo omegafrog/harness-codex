@@ -10,6 +10,7 @@ Architecture 단계에서 대안 비교 전에 실행한다. 결정 질문이 �
 2. 관련 ADR, `docs/architecture/constraints.md`, 소유 팀의 승인된 기술 기준, project-local Principle·Evidence 및 연결된 Source·Claim을 조회한다. 질문의 용어·동의어와 관련 ID로 검색하고 registry 목록도 확인해 빠진 일치 항목을 찾는다.
    - 기술 선택 질문에는 적용되는 formal standard, official/primary technical documentation, maintainer 또는 기술 작성 팀이 발행한 기준, 실측 Evidence를 우선 대조한다. 각 출처의 발행 주체, 적용 범위, 원문 위치, 최신성을 확인한다. 조직 내부 기준은 소유 팀의 승인 상태와 예외 조건을 확인한다.
 3. 승인 hash가 유효한 `approved` Principle과 승인된 durable 프로젝트 Evidence만 권위 있는 근거로 사용한다. candidate/reviewed, staged/rejected, deprecated 자료는 근거를 대신하지 못한다. Source/Claim은 출처와 맥락을 확인하는 자료이며 승인된 Principle로 자동 승격하지 않는다.
+   - 확정 요구사항·운영 목표·문서 조사 결과는 `type: documentary` Evidence로 등록할 수 있다. 정확한 문서·구간을 `source_reference`, 해당 원문 snapshot의 SHA-256을 `source_sha256`에 기록한다. `execution_status`와 `measurement_validity`는 `not_applicable`, `execution_purpose`는 `decision_validation`이다. observations에는 문서가 뒷받침하는 사실과 적용 범위를 기록하며 실행·성능 검증을 주장하지 않는다. 기존 Evidence의 제시·승인·게시 절차를 그대로 적용하고 원문 변경 시 새 hash로 재승인한다.
 4. 질문마다 출처의 권위·적용 조건·예외·반대 근거·최신성, Evidence의 원래 프로젝트·환경·측정 유효성·실행 상태를 이번 요구사항과 정량 System Target에 대조한다. 각 기술 option이 목표와 적용 기준을 얼마나 충족하는지 비교하고 `충분 / 부분 충족 / 없음`, 재사용할 ID, 배제 이유, 부족한 질문을 기록한다.
 
 ## 부족분 수집과 복귀

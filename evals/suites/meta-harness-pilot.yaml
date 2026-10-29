@@ -1,0 +1,37 @@
+schema_version: 1
+id: meta-harness-pilot
+cases:
+  - pilot-skill-selection-design
+  - pilot-skill-selection-planning
+  - pilot-context-precedence
+  - pilot-untrusted-instruction
+  - spec-me-source-policy
+  - spec-me-ambiguity-gate
+  - implement-wrapper-dependency
+  - code-review-isolation
+  - public-skill-routing-o10
+  - public-skill-routing-o45
+  - public-skill-routing-o47
+  - public-skill-routing-m36
+  - public-skill-routing-m39
+  - public-skill-routing-m40
+  - public-skill-routing-m44
+  - public-skill-routing-m45
+evaluation_axes:
+  skill_selection: [pilot-skill-selection-design, pilot-skill-selection-planning, public-skill-routing-o10, public-skill-routing-o45, public-skill-routing-o47, public-skill-routing-m36, public-skill-routing-m39, public-skill-routing-m40, public-skill-routing-m44, public-skill-routing-m45]
+  subagent_utilization: [code-review-isolation]
+  context_management: [pilot-context-precedence]
+  tool_execution_policy: [pilot-untrusted-instruction, spec-me-source-policy, code-review-isolation]
+baseline: null
+thresholds:
+  hard_gate_failures: 0
+  critical_case_pass_rate: 1.0
+  pass_rate: 0.95
+  mean_quality: 0.80
+  p10_quality: 0.65
+  max_token_regression: 0.20
+  max_case_token_regression: 0.25
+  max_latency_regression: 0.25
+  max_case_latency_regression: 0.40
+  max_inconclusive_rate: 0.05
+  minimum_conclusive_cases: 0.95

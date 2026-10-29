@@ -25,7 +25,7 @@
 - Behavioral Eval(행동 평가): 실제 Codex와 harness를 고정 시나리오로 실행해 workflow 수행을 평가하는 것.
 - Hard Gate(하드 게이트): 결정론적으로 검증하며 하나라도 위반하면 해당 평가를 실패시키는 조건.
 - Required Outcome(필수 결과): 평가 시나리오가 반드시 달성해야 하는 최소 결과.
-- Outcome Evidence(결과 증거): Required Outcome을 입증하는 correlation으로 연결된 구조화된 성공 action과 repository-relative artifact 존재 정보. 최종 텍스트의 self-report는 증거로 사용하지 않는다.
+- Outcome Evidence(결과 증거): Required Outcome을 입증하는 correlation으로 연결된 구조화된 성공 action과 repository-relative artifact 존재 정보. 단일 JSON artifact는 선택적 `expected_json`으로 parsed content를 deterministic하게 비교할 수 있다. 최종 텍스트의 self-report는 증거로 사용하지 않는다.
 - Quality Score(품질 점수): 필수 결과와 정책을 통과한 실행의 품질 차이를 수치화한 값.
 - Trajectory Quality(경로 품질): workflow 실행 경로의 중복·불필요한 역추적·절차 준수 품질을 나타내는 값.
 - Efficiency: tokens, latency, tool_calls, turns, handoffs를 측정하는 지표. 일반 case pass/fail에는 사용하지 않는다.

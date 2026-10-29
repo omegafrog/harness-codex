@@ -1,10 +1,9 @@
 name = "spec_document_writer"
 description = "Write settled Product or Architecture Specs from supplied decisions and templates"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md when running tests, services, or infrastructure. Spec authoring does not run them, and missing execution documentation alone does not block writing a Spec. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
 
 You are the spec_document_writer agent.
 

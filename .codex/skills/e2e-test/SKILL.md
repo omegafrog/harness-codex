@@ -7,7 +7,11 @@ description: Run full-stack end-user E2E tests in the active worktree, following
 
 # E2E 테스트 실행
 
-먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. 이 정책은 의미적 수동 판단이며 자동 런타임 집행이 아니다. 호출자는 E2E/full-stack/browser end-to-end를 명시적으로 요청했거나 저비용 검사로 실패를 확인할 수 없는 변경된 critical cross-boundary 경로에 대해서만 실행한다. 승인된 E2E plan과 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다.
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
+먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. implement-wrapper가 split plan set의 최종 검증으로 호출하면 모든 split plan 구현·개별 검증·통합이 끝난 뒤 feature-level E2E를 한 번 실행한다. 개별 plan 구현 중에는 실행하지 않는다. 승인된 시나리오와 oracle을 사용하며, plan/test contract에 정의된 시나리오와 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다. 그 밖의 독립 작업에서는 명시된 E2E 요청 또는 저비용 검사로 판정할 수 없는 승인된 critical cross-boundary 위험에 대해서만 실행한다.
 
 실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 사용한다. 호출자는 활성 worktree의 절대 `workspace_root`와 세션을 시작한 원본 프로젝트의 절대 `shared_guidance_root`(`return_root`)를 모두 확정하고, 두 경로가 같은 Git common directory인지 확인한다. `<shared_guidance_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. `.codex/harness.yaml`의 `agents.execution_model`, `agents.execution_reasoning_effort`를 해석한 뒤 `multi_agent_v1.spawn_agent`로 `agent_type="e2e_test_runner"`를 호출한다. `workspace_root`와 `cwd`에 동일한 경로를 지정하고 두 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달하며 해석한 model/reasoning 값을 명시한다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
 
@@ -21,12 +25,12 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 
 1. 현재 디렉터리와 `git rev-parse --show-toplevel`을 확인해 활성 워크트리 경로를 확정한다. 호출 세션에서 전달된 워크트리와 다르면 실행하지 않고 불일치를 보고한다. 이후 모든 명령의 working directory는 이 경로로 고정한다. 인프라를 시작하기 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <worktree> --json`을 실행하고 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. 실패하면 서버나 테스트를 시작하지 않는다.
 2. `<shared_guidance_root>/docs/agents/testing-guidance.md`, 활성 worktree의 `docs/agents/EXEC.md`, E2E 대상의 실행 지침을 읽는다. 서버·인프라 준비, 환경 변수, 실행·대기·종료 명령은 활성 worktree의 프로젝트 계약을 따른다. 필요한 명령이나 전제가 없으면 추측해 환경을 변경하지 말고 blocker로 보고한다.
-3. `.codex/skills/e2e-test/scripts/artifact-guard.mjs snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
-4. EXEC의 인프라 profile을 harness-exec로 foreground 실행해 살아 있는 tool session/PID로 보존하고, 같은 방식으로 서버 profile을 시작한다. E2E profile은 별도 호출에서 서버·인프라 readiness를 다시 검사한다. 시작 PID와 receipt 경로를 기록하고 이 run이 소유한 CLI에만 SIGTERM을 전달하여 정리한다. 대상 애플리케이션과 필요한 인프라가 준비된 뒤, 지정된 브라우저/UI/API 절차로 엔드유저 시나리오를 실행한다. 시작한 프로세스의 로그·종료 코드·URL을 수집하고, 성공·실패·timeout·환경 차단을 구분한다. 로그·스크린샷·임시 결과는 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 저장한다.
+3. 원본 checkout에서는 `.codex/skills/e2e-test/scripts/artifact-guard.mjs`, 설치 consumer에서는 `.agents/skills/e2e-test/scripts/artifact-guard.mjs`를 선택한다. 이 경로를 `ARTIFACT_GUARD`로 지정하고 `node "$ARTIFACT_GUARD" snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
+4. `purpose: "e2e"`가 지정된 EXEC 인프라 profile을 harness-exec로 foreground 실행해 살아 있는 tool session/PID로 보존하고, 같은 방식으로 E2E server profile을 시작한다. E2E profile은 별도 호출에서 서버·인프라 readiness를 다시 검사한다. 시작 PID와 receipt 경로를 기록하고 이 run이 소유한 CLI에만 SIGTERM을 전달하여 정리한다. 대상 애플리케이션과 필요한 인프라가 준비된 뒤, 지정된 브라우저/UI/API 절차로 엔드유저 시나리오를 실행한다. 시작한 프로세스의 로그·종료 코드·URL을 수집하고, 성공·실패·timeout·환경 차단을 구분한다. 로그·스크린샷·임시 결과는 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 저장한다.
 5. 실행 종료, 시작 실패, 테스트 실패, timeout 모두에서 정리 절차를 수행한다. 소유한 서버/인프라 프로세스를 종료한 뒤 다음 cleanup hook을 실행한다.
 
    ```bash
-   node .codex/skills/e2e-test/scripts/artifact-guard.mjs cleanup --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json
+   node "$ARTIFACT_GUARD" cleanup --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json
    ```
 
 6. cleanup hook 결과를 확인한다. 실행 전부터 있던 untracked/ignored 경로는 보존되어야 하고, 실행 후 새로 생긴 경로는 제거되어야 한다. cleanup이 실패하거나 새 산출물이 남으면 결과를 `inconclusive`로 보고하고 남은 경로를 명시한다.

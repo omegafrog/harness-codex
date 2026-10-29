@@ -1,7 +1,8 @@
 schema_version: 1
 id: frontend-design
+orchestrator: orchestrator
 roles: [frontend_designer, frontend_implementation_agent, frontend_visual_reviewer]
-skills: [sync-contracts, frontend-design, frontend-figma, frontend-implement, frontend-visual-review]
+skills: [orchestrator, sync-contracts, frontend-design, frontend-figma, frontend-implement, frontend-visual-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]

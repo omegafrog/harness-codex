@@ -4,7 +4,7 @@
 
 ## 실행 위치
 
-- canonical per-plan `## 범위`의 `workspace_root`·`workspace_branch`와 index `## 실행 위치`를 읽고 사용자 지정 위치와 대조한다. 필드 누락·충돌·제거된 경로·detached HEAD는 tracker 전환이나 쓰기 전에 중단한다. 기존 계획에 필드가 없으면 실제 대상 확인 후 plan/index를 보완하고 fresh review를 갱신한다.
+- `docs/plans/<plan-set-id>/<plan-id>.md`의 `## 범위`에 있는 `workspace_root`·`workspace_branch`와 `docs/plans/<plan-set-id>/plans.md`의 `## 실행 위치`를 읽고 사용자 지정 위치와 대조한다. 필드 누락·충돌·제거된 경로·detached HEAD는 tracker 전환이나 쓰기 전에 중단한다.
 - 해당 절대 경로를 `execution_line`, 구현 agent의 `workspace_root`와 `cwd`로 사용한다. `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list --porcelain`이 계획의 경로·브랜치·등록과 일치해야 한다. `expected-root`도 계획의 경로로 고정한다.
 - 과거 checkpoint·`worktree.json`·Architecture review의 `session_worktree`는 현재 실행 위치를 결정하지 않는다. 계획 전환·재개·병합 후에도 같은 위치와 브랜치를 유지한다. 실행 대상에 승인 Spec·계획이 없으면 통합을 인계하고 반영 전 dispatch를 차단한다.
 

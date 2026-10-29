@@ -1,0 +1,24 @@
+schema_version: 1
+execution_purpose: code_validation
+id: pilot-skill-selection-planning
+workflow: to-ticket
+dispatch_workflow: false
+critical: true
+required_outcome: [artifact_written]
+outcome_evidence:
+  artifact_written:
+    actions: [write_file]
+    target_prefix: .eval-output/pilot/skill-selection-planning.json
+    required_files: [.eval-output/pilot/skill-selection-planning.json]
+hard_gates: [workflow_order_violation]
+quality_threshold: 0.85
+hard_caps:
+  max_turns: 8
+  max_tool_calls: 16
+  max_tokens: 100000
+  max_latency_ms: 60000
+environment_profile: p0-default
+integration: false
+recording: { mode: none }
+scenario:
+  prompt: "Classify which Harness workflow should start for this request. Product and Architecture Specs are approved, required independent reviews passed, and the user wants vertical implementation tickets prepared. Choose exactly one from spec-me, to-ticket, implement-wrapper, evaluate-harness. Do not execute the workflow. Write .eval-output/pilot/skill-selection-planning.json containing JSON with keys workflow and reason. Use only this workspace, and verify the file parses as JSON."

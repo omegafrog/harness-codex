@@ -7,6 +7,10 @@ description: Update the project-local Harness runtime when the user asks to upda
 
 # Harness Maintenance
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 Use this skill for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.
 
 1. Resolve the current repository root with `git rev-parse --show-toplevel`. Do not update a parent checkout, another worktree, or the Harness source repository by assumption.
@@ -17,7 +21,7 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
    npx --yes github:omegafrog/harness-codex update --project <repository-root>
    ```
 
-4. `Project readiness: blocked` 또는 doctor의 `project_preparation_required`이면 [setup의 준비 복구](../setup/SKILL.md#설치업데이트-및-구현-전-준비-복구)를 실행해 실제 실행 프로필과 통합 계약을 보완한다. 런타임 파일 배치 성공을 workflow 완료로 보고하지 않는다. 기존 업무 코드·stash·tracker 상태는 보존한다. 그런 다음 진단을 재실행한다.
+4. Doctor로 설치 상태를 확인한다. 프로젝트 실행 준비와 통합 계약은 해당 workflow의 실행 전 검사와 최종 통합 gate에서 확인한다. 업데이트만으로 통합 계약을 갱신하거나 seal하지 않는다.
 
    Run the installed version's diagnostic command:
 

@@ -5,7 +5,7 @@ import { inspectContracts } from '../contracts/contracts.mjs';
 import { readExecutionManifest } from './execution.mjs';
 
 // This checks preparation without launching commands or inventing consumer business contracts.
-export async function inspectProjectReadiness({ workspace_root, deferContractSync = false, base_ref = null } = {}) {
+export async function inspectProjectReadiness({ workspace_root, deferContractSync = false, deferActiveWorktree = false, base_ref = null } = {}) {
   let execution;
   try {
     if (!isAbsolute(workspace_root || '')) throw new Error('Absolute workspace_root is required');
@@ -20,6 +20,13 @@ export async function inspectProjectReadiness({ workspace_root, deferContractSyn
   const contractDriftOnly = contracts.reason === 'contracts_out_of_sync'
     && contracts.violations.length === 1
     && contracts.violations[0] === 'Contract/source snapshot changed; reconcile and seal';
+  if (deferActiveWorktree && contractDriftOnly && !deferContractSync) {
+    try {
+      const { inspectStartupState } = await import('./startup-state.mjs');
+      const observed = await inspectStartupState({ workspaceRoot: workspace_root });
+      deferContractSync = observed.worktrees.some((entry) => entry.current && entry.status === 'verified_active');
+    } catch { /* Unverified workspaces retain strict contract checks. */ }
+  }
   if (deferContractSync && execution.status === 'pass' && contractDriftOnly) {
     return {
       status: 'pass',

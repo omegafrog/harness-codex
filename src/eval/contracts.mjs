@@ -39,6 +39,7 @@ export const HARD_GATE_MODES = Object.freeze({
 export const HARD_GATE_IDS = new Set(Object.keys(HARD_GATE_MODES));
 
 export const REQUIRED_OUTCOME_IDS = new Set([
+  "artifact_written",
   "spec_complete",
   "ambiguity_resolved",
   "plan_dispatched",

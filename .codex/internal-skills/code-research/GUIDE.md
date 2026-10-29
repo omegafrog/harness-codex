@@ -4,6 +4,10 @@
 
 # code-research
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 ## What it does
 
 `code-research` inspects the current codebase and returns only the facts and deltas needed for architecture work.
@@ -75,4 +79,4 @@ For every concrete claim, include file paths. Keep the report short and factual.
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
 
-실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 `docs/agents/execution.json`과 EXEC에 대조하여 필수 인자·설정 갱신·인프라 누락을 보고한다. 빈 dependency/prepare 목록을 무조건 신뢰하지 않는다.
+실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조한다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.

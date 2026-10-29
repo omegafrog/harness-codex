@@ -66,16 +66,16 @@ try {
     const actual = createHash("sha256").update(readFileSync(options.jar)).digest("hex");
     if (actual !== options.sha256.toLowerCase()) throw new Error(`PlantUML JAR SHA-256 mismatch: expected ${options.sha256}, got ${actual}`);
   }
-  const java = spawnSync("java", ["-version"], { encoding: "utf8" });
-  if (java.error || java.status !== 0) throw new Error("Java is unavailable; install Java and retry");
-  const graphviz = spawnSync("dot", ["-V"], { encoding: "utf8" });
+  const java = spawnSync("java", ["-version"], { stdio: "inherit" });
+  if (java.error || java.status !== 0) throw new Error(`Java could not start: ${java.error?.message || `exit ${java.status}`}`);
+  const graphviz = spawnSync("dot", ["-V"], { stdio: "inherit" });
   if (graphviz.error || graphviz.status !== 0) throw new Error("Graphviz is unavailable; install Graphviz and retry");
   const outputDir = options.output || dirname(options.input);
   mkdirSync(outputDir, { recursive: true });
   for (const format of options.png ? ["svg", "png"] : ["svg"]) {
-    const process = spawnSync("java", ["-jar", options.jar, `-t${format}`, "-o", outputDir, options.input], { encoding: "utf8" });
+    const process = spawnSync("java", ["-Djava.awt.headless=true", "-jar", options.jar, `-t${format}`, "-o", outputDir, options.input], { stdio: "inherit" });
     if (process.error || process.status !== 0) {
-      const detail = (process.stderr || process.stdout || "").trim();
+      const detail = process.error?.message || `exit ${process.status}`;
       throw new Error(`PlantUML ${format} render failed for ${options.input}${detail ? `: ${detail}` : ""}`);
     }
     const output = resolve(outputDir, `${basename(options.input, ".puml")}.${format}`);

@@ -1,6 +1,9 @@
 import { inspectSpecReviews } from './spec-review.mjs';
 import { readArchitectureDecision, readMaterialApproval, readReviewRecord, readSystemTargets, validateEvidenceReferences, validatePrincipleReferences } from "../decision/artifacts.mjs";
 import { evaluateDecisionGate, materialApprovalReferences } from "../decision/review.mjs";
+import { lstat, readFile, readdir } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
+import { assertWorkspaceTarget } from "../eval/case-workspace.mjs";
 
 export const SYSTEM_TARGET_GATE_ID = "system_targets_complete";
 export const DECISION_EVIDENCE_GATE_ID = "decision_evidence_complete";
@@ -65,6 +68,50 @@ export async function evaluateSystemTargetsComplete({ root = process.cwd(), tick
 
 function result(status, ruleId, reason, evidencePath, violations = []) {
   return { status, rule_id: ruleId, reason, evidence_path: evidencePath, violations };
+}
+
+async function evaluateDiagramCompletion({ root, ticketId, axis }) {
+  const safeTicketId = typeof ticketId === "string" && SAFE_TICKET_ID.test(ticketId) ? ticketId : "<invalid-ticket-id>";
+  const directory = `docs/specs/${safeTicketId}/diagrams/${axis}`;
+  const specPath = `docs/specs/${safeTicketId}/${axis === "product" ? "product-spec.md" : "architecture-spec.md"}`;
+  const rootPath = resolve(root);
+  try {
+    await assertWorkspaceTarget(rootPath, specPath);
+    await assertWorkspaceTarget(rootPath, directory);
+    const spec = await readFile(resolve(rootPath, specPath), "utf8");
+    const files = [];
+    const walk = async (path) => {
+      const info = await lstat(path);
+      if (info.isSymbolicLink()) throw new Error(`Diagram path cannot be a symlink: ${relative(root, path)}`);
+      if (!info.isDirectory()) return;
+      for (const entry of await readdir(path, { withFileTypes: true })) {
+        const child = join(path, entry.name);
+        if (entry.isSymbolicLink()) throw new Error(`Diagram path cannot be a symlink: ${relative(root, child)}`);
+        if (entry.isDirectory()) await walk(child);
+        else if (entry.isFile() && /\.(puml|svg)$/i.test(entry.name)) files.push(relative(rootPath, child).split(sep).join("/"));
+      }
+    };
+    await walk(resolve(root, directory));
+    const sources = files.filter((path) => path.endsWith(".puml"));
+    const renders = new Set(files.filter((path) => path.endsWith(".svg")));
+    const violations = [];
+    if (!sources.length) violations.push({ code: "missing_diagram_source", path: directory, message: "An applicable diagram stage must produce at least one PlantUML source." });
+    for (const source of sources) {
+      const render = source.replace(/\.puml$/, ".svg");
+      if (!renders.has(render)) violations.push({ code: "missing_diagram_render", path: render, message: "A rendered SVG with the same basename is required." });
+      else {
+        const svg = await readFile(resolve(rootPath, render), "utf8");
+        if (!/<svg[\s>]/i.test(svg)) violations.push({ code: "invalid_diagram_render", path: render, message: "Rendered file does not contain an SVG root element." });
+      }
+      const markdownLink = source.replace(`docs/specs/${safeTicketId}/`, "").replace(/\.puml$/, ".svg");
+      if (!spec.includes(markdownLink)) violations.push({ code: "missing_diagram_link", path: specPath, message: `Spec must link to ${markdownLink}.` });
+    }
+    for (const render of renders) if (!sources.includes(render.replace(/\.svg$/, ".puml"))) violations.push({ code: "orphan_diagram_render", path: render, message: "SVG has no matching PlantUML source." });
+    return result(violations.length ? "blocked" : "pass", `${axis}_diagram_completion`, violations.length ? "Diagram sources, renders, and Spec links are incomplete." : "Diagram sources, renders, and Spec links are present.", directory, violations);
+  } catch (error) {
+    const missing = error?.code === "ENOENT";
+    return result(missing ? "blocked" : "fail", `${axis}_diagram_completion`, missing ? "An applicable diagram artifact is missing." : "Diagram completion could not be verified.", directory, [{ code: missing ? "missing_diagram_artifact" : "invalid_diagram_artifact", path: directory, message: error.message }]);
+  }
 }
 
 async function loadDecisionContext(root, ticketId) {
@@ -135,7 +182,8 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
 }
 
 const REGISTERED_STAGE_GATES = new Map([
-  ["product_adversarial_review", ({ root, ticketId, specReviews }) => inspectSpecReviews({ root, ticketId, reviews: specReviews, axes: ["product"] })],
+  ["product_diagram_completion", ({ root, ticketId }) => evaluateDiagramCompletion({ root, ticketId, axis: "product" })],
+  ["architecture_diagram_completion", ({ root, ticketId }) => evaluateDiagramCompletion({ root, ticketId, axis: "architecture" })],
   ["architecture_adversarial_review", ({ root, ticketId, specReviews }) => inspectSpecReviews({ root, ticketId, reviews: specReviews })],
   [SYSTEM_TARGET_GATE_ID, evaluateSystemTargetsComplete],
   [DECISION_EVIDENCE_GATE_ID, evaluateDecisionEvidenceComplete],

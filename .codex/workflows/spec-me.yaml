@@ -1,7 +1,8 @@
 schema_version: 1
 id: spec-me
+orchestrator: orchestrator
 roles: [spec_document_writer, diagram_creator, architecture_review_lead, code_researcher, spec_adversarial_reviewer]
-skills: [session-worktree, worktree-create, spec-me, product-spec, code-research, ddd-design, codebase-design, event-storming, architecture-spec, plantuml-diagrams, architecture-review, spec-review]
+skills: [orchestrator, session-worktree, worktree-create, spec-me, product-spec, code-research, ddd-design, codebase-design, event-storming, architecture-spec, plantuml-diagrams, architecture-review, spec-review]
 hooks:
   before_dispatch: [session_worktree, tracker_sync]
   before_handoff: [checkpoint_completeness, evidence_flush]
@@ -18,26 +19,20 @@ stages:
     role: diagram_creator
     skill: plantuml-diagrams
     model_tier: low
-    needs: [product]
+    needs: [architecture-review]
     condition: product_diagram_required
     gates: [product_diagram_completion]
-  - id: product-review
-    role: spec_adversarial_reviewer
-    skill: spec-review
-    model_tier: high_performance
-    needs: [product, product_diagram]
-    gates: [product_adversarial_review]
   - id: define-system-targets
     role: spec_document_writer
     skill: spec-me
     model_tier: implementation
-    needs: [product-review]
+    needs: [product]
     gates: [system_targets_complete]
   - id: domain-baseline
     role: code_researcher
     skill: code-research
     model_tier: low
-    needs: [product-review]
+    needs: [product]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
@@ -61,12 +56,12 @@ stages:
     role: diagram_creator
     skill: plantuml-diagrams
     model_tier: low
-    needs: [architecture]
+    needs: [architecture-review]
     condition: architecture_diagram_required
     gates: [architecture_diagram_completion]
   - id: architecture-review
     role: spec_adversarial_reviewer
     skill: spec-review
     model_tier: high_performance
-    needs: [architecture, architecture_diagram, verify-architecture-decisions]
+    needs: [architecture, verify-architecture-decisions]
     gates: [architecture_adversarial_review]

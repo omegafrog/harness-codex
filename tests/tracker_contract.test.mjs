@@ -65,10 +65,12 @@ test("split-plan and implementation PR renderers preserve one-plan and one-PR in
     purpose: "Persist evidence.",
     scope: ["workspace_root: /workspace/existing-project", "workspace_branch: feature/journal", "JSONL journal"],
     acceptance_criteria: ["Replay is contiguous."],
-    test_contract: { unit_policy: "Node tests", ui_entity_e2e: "Not applicable." },
+    test_contract: { unit_policy: "Business rule unit tests; verification_files: tests/business-rule.test.mjs; verification_command: node --test tests/business-rule.test.mjs", ui_entity_e2e: "Not applicable." },
     dependencies: [],
     specs,
   });
+  assert.match(split, /tests\/business-rule\.test\.mjs/);
+  assert.match(split, /verification_command: node --test tests/business-rule.test.mjs/);
   const pr = renderImplementationPr({
     schema_version: 1,
     kind: "implementation-pr",
