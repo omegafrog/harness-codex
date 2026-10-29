@@ -5,7 +5,7 @@ import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 
-const ACTIVE_WORKFLOW_STATES = new Set(['running', 'waiting', 'blocked']);
+const ACTIVE_WORKFLOW_STATES = new Set(['created', 'running', 'waiting', 'blocked']);
 
 export async function processIdentity(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Invalid process identity');
@@ -32,14 +32,21 @@ export async function recordExecutionState({ root, input, binding, status, code 
   const stage = input.context?.stage_id || input.skill;
   if ((codexSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(codexSessionId)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid Codex session ID or stage ID');
   const directory = 'runtime/orchestrator';
-  await assertWorkspaceTarget(session, `${directory}/state.json`);
+  await assertWorkspaceTarget(session, `${directory}/workflow.json`);
   await mkdir(join(session, directory), { recursive: true });
   const lock = join(session, directory, '.state.lock');
   await mkdir(lock);
   try {
-    let state;
-    try { state = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/state.json` }); }
+    let workflow;
+    try { workflow = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/workflow.json` }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    workflow ||= { schema_version: 1, stages: [] };
+    let state = workflow.state;
+    let migrated = false;
+    if (!state) {
+      try { state = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/state.json` }); migrated = true; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     if (state && state.schema_version !== 1) throw new Error('Invalid workflow state schema');
     if (state && input.context?.workflow_ref && state.workflow_ref !== input.context.workflow_ref) throw new Error('Workflow reference mismatch');
     if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') throw new Error('Workflow already active');
@@ -50,10 +57,12 @@ export async function recordExecutionState({ root, input, binding, status, code 
       if (await processAlive(previous.owner) || await processAlive(previous.child)) throw new Error('Stage already running');
       previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its processes exited'; previous.finished_at = new Date().toISOString();
     }
-    if (status !== 'running' && previous?.execution_id !== input.execution_id) throw new Error('Stage execution changed');
+    if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
     const now = new Date().toISOString();
+    const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
     if (status === 'running') {
+      if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = now;
       if (previous?.execution_id !== input.execution_id) { delete entry.child; delete entry.finished_at; }
       if (owner) entry.owner = owner;
@@ -62,14 +71,16 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     else entry.finished_at = now;
     state.stages = { ...state.stages, [stage]: entry };
-    state.status = status === 'completed' || status === 'action_required' ? 'waiting' : status;
+    state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';
     state.current_stage = stage;
     state.updated_at = now;
     if (input.skill === 'workflow-compose' && status === 'completed') state.workflow_ref = 'runtime/orchestrator/workflow.json';
-    const temporary = join(session, directory, `.state-${randomUUID()}.json`);
-    try { await writeFile(temporary, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, join(session, directory, 'state.json')); }
+    workflow.state = state;
+    const temporary = join(session, directory, `.workflow-${randomUUID()}.json`);
+    try { await writeFile(temporary, JSON.stringify(workflow, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, join(session, directory, 'workflow.json')); }
     finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    if (migrated) await unlink(join(session, directory, 'state.json'));
     await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [], codex_session_id: codexSessionId }, 'SkillExecution');
   } finally { await rm(lock, { recursive: true }); }
 }

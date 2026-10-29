@@ -148,7 +148,8 @@ async function resolveInputWorktree(root, input) {
 }
 
 export async function validateComposedWorkflow({ root, session_directory, workflow }) {
-  validate(workflow, await json(join(root, '.codex/internal-skills/workflow-compose/schemas/workflow.schema.json')));
+  const { state, ...definition } = workflow;
+  validate(definition, await json(join(root, '.codex/internal-skills/workflow-compose/schemas/workflow.schema.json')));
   const session = await resolveSkillSession(root, session_directory);
   const bindings = await json(join(root, CONTRACT, 'bindings.json'));
   const stages = new Map(workflow.stages.map((stage) => [stage.id, stage]));

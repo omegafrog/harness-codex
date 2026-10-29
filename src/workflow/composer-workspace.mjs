@@ -11,8 +11,12 @@ export async function prepareComposerWorkspace({ root, session, input, inputPath
   let reference = input.context?.worktree_ref;
   if (!reference) {
     let state;
-    try { state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' }); }
+    try { state = (await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/workflow.json' })).state; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (!state) {
+      try { state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' }); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     const current = state?.stages?.['workflow-compose'];
     const previous = current?.execution_id === input.execution_id ? current.attempts?.at(-1) : current;
     if (previous?.execution_id && previous.execution_id !== input.execution_id) {

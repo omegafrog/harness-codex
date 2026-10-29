@@ -24,7 +24,8 @@ try {
   const session = await resolveSkillSession(repository, dirname(dirname(dirname(workflowPath))));
   const workflowRef = relative(session, workflowPath);
   if (workflowRef !== 'runtime/orchestrator/workflow.json') throw new Error('Workflow reference must identify the canonical workflow');
-  const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });
+  const workflow = await readSkillSessionJson({ root: repository, session_directory: session, path: workflowRef });
+  const state = workflow.state || await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.workflow_ref !== workflowRef) throw new Error('Workflow state/reference mismatch');
   const composer = state.stages?.['workflow-compose'];
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(composer?.execution_id || '') || !composer.result_ref) throw new Error('Workflow composition record is missing');

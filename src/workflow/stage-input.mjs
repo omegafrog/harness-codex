@@ -28,7 +28,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   const workflow = await readSkillSessionJson({ root, session_directory: session, path: workflowRef });
   await validateComposedWorkflow({ root, session_directory: session, workflow });
-  const state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
+  const state = workflow.state || await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.workflow_ref !== workflowRef) throw new Error('Workflow state/reference mismatch');
   const stage = workflow.stages.find((item) => item.id === stageId);
   if (!stage) throw new Error(`Unknown workflow stage: ${stageId}`);

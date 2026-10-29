@@ -9,7 +9,7 @@ import { findExecutionInput } from './execution-input.mjs';
 
 const exec = promisify(execFile);
 const git = async (root, args) => (await exec('git', args, { cwd: root, encoding: 'utf8', timeout: 2000, maxBuffer: 2 * 1024 * 1024 })).stdout;
-const ACTIVE = new Set(['running', 'waiting', 'blocked']);
+const ACTIVE = new Set(['created', 'running', 'waiting', 'blocked']);
 const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
 
 async function readJson(directory, file) {
@@ -67,24 +67,25 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       }
     } catch (error) { issues.push({ path: join(session, 'worktree.json'), reason: error.message }); }
     try {
-      const state = await readJson(session, 'runtime/orchestrator/state.json');
+      const document = await readJson(session, 'runtime/orchestrator/workflow.json');
+      const state = document?.state || await readJson(session, 'runtime/orchestrator/state.json');
       if (!state) {
         if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) currentOrphan = true;
         continue;
       }
       if (![currentSession, legacySession].includes(session) && !records.some((record) => dirname(record.record_path) === session)) {
-        issues.push({ path: join(session, 'runtime/orchestrator/state.json'), reason: 'workflow_without_worktree_record' });
+        issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: 'workflow_without_worktree_record' });
         continue;
       }
       if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
       if (ref === null && state.current_stage === 'workflow-compose' && ACTIVE.has(state.status)) {
-        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
+        states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
       if (typeof ref !== 'string' || isAbsolute(ref) || win32.isAbsolute(ref) || ref.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid workflow reference');
-      const workflow = await readJson(session, ref);
+      const workflow = document || await readJson(session, ref);
       if (!workflow || workflow.schema_version !== 1 || !Array.isArray(workflow.stages) || !workflow.stages.length) throw new Error('Workflow file missing or invalid');
       let agentSessions = sessionRecord?.agent_sessions || {};
       if (!Object.keys(agentSessions).length) {
@@ -112,8 +113,8 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
           if (Object.keys(agentSessions).length) break;
         }
       }
-      states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: join(session, ref), status: state.status, current_stage: state.current_stage || null, orchestrator_session_id: agentSessions.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: agentSessions });
-    } catch (error) { issues.push({ path: join(session, 'runtime/orchestrator/state.json'), reason: error.message }); }
+      states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: join(session, ref), status: state.status, current_stage: state.current_stage || null, orchestrator_session_id: agentSessions.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: agentSessions });
+    } catch (error) { issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: error.message }); }
   }
   const currentRecord = records.find((record) => record.current);
   const associatedRecord = states.length === 1 ? records.find((record) => dirname(record.record_path) === states[0].session_directory) : null;
@@ -139,9 +140,9 @@ export async function refreshWorkflowProgress(observed, event) {
   if (observed.matching_workflow_count !== 1 || observed.issues.length) return null;
   const match = observed.matching_workflows[0];
   const session = match.session_directory;
-  const state = await readJson(session, 'runtime/orchestrator/state.json');
+  const workflow = await readJson(session, 'runtime/orchestrator/workflow.json');
+  const state = workflow?.state || await readJson(session, 'runtime/orchestrator/state.json');
   if (!state) return null;
-  const workflow = state.workflow_ref ? await readJson(session, state.workflow_ref) : null;
   const statuses = new Set(['pending', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'skipped']);
   const stages = (workflow?.stages || []).map(({ id, needs = [] }) => {
     const entry = state.stages?.[id];

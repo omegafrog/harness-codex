@@ -1,6 +1,6 @@
 # 시작 hook의 상태 확인
 
-`harness-orchestrator-hook.mjs`의 시작 상태 검사는 읽기 전용으로 현재 Git root·common directory와 `git worktree list --porcelain -z`를 조회한다. 같은 저장소의 canonical session 디렉터리에서 `worktree.json`·`runtime/orchestrator/state.json`을 읽고 실제 등록 경로·branch·디렉터리 존재 여부와 대조한다. 조회 과정에서 기록을 생성·이전·복구하거나 worktree를 제거하지 않는다.
+`harness-orchestrator-hook.mjs`의 시작 상태 검사는 읽기 전용으로 현재 Git root·common directory와 `git worktree list --porcelain -z`를 조회한다. 같은 저장소의 canonical session 디렉터리에서 `worktree.json`·`runtime/orchestrator/workflow.json`의 `state`을 읽고 실제 등록 경로·branch·디렉터리 존재 여부와 대조한다. 조회 과정에서 기록을 생성·이전·복구하거나 worktree를 제거하지 않는다.
 
 ## 판정 힌트
 
@@ -26,12 +26,12 @@ workflow state는 현재 저장소의 canonical session 경로와 검증된 work
 }
 ```
 
-`status`는 `running`, `waiting`, `blocked`, `completed`, `cancelled`, `failed` 중 하나다. workflow-compose 실행기가 시작할 때는 `current_stage: "workflow-compose"`, `workflow_ref: null`로 기록하고 실제 agent ID·execution ID를 추가한다. 생성 결과를 채택하면 `workflow_ref`를 채운다. 이 과도기에도 hook은 같은 세션의 생성 작업이 있음을 전달하므로 중복 생성하지 않는다. 상태 질문이나 사용자 답변을 받으면 기존 기록을 갱신한다.
+`status`는 `created`, `running`, `waiting`, `blocked`, `completed`, `cancelled`, `failed` 중 하나다. workflow-compose 실행기가 시작할 때는 `current_stage: "workflow-compose"`, `workflow_ref: null`로 기록하고 실제 agent ID·execution ID를 추가한다. 생성 결과를 채택하면 `workflow_ref`를 채우고 신규 상태는 `created`로 설정한다. 기존 workflow 상태가 있으면 보존한다. 이 과도기에도 hook은 같은 세션의 생성 작업이 있음을 전달하므로 중복 생성하지 않는다. 상태 질문이나 사용자 답변을 받으면 기존 기록을 갱신한다.
 
 상태가 없는 workflow 파일은 기존 기록으로 간주하지 않는다. `codex_session_id`가 없거나 이전 세션 ID인 상태도 현재 저장소·workflow reference·worktree 기록이 유효하면 이어갈 수 있다. Hook은 `matching_workflows`, `worktrees`, `issues`의 실제 경로를 함께 전달하며 많은 worktree가 있으면 표시 개수와 생략 개수를 구분한다.
 
 ## 진행 상황 집계
 
-실행기는 단계 실행 결과에 따라 `state.json`의 `stages` 객체에 workflow stage ID별 `{ "status": "pending", "execution_id": null, "result_ref": null, "reason": null }`를 기록한다. 상태는 `pending`, `running`, `waiting`, `blocked`, `completed`, `failed`, `cancelled`, `skipped`다. dispatch 전에 running, 검증된 반환과 gate 판정 후 해당 상태로 갱신한다. 재시도는 같은 stage를 running으로 되돌리고 새 execution ID를 기록한다. 조건상 생략은 skipped와 사유를 남긴다. 병렬 단계도 각각 기록하며 `current_stage` 하나로 완료 여부를 추측하지 않는다.
+실행기는 단계 실행 결과에 따라 `workflow.json`의 `state.stages` 객체에 workflow stage ID별 `{ "status": "pending", "execution_id": null, "result_ref": null, "reason": null }`를 기록한다. 상태는 `pending`, `running`, `waiting`, `blocked`, `completed`, `failed`, `cancelled`, `skipped`다. dispatch 전에 running, 검증된 반환과 gate 판정 후 해당 상태로 갱신한다. 재시도는 같은 stage를 running으로 되돌리고 새 execution ID를 기록한다. 조건상 생략은 skipped와 사유를 남긴다. 병렬 단계도 각각 기록하며 `current_stage` 하나로 완료 여부를 추측하지 않는다.
 
 `UserPromptSubmit`, `PostToolUse`, `Stop` hook은 같은 Codex 세션의 기록으로 `<session_directory>/runtime/orchestrator/progress.json`을 원자적으로 갱신한다. 이 파일은 workflow ID, 전체 상태, 현재 단계, stage별 상태·실행 ID·결과 참조·차단 사유, 상태별 개수, 완료 단계 비율, 관측 시각·event를 담는다. 진행률은 완료 단계 수/전체 단계 수이며 시간·작업량 추정치가 아니다. workflow 생성 중에는 전체 단계 수 0, 비율 null이다. 기존 stage 기록이 없으면 pending으로 표시한다. hook은 단계 전환이나 성공 판정을 만들지 않는다. 상태 질문에는 이 집계와 원본 state·결과 파일을 함께 읽는다. 갱신 시각 이후 hook이 실행되지 않았다면 최신 상태라고 단정하지 않는다.
