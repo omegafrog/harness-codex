@@ -1,5 +1,6 @@
 import { provisionWorktreeRuntime } from '../installer/worktree-runtime.mjs';
 import { sessionDirectory } from './session-output.mjs';
+import { WORKTREE_STAGE } from './worktree-stages.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
@@ -35,6 +36,7 @@ export function parseWorktreeRecord(text) {
     || !['workspace', 'common', 'return_root', 'session_directory'].every((key) => isAbsolute(record[key] || ''))
     || typeof record.branch !== 'string' || !record.branch) throw new Error('Invalid worktree.json');
   validatePlanSetId(record.plan_set_id);
+  if (record.current_stage !== undefined && !Object.values(WORKTREE_STAGE).includes(record.current_stage)) throw new Error('Invalid worktree current_stage');
   if (record.agent_sessions !== undefined) {
     if (!record.agent_sessions || typeof record.agent_sessions !== 'object' || Array.isArray(record.agent_sessions)) throw new Error('Invalid worktree agent_sessions');
     for (const [key, entry] of Object.entries(record.agent_sessions)) {
@@ -97,7 +99,7 @@ export async function reserveWorkflowWorktree({ workspace_root, repository_root,
   try { await lstat(place.workspace); throw new Error('Allocation path already exists'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { const old = await readWorktreeRecord(place); if (old.state !== 'removed') throw new Error('Allocation already has a pending owner'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const source_workspace = await realpath(repository_root);
-  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), state: 'allocating', session_directory: place.session_directory };
+  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), state: 'allocating', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, session_directory: place.session_directory };
   await writeWorktreeRecord(place, record);
   return record;
   });
@@ -131,7 +133,7 @@ async function registerWorktree({ workspace_root, return_root, plan_set_id } = {
     }
     if (existing.state !== 'removed') throw new Error('Finish the pending cleanup before registering another worktree');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), state: 'active', registered_at: new Date().toISOString() };
+  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), state: 'active', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, registered_at: new Date().toISOString() };
   await writeWorktreeRecord(place, record);
   return record;
 }
@@ -172,6 +174,18 @@ export async function recordWorkflowSession({ workspace_root, repository_root = 
     const updated = { ...record, agent_sessions: { ...(record.agent_sessions || {}), [key]: entry } };
     await writeWorktreeRecord(place, updated);
     return entry;
+  });
+}
+
+export async function recordWorktreeStage({ workspace_root, repository_root, current_stage } = {}) {
+  if (!Object.values(WORKTREE_STAGE).includes(current_stage)) throw new Error('Invalid worktree current_stage');
+  const place = await location(workspace_root, repository_root);
+  return withWorktreeLock(place, async () => {
+    const record = await readWorktreeRecord(place);
+    if (record.state !== 'active' || record.workspace !== place.workspace || record.common !== place.common || record.session_directory !== place.session_directory) throw new Error('Worktree ownership mismatch while recording stage');
+    const actual = await describe(place.workspace);
+    if (actual.common !== record.common || actual.branch !== record.branch || actual.git_dir !== record.git_dir) throw new Error('Worktree changed while recording stage');
+    await writeWorktreeRecord(place, { ...record, current_stage });
   });
 }
 

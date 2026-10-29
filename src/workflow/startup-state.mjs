@@ -6,6 +6,7 @@ import { sessionDirectory } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { findExecutionInput } from './execution-input.mjs';
+import { WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const exec = promisify(execFile);
 const git = async (root, args) => (await exec('git', args, { cwd: root, encoding: 'utf8', timeout: 2000, maxBuffer: 2 * 1024 * 1024 })).stdout;
@@ -80,7 +81,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
-      if (ref === null && state.current_stage === 'workflow-compose' && ACTIVE.has(state.status)) {
+      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && ACTIVE.has(state.status)) {
         states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }

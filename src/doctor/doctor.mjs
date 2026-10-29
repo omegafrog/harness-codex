@@ -38,7 +38,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['plan_split', 'plan_revision', 'plan_finalize'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-${name}.schema.json`),
   ];
   if (await lstat(join(root, '.codex/harness-runtime')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['output-schema', 'codex-process', 'cli-session'].map((name) => `.codex/harness-runtime/src/workflow/${name}.mjs`));
+    paths.push(...['output-schema', 'codex-process', 'cli-session', 'worktree-stages'].map((name) => `.codex/harness-runtime/src/workflow/${name}.mjs`));
   }
   for (const path of paths) {
     const fullPath = join(root, path);

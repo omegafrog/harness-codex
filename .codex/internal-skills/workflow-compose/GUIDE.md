@@ -2,9 +2,9 @@
 
 사용자의 최초 요청 원문을 입력받는다.
 
-1. 요청을 바탕으로 짧고 의미 있는 `plan_set_id`를 만든다.
-2. 현재 프로젝트에서 `node .codex/scripts/harness-workflow-worktree.mjs create --plan-set-id <plan_set_id>`를 실행한다. 생성기가 작업 worktree와 `plan_set_id`가 기록된 정본 `worktree.json`을 만든다.
-3. 생성 결과의 `session_directory`에 있는 `worktree.json`을 `worktree_ref`로 사용해 처리 상태와 함께 orchestrator에 반환한다. 실패한 경우 실패 사유를 반환한다.
-4. 성공하면 orchestrator가 `worktree.json`에서 worktree 경로를 읽어 사용자에게 알리고, 해당 위치에서 새 세션을 열도록 안내한다.
+1. 실행 입력의 `context.worktree_ref`로 준비된 정본 `worktree.json`을 읽는다. worktree 준비는 호출자의 `harness-compose-workspace.mjs`가 담당한다.
+2. 사용자 요청에 필요한 skill, 단계와 의존 관계를 결정하고 `.codex/internal-skills/workflow-compose/schemas/workflow.schema.json`에 맞는 `runtime/orchestrator/workflow.json`을 실행 session에 작성한다. 기존 파일에 `state`가 있으면 그대로 보존한다.
+3. `completed/OK` 반환에 `worktree_ref`와 `request_workflow` artifact (`base: session`, `path: runtime/orchestrator/workflow.json`)를 포함한다. worktree 생성만으로 compose가 완료된 것으로 보고하지 않는다.
+4. 호출자는 반환과 workflow를 검증하고 `harness-execution-state.mjs`로 완료 상태를 기록한 뒤에만 다음 세션을 안내한다.
 
 기존 `runtime/orchestrator/workflow.json`을 갱신할 때는 기존 `state` 객체를 그대로 보존한다. 새 workflow는 실행기가 compose 완료 후 상태를 `created`로 초기화한다.

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
+import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
+import { WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const ACTIVE_WORKFLOW_STATES = new Set(['created', 'running', 'waiting', 'blocked']);
 
@@ -41,6 +43,9 @@ export async function recordExecutionState({ root, input, binding, status, code 
     try { workflow = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/workflow.json` }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     workflow ||= { schema_version: 1, stages: [] };
+    if (input.skill === 'workflow-compose' && status === 'completed' && (!Array.isArray(workflow.stages) || !workflow.stages.length || !workflow.stages[0]?.id)) throw new Error('Completed workflow composition requires a workflow with an initial stage');
+    const workflowStage = input.context?.parent_stage_id || stage;
+    if (input.context?.workflow_ref && !workflow.stages?.some((item) => item.id === workflowStage)) throw new Error('Current stage is not in the workflow');
     let state = workflow.state;
     let migrated = false;
     if (!state) {
@@ -73,13 +78,24 @@ export async function recordExecutionState({ root, input, binding, status, code 
     state.stages = { ...state.stages, [stage]: entry };
     state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';
-    state.current_stage = stage;
+    if (input.skill === 'workflow-compose' && status === 'completed') {
+      state.current_stage = priorWorkflowStatus && state.current_stage !== WORKTREE_STAGE.WORKFLOW_COMPOSE ? state.current_stage : workflow.stages?.[0]?.id || null;
+    } else state.current_stage = workflowStage;
+    const stageSkill = state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE ? WORKTREE_STAGE.WORKFLOW_COMPOSE : workflow.stages?.find((item) => item.id === state.current_stage)?.skill;
+    if (!Object.values(WORKTREE_STAGE).includes(stageSkill)) throw new Error('Current stage is not in the workflow or stage enum');
     state.updated_at = now;
     if (input.skill === 'workflow-compose' && status === 'completed') state.workflow_ref = 'runtime/orchestrator/workflow.json';
     workflow.state = state;
     const temporary = join(session, directory, `.workflow-${randomUUID()}.json`);
     try { await writeFile(temporary, JSON.stringify(workflow, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, join(session, directory, 'workflow.json')); }
     finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    if (input.context?.worktree_ref && state.current_stage) {
+      const reference = input.context.worktree_ref;
+      const record = parseWorktreeRecord(await readFile(reference, 'utf8'));
+      const worktreeSession = await resolveSkillSession(root, record.session_directory);
+      if (reference !== join(worktreeSession, 'worktree.json')) throw new Error('Invalid canonical worktree reference');
+      await recordWorktreeStage({ workspace_root: record.workspace, repository_root: record.return_root, current_stage: stageSkill });
+    }
     if (migrated) await unlink(join(session, directory, 'state.json'));
     await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [], codex_session_id: codexSessionId }, 'SkillExecution');
   } finally { await rm(lock, { recursive: true }); }

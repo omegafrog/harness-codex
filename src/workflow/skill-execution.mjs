@@ -9,6 +9,7 @@ import { loadNamedWorkflow, WORKFLOW_STAGE_GATE_IDS } from './loader.mjs';
 import { LifecycleGateRegistry } from '../gates/lifecycle.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
+import { WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const CODES = {
@@ -167,6 +168,7 @@ export async function validateComposedWorkflow({ root, session_directory, workfl
   for (const stage of stages.values()) {
     ancestors(stage.id);
     requireValue(bindings.skills[stage.skill] && stage.skill !== 'workflow-compose' && !bindings.main_session_skills.includes(stage.skill), `Invalid workflow task skill: ${stage.skill}`);
+    requireValue(Object.values(WORKTREE_STAGE).includes(stage.skill), `Workflow task skill missing from worktree stage enum: ${stage.skill}`);
     const paths = [`.codex/internal-skills/${stage.skill}/GUIDE.md`, `.agents/skills/${stage.skill}/SKILL.md`, `.codex/skills/${stage.skill}/SKILL.md`];
     let found = false;
     for (const path of paths) {

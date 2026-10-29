@@ -45,7 +45,7 @@ description: Diagnose and recover an installed project's blocked Harness install
 2. 승인된 최소 복구를 기존 소유 CLI/절차로 실행한다. 설치/update는 공식 npx 경로를 사용하며, 로컬 충돌의 merge·force·lock은 승인된 선택을 적용한다. installer를 통해 관리 산출물 ignore를 동기화하고 `git check-ignore -v`로 확인한다. `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/**` 등 프로젝트 소유 준비 문서는 Git에 보이도록 유지한다.
 3. ticket 복구는 설정된 canonical tracker를 먼저 확인하고, v1 mirror는 공통 `harness-tracker.mjs sync`로 변경·재조회한다. 이미 반영된 canonical 변경 뒤 mirror만 실패했으면 현행 canonical을 기준으로 동기화를 재시도한다. ticket 삭제·재생성은 연결·의존성·이력 손실과 대체 ref까지 승인된 경우에 수행한다.
 4. workflow 기록은 원래 오류의 원인을 고친 뒤 지원되는 재개·replay·복구 경로를 사용한다. 손상된 권위 기록에 지원 복구가 없으면 보존본과 재구성 근거를 제시해 별도 승인을 받는다. review budget 변경은 명시적 사용자 결정과 공통 resolve 절차를 적용하고, 검증·review·완료 결과는 실제 재실행 결과로 기록한다.
-5. worktree 복구는 원본과 소유 실행 경로를 구분한다. 종료·제거는 실행 종료 확인과 recovery 보존·검증을 포함하는 소유 CLI 절차로 수행하고 branch/recovery를 보존한다. 살아 있는 실행·비소유 경로는 해당 소유자와 처리 범위를 먼저 확인한다. 정리 대상은 승인된 경로를 열거해 처리한다.
+5. worktree 복구는 원본과 소유 실행 경로를 구분한다. 종료·제거는 실행 종료 확인 후 소유 CLI 절차로 수행하며 별도 백업이나 recovery archive를 만들지 않는다. 살아 있는 실행·비소유 경로는 해당 소유자와 처리 범위를 먼저 확인한다. 정리 대상은 승인된 경로를 열거해 처리한다.
 6. 일부 실행이 실패하면 실제 반영된 변경과 남은 오류를 확인한다. 승인된 복원 범위를 적용하고, 추가 조작이 필요하면 새 변경안을 제시한다.
 
 ## 4. 사용 가능 여부 검증
