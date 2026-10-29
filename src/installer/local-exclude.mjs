@@ -5,6 +5,8 @@ import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 
 const LOCAL_INSTALL_EXCLUDES = [
   ".harness-workflows/",
+  ".io/",
+  ".codex/runtime/io/",
   ".agents/",
   ".codex/",
   ".harness/",
@@ -27,7 +29,7 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const excludePath = resolve(projectRoot, (result.stdout || "").trim());
   const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
   const normalizedExisting = sourceCheckout
-    ? existing.split(/\r?\n/).filter((entry) => !entry.startsWith(".codex/") && !sourceOwnedPaths.has(entry)).join("\n")
+    ? existing.split(/\r?\n/).filter((entry) => (entry === ".codex/runtime/io/" || !entry.startsWith(".codex/")) && !sourceOwnedPaths.has(entry)).join("\n")
     : existing;
   const additions = exclusions.filter((entry) => !normalizedExisting.split(/\r?\n/).includes(entry));
   if (additions.length === 0 && normalizedExisting === existing) return;

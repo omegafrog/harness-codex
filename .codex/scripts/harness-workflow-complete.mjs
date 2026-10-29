@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+let sourceCheckout = false;
+try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { readFile, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 const installed = new URL('../harness-runtime/src/workflow/completion.mjs', import.meta.url);
 const source = new URL('../../src/workflow/completion.mjs', import.meta.url);
-const worktreeModule = new URL(existsSync(installed) ? "../harness-runtime/src/workflow/worktrees.mjs" : "../../src/workflow/worktrees.mjs", import.meta.url);
+const worktreeModule = new URL(existsSync(installed) && !sourceCheckout ? "../harness-runtime/src/workflow/worktrees.mjs" : "../../src/workflow/worktrees.mjs", import.meta.url);
 const { finishWorkflowWorktree } = await import(worktreeModule.href);
 const { sessionOutputPath } = await import(new URL('./session-output.mjs', worktreeModule).href);
 const options = {};
 let invoked = false;
 const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Workflow interrupted: ${name}`)));
-const { completeWorkflow } = await import(existsSync(installed) ? installed.href : source.href);
+const { completeWorkflow } = await import(existsSync(installed) && !sourceCheckout ? installed.href : source.href);
 try {
   const flags = { '--root': 'workspace_root', '--workflow': 'workflow_id', '--worktree-id': 'worktree_id', '--base-ref': 'base_ref', '--state': 'state_file' };
   const args = process.argv.slice(2);

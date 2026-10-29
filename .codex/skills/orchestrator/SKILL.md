@@ -10,14 +10,15 @@ description: Coordinate workflow composition and stage execution in the main ses
 ## 시작
 
 1. hook이 전달한 [상태 판정](references/session-state.md)과 사용자 메시지로 기존 작업 재개 또는 새 작업 시작을 결정한다. 재개 시 `orchestrator_session_id`와 stage별 `agent_sessions`를 사용해 기존 Codex 대화를 이어간다. `inspect_required`이면 필요한 확인·복구 작업을 호출한다.
-2. 새 작업의 요청과 승인 범위를 전달해 [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)를 호출한다.
+2. 새 작업은 [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)를 호출한다.
 3. `completed / OK`이면 반환된 workflow를 요청 범위·승인 조건과 대조해 채택한다. 그 외에는 반환 코드에 따라 필요한 조치를 결정한다.
+4. 새 worktree가 준비되면 사용자에게 그 작업 위치에서 새 Codex 세션을 열고 기존 workflow를 이어가도록 안내한다. 준비된 worktree와 기록을 보존하고, 새 세션이 시작되기 전에는 후속 작업 단계를 실행하지 않는다. 이미 해당 worktree에서 재개한 세션에는 다시 안내하지 않는다.
 
 ## 작업 실행
 
-1. 실행할 workflow stage를 선택한다.
-2. `to-ticket` workflow는 [전용 stage 절차](references/to-ticket.md)를 적용하고, 나머지 workflow는 [stage 실행 명령](../../../.codex/internal-skills/static-caller/GUIDE.md)으로 해당 stage를 호출한다.
-3. 반환 상태와 결과를 읽고 다음 단계·재시도·사용자 질문을 결정한다.
+1. 구성된 workflow와 현재 실행 상태를 확인해 실행할 단계를 선택한다. 의존 단계, 승인 조건과 이전 결과를 반영하고 실행 중인 단계를 중복 호출하지 않는다.
+2. 실행기를 호출하기 전에 `worktree_ref`가 가리키는 정본 `worktree.json`의 `workspace`를 읽어 작업 root를 확인한다. 선택한 단계를 [정적 호출기 지침](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 그 작업 root의 실행기로 호출한다. skill 입력에는 worktree 정보로 `worktree_ref`만 전달하고 skill이 필요한 위치와 plan 식별자를 정본 기록에서 읽는다.
+3. 반환 상태와 결과에 따라 다음 단계·재시도·사용자 질문을 결정한다. 각 작업의 세부 절차와 판정 기준은 해당 skill이 담당한다.
 
 workflow 구성 변경이나 추가 작업이 필요하면 변경 요청을 workflow-compose에 전달하고 갱신된 workflow로 진행한다.
 
@@ -29,7 +30,7 @@ workflow 구성 변경이나 추가 작업이 필요하면 변경 요청을 work
 |---|---|
 | `completed/OK` | workflow에서 다음 실행할 stage를 선택한다. |
 | `REVIEW_REQUIRED` | 리뷰를 요청한 작업은 독립 reviewer를 호출한다. reviewer가 findings와 함께 반환하면 결과를 읽고 기존 작업을 수정·보완하거나 결정이 필요한 쟁점을 처리한 뒤 필요한 부분을 재검토한다. 미통과 결과를 승인으로 취급하지 않는다. |
-| `SUBTASK_REQUIRED` | 결과의 내부 작업을 정적 호출기의 `--subtask`로 호출하고, 성공 결과를 `--subtask-result`로 부모 stage에 전달해 재개한다. |
+| `SUBTASK_REQUIRED` | 결과의 내부 작업을 `harness-prepare-input.mjs --subtask`로 입력을 준비해 호출하고, 성공 결과는 `--subtask-result`로 부모 stage 입력에 전달해 재개한다. |
 | `SPEC_REVISION_REQUIRED` | Spec 담당 stage로 회귀한다. |
 | `PLAN_REVISION_REQUIRED` | 계획 담당 stage로 회귀한다. |
 | `IMPLEMENTATION_REVISION_REQUIRED` | 관련 구현 stage로 회귀한다. |

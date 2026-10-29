@@ -284,7 +284,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     if (!descriptor) {
       if (!selected(entry.path)) continue;
       const internalReplacement = entry.path.replace(/^\.agents\/skills\//, ".codex/internal-skills/").replace(/\/SKILL\.md$/, "/GUIDE.md");
-      if (selected(entry.path) && (entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || entry.path === '.codex/internal-skills/spec-review/references/review-coordination.md' || entry.path === '.codex/internal-skills/skill-execution/GUIDE.md' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
+      if (selected(entry.path) && (entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || entry.path === '.agents/skills/orchestrator/references/to-ticket.md' || entry.path === '.codex/internal-skills/spec-review/references/review-coordination.md' || entry.path === '.codex/internal-skills/skill-execution/GUIDE.md' || entry.path === '.codex/internal-skills/skill-execution/schemas/result.schema.json' || entry.path === '.codex/scripts/harness-skill-exec.mjs' || entry.path === '.codex/scripts/harness-stage-input.mjs' || entry.path === '.codex/harness-runtime/src/workflow/skill-dispatch.mjs' || entry.path === '.codex/harness-runtime/src/workflow/static-caller.mjs' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
         const target = await readTarget(targetRoot, entry.path);
         if (target) actions.push({ descriptor: sourceDescriptor(entry.source_path, entry.path), retired: true, backup: target.content });
       }

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+let sourceCheckout = false;
+try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 const installed = new URL('../harness-runtime/src/workflow/plan-review.mjs', import.meta.url);
 const source = new URL('../../src/workflow/plan-review.mjs', import.meta.url);
-const runtime = existsSync(installed) ? installed : source;
+const runtime = existsSync(installed) && !sourceCheckout ? installed : source;
 const { snapshotPlanSet, inspectPlanSet, inspectPlanSetImpact, updatePlanReview } = await import(runtime.href);
 const { reviewDelta } = await import(new URL('./review-delta.mjs', runtime).href);
 try {

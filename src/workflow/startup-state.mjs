@@ -2,9 +2,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path';
-import { legacySessionDirectory, sessionDirectory } from './session-output.mjs';
+import { sessionDirectory } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { findExecutionInput } from './execution-input.mjs';
 
 const exec = promisify(execFile);
 const git = async (root, args) => (await exec('git', args, { cwd: root, encoding: 'utf8', timeout: 2000, maxBuffer: 2 * 1024 * 1024 })).stdout;
@@ -36,14 +37,17 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   const registered = gitWorktrees(listing);
   const current = registered.find((entry) => entry.workspace === root);
   const currentSession = sessionDirectory(root, { create: false });
-  const legacySession = legacySessionDirectory(root);
-  const directories = [...new Set([dirname(currentSession), dirname(legacySession)])];
-  const entries = (await Promise.all(directories.map(async (directory) => (await readdir(directory, { withFileTypes: true }).catch((error) => { if (error.code === 'ENOENT') return []; throw error; })).map((entry) => ({ entry, directory }))))).flat();
+  const legacySession = null;
+  const directories = registered.map((entry) => entry.workspace);
+  const entries = await Promise.all(registered.map(async ({ workspace }) => {
+    const session = join(workspace, '.io');
+    const info = await lstat(session).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    return info ? { session, info } : null;
+  }));
   const records = [], states = [], issues = [];
   let currentOrphan = false, currentForeign = false;
-  for (const { entry, directory } of entries.filter(({ entry }) => /^[a-f0-9]{64}$/.test(entry.name))) {
-    const session = join(directory, entry.name);
-    if (!entry.isDirectory() || await realpath(session) !== session) { issues.push({ path: session, reason: 'unsafe_session_directory' }); continue; }
+  for (const { session, info } of entries.filter(Boolean)) {
+    if (!info.isDirectory() || await realpath(session) !== session) { issues.push({ path: session, reason: 'unsafe_session_directory' }); continue; }
     let sessionRecord = null;
     try {
       const record = await readJson(session, 'worktree.json');
@@ -54,7 +58,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if (record) {
         parseWorktreeRecord(JSON.stringify(record));
         sessionRecord = record;
-        if (record.common !== common || record.session_directory !== session || ![sessionDirectory(record.workspace, { repositoryRoot: root, create: false }), legacySessionDirectory(record.workspace, { repositoryRoot: root })].includes(session)) throw new Error('Worktree record ownership mismatch');
+        if (record.common !== common || record.session_directory !== session || sessionDirectory(record.workspace, { repositoryRoot: root, create: false }) !== session) throw new Error('Worktree record ownership mismatch');
         const actual = registered.find((item) => item.workspace === resolve(record.workspace));
         const present = await lstat(record.workspace).then((info) => info.isDirectory(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
         const matches = Boolean(actual && actual.branch === record.branch);
@@ -86,14 +90,14 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if (!Object.keys(agentSessions).length) {
         for (const stage of Object.values(state.stages || {})) {
           const taskSession = stage.result_session_directory;
-          if (typeof taskSession !== 'string' || !isAbsolute(taskSession) || !/^[a-f0-9]{64}$/.test(taskSession.split(/[\\/]/).at(-1)) || !directories.includes(dirname(taskSession))) continue;
+          if (typeof taskSession !== 'string' || !isAbsolute(taskSession) || taskSession.split(/[\\/]/).at(-1) !== '.io' || !directories.includes(dirname(taskSession))) continue;
           let recordSession = taskSession;
           let taskRecord = await readJson(taskSession, 'worktree.json');
           if (!taskRecord && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage.execution_id || '')) {
-            const input = await readJson(taskSession, `runtime/executions/${stage.execution_id}/input.json`);
+            const input = await findExecutionInput(root, stage.execution_id).then((found) => found.input, (error) => { if (error.code === 'ENOENT') return null; throw error; });
             const reference = input?.context?.worktree_ref;
             const candidate = typeof reference === 'string' && isAbsolute(reference) && reference.endsWith('/worktree.json') ? dirname(reference) : null;
-            if (candidate && /^[a-f0-9]{64}$/.test(candidate.split(/[\\/]/).at(-1)) && directories.includes(dirname(candidate))) {
+            if (candidate && candidate.split(/[\\/]/).at(-1) === '.io' && directories.includes(dirname(candidate))) {
               taskRecord = await readJson(candidate, 'worktree.json');
               recordSession = candidate;
             }

@@ -2,6 +2,8 @@
 
 `plan_finalize` stage는 최신 review 결과가 pass인 plan set을 tracker 발행 가능한 상태로 확정한다.
 
+작업 전에 `context.worktree_ref`의 정본 `worktree.json`을 읽어 작업 worktree, session과 `plan_set_id`를 확인한다. 기록이 없거나 ID가 없으면 중단한다. 해당 worktree의 `docs/plans/<plan-set-id>/`를 사용한다.
+
 1. `node .codex/scripts/harness-plan-review.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase planning`을 실행해 현재 canonical plan·Spec snapshot의 pass를 확인한다.
 2. `.codex/harness.yaml`에서 configured tracker와 Beads 설정을 확인한다. Beads가 활성화된 경우에만 [Beads 티켓 미러 절차](beads.md)로 parent/child 항목과 dependency를 준비한다.
 3. `local-markdown` mode는 승인된 plan set의 ticket 파일을 `planned` 상태로 발행한다. GitHub mode는 모든 canonical plan과 Issue draft를 다시 확인한 뒤 [GitHub batch publish](github-batch-publish.md)로 parent/child Issues, Project 등록, `Workflow Status: Planned`를 batch 처리한다. Tracker mutation은 현재 plan-review gate pass 뒤에 수행한다.

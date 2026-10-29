@@ -9,7 +9,7 @@ description: Review the diff between HEAD and a fixed point with independent Sta
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
 
 ## What it does
 
@@ -60,25 +60,23 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 
 ## Process
 
+When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis using its role profile and return its findings. Do not dispatch another reviewer. The caller coordinates the two independent executions below.
+
 1. Confirm the fixed point first.
-2. Read `.codex/harness.yaml`, resolve `agents.implementation_model` and `agents.implementation_reasoning_effort`, and pass both actual values explicitly to the reviewer spawns. Do not pass config-key literals or inherit the parent model/effort. Managed calls return `REVIEW_REQUIRED`; the orchestrator performs these spawns.
+2. Use the static caller to read the reviewer model and reasoning effort from setup configuration. Managed calls return `REVIEW_REQUIRED`; the orchestrator dispatches the reviewers.
 3. If either value is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys. Model configuration belongs to the caller; do not invoke setup automatically.
-4. Call `multi_agent_v1.spawn_agent` with `agent_type="standards_reviewer"`, `fork_context: false`, and the resolved model ID. Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
-5. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_reviewer"`, `fork_context: false`, and the resolved model ID. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
+4. Dispatch a fresh `code-review` execution with `context.role="standards_reviewer"` using the [independent execution commands](../../../.codex/internal-skills/static-caller/GUIDE.md). Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
+5. Dispatch a separate fresh `code-review` execution with `context.role="spec_reviewer"` using the same commands. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
    For every planned implementation, include the current Product and Architecture Specs and every canonical plan. Require the reviewer to compare their behavior and constraints directly; a plan set may still omit part of a Spec.
-6. Preserve the actual agent/context identifiers returned by the two spawn calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
-7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for spawning the reviewer.
+6. Preserve the actual execution and Codex thread identifiers returned by the two calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
+7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for the independent execution.
 8. Keep the two subagent contexts isolated and read-only.
 9. Wait long enough for both review subagents to finish before aggregating.
 10. Aggregate the two reports without merging or reranking them. Preserve each axis and structured findings; use the repair decision below to route the next action.
 
 ## Waiting
 
-- Use `wait_agent` with a long timeout, preferably 300000 ms or longer when the tool allows it.
-- Do not use several short 30000 ms waits as the normal path.
-- Treat `timed_out` as "still running", not as a review failure.
-- If a wait times out, report that the review is still pending and continue waiting unless the user asked for a time limit.
-- Close completed review subagents after collecting their final messages.
+Wait for both static calls to finish and preserve their actual return files and thread IDs before aggregating. A running process is pending, not a failed review.
 
 ## Rules
 

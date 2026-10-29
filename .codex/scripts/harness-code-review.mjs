@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+let sourceCheckout = false;
+try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const installed = new URL('../harness-runtime/src/wrapper/repair.mjs', import.meta.url);
 const source = new URL('../../src/wrapper/repair.mjs', import.meta.url);
-const runtime = existsSync(installed) ? installed : source;
+const runtime = existsSync(installed) && !sourceCheckout ? installed : source;
 const { reserveImplementationRepair } = await import(runtime.href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', runtime).href);
 try {

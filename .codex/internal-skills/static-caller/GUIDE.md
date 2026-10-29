@@ -1,20 +1,16 @@
-# 정적 호출기
+# 실행별 명령
 
-호출자는 `workspace_root`, `shared_guidance_root`, `session_directory`, skill 입력과 적용할 workflow stage를 지정한다. 작업 위치와 session은 전달된 정본을 사용한다.
+메인 orchestrator는 작업에 필요한 명령만 순서대로 호출한다. worktree가 준비된 `spec-me`와 `to-ticket`의 입력에는 작업 위치 정보를 `context.worktree_ref`로만 전달한다.. 명령의 `<workspace_root>` 등 꺾쇠 표기는 실제 값으로 바꿔 실행한다.
 
-```sh
-node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill <skill-id> [--workflow <workflow-id> --stage <stage-id>]
-node .codex/scripts/harness-skill-exec.mjs --root <workspace_root> --session-directory <session_directory> --input <session-relative-input.json>
-```
+1. `node "<workspace_root>/.codex/scripts/harness-prepare-input.mjs" --worktree-ref <절대 worktree.json 경로> --workflow-ref <절대 workflow.json 경로> --stage-id <stage_id>`로 선택한 단계의 입력 파일을 준비한다.
+2. 최초 workflow 구성에서 `node "<workspace_root>/.codex/scripts/harness-compose-workspace.mjs" --root "<workspace_root>" --execution-id <execution_id>`을 실행해 worktree를 준비하고 반환된 `worktree.json`을 읽는다. 다른 단계는 전달된 worktree를 사용한다.
+3. `node "<workspace_root>/.codex/scripts/harness-output-schema.mjs" --root "<workspace_root>" --worktree-ref <worktree_ref> --execution-id <execution_id>`으로 해당 실행의 출력 스키마를 생성한다.
+   입력 준비 명령이 반환한 session에서 입력을 읽는다. worktree 작업의 schema·반환·실행 로그는 정본이 지정한 session에 저장한다. `waiting_for_answers`가 반환되면 실행하지 않고 답변을 기다린다.
+4. 실행 시작·종료·실패는 `node "<workspace_root>/.codex/scripts/harness-execution-state.mjs" --root "<workspace_root>" --worktree-ref <worktree_ref> --execution-id <execution_id> --status <running|completed|action_required|blocked|failed|cancelled>`로 기록한다. 종료에는 실제 `--code`, `--result-ref` 또는 `--reason`을 전달한다. 입력에 `context.codex_session_id`, `context.stage_id`를 기록한다. 실행 중에는 실제 owner/child PID를 `--owner-pid`, `--child-pid`로 전달한다. 단계별 model binding을 지정할 때 `--workflow`, `--stage`를 함께 전달한다. 상태 파일을 직접 수정하지 않는다.
+5. `node "<workspace_root>/.codex/scripts/harness-static-call.mjs" --root "<workspace_root>" --skill <skill-id> [--workflow <workflow-id> --stage <stage-id>] --schema <절대 스키마 경로> --output <절대 반환 경로> --prompt <절대 입력 메시지 파일> --worktree-ref <worktree_ref> --execution-id <execution_id> --add-dir <허용 경로>`로 `codex exec --output-schema`를 실행한다. 실행기는 호출할 skill의 binding과 setup 설정을 읽어 model·effort를 선택한다. 재개할 때 `--resume <기록된 session ID>`를 전달한다. stderr의 `started`와 `thread.started` 이벤트 및 stdout의 종료 결과를 session에 보존한다. 필요한 worktree·session·같은 Git common directory의 shared guidance만 `--add-dir`로 지정한다. thread ID는 `node "<workspace_root>/.codex/scripts/harness-workflow-session.mjs" --workspace-root "<workspace_root>" --repository-root <shared_guidance_root> --key <stage-key> --session-id <thread-id> --execution-id <execution_id>`로 정본 worktree에 기록한다.
+   호출자는 입력 메시지 파일에 해당 skill의 `GUIDE.md` 또는 `SKILL.md`와 실행 ID를 적고 정해진 입력 파일을 읽도록 지시한다. `context.role`이 있으면 `.codex/agents/<role>.toml`을 읽게 하고, 작업에 필요한 참조 파일을 읽고 출력 스키마에 맞는 객체를 반환하도록 지시한다. 사용자 질문과 workflow Markdown은 한국어로 작성한다. 답변·리뷰·하위 작업 재개는 입력에 지정된 참조 파일과 기록된 session ID를 사용한다.
+   준비 명령이 `answer`를 반환하면 `runtime/executions/<execution_id>/answers.json`에 저장하고 그 절대 경로를 입력 메시지에 포함한다. 재개 ID는 입력의 `context.resume_session_id` 또는 정본 worktree의 해당 stage session을 사용한다.
+   호출은 백그라운드에서 시작하고 stderr의 `started.pid`를 받는 즉시 호출자의 살아 있는 PID와 child PID로 `running`을 기록한다. `thread.started.thread_id`는 즉시 worktree에 저장한다. stage key는 `stage:<stage_id>`이며 하위 작업은 `stage:<parent_stage_id>:subtask:<subtask_index>`를 사용한다. review 하위 작업은 index 대신 `review-<reviewed_execution_id>`, 그 외 index 없는 하위 작업은 `skill-<skill>`을 사용한다. 리뷰 재시도는 `:attempt:<attempt_id>`를 stage key에 추가한다. worktree가 있는 호출에 thread ID가 없거나 재개 session이 일치하지 않으면 실패로 기록한다. 종료 JSON의 `code`, `stderr`, `errors`, `threadId`를 각각 `exit_code`, `stderr`, `codex_errors`, `thread_id`로 바꾸고 binding을 포함해 `runtime/executions/<execution_id>/exec.stderr.json`에 저장한다.
+6. 성공한 응답은 `node "<workspace_root>/.codex/scripts/harness-result.mjs" --root "<workspace_root>" --worktree-ref <worktree_ref> --execution-id <execution_id> --return runtime/executions/<execution_id>/return.json`으로 검증·저장한 후 실제 반환 상태를 기록한다. 프로세스·반환·검증 실패는 실패로 기록하며 성공으로 대체하지 않는다. 결과 판단과 다음 단계는 해당 workflow가 담당한다.
 
-구성된 workflow stage는 다음 명령으로 호출한다.
-
-```sh
-node .codex/scripts/harness-skill-exec.mjs --root <workspace_root> --session-directory <control-session-directory> --request-workflow runtime/orchestrator/workflow.json --stage <stage-id> --codex-session-id <codex-session-id>
-```
-
-호출기는 설정된 model·reasoning effort를 해석하고 `codex exec --output-schema`로 실행한다. 입력과 결과 스키마 및 binding은 `../skill-execution/schemas/`와 `../skill-execution/bindings.json`에 있다. 프로세스 실패·반환 누락·검증 실패는 오류로 보고한다. `workspace_root`와 `shared_guidance_root`가 같은 Git common directory인지 확인하고 session 출력 경계를 유지한다.
-
-호출 결과의 판단과 다음 단계는 호출한 workflow가 담당한다. 호출기는 실행 상태와 결과를 기록하며 호출자는 `state.json`을 직접 수정하지 않는다.
-
-질문에 대한 실제 답변은 stage 호출에 `--answer <답변>`으로 전달한다. 하위 작업 선택과 결과 전달은 각각 `--subtask <index>`, `--subtask-result <execution_id>`를 사용한다. 리뷰 재개에는 `--review-subtask`와 `--review-result`를 사용한다.
+입력과 결과 스키마는 `../skill-execution/schemas/`, model binding은 `../skill-execution/bindings.json`이다. 질문과 리뷰의 구체 내용·파일 경로는 해당 skill이 정한다. 선택 출력 필드는 null 또는 빈 배열이며 `review_request.context_path`는 session 상대 JSON 파일이다.

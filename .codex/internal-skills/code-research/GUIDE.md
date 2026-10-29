@@ -6,7 +6,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
 
 ## What it does
 
@@ -35,35 +35,7 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
-Run the research in one subagent instead of inspecting the whole codebase inline.
-
-- Use `multi_agent_v1.spawn_agent` with the `code_researcher` agent profile when available.
-- Resolve `.codex/harness.yaml` `agents.low_performance_model` to an actual model ID and pass it explicitly to `multi_agent_v1.spawn_agent`. Fall back to `agents.default_model` only for older configurations.
-- If no model resolves, stop and require `setup`; never omit the override or inherit the parent model. The `code_researcher` profile owns its fixed `medium` reasoning effort.
-- A user-specified supported model for the current request overrides both defaults.
-- Keep reasoning effort modest unless the user explicitly requests deeper reasoning.
-- Use `fork_context: false`.
-- Keep the main agent responsible for reading the result, checking it against the current request, and deciding what to pass into the next skill.
-
-Use this prompt for the subagent:
-
-```text
-You are the code-research subagent.
-
-Work in the current repository. Inspect only the code and tests needed to answer the research request. Do not edit files. Do not make product or architecture decisions.
-
-Return a compact architecture-focused report with these sections:
-
-1. Current Structure
-2. Entry Points And Boundaries
-3. Relevant Source And Test Seams
-4. Persistence, Adapter, And Integration Touchpoints
-5. Mismatches Against Target Design
-6. Structural Risks
-7. Follow-up Areas For codebase-design
-
-For every concrete claim, include file paths. Keep the report short and factual.
-```
+The caller dispatches a fresh `code-research` execution with `context.role="code_researcher"` through the [independent execution commands](../static-caller/GUIDE.md). Supply the research request and referenced inputs, let the static caller read the configured model and effort, and use a separate Codex session. The researcher inspects only the relevant source and tests, does not edit files or make design decisions, and returns a concise report with file paths. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out
 

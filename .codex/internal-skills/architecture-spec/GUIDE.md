@@ -4,9 +4,9 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
 
-내부 작업에서 독립 리뷰를 요청할 때는 공통 계약의 `details.review_request`에 reviewer skill·role·범위와 실제로 확인된 Decision ID, review mode, 사용자 주장 및 근거를 기록하고 검토 대상 산출물을 반환한다. 재검토 요청에는 이전 `architecture_review` 보고서와 변경 구간, 직접 영향을 받는 관계 및 미해결 finding을 포함한다. 통과된 무관한 항목을 다시 검토하도록 요청하지 않는다. 미확정 입력이나 승인을 추정하지 않는다. 리뷰 결과로 같은 Codex session이 재개되면 `context.review_result`를 읽어 findings와 미해결 gate를 처리한다.
+내부 작업에서 독립 리뷰를 요청할 때는 공통 계약의 `review_request`에 reviewer skill·role·범위와 `context_path`를 기록한다. `context_path`는 실제로 확인된 Decision ID, review mode, 사용자 주장 및 근거를 담은 session 상대 JSON 경로이며 검토 대상 산출물도 반환한다. 재검토 요청에는 이전 `architecture_review` 보고서와 변경 구간, 직접 영향을 받는 관계 및 미해결 finding을 포함한다. 통과된 무관한 항목을 다시 검토하도록 요청하지 않는다. 미확정 입력이나 승인을 추정하지 않는다. 리뷰 결과로 같은 Codex session이 재개되면 `context.review_result_ref`가 지정한 결과 파일을 읽어 findings와 미해결 gate를 처리한다.
 
 ## Purpose
 

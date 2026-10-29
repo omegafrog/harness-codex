@@ -10,11 +10,11 @@
 | `compose_candidate` | 현재 root가 primary이고 관련 진행 기록이 없거나 같은 세션의 workflow가 종료됨 | 실제 새 작업 요청인 경우에만 workflow-compose를 호출한다. |
 | `inspect_required` | 소유권 없는 linked worktree, 경로·branch 불일치, 손상·누락·중복 기록 등 | 원인을 확인하고 기존 기록을 보존한다. 자동 재생성·복구는 하지 않는다. |
 
-workflow state는 현재 저장소의 canonical session 경로와 검증된 worktree 기록으로 식별한다. hook이 전달한 `orchestrator_session_id`와 `agent_sessions`는 기존 대화를 이어갈 Codex session ID다. `harness-skill-exec.mjs`는 stage/subtask별 마지막 ID로 해당 worker 대화를 자동 재개한다. `codex_session_id`는 실제 메인 대화의 ID이며 worktree 소유권을 결정하지 않는다. 다른 Git common directory의 기록은 찾지 않으며, 같은 저장소에 활성 workflow가 여러 개면 임의로 고르지 않고 `inspect_required`로 반환한다. 최종 새 작업/재개 결정은 메인 orchestrator가 맡는다.
+workflow state는 현재 저장소의 canonical session 경로와 검증된 worktree 기록으로 식별한다. hook이 전달한 `orchestrator_session_id`와 `agent_sessions`는 기존 대화를 이어갈 Codex session ID다. orchestrator는 stage/subtask별 마지막 ID를 `harness-static-call.mjs --resume`에 전달해 해당 worker 대화를 재개한다. `codex_session_id`는 실제 메인 대화의 ID이며 worktree 소유권을 결정하지 않는다. 다른 Git common directory의 기록은 찾지 않으며, 같은 저장소에 활성 workflow가 여러 개면 임의로 고르지 않고 `inspect_required`로 반환한다. 최종 새 작업/재개 결정은 메인 orchestrator가 맡는다.
 
 ## Orchestrator 상태 기록
 
-상태 파일 쓰기는 `harness-skill-exec.mjs` 실행기가 담당한다. 단계 시작 전에 running을 기록하고 결과 검증 후 반환 상태를 기록한다. 프로세스·검증 실패도 failed로 기록하며 기록 실패는 다음 단계를 차단한다. 개별 단계 완료는 전체 workflow 완료가 아니므로 전체 상태는 waiting으로 둔다. `worktree.json.agent_sessions`는 `orchestrator`와 각 stage/subtask별 마지막 Codex session ID 및 execution ID를 보존한다. `codex_session_id`에는 최근 실제 메인 hook ID를 남긴다. 임의 ID나 worktree ID를 넣지 않는다.
+상태 파일 쓰기는 `harness-execution-state.mjs`가 담당한다. 단계 시작 전에 running을 기록하고 결과 검증 후 반환 상태를 기록한다. 프로세스·검증 실패도 failed로 기록하며 기록 실패는 다음 단계를 차단한다. 개별 단계 완료는 전체 workflow 완료가 아니므로 전체 상태는 waiting으로 둔다. `worktree.json.agent_sessions`는 `orchestrator`와 각 stage/subtask별 마지막 Codex session ID 및 execution ID를 보존한다. `codex_session_id`에는 최근 실제 메인 hook ID를 남긴다. 임의 ID나 worktree ID를 넣지 않는다.
 
 ```json
 {

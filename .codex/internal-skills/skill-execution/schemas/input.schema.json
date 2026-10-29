@@ -6,9 +6,6 @@
     "schema_version",
     "execution_id",
     "skill",
-    "workspace_root",
-    "shared_guidance_root",
-    "session_directory",
     "scope",
     "input_refs"
   ],
@@ -62,11 +59,17 @@
             "minLength": 1
           },
           "kind": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1
           },
           "sha256": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^[a-f0-9]{64}$"
           }
         }

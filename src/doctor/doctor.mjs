@@ -16,6 +16,37 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 
+async function inspectExecutionAssets(root, diagnostics) {
+  const bindingsPath = join(root, '.codex/internal-skills/skill-execution/bindings.json');
+  let bindings;
+  try { bindings = JSON.parse(await readFile(bindingsPath, 'utf8')); }
+  catch (error) {
+    if (error.code !== 'ENOENT') diagnostics.push(diagnostic('execution_bindings_invalid', 'error', safeMessage(error, 'Invalid execution bindings'), bindingsPath));
+    return;
+  }
+  if (!bindings.skills || typeof bindings.skills !== 'object' || Array.isArray(bindings.skills) || Object.keys(bindings.skills).some((name) => !/^[a-z0-9][a-z0-9-]*$/.test(name))) {
+    diagnostics.push(diagnostic('execution_bindings_invalid', 'error', 'Execution bindings must contain a skills object', bindingsPath));
+    return;
+  }
+  const paths = [
+    '.codex/internal-skills/static-caller/GUIDE.md',
+    '.codex/internal-skills/skill-execution/schemas/input.schema.json',
+    '.codex/internal-skills/skill-execution/schemas/return.schema.json',
+    '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
+    ...['prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'static-call', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...Object.keys(bindings.skills).filter((name) => name !== 'workflow-compose').map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
+    ...['plan_split', 'plan_revision', 'plan_finalize'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-${name}.schema.json`),
+  ];
+  if (await lstat(join(root, '.codex/harness-runtime')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+    paths.push(...['output-schema', 'codex-process', 'cli-session'].map((name) => `.codex/harness-runtime/src/workflow/${name}.mjs`));
+  }
+  for (const path of paths) {
+    const fullPath = join(root, path);
+    const info = await lstat(fullPath).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!info || !info.isFile() || info.isSymbolicLink()) diagnostics.push(diagnostic('execution_asset_missing', 'error', `Required execution asset is missing or invalid: ${path}`, fullPath));
+  }
+}
+
 function safeMessage(error, fallback) {
   if (error instanceof Error && error.message) return error.message;
   try {
@@ -311,8 +342,10 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   const diagnostics = [];
   const gitRoot = spawnSync('git', ['-C', repositoryRoot, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
   if (gitRoot.status === 0 && resolve(gitRoot.stdout.trim()) === repositoryRoot) {
-    const ignored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.harness-workflows/sessions/probe/input.json'], { encoding: 'utf8' });
-    if (ignored.status !== 0) diagnostics.push(diagnostic('runtime_not_ignored', 'error', 'Harness workflow session files are not ignored by Git', join(repositoryRoot, '.harness-workflows')));
+    const ignored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.io/worktree.json'], { encoding: 'utf8' });
+    if (ignored.status !== 0) diagnostics.push(diagnostic('runtime_not_ignored', 'error', 'Harness workflow session files are not ignored by Git', join(repositoryRoot, '.io')));
+    const inputIgnored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.io/probe/skill/execution/input.json'], { encoding: 'utf8' });
+    if (inputIgnored.status !== 0) diagnostics.push(diagnostic('execution_input_not_ignored', 'error', 'Harness execution inputs are not ignored by Git', join(repositoryRoot, '.io')));
   }
   const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');
   if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
@@ -334,6 +367,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectWorkflows(repositoryRoot, diagnostics);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
+  await inspectExecutionAssets(repositoryRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
