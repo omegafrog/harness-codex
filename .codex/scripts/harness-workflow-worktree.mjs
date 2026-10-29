@@ -3,21 +3,21 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 const installed = new URL('../harness-runtime/src/workflow/worktrees.mjs', import.meta.url);
 const source = new URL('../../src/workflow/worktrees.mjs', import.meta.url);
-const { createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees } = await import(existsSync(installed) ? installed.href : source.href);
+const { bindWorkflowPlanSetId, createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees } = await import(existsSync(installed) ? installed.href : source.href);
 const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Workflow interrupted: ${name}`)));
 try {
   const [command, ...args] = process.argv.slice(2), options = {};
-  const flags = { '--root': 'workspace_root', '--return-root': 'return_root', '--repository': 'repository_root', '--outcome': 'outcome', '--branch': 'branch', '--worktree-id': 'worktree_id' };
+  const flags = { '--root': 'workspace_root', '--return-root': 'return_root', '--repository': 'repository_root', '--outcome': 'outcome', '--branch': 'branch', '--worktree-id': 'worktree_id', '--plan-set-id': 'plan_set_id', '--feature-name': 'feature_name' };
   for (let i = 0; i < args.length; i++) {
     const key = args[i], value = args[++i];
     if (!flags[key] || !value) throw new Error(`Unknown/missing argument: ${key}`);
     options[flags[key]] = value;
   }
-  if (!['create', 'register', 'finish', 'list'].includes(command) || !options.workspace_root) throw new Error('Usage: harness-workflow-worktree.mjs create|register|finish|list --root DIR [--branch NAME] [--return-root DIR] [--repository DIR] [--worktree-id UUID] [--outcome completed|failed|aborted|handoff]');
+  if (!['create', 'register', 'bind-plan-set-id', 'finish', 'list'].includes(command) || !options.workspace_root) throw new Error('Usage: harness-workflow-worktree.mjs create|register|bind-plan-set-id|finish|list --root DIR [--branch NAME] [--return-root DIR] [--repository DIR] [--worktree-id UUID] [--plan-set-id ID|--feature-name NAME] [--outcome completed|failed|aborted|handoff]');
   if (command === 'create' && options.worktree_id) throw new Error('create generates worktree_id; do not provide one');
   for (const key of ['workspace_root', 'return_root', 'repository_root']) if (options[key]) options[key] = resolve(options[key]);
-  const result = await (command === 'create' ? createWorkflowWorktree : command === 'register' ? registerWorkflowWorktree : command === 'list' ? listWorkflowWorktrees : finishWorkflowWorktree)({ ...options, signal: cancellation.signal });
+  const result = await (command === 'create' ? createWorkflowWorktree : command === 'register' ? registerWorkflowWorktree : command === 'bind-plan-set-id' ? bindWorkflowPlanSetId : command === 'list' ? listWorkflowWorktrees : finishWorkflowWorktree)({ ...options, signal: cancellation.signal });
   if (command === 'create' && cancellation.signal.aborted && result.state === 'active') Object.assign(result, await finishWorkflowWorktree({ workspace_root: result.workspace, repository_root: result.return_root, worktree_id: result.worktree_id, outcome: 'aborted' }));
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.state === 'failed' || cancellation.signal.aborted) process.exitCode = 1;

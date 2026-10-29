@@ -18,7 +18,7 @@ flowchart TD
     J --> K[Spec 완료 gate와 소유 worktree 제거]
     K --> L[to-ticket 시작과 계획용 worktree 준비]
     L --> M[분할 승인과 canonical plan 작성]
-    M --> N[추적 원장과 독립 plan 리뷰]
+    M --> N[Spec·전체 plan 직접 대조와 독립 리뷰]
     N --> O[계획 발행과 tracker 및 Beads 연결]
     O --> P[계획 완료 gate와 소유 worktree 제거]
     P --> Q[기존 구현 위치에 승인 산출물 반영]
@@ -86,7 +86,7 @@ flowchart TD
 | workflow 완료 상태 | `runtime/workflow-completion/<workflow>-<base>.jsonl`와 CLI 출력 | gate의 `completed` 또는 `in-progress`와 `completion_kind` |
 | 검증 결과 | `runtime/execution/<profile>-<uuid>/receipt.json` | `passed`, `failed`, `blocked`, `interrupted` |
 | Spec 리뷰 | `runtime/spec-reviews/`의 caller가 정한 JSON | axis, reviewer ID, hash snapshot, verdict, findings |
-| 계획 리뷰 | `docs/plans/<set>/traceability.json`의 `review` | 전체 계획과 입력의 독립 리뷰 snapshot |
+| 계획 리뷰 | session runtime의 plan-review snapshot | 전체 계획과 입력의 독립 리뷰 snapshot |
 
 `architecture-reviews/session.json`은 일부 작업이 남긴 설계 검토 상태 파일이며 실행 위치의 정본이 아니다. runtime의 설계 리뷰 이력은 `runtime/decision-review/<session-id>/events.jsonl`에도 기록된다. plan은 이 파일의 `session_worktree` 대신 자신의 `workspace_root`·`workspace_branch`를 사용한다.
 
@@ -131,7 +131,7 @@ flowchart TD
 - ADR: 보존할 가치가 있는 되돌리기 어려운 결정만 작성한다. 정해진 모든 결정에 ADR 파일을 강제하지 않는다.
 - opt-in `decision_layer_version: 1`: `architecture-decisions/<id>.yaml`, `architecture-reviews/<id>.yaml`, `architecture-reviews/material-approvals/<id>.yaml`를 ticket 디렉터리에 기록한다. 기존 legacy artifact를 자동 migration하지 않는다.
 - `knowledge-harvest`: discover → qualify → collect → extract → corroboration → countersearch → synthesis → review → humanapprove → publish. Source/Claim, candidate/reviewed/approved Principle 및 Evidence의 사용자 승인을 구분한다. 최종 registry는 `knowledge/sources/`, `claims/`, `principles/`, `evidence/`; 임시 Evidence는 session의 `runtime/knowledge/evidence/`에 둔다.
-- 기존 plan set의 Spec을 바꾸면 `harness-plan-traceability.mjs impact`로 영향 계획을 확인하고 fresh plan review 전 dispatch를 차단한다.
+- 기존 plan set의 Spec을 바꾸면 `harness-plan-review.mjs impact`로 영향 계획을 확인하고 fresh plan review 전 dispatch를 차단한다.
 - Spec reviewer는 각 axis마다 새 agent이며 수정본도 새 reviewer를 사용한다. 같은 범위 최대 2회 보정 뒤 중대 쟁점이 남으면 blocked 인계한다.
 
 ## 3. to-ticket: 승인 Spec을 실행 계획으로 전환
@@ -144,11 +144,11 @@ flowchart TD
 | P2 | Spec review 검사·`code-research` | 현재 Product/Architecture·원문·그림·review snapshot, 조사 baseline | 현재 코드 대비 구현 slice 후보 | P에서 `--defer-tracker-sync` preflight. 리뷰 전 GitHub 조회를 미룸. 실패하면 하위 단계 시작 금지 |
 | P3 | 계획 분할과 사용자 승인 | Smart Zone, vertical slice, 의존성·공유 자원, testing-guidance, verification-policy | 승인된 계획 집합·검증/E2E disposition | 사용자 승인 전 canonical plan·tracker mutation 금지 |
 | P4 | `beads` | CLI/workspace 확인, 기존 `harness_plan_id` 목록 | parent epic·child Beads task, scope·AC·test contract·dependencies | GitHub mode parent는 epic. 아직 external_ref·v1 lifecycle marker를 붙이지 않음. 별도 DB 초기화 금지 |
-| P5 | `to-ticket` | 승인 Spec과 분할 결정, execution-evidence·issue-template·traceability-ledger | `docs/plans/<set>/<plan>.md`, `plans.md`, `traceability.json` v2; session의 drafts | 각 plan 범위 첫 두 항목에 `workspace_root`, `workspace_branch`; index에도 같은 실행 위치. 구현 대상 E는 종료할 planning 경로 P와 구분 |
-| P6 | 독립 `plan_reviewer` → `plan-review` | 요청 원문·두 Spec·결정·그림·모든 canonical plan·추적 원장·정확한 root | reviewer JSON, traceability의 `review` snapshot·findings | 작성 맥락 없는 fresh reviewer. requirement·반례·handoff·실행 위치 검토. major 수정은 새 reviewer. 계획·index·Spec current-input gate |
+| P5 | `to-ticket` | 승인 Spec과 분할 결정, execution-evidence·issue-template | `docs/plans/<set>/<plan>.md`, `plans.md`; session의 drafts | 각 plan 범위 첫 두 항목에 `workspace_root`, `workspace_branch`; index에도 같은 실행 위치. 구현 대상 E는 종료할 planning 경로 P와 구분 |
+| P6 | 독립 `plan_reviewer` → `plan-review` | 요청 원문·두 Spec·결정·그림·모든 canonical plan·정확한 root | reviewer JSON, session review snapshot·findings | 작성 맥락 없는 fresh reviewer. requirement·반례·handoff·실행 위치 검토. major 수정은 새 reviewer. 계획·index·Spec current-input gate |
 | P7 | GitHub batch publish 또는 local-markdown 발행 | 전체 로컬 계획과 최신 리뷰 pass, 렌더된 초안 | GitHub parent/child Issue·관계·Project membership·Planned, 또는 local ticket planned | 이 단계 전 GitHub Issue/Project API 조회·변경 금지. GitHub 초안·응답은 `runtime/to-ticket/`에 보존 |
 | P8 | Beads mirror 연결 | 실제 parent/child Issue URL·번호·상태 | `external_ref`, `harness_tracker_version=1`, classification=committed, phase=planning | canonical content 재작성 없이 index의 실제 Issue 링크 채움. 완료 tracker_sync는 전체 plan set batch 조회 |
-| P9 | 계획 완료 | 시작 SHA, 현재 Spec reviews·계획 리뷰·index·추적 원장·tracker refs | `plan_set_ready_for_implementation` receipt, 계획 branch·HEAD·recovery 인계 | 정상 완료·실패·취소·handoff에서 owned P 정리. 대기는 P 유지. 계획 PR은 이 경로에서 만들지 않음 |
+| P9 | 계획 완료 | 시작 SHA, 현재 Spec reviews·계획 리뷰·index·tracker refs | `plan_set_ready_for_implementation` receipt, 계획 branch·HEAD·recovery 인계 | 정상 완료·실패·취소·handoff에서 owned P 정리. 대기는 P 유지. 계획 PR은 이 경로에서 만들지 않음 |
 | P10 | 기존 구현 위치로 인계 | canonical plan의 E/branch, 보존 Spec·계획 branch/HEAD | E에 승인 산출물이 존재하는 상태 | 서로 다른 branch이면 통합이 필요함을 인계. 반영 전 dispatch 차단. 이를 위해 순차 구현 worktree를 새로 만들지 않음 |
 
 ### 계획의 실행 위치 예시
@@ -170,7 +170,7 @@ flowchart TD
 | 순서 | 수행·읽는 파일 | 입력 | 출력·변경 | 차단 조건 |
 |---|---|---|---|---|
 | W1 | wrapper와 setup의 구현 준비 복구 | E, `.codex/harness.yaml`, EXEC/execution.json, 현행 계약 | `--for-implementation` preflight의 실제 pass | tracker 전환·fixed point·분기·코드 수정·spawn 전에 준비. source snapshot drift만 deferred, 구조·실행 준비 오류는 차단 |
-| W2 | plan index·canonical body·traceability·선택 tracker | 승인·상태·dependencies·resources·현재 review hashes | ready/waiting plans, parallel groups, slot과 선택 사유 | tracker 조회 실패는 unknown. Planned만으로 승인으로 간주하지 않음 |
+| W2 | plan index·canonical plan·선택 tracker | 승인·상태·dependencies·resources·현재 review hashes | ready/waiting plans, parallel groups, slot과 선택 사유 | tracker 조회 실패는 unknown. Planned만으로 승인으로 간주하지 않음 |
 | W3 | `실행 방식 선택` 분기 | 자원 충돌·불확실성·실제 동시 실행 필요 | sequential 또는 parallel, 선택 reference 절대 경로 | 독립 reviewer 두 개를 동시에 띄운다고 병렬 구현으로 바꾸지 않음 |
 | W4-S | `session-worktree/references/sequential.md`만 읽음 | plan/index의 E·branch | 같은 E, owned=false, 기존 branch | 생성·reserve/register·소유 receipt 요구 없음. root/branch 불일치면 중단 |
 | W4-P | `session-worktree/references/parallel.md`만 읽음 | 기존 E·branch, parallel group·고정 base | W_i와 전용 branch·소유 receipt | 배정된 group/base/branch/root/등록을 검증한 뒤 dispatch |
@@ -178,7 +178,7 @@ flowchart TD
 | W6 | `buildImplementPrompt` → fresh 구현 agent | 모델/effort, 정확한 plan·Spec·checkpoint·의존성·자원·retirement | agent 한 개에 plan 한 개, 명시 cwd·workspace_root·mode/reference | stale/missing plan review면 실제 spawn 금지. 모델이 없으면 setup |
 | W7 | checkpoint 및 Smart Zone | 실제 Git/test 상태·이전 실패·남은 맥락 | 같은 plan 재시도용 fresh agent 또는 다음 plan용 fresh agent | plan 간 agent 재사용 금지. context 한도 자체는 tracker Blocked 사유가 아님 |
 
-필수 dispatch 입력은 repository, 절대 workspace_root/cwd, plan_set_id/plan_id, canonical plan reference, Product/Architecture 경로, traceability refs, shared_guidance_root, session_directory, workspace_mode/reference, 고정점, checkpoint, dependency/resource facts, model/effort다. 병렬 worker에는 별도 workspace_branch와 group/base가 들어간다. 제거 대상으로 승인된 경로는 runtime `retirement.removed_paths`와 reason으로 전달한다.
+필수 dispatch 입력은 repository, 절대 workspace_root/cwd, plan_set_id/plan_id, canonical plan reference, Product/Architecture 경로, plan-review snapshot, shared_guidance_root, session_directory, workspace_mode/reference, 고정점, checkpoint, dependency/resource facts, model/effort다. 병렬 worker에는 별도 workspace_branch와 group/base가 들어간다. 제거 대상으로 승인된 경로는 runtime `retirement.removed_paths`와 reason으로 전달한다.
 
 현재 prompt builder는 전달된 방식에 맞는 reference 한 개의 절대 경로를 넣고, 다른 방식이나 worktree-creation 절차를 추가 로드하지 말라고 명시한다. 순차·병렬 결정은 runtime의 scheduling 결과에서 전달된다.
 
@@ -188,7 +188,7 @@ flowchart TD
 
 | 순서 | 스킬·역할 | 읽는 입력 | 생성·변경 출력 | 상태·위치 |
 |---|---|---|---|---|
-| I1 | 구현 agent 시작 | 해당 plan·원문 requirement·두 Spec·원장·checkpoint·선택 reference·실제 root/branch | 검증된 root/branch와 시작 HEAD | workspace 불일치면 파일 수정 전 중단. 선택한 방식 하나만 적용 |
+| I1 | 구현 agent 시작 | 해당 plan·두 Spec·checkpoint·선택 reference·실제 root/branch | 검증된 root/branch와 시작 HEAD | workspace 불일치면 파일 수정 전 중단. 선택한 방식 하나만 적용 |
 | I2 | tracker lifecycle 시작 | 승인된 plan, 선택 tracker와 exact external_ref | child In Progress/in-progress와 Beads in_progress | v1은 공통 tracker sync 사용. 기존 legacy는 자동 migration하지 않음 |
 | I3 | 지침·모델 확인 | 원래 shared root의 구현/테스트 지침, model-continuity, plan execution-evidence, verification-policy, source/callers/tests | 변경 범위·규칙 owner·baseline·필요 검증 | 기존 owner 확장 우선. 승인 범위를 넘는 설계·계획 결정은 중단·상위 인계 |
 | I4 | 최소 구현·필요한 focused test | 승인 UC/BR/INV·AC·검증 사례 | application source/test/config/fixtures, 영향받는 실행 profile·EXEC | 순차 E 또는 병렬 W_i에서만 변경. 실제 소비자·구형 경로 이전 포함 |
@@ -196,7 +196,7 @@ flowchart TD
 | I6 | 구현 커밋 | 범위 내 diff와 검증 결과 | 구현 commit와 commit list | 해당 실행 branch에 커밋. 개별 plan PR 금지 |
 | I7 | code-review의 fresh Standards·Spec reviewer | 같은 review_fixed_point부터 최신 HEAD까지 diff·commit list, plan·Spec·evidence | 두 독립 axis 보고서와 실제 reviewer/context IDs | 하나라도 누락·stale·blocking이면 완료 금지 |
 | I8 | 구현 agent의 리뷰 수정 반복 | 각 finding·두 Spec·현재 source·focused 검증 근거 | bounded 수정·재검증·추가 commit·두 리뷰 재실행 | 같은 fixed point 유지. code-review 자체가 자동 수정하는 것은 아님 |
-| I9 | completion traceability·retirement·tracker 검사 | 실제 source/test hashes·선택 profile 성공 receipt·최신 두 리뷰 | 원장의 requirement별 implementation evidence와 완료 판정 | 누락·실패면 Done 금지. 기존 checkpoint나 과거 pass로 대체 금지 |
+| I9 | plan-review·retirement·tracker 검사 | 실제 source/test hashes·선택 profile 성공 receipt·최신 두 리뷰 | 현재 Spec/plan 검토 snapshot과 완료 판정 | 누락·실패면 Done 금지. 기존 checkpoint나 과거 pass로 대체 금지 |
 | I10 | plan terminal 상태 및 dependent 재계산 | 모든 해당 gate 통과 | Project Done/local completed, Beads closed, 다음 실행 가능 계획 | GitHub child Issue 자체는 OPEN 유지. 최종 상태 변경 주체의 문서 충돌은 별도 기록 |
 | I11 | 방식별 종료·다음 plan | 결과·branch·commit·checkpoint | 순차는 E 유지. 병렬은 소유 W_i 정리와 branch 보존 | 다음 계획은 새 empty-context 구현 agent. cleanup 실패면 완료 실패 |
 
@@ -213,7 +213,7 @@ flowchart TD
     F -->|아니오: 코드 수정 가능| G[구현자가 finding 수정]
     G --> B
     F -->|아니오: 외부 권한 및 결정 필요| H[Blocked와 mirror 동기화 및 인계]
-    F -->|예| I[traceability 및 해당 완료 gate]
+    F -->|예| I[plan review 및 해당 완료 gate]
     I -->|실패| G
     I -->|통과| J[Done과 Beads closed 및 의존 계획 해제]
 ```
@@ -254,7 +254,7 @@ Runner는 source/test 편집, git add/commit/push/merge를 하지 않는다. art
 | F2 방식별 통합 | 병렬 reference의 고정 base·보존 worker branch·기존 E/branch | `WorktreeManager.integrate`로 하나씩 merge; 순차는 이미 E에 구현됨 | worker가 쓰는 중에는 merge하지 않음. 충돌은 중단하고 branch 보존 |
 | F3 통합 검증 | shared model·verification map 변경, 전체 대표 경로·해당 metrics, profile receipts | 통합 결과의 실제 근거 | 개별 plan pass만으로 통합 동작을 입증했다고 하지 않음 |
 | F4 sync-contracts | `.codex/internal-skills/sync-contracts/GUIDE.md`, `references/format.md`, 실제 구현·검증·독립 의미 검토 | `docs/contracts/product.md`, `architecture.md`, 관련 `.puml/.svg`, `manifest.json`; seal로 `architecture.html` 생성 | 최종 feature 구현 완료 시에만 수정·seal. 변경 없는 계약은 실제 영향 없음 근거 필요 |
-| F5 최종 완료 gate | 시작 base SHA, 전체 traceability, tests/review/evidence/retirement/tracker/contract_docs | `feature_implemented` receipt | 소유 worker만 정리. 기존 E와 그 branch를 제거하지 않음 |
+| F5 최종 완료 gate | 시작 base SHA, 현재 Spec/plan snapshot, tests/review/evidence/retirement/tracker/contract_docs | `feature_implemented` receipt | 소유 worker만 정리. 기존 E와 그 branch를 제거하지 않음 |
 | F6 gh-open-pr | `.codex/skills/gh-open-pr/SKILL.md`, 현재 head·caller가 캡처한 base·전체 parent/child·Spec/그림·검증·리뷰 | plan set 전체 PR 하나, 실제 Issue closing references, Project 연결 | head push 확인 필요. 구현 gate 완료 PR은 ready. local-markdown에서는 PR 생성하지 않음 |
 | F7 사용자 최종 결정 | ready PR·검토 결과 | 사용자 merge 또는 close | 스킬은 merge/close하지 않음. PR 생성으로 Issue/Project 상태를 바꾸지 않음 |
 | F8 merge 뒤 reconciliation | 실제 parent/child Issue closure와 Project 상태 | 의도한 Issue 종료 확인 또는 blocker 보고 | child Project Done은 merge 전 가능. merge 뒤 In Progress로 되돌리지 않음 |
@@ -355,15 +355,15 @@ stateDiagram-v2
 | workflow | before_dispatch | before_complete의 선언·추가 검사 | 완료 의미 |
 |---|---|---|---|
 | spec-me | session_worktree, tracker_sync | tracker_sync, spec_reviews | `spec_ready_for_planning` |
-| to-ticket | dependency, resource_conflict, workspace, permission_preflight, spec_reviews | tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_traceability | `plan_set_ready_for_implementation` |
-| implement-wrapper | dependency, resource_conflict, workspace, tracker_sync, project_readiness, permission_preflight | tracker_sync, contract_docs, required_outcome, tests, retirement, review, evidence, plan_traceability | `feature_implemented` |
+| to-ticket | dependency, resource_conflict, workspace, permission_preflight, spec_reviews | tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_review | `plan_set_ready_for_implementation` |
+| implement-wrapper | dependency, resource_conflict, workspace, tracker_sync, project_readiness, permission_preflight | tracker_sync, contract_docs, required_outcome, tests, retirement, review, evidence, plan_review | `feature_implemented` |
 | 개별 implement | wrapper의 실제 dispatch와 implement GUIDE 적용. 별도 implement.yaml은 없음 | executeImplementPlan의 실제 검증 및 caller 경로에 의존 | completion kind 매핑에는 `plan_implemented`가 있음. CLI 사용과 manifest 존재를 별도 확인해야 함 |
 | code-review | dependency, resource_conflict, workspace, tracker_sync, permission_preflight | tracker_sync, review, evidence | 독립 리뷰 결과. feature 구현 완료 아님 |
 | knowledge-harvest-workflow | tracker_sync | tracker_sync | 승인된 지식 게시. 구현 완료 아님 |
 
 `before_handoff`에는 주요 workflow의 checkpoint_completeness·evidence_flush가 있다. `after_merge`는 implement-wrapper의 tracker_reconciliation으로 선언된다. 이 hook들을 선언한 YAML이 실제 외부 merge 감시·자동 호출까지 수행한다는 뜻은 아니다.
 
-`completeWorkflow`는 final `feature_implemented`에만 contract_docs를 필수화하고 비최종 workflow에서는 선언된 contract_docs를 필터링한다. Spec·계획 완료에는 ticket_id와 현재 spec_reviews를 전달한다. `to-ticket`은 계획 phase traceability, 구현은 completion phase traceability를 검사한다. 검사 결과를 공통 완료 journal에 기록하며 실패 상태는 completed로 보고하지 않는다.
+`completeWorkflow`는 final `feature_implemented`에만 contract_docs를 필수화하고 비최종 workflow에서는 선언된 contract_docs를 필터링한다. Spec·계획 완료에는 ticket_id와 현재 spec_reviews를 전달한다. `to-ticket`은 계획 phase plan-review, 구현은 completion phase plan-review를 검사한다. 검사 결과를 공통 완료 journal에 기록하며 실패 상태는 completed로 보고하지 않는다.
 
 ## 11. 읽는 파일과 생성·갱신하는 파일
 
@@ -398,7 +398,7 @@ stateDiagram-v2
 | `docs/specs/<ticket>/architecture-reviews/material-approvals/<id>.yaml` | 명시적 사용자 자료 사용 승인 | 제시한 정확한 자료와 승인 snapshot |
 | `docs/plans/<set>/<plan>.md` | to-ticket | 실행 root/branch·목적·범위·AC·반례·검증 계약·의존성 |
 | `docs/plans/<set>/plans.md` | to-ticket | 실행 위치·개별 plan 링크·요약·의존성·실제 Issue URL. tracker 상태 정본 아님 |
-| `docs/plans/<set>/traceability.json` | 계획 작성·리뷰와 구현 검증 | requirement inventory·소유·handoff·검증 사례·review hash·구현 evidence |
+| Spec과 canonical plan | 계획 작성·리뷰와 구현 | 전체 요구·경계·인계·검증 계약을 직접 대조 |
 | 선택 local-markdown ticket 경로 | local tracker 발행·sync | frontmatter planned/in-progress/blocked/completed |
 | `knowledge/sources/`, `claims/`, `principles/`, `evidence/` | 조건부 knowledge-harvest | 원문 기반 근거와 독립 검토·사용자 승인 |
 | `docs/contracts/product.md`, `architecture.md` | 최종 sync-contracts | 통합 구현 사실과 규칙·모델·source·검증 연결 |
@@ -457,7 +457,7 @@ stateDiagram-v2
 - [session 경로 resolver](../../src/workflow/session-output.mjs)
 - [순수 workspace 검사](../../src/eval/workspace-preflight.mjs)
 - [CLI workspace·tracker·준비 preflight](../../.codex/scripts/workspace-preflight-cli.mjs)
-- [계획 추적·리뷰 current-input 검사](../../src/workflow/plan-traceability.mjs)
+- [계획 리뷰 current-input 검사](../../src/workflow/plan-review.mjs)
 - [fresh Spec 리뷰 구조·snapshot 검사](../../src/workflow/spec-review.mjs)
 - [tracker 상태·mirror mutation](../../src/tracker/lifecycle.mjs)
 - [실행 profile과 receipt](../../src/workflow/execution.mjs)
@@ -474,7 +474,7 @@ stateDiagram-v2
 | 계획 시작 | `harness-workspace-preflight.mjs --workspace-root <P> --defer-tracker-sync --json` | P. 리뷰 전 tracker 조회 지연 |
 | 구현 준비 | `harness-workspace-preflight.mjs --workspace-root <E> --for-implementation --json` | 기존 E. 설정·실행 준비 pass 필요 |
 | Spec snapshot/check | `harness-spec-review.mjs snapshot/check --root <root> --ticket <id> ...` | 해당 artifact를 실제 읽는 root, axis·원문 inputs·현재 review JSON |
-| 계획 검사 | `harness-plan-traceability.mjs snapshot/check/impact --root <root> --plan-set <id> ...` | planning/dispatch/completion에 맞는 root·phase·plan ID |
+| 계획 검사 | `harness-plan-review.mjs snapshot/check/impact --root <root> --plan-set <id> ...` | planning/dispatch/completion에 맞는 root·phase·plan ID |
 | 순차 구현 배정 | `WorktreeManager.allocate({ mode: sequential, executionLine: E })` | 기존 E를 owned=false로 반환. git worktree add 없음 |
 | 병렬 구현 배정 | `WorktreeManager.allocate({ mode: parallel, fixedGroupBase, groupId, planId })` | 기존 repository와 승인된 fixed base. W_i 생성 |
 | 검증 | `harness-exec.mjs --root <E 또는 W_i> --profile <id>` | 해당 구현 위치, exact argv/env/config/dependency readiness |
@@ -495,7 +495,7 @@ stateDiagram-v2
 | 스킬·적용 시점 | 진입 파일 | reference·supporting 파일 |
 |---|---|---|
 | `spec-me` — Spec 진입·조율; decision-knowledge는 Architecture 대안 선택 전 | [SKILL.md](../../.codex/skills/spec-me/SKILL.md) | [references/decision-knowledge.md](../../.codex/skills/spec-me/references/decision-knowledge.md) |
-| `to-ticket` — 계획 생성; 검증 계약·추적 원장·Issue 형식은 작성 전, batch-publish는 전체 리뷰 후 | [SKILL.md](../../.codex/skills/to-ticket/SKILL.md) | [references/execution-evidence.md](../../.codex/skills/to-ticket/references/execution-evidence.md)<br>[references/github-batch-publish.md](../../.codex/skills/to-ticket/references/github-batch-publish.md)<br>[references/github-issue-template.md](../../.codex/skills/to-ticket/references/github-issue-template.md)<br>[references/traceability-ledger.md](../../.codex/skills/to-ticket/references/traceability-ledger.md) |
+| `to-ticket` — 계획 생성; Spec 대조·Issue 형식은 작성 전, batch-publish는 전체 리뷰 후 | [SKILL.md](../../.codex/skills/to-ticket/SKILL.md) | [references/execution-evidence.md](../../.codex/skills/to-ticket/references/execution-evidence.md)<br>[references/github-batch-publish.md](../../.codex/skills/to-ticket/references/github-batch-publish.md)<br>[references/github-issue-template.md](../../.codex/skills/to-ticket/references/github-issue-template.md) |
 | `implement-wrapper` — 의존성·자원 scheduling과 선택 reference 한 개 로딩 | [SKILL.md](../../.codex/skills/implement-wrapper/SKILL.md) | 별도 파일 없음 |
 | `code-review` — 코드의 두 독립 axis 리뷰; default-rules는 프로젝트 conventions 부재 시 | [SKILL.md](../../.codex/skills/code-review/SKILL.md) | [references/default-rules.md](../../.codex/skills/code-review/references/default-rules.md) |
 | `e2e-test` — 승인된 E2E 필요 시; 정책·실패 학습·artifact guard | [SKILL.md](../../.codex/skills/e2e-test/SKILL.md) | [references/failure-learning.md](../../.codex/skills/e2e-test/references/failure-learning.md)<br>[references/verification-policy.md](../../.codex/skills/e2e-test/references/verification-policy.md)<br>[scripts/artifact-guard.mjs](../../.codex/skills/e2e-test/scripts/artifact-guard.mjs) |
@@ -540,7 +540,7 @@ stateDiagram-v2
 ### schema·형식 계약
 
 - tracker 입력 형식: `.codex/schemas/tracker/plan-set.schema.yaml`, `split-plan.schema.yaml`, `implementation-pr.schema.yaml`; 실제 검증·렌더는 `src/tracker/contracts.mjs`, `render.mjs`, source-authoring 모듈을 따른다.
-- 계획 원장 예시와 version 2 계약: `to-ticket/references/traceability-ledger.md` 및 `src/workflow/plan-traceability.mjs`.
+- 계획 리뷰는 Product/Architecture Spec과 canonical plan을 직접 대조하며, session runtime에는 review current-input snapshot만 보존한다.
 - System Targets·Decision·Review·Knowledge JSON/YAML의 필수 필드는 `.codex/schemas/decision/`, `.codex/schemas/knowledge/`와 각 validation 모듈을 따른다.
 - 통합 계약의 모델·기능·diagram·source inventory 형식은 `sync-contracts/references/format.md`와 `docs/contracts/manifest.json`을 따른다.
 - 해당 pipeline의 읽기 경로가 설치 consumer에서 바뀌는지 managed asset transform·lock·Doctor inventory로 확인한다. reference는 GUIDE 옆 supporting 파일로 함께 배포하며 독립 공개 스킬로 만들지 않는다.

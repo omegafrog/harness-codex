@@ -195,29 +195,18 @@ async function setupVictoriaLogs() {
   await replaceConfig(mcpPath, JSON.stringify(mcp, null, 2) + '\n');
   const executionPath = join(root, 'docs/agents/execution.json');
   await safePath(executionPath);
-  const execution = existsSync(executionPath) ? JSON.parse(await readFile(executionPath, 'utf8')) : { schema_version: 1, profiles: {} };
-  if (execution.schema_version !== 1 || !execution.profiles || typeof execution.profiles !== 'object' || Array.isArray(execution.profiles)) throw new Error('Invalid existing execution manifest; preserve and reconcile it before setup');
-  for (const [id, command] of [['victorialogs-infrastructure', 'start'], ['victorialogs-check', 'check'], ['victorialogs-stop', 'stop']]) {
-    const previous = execution.profiles[id];
-    if (previous && !(previous.command?.[1] === '.codex/scripts/harness-victorialogs.mjs' && previous.command?.[2] === command)) throw new Error(`Profile ${id} is user-owned; reconcile it before setup`);
-    execution.profiles[id] = { ...previous, command: ['node', '.codex/scripts/harness-victorialogs.mjs', command, '--root', '.'], required_env: previous?.required_env || [], config_inputs: [...new Set([...(previous?.config_inputs || []).filter((path) => !/\/(fluent-bit|parsers)\.conf$/.test(path)), '.codex/scripts/harness-victorialogs.mjs', 'docs/observability/victorialogs/config.json', 'docs/observability/victorialogs/compose.yaml', 'docs/observability/victorialogs/otel-collector.yaml', 'docs/observability/victorialogs/scrape.json', 'docs/observability/victorialogs/otel-javaagent.properties', 'docs/agents/EXEC.md'])], prepare: previous?.prepare || [], verify_config: [...(previous?.verify_config || []).filter((argv) => argv[1] !== '.codex/scripts/harness-victorialogs.mjs'), ['node', '.codex/scripts/harness-victorialogs.mjs', 'validate', '--root', '.']], dependencies: previous?.dependencies || [], timeout_ms: command === 'start' ? 43200000 : 30000, readiness_timeout_ms: command === 'start' ? 180000 : 10000, poll_interval_ms: 1000 };
+  if (existsSync(executionPath)) {
+    const execution = JSON.parse(await readFile(executionPath, 'utf8'));
+    if (execution.schema_version !== 1 || !execution.profiles || typeof execution.profiles !== 'object' || Array.isArray(execution.profiles)) throw new Error('Invalid existing execution manifest; preserve and reconcile it before setup');
+  } else {
+    await mkdir(dirname(executionPath), { recursive: true });
+    await writeFile(executionPath, '{"schema_version":1,"profiles":{}}\n', { flag: 'wx' });
   }
-  if (!execution.profiles['victorialogs-diagnostic-logs']) execution.profiles['victorialogs-diagnostic-logs'] = {
-    command: ['node', '.codex/scripts/harness-victorialogs.mjs', 'validate-logs', '--root', '.', '--input', '${HARNESS_DIAGNOSTIC_LOG_FILE}'],
-    required_env: ['HARNESS_DIAGNOSTIC_LOG_FILE'],
-    config_inputs: ['.codex/scripts/harness-victorialogs.mjs', 'docs/observability/victorialogs/diagnostic-log.schema.json', 'docs/observability/victorialogs/diagnostic-log.example.json', existsSync(join(root, '.codex/harness-runtime/src/observability/diagnostic-logs.mjs')) ? '.codex/harness-runtime/src/observability/diagnostic-logs.mjs' : 'src/observability/diagnostic-logs.mjs'],
-    prepare: [], verify_config: [['node', '.codex/scripts/harness-victorialogs.mjs', 'validate-logs', '--root', '.', '--input', 'docs/observability/victorialogs/diagnostic-log.example.json']], dependencies: [], timeout_ms: 30000, readiness_timeout_ms: 1000, poll_interval_ms: 100,
-  };
-  await mkdir(dirname(executionPath), { recursive: true });
-  if (existsSync(executionPath)) await copyFile(executionPath, sessionOutputPath(root, `runtime/setup/backups/execution-${Date.now()}.json`));
-  const executionTemporary = sessionOutputPath(root, `tmp/victorialogs-execution-${Date.now()}.json`);
-  await writeFile(executionTemporary, JSON.stringify(execution, null, 2) + '\n');
-  await rename(executionTemporary, executionPath);
   const execPath = join(root, 'docs/agents/EXEC.md');
   await safePath(execPath);
   const instructions = await readFile(execPath, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return ''; });
-  if (!instructions.includes('## VictoriaLogs local')) await writeFile(execPath, instructions + '\n## VictoriaLogs local\n\n설정과 MCP 연결: [로컬 VictoriaLogs](../observability/victorialogs/README.md). `victorialogs-infrastructure`를 foreground로 실행하고 별도 세션에서 `victorialogs-check`와 실제 앱 profile을 사용한다. 종료는 `victorialogs-stop`이며 저장 데이터는 보존한다. 모든 실행은 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`를 사용한다. Spring Boot 개발 profile 연결은 설치된 `victorialogs-local-setup` 스킬이 기존 source/config에 맞춰 완료한다.\n');
-  if (!instructions.includes('## Diagnostic log v1')) await writeFile(execPath, await readFile(execPath, 'utf8') + '\n## Diagnostic log v1\n\n[진단 로그 v1 계약](../observability/victorialogs/diagnostic-log-schema.md)을 따른다. 원본 JSONL의 경로를 HARNESS_DIAGNOSTIC_LOG_FILE로 지정하고 harness-exec의 victorialogs-diagnostic-logs profile로 검사한다. Docker 없이 실행되며 실제 앱 emitter/context/redaction 및 수집 확인은 별도다.\n');
+  if (!instructions.includes('## VictoriaLogs local')) await writeFile(execPath, instructions + '\n## VictoriaLogs local\n\n설정과 MCP 연결: [로컬 VictoriaLogs](../observability/victorialogs/README.md). 필요한 경우 `node .codex/scripts/harness-victorialogs.mjs start|check|stop --root <workspace_root>`를 직접 사용한다. start는 foreground이며 저장 데이터는 보존한다. 실제 사용자 경로 E2E에만 harness-exec profile을 사용한다. Spring Boot 개발 profile 연결은 설치된 `victorialogs-local-setup` 스킬이 기존 source/config에 맞춰 완료한다.\n');
+  if (!instructions.includes('## Diagnostic log v1')) await writeFile(execPath, await readFile(execPath, 'utf8') + '\n## Diagnostic log v1\n\n[진단 로그 v1 계약](../observability/victorialogs/diagnostic-log-schema.md)을 따른다. 원본 JSONL은 기본 CLI `node .codex/scripts/harness-victorialogs.mjs validate-logs --root <workspace_root> --input <jsonl>`로 검사한다. Docker 없이 실행되며 실제 앱 emitter/context/redaction 및 수집 확인은 별도다.\n');
   console.log(`OpenTelemetry Collector + VictoriaLogs + VictoriaMetrics and two official MCP servers prepared (${scrapeConfig(config).scrape_configs.length} scrape targets); connect development profiles with victorialogs-local-setup. No servers started.`);
 }
 async function main() {

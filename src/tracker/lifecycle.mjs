@@ -119,7 +119,13 @@ function metadataValid(bead) {
 export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, run = defaultRun } = {}) {
   try {
     let refs = ticket_refs;
+    let beadsDisabled = false;
+    if (isAbsolute(root || '')) {
+      try { beadsDisabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled === false; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     if (refs === null) {
+      if (beadsDisabled) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
       // Only versioned mirrors belong to this policy; older/local operational Beads are untouched.
       if (!isAbsolute(root || '')) throw new Error('Absolute workspace_root is required');
       let beadsRoot = resolve(root, '.beads');
@@ -141,13 +147,19 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     const config = await projectConfig(root), tickets = [], context = {};
     const githubStatuses = config.mode === 'github' ? await githubTickets(root, config, refs, run, context) : null;
     for (const ref of refs) {
-      const bead = await mirror(root, ref, run), tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
+      if (beadsDisabled) {
+        const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
+        tickets.push({ ref, status: tracker.status });
+        continue;
+      }
+      const bead = await mirror(root, ref, run);
+      const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
       tickets.push({ ref, bead_id: bead.id, status: tracker.status });
     }
-    return { status: 'pass', reason: 'tracker_mirrors_current', violations: [], tickets };
+    return { status: 'pass', reason: beadsDisabled ? 'tracker_tickets_current' : 'tracker_mirrors_current', violations: [], tickets };
   } catch (error) { return { status: 'fail', reason: 'tracker_mirror_unresolved', violations: [error.message] }; }
 }
 

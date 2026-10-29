@@ -35,7 +35,7 @@ export async function readExecutionManifest(root) {
   const text = await readFile(join(root, path), 'utf8');
   const manifest = JSON.parse(text);
   requireValue(manifest.schema_version === 1, 'Unsupported execution contract version');
-  requireValue(manifest.profiles && typeof manifest.profiles === 'object' && !Array.isArray(manifest.profiles) && Object.keys(manifest.profiles).length > 0, 'Execution contract must contain profiles');
+  requireValue(manifest.profiles && typeof manifest.profiles === 'object' && !Array.isArray(manifest.profiles), 'Execution contract profiles must be an object');
   for (const [id, profile] of Object.entries(manifest.profiles)) {
     requireValue(ID.test(id), 'Invalid execution profile id');
     validate(profile);
@@ -98,6 +98,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     const { manifest, text: manifestText } = await readExecutionManifest(root);
     const profile = manifest.profiles?.[profile_id];
     validate(profile);
+    requireValue(profile.purpose === 'e2e', 'harness-exec is reserved for end-to-end tests');
     const temporary = sessionOutputPath(root, 'tmp');
     await mkdir(temporary, { recursive: true, mode: 0o700 });
     const env = { ...environment, HARNESS_SESSION_DIR: sessionDirectory(root), HARNESS_EXECUTION_DIR: directory, TMPDIR: temporary, TMP: temporary, TEMP: temporary };

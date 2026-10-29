@@ -28,7 +28,7 @@ function parseArgs(argv) {
 
 async function listArtifacts(root) {
   const results = await Promise.all([[], ["--ignored"]].map((extra) => execFileAsync("git", ["ls-files", "--others", "--exclude-standard", ...extra, "-z"], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })));
-  return [...new Set(results.flatMap(({ stdout }) => stdout.split("\0").filter(Boolean)))].sort();
+  return [...new Set(results.flatMap(({ stdout }) => stdout.split("\0").filter((path) => path && path !== '.harness-workflows' && !path.startsWith('.harness-workflows/'))))].sort();
 }
 
 function safeTarget(root, gitPath) {
@@ -41,11 +41,6 @@ function safeTarget(root, gitPath) {
   return target;
 }
 
-function isWithin(parent, candidate) {
-  const pathFromParent = relative(parent, candidate);
-  return pathFromParent === "" || (pathFromParent !== ".." && !pathFromParent.startsWith(`..${sep}`) && !isAbsolute(pathFromParent));
-}
-
 async function validateRoot(root) {
   const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: root, encoding: "utf8" });
   if (resolve(stdout.trim()) !== root) throw new Error(`--root must be the worktree root: ${root}`);
@@ -54,7 +49,6 @@ async function validateRoot(root) {
 async function snapshot(root, manifest) {
   await validateRoot(root);
   assertSessionManifest(root, manifest);
-  if (isWithin(root, manifest)) throw new Error("--manifest must be outside the active worktree");
   const paths = await listArtifacts(root);
   await writeFile(manifest, JSON.stringify({ root, paths }, null, 2), { flag: "wx" });
   return { action: "snapshot", root, manifest, path_count: paths.length };
@@ -63,7 +57,6 @@ async function snapshot(root, manifest) {
 async function cleanup(root, manifest) {
   await validateRoot(root);
   assertSessionManifest(root, manifest);
-  if (isWithin(root, manifest)) throw new Error("--manifest must be outside the active worktree");
   const state = JSON.parse(await readFile(manifest, "utf8"));
   if (resolve(state.root) !== root || !Array.isArray(state.paths)) throw new Error("Artifact manifest does not match the requested worktree");
   const initial = new Set(state.paths);

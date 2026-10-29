@@ -28,8 +28,7 @@ function makeFailure(root, fields = {}) {
 }
 
 test("E2E test results remain independent of learning while failure history is preserved", async () => {
-  assert.ok(process.env.HARNESS_SESSION_DIR, "Run this test through harness-exec");
-  const root = await mkdtemp(join(process.env.HARNESS_SESSION_DIR, "tmp/e2e-learning-"));
+  const root = await mkdtemp(sessionOutputPath(process.cwd(), "tmp/e2e-learning-"));
   const failure = makeFailure(root);
   const sessionTests = (e2e_failures) => ({ status: "passed", e2e_failures });
   try {
@@ -71,7 +70,7 @@ test("E2E test results remain independent of learning while failure history is p
         assert.deepEqual((await resumed.read()).tests.e2e_failures, [{ ...failure, status: "open" }]);
         await resumed.write({ tests: sessionTests([failure]) });
       const completion = (tests) => evaluateCompletion({
-        planTraceability: { status: "pass" },
+        planReview: { status: "pass" },
         contractDocs: { status: "pass" },
         implementation: { state: "completed", commit_sha: "abc" },
         tests,

@@ -32,7 +32,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 ### Workspace 전달
 
-워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
+워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. `shared_guidance_root`는 `workspace_root`와 같은 Git common directory인지 검증하고, linked worktree의 worker sandbox에는 이 원본 프로젝트 경로를 `--add-dir`로 허용한다. 이를 통해 공통 저장소의 canonical `worktree.json`과 공용 지침을 사용한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
 
 `spec-me`, `to-ticket`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 한 번 실행한다. `workflow-compose`가 worktree 생성·재사용과 생성 직후 검사를 맡고, `spec-me`는 전달받은 `worktree.json`의 작업 위치에서 진입 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
 
@@ -72,11 +72,13 @@ workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/regis
 
 ## Session output
 
-로그·임시 파일·스크린샷·평가 결과·checkpoint·복구 백업은 `harness-session-output.mjs --root <workspace_root>`가 반환한 `session_directory` 안에만 기록한다. 모든 agent/tool에 이 경로를 전달하고 `docs/agents/EXEC.md`의 process 환경·browser output 규칙을 적용한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로를 사용한다.
+로그·임시 파일·스크린샷·평가 결과·checkpoint·복구 백업은 현재 실행 input의 `session_directory` 안에만 기록한다. standalone/main 실행은 `harness-session-output.mjs --root <workspace_root>`로 이를 구한다. workflow가 linked worktree를 준비한 stage는 해당 worktree의 canonical `worktree.json`이 지정한 session을 input의 `session_directory`로 전달하고, orchestrator 상태 소유 session은 `context.control_session_directory`로 별도 전달한다. worker는 전달된 경로를 다시 계산하거나 worktree의 `.git` 아래에 접근하지 않는다. 모든 agent/tool에 이 경로를 전달하고 `docs/agents/EXEC.md`의 process 환경·browser output 규칙을 적용한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로를 사용한다.
 
 ## 테스트·서비스 실행
 
-테스트·서버·인프라는 `docs/agents/EXEC.md`와 프로젝트 소유 `docs/agents/execution.json`의 프로필을 사용해 `harness-exec.mjs --root <workspace_root> --profile <id>`로 실행한다. 인자·환경값·설정 준비/검증·인프라 readiness 누락/실패 시 시작을 차단하며 직접 명령으로 우회하지 않는다. 구현이 실행 전제를 바꾸면 프로필·EXEC도 함께 갱신한다.
+Harness 소비자 workflow 테스트 저장소: `/home/jiwoo/workspace/.harness-worktrees/harness/aa279184-e3bc-4a1e-bf58-27b1835724db` (private GitHub: `git@github.com:omegafrog/harness-specme-e2e-20261028.git`). 다른 세션에서도 이 저장소를 사용하며, 경로가 없으면 원격 주소로 찾거나 다시 clone한다. 테스트 전 저장소 상태와 설치된 Harness 버전을 확인한다.
+
+일반 단위·회귀 검증은 `docs/agents/EXEC.md`의 명령을 언어별 기본 CLI로 실행한다. `harness-exec.mjs`와 `execution.json` profile은 명시적 사용자 흐름 E2E에만 사용한다. E2E 실행 전 실제 인자·환경·설정·인프라 readiness를 확인하고, 실행 전제가 바뀌면 관련 E2E profile과 EXEC를 갱신한다.
 
 ## Fresh Spec review
 

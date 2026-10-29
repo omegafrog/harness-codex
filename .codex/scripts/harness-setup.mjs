@@ -352,7 +352,7 @@ async function main() {
   }
   const gitignore = join(root, '.gitignore');
   const ignoreText = await readFile(gitignore, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  if (!/^\.codex\/sessions\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.codex/sessions/\n`);
+  if (!/^\.harness-workflows\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.harness-workflows/\n`);
   console.log(`Updated .codex/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
   console.log(`Tracker configured: ${mode}`);
   if (useBeads) console.log('Beads workspace verification/initialization remains a separate explicit step: run bd status, and initialize only after checking local and remote data.');

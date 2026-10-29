@@ -22,7 +22,7 @@ test('only a split plan can defer contract snapshot sync; final integration and 
 
 test("split-plan completion does not wait for the plan-set integration PR and recalculates dependents", () => {
   const passed = evaluateCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed", command: "npm test" },
@@ -43,7 +43,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
   assert.equal(passed.can_complete, true);
 
   const unresolved = evaluateCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed" },
@@ -72,7 +72,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
   assert.deepEqual(dependents, { ready: ["b"], waiting: [{ plan_id: "c", reasons: ["dependency:missing"] }] });
 
   const report = reconcileCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     plan: { id: "a", dependencies: [], required_outcomes: ["implementation_acceptance_criteria"] },
     implementation: { state: "completed", commit_sha: "abc123" },
@@ -100,7 +100,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
 
 test("local-markdown reconciliation uses local canonical statuses", () => {
   const report = reconcileCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     plan: { id: "local-plan", dependencies: [] },
     implementation: { state: "completed", commit_sha: "abc123" },
@@ -126,7 +126,7 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
 
 test("completion rejects reviewer evidence from a different implementation commit", () => {
   const result = evaluateCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "new-commit" },
     tests: { status: "passed" },
@@ -148,7 +148,7 @@ test("completion rejects reviewer evidence from a different implementation commi
 
 test("completion rejects two review roles that share one reviewer context", () => {
   const result = evaluateCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "commit-1" },
     tests: { status: "passed" },
@@ -175,7 +175,7 @@ test("completion rejects unsupported tracker mode instead of assuming GitHub", (
 
 test("completion stays unresolved when test, required outcome, or evidence gates are missing", () => {
   const result = evaluateCompletion({
-    planTraceability: { status: "pass", reason: "plan_traceability_completion_current" },
+    planReview: { status: "pass", reason: "plan_review_completion_current" },
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
@@ -197,12 +197,12 @@ test("stale plan traceability blocks Done and keeps dependent plans waiting", ()
     plan: { id: "plan-a", dependencies: [] }, implementation, reviews, tests: { status: "passed" },
     evidence: { fixed_point: "base", implementation, tests: { status: "passed" }, reviews },
     contractDocs: { status: "pass" }, trackerSync: { status: "pass" },
-    planTraceability: { status: "blocked", reason: "Plan review is stale" },
+    planReview: { status: "blocked", reason: "Plan review is stale" },
     trackerSnapshot: { status: "Done", project_status: "Done" },
     dependents: [{ id: "plan-b", status: "planned", dependencies: ["plan-a"] }],
   });
   assert.equal(result.can_complete, false);
-  assert.ok(result.unresolved.includes("plan_traceability:Plan review is stale"));
+  assert.ok(result.unresolved.includes("plan_review:Plan review is stale"));
   assert.notEqual(result.tracker_reconciliation.requested_status, "Done");
   assert.deepEqual(result.dependents.ready, []);
   assert.deepEqual(result.dependents.waiting[0].reasons, ["dependency:plan-a"]);

@@ -11,7 +11,7 @@ import { inspectOrchestratorHook } from '../src/installer/orchestrator-hook.mjs'
 import { runDoctor } from '../src/doctor/index.mjs';
 import { prepareComposerWorkspace } from '../src/workflow/composer-workspace.mjs';
 import { recordExecutionState } from '../src/workflow/execution-state.mjs';
-import { inspectStartupState } from '../src/workflow/startup-state.mjs';
+import { inspectStartupState, refreshWorkflowProgress } from '../src/workflow/startup-state.mjs';
 import { createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree } from '../src/workflow/worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from '../src/workflow/session-output.mjs';
 
@@ -64,14 +64,16 @@ if(!args.some((arg,index)=>arg==='--add-dir'&&args[index+1]===path.join(process.
 const prompt=fs.readFileSync(0,'utf8');const session=process.env.HARNESS_SESSION_DIR;
 const schema=JSON.parse(fs.readFileSync(args[args.indexOf('--output-schema')+1],'utf8'));
 if(schema.properties.execution_id.const!==process.env.HARNESS_SKILL_EXECUTION_ID||schema.properties.skill.const!=='beads'||schema.properties.result_ref.enum[0]!=='runtime/executions/'+process.env.HARNESS_SKILL_EXECUTION_ID+'/result.json')process.exit(11);
-if(!session||!prompt.includes(path.join(session,'runtime/executions',process.env.HARNESS_SKILL_EXECUTION_ID,'result.json'))||!prompt.includes('not the workspace cwd'))process.exit(10);
-const id=process.env.HARNESS_SKILL_EXECUTION_ID;const e={schema_version:1,execution_id:id,skill:'beads',status:'completed',code:'OK',result_ref:'runtime/executions/'+id+'/result.json'};
-const {result_ref,...fields}=e;fs.writeFileSync(path.join(path.dirname(output),'result.json'),JSON.stringify({...fields,summary:'Fixture',artifacts:[],details:{}}));
+if(!session||!prompt.includes('Input: ')||!prompt.includes('Output: ')||!prompt.includes('Read only the input fields')||schema.properties.result.type!=='string')process.exit(10);
+const id=process.env.HARNESS_SKILL_EXECUTION_ID;const e={schema_version:1,execution_id:id,skill:'beads',status:'completed',code:'OK',result_ref:null};
+const {result_ref,...fields}=e;e.result=JSON.stringify({...fields,summary:'Fixture',artifacts:[],details:{}});
 fs.writeFileSync(output,JSON.stringify(e));
 `, { mode: 0o700 });
       const executed = spawnSync('node', ['.codex/scripts/harness-skill-exec.mjs', '--root', root, '--session-directory', execSession, '--input', inputPath], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: join(execSession, 'tmp/fake-bin') + ':' + process.env.PATH } });
       assert.equal(executed.status, 0, executed.stderr);
       assert.equal(JSON.parse(executed.stdout).status, 'completed');
+      assert.equal(JSON.parse(executed.stdout).result_ref, `runtime/executions/${executionId}/result.json`);
+      assert.equal(JSON.parse(await readFile(join(execSession, 'runtime/executions', executionId, 'result.json'), 'utf8')).summary, 'Fixture');
       const recorded = JSON.parse(await readFile(join(execSession, 'runtime/orchestrator/state.json'), 'utf8'));
       assert.equal(recorded.stages['fixture-task'].status, 'completed');
       assert.equal(recorded.status, 'waiting');
@@ -105,10 +107,13 @@ fs.writeFileSync(output,JSON.stringify(e));
         assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), state);
       }
       const progressPath = sessionOutputPath(root, 'runtime/orchestrator/progress.json');
-      const previous = await readFile(progressPath, 'utf8');
       const foreign = spawnSync(own.command, { shell: true, cwd: root, input: JSON.stringify({ ...event, session_id: 'another-session' }), encoding: 'utf8' });
       assert.equal(foreign.status, 0, foreign.stderr);
-      assert.equal(await readFile(progressPath, 'utf8'), previous);
+      const resumedProgress = JSON.parse(await readFile(progressPath, 'utf8'));
+      assert.equal(resumedProgress.workflow_id, 'test');
+      assert.equal(resumedProgress.completion_percent, 50);
+      assert.equal(resumedProgress.stages[1].reason, 'User decision required');
+      assert.equal(JSON.parse(await readFile(statePath, 'utf8')).codex_session_id, 'fixture-session');
       state.stages.spec = { status: 'running', execution_id: 'spec-2' };
       await writeFile(statePath, JSON.stringify(state));
       const retry = spawnSync(own.command, { shell: true, cwd: root, input: JSON.stringify(event), encoding: 'utf8' });
@@ -145,6 +150,65 @@ async function worktreeFixture() {
   return { root, git, tree: join(root, 'worker') };
 }
 
+test('installed linked-worktree skill execution grants only the shared root and worktree session', async () => {
+  const { root } = await worktreeFixture();
+  let created;
+  try {
+    await protectLocalInstallArtifacts(root, SOURCE);
+    await updateProject({ sourceRoot: SOURCE, targetRoot: root, initialize: true });
+    const installedExec = join(root, '.codex/scripts/harness-skill-exec.mjs');
+    const sourceExec = await readFile(join(SOURCE, '.codex/scripts/harness-skill-exec.mjs'), 'utf8');
+    assert.equal(await readFile(installedExec, 'utf8'), sourceExec);
+    const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
+    assert.ok(lock.files['.codex/scripts/harness-skill-exec.mjs']);
+    assert.ok(lock.files['.codex/harness-runtime/src/workflow/skill-execution.mjs']);
+    assert.ok(lock.files['.codex/harness-runtime/src/workflow/worktrees.mjs']);
+    await updateProject({ sourceRoot: SOURCE, targetRoot: root, initialize: false });
+    assert.equal(await readFile(installedExec, 'utf8'), sourceExec);
+    const doctor = await runDoctor({ root, sourceRoot: SOURCE });
+    assert.ok(!doctor.diagnostics.some(({ code, path }) => ['installer_missing_file', 'installer_unlocked_file', 'installer_stale_lock_entry'].includes(code) && /harness-skill-exec\.mjs|skill-execution\.mjs/.test(path || '')));
+    assert.equal(spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).stdout, '');
+    assert.equal(spawnSync('git', ['check-ignore', '-v', '.github/pull_request_template.md'], { cwd: root }).status, 0);
+
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  high_performance_model: fixture-model\n  high_performance_reasoning_effort: medium\n  implementation_model: fixture-model\n  implementation_reasoning_effort: medium\n  execution_model: fixture-model\n  execution_reasoning_effort: medium\n  low_performance_model: fixture-model\n  low_performance_reasoning_effort: medium\n');
+    created = await createWorkflowWorktree({ workspace_root: root, return_root: root });
+    const session = sessionDirectory(root);
+    const executionId = 'linked-shared-root';
+    const inputPath = `runtime/executions/${executionId}/input.json`;
+    const input = { schema_version: 1, execution_id: executionId, skill: 'beads', workspace_root: created.workspace, shared_guidance_root: root, session_directory: session, scope: 'Verify shared repository sandbox access', input_refs: [], context: { codex_session_id: '01a1864e-f57b-72a3-bfaf-4d61a131ec76', stage_id: 'linked-task', worktree_ref: join(created.session_directory, 'worktree.json') } };
+    await writeFile(sessionOutputPath(root, inputPath), JSON.stringify(input));
+    const fakeBin = sessionOutputPath(root, 'tmp/fake-bin/codex');
+    await writeFile(fakeBin, `#!/usr/bin/env node
+import fs from 'node:fs';import path from 'node:path';
+const args=process.argv.slice(2);const output=args[args.indexOf('--output-last-message')+1];
+if(!args.includes('--output-schema')||args[args.indexOf('--model')+1]!=='fixture-model')process.exit(9);
+const added=args.flatMap((arg,index)=>arg==='--add-dir'?[args[index+1]]:[]);
+const allowed=[process.env.HARNESS_EXPECTED_SHARED_ROOT,process.env.HARNESS_EXPECTED_WORKSPACE,process.env.HARNESS_EXPECTED_SESSION,process.env.HARNESS_EXPECTED_WORKTREE_SESSION];
+if(!allowed.every(value=>added.includes(value))||added.some(value=>!allowed.includes(value)))process.exit(13);
+if(added.includes(process.env.HARNESS_EXPECTED_COMMON))process.exit(14);
+const id=process.env.HARNESS_SKILL_EXECUTION_ID;const session=process.env.HARNESS_SESSION_DIR;
+const e={schema_version:1,execution_id:id,skill:'beads',status:'completed',code:'OK',result_ref:'runtime/executions/'+id+'/result.json'};
+const {result_ref,...fields}=e;e.result=JSON.stringify({...fields,summary:'Fixture',artifacts:[],details:{}});console.log(JSON.stringify({type:'thread.started',thread_id:'01a18675-ee8a-7561-8dd3-0043de67edcf'}));fs.writeFileSync(output,JSON.stringify(e));
+`, { mode: 0o700 });
+    await mkdir(join(created.workspace, 'docs/agents'), { recursive: true });
+    await writeFile(join(created.workspace, 'app.txt'), 'Application-owned edit\n');
+    await writeFile(join(created.workspace, 'docs/agents/EXEC.md'), 'Project-owned preparation\n');
+    const executed = spawnSync('node', ['.codex/scripts/harness-skill-exec.mjs', '--root', created.workspace, '--session-directory', session, '--input', inputPath], { cwd: created.workspace, encoding: 'utf8', env: { ...process.env, PATH: join(session, 'tmp/fake-bin') + ':' + process.env.PATH, HARNESS_EXPECTED_SHARED_ROOT: root, HARNESS_EXPECTED_WORKSPACE: created.workspace, HARNESS_EXPECTED_SESSION: session, HARNESS_EXPECTED_WORKTREE_SESSION: created.session_directory, HARNESS_EXPECTED_COMMON: created.common } });
+    assert.equal(executed.status, 0, executed.stderr);
+    assert.equal(JSON.parse(executed.stdout).status, 'completed');
+    assert.equal(JSON.parse(await readFile(join(created.session_directory, 'worktree.json'), 'utf8')).agent_sessions['stage:linked-task'].session_id, '01a18675-ee8a-7561-8dd3-0043de67edcf');
+    const status = spawnSync('git', ['status', '--short', '--untracked-files=all'], { cwd: created.workspace, encoding: 'utf8' });
+    assert.equal(status.status, 0, status.stderr);
+    assert.ok(status.stdout.includes('app.txt') && status.stdout.includes('docs/agents/EXEC.md'));
+    assert.ok(!status.stdout.includes('.codex/') && !status.stdout.includes('.agents/'));
+    assert.equal(spawnSync('git', ['check-ignore', '-v', '.codex/scripts/harness-skill-exec.mjs'], { cwd: created.workspace }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '-v', 'docs/agents/EXEC.md'], { cwd: created.workspace }).status, 1);
+  } finally {
+    if (created) await finishWorkflowWorktree({ workspace_root: created.workspace, repository_root: root, worktree_id: created.worktree_id, outcome: 'aborted' });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('startup inspection is read-only and an unmanaged linked worktree is not treated as a fresh primary workspace', async () => {
   const { root, git, tree } = await worktreeFixture();
   try {
@@ -167,7 +231,7 @@ test('startup inspection is read-only and an unmanaged linked worktree is not tr
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('startup inspection correlates the same Codex session, canonical ownership and actual Git registration', async () => {
+test('startup inspection resumes canonical workflow state across Codex sessions and verifies Git registration', async () => {
   const { root, git, tree } = await worktreeFixture();
   try {
     git('worktree', 'add', '-qb', 'worker', tree);
@@ -186,9 +250,17 @@ test('startup inspection correlates the same Codex session, canonical ownership 
     assert.equal(observed.decision_hint, 'resume_candidate');
     assert.equal(observed.matching_workflows[0].path, statePath);
     const foreign = await inspectStartupState({ workspaceRoot: tree, codexSessionId: 'session-b' });
-    assert.equal(foreign.matching_workflows.length, 0);
+    assert.equal(foreign.matching_workflows.length, 1);
     assert.equal(foreign.current_workspace_has_other_session_state, true);
-    assert.equal(foreign.decision_hint, 'inspect_required');
+    assert.equal(foreign.decision_hint, 'resume_candidate');
+    assert.equal((await inspectStartupState({ workspaceRoot: tree })).decision_hint, 'resume_candidate');
+    const progress = await refreshWorkflowProgress(foreign, 'SessionResume');
+    assert.equal(progress.codex_session_id, 'session-a');
+    const legacyState = { ...state };
+    delete legacyState.codex_session_id;
+    await writeFile(statePath, JSON.stringify(legacyState));
+    assert.equal((await inspectStartupState({ workspaceRoot: tree, codexSessionId: 'session-c' })).decision_hint, 'resume_candidate');
+    await writeFile(statePath, JSON.stringify(state));
     assert.equal(await readFile(recordPath, 'utf8'), recordBefore);
     assert.equal(await readFile(statePath, 'utf8'), JSON.stringify(state));
     git('-C', tree, 'branch', '-m', 'renamed-worker');
@@ -280,7 +352,7 @@ test('installed worktree creation provisions ignored runtime and preserves appli
 });
 
 
-test('execution lifecycle preserves retries and rejects foreign state owners', async () => {
+test('execution lifecycle preserves retries and permits a new Codex session without concurrent stage duplication', async () => {
   const { root } = await worktreeFixture();
   try {
     const session = sessionDirectory(root);
@@ -298,7 +370,18 @@ test('execution lifecycle preserves retries and rejects foreign state owners', a
     const progress = JSON.parse(await readFile(join(session, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(progress.observed_event, 'SkillExecution');
     input.context.codex_session_id = 'foreign';
-    await assert.rejects(recordExecutionState({ ...args, status: 'running' }), /ownership mismatch/);
-    assert.deepEqual(JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')), state);
+    input.execution_id = 'attempt-3';
+    await recordExecutionState({ ...args, status: 'running' });
+    input.execution_id = 'attempt-4';
+    await assert.rejects(recordExecutionState({ ...args, status: 'running' }), /Stage already running/);
+    input.execution_id = 'attempt-3';
+    await recordExecutionState({ ...args, status: 'completed', code: 'OK', result_ref: 'runtime/result.json' });
+    const resumed = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8'));
+    assert.equal(resumed.codex_session_id, 'foreign');
+    assert.equal(resumed.stages.check.status, 'completed');
+    assert.equal(resumed.stages.check.attempts.length, 2);
+    const duplicateCompose = { ...input, execution_id: 'duplicate-workflow', skill: 'workflow-compose', context: { codex_session_id: 'new-session', stage_id: 'workflow-compose' } };
+    await assert.rejects(recordExecutionState({ ...args, input: duplicateCompose, status: 'running' }), /Workflow already active/);
+    assert.deepEqual(JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')), resumed);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

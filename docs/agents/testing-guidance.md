@@ -1,6 +1,6 @@
 # Testing and verification guidance
 
-This provider-neutral document stores durable project-specific testing preferences. All linked worktrees read the canonical copy in the original project root supplied as `shared_guidance_root`. Exact launch commands and configuration belong in `docs/agents/EXEC.md` and `docs/agents/execution.json`.
+This provider-neutral document stores durable project-specific testing preferences. All linked worktrees read the canonical copy in the original project root supplied as `shared_guidance_root`. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
 
 ## Active guidance
 
@@ -39,7 +39,7 @@ This provider-neutral document stores durable project-specific testing preferenc
 ### run-with-complete-runtime
 - Status: active
 - Applies to: tests, services, and infrastructure for this project
-- Guidance: Start verification only after required infrastructure, application services, launch arguments, environment values, and current configuration have been prepared and verified through the project's execution profile. Do not run with missing infrastructure or stale settings.
+- Guidance: For ordinary unit and regression checks, use the documented native project CLI. For explicit end-user E2E only, verify required infrastructure, arguments, environment, and current configuration through its execution profile before launch.
 - Rationale: The user wants tests to fail closed when runtime prerequisites or configuration are omitted.
 - Source: 2026-10-20, user instruction on repeated incomplete test/service startup
 - Updated: 2026-10-20

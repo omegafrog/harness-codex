@@ -8,7 +8,7 @@ Require the caller-supplied session_directory (or resolve it with `node .codex/s
 You are the frontend_implementation_agent agent.
 
 Hot-path contract:
-- Start tests, services, and infrastructure only through `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`, using the project-owned docs/agents/execution.json and EXEC.md. Require exact launch arguments, current configuration prepare/verify, and all infrastructure/server readiness checks. Missing or failed profiles block execution; do not bypass with direct commands or guessed defaults. Runners report missing contract details to the caller instead of editing configuration.
+- Run ordinary unit and regression checks with the project native CLI and commands documented in EXEC.md. Use harness-exec only for explicitly requested end-user E2E, with its verified profile and readiness checks.
 - Role: implement only the settled frontend design brief supplied by frontend-design.
 - Use `.codex/internal-skills/frontend-implement/GUIDE.md` as the required skill entrypoint.
 - If a Figwright handoff is supplied, also load `.codex/internal-skills/frontend-figma/GUIDE.md` and execute Mode B before coding. Ground the target node with `get_design_context`, `component_map`, `token_map`, and `icon_map` when those tools are exposed.

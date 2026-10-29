@@ -1,10 +1,11 @@
 import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
+import { readFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join, resolve, relative } from "node:path";
 import { promisify } from "node:util";
 import { ensureDir, isWithin } from "./util.mjs";
 import { parseYaml } from "./yaml.mjs";
-import { reserveWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree } from "../workflow/worktrees.mjs";
+import { parseWorktreeRecord, reserveWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree } from "../workflow/worktrees.mjs";
 import { compareKnowledgeMerge } from "../knowledge/merge.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -238,13 +239,14 @@ export class WorktreeManager {
     this.poolHandles = new Map();
   }
 
-  async allocate({ planId, mode = "parallel", fixedGroupBase = null, executionLine = null, groupId = "default" }) {
+  async allocate({ planId, planSetId = null, mode = "parallel", fixedGroupBase = null, executionLine = null, groupId = "default" }) {
     safePlanPath(planId);
+    if (planSetId !== null) safeGroupPath(planSetId);
     const sequentialWorkspace = resolve(executionLine || this.repoRoot);
     const base = (await this.runGit(mode === "parallel" ? this.repoRoot : sequentialWorkspace, ["rev-parse", "HEAD"])).stdout.trim();
     if (mode !== "parallel") {
       if (this.blockedExecutionLines.has(sequentialWorkspace)) throw new Error(`Execution line is blocked: ${sequentialWorkspace}`);
-      return { planId, mode: "sequential", workspace: sequentialWorkspace, owned: false, baseSha: base, finalHeadSha: null, dirty: null };
+      return { planId, ...(planSetId ? { plan_set_id: planSetId } : {}), mode: "sequential", workspace: sequentialWorkspace, owned: false, baseSha: base, finalHeadSha: null, dirty: null };
     }
     if (this.blockedPools.has(groupId)) throw new Error(`Worktree pool is blocked: ${groupId}`);
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
@@ -252,20 +254,20 @@ export class WorktreeManager {
     const workspace = sessionOutputPath(this.repoRoot, relative(sessionDirectory(this.repoRoot), join(this.runtimeRoot, "worktrees", this.runtimeNamespace, safeGroupPath(groupId), safePlanPath(planId))));
     const branch = `harness/${this.runtimeNamespace}/${safeGroupPath(groupId)}/${safePlanPath(planId)}-${process.pid}-${++branchInstance}`;
     await ensureDir(join(this.runtimeRoot, "worktrees"));
-    const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, branch });
+    const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, branch, plan_set_id: planSetId || undefined });
     let allocatedBase;
     let added = false;
     try {
       await this.runGit(this.repoRoot, ["worktree", "add", "-b", branch, workspace, fixedGroupBase]);
       added = true;
-      await registerWorkflowWorktree({ workspace_root: workspace, return_root: this.repoRoot });
+      await registerWorkflowWorktree({ workspace_root: workspace, return_root: this.repoRoot, plan_set_id: planSetId || undefined });
       allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
       if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
     } catch (error) {
       this.blockedPools.add(groupId);
       if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
       if (added) {
-        const handle = { planId, mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+        const handle = { planId, ...(planSetId ? { plan_set_id: planSetId } : {}), mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
         this.poolHandles.get(groupId).add(workspace);
         try {
           const observed = await this.observe(handle);
@@ -287,7 +289,7 @@ export class WorktreeManager {
     this.groupBases.set(groupId, fixedGroupBase);
     if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
     this.poolHandles.get(groupId).add(workspace);
-    return { planId, mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+    return { planId, ...(planSetId ? { plan_set_id: planSetId } : {}), mode: "parallel", workspace, worktree_id: ownership.worktree_id, branch, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
   }
 
   async observe(handle) {
@@ -296,10 +298,12 @@ export class WorktreeManager {
     return { ...handle, finalHeadSha, dirty: status.stdout.trim().length > 0, dirtyFiles: status.stdout.split("\n").filter(Boolean) };
   }
 
-  async verify(handle, { fixedGroupBase = handle.fixedGroupBase } = {}) {
+  async verify(handle, { fixedGroupBase = handle.fixedGroupBase, planSetId = handle.plan_set_id } = {}) {
     if (!handle?.owned || handle.mode !== "parallel" || !handle.workspace || !fixedGroupBase) return { valid: false, reason: "invalid_worktree_handle" };
     const workspace = resolve(handle.workspace);
     if (!isWithin(sessionDirectory(this.repoRoot), workspace)) return { valid: false, reason: "workspace_outside_session" };
+    const record = parseWorktreeRecord(await readFile(join(sessionDirectory(workspace), "worktree.json"), "utf8"));
+    if (planSetId && record.plan_set_id !== planSetId) return { valid: false, reason: "plan_set_id_mismatch", expected_plan_set_id: planSetId, actual_plan_set_id: record.plan_set_id || null };
     const observed = await this.observe(handle);
     if (observed.baseSha !== fixedGroupBase) return { valid: false, reason: "worktree_base_mismatch", observed };
     const listing = await this.runGit(this.repoRoot, ["worktree", "list", "--porcelain"]);

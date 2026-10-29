@@ -69,7 +69,7 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
       requireValue(round <= 3, 'Review retry budget exhausted (initial review plus two retries); present unresolved findings for a scope or decision resolution');
       const attempt = { id: randomUUID(), round, status: 'active', inputs };
       history.attempts.push(attempt);
-      result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_findings: history.attempts.findLast((item) => item.review)?.review.findings || [] };
+      result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_inputs: last?.review && ['pass', 'revise'].includes(last.status) ? last.inputs : null, previous_findings: history.attempts.findLast((item) => item.review)?.review.findings || [] };
     } else if (action === 'resolve') {
       requireValue(last && last.status !== 'active' && last.status !== 'pass' && last.round === 3, 'Resolve requires an exhausted review cycle');
       requireValue(typeof reason === 'string' && reason.trim(), 'Explicit user scope/decision resolution is required');
@@ -114,6 +114,14 @@ export async function assertActiveReviewAdmission({ root, scope, attemptId, inpu
   requireValue((requireActive ? last?.status === 'active' : ['active', 'pass', 'revise'].includes(last?.status)) && last.id === attemptId && inputs && same(last.inputs, inputs), 'Review admission does not match the active attempt');
 }
 
+export async function reviewAdmissionPreviousInputs({ root, scope, attemptId }) {
+  const history = await readHistory(historyPath(root, scope, { create: false }));
+  const index = history.attempts.findIndex((item) => item.id === attemptId);
+  requireValue(index >= 0, 'Review admission attempt is missing');
+  const previous = history.attempts[index - 1];
+  return previous?.review && ['pass', 'revise'].includes(previous.status) ? previous.inputs : null;
+}
+
 
 export async function inspectReviewHistory({ root, scope }) {
   const path = historyPath(root, scope, { create: false });
@@ -126,6 +134,7 @@ export async function inspectReviewHistory({ root, scope }) {
   const limit = repair ? cycle[0]?.limit ?? null : 3;
   requireValue(Number.isSafeInteger(used) && used >= 0 && (limit === null || Number.isSafeInteger(limit) && limit >= 0), 'Invalid review budget');
   return { root, scope, evidence_path: path, recorded_state: repair ? cycle.length ? 'repair-reserved' : 'no-current-reservation' : last?.status || 'not-started',
+    ...(last?.review ? { last_review: last.review, last_attempt_id: last.id, last_round: last.round } : {}),
     budget: { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) },
     next_admission_requires_resolution: repair ? cycle.length > 0 && used >= limit : Boolean(last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
     findings: repair ? cycle.at(-1)?.findings || [] : last?.review?.findings || [],

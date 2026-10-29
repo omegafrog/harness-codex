@@ -59,7 +59,7 @@ Product 기능과 Architecture 구성요소는 다음처럼 명시적인 stable 
 }
 ```
 
-`components`는 실제 전체 모델을 채운다. `owner`는 Context/aggregate/service/entity의 ID이며 aggregate는 정확히 하나의 `aggregate-root`를 가진다. `features`는 실제 소유 기능을 연결한다. 이 JSON은 형식 예시이며 빈 모델을 초기 완료로 승인하지 않는다.
+`components`는 실제 전체 모델을 채운다. `owner`는 Context/aggregate/service/entity의 ID이며 aggregate는 정확히 하나의 `aggregate-root`를 가진다. `features`는 실제 소유 기능을 연결한다. 제품 코드가 아직 하나도 없는 신규 저장소만 `features`, `components`, `source_roots`를 빈 배열로 두고 manifest에 `empty_project_reason`을 기록할 수 있다. 이때 Product/Architecture 문서에도 현재 구현이 없음을 명시하고 DDD/Class diagram은 각각 생략 사유를 기록한다. 어느 하나라도 실제 기능·구성요소가 있으면 이 예외를 사용할 수 없다.
 
 `source_roots`는 설치 대상 프로젝트의 전체 production source·설정·진입점을 포함해야 한다. source snapshot은 Git 관리 파일과 ignore되지 않은 신규 파일을 포함하고 삭제도 감지한다. 런타임 산출물·의존성 cache는 넣지 않는다. `CONTEXT.md`·`CONTEXT-MAP.md`와 `docs/specs/`·`docs/plans/`도 자동 포함한다. ticket Spec/plan만 바뀌어도 통합 계약 검토를 요구하며 새 local checkpoint/완료 receipt는 project source 밖 session_directory에 둔다. 과거 `docs/plans/.runtime/`는 snapshot에서 제외하지만 새 출력을 쓰지 않는다. CI에서 제외 범위 축소와 모델 누락을 reviewer가 확인한다.
 
@@ -69,4 +69,4 @@ DDD 노드 예: `rectangle "[[../architecture.md#order Order]]" as order`. owner
 
 경계를 감싸는 package는 `package "Orders" as orders [[../architecture.md#orders]] { ... }`처럼 **package URL 문법**을 사용한다. package 표시명 안의 `[[URL 이름]]`은 일반 텍스트가 될 수 있으므로 사용하지 않는다. 렌더 후 각 이름의 실제 `<a href>`를 검사하며 URL 문자열이나 bracket label의 존재만으로 클릭 성공을 판정하지 않는다.
 
-실행 전제가 바뀌면 프로젝트 소유 `docs/agents/execution.json`과 EXEC의 profile·인자·설정 갱신/검증·인프라 readiness를 source/CI와 대조하고 source_roots에 공유 실행 계약을 포함한다. 비밀 환경값 자체를 공개 계약에 복사하지 않는다.
+일반 검증 명령은 EXEC에 기본 CLI로 기록한다. 명시적 최종 사용자 흐름 E2E의 실행 전제가 바뀌면 `purpose: "e2e"`인 프로젝트 소유 `docs/agents/execution.json` profile과 EXEC의 인자·설정 검증·인프라 readiness를 source/CI와 대조하고 source_roots에 공유 실행 계약을 포함한다. 비밀 환경값 자체를 공개 계약에 복사하지 않는다.

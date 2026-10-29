@@ -6,15 +6,15 @@
 
 | `decision_hint` | 관측된 상태 | 메인 세션의 처리 |
 |---|---|---|
-| `resume_candidate` | 같은 Codex session ID의 진행 중 workflow 또는 생성 중 작업 | 기록을 먼저 읽고 현재 메시지와 작업의 관계를 판단한다. |
+| `resume_candidate` | 현재 저장소의 canonical session 기록에 진행 중 workflow 또는 생성 중 작업이 있음 | 기록과 worktree를 검증한 뒤 현재 메시지와 작업의 관계를 판단한다. Codex session ID가 달라도 이어간다. |
 | `compose_candidate` | 현재 root가 primary이고 관련 진행 기록이 없거나 같은 세션의 workflow가 종료됨 | 실제 새 작업 요청인 경우에만 workflow-compose를 호출한다. |
-| `inspect_required` | 소유권 없는 linked worktree, 다른 세션의 현재 기록, 경로·branch 불일치, 손상·누락·중복 기록 등 | 원인을 확인하고 기존 기록을 보존한다. 자동 재생성·복구·인계는 하지 않는다. |
+| `inspect_required` | 소유권 없는 linked worktree, 경로·branch 불일치, 손상·누락·중복 기록 등 | 원인을 확인하고 기존 기록을 보존한다. 자동 재생성·복구는 하지 않는다. |
 
-다른 worktree의 기록도 같은 Git common directory 아래에서 찾지만, Codex session ID가 다른 workflow를 현재 작업으로 간주하지 않는다. worktree 존재만으로 사용자 메시지의 의미를 알 수 없으므로 최종 새 작업/재개 결정은 메인 orchestrator가 맡는다.
+workflow state는 현재 저장소의 canonical session 경로와 검증된 worktree 기록으로 식별한다. hook이 전달한 `orchestrator_session_id`와 `agent_sessions`는 기존 대화를 이어갈 Codex session ID다. `harness-skill-exec.mjs`는 stage/subtask별 마지막 ID로 해당 worker 대화를 자동 재개한다. `codex_session_id`는 실제 메인 대화의 ID이며 worktree 소유권을 결정하지 않는다. 다른 Git common directory의 기록은 찾지 않으며, 같은 저장소에 활성 workflow가 여러 개면 임의로 고르지 않고 `inspect_required`로 반환한다. 최종 새 작업/재개 결정은 메인 orchestrator가 맡는다.
 
 ## Orchestrator 상태 기록
 
-상태 파일 쓰기는 `harness-skill-exec.mjs` 실행기가 담당한다. 단계 시작 전에 running을 기록하고 결과 검증 후 반환 상태를 기록한다. 프로세스·검증 실패도 failed로 기록하며 기록 실패는 다음 단계를 차단한다. 개별 단계 완료는 전체 workflow 완료가 아니므로 전체 상태는 waiting으로 둔다. hook 입력의 실제 `session_id`를 아래 `codex_session_id`에 기록한다. 임의 ID나 worktree ID로 대체하지 않는다. lifecycle 정보의 정본은 `worktree.json`이며 이 파일에 복제하지 않는다.
+상태 파일 쓰기는 `harness-skill-exec.mjs` 실행기가 담당한다. 단계 시작 전에 running을 기록하고 결과 검증 후 반환 상태를 기록한다. 프로세스·검증 실패도 failed로 기록하며 기록 실패는 다음 단계를 차단한다. 개별 단계 완료는 전체 workflow 완료가 아니므로 전체 상태는 waiting으로 둔다. `worktree.json.agent_sessions`는 `orchestrator`와 각 stage/subtask별 마지막 Codex session ID 및 execution ID를 보존한다. `codex_session_id`에는 최근 실제 메인 hook ID를 남긴다. 임의 ID나 worktree ID를 넣지 않는다.
 
 ```json
 {
@@ -28,7 +28,7 @@
 
 `status`는 `running`, `waiting`, `blocked`, `completed`, `cancelled`, `failed` 중 하나다. workflow-compose 실행기가 시작할 때는 `current_stage: "workflow-compose"`, `workflow_ref: null`로 기록하고 실제 agent ID·execution ID를 추가한다. 생성 결과를 채택하면 `workflow_ref`를 채운다. 이 과도기에도 hook은 같은 세션의 생성 작업이 있음을 전달하므로 중복 생성하지 않는다. 상태 질문이나 사용자 답변을 받으면 기존 기록을 갱신한다.
 
-상태가 없는 workflow 파일이나 session ID가 없는 과거 기록은 소유자를 추측해 이어가지 않는다. 메인 세션이 근거를 확인해 연결한다. Hook은 `matching_workflows`, `worktrees`, `issues`의 실제 경로를 함께 전달하며 많은 worktree가 있으면 표시 개수와 생략 개수를 구분한다.
+상태가 없는 workflow 파일은 기존 기록으로 간주하지 않는다. `codex_session_id`가 없거나 이전 세션 ID인 상태도 현재 저장소·workflow reference·worktree 기록이 유효하면 이어갈 수 있다. Hook은 `matching_workflows`, `worktrees`, `issues`의 실제 경로를 함께 전달하며 많은 worktree가 있으면 표시 개수와 생략 개수를 구분한다.
 
 ## 진행 상황 집계
 

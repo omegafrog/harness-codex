@@ -30,6 +30,13 @@ export async function validateSpecReviewAdmission({ root, admission, requireActi
   const inputs = admission.inputs;
   requireValue(inputs && typeof inputs === 'object' && !Array.isArray(inputs), 'Review admission snapshot is required');
   await assertActiveReviewAdmission({ root, scope: `spec-${target.ticket_id}-${target.axis}`, attemptId: target.attempt_id, inputs, requireActive });
+  if (admission.review_delta) {
+    const { reviewAdmissionPreviousInputs } = await import('./review-attempts.mjs');
+    const { reviewDelta } = await import('./review-delta.mjs');
+    const previousInputs = await reviewAdmissionPreviousInputs({ root, scope: `spec-${target.ticket_id}-${target.axis}`, attemptId: target.attempt_id });
+    requireValue(JSON.stringify(admission.previous_inputs) === JSON.stringify(previousInputs), 'Review delta baseline does not match history');
+    requireValue(JSON.stringify(admission.review_delta) === JSON.stringify(await reviewDelta({ root, inputs, previousInputs })), 'Review delta does not match admitted inputs');
+  }
   const current = await snapshotSpecReview({ root, ticketId: target.ticket_id, input_paths: Object.keys(inputs) });
   requireValue(Object.keys(current).length === Object.keys(inputs).length && Object.entries(current).every(([path, digest]) => inputs[path] === digest), 'Review admission snapshot is stale');
   return admission;

@@ -57,6 +57,9 @@
         "null"
       ],
       "minLength": 1
+    },
+    "result": {
+      "type": "object"
     }
   }
 }

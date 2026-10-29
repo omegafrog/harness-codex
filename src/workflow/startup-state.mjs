@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path';
-import { sessionDirectory } from './session-output.mjs';
+import { legacySessionDirectory, sessionDirectory } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 
@@ -36,13 +36,15 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   const registered = gitWorktrees(listing);
   const current = registered.find((entry) => entry.workspace === root);
   const currentSession = sessionDirectory(root, { create: false });
-  const directory = dirname(currentSession);
-  const entries = await readdir(directory, { withFileTypes: true }).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+  const legacySession = legacySessionDirectory(root);
+  const directories = [...new Set([dirname(currentSession), dirname(legacySession)])];
+  const entries = (await Promise.all(directories.map(async (directory) => (await readdir(directory, { withFileTypes: true }).catch((error) => { if (error.code === 'ENOENT') return []; throw error; })).map((entry) => ({ entry, directory }))))).flat();
   const records = [], states = [], issues = [];
   let currentOrphan = false, currentForeign = false;
-  for (const entry of entries.filter((item) => /^[a-f0-9]{64}$/.test(item.name))) {
+  for (const { entry, directory } of entries.filter(({ entry }) => /^[a-f0-9]{64}$/.test(entry.name))) {
     const session = join(directory, entry.name);
     if (!entry.isDirectory() || await realpath(session) !== session) { issues.push({ path: session, reason: 'unsafe_session_directory' }); continue; }
+    let sessionRecord = null;
     try {
       const record = await readJson(session, 'worktree.json');
       if (!record) {
@@ -51,7 +53,8 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       }
       if (record) {
         parseWorktreeRecord(JSON.stringify(record));
-        if (record.common !== common || record.session_directory !== session || sessionDirectory(record.workspace, { repositoryRoot: root, create: false }) !== session) throw new Error('Worktree record ownership mismatch');
+        sessionRecord = record;
+        if (record.common !== common || record.session_directory !== session || ![sessionDirectory(record.workspace, { repositoryRoot: root, create: false }), legacySessionDirectory(record.workspace, { repositoryRoot: root })].includes(session)) throw new Error('Worktree record ownership mismatch');
         const actual = registered.find((item) => item.workspace === resolve(record.workspace));
         const present = await lstat(record.workspace).then((info) => info.isDirectory(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
         const matches = Boolean(actual && actual.branch === record.branch);
@@ -62,31 +65,60 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
     try {
       const state = await readJson(session, 'runtime/orchestrator/state.json');
       if (!state) {
-        if (session === currentSession && await readJson(session, 'runtime/orchestrator/workflow.json')) currentOrphan = true;
+        if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) currentOrphan = true;
         continue;
       }
-      if (!state.codex_session_id) { issues.push({ path: join(session, 'runtime/orchestrator/state.json'), reason: 'unassigned_codex_session' }); continue; }
-      if (state.codex_session_id !== codexSessionId) { if (session === currentSession) currentForeign = true; continue; }
+      if (![currentSession, legacySession].includes(session) && !records.some((record) => dirname(record.record_path) === session)) {
+        issues.push({ path: join(session, 'runtime/orchestrator/state.json'), reason: 'workflow_without_worktree_record' });
+        continue;
+      }
+      if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
       if (ref === null && state.current_stage === 'workflow-compose' && ACTIVE.has(state.status)) {
-        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true });
+        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
       if (typeof ref !== 'string' || isAbsolute(ref) || win32.isAbsolute(ref) || ref.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid workflow reference');
       const workflow = await readJson(session, ref);
       if (!workflow || workflow.schema_version !== 1 || !Array.isArray(workflow.stages) || !workflow.stages.length) throw new Error('Workflow file missing or invalid');
-      states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: join(session, ref), status: state.status, current_stage: state.current_stage || null });
+      let agentSessions = sessionRecord?.agent_sessions || {};
+      if (!Object.keys(agentSessions).length) {
+        for (const stage of Object.values(state.stages || {})) {
+          const taskSession = stage.result_session_directory;
+          if (typeof taskSession !== 'string' || !isAbsolute(taskSession) || !/^[a-f0-9]{64}$/.test(taskSession.split(/[\\/]/).at(-1)) || !directories.includes(dirname(taskSession))) continue;
+          let recordSession = taskSession;
+          let taskRecord = await readJson(taskSession, 'worktree.json');
+          if (!taskRecord && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage.execution_id || '')) {
+            const input = await readJson(taskSession, `runtime/executions/${stage.execution_id}/input.json`);
+            const reference = input?.context?.worktree_ref;
+            const candidate = typeof reference === 'string' && isAbsolute(reference) && reference.endsWith('/worktree.json') ? dirname(reference) : null;
+            if (candidate && /^[a-f0-9]{64}$/.test(candidate.split(/[\\/]/).at(-1)) && directories.includes(dirname(candidate))) {
+              taskRecord = await readJson(candidate, 'worktree.json');
+              recordSession = candidate;
+            }
+          }
+          if (!taskRecord) continue;
+          parseWorktreeRecord(JSON.stringify(taskRecord));
+          if (taskRecord.common !== common || taskRecord.session_directory !== recordSession) throw new Error('Agent session worktree record ownership mismatch');
+          const actual = registered.find((item) => item.workspace === resolve(taskRecord.workspace));
+          const present = await lstat(taskRecord.workspace).then((info) => info.isDirectory(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
+          if (taskRecord.state !== 'active' || !present || actual?.branch !== taskRecord.branch) throw new Error('Agent session worktree is not verified active');
+          agentSessions = taskRecord.agent_sessions || {};
+          if (Object.keys(agentSessions).length) break;
+        }
+      }
+      states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: join(session, ref), status: state.status, current_stage: state.current_stage || null, orchestrator_session_id: agentSessions.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: agentSessions });
     } catch (error) { issues.push({ path: join(session, 'runtime/orchestrator/state.json'), reason: error.message }); }
   }
   const currentRecord = records.find((record) => record.current);
   const associatedRecord = states.length === 1 ? records.find((record) => dirname(record.record_path) === states[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
-  let hint = 'compose_candidate', reason = 'No matching session workflow or current owned worktree';
-  if (!codexSessionId || !current || relevantIssues.length || states.length > 1 || currentForeign || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
-    hint = 'inspect_required'; reason = 'Session identity, records or Git registration require inspection';
+  let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
+  if (!current || relevantIssues.length || states.length > 1 || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+    hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
   } else if (states.length === 1 && ACTIVE.has(states[0].status)) {
-    hint = 'resume_candidate'; reason = 'Matching Codex session has a persisted active workflow';
+    hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = 'Matching Codex session workflow is terminal';
@@ -100,11 +132,11 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
 
 // Progress is a projection of orchestrator decisions, never a workflow transition.
 export async function refreshWorkflowProgress(observed, event) {
-  if (observed.matching_workflow_count !== 1 || observed.issues.length || observed.current_workspace_has_other_session_state) return null;
+  if (observed.matching_workflow_count !== 1 || observed.issues.length) return null;
   const match = observed.matching_workflows[0];
   const session = match.session_directory;
   const state = await readJson(session, 'runtime/orchestrator/state.json');
-  if (state?.codex_session_id !== observed.codex_session_id) return null;
+  if (!state) return null;
   const workflow = state.workflow_ref ? await readJson(session, state.workflow_ref) : null;
   const statuses = new Set(['pending', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'skipped']);
   const stages = (workflow?.stages || []).map(({ id, needs = [] }) => {

@@ -13,6 +13,14 @@ description: Initialize a repository for the harness workflow. Use when setting 
 
 Initialize repository-owned context, agent model tiers, and tracker settings before running `spec-me` or `to-ticket`. **Codex CLI 내부의 네이티브 선택 UI**로 설정한다. 외부 터미널·설치기 메뉴·agent-only PTY·일반 채팅의 번호 질문으로 대체하지 않는다.
 
+## 설치와 초기 기준 커밋
+
+1. 대상 Git root와 현재 branch를 확인하고 설치 전에 `git status --short --untracked-files=all`과 staged 경로를 session에 기록한다. 기존 변경과 미추적 파일은 사용자 소유로 보존한다. 아직 설치되지 않았다면 사용 가능한 `harness-codex install --project <절대 경로>`로 설치한다. 설치 CLI를 찾을 수 없으면 임의의 원격 소스를 추정하지 말고 중단한다.
+2. 아래 설정 선택과 실행·계약 문서 준비를 모두 마치고 Doctor를 재실행한다. `configured`는 설정 선택 완료이며 준비·커밋 완료가 아니다.
+3. 설치 전 상태와 실제 생성·수정 목록을 대조해 이번 setup이 만든 프로젝트 소유 준비 파일만 정확한 경로별로 식별한다. `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/agents/EXEC.md`, `docs/agents/execution.json`, guidance, `docs/contracts/**`, 필요한 `.gitignore` 등 실제 이번 setup이 변경한 파일이 대상이다. `.codex/`, `.agents/`, `.harness/`, 세션 출력과 설치 전 이미 변경됐거나 미추적이던 사용자 파일은 포함하지 않는다. 사용자가 이전 setup 산출물의 커밋을 명시적으로 요청한 경우에만 실제 해당 경로와 내용을 확인해 포함할 수 있다. 기존 변경과 겹치거나 소유권이 불명확하면 해당 경로를 자동 커밋하지 말고 이유를 보고한다.
+4. Git root에서 `git add -- <식별한 경로들>` 후 `git commit --only -m "chore: initialize harness setup" -- <동일 경로들>`로 준비 파일만 커밋한다. 경로가 없으면 빈 커밋을 만들지 않는다. 첫 커밋 이전의 저장소에서 setup 외의 미커밋 제품 파일이 있으면 불완전한 제품 기준을 만들지 말고 중단한다. 사용자 파일이나 기존 staged 변경을 함께 커밋하거나 stash·삭제하지 않는다. Git identity, hook 또는 commit 오류는 그대로 보고하고 중단한다. Push는 하지 않는다.
+5. 커밋에 포함된 경로와 `git status --short --untracked-files=all`을 확인한다. 준비 파일이 기준 commit에 포함되고 다른 변경도 없을 때 새 workflow worktree를 시작한다. 기존 사용자 변경이 남으면 보존하고 clean workspace가 필요한 이유를 보고한다.
+
 ## Codex 내부 선택 흐름
 
 1. `harness-session-output.mjs --root <absolute-project-root>`로 session directory를 구하고 그 안의 `runtime/setup/answers.json`을 만든다. 최초 내용은 `{"answers":{}}`이며 이전 사용자 답이 있으면 보존한다.
@@ -41,7 +49,7 @@ When later architecture work establishes reusable models, link `docs/architectur
 
 ## 실행 계약 준비
 
-실제 테스트/서버/인프라 entrypoint·필수 인자·config loader·compose/CI를 조사해 `docs/agents/EXEC.md`의 실행 계약과 `docs/agents/execution.json`을 작성한다. 각 프로필은 정확한 command, required_env, config_inputs, prepare, verify_config, dependencies 및 timeout/poll 값을 포함한다. 필요한 설정 갱신과 실제 readiness를 검증하는 프로젝트 명령을 사용한다. 인프라/prepare 불필요의 근거를 EXEC에 기록한다. 기존 사용자 프로필은 보존하고 Harness 원본의 명령을 소비 프로젝트에 복사하지 않는다. 불명확한 값은 추정하거나 사용자에게 채팅으로 묻지 않는다. 정확한 누락값과 이를 찾지 못한 source 범위를 기록하고 관련 실행을 차단한다.
+일반 검증은 기본 CLI 명령을 `docs/agents/EXEC.md`에 기록한다. `docs/agents/execution.json`에는 명시적 최종 사용자 흐름 E2E만 등록하고, 각 E2E profile은 `purpose: "e2e"`, 정확한 command, required_env, config_inputs, prepare, verify_config, dependencies 및 timeout/poll 값을 포함한다. 필요한 설정 갱신과 실제 readiness를 검증하는 프로젝트 명령을 사용한다. 인프라/prepare 불필요의 근거를 EXEC에 기록한다. 기존 사용자 프로필은 보존하고 Harness 원본의 명령을 소비 프로젝트에 복사하지 않는다. 불명확한 값은 추정하거나 사용자에게 채팅으로 묻지 않는다. 정확한 누락값과 이를 찾지 못한 source 범위를 기록하고 관련 실행을 차단한다.
 
 ## 설치·업데이트 및 구현 전 준비 복구
 
@@ -63,11 +71,11 @@ Keep the Harness runtime local to each checkout. During installation, the instal
 
 ```gitignore
 # Harness runtime-only artifacts
-.codex/sessions/
+.harness-workflows/
 ```
 
 3. Keep ticket-scoped Product Specs, Architecture Specs, and plan documents tracked:
-   - `docs/specs/<ticket-id>/**`
+   - `docs/specs/<plan-set-id>/**`
    - `docs/plans/<plan-set-id>/<plan-id>.md`
    - `docs/plans/<plan-set-id>/plans.md` when `local-markdown` is selected
 4. Do not add `.codex/` to the shared `.gitignore`; its local exclusion is managed by the installer in `.git/info/exclude`.
@@ -90,7 +98,7 @@ Model and reasoning-effort options come from the live Codex app-server schema th
 
 모델 선택 뒤 CLI가 공통 context 한도, plan 하나의 최대 예상 토큰, checkpoint·인계용 예비 토큰을 사용자에게 확인하고 `.codex/context-budget.json`에 저장한다. 숫자를 추측하거나 자동 기본값으로 채우지 않는다. 공통 한도는 선택한 모델들에서 실제 사용 가능한 범위로 확인한다.
 
-`max_plan_tokens + handoff_reserve_tokens <= context_window_tokens`여야 한다. `to-ticket`은 원본 프로젝트의 이 파일을 읽어 각 plan의 예상 토큰과 policy hash를 기록하고 한도 안으로 분할한다. orchestrator는 같은 기준으로 실제 사용량과 다음 작업 예상량을 비교해 인계를 결정한다. 구현 worker에는 Smart Zone 판정을 맡기지 않는다. 파일이 없으면 해당 caller가 설정 누락으로 반환하며 setup을 자동 호출하지 않는다.
+`max_plan_tokens + handoff_reserve_tokens <= context_window_tokens`여야 한다. `to-ticket`은 원본 프로젝트의 이 파일을 읽어 각 plan의 예상 토큰이 한도 안에 들도록 분할한다. orchestrator는 같은 기준으로 실제 사용량과 다음 작업 예상량을 비교해 인계를 결정한다. 구현 worker에는 Smart Zone 판정을 맡기지 않는다. 파일이 없으면 해당 caller가 설정 누락으로 반환하며 setup을 자동 호출하지 않는다.
 
 ## Beads Project Board
 

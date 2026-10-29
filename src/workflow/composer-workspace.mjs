@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
+import { bindWorkflowPlanSetId, createWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
 import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs';
 
 // Only the deterministic worktree lifecycle runs outside the model sandbox.
@@ -24,7 +24,13 @@ export async function prepareComposerWorkspace({ root, session, input, inputPath
     await resolveSkillSession(root, directory);
     record = parseWorktreeRecord(await readFile(reference, 'utf8'));
     if (record.state !== 'active' || record.session_directory !== directory) throw new Error('Worktree requires lifecycle recovery');
-  } else record = await createWorkflowWorktree({ workspace_root: root, return_root: input.shared_guidance_root });
+    if (input.context?.plan_set_id && record.plan_set_id && input.context.plan_set_id !== record.plan_set_id) throw new Error('Workflow plan_set_id conflicts with the active worktree');
+    if (input.context?.plan_set_id && !record.plan_set_id) record = await bindWorkflowPlanSetId({ workspace_root: record.workspace, repository_root: record.return_root, plan_set_id: input.context.plan_set_id });
+  } else record = await createWorkflowWorktree({ workspace_root: root, return_root: input.shared_guidance_root, plan_set_id: input.context?.plan_set_id });
+  if (record.plan_set_id) {
+    if (input.context?.plan_set_id && input.context.plan_set_id !== record.plan_set_id) throw new Error('Workflow plan_set_id conflicts with the prepared worktree');
+    input.context = { ...input.context, plan_set_id: record.plan_set_id };
+  }
   input.context = { ...input.context, worktree_ref: join(record.session_directory, 'worktree.json') };
   await writeFile(join(session, inputPath), JSON.stringify(input, null, 2) + '\n', { mode: 0o600 });
   return record;

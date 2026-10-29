@@ -1,6 +1,6 @@
 # Testing and verification guidance
 
-This provider-neutral document stores durable project-specific testing preferences. Exact launch commands and configuration belong in `docs/agents/EXEC.md` and `docs/agents/execution.json`.
+This provider-neutral document stores durable project-specific testing preferences. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
 
 ## Active guidance
 

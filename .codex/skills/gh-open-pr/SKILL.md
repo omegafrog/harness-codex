@@ -59,7 +59,7 @@ or the implementation workflow has completed its verification gates.
 
 ## Plan PR Body
 
-For diagram links in a draft plan PR, include only available, non-empty ticket-scoped SVG artifacts. Use a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true`; do not use an unresolved local-relative link. A missing or explicitly `해당 없음` Product/Architecture diagram is valid: record or omit that optional link and continue the plan PR without blocking it.
+For diagram links in a draft plan PR, include only available, non-empty ticket-scoped SVG artifacts. Use a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true`; do not use an unresolved local-relative link. A missing or explicitly `해당 없음` Product/Architecture diagram is valid: record or omit that optional link and continue the plan PR without blocking it.
 
 다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`으로 계획 PR 검증 결과에 기록한다. 이는 계획 PR 생성을 차단하지 않는다.
 
@@ -83,8 +83,8 @@ For a plan-set PR, use this order:
 2. #125 — depends on #124
 
 ## Specifications
-- Product Spec: `docs/specs/<ticket-id>/product-spec.md`
-- Architecture Spec: `docs/specs/<ticket-id>/architecture-spec.md`
+- Product Spec: `docs/specs/<plan-set-id>/product-spec.md`
+- Architecture Spec: `docs/specs/<plan-set-id>/architecture-spec.md`
 - Class diagram: `<link or heading>`
 - State diagram: `<link or heading>`
 
@@ -106,7 +106,7 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 3. Add the problem, change flow, and test or verification results.
 4. Read and use the repo-local `.codex/skills/eli5/SKILL.md` as the explanation pass. Put its output first under the canonical `## Summary`: 한 문장, 최대 세 단계의 `Before → After` 흐름 (one sentence and at most three steps). `## Summary` is the structured authoring heading; do not introduce a second `## 한눈에 보기` section.
 5. Put changed PlantUML diagram entries under the canonical `## Plan Set` → `Diagrams` list. Each entry must include the requirement or use-case ID·이름·유형 and a head-branch-qualified rendered SVG URL. `<details>` blocks may wrap long diagram context, but do not create a second canonical diagram section.
-6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
+6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
 7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
 8. Put one closing line at the bottom for the parent Issue and every child Issue. These Issues close only after the implementation PR merges.
 9. Confirm that each closing phrase targets the intended Issue and that the single PR scope matches the complete plan set.
@@ -121,7 +121,7 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 
 ## Plan Set
 - Diagrams:
-  - UC-001 · 댓글 제출 · Activity: ![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/product/UC-001.activity.svg?raw=true)
+  - UC-001 · 댓글 제출 · Activity: ![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/product/UC-001.activity.svg?raw=true)
 
 ## 검증
 - `Postman`으로 로그인 후 댓글 생성을 확인했습니다.

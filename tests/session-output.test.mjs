@@ -80,3 +80,21 @@ test("E2E artifact guard requires a session manifest and removes only new artifa
     assert.equal(await readFile(join(root, "created.untracked")).then(() => true, () => false), false);
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
+
+test("E2E artifact guard accepts the primary worktree's Git session and preserves existing files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "session-artifact-primary-"));
+  const guard = join(import.meta.dirname, "../.codex/skills/e2e-test/scripts/artifact-guard.mjs");
+  try {
+    assert.equal(spawnSync("git", ["init", "-q", root]).status, 0);
+    await writeFile(join(root, "existing.txt"), "keep");
+    const manifest = sessionOutputPath(root, "runtime/e2e/artifacts.json");
+    const run = (action) => spawnSync(process.execPath, [guard, action, "--root", root, "--manifest", manifest], { encoding: "utf8" });
+    const snapshot = run("snapshot");
+    assert.equal(snapshot.status, 0, snapshot.stderr);
+    await writeFile(join(root, "new.txt"), "remove");
+    const cleanup = run("cleanup");
+    assert.equal(cleanup.status, 0, cleanup.stderr);
+    assert.equal(await readFile(join(root, "existing.txt"), "utf8"), "keep");
+    assert.equal(await readFile(join(root, "new.txt")).then(() => true, () => false), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -23,7 +23,7 @@ async function readExclude(root) {
 
 test("source checkout installation keeps tracked .codex assets out of local exclude", async () => {
   const sourceRoot = await createGitRepository("harness-source-");
-  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n.codex/agents/\n.harness/\n.github/workflows/harness-contracts.yml\n", "utf8");
+  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n.codex/agents/\n.harness/\n.github/pull_request_template.md\n.github/workflows/harness-contracts.yml\n", "utf8");
 
   await protectLocalInstallArtifacts(sourceRoot, sourceRoot);
 
@@ -31,8 +31,10 @@ test("source checkout installation keeps tracked .codex assets out of local excl
   assert.doesNotMatch(exclude, /^\.codex\/$/m);
   assert.doesNotMatch(exclude, /^\.codex\/agents\/$/m);
   assert.doesNotMatch(exclude, /^\.harness\/$/m);
+  assert.doesNotMatch(exclude, /^\.github\/pull_request_template\.md$/m);
   assert.doesNotMatch(exclude, /^\.github\/workflows\/harness-contracts\.yml$/m);
   assert.match(exclude, /^\.agents\/$/m);
+  assert.match(exclude, /^\.harness-workflows\/$/m);
   assert.match(exclude, /^skills-lock\.json$/m);
 });
 
@@ -44,13 +46,16 @@ test("consumer installation excludes its local .codex runtime", async () => {
 
   let exclude = await readExclude(consumerRoot);
   assert.match(exclude, /^\.codex\/$/m);
+  assert.match(exclude, /^\.harness-workflows\/$/m);
   assert.match(exclude, /^\.harness\/$/m);
+  assert.match(exclude, /^\.github\/pull_request_template\.md$/m);
   assert.match(exclude, /^\.github\/workflows\/harness-contracts\.yml$/m);
   assert.match(exclude, /^\.agents\/$/m);
   assert.match(exclude, /^skills-lock\.json$/m);
   await protectLocalInstallArtifacts(consumerRoot, sourceRoot);
   exclude = await readExclude(consumerRoot);
   assert.equal((exclude.match(/^\.harness\/$/gm) || []).length, 1);
+  assert.equal((exclude.match(/^\.github\/pull_request_template\.md$/gm) || []).length, 1);
   assert.equal((exclude.match(/^\.github\/workflows\/harness-contracts\.yml$/gm) || []).length, 1);
 });
 

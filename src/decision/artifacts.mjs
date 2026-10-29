@@ -117,6 +117,14 @@ export async function readArchitectureDecision({ root = process.cwd(), ticketId,
   });
 }
 
+export async function readArchitectureDecisionForHash({ root = process.cwd(), ticketId, decisionId }) {
+  const path = decisionArtifactPath(root, ticketId, "architecture-decisions", decisionId);
+  return readYamlArtifact(root, path, (value) => {
+    if (value?.id !== decisionId) throw artifactIdentityError("decision_id_mismatch", "$.id", `Decision file ${decisionId}.yaml contains a different object ID.`);
+    validateObject(validateArchitectureDecision(value, {}, { checkApproval: false }), "Architecture Decision");
+  });
+}
+
 export async function writeArchitectureDecision(options = {}) {
   const { root = process.cwd(), ticketId, decision, refs = {} } = options;
   if ("path" in options) throw new TypeError("decision artifact path is not configurable");

@@ -8,6 +8,7 @@
 | 승인된 decision과 review만 인계한다 | `src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | decision opt-in이 없는 legacy artifact에는 같은 gate를 강제하지 않음 |
 | tracker 구조 입력을 검증 후 렌더한다 | `src/tracker/contracts.mjs`, `src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |
 | 원본 workflow가 오래된 설치 스킬을 선택하지 않는다 | `src/workflow/loader.mjs`, `tests/workflow_loader.test.mjs`의 source/consumer 우선순위 검사 | consumer의 설치 사본 최신화는 installer update가 담당 |
+| 현재 저장소의 진행 중 workflow는 Codex session ID 변경과 무관하게 재개하고, 중복 stage 실행은 막는다 | `src/workflow/startup-state.mjs`, `src/workflow/stage-input.mjs`, `src/workflow/execution-state.mjs`; `tests/orchestrator_hook.test.mjs`, `tests/skill_execution.test.mjs`, installed-consumer case in `tests/installer_update.test.mjs` | 같은 저장소에 여러 활성 workflow가 있으면 orchestrator가 정확한 대상을 판단해야 함; 다른 Git common directory나 검증되지 않은 worktree는 계속 차단 |
 | 스킬의 supporting reference도 갱신된다 | `src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
 | checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
 | 업무 규칙은 선언된 owner에서 보호한다 | `ddd-design/references/model-continuity.md`, Spec reviewer의 실제 source/caller/우회 경로 검토와 프로젝트별 domain/dependency 검사 | 범용 JavaScript 구조 검사로 DDD 의미를 자동 판정하지 않음 |
@@ -47,7 +48,7 @@ Spec·계획 리뷰의 반복 제한은 `src/workflow/review-attempts.mjs`와 �
 
 ## 실행 전제 누락
 
-사용자가 보고한 인프라·필수 인자·설정 갱신 누락은 EXEC를 읽으라는 지침만으로 막지 못했다. `src/workflow/execution.mjs`와 `harness-exec.mjs`가 프로젝트 실행 프로필을 매번 읽고, 필수 환경/argv 검증→설정 prepare/verify→dependency readiness→설정 변경 재검증을 통과한 경우에만 main을 spawn한다. 실패는 blocked receipt와 단계 로그로 남긴다. 실행 프로필은 Git 관리하며 설치 runtime·E2E/실행/구현/시각 검토 agent도 같은 CLI를 사용한다. `tests/execution.test.mjs`가 missing value, stale config, missing infra, config drift의 main 미실행과 올바른 argv/순서를 확인한다. 프로필 자체에서 빠진 요구와 검증 명령의 충분성은 entrypoint·config loader·infra·CI 대조 리뷰 대상이며 임의 shell 실행을 OS 차원에서 가로막지는 않는다.
+일반 단위·회귀 검증을 `harness-exec`에 감싸는 지침은 test profile과 런타임 환경 주입을 불필요하게 강제했다. 일반 검증은 EXEC에 기록한 기본 CLI로 직접 실행하고, `execution.json`은 명시적 사용자 흐름 E2E profile만 둔다. `src/workflow/execution.mjs`는 `purpose: "e2e"`가 아닌 profile 실행을 거부하지만, 기존 profile manifest의 readiness 검증은 그대로 허용한다. argv/env 검사→설정 prepare/verify→dependency readiness→설정 변경 재검증을 통과한 경우에만 E2E command를 spawn한다. 빈 profile 객체는 E2E가 없는 프로젝트를 뜻한다. `tests/execution.test.mjs`는 비 E2E profile 거부 및 E2E의 missing value, stale config, missing infra, config drift main 미실행을 확인한다. profile 요구의 충분성은 실제 entrypoint·config loader·infra·CI 리뷰 대상이다.
 
 ## Fresh Spec 적대적 리뷰
 
@@ -71,11 +72,11 @@ spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Archi
 
 ## 요구사항·계획·구현 추적
 
-`src/workflow/plan-traceability.mjs`는 `docs/plans/<plan-set-id>/traceability.json`의 요구사항 inventory를 Product/Architecture 및 자동 발견한 요청·결정·다이어그램·현행 계약과 대조한다. `to-ticket` 완료는 독립 `plan_reviewer`가 전체 canonical 계획을 읽은 현재 hash를 요구한다. wrapper dispatch는 workspace preflight 뒤 실제 ledger·Spec·계획·tracker body를 다시 읽고, 미통과 시 implementer spawn 전에 차단한다. completion은 구현/검증 파일 hash와 선택한 실행 profile의 성공 harness-exec receipt를 확인하며, receipt의 현재 설정 hash와 session log 위치도 확인한다. lifecycle completion도 원장 검사를 재실행한다.
+`src/workflow/plan-review.mjs`는 Product/Architecture Spec과 전체 canonical plan을 독립 리뷰가 직접 대조하도록 하며, session runtime에는 current-input hash만 저장한다. `to-ticket` 완료는 독립 `plan_reviewer`가 전체 canonical 계획을 읽은 현재 hash를 요구한다. wrapper dispatch는 workspace preflight 뒤 Spec·전체 계획·tracker body를 다시 읽고, 미통과 시 implementer spawn 전에 차단한다. completion은 구현/검증 파일 hash와 계획된 직접 실행 검증의 결과를 확인한다. feature-level E2E는 모든 split plan 통합 후 한 번 실행하며 `harness-exec` receipt를 남긴다. lifecycle completion도 현재 plan-review snapshot 검사를 재실행한다.
 
-`tests/plan_traceability.test.mjs`와 `plan-traceability-check` profile이 원장/coverage/review/impact/evidence 및 실제 dispatch 차단을 검사한다. 자동 검사는 구조·현재성·receipt 형식을 증명하지만 source 요구가 의미상 완전하게 inventory 되었는지, 분해된 acceptance criteria를 함께 만족해도 원래 규칙을 위반하는 구현이 가능한지는 증명하지 않는다. 독립 reviewer가 원문과 전체 계획에서 counterexample을 찾아 판단한다. Receipt 구조 검사는 작성 주체의 암호학적 신원을 증명하지 않는다.
+`tests/plan_review.test.mjs`와 `node --test` 직접 검증이 Spec·계획 snapshot, stale review, dispatch 차단을 검사한다. 자동 검사는 구조·현재성·receipt 형식을 증명하지만 Spec의 의미적 범위가 plan 전체에 빠짐없이 반영되었는지는 자동 검사로 증명하지 않으며 독립 reviewer가 판단한다. 독립 reviewer가 원문과 전체 계획에서 counterexample을 찾아 판단한다. Receipt 구조 검사는 작성 주체의 암호학적 신원을 증명하지 않는다.
 
-구현 후 계획 테스트가 선택된 실행 profile에서 빠진 경우 profile·계획 리뷰·검증 근거를 다시 갱신해야 한다. 이를 구현 전에 발견하도록 schema_version 2 계획은 업무 규칙 단위 테스트 파일을 `verification_files`에 선언하고 정본 계획 및 선택한 `execution.json` profile의 `config_inputs`에 연결한다. traceability snapshot은 `execution.json`을 포함하므로 이 설정이 바뀌면 기존 계획 리뷰가 stale 처리되고, 잘못된 매핑은 계획 리뷰/dispatch 전에 막힌다. 구현 프롬프트에도 해당 테스트 파일을 전달한다. 설치 소비자 회귀는 `installer_update.test.mjs`에서 확인한다. Profile 명령이 파일을 실제 실행하는지와 테스트가 업무 로직만 검증하는지는 독립 plan review가 확인한다.
+구현 plan의 테스트 파일과 실행 방법은 해당 canonical plan의 테스트 계약에 보존한다. 독립 plan reviewer는 Product/Architecture Spec과 전체 plan을 직접 읽고 테스트 계약이 각 split plan의 업무 규칙 단위 테스트 및 통합 후 마지막 E2E 규칙을 따르는지 판단한다. 자동 plan-review gate는 Spec과 plan의 현재 snapshot만 확인하고 coverage inventory를 만들지 않는다. 설치 소비자 회귀는 `installer_update.test.mjs`에서 확인한다.
 
 ## Spring Boot Diagnostic Log Schema v1
 
@@ -83,6 +84,6 @@ spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Archi
 
 구현 리뷰의 반복 제한은 `reserveImplementationRepair`가 공통 review-attempt 원장에 원본 저장소·plan별로 예약한다. wrapper runtime과 `harness-code-review.mjs repair`가 같은 검증을 사용한다. checkpoint는 원래 review_fixed_point를 유지하며 fresh reviewer context 재사용을 거부한다. 한도 reset은 기존 예약의 planning snapshot과 다른 새 snapshot이 독립 계획 리뷰·dispatch를 통과할 때만 허용한다. 세션 `01a170ef-39f1-7250-99d1-29efa09e08c8`의 #370에서는 수정 예약이 9회, reset이 8회 기록됐고, 한 reset 사유는 사용자의 일반 진행 지시 `계속 해`였다. 이 사례는 사용자 결정의 진위를 수동 확인하는 문구만으로 반복 제한이 구조적으로 보장되지 않음을 보여준다. `implementation-review-check`는 동일 snapshot reset 거부, 승인된 snapshot 변경 뒤 재개, 재개·worktree 교체, 설치/갱신 소비자의 동작과 Git 가시성을 검사한다. `canonical_plan` metadata로 실제 정본과 가상 hash 키를 구분한다. 중간 plan 완료는 snapshot drift만 deferred로, 최종 feature 완료는 실제 계약 pass로 검사한다. 규칙의 전 경로 보완과 commit/검토 입력의 의미상 일치는 reviewer/caller의 검토 계약이다.
 
-세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 후반부는 raw/canonical hash 혼동과 예약→경쟁 저장→기회 공격→복구 경로의 순차 보완을 보였다. `validateCanonicalPlanReference`는 reviewer 생성 전에 정본 참조·digest·정규화 metadata를 검사하고 traceability snapshot은 정규화 본문 변경을 판정한다. Spec begin target은 admission과 호출 대상의 수동 복사를 줄인다. 설계 blocker의 `next_action:spec-me`와 재개 조건은 repair 예약 없이 checkpoint까지 전달된다. `implementation-review-check`가 spawn 이전 거부·상태만 바뀐 hash 유지/업무 내용 변경 탐지·예약 없이 설계 인계·설치 소비자 배포를 검사한다. 전이 표의 모든 경로가 실제로 충분한지, finding이 설계 변경인지, 수동 caller가 target을 지키는지는 작성자·reviewer의 의미 검토 범위다. 전체 latency/token 개선은 동일 workload의 비교 실행 전까지 미측정이다.
+세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 후반부는 raw/canonical hash 혼동과 예약→경쟁 저장→기회 공격→복구 경로의 순차 보완을 보였다. `validateCanonicalPlanReference`는 reviewer 생성 전에 정본 참조·digest·정규화 metadata를 검사하고 plan-review snapshot은 Spec 및 canonical plan 변경을 판정한다. Spec begin target은 admission과 호출 대상의 수동 복사를 줄인다. 설계 blocker의 `next_action:spec-me`와 재개 조건은 repair 예약 없이 checkpoint까지 전달된다. `implementation-review-check`가 spawn 이전 거부·상태만 바뀐 hash 유지/업무 내용 변경 탐지·예약 없이 설계 인계·설치 소비자 배포를 검사한다. 전이 표의 모든 경로가 실제로 충분한지, finding이 설계 변경인지, 수동 caller가 target을 지키는지는 작성자·reviewer의 의미 검토 범위다. 전체 latency/token 개선은 동일 workload의 비교 실행 전까지 미측정이다.
 
 리뷰 승인 요청의 연쇄 대기는 `harness-review-status`가 기존 scope별 기록·pending·한도를 읽어 caller의 통합 질문을 지원한다. create:false 경로 조회는 mkdir/chmod 없이 같은 경로 안전성을 적용하고, 손상된 원장은 성공/미실행으로 숨기지 않는다. 실행 중인 모든 reviewer의 결과 수집은 기존 Promise.all로 유지한다. planning 입력의 정렬 hash fingerprint를 reviewer 입력에 고정하고 생성·repair 예약·완료에서 비교해, 다른 snapshot이 새로 승인돼도 옛 리뷰로 진행하지 못한다. `implementation-review-check`는 통합 조회 무변경·linked root·부분 손상·resolve 반영·양쪽 결과 대기·재승인 snapshot 차단·설치/갱신 배포를 검사한다. 실제 사용자 질문의 묶음·승인 범위와 활성 입력 편집 중단은 공통 리뷰 조정 문서의 수동 계약이다.

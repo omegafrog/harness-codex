@@ -14,7 +14,7 @@ Architecture 작성자와 reviewer는 반드시 [Architecture Spec 리뷰 기준
 
 ## 리뷰 준비와 실행
 
-1. 확정된 사용자 답변과 Product/Architecture Spec을 안정화한다. Architecture 결정은 review 전에 해결한다. spec-me의 Architecture 리뷰는 두 Spec과 근거를 대상으로 다이어그램 생성 전에 한 번 수행하며, 렌더·링크·내용 일치는 후속 완료 gate에서 확인한다. 계획 단계의 변경은 canonical plan과 추적 원장도 함께 반영한다. 통합 계약은 현행 구현 기준으로 읽고 최종 구현 통합 단계에서 갱신한다.
+1. 확정된 사용자 답변과 Product/Architecture Spec을 안정화한다. Architecture 결정은 review 전에 해결한다. spec-me의 Architecture 리뷰는 두 Spec과 근거를 대상으로 다이어그램 생성 전에 한 번 수행하며, 렌더·링크·내용 일치는 후속 완료 gate에서 확인한다. 계획 단계의 변경은 canonical plan도 함께 반영한다. 통합 계약은 현행 구현 기준으로 읽고 최종 구현 통합 단계에서 갱신한다.
 2. `harness-spec-review.mjs begin --root <workspace_root> --ticket <id> --axis architecture`를 실행한다. 추가 근거는 `--input <상대 경로>`로 포함한다. CLI가 반환한 `attempt_id`·`inputs`를 보존하고 `status: pass`일 때 fresh reviewer를 실행한다.
 3. 같은 축의 입력을 고정한 상태에서 리뷰 결과를 수집한다. reviewer에게 변경 범위와 이전 지적의 식별·해결 기록을 전달하되, 이전 판정 대조는 독립 검토 뒤 수행한다. caller는 새 지적과 기존 지적의 재발을 구분해 해결 여부를 기록한다.
 4. 원본 응답과 실제 agent metadata를 합친 리뷰 JSON을 저장하고 `harness-spec-review.mjs record --root <workspace_root> --ticket <id> --axis <axis> --attempt <attempt_id> --reviews <session-relative JSON>`을 실행한다. `record`는 pass·수정 필요·검토 중 입력 변경을 구분해 보존한다. reviewer 종료·취소는 먼저 agent를 종료한 뒤 `abort ... --attempt <attempt_id> --reason '<사유>'`로 기록한다.
@@ -22,7 +22,7 @@ Architecture 작성자와 reviewer는 반드시 [Architecture Spec 리뷰 기준
 
 `begin`이 반환한 `target`의 workspace_root·session_directory·ticket_id·axis·attempt_id와 `inputs`를 reviewer 입력의 기준으로 사용한다. caller는 spawn 전에 요청한 대상과 일치하는지 대조한다. 검토 중 snapshot 파일이 바뀌면 결과는 stale이며 변경된 Architecture Spec에 새 admission을 발급한다.
 
-`codex exec` 호출에서는 `begin`의 전체 JSON을 제어 session에 저장하고 stage 실행에 `--review-admission <session-relative JSON>`을 전달한다. 실행기가 해당 admission을 `context.review_admission`으로 넣고 활성 attempt·대상·현재 snapshot을 확인한다. reviewer는 그 목록의 모든 파일을 직접 읽고 해시를 확인해 `details.inputs`에 같은 workspace 상대 경로 맵을 반환한다. session 근거의 해시는 이 맵과 별도로 관리한다. 실행기가 대상·전체 해시 일치를 확인한 뒤 caller가 실제 reviewer/author metadata를 합쳐 `record`한다.
+`codex exec` 호출에서는 `begin`의 전체 JSON을 제어 session에 저장하고 stage 실행에 `--review-admission <session-relative JSON>`을 전달한다. 최초 리뷰는 모든 입력을 읽는다. 재리뷰는 `review_delta`의 변경된 구간, 미해결 지적과 직접 영향을 받는 관계를 읽고 이전에 통과한 무관한 항목은 다시 읽지 않는다. 이전 내용이 없거나 구간 구분이 모호하면 해당 파일 전체를 읽는다. reviewer는 실제로 확인한 변경 파일의 해시를 검증하고 `details.inputs`에 admission의 전체 workspace 해시 맵을 반환한다. 전체 맵은 snapshot 현재성의 기계 검사이며 모든 파일을 다시 읽었다는 주장이 아니다. 실행기는 대상·전체 해시 일치를 확인하고 caller는 실제 reviewer/author metadata를 합쳐 `record`한다.
 
 ## 호출과 독립성
 
@@ -47,7 +47,7 @@ Architecture: [Architecture Spec 리뷰 기준](references/review-criteria.md)�
 - `blocker`: 사용자 의도/규칙의 모순·미확정, 안전한 설계 불가. `major`: 누락/회귀/불변식·실행/측정 계약 결함으로 구현에 중대한 영향. `minor`: 의미나 구현 안전성을 막지 않는 개선.
 - blocker/major가 있으면 `verdict: revise`. 작성자는 근거를 확인해 수정하거나 반박 근거를 제시한다. 요구/설계의 중요 결정이 바뀌면 기존 interview로 돌아가 사용자 확인을 받는다. reviewer가 대신 결정하지 않는다.
 - 수정본은 새 reviewer가 독립적으로 검토한 뒤 이전 지적/수정 근거와 대조한다. 회차와 종료 처리는 위 CLI 절차를 따른다.
-- Architecture Spec 또는 명시적 review 근거가 snapshot을 바꾸면 해당 Architecture 리뷰만 무효화한다. Product Spec이 수정되어 Architecture 판단에 영향을 주면 Architecture 리뷰를 새 snapshot으로 수행한다. 다이어그램은 Architecture review pass 뒤 생성하므로 snapshot에 포함하지 않는다. 의미와 근거를 바꾸지 않는 편집은 재검토하지 않는다.
+- 변경된 Spec이나 근거의 구간과 그 변경에 직접 영향을 받는 요구사항·설계·테스트 연결만 새 reviewer가 재검토한다. 이전 통과 항목은 변경 영향이 없으면 유지한다. 전체 snapshot의 변경은 현재성 gate를 차단하며, 새 리뷰가 변경 범위와 영향 관계를 확인한 뒤에만 다시 통과한다. 다이어그램은 Architecture review pass 뒤 생성하므로 snapshot에 포함하지 않는다.
 
 ## 기계 검사 입력
 

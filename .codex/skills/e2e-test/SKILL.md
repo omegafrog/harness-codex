@@ -25,12 +25,12 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 
 1. 현재 디렉터리와 `git rev-parse --show-toplevel`을 확인해 활성 워크트리 경로를 확정한다. 호출 세션에서 전달된 워크트리와 다르면 실행하지 않고 불일치를 보고한다. 이후 모든 명령의 working directory는 이 경로로 고정한다. 인프라를 시작하기 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <worktree> --json`을 실행하고 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. 실패하면 서버나 테스트를 시작하지 않는다.
 2. `<shared_guidance_root>/docs/agents/testing-guidance.md`, 활성 worktree의 `docs/agents/EXEC.md`, E2E 대상의 실행 지침을 읽는다. 서버·인프라 준비, 환경 변수, 실행·대기·종료 명령은 활성 worktree의 프로젝트 계약을 따른다. 필요한 명령이나 전제가 없으면 추측해 환경을 변경하지 말고 blocker로 보고한다.
-3. `.codex/skills/e2e-test/scripts/artifact-guard.mjs snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
-4. EXEC의 인프라 profile을 harness-exec로 foreground 실행해 살아 있는 tool session/PID로 보존하고, 같은 방식으로 서버 profile을 시작한다. E2E profile은 별도 호출에서 서버·인프라 readiness를 다시 검사한다. 시작 PID와 receipt 경로를 기록하고 이 run이 소유한 CLI에만 SIGTERM을 전달하여 정리한다. 대상 애플리케이션과 필요한 인프라가 준비된 뒤, 지정된 브라우저/UI/API 절차로 엔드유저 시나리오를 실행한다. 시작한 프로세스의 로그·종료 코드·URL을 수집하고, 성공·실패·timeout·환경 차단을 구분한다. 로그·스크린샷·임시 결과는 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 저장한다.
+3. 원본 checkout에서는 `.codex/skills/e2e-test/scripts/artifact-guard.mjs`, 설치 consumer에서는 `.agents/skills/e2e-test/scripts/artifact-guard.mjs`를 선택한다. 이 경로를 `ARTIFACT_GUARD`로 지정하고 `node "$ARTIFACT_GUARD" snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
+4. `purpose: "e2e"`가 지정된 EXEC 인프라 profile을 harness-exec로 foreground 실행해 살아 있는 tool session/PID로 보존하고, 같은 방식으로 E2E server profile을 시작한다. E2E profile은 별도 호출에서 서버·인프라 readiness를 다시 검사한다. 시작 PID와 receipt 경로를 기록하고 이 run이 소유한 CLI에만 SIGTERM을 전달하여 정리한다. 대상 애플리케이션과 필요한 인프라가 준비된 뒤, 지정된 브라우저/UI/API 절차로 엔드유저 시나리오를 실행한다. 시작한 프로세스의 로그·종료 코드·URL을 수집하고, 성공·실패·timeout·환경 차단을 구분한다. 로그·스크린샷·임시 결과는 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 저장한다.
 5. 실행 종료, 시작 실패, 테스트 실패, timeout 모두에서 정리 절차를 수행한다. 소유한 서버/인프라 프로세스를 종료한 뒤 다음 cleanup hook을 실행한다.
 
    ```bash
-   node .codex/skills/e2e-test/scripts/artifact-guard.mjs cleanup --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json
+   node "$ARTIFACT_GUARD" cleanup --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json
    ```
 
 6. cleanup hook 결과를 확인한다. 실행 전부터 있던 untracked/ignored 경로는 보존되어야 하고, 실행 후 새로 생긴 경로는 제거되어야 한다. cleanup이 실패하거나 새 산출물이 남으면 결과를 `inconclusive`로 보고하고 남은 경로를 명시한다.

@@ -30,7 +30,7 @@ async function fixture(mode = "local-markdown") {
     if (command === "gh") {
       if (args[0] === "project" && args[1] === "view") return JSON.stringify({ id: "project-4" });
       if (args[0] === "project" && args[1] === "field-list") return JSON.stringify({ fields: [{ id: "workflow", name: "Workflow Status", type: "ProjectV2SingleSelectField", options: ["Planned", "In Progress", "Blocked", "Done"].map((name) => ({ id: name, name })) }, { id: "default", name: "Status", type: "ProjectV2SingleSelectField", options: [{ id: "closed", name: "Closed" }] }] });
-      if (args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: issueState, projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: "item-7", project: { id: "project-4" }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: canonicalStatus, field: { id: "workflow" } }] } }] } } } } });
+      if (args[0] === "api") return JSON.stringify({ data: { repository: { issue_0: { state: issueState, projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: "item-7", project: { id: "project-4" }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: canonicalStatus, field: { id: "workflow" } }] } }] } } } } });
       if (args[0] === "project" && args[1] === "item-edit") { canonicalStatus = args[args.indexOf("--single-select-option-id") + 1]; return ""; }
       throw new Error(`Unexpected gh call: ${args.join(" ")}`);
     }
@@ -87,6 +87,25 @@ test("GitHub sync uses the configured Workflow Status field and leaves Issue sta
   } finally { await f.cleanup(); }
 });
 
+test("GitHub-only completion checks every configured ticket without Beads", async () => {
+  const f = await fixture("github");
+  try {
+    await writeFile(join(f.root, '.codex/harness.yaml'), (await readFile(join(f.root, '.codex/harness.yaml'), 'utf8')) + '\nbeads:\n  enabled: false\n');
+    let state = 'OPEN';
+    const run = async (cmd, args, cwd) => {
+      if (cmd === 'bd') throw new Error('Beads must not be invoked');
+      if (cmd === 'gh' && args[0] === 'api') return JSON.stringify({ data: { repository: { issue_0: { state, projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: 'item-7', project: { id: 'project-4' }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'workflow' } }] } }] } } } } });
+      return f.run(cmd, args, cwd);
+    };
+    const pass = await inspectTrackerSync({ workspace_root: f.root, ticket_refs: [ref], run });
+    assert.equal(pass.status, 'pass');
+    assert.equal(pass.reason, 'tracker_tickets_current');
+    state = 'CLOSED';
+    assert.equal((await inspectTrackerSync({ workspace_root: f.root, ticket_refs: [ref], run })).status, 'fail');
+    assert.equal((await inspectTrackerSync({ workspace_root: f.root, run })).reason, 'no_managed_tracker_tickets');
+  } finally { await f.cleanup(); }
+});
+
 test("read-only tracker lookup resolves exact issue beyond the default board page without requiring Beads", async () => {
   const f = await fixture("github");
   try {
@@ -105,14 +124,14 @@ test("read-only tracker lookup resolves exact issue beyond the default board pag
 test("read-only GitHub lookup distinguishes incomplete pagination from a missing project item", async () => {
   const f = await fixture("github");
   const run = async (cmd, args, cwd) => {
-    if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: true }, nodes: [] } } } } });
+    if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue_0: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: true }, nodes: [] } } } } });
     return f.run(cmd, args, cwd);
   };
   try {
     const incomplete = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run });
     assert.match(incomplete.violations[0], /incomplete project item pagination/);
     const absent = await readTrackerStatus({ workspace_root: f.root, ticket_ref: ref, run: async (cmd, args, cwd) => {
-      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
+      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue_0: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
       return f.run(cmd, args, cwd);
     } });
     assert.match(absent.violations[0], /Configured project item: expected exactly one match/);
@@ -122,7 +141,7 @@ test("read-only GitHub lookup distinguishes incomplete pagination from a missing
       if (cmd === "gh" && args[0] === "api") return JSON.stringify({ errors: [{ message: "configured project access unavailable" }] });
       return f.run(cmd, args, cwd);
     } });
-    assert.match(apiError.violations[0], /GitHub issue query failed for owner\/repo#7: configured project access unavailable/);
+    assert.match(apiError.violations[0], /GitHub batched issue query failed: configured project access unavailable/);
   } finally { await f.cleanup(); }
 });
 
@@ -223,7 +242,7 @@ test("GitHub lifecycle check rejects incomplete or ambiguous configured items be
   const f = await fixture("github");
   try {
     const bad = async (cmd, args, cwd) => {
-      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
+      if (cmd === "gh" && args[0] === "api") return JSON.stringify({ data: { repository: { issue_0: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
       return f.run(cmd, args, cwd);
     };
     await assert.rejects(syncTrackerStatus({ workspace_root: f.root, ticket_ref: ref, status: "completed", run: bad }), /exactly one match/);
@@ -231,7 +250,7 @@ test("GitHub lifecycle check rejects incomplete or ambiguous configured items be
   } finally { await f.cleanup(); }
 });
 
-test("GitHub mirror check resolves project metadata once per invocation and refreshes each issue", async () => {
+test("GitHub mirror check resolves project metadata once and batches issue reads", async () => {
   const f = await fixture("github");
   let fieldCalls = 0, viewCalls = 0, issueCalls = 0;
   const beads = [7, 8].map((number) => ({ ...f.bead, id: `bd-${number}`, external_ref: `owner/repo#${number}` }));
@@ -243,8 +262,10 @@ test("GitHub mirror check resolves project metadata once per invocation and refr
     }
     if (cmd === "gh" && args[0] === "api") {
       issueCalls++;
-      const number = Number(args[args.indexOf("-F") + 1].split("=")[1]);
-      return JSON.stringify({ data: { repository: { issue: { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: `item-${number}`, project: { id: "project-4" }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: "Planned", field: { id: "workflow" } }] } }] } } } } });
+      const query = args.find((arg) => arg.startsWith('query='));
+      const repository = {};
+      for (const [, alias, number] of query.matchAll(/(issue_\d+):issue\(number:(\d+)\)/g)) repository[alias] = { state: "OPEN", projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: `item-${number}`, project: { id: "project-4" }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: "Planned", field: { id: "workflow" } }] } }] } };
+      return JSON.stringify({ data: { repository } });
     }
     return f.run(cmd, args, cwd);
   };
@@ -253,12 +274,12 @@ test("GitHub mirror check resolves project metadata once per invocation and refr
     assert.equal(result.status, "pass");
     assert.equal(fieldCalls, 1);
     assert.equal(viewCalls, 1);
-    assert.equal(issueCalls, 2);
+    assert.equal(issueCalls, 1);
     assert.equal(result.tickets.length, 2);
     assert.equal((await inspectTrackerSync({ workspace_root: f.root, ticket_refs: beads.map((bead) => bead.external_ref), run })).status, "pass");
     assert.equal(fieldCalls, 2);
     assert.equal(viewCalls, 2);
-    assert.equal(issueCalls, 4);
+    assert.equal(issueCalls, 2);
   } finally { await f.cleanup(); }
 });
 

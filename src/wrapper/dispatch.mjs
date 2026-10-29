@@ -13,7 +13,7 @@ import { reconcileCompletion } from "./reconciliation.mjs";
 import { runBoundedReviewRepair, reserveImplementationRepair, assertPlanningReviewSnapshot } from "./repair.mjs";
 import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
 import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
-import { inspectPlanTraceability, validateCanonicalPlanReference } from "../workflow/plan-traceability.mjs";
+import { inspectPlanSet, validateCanonicalPlanReference } from "../workflow/plan-review.mjs";
 
 const WORKSPACE_PREFLIGHT_REGISTRY = new LifecycleGateRegistry({
   hooks: {
@@ -131,7 +131,7 @@ export async function dispatchImplementPlan({
   let dispatchWorkspace = workspace;
   let workspaceAllocated = false;
   const verifyWorkspace = workspaceVerifier || (typeof worktreeManager?.verify === "function"
-    ? ({ workspace: workspaceHandle, fixedGroupBase: base }) => worktreeManager.verify(workspaceHandle, { fixedGroupBase: base })
+    ? ({ workspace: workspaceHandle, fixedGroupBase: base, planSetId: expectedPlanSetId }) => worktreeManager.verify(workspaceHandle, { fixedGroupBase: base, planSetId: expectedPlanSetId })
     : null);
   const stored = await checkpointStore.read();
   const previous = await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState });
@@ -155,6 +155,7 @@ export async function dispatchImplementPlan({
     if (!dispatchWorkspace && worktreeManager) {
       dispatchWorkspace = await worktreeManager.allocate({
         planId: plan.id,
+        planSetId,
         mode: parallelGroup ? "parallel" : "sequential",
         fixedGroupBase: parallelGroup?.fixed_group_base || null,
         executionLine: executionLine,
@@ -196,18 +197,18 @@ export async function dispatchImplementPlan({
       throw error;
     }
     const workspaceRoot = resolvePath(workspacePreflight.workspace_root);
-    const traceability = await inspectPlanTraceability({ root: workspaceRoot, planSetId, phase: "dispatch", planId: plan.id, trackerPort });
-    if (traceability.status !== "pass") {
-      const error = new Error(`Plan ${plan.id} traceability gate failed: ${traceability.reason}`);
-      error.reason = "plan_traceability_failed";
-      error.traceability = traceability;
+    const planReviewGate = await inspectPlanSet({ root: workspaceRoot, planSetId, phase: "dispatch", planId: plan.id, trackerPort });
+    if (planReviewGate.status !== "pass") {
+      const error = new Error(`Plan ${plan.id} plan-review gate failed: ${planReviewGate.reason}`);
+      error.reason = "plan_review_failed";
+      error.plan_review = planReviewGate;
       throw error;
     }
     const originalWorkspaceFingerprint = workspaceRoot === resolvePath(repository)
       ? null
       : await captureWorkspaceFingerprint(repository);
     if (parallelGroup) {
-      const verification = await verifyWorkspace({ workspace: dispatchWorkspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id });
+      const verification = await verifyWorkspace({ workspace: dispatchWorkspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id, planSetId });
       if (verification?.valid !== true) {
         const error = new Error(`Plan ${plan.id} worktree verification failed: ${verification?.reason || "unknown"}`);
         error.reason = "workspace_isolation_required";
@@ -223,10 +224,10 @@ export async function dispatchImplementPlan({
       workspaceMode: parallelGroup ? "parallel" : "sequential",
       planSetId,
       planId: plan.id,
-      planPath: traceability.details.plan_reference,
-      productSpecPath: traceability.details.product_spec_path,
-      architectureSpecPath: traceability.details.architecture_spec_path,
-      traceabilityRefs: { ...traceability.details, repository_root: workspaceRoot },
+      planPath: planReviewGate.details.plan_reference,
+      productSpecPath: planReviewGate.details.product_spec_path,
+      architectureSpecPath: planReviewGate.details.architecture_spec_path,
+      planReviewRefs: { ...planReviewGate.details, repository_root: workspaceRoot },
       dependencyFacts,
       resourceFacts,
       smartZone: smartZone.state,
@@ -257,7 +258,7 @@ export async function dispatchImplementPlan({
       ...(parallelGroup ? {} : { workspace_branch: dispatchWorkspace?.branch || null, workspace: dispatchWorkspace }),
     });
     if (child?.context_id) slot.context_id = child.context_id;
-    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, traceability_refs: { ...traceability.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: dispatchWorkspace?.branch || null, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
+    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, plan_review: { ...planReviewGate.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: dispatchWorkspace?.branch || null, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
   } catch (error) {
     let evidencePersisted = false;
     try {
@@ -288,7 +289,7 @@ export async function runIndependentReviewers({
   diff = null,
   config = null,
   reviewerProfile = null,
-  traceabilityRefs = null,
+  planReviewRefs = null,
   trackerPort = null,
 } = {}) {
   required(plan?.id, "plan.id");
@@ -303,14 +304,14 @@ export async function runIndependentReviewers({
   if (typeof diff !== "string" || !diff.trim()) throw new TypeError("diff must be a non-empty string");
   const expectedProductSpecPath = `docs/specs/${resolvedPlanSetId}/product-spec.md`;
   const expectedArchitectureSpecPath = `docs/specs/${resolvedPlanSetId}/architecture-spec.md`;
-  const approvedProductPath = traceabilityRefs?.product_spec_path || expectedProductSpecPath;
-  const approvedArchitecturePath = traceabilityRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const approvedProductPath = planReviewRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
   const safeProjectPath = (path) => typeof path === "string" && path.length > 0 && !path.startsWith("/") && !path.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
   if (!safeProjectPath(approvedProductPath) || !safeProjectPath(approvedArchitecturePath)) throw new TypeError("Spec paths must be safe workspace-relative paths");
-  if (traceabilityRefs?.repository_root && resolvePath(repository) !== resolvePath(traceabilityRefs.repository_root)) throw new TypeError("Reviewer repository must be the workspace whose traceability refs were checked");
+  if (planReviewRefs?.repository_root && resolvePath(repository) !== resolvePath(planReviewRefs.repository_root)) throw new TypeError("Reviewer repository must be the workspace whose plan review inputs were checked");
   if (productSpecPath && productSpecPath !== approvedProductPath) throw new TypeError(`productSpecPath must be ${approvedProductPath}`);
   if (architectureSpecPath && architectureSpecPath !== approvedArchitecturePath) throw new TypeError(`architectureSpecPath must be ${approvedArchitecturePath}`);
-  if (traceabilityRefs) validateCanonicalPlanReference(traceabilityRefs.canonical_plan);
+  if (planReviewRefs) validateCanonicalPlanReference(planReviewRefs.canonical_plan);
   const reviewInput = {
     repository,
     fixed_point: reviewFixedPoint,
@@ -321,9 +322,8 @@ export async function runIndependentReviewers({
     product_spec_path: productSpecPath || approvedProductPath,
     architecture_spec_path: architectureSpecPath || approvedArchitecturePath,
     completion_kind: 'plan_implemented',
-    ...(traceabilityRefs ? { plan_set_id: resolvedPlanSetId, planning_snapshot_sha256: traceabilityRefs.review_snapshot_sha256 } : {}),
-    ...(traceabilityRefs?.canonical_plan ? { canonical_plan: traceabilityRefs.canonical_plan } : {}),
-    ...(traceabilityRefs ? { traceability_ledger_path: traceabilityRefs.ledger_path, requirement_ids: traceabilityRefs.requirement_ids } : {}),
+    ...(planReviewRefs ? { plan_set_id: resolvedPlanSetId, planning_snapshot_sha256: planReviewRefs.review_snapshot_sha256 } : {}),
+    ...(planReviewRefs?.canonical_plan ? { canonical_plan: planReviewRefs.canonical_plan } : {}),
   };
   await assertPlanningReviewSnapshot({ root: repository, planId: plan.id, reviewInput, trackerPort });
   const roles = [
@@ -461,9 +461,9 @@ export async function executeImplementPlan({
       fixedPoint,
       planSetId: dispatchOptions.planSetId,
       repository: dispatched.workspace_root,
-      productSpecPath: dispatched.traceability_refs.product_spec_path,
-      architectureSpecPath: dispatched.traceability_refs.architecture_spec_path,
-      traceabilityRefs: dispatched.traceability_refs,
+      productSpecPath: dispatched.plan_review.product_spec_path,
+      architectureSpecPath: dispatched.plan_review.architecture_spec_path,
+      planReviewRefs: dispatched.plan_review,
       trackerPort: dispatchOptions.trackerPort,
       commitList: reviewCommitList,
       diff: reviewDiff,
@@ -519,12 +519,12 @@ export async function executeImplementPlan({
   const readiness = await inspectProjectReadiness({ workspace_root: dispatched.workspace_root, deferContractSync: true, base_ref: typeof fixedPoint === 'string' ? fixedPoint : fixedPoint.commit_sha || null });
   const contractDocs = readiness.execution.status !== 'pass' ? readiness.execution : readiness.contract_sync || readiness.contracts;
   const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
-  let planTraceability = await inspectPlanTraceability({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
+  let planReview = await inspectPlanSet({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
   const reviewedSnapshot = reviews[0]?.review_input?.planning_snapshot_sha256;
-  if (planTraceability.status === 'pass' && reviewedSnapshot && planTraceability.details.review_snapshot_sha256 !== reviewedSnapshot) planTraceability = { status: 'blocked', reason: 'review_snapshot_changed', violations: ['plan_traceability'] };
+  if (planReview.status === 'pass' && reviewedSnapshot && planReview.details.review_snapshot_sha256 !== reviewedSnapshot) planReview = { status: 'blocked', reason: 'review_snapshot_changed', violations: ['plan_review'] };
   const completionEvidence = {
     trackerSync,
-    planTraceability,
+    planReview,
     contractDocs,
     fixed_point: fixedPoint,
     implementation,
@@ -548,7 +548,7 @@ export async function executeImplementPlan({
     retirement,
     contractDocs,
     trackerSync,
-    planTraceability,
+    planReview,
     blocker: existingBlocker,
     pr,
     trackerSnapshot,
@@ -571,7 +571,7 @@ export async function executeImplementPlan({
       fixed_point: fixedPoint,
       contract_docs: contractDocs,
       tracker_sync: trackerSync,
-      plan_traceability: planTraceability,
+      plan_review: planReview,
       ...(retirement ? { retirement } : {}),
       implementation: {
         state: implementation.state || null,

@@ -24,11 +24,11 @@ function profile(command = ['node', '-e', "require('fs').writeFileSync('must-not
   return { command, required_env: [], config_inputs: ['config.json'], prepare: [], verify_config: [['node', '-e', 'process.exit(0)']], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 };
 }
 
-test('blocks missing execution prerequisites and invalid or empty profile manifests', async (t) => {
+test('allows an empty E2E manifest but blocks missing instructions and malformed profiles', async (t) => {
   const root = await fixture(t);
   assert.equal((await inspectProjectReadiness({ workspace_root: root })).execution.status, 'fail');
   await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({ schema_version: 1, profiles: {} }));
-  assert.equal((await inspectProjectReadiness({ workspace_root: root })).execution.status, 'fail');
+  assert.equal((await inspectProjectReadiness({ workspace_root: root })).execution.status, 'pass');
   await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({ schema_version: 1, profiles: { test: profile() } }));
   await writeFile(join(root, 'docs/agents/EXEC.md'), '   ');
   assert.equal((await inspectProjectReadiness({ workspace_root: root })).execution.status, 'fail');
@@ -46,14 +46,23 @@ test('validates profile shape without executing arbitrary configured commands', 
   await assert.rejects(readFile(join(root, 'must-not-run')));
 });
 
-test('the real project defers only its existing source snapshot drift during implementation readiness', async () => {
-  const strict = await inspectProjectReadiness({ workspace_root: sourceRoot });
+test('implementation readiness does not defer a contract that references a missing source', async (t) => {
+  const { root, cleanup } = await makeContractsFixture();
+  t.after(cleanup);
+  await mkdir(join(root, 'docs/agents'), { recursive: true });
+  await writeFile(join(root, 'docs/agents/EXEC.md'), 'Execution instructions\n');
+  await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({ schema_version: 1, profiles: { focused: profile(['node', '-e', 'process.exit(0)']) } }));
+  await rm(join(root, 'src/app.mjs'));
+
+  const strict = await inspectProjectReadiness({ workspace_root: root });
   assert.equal(strict.status, 'blocked');
-  assert.equal(strict.contracts.reason, 'contracts_out_of_sync');
-  assert.deepEqual(strict.contracts.violations, ['Contract/source snapshot changed; reconcile and seal']);
-  const implementation = await inspectProjectReadiness({ workspace_root: sourceRoot, deferContractSync: true });
-  assert.equal(implementation.status, 'pass', JSON.stringify(implementation));
-  assert.equal(implementation.contract_sync.status, 'deferred');
+  assert.equal(strict.contracts.reason, 'contracts_invalid');
+  assert.match(strict.contracts.violations[0], /src\/app\.mjs/);
+
+  const deferred = await inspectProjectReadiness({ workspace_root: root, deferContractSync: true });
+  assert.equal(deferred.status, 'blocked');
+  assert.equal(deferred.contracts.reason, 'contracts_invalid');
+  assert.equal(deferred.contract_sync, undefined);
 });
 
 test('implementation preflight defers only a source snapshot drift until final contract synchronization', async (t) => {

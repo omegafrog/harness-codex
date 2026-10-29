@@ -14,9 +14,9 @@
     "test:contracts": "node --test tests/contracts.test.mjs",
     "test:tracker": "node --test tests/tracker_lifecycle.test.mjs",
     "test:worktrees": "node --test tests/workflow_worktrees.test.mjs",
-    "test:execution": "node .codex/scripts/harness-exec.mjs --root . --profile harness-execution",
-    "test:spec-review": "node .codex/scripts/harness-exec.mjs --root . --profile spec-review-check",
-    "test:plan-traceability": "node .codex/scripts/harness-exec.mjs --root . --profile plan-traceability-check"
+    "test:execution": "node --test tests/execution.test.mjs",
+    "test:spec-review": "node --test tests/spec_review.test.mjs tests/contracts.test.mjs tests/workflow_loader.test.mjs tests/workflow_system_targets.test.mjs tests/plan_review.test.mjs tests/installer_update.test.mjs",
+    "test:plan-review": "node --test tests/plan_review.test.mjs tests/wrapper_dispatch.test.mjs tests/workflow_worktrees.test.mjs tests/workspace_preflight.test.mjs"
   },
   "engines": {
     "node": ">=20"

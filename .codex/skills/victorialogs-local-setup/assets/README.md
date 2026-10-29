@@ -26,9 +26,9 @@ Docker Desktop/WSL에서 컨테이너가 WSL 앱에 접근할 때는 `scrape_url
 ## 실행
 
 ```sh
-node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile victorialogs-infrastructure
-node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile victorialogs-check
-node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile victorialogs-stop
+node .codex/scripts/harness-victorialogs.mjs start --root <workspace_root>
+node .codex/scripts/harness-victorialogs.mjs check --root <workspace_root>
+node .codex/scripts/harness-victorialogs.mjs stop --root <workspace_root>
 ```
 
 infrastructure는 foreground이며 다른 세션에서 check와 앱 profile을 실행한다. check는 세 API readiness이며 앱 수집 확인은 아니다. 앱 실행 후 최근 실제 로그와 VictoriaMetrics의 `up{project="프로젝트ID",service="서비스명"}` 값 1을 확인한다. setup 자체는 서버를 시작하지 않는다. 구형 Fluent Bit compose를 전환할 때 원본을 session backup하며 구형 설정/offset 파일은 복구용으로 보존한다. 스택 시작 시 같은 compose project의 폐기 collector만 정리한다.
@@ -36,8 +36,7 @@ infrastructure는 foreground이며 다른 세션에서 check와 앱 profile을 �
 schema 검사는 Docker 없이 실행한다. fixture만 통과했다고 실제 emitter/context/redaction·수집·MCP 연결이 검증된 것은 아니다.
 
 ```sh
-export HARNESS_DIAGNOSTIC_LOG_FILE="<원본 JSONL 절대 경로>"
-node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile victorialogs-diagnostic-logs
+node .codex/scripts/harness-victorialogs.mjs validate-logs --root <workspace_root> --input "<원본 JSONL 경로>"
 ```
 
 ## MCP와 조회

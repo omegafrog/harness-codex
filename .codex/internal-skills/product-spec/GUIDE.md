@@ -45,15 +45,15 @@ The Product Spec MUST NOT be written while any applicable topic in `references/t
 
 A topic may be treated as `SETTLED` only when its required product behavior is explicitly supported by authoritative input or confirmed by the user. A topic may be `NOT_APPLICABLE` only with a concrete reason.
 
-There is no minimum question count. Question count follows unresolved coverage. Zero-question completion is allowed only under the exceptional zero-question rule defined by `grill-with-docs`.
+There is no minimum question count. Ask about unresolved business behavior and scope, and apply the `grill-with-docs` completion rule; settled or explicitly delegated choices need no repeated confirmation.
 
 ## Completion Criteria
 
 - Trace requirements and use cases with stable IDs.
 - When a flow is newly created or changed, declare the related Product use-case and activity `.puml` sources plus SVG link targets in the ticket-scoped diagrams directory; a Product Spec must not create class diagrams.
-- Treat `docs/specs/<ticket-id>/diagrams/product/` `.puml` files as the only editable originals and link matching SVG derivatives from the Markdown document.
+- Treat `docs/specs/<plan-set-id>/diagrams/product/` `.puml` files as the only editable originals and link matching SVG derivatives from the Markdown document.
 - If no flow changed or a diagram is not applicable, record `해당 없음` with its reason instead of manufacturing a diagram.
 - The independent Architecture review checks the frozen Architecture Spec against the Product Spec and project evidence. The final spec-me diagram stages validate applicable sources, SVG renders, Markdown links, and content consistency after the Architecture review and decision gates pass; a render failure blocks workflow completion.
-- Generate `docs/specs/<ticket-id>/product-spec.md` in the format of `references/template.md`.
+- Generate `docs/specs/<plan-set-id>/product-spec.md` in the format of `references/template.md`.
 
 현재 구현 사실은 `code-research`의 입력 보고서로 전달받으며 Product 단계의 source 직접 조사 금지는 유지한다. 요구 변경은 현재 구현과 구분한다.

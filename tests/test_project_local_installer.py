@@ -143,6 +143,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 "schema_version": 1,
                 "profiles": {
                     "unlimited": {
+                        "purpose": "e2e",
                         "command": ["node", "-e", "setTimeout(() => require('node:fs').writeFileSync('application-output.txt', 'done'), 150)"],
                         "required_env": [],
                         "config_inputs": ["docs/agents/EXEC.md"],
@@ -167,6 +168,13 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["status"], "passed")
             self.assertEqual((target / "application-output.txt").read_text(encoding="utf-8"), "done")
+            execution["profiles"]["unlimited"]["purpose"] = "unit-test"
+            (agents / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
+            rejected = subprocess.run(["node", ".codex/scripts/harness-exec.mjs", "--root", str(target), "--profile", "unlimited"], cwd=target, text=True, capture_output=True, check=False)
+            self.assertEqual(json.loads(rejected.stdout)["status"], "blocked")
+            self.assertIn("reserved for end-to-end tests", json.loads(rejected.stdout)["error"])
+            execution["profiles"]["unlimited"]["purpose"] = "e2e"
+            (agents / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
 
             harness_file = ".codex/harness-runtime/src/workflow/execution.mjs"
             ignored = subprocess.run(["git", "check-ignore", "-q", harness_file], cwd=target, check=False)
@@ -400,13 +408,11 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 self.assertTrue(argv[argv.index("--network") + 1].endswith("_default"))
                 self.assertIn(endpoint, argv)
             profiles = json.loads((target / "docs/agents/execution.json").read_text())["profiles"]
-            self.assertIn("victorialogs-infrastructure", profiles)
-            self.assertIn("victorialogs-check", profiles)
-            self.assertIn("victorialogs-diagnostic-logs", profiles)
+            self.assertEqual(profiles, {})
             self.assertTrue((config_dir / "diagnostic-log.schema.json").exists())
             self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/implementation-guidance.md").read_text())
             self.assertIn("spring-boot-diagnostic-log-v1", (target / "docs/agents/testing-guidance.md").read_text())
-            validated = subprocess.run(["node", str(target / ".codex/scripts/harness-exec.mjs"), "--root", str(target), "--profile", "victorialogs-diagnostic-logs"], cwd=target, env={**os.environ, "HARNESS_DIAGNOSTIC_LOG_FILE": str(config_dir / "diagnostic-log.example.json")}, text=True, capture_output=True)
+            validated = subprocess.run(["node", str(helper), "validate-logs", "--root", str(target), "--input", str(config_dir / "diagnostic-log.example.json")], cwd=target, text=True, capture_output=True)
             self.assertEqual(validated.returncode, 0, validated.stderr + validated.stdout)
             validation = subprocess.run(["node", "--input-type=module", "-e", "const {readExecutionManifest}=await import(process.argv[1]);await readExecutionManifest(process.argv[2]);", (target / ".codex/harness-runtime/src/workflow/execution.mjs").as_uri(), str(target)], cwd=target, text=True, capture_output=True)
             self.assertEqual(validation.returncode, 0, validation.stderr)
@@ -425,7 +431,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             migrated = subprocess.run(setup, cwd=target, text=True, capture_output=True)
             self.assertEqual(migrated.returncode, 0, migrated.stderr)
             self.assertNotIn("fluent-bit:", (config_dir / "compose.yaml").read_text())
-            self.assertTrue(any("image: legacy" in path.read_text() for path in (target / ".git/harness-workflows/sessions").glob("*/runtime/setup/backups/compose.yaml-*")))
+            self.assertTrue(any("image: legacy" in path.read_text() for path in (target / ".harness-workflows/sessions").glob("*/runtime/setup/backups/compose.yaml-*")))
             self.assertEqual((target / "docs/agents/testing-guidance.md").read_text().count("### spring-boot-diagnostic-log-v1"), 1)
             invalid = subprocess.run(["node", str(helper), "setup", "--root", str(target), "--metrics-port", "70000"], cwd=target, text=True, capture_output=True)
             self.assertNotEqual(invalid.returncode, 0)

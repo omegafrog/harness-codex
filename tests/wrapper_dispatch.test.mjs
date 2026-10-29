@@ -14,38 +14,32 @@ import { ExecutionSlotRegistry, buildImplementPrompt } from "../src/wrapper/sche
 import { makeContractsFixture } from "./contracts-fixture.mjs";
 import { sealContracts } from "../src/contracts/contracts.mjs";
 import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
-import { snapshotPlanTraceability } from "../src/workflow/plan-traceability.mjs";
+import { updatePlanReview } from "../src/workflow/plan-review.mjs";
 
 import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
 
 const execFileAsync = promisify(execFile);
 
-test("implementation prompt accepts canonical GitHub plans and separate ticket IDs", () => {
+test("implementation prompt uses the reviewed canonical plan file and linked Spec paths", () => {
   const prompt = buildImplementPrompt({
     repository: process.cwd(),
     workspaceRoot: process.cwd(),
     planSetId: "plan-set",
     planId: "plan-a",
-    planPath: "owner/repo#456",
-    traceabilityRefs: {
-      plan_reference: "owner/repo#456",
+    planPath: "docs/plans/plan-set/plan-a.md",
+    planReviewRefs: {
+      plan_reference: "docs/plans/plan-set/plan-a.md",
       ticket_id: "ticket-123",
       product_spec_path: "docs/specs/ticket-123/product-spec.md",
       architecture_spec_path: "docs/specs/ticket-123/architecture-spec.md",
-      ledger_path: "docs/plans/plan-set/traceability.json",
-      requirement_ids: ["BR-1"],
-      verification_files: ["tests/business-rule.test.mjs"],
-      verification_profile: "business-unit",
     },
   });
-  assert.match(prompt, /Plan: owner\/repo#456/);
+  assert.match(prompt, /Plan: docs\/plans\/plan-set\/plan-a\.md/);
   assert.match(prompt, /Product Spec: docs\/specs\/ticket-123\/product-spec\.md/);
-  assert.match(prompt, /Planned unit-test files: tests\/business-rule\.test\.mjs/);
-  assert.match(prompt, /Selected verification profile: business-unit/);
+  assert.match(prompt, /Compare the selected plan directly with the Product and Architecture Specs/);
 });
 
 async function makeSessionTemp(prefix) {
-  assert.ok(process.env.HARNESS_SESSION_DIR, "Run this test through harness-exec");
   const directory = sessionOutputPath(process.cwd(), "tmp");
   await mkdir(directory, { recursive: true });
   return mkdtemp(join(directory, prefix));
@@ -59,9 +53,7 @@ async function makeReadyProject() {
   const fixture = await makeContractsFixture({ root: await makeSessionTemp("wrapper-ready-") });
   await mkdir(join(fixture.root, "docs/agents"), { recursive: true });
   await writeFile(join(fixture.root, "docs/agents/EXEC.md"), "Project execution instructions.\n");
-  await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {
-    test: { command: ["node", "--test", "tests/implementation.test.mjs"], required_env: [], config_inputs: ["src/implementation.mjs", "tests/implementation.test.mjs"], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 },
-  } }));
+  await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {} }));
   const root = fixture.root;
   await mkdir(join(root, "tests"), { recursive: true });
   await writeFile(join(root, "src/implementation.mjs"), "export const implemented = true;\n");
@@ -78,36 +70,22 @@ async function makeReadyProject() {
   await writeFile(join(root, `${spec}/product-spec.md`), `# Product\n${requirements.map(({ id, statement }) => `- **${id}:** ${statement}`).join("\n")}\n`);
   await writeFile(join(root, `${spec}/architecture-spec.md`), "# Architecture\nNo additional declared IDs.\n");
   const plans = ids.map((id, index) => ({
-    id, requirement_ids: [`${spec}/product-spec.md#BR-${index + 1}`], content_path: `${base}/${id}.md`, verification_profile: "test", verification_files: ["tests/implementation.test.mjs"],
+    id, requirement_ids: [`${spec}/product-spec.md#BR-${index + 1}`], content_path: `${base}/${id}.md`, verification_command: "node --test tests/implementation.test.mjs", verification_files: ["tests/implementation.test.mjs"],
     acceptance_criteria: [`Acceptance for ${id}.`], counterexamples: [`Counterexample for ${id}.`], verification_cases: [`Verification for ${id}.`],
   }));
-  await writeFile(join(root, `${base}/plans.md`), `# Plans\n${ids.join("\n")}\n`);
+  await writeFile(join(root, `${base}/plans.md`), `# Plans\n- Product Spec: \`${spec}/product-spec.md\`\n- Architecture Spec: \`${spec}/architecture-spec.md\`\n${ids.map((id) => `- ${id}`).join("\n")}\n`);
   for (const plan of plans) await writeFile(join(root, plan.content_path), `${plan.id} BR-${plan.requirement_ids[0].split("#").at(-1).split("-").at(-1)}\n${plan.acceptance_criteria[0]}\n${plan.counterexamples[0]}\n${plan.verification_cases[0]}\ntests/implementation.test.mjs\n`);
-  const ledgerPath = join(root, base, "traceability.json");
-  const ledger = { schema_version: 1, plan_set_id: "496", ticket_id: "496", spec_paths: [`${spec}/product-spec.md`, `${spec}/architecture-spec.md`], requirements, plans };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  ledger.review = { reviewer_id: "independent-reviewer", author_ids: ["plan-author"], fork_turns: "none", verdict: "pass", findings: [], inputs: (await snapshotPlanTraceability({ root, planSetId: "496" })).inputs };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Traceability dispatch fixture", no_contract_change: "Add temporary plan/spec fixture inputs" })).status, "pass");
+  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Plan review dispatch fixture", no_contract_change: "Add temporary plan/spec fixture inputs" })).status, "pass");
+  const admission = await updatePlanReview({ root, planSetId: "496", action: "begin" });
+  await updatePlanReview({ root, planSetId: "496", action: "record", attemptId: admission.attempt_id, review: { plan_set_id: "496", reviewer_id: "independent-reviewer", author_ids: ["plan-author"], fork_turns: "none", verdict: "pass", findings: [], inputs: admission.inputs } });
   await execFileAsync("git", ["add", "docs/agents", "docs/specs", "docs/plans", "docs/contracts", "src/implementation.mjs", "tests/implementation.test.mjs"], { cwd: root });
-  await execFileAsync("git", ["commit", "-qm", "traceability test plans"], { cwd: root });
+  await execFileAsync("git", ["commit", "-qm", "plan review dispatch fixture"], { cwd: root });
   return fixture;
 }
 
 async function recordImplementationEvidence(root, planId) {
-  const { stdout } = await execFileAsync(process.execPath, [new URL("../.codex/scripts/harness-exec.mjs", import.meta.url).pathname, "--root", root, "--profile", "test"], { cwd: root, encoding: "utf8", env: process.env });
-  const execution = JSON.parse(stdout);
-  const ledgerPath = join(root, "docs/plans/496/traceability.json");
-  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-  const plan = ledger.plans.find((item) => item.id === planId);
-  const requirementId = plan.requirement_ids[0];
-  const evidence = async (path) => ({ path, sha256: createHash("sha256").update(await readFile(join(root, path))).digest("hex") });
-  ledger.implementation = {
-    ...(ledger.implementation || {}),
-    [planId]: { requirements: [{ requirement_id: requirementId, files: [await evidence("src/implementation.mjs")], verification: [await evidence("tests/implementation.test.mjs")], receipt: execution.evidence_path.replace(`${sessionDirectory(root)}/`, "") }] },
-  };
-  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Record implementation evidence", no_contract_change: "Add execution evidence to the plan ledger" })).status, "pass");
+  assert.ok(planId);
+  return execFileAsync(process.execPath, ["--test", "tests/implementation.test.mjs"], { cwd: root, encoding: "utf8", env: process.env });
 }
 
 test("sequential dispatch requires the caller's explicit execution line", async () => {
@@ -316,6 +294,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace_root, result.workspace.workspace);
     assert.equal(result.child.workspace_root, result.workspace.workspace);
     assert.equal(result.child.cwd, result.workspace.workspace);
+    assert.equal(JSON.parse(await readFile(sessionOutputPath(result.workspace.workspace, "worktree.json"), "utf8")).plan_set_id, "496");
     assert.ok(result.prompt.includes("workspace_mode: parallel"));
     assert.ok(result.prompt.includes(`workspace_reference: ${join(result.workspace.workspace, ".codex/internal-skills/session-worktree/references/parallel.md")}`));
     assert.equal(result.prompt.includes("references/sequential.md"), false);
@@ -509,10 +488,6 @@ test('changed and reapproved planning inputs block repair before a reservation',
           if (agent_type === 'spec_reviewer') {
             const spec = join(root, 'docs/specs/496/product-spec.md');
             await writeFile(spec, (await readFile(spec, 'utf8')) + '\nChanged decision evidence after admission.\n');
-            const ledgerPath = join(root, 'docs/plans/496/traceability.json');
-            const ledger = JSON.parse(await readFile(ledgerPath, 'utf8'));
-            ledger.review.inputs = (await snapshotPlanTraceability({ root, planSetId: '496' })).inputs;
-            await writeFile(ledgerPath, JSON.stringify(ledger));
           }
           return { state: agent_type === 'standards_reviewer' ? 'failed' : 'passed', independent: true, fresh_context: true, context_id: `${agent_type}-initial`, implementation_commit_sha: initial, findings: agent_type === 'standards_reviewer' ? [{ kind: 'implementation_defect', summary: 'Fix replay' }] : [] };
         },
@@ -696,7 +671,7 @@ test("review input rejects an empty diff and cross-ticket spec path", async () =
   let spawned = 0;
   const canonical = { kind: 'file', reference: 'docs/plans/496/plan-a.md', input_key: 'docs/plans/496/plans/plan-a#canonical', hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: 'a'.repeat(64) };
   for (const broken of [null, { ...canonical, normalization: 'raw-file' }, { ...canonical, sha256: 'invalid' }, { ...canonical, reference: '../other-plan.md' }]) {
-    await assert.rejects(() => runIndependentReviewers({ ...input, diff: 'diff', traceabilityRefs: { canonical_plan: broken }, spawnReviewer: async () => { spawned++; } }), /Canonical plan/);
+    await assert.rejects(() => runIndependentReviewers({ ...input, diff: 'diff', planReviewRefs: { canonical_plan: broken }, spawnReviewer: async () => { spawned++; } }), /Canonical plan/);
   }
   assert.equal(spawned, 0);
 

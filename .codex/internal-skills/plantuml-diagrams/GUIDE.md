@@ -21,7 +21,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 
 ## 파일·식별자·링크 규약
 
-다이어그램은 `docs/specs/<ticket-id>/diagrams/{product,architecture}/` 아래에 둔다.
+다이어그램은 `docs/specs/<plan-set-id>/diagrams/{product,architecture}/` 아래에 둔다.
 
 - Product: `UC-<id>.<usecase|activity>.puml` 및 같은 basename의 `.svg`
 - 업무 상태: `<concept>.business-state.puml` 및 `.svg`

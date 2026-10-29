@@ -8,8 +8,7 @@ import { sessionDirectory, sessionOutputPath } from '../src/workflow/session-out
 
 const cli = new URL('../.codex/scripts/harness-review-status.mjs', import.meta.url).pathname;
 async function fixture() {
-  assert.ok(process.env.HARNESS_SESSION_DIR, 'Run through harness-exec');
-  const root = await mkdtemp(join(process.env.HARNESS_SESSION_DIR, 'review-status-'));
+  const root = await mkdtemp(join(sessionOutputPath(process.cwd(), 'tmp'), 'review-status-'));
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
   return root;
 }

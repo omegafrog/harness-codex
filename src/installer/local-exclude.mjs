@@ -4,9 +4,11 @@ import { resolve } from "node:path";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 
 const LOCAL_INSTALL_EXCLUDES = [
+  ".harness-workflows/",
   ".agents/",
   ".codex/",
   ".harness/",
+  ".github/pull_request_template.md",
   ".github/workflows/harness-contracts.yml",
   "skills-lock.json",
 ];
@@ -17,9 +19,8 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   if (gitRoot.status !== 0 || await realpath(gitRoot.stdout.trim()) !== targetPath) return;
   const harnessSourcePath = await realpath(sourceRoot);
   const sourceCheckout = await isHarnessSourceCheckout(harnessSourcePath, targetPath);
-  // The Harness repository owns and versions its .codex source assets. Only a
-  // consumer project should hide an installed .codex runtime from Git.
-  const sourceOwnedPaths = new Set([".codex/", ".harness/", ".github/workflows/harness-contracts.yml"]);
+  // The Harness repository owns and versions these source assets; consumers should ignore generated copies.
+  const sourceOwnedPaths = new Set([".codex/", ".harness/", ".github/pull_request_template.md", ".github/workflows/harness-contracts.yml"]);
   const exclusions = sourceCheckout ? LOCAL_INSTALL_EXCLUDES.filter((entry) => !sourceOwnedPaths.has(entry)) : LOCAL_INSTALL_EXCLUDES;
   const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
   if (result.status !== 0) return;

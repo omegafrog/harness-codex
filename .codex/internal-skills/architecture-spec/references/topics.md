@@ -51,4 +51,4 @@ Use these topics as the coverage checklist for the architecture interview. The c
 
 Current code, tests, Product Spec, ADRs, and project documents may settle descriptive facts about the existing system. They do not by themselves settle a target architecture decision when multiple valid futures remain.
 
-Ask the user only when a material target decision, trade-off, product interpretation, irreversible architecture choice, or unresolved boundary-promotion decision remains unresolved after the available evidence is read.
+Use the [grilling](../../../../.codex/skills/grilling/SKILL.md) question criteria to distinguish stakeholder decisions from implementation details. Record the engineering rationale without inventing a user statement.

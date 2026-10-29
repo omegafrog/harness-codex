@@ -70,7 +70,8 @@
           "base": {
             "enum": [
               "workspace",
-              "session"
+              "session",
+              "control_session"
             ]
           },
           "path": {

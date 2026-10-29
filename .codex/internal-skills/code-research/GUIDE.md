@@ -79,4 +79,4 @@ For every concrete claim, include file paths. Keep the report short and factual.
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
 
-실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 `docs/agents/execution.json`과 EXEC에 대조하여 필수 인자·설정 갱신·인프라 누락을 보고한다. 빈 dependency/prepare 목록을 무조건 신뢰하지 않는다.
+실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조한다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.

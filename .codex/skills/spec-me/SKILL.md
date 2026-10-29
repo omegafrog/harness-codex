@@ -19,19 +19,23 @@ Standalone `spec-me` uses the model ID and reasoning effort resolved from `agent
 
 `spec_document_writer` owns Spec Markdown and `diagram_creator` owns diagram files. `execution_id`를 받은 skill은 필요한 작성·다이어그램·리뷰 작업을 파일에 기록하고 `SUBTASK_REQUIRED` 또는 `REVIEW_REQUIRED`로 반환한다. orchestrator가 해당 stage의 model·effort를 resolve하여 fresh subagent를 호출한다. standalone 호출의 직접 spawn도 `agents.low_performance_model`과 `agents.low_performance_reasoning_effort`의 실제 값을 사용하며 config key 문자열이나 부모 모델 상속으로 대체하지 않는다.
 
+내부 작업 요청은 `details.required_subtasks`에 실행 가능한 `skill`, 선택적 `role`, 구체적 `purpose`를 기록한다. 재개 시 `context.previous_result_ref`의 checkpoint와 `context.subtask_result_ref`, `context.completed_subtasks`의 검증된 결과를 읽고 현재 범위와 시점에 유효한 완료 작업과 사용자 결정을 반복하지 않는다. 후속 내부 작업은 결과를 확인한 뒤 별도 요청한다.
+
 If the request is about broken behavior, flaky regression, or performance regression, `spec-me` is not the right on-ramp; use `diagnosing-bugs` instead.
 
 ## Flow
 
-1. [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)가 준비한 `worktree.json`을 읽고 `workspace`를 `session_worktree`로 사용한다. 신규 worktree를 생성하지 않는다. standalone 요청도 먼저 메인 orchestrator의 workflow-compose 준비를 거친다. 구현 중 설계 변경은 caller 소유의 같은 worktree를 사용한다. 이후 단계와 agent에는 파일의 `workspace`를 절대 `workspace_root`와 `cwd`로, `session_directory`를 session 경로로 전달한다. 진입 preflight는 전달된 위치에서 수행한다.
+1. [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)가 전달한 `context.worktree_ref`의 `worktree.json`을 읽고 `workspace`를 `session_worktree`로 사용한다. 신규 worktree를 생성하지 않는다. `workspace_root`와 모든 명령의 cwd는 이 준비된 worktree다. 실행 결과와 임시 파일에는 입력의 `session_directory`를 그대로 사용하고 `harness-session-output`이나 `.git` 경로를 다시 계산하지 않는다. standalone 요청도 먼저 메인 orchestrator의 workflow-compose 준비를 거친다. 구현 중 설계 변경은 caller 소유의 같은 worktree를 사용한다. 진입 preflight는 전달된 worktree에서 수행한다.
 2. [Product Spec 절차](../../../.codex/internal-skills/product-spec/GUIDE.md)와 [Architecture 결정 단계](references/architecture-decision.md)를 순서대로 진행하며, 리뷰 시점과 gate는 [적대적 Spec 리뷰](references/adversarial-spec-review.md)를 따른다.
 3. 리뷰와 완료 gate를 통과한 Specs와 근거를 작업 branch에 보존한다. 신규 Spec 요청은 같은 worktree를 [`to-ticket`](../to-ticket/SKILL.md)에 넘긴다. 구현 중 설계 변경은 변경 Spec·결정·영향 요구 ID를 상위 구현 caller에 반환한다. caller는 영향 계획의 갱신과 리뷰를 `to-ticket`에 인계하고 승인 근거를 받은 뒤 보존한 fixed point에서 구현을 재개한다.
 ## Documents
 
-- Create `docs/specs/<ticket-id>/` when missing.
+- Create `docs/specs/<plan-set-id>/` when missing.
 - Spec artifacts use the selected `session_worktree`. Before accepting any writer/diagram result, verify every output resolves inside that directory. New Spec sessions preserve artifacts on the session branch until integration; design changes during implementation use the caller-owned workspace and return their approved artifacts to that caller.
-- Resolve the ticket ID before writing the specs.
-- Do not overwrite an existing ticket-scoped spec without explicit user approval.
+- Resolve the source tracker ticket before writing the Specs, then derive a short, human-readable English feature name from the agreed scope (for example, `solo-trpg-d6-narration`). Do not use the ticket number as `plan_set_id`.
+- Before dispatching the first Spec writer, bind the ID once to the active worktree with `node .codex/scripts/harness-workflow-worktree.mjs bind-plan-set-id --root <workspace_root> --feature-name <feature-name>`. The CLI creates a lowercase kebab-case slug from the agreed feature name. Read the returned canonical `worktree.json` value and use it for every Spec, diagram, System Target, Architecture Decision, plan, review, and handoff path. A fresh Spec worktree starts without this value; do not reuse an ID from an unrelated worktree. If `worktree.json` already has an ID, preserve it; never regenerate or overwrite it. Worktrees continuing this same plan set must receive its existing ID when they are created.
+- `--plan-set-id <id>` remains available only when explicitly opening an existing Spec/plan set. New Spec workflows use `--feature-name` so the ID is generated once from feature scope. Never let a Spec writer, diagram writer, or `to-ticket` choose or rename it.
+- Do not overwrite an existing Spec without explicit user approval.
 
 ## Rules
 
@@ -44,7 +48,7 @@ Spec 설계 전에 대상 프로젝트의 `docs/contracts/` 계약과 연결 다
 
 ## 세션 출력
 
-`node .codex/scripts/harness-session-output.mjs --root <workspace_root>`로 `session_directory`를 구해 agent와 tool에 전달한다. 리뷰 증거와 임시 산출물은 그 경로에, Spec과 다이어그램은 선언된 프로젝트 경로에 기록한다.
+workflow 실행의 `session_directory`는 현재 작업을 위해 준비된 worktree의 canonical session이며 실행 결과·리뷰 증거·임시 산출물의 기준이다. `context.control_session_directory`는 orchestrator workflow 상태용으로만 사용한다. 두 경로를 서로 대체하거나 `.git` 아래에서 다시 계산하지 않는다. Spec과 다이어그램은 준비된 worktree의 선언 경로에 기록한다.
 
 
 ## Exec 호출의 질문 전달
