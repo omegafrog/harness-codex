@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`implement-wrapper` 스킬 사용. 승인된 plan 중 dependency 충족된 runnable plan만 dispatch."
-}

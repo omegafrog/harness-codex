@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`implement-wrapper`와 `caveman` 스킬 적용. 의존성 충족된 plan만 dispatch하도록 구현·검증.\n현재 케이스는 최소 fixture. `.codex/harness.yaml` 없음; 상위 harness 설정·`plan.md` 확인 중. 변경 범위는 wrapper 동작으로 제한.\n`plan.md`에는 실행 plan 없음. Tracker/Project 데이터도 fixture에 없음. 따라서 runnable plan 0개; dispatch 금지. 그래프 blocked 상태로 종료. Scheduler 계약 테스트만 확인."
-}

@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용하겠습니다. 요청대로 이 프로세스에서 Standards와 Spec을 각각 검토하고 결과 파일을 작성하겠습니다. 별도 에이전트 격리는 사용하지 않으므로, 두 검토의 구분과 실제 컨텍스트 격리의 한계를 결과에 명시하겠습니다.\n"
-}

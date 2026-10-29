@@ -1,4 +1,0 @@
-{"schema_version":1,"stream_id":"case-code-review-isolation","seq":1,"timestamp":"2026-09-10T08:33:47.237Z","type":"case_started","payload":{"case_id":"code-review-isolation","workflow":"code-review"}}
-{"schema_version":1,"stream_id":"case-code-review-isolation","seq":2,"timestamp":"2026-09-10T08:33:47.453Z","type":"process_started","payload":{"command":["node","evals/fixtures/emit-eval.mjs"],"cwd":"/home/jiwoo/workspace/harness/.codex/evals/.runtime/baseline-metrics-check/cases/code-review-isolation/workspace"}}
-{"schema_version":1,"stream_id":"case-code-review-isolation","seq":3,"timestamp":"2026-09-10T08:33:47.517Z","type":"process_exited","payload":{"exit_code":1,"signal":null,"status":"error","duration_ms":69}}
-{"schema_version":1,"stream_id":"case-code-review-isolation","seq":4,"timestamp":"2026-09-10T08:33:47.521Z","type":"evidence_flushed","payload":{"case_id":"code-review-isolation"}}

@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬로 제공된 diff와 고정점을 확인하고, 독립된 읽기 전용 Standards·Spec 리뷰 결과를 지정된 JSON 파일에 기록하겠습니다.\n\n지정된 `fixture/change.diff`와 `fixture-baseline`이 작업 공간에 없습니다. 루트의 `change.diff`는 파일 헤더만 있어 대체하지 않겠습니다. 두 리뷰어가 각각 입력 누락을 독립적으로 판단하도록 하고, 차단 사유를 결과에 기록하겠습니다.\n"
-}

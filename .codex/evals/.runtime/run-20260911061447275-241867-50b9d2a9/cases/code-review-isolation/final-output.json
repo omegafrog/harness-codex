@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용하겠습니다. 요청대로 현재 프로세스에서 두 검토를 독립적으로 수행하고, 실제 subagent 격리는 사용하지 않았다는 한계를 결과에 기록하겠습니다.\n\ndiff는 `example.txt`의 `before`를 `after`로 바꾸는 한 줄 변경입니다. 다만 해당 파일이 `HEAD`에 없고, 저장소의 #496 스펙과 이 변경의 연결도 확인되지 않아 두 축 모두 적합성을 확정할 수 없다는 판정을 기록하겠습니다.\n\n생성 및 JSON 검증을 완료했습니다.\n\n- `.eval-output/review/contexts.json`: 서로 다른 논리적 검토 ID 2개\n- `.eval-output/review/verdict.json`: Standards·Spec 개별 판정\n\n두 판정 모두 `inconclusive`입니다. `HEAD`에 대상 파일이 없고 적용 스펙 연결도 불명확합니다. 실제 subagent 격리를 사용하지 않았다는 한계를 기록했으며, 구현 파일은 변경하지 않았습니다."
-}

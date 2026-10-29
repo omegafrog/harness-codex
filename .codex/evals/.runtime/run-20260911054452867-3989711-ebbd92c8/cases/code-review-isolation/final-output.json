@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용해 `HEAD`와 `change.diff`를 기준으로 두 검토를 수행하겠습니다. 요청대로 협업 도구 없이 같은 프로세스에서 별도로 검토하며, 실제 서브에이전트 컨텍스트 격리가 없다는 한계를 결과에 기록하겠습니다.\n\n변경은 `example.txt`의 한 줄뿐이며, 연결된 Product Spec이나 Architecture Spec은 확인되지 않았습니다. Standards 검토에서는 위반을 찾지 못했고 Spec 검토는 건너뜁니다. `HEAD`에 해당 파일이 없어 기준점과의 적용 검증이 불가능하다는 점도 기록하겠습니다.\n\n완료했습니다. `.eval-output/review/contexts.json`과 `verdict.json`을 작성하고 JSON 및 서로 다른 context ID를 검증했습니다.\n\n- Standards: 발견된 위반 없음.\n- Spec: 적용 가능한 명세가 없어 건너뜀.\n- 같은 프로세스의 검토로 실제 컨텍스트 격리는 없음을 기록.\n- `HEAD`에 `example.txt`가 없어 적용 검증에 한계가 있음을 기록.\n\n구현 파일 변경이나 외부 시스템 사용은 없었습니다."
-}

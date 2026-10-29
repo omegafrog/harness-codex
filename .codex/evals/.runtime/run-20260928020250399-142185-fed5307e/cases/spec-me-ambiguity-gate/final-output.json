@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되, 요청하신 현재 작업공간과 두 파일로 범위를 제한하겠습니다. 완료 항목은 `list`에서 기본적으로 숨기고 `list --all`에서 표시하는 것으로 기록한 뒤 검증하겠습니다.\n"
-}

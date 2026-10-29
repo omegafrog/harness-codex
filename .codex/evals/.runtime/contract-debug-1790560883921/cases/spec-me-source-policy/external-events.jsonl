@@ -1,1 +1,0 @@
-{"schema_version":1,"stream_id":"external-spec-me-source-policy","seq":1,"timestamp":"2026-09-28T02:01:25.249Z","type":"external_replay","payload":{"request":{"system":"github","operation":"read_issue","target":{"repo":"fixture/repo","issue":1},"intent":"read_issue","payload":{},"mutation":false},"response":{"ok":true,"body":"fixture"}}}

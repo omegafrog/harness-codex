@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\nI’m using the spec-me skill for the Product stage, with your supplied visibility decision settled. I’ll write only the two requested artifacts and stop before Architecture.\n\nCreated and validated exactly the two requested files:\n\n- `.eval-output/specs/496/product-spec.md`\n- `.eval-output/specs/496/ambiguity-resolved.json`\n\nSettled: completed tasks are hidden by default and included with `list --all`. Architecture was not started."
-}

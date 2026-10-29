@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용해 입력 파일을 확인하고, 격리된 리뷰어를 시작할 수 없다는 상태를 기록하겠습니다. 리뷰 판정은 생성하지 않고 JSON 파일의 존재와 파싱 여부를 검증하겠습니다.\n\n`.eval-output/review/contexts.json`을 생성하고 파일 존재 및 JSON 파싱을 검증했습니다.\n\n- 기준점: `HEAD` (`eec7287`)\n- Standards·Spec: 격리 리뷰어 시작 불가\n- 리뷰 판정과 agent/context ID: `null`\n- `src/` 및 specs는 수정하지 않았습니다."
-}

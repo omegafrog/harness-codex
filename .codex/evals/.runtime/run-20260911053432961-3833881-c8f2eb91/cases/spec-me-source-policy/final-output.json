@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되 요청하신 범위에 따라 Product Spec과 결정 JSON 두 파일만 작성하겠습니다. 소스 조사, 추가 질문, 위임, Architecture 단계는 진행하지 않습니다.\n\n요청한 두 파일을 작성했습니다.\n\n- `.eval-output/specs/496/product-spec.md`\n- `.eval-output/specs/496/ambiguity-resolved.json`\n\n`list`는 완료 항목을 숨기고, `list --all`은 포함하도록 기록했습니다. Architecture 단계는 진행하지 않았습니다."
-}

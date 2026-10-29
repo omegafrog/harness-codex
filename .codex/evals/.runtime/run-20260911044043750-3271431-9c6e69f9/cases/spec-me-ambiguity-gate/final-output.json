@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me` 스킬을 사용해 요청과 기존 문서를 확인하고, 중요한 모호성을 해소한 뒤 Product Spec에서 Architecture Spec으로 진행하겠습니다.\n"
-}

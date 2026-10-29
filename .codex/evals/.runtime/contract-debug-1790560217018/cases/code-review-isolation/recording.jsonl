@@ -1,1 +1,0 @@
-{"schema_version":1,"stream_id":"recording","seq":1,"timestamp":"2026-09-28T01:50:22.051Z","request":{"system":"github","operation":"read_issue","target":{"repo":"fixture/repo","issue":1},"intent":"read_issue","payload":{},"mutation":false},"response":{"ok":true,"body":"fixture"}}

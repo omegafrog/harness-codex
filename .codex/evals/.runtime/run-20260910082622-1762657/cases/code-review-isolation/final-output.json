@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬 사용. 독립 Spec/Standards 리뷰 실행, 판정 보존, 파일 수정 없음.\nHEAD 확인. 기준점은 현재 브랜치의 추적 ref `origin/codex/496-p0-behavioral-eval`로 보임; HEAD가 10커밋 앞섬. 리뷰 입력·모델 설정·스펙 위치 확인 중.\n기준점 확정: `origin/codex/496-p0-behavioral-eval` (`1be4be8`). HEAD diff 35 files/2,215 lines. 두 reviewer를 별도 context, read-only로 병렬 실행."
-}

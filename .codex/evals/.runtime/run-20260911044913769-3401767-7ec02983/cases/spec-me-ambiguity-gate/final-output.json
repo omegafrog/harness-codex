@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되, 요청하신 Product 단계까지만 진행하겠습니다. 완료된 작업은 기본 목록에서 숨기고 `list --all`에서 표시하는 것으로 확정하여 지정된 두 파일에 기록하겠습니다.\n\n2026-09-11T04:51:03.951323Z ERROR codex_core::tools::router: error=collab spawn failed: no thread with id: 01a08ecd-c62e-7441-82cf-37f524e2f9d0\n명세 작성용 하위 에이전트를 시작할 수 없어 직접 작성하겠습니다. 결정 범위는 목록의 완료 작업 표시 규칙이며, 지정된 두 파일만 생성하겠습니다.\n"
-}

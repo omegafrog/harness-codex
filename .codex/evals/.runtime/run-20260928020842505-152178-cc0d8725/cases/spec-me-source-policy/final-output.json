@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되, 이번 평가의 명시된 범위에 따라 확정된 요구사항만 두 지정 파일에 작성하겠습니다.\n\n요청한 두 파일을 작성했습니다: `.eval-output/specs/496/product-spec.md`, `.eval-output/specs/496/ambiguity-resolved.json`. 기본 목록과 `list --all`의 완료 작업 표시 규칙을 명시했습니다."
-}

@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me` 스킬을 적용하되, 요청하신 범위에 따라 완료 작업의 표시 규칙을 확정하고 지정된 두 파일만 작성하겠습니다.\n\n지정된 두 파일을 작성했습니다.\n\n- `.eval-output/specs/496/product-spec.md`\n- `.eval-output/specs/496/ambiguity-resolved.json`\n\n완료 작업은 `list`에서 숨기고 `list --all`에서 표시하도록 확정했습니다. Architecture로 진행하지 않았습니다."
-}

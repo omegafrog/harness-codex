@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me` + `caveman` 사용. 먼저 지침·현재 문맥 확인 → Product 단계의 material ambiguity만 질문 → 답변 후 Architecture 진행.\n경로 하나 잘못됨. 올바른 skill root로 재조회.\n`spec-me` 규칙상 Product coverage gate 유지. `product-spec`·`grill-with-docs` 지침 읽고, 기존 작업 상태 확인. 아직 Architecture 안 감.\nProduct 단계 blocker: suite 판정 분모가 모호함.\n\n`pass_rate`는 `inconclusive` 제외인데, `minimum_conclusive_cases >=95%`는 전체 case 기준인지 불명확. 0건·반올림 규칙도 미정.\n\n추천 확정안:\n\n- `conclusive_rate = conclusive / 전체 case`\n- `pass_rate = passed / conclusive`\n- 비율은 반올림 없이 원값 비교\n- conclusive 0건이면 suite 실패\n- Critical `inconclusive`는 pass rate 0으로 처리\n- `inconclusive_rate` 별도 health gate 적용\n\n이 규칙으로 Product 결정을 확정할까요?"
-}

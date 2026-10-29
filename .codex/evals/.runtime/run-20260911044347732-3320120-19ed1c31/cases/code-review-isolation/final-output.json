@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\nI’ll use the code-review skill to run isolated Spec and Standards reviewers and preserve their independent verdicts without editing files.\n\n리뷰 기준이 될 fixed point(커밋 SHA 또는 ref)를 알려주시겠어요?\n\n현재 저장소에는 커밋 하나(`209eb3a`)만 있고 작업 트리는 깨끗합니다. `change.diff`에도 파일 헤더만 있어 검토할 변경 내용이 없습니다. code-review 스킬은 기준점 확인을 먼저 요구하므로 리뷰어 실행은 보류했습니다. 파일은 수정하지 않았습니다."
-}

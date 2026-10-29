@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용해 확정된 요구사항만 담은 Product Spec과 모호성 해결 기록을 지정된 두 파일에 작성하겠습니다.\n\n지정된 두 파일에 Product Spec과 모호성 해결 기록을 작성했습니다. Architecture 단계는 진행하지 않았습니다."
-}

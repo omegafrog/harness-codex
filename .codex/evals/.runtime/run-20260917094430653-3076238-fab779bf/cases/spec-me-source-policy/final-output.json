@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\nI’m applying the spec-me skill with your evaluation overrides, writing only the Product Spec and the ambiguity resolution record.\n\nCreated exactly the two requested files: `product-spec.md` and `ambiguity-resolved.json` under `.eval-output/specs/496/`. Completed-task visibility is explicitly resolved."
-}

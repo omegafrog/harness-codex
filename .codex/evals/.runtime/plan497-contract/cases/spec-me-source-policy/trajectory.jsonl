@@ -1,4 +1,0 @@
-{"schema_version":1,"stream_id":"trajectory-spec-me-source-policy","seq":1,"timestamp":"2026-09-10T07:44:36.315Z","actor":"codex","kind":"message","payload":{"text":"[OUTCOME:spec_complete]"},"source":"structured_event"}
-{"schema_version":1,"stream_id":"trajectory-spec-me-source-policy","seq":2,"timestamp":"2026-09-10T07:44:36.317Z","actor":"harness","kind":"process_event","action":"spec_complete","payload":{"outcome":"spec_complete"},"source":"structured_event"}
-{"schema_version":1,"stream_id":"trajectory-spec-me-source-policy","seq":3,"timestamp":"2026-09-10T07:44:36.317Z","actor":"codex","kind":"message","payload":{"text":"[OUTCOME:ambiguity_resolved]"},"source":"structured_event"}
-{"schema_version":1,"stream_id":"trajectory-spec-me-source-policy","seq":4,"timestamp":"2026-09-10T07:44:36.318Z","actor":"harness","kind":"process_event","action":"ambiguity_resolved","payload":{"outcome":"ambiguity_resolved"},"source":"structured_event"}

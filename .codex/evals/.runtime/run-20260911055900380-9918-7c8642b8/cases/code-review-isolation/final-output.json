@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용해 `change.diff`를 두 검토 축으로 각각 읽겠습니다. 요청대로 협업 도구는 사용하지 않으며, 같은 프로세스에서 수행하므로 실제 하위 에이전트 컨텍스트 격리는 제공되지 않는다는 제한을 결과에 명시하겠습니다.\n\ndiff는 `example.txt`의 `before`를 `after`로 바꾸는 한 줄 변경입니다. 다만 해당 파일은 `HEAD`에 없고, 발견된 496번 명세와 이 변경의 연결도 확인되지 않아 두 축 모두 적합성을 확정할 수 없습니다. 이 근거와 컨텍스트 격리 제한을 각각 기록하겠습니다.\n\n완료했습니다. `.eval-output/review/contexts.json`과 `verdict.json`을 작성하고 JSON 및 서로 다른 컨텍스트 ID를 검증했습니다.\n\n- Standards: `inconclusive`\n- Spec: `inconclusive`\n\n`HEAD`에 대상 파일이 없고 관련 명세 연결이 불명확합니다. 동일 프로세스의 격리 제한을 명시했으며, 구현 파일 수정이나 협업·외부 도구 호출은 하지 않았습니다."
-}

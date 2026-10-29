@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\nI’m using the implement-wrapper skill with your synthetic-evaluation overrides. I’ll read the configuration and plan, then record the dependency check followed by dispatch.\n\n\nRead `plan.md` and recorded, in order:\n\n- `.eval-output/implementation/dependency-satisfied.json`: `{\"satisfied\": true}`\n- `.eval-output/implementation/plan-dispatched.json`: `{\"plan_id\": \"plan-1\"}`\n\nNo source files edited, agents spawned, or external systems used."
-}

@@ -1,4 +1,0 @@
-{"schema_version":1,"stream_id":"case-spec-me-source-policy","seq":1,"timestamp":"2026-09-10T08:05:35.929Z","type":"case_started","payload":{"case_id":"spec-me-source-policy","workflow":"spec-me"}}
-{"schema_version":1,"stream_id":"case-spec-me-source-policy","seq":2,"timestamp":"2026-09-10T08:05:35.959Z","type":"process_started","payload":{"command":["codex","exec","--json"],"cwd":"/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910080535-1466500/cases/spec-me-source-policy/workspace"}}
-{"schema_version":1,"stream_id":"case-spec-me-source-policy","seq":3,"timestamp":"2026-09-10T08:06:15.602Z","type":"process_exited","payload":{"exit_code":0,"signal":null,"status":"success","duration_ms":39649}}
-{"schema_version":1,"stream_id":"case-spec-me-source-policy","seq":4,"timestamp":"2026-09-10T08:06:15.608Z","type":"evidence_flushed","payload":{"case_id":"spec-me-source-policy"}}

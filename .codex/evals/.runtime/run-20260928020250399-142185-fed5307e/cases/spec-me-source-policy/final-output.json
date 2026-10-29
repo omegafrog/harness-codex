@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되, 이번 평가에서 지정한 범위에 따라 확정된 요구사항과 목록 표시 결정을 두 파일에만 기록하겠습니다.\n\n요청한 두 파일에 Product Spec과 목록 표시 모호성의 확정 결정을 기록했습니다."
-}

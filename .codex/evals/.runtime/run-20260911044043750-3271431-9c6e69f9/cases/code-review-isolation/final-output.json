@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`code-review` 스킬을 사용해 Spec과 Standards 검토를 격리 실행하고, 파일 수정 없이 각 판정을 독립적으로 보존하겠습니다.\n"
-}

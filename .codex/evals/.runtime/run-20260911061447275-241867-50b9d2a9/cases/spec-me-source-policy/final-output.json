@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me` 스킬을 적용하되, 요청하신 범위에 따라 Product Spec과 모호성 해결 기록 두 파일만 작성하겠습니다.\n\n요청한 두 파일을 작성했습니다: `.eval-output/specs/496/product-spec.md`, `.eval-output/specs/496/ambiguity-resolved.json`."
-}

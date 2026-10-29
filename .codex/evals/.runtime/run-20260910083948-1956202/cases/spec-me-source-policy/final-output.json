@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`와 `caveman` 규칙 적용. 소스 코드는 읽지 않음. 먼저 스킬 지침 확인 후, 필요한 질문만 순차 진행.\n제품 단계만 진행. 허용 입력은 `CONTEXT.md`, `CONTEXT-MAP.md`, Product 체크리스트·템플릿. 이 파일들만 읽고, 미결정 중 영향 큰 항목 하나씩 질문.\n현재 Product Spec 대상 기능·문제가 없음.\n\n질문 1 — 무엇을 명세할까?\n\n추천 답변 형식:  \n`[사용자]가 [상황]에서 겪는 [문제]를 해결해 [기대 결과]를 얻는다.`\n\n예: `평가 작성자가 source code 없이 Product Spec을 만들고, 모호한 요구사항을 확정한다.`"
-}

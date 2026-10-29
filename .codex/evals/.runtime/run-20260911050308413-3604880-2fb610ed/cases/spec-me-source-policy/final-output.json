@@ -1,3 +1,0 @@
-{
-  "output": "Reading prompt from stdin...\n`spec-me`의 Product Spec 템플릿을 확인한 뒤, 확정된 요구사항을 한국어 명세와 결정 JSON으로 작성하겠습니다. 요청하신 두 파일만 생성하고 Architecture 단계로 진행하지 않겠습니다.\n"
-}
