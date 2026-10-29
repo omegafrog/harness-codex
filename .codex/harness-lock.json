@@ -1,0 +1,1269 @@
+{
+  "schema_version": 1,
+  "files": {
+    ".agents/skills/attention-span/SKILL.md": {
+      "installed_sha256": "1e93693a6718a7f7818f291b90a6f511810c3f4a590eae23654e5c2f20053f04",
+      "upstream_sha256": "1e93693a6718a7f7818f291b90a6f511810c3f4a590eae23654e5c2f20053f04",
+      "source_path": ".codex/skills/attention-span/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/beads/SKILL.md": {
+      "installed_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
+      "upstream_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
+      "source_path": ".codex/skills/beads/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/code-review/SKILL.md": {
+      "installed_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
+      "upstream_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
+      "source_path": ".codex/skills/code-review/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/code-review/references/default-rules.md": {
+      "installed_sha256": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
+      "upstream_sha256": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
+      "source_path": ".codex/skills/code-review/references/default-rules.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/correct/SKILL.md": {
+      "installed_sha256": "ded7fd34383020edbb39cb08b393c461c5ef8ee9f8648be801ff6ed603900898",
+      "upstream_sha256": "ded7fd34383020edbb39cb08b393c461c5ef8ee9f8648be801ff6ed603900898",
+      "source_path": ".codex/skills/correct/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/diagnosing-bugs/SKILL.md": {
+      "installed_sha256": "1c7f0fbd41f367ca0c17098eaf061070d574731d9e1ecdd3b6a3c6800c3ba497",
+      "upstream_sha256": "1c7f0fbd41f367ca0c17098eaf061070d574731d9e1ecdd3b6a3c6800c3ba497",
+      "source_path": ".codex/skills/diagnosing-bugs/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/e2e-test/SKILL.md": {
+      "installed_sha256": "f12acffdfc602fe3f7631bb9eaed7b5f9256712da781752972fef85f1c15ca69",
+      "upstream_sha256": "f12acffdfc602fe3f7631bb9eaed7b5f9256712da781752972fef85f1c15ca69",
+      "source_path": ".codex/skills/e2e-test/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/e2e-test/references/failure-learning.md": {
+      "installed_sha256": "ae621b655497ab80e1596d6932a33d18d2d0ab2b115d0a64116bb333c5ae8d8b",
+      "upstream_sha256": "ae621b655497ab80e1596d6932a33d18d2d0ab2b115d0a64116bb333c5ae8d8b",
+      "source_path": ".codex/skills/e2e-test/references/failure-learning.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/e2e-test/references/verification-policy.md": {
+      "installed_sha256": "8be7532caacb44baaa79e65841c1831af026176f6ec45526b99c95591f8ba17f",
+      "upstream_sha256": "8be7532caacb44baaa79e65841c1831af026176f6ec45526b99c95591f8ba17f",
+      "source_path": ".codex/skills/e2e-test/references/verification-policy.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/e2e-test/scripts/artifact-guard.mjs": {
+      "installed_sha256": "e1cad3c250d9615131b816d00d55a13bd0a1eb2a8e2f407c841331bbbe2e973c",
+      "upstream_sha256": "e1cad3c250d9615131b816d00d55a13bd0a1eb2a8e2f407c841331bbbe2e973c",
+      "source_path": ".codex/skills/e2e-test/scripts/artifact-guard.mjs"
+    },
+    ".agents/skills/eli5/SKILL.md": {
+      "installed_sha256": "1b700762a10544e460da06ee1c699ad5aea50604c1de119b1bf7e4525430399a",
+      "upstream_sha256": "1b700762a10544e460da06ee1c699ad5aea50604c1de119b1bf7e4525430399a",
+      "source_path": ".codex/skills/eli5/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/evaluate-harness/SKILL.md": {
+      "installed_sha256": "a42f8f0d418dadd87f6cf3d2ca4103d67d9d73c18831b888a6e4e133e48c2d03",
+      "upstream_sha256": "a42f8f0d418dadd87f6cf3d2ca4103d67d9d73c18831b888a6e4e133e48c2d03",
+      "source_path": ".codex/skills/evaluate-harness/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/evaluate-harness/references/blinded-comparison.md": {
+      "installed_sha256": "a8f65b6a7d06e7f6b241e7eb444ae8322983540331ef721029ba51daf306e868",
+      "upstream_sha256": "a8f65b6a7d06e7f6b241e7eb444ae8322983540331ef721029ba51daf306e868",
+      "source_path": ".codex/skills/evaluate-harness/references/blinded-comparison.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/evaluate-harness/references/measurement.md": {
+      "installed_sha256": "7eda5a5eb81079a83be76373fb224cef1679e4a00c1ae971b13f12ded5ac2ef5",
+      "upstream_sha256": "7eda5a5eb81079a83be76373fb224cef1679e4a00c1ae971b13f12ded5ac2ef5",
+      "source_path": ".codex/skills/evaluate-harness/references/measurement.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/frontend-design/SKILL.md": {
+      "installed_sha256": "b99cee6e2901f4ff1536a5492a3c4796c1e25f6592470c877f258defce83028e",
+      "upstream_sha256": "b99cee6e2901f4ff1536a5492a3c4796c1e25f6592470c877f258defce83028e",
+      "source_path": ".codex/skills/frontend-design/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/gh-open-pr/SKILL.md": {
+      "installed_sha256": "4104fa47485a547ab4c19fe5303c0957b6d1cd52ee8d97f15c1d6af38383742f",
+      "upstream_sha256": "4104fa47485a547ab4c19fe5303c0957b6d1cd52ee8d97f15c1d6af38383742f",
+      "source_path": ".codex/skills/gh-open-pr/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/gh-open-pr/agents/openai.yaml": {
+      "installed_sha256": "49df0a5dde41bddc0002569c01aa3e6ec110f3a11b5eff4ebdf273a5094175f0",
+      "upstream_sha256": "49df0a5dde41bddc0002569c01aa3e6ec110f3a11b5eff4ebdf273a5094175f0",
+      "source_path": ".codex/skills/gh-open-pr/agents/openai.yaml"
+    },
+    ".agents/skills/grilling/SKILL.md": {
+      "installed_sha256": "0ec38415c1194844af8c58707815a8fe36b32755d2e7a81981efd6d5e0caf955",
+      "upstream_sha256": "0ec38415c1194844af8c58707815a8fe36b32755d2e7a81981efd6d5e0caf955",
+      "source_path": ".codex/skills/grilling/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/harness-maintenance/SKILL.md": {
+      "installed_sha256": "567d063e613aea525aacf8ebc5ddf852c23cd46cb0ec4bdc87537a493488dadf",
+      "upstream_sha256": "567d063e613aea525aacf8ebc5ddf852c23cd46cb0ec4bdc87537a493488dadf",
+      "source_path": ".codex/skills/harness-maintenance/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/harness-maintenance/agents/openai.yaml": {
+      "installed_sha256": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
+      "upstream_sha256": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
+      "source_path": ".codex/skills/harness-maintenance/agents/openai.yaml"
+    },
+    ".agents/skills/harness-recover/SKILL.md": {
+      "installed_sha256": "404831334d619d8d0abf90b5c38fba1d1e3d70afd083cf821837c246ba0174ad",
+      "upstream_sha256": "404831334d619d8d0abf90b5c38fba1d1e3d70afd083cf821837c246ba0174ad",
+      "source_path": ".codex/skills/harness-recover/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/implement-wrapper/SKILL.md": {
+      "installed_sha256": "4b379ac39c141411866bdc4fcdff8e3700dcc92c2e8ac113662130c20c5df3a8",
+      "upstream_sha256": "4b379ac39c141411866bdc4fcdff8e3700dcc92c2e8ac113662130c20c5df3a8",
+      "source_path": ".codex/skills/implement-wrapper/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/implement-wrapper/references/tracker/github.md": {
+      "installed_sha256": "25e6f57097dce73e5c5999cca078b9b0bdc82db6e30397a7a0f27e7018279743",
+      "upstream_sha256": "25e6f57097dce73e5c5999cca078b9b0bdc82db6e30397a7a0f27e7018279743",
+      "source_path": ".codex/skills/implement-wrapper/references/tracker/github.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/implement-wrapper/references/tracker/local-markdown.md": {
+      "installed_sha256": "194e35485e9e1da75128df42b57c418ef30c87b56153669011cd80be930aadbb",
+      "upstream_sha256": "194e35485e9e1da75128df42b57c418ef30c87b56153669011cd80be930aadbb",
+      "source_path": ".codex/skills/implement-wrapper/references/tracker/local-markdown.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/knowledge-harvest/SKILL.md": {
+      "installed_sha256": "1c40542f6d252ad75e37fbc47cad40354053b8466be7940d7624d7032d74d311",
+      "upstream_sha256": "1c40542f6d252ad75e37fbc47cad40354053b8466be7940d7624d7032d74d311",
+      "source_path": ".codex/skills/knowledge-harvest/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/maintain-verification/SKILL.md": {
+      "installed_sha256": "511b1892808ecb0e519e65ea9241a3d96889da5ee5874b255a6ea4ae43c48f89",
+      "upstream_sha256": "511b1892808ecb0e519e65ea9241a3d96889da5ee5874b255a6ea4ae43c48f89",
+      "source_path": ".codex/skills/maintain-verification/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/orchestrator/SKILL.md": {
+      "installed_sha256": "1c4071472cb7b36846e79095003ce5011c7863b0a8e1f3dacc9d7c0b0d6c7eeb",
+      "upstream_sha256": "1c4071472cb7b36846e79095003ce5011c7863b0a8e1f3dacc9d7c0b0d6c7eeb",
+      "source_path": ".codex/skills/orchestrator/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/orchestrator/agents/openai.yaml": {
+      "installed_sha256": "3f3a974ed24a94f09cbe775fa46e26d3682dd6fc0e469b0d8e6601ce886f0a6f",
+      "upstream_sha256": "3f3a974ed24a94f09cbe775fa46e26d3682dd6fc0e469b0d8e6601ce886f0a6f",
+      "source_path": ".codex/skills/orchestrator/agents/openai.yaml"
+    },
+    ".agents/skills/orchestrator/references/implementation.md": {
+      "installed_sha256": "1084266dba38e35c27ed401830f54eab794ed24e4791086d6c7006c6a8e25d59",
+      "upstream_sha256": "1084266dba38e35c27ed401830f54eab794ed24e4791086d6c7006c6a8e25d59",
+      "source_path": ".codex/skills/orchestrator/references/implementation.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/orchestrator/references/session-state.md": {
+      "installed_sha256": "1d486c3807a1482445267bce186d15d32b09515e4642576ad5f2ec743dc801be",
+      "upstream_sha256": "1d486c3807a1482445267bce186d15d32b09515e4642576ad5f2ec743dc801be",
+      "source_path": ".codex/skills/orchestrator/references/session-state.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/orchestrator/references/to-ticket.md": {
+      "installed_sha256": "72bc95a764b15086755de340a67fa7b17de74e373a4927686e0f396298f86e91",
+      "upstream_sha256": "72bc95a764b15086755de340a67fa7b17de74e373a4927686e0f396298f86e91",
+      "source_path": ".codex/skills/orchestrator/references/to-ticket.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/setup/SKILL.md": {
+      "installed_sha256": "c0bd3a0752a4bab725c9c10e9d94b2e5ab51c237ddd9c9fbaa36afafe753cf09",
+      "upstream_sha256": "c0bd3a0752a4bab725c9c10e9d94b2e5ab51c237ddd9c9fbaa36afafe753cf09",
+      "source_path": ".codex/skills/setup/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/setup/agents/openai.yaml": {
+      "installed_sha256": "0b77a261923dd72703b4629f771ce69f126a8fcc6b5e329d1a5a939e9470ed7e",
+      "upstream_sha256": "0b77a261923dd72703b4629f771ce69f126a8fcc6b5e329d1a5a939e9470ed7e",
+      "source_path": ".codex/skills/setup/agents/openai.yaml"
+    },
+    ".agents/skills/setup/assets/CONTEXT-MAP.md": {
+      "installed_sha256": "49d49400876532d72c58fd68560d8374113ca6b2b7999a125a20baed26bdee27",
+      "upstream_sha256": "49d49400876532d72c58fd68560d8374113ca6b2b7999a125a20baed26bdee27",
+      "source_path": ".codex/skills/setup/assets/CONTEXT-MAP.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/setup/assets/CONTEXT.md": {
+      "installed_sha256": "960f8c7e50fdfafa0ff9b6ca27acd317667672115089f5d8bdd72b45b44521fb",
+      "upstream_sha256": "960f8c7e50fdfafa0ff9b6ca27acd317667672115089f5d8bdd72b45b44521fb",
+      "source_path": ".codex/skills/setup/assets/CONTEXT.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/spec-me/SKILL.md": {
+      "installed_sha256": "282f953dba240376c313b1e09c201896194b71bb6102775ae4b45bed91591e90",
+      "upstream_sha256": "282f953dba240376c313b1e09c201896194b71bb6102775ae4b45bed91591e90",
+      "source_path": ".codex/skills/spec-me/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/spec-me/references/adversarial-spec-review.md": {
+      "installed_sha256": "43eaaaf7241e716bf6f91e54392362e4e823027aa3b6ecbb03d73e67479f9588",
+      "upstream_sha256": "43eaaaf7241e716bf6f91e54392362e4e823027aa3b6ecbb03d73e67479f9588",
+      "source_path": ".codex/skills/spec-me/references/adversarial-spec-review.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/spec-me/references/architecture-decision.md": {
+      "installed_sha256": "9124115e30263a302fee7aca1f6f47436bd239d07717628aeb48df9b13c6539b",
+      "upstream_sha256": "9124115e30263a302fee7aca1f6f47436bd239d07717628aeb48df9b13c6539b",
+      "source_path": ".codex/skills/spec-me/references/architecture-decision.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/spec-me/references/decision-knowledge.md": {
+      "installed_sha256": "282e7cb99a65f169a4993a755bde31248aef6cdfbb450747ef9517addd1d70f6",
+      "upstream_sha256": "282e7cb99a65f169a4993a755bde31248aef6cdfbb450747ef9517addd1d70f6",
+      "source_path": ".codex/skills/spec-me/references/decision-knowledge.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/SKILL.md": {
+      "installed_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
+      "upstream_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
+      "source_path": ".codex/skills/to-ticket/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/beads.md": {
+      "installed_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
+      "upstream_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
+      "source_path": ".codex/skills/to-ticket/references/beads.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/execution-evidence.md": {
+      "installed_sha256": "3e0869ff9c340532ae7b16324a01b857dc4a24beddd87714ff2058d786e5b2c4",
+      "upstream_sha256": "3e0869ff9c340532ae7b16324a01b857dc4a24beddd87714ff2058d786e5b2c4",
+      "source_path": ".codex/skills/to-ticket/references/execution-evidence.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/finalize.md": {
+      "installed_sha256": "6074bdffe03c4652bb369d3a2fe982970fafdace7cd200ec44ea31bb47f57c2c",
+      "upstream_sha256": "6074bdffe03c4652bb369d3a2fe982970fafdace7cd200ec44ea31bb47f57c2c",
+      "source_path": ".codex/skills/to-ticket/references/finalize.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/github-batch-publish.md": {
+      "installed_sha256": "4660765013e4fccf67ccad031035e5b035a4d7ea6c6266bb7da3fbef7bde3e31",
+      "upstream_sha256": "4660765013e4fccf67ccad031035e5b035a4d7ea6c6266bb7da3fbef7bde3e31",
+      "source_path": ".codex/skills/to-ticket/references/github-batch-publish.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/github-issue-template.md": {
+      "installed_sha256": "ee906ce0becd4f42f12da4e53ce0b1d36c853a9af9d4369bb751b3a74510489b",
+      "upstream_sha256": "ee906ce0becd4f42f12da4e53ce0b1d36c853a9af9d4369bb751b3a74510489b",
+      "source_path": ".codex/skills/to-ticket/references/github-issue-template.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/revision.md": {
+      "installed_sha256": "f83cca1e43b9bd969cbf40cc2aa9d43dcf68e7941a7ae0b47f0369afcc93d4ae",
+      "upstream_sha256": "f83cca1e43b9bd969cbf40cc2aa9d43dcf68e7941a7ae0b47f0369afcc93d4ae",
+      "source_path": ".codex/skills/to-ticket/references/revision.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/to-ticket/references/split.md": {
+      "installed_sha256": "b949628616b48a454b6db90d71a143343d4db465d79caf5bb0eb9d0c27989190",
+      "upstream_sha256": "b949628616b48a454b6db90d71a143343d4db465d79caf5bb0eb9d0c27989190",
+      "source_path": ".codex/skills/to-ticket/references/split.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/victorialogs-local-setup/SKILL.md": {
+      "installed_sha256": "43ce8cbff430ee06f56cac7225eca8e82364d4b99f8f3194db6c01adacfb92d8",
+      "upstream_sha256": "43ce8cbff430ee06f56cac7225eca8e82364d4b99f8f3194db6c01adacfb92d8",
+      "source_path": ".codex/skills/victorialogs-local-setup/SKILL.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/README.md": {
+      "installed_sha256": "eeb9da139c3f16e390432bbc27f949f0e93974293ac15af41d1e3dc8aa5b97fe",
+      "upstream_sha256": "eeb9da139c3f16e390432bbc27f949f0e93974293ac15af41d1e3dc8aa5b97fe",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/README.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/compose.yaml": {
+      "installed_sha256": "f6c802ed86ad29dbdbceee677563f1fcc86cdf7c878386d84e6c3151c1874c4d",
+      "upstream_sha256": "f6c802ed86ad29dbdbceee677563f1fcc86cdf7c878386d84e6c3151c1874c4d",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/compose.yaml"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md": {
+      "installed_sha256": "2bd220baa639ad6c0024f1bcc8c7a71a6837b505f14dc1f5fc5e1a5608703021",
+      "upstream_sha256": "2bd220baa639ad6c0024f1bcc8c7a71a6837b505f14dc1f5fc5e1a5608703021",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/diagnostic-log.example.json": {
+      "installed_sha256": "aa72110bcafadd0e9e4b22de37ba57124af835784fc8944b7d46d4c8718866f7",
+      "upstream_sha256": "aa72110bcafadd0e9e4b22de37ba57124af835784fc8944b7d46d4c8718866f7",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.example.json"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json": {
+      "installed_sha256": "161cf1aa9372c0c2ef8a33284554aaf8f32da274b24fe300f22b02cee4a20281",
+      "upstream_sha256": "161cf1aa9372c0c2ef8a33284554aaf8f32da274b24fe300f22b02cee4a20281",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/implementation-guidance.md": {
+      "installed_sha256": "1b72fcc76c96094add19023233ba372f094cc0d962aac2618c1b3b61a5cd0e88",
+      "upstream_sha256": "1b72fcc76c96094add19023233ba372f094cc0d962aac2618c1b3b61a5cd0e88",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/implementation-guidance.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/otel-collector.yaml": {
+      "installed_sha256": "32e14f4bd8019fe482438e5abfc0f9a9d696c320e85a22588abc98687833aec2",
+      "upstream_sha256": "32e14f4bd8019fe482438e5abfc0f9a9d696c320e85a22588abc98687833aec2",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/spring-local.properties": {
+      "installed_sha256": "13c30ba4a6c18b69d70322694403480177809c2f60d530d0b0035037ade5bef4",
+      "upstream_sha256": "13c30ba4a6c18b69d70322694403480177809c2f60d530d0b0035037ade5bef4",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/spring-local.properties"
+    },
+    ".agents/skills/victorialogs-local-setup/assets/testing-guidance.md": {
+      "installed_sha256": "cce5cb1ee0b62a86d8d904369ebff4f54355db6d05983b0ccfc24467c5918382",
+      "upstream_sha256": "cce5cb1ee0b62a86d8d904369ebff4f54355db6d05983b0ccfc24467c5918382",
+      "source_path": ".codex/skills/victorialogs-local-setup/assets/testing-guidance.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/code_researcher.toml": {
+      "installed_sha256": "60dd7ae67542f0eb2a4ff42b1b801a5090b7bfdce0eae0cda84277892ffb597b",
+      "upstream_sha256": "60dd7ae67542f0eb2a4ff42b1b801a5090b7bfdce0eae0cda84277892ffb597b",
+      "source_path": ".codex/agents/code_researcher.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/diagram_creator.toml": {
+      "installed_sha256": "6c1ebfcd3adab90de685343d11f1a0a0a2e44eb2ddceeb679ec8e4ef861a55c2",
+      "upstream_sha256": "6c1ebfcd3adab90de685343d11f1a0a0a2e44eb2ddceeb679ec8e4ef861a55c2",
+      "source_path": ".codex/agents/diagram_creator.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/execution_runner.toml": {
+      "installed_sha256": "25cbd7f0fabdc66c6156c6684b263b1b6f0d0ad5ad940d98ba4574665c715684",
+      "upstream_sha256": "25cbd7f0fabdc66c6156c6684b263b1b6f0d0ad5ad940d98ba4574665c715684",
+      "source_path": ".codex/agents/execution_runner.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/frontend_implementation_agent.toml": {
+      "installed_sha256": "bb57451a413ff547906477fb6868bfb5262c1892fe618e990d570ddac3a13503",
+      "upstream_sha256": "bb57451a413ff547906477fb6868bfb5262c1892fe618e990d570ddac3a13503",
+      "source_path": ".codex/agents/frontend_implementation_agent.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/frontend_visual_reviewer.toml": {
+      "installed_sha256": "522123563869208865ed45274ac42751d644c98b0041c78ec6e8a6f684f6e88d",
+      "upstream_sha256": "522123563869208865ed45274ac42751d644c98b0041c78ec6e8a6f684f6e88d",
+      "source_path": ".codex/agents/frontend_visual_reviewer.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/plan_reviewer.toml": {
+      "installed_sha256": "081e7606b653ea6ee2c34216f95438375bc8594021f962e9695d2c47b3c9d871",
+      "upstream_sha256": "081e7606b653ea6ee2c34216f95438375bc8594021f962e9695d2c47b3c9d871",
+      "source_path": ".codex/agents/plan_reviewer.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/spec_adversarial_reviewer.toml": {
+      "installed_sha256": "d8693d6da4f82cce65bb22bfe3e4c8ab12b76c97711b785c38602558bacf11dc",
+      "upstream_sha256": "d8693d6da4f82cce65bb22bfe3e4c8ab12b76c97711b785c38602558bacf11dc",
+      "source_path": ".codex/agents/spec_adversarial_reviewer.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/agents/spec_document_writer.toml": {
+      "installed_sha256": "e3dbbbb1364238fa13af8dfb31ab39b35e77c8f5cd02f01623165930723433c4",
+      "upstream_sha256": "e3dbbbb1364238fa13af8dfb31ab39b35e77c8f5cd02f01623165930723433c4",
+      "source_path": ".codex/agents/spec_document_writer.toml",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/harness-runtime/src/contracts/contracts.mjs": {
+      "installed_sha256": "5b01e5713b817d99f80819bd0feb1a8802581a91e6ad66e6a2f561d14faac8db",
+      "upstream_sha256": "5b01e5713b817d99f80819bd0feb1a8802581a91e6ad66e6a2f561d14faac8db",
+      "source_path": "src/contracts/contracts.mjs"
+    },
+    ".codex/harness-runtime/src/decision/approval.mjs": {
+      "installed_sha256": "88c755c2b271ca75c56ac995e85056ea749c195fda4e0798062c14b303a4ac82",
+      "upstream_sha256": "88c755c2b271ca75c56ac995e85056ea749c195fda4e0798062c14b303a4ac82",
+      "source_path": "src/decision/approval.mjs"
+    },
+    ".codex/harness-runtime/src/decision/artifacts.mjs": {
+      "installed_sha256": "97821017a5ae0653a1218628a47df92d92b5e96f41fce1586eaa5f6135e3510f",
+      "upstream_sha256": "97821017a5ae0653a1218628a47df92d92b5e96f41fce1586eaa5f6135e3510f",
+      "source_path": "src/decision/artifacts.mjs"
+    },
+    ".codex/harness-runtime/src/decision/impact.mjs": {
+      "installed_sha256": "5bdd6ba517f001788f10fa9d0fc9f08400ae03b8841d112d5cf36d85571a69a4",
+      "upstream_sha256": "5bdd6ba517f001788f10fa9d0fc9f08400ae03b8841d112d5cf36d85571a69a4",
+      "source_path": "src/decision/impact.mjs"
+    },
+    ".codex/harness-runtime/src/decision/model.mjs": {
+      "installed_sha256": "7cedeeca1b9f7b7bbdd684d45852fab2e7f7a7e72f06811a11646bd841fe993d",
+      "upstream_sha256": "7cedeeca1b9f7b7bbdd684d45852fab2e7f7a7e72f06811a11646bd841fe993d",
+      "source_path": "src/decision/model.mjs"
+    },
+    ".codex/harness-runtime/src/decision/review.mjs": {
+      "installed_sha256": "9fffac834108af3810bf9c443df8eefa2e96bebfd1d834936bc2edc4dead6b46",
+      "upstream_sha256": "9fffac834108af3810bf9c443df8eefa2e96bebfd1d834936bc2edc4dead6b46",
+      "source_path": "src/decision/review.mjs"
+    },
+    ".codex/harness-runtime/src/decision/validation.mjs": {
+      "installed_sha256": "26a4edb454e89bbe1c929c7b3cd1f9d1a5ceb1acfb48a92b84a8f4bd6c6dfee1",
+      "upstream_sha256": "26a4edb454e89bbe1c929c7b3cd1f9d1a5ceb1acfb48a92b84a8f4bd6c6dfee1",
+      "source_path": "src/decision/validation.mjs"
+    },
+    ".codex/harness-runtime/src/doctor/doctor.mjs": {
+      "installed_sha256": "fa95dd8e369d79328f1a3715d44d6bc033133b148bb5c507e4076c8184d88713",
+      "upstream_sha256": "fa95dd8e369d79328f1a3715d44d6bc033133b148bb5c507e4076c8184d88713",
+      "source_path": "src/doctor/doctor.mjs"
+    },
+    ".codex/harness-runtime/src/doctor/index.mjs": {
+      "installed_sha256": "cf1f3b14a0cba01ca83107b8c98a3c489f7d8a65c2d97bbb06c68a2497593730",
+      "upstream_sha256": "cf1f3b14a0cba01ca83107b8c98a3c489f7d8a65c2d97bbb06c68a2497593730",
+      "source_path": "src/doctor/index.mjs"
+    },
+    ".codex/harness-runtime/src/eval/case-loader.mjs": {
+      "installed_sha256": "05ec0bff0b3d7aa993984b9e352b0942a2ae6dd6d9d0e63526d7a77fda83222f",
+      "upstream_sha256": "05ec0bff0b3d7aa993984b9e352b0942a2ae6dd6d9d0e63526d7a77fda83222f",
+      "source_path": "src/eval/case-loader.mjs"
+    },
+    ".codex/harness-runtime/src/eval/case-workspace.mjs": {
+      "installed_sha256": "12d70a67d6629f04e8cdf363e255c20decd095bee7a5690ca484239a918f9dc2",
+      "upstream_sha256": "12d70a67d6629f04e8cdf363e255c20decd095bee7a5690ca484239a918f9dc2",
+      "source_path": "src/eval/case-workspace.mjs"
+    },
+    ".codex/harness-runtime/src/eval/codex-adapter.mjs": {
+      "installed_sha256": "f4d38b78f899e7f002c5d05413c747d69a19ee33e70c04917c10dce66fef1057",
+      "upstream_sha256": "f4d38b78f899e7f002c5d05413c747d69a19ee33e70c04917c10dce66fef1057",
+      "source_path": "src/eval/codex-adapter.mjs"
+    },
+    ".codex/harness-runtime/src/eval/contracts.mjs": {
+      "installed_sha256": "9b5ad8fd6a9768ca045f3170a22a768433bb2b3fb6ea422e6db9ee242609310b",
+      "upstream_sha256": "9b5ad8fd6a9768ca045f3170a22a768433bb2b3fb6ea422e6db9ee242609310b",
+      "source_path": "src/eval/contracts.mjs"
+    },
+    ".codex/harness-runtime/src/eval/errors.mjs": {
+      "installed_sha256": "14ab80c2f4bcd36ec297540183d2858a60fbcfc0bcf19ae5fa07db08a89465dd",
+      "upstream_sha256": "14ab80c2f4bcd36ec297540183d2858a60fbcfc0bcf19ae5fa07db08a89465dd",
+      "source_path": "src/eval/errors.mjs"
+    },
+    ".codex/harness-runtime/src/eval/graders/hard-gates.mjs": {
+      "installed_sha256": "19360e2aff54eac6bbe255b0091be82c85476da5e955fcd34a7f44a6d8936233",
+      "upstream_sha256": "19360e2aff54eac6bbe255b0091be82c85476da5e955fcd34a7f44a6d8936233",
+      "source_path": "src/eval/graders/hard-gates.mjs"
+    },
+    ".codex/harness-runtime/src/eval/graders/outcome.mjs": {
+      "installed_sha256": "8a1ac994812b09f1b8aa802b6cf6ef66c82bdd534d38d58ff70c18485c0dcb96",
+      "upstream_sha256": "8a1ac994812b09f1b8aa802b6cf6ef66c82bdd534d38d58ff70c18485c0dcb96",
+      "source_path": "src/eval/graders/outcome.mjs"
+    },
+    ".codex/harness-runtime/src/eval/graders/quality.mjs": {
+      "installed_sha256": "0f461a7554290c69e2370043764dd919016f6d72d36d418120b4fd6c32f3340b",
+      "upstream_sha256": "0f461a7554290c69e2370043764dd919016f6d72d36d418120b4fd6c32f3340b",
+      "source_path": "src/eval/graders/quality.mjs"
+    },
+    ".codex/harness-runtime/src/eval/journal.mjs": {
+      "installed_sha256": "bfece72e85c652287b8dfa41f3303d49ac5a29cba400803d60ca0665613c55cf",
+      "upstream_sha256": "bfece72e85c652287b8dfa41f3303d49ac5a29cba400803d60ca0665613c55cf",
+      "source_path": "src/eval/journal.mjs"
+    },
+    ".codex/harness-runtime/src/eval/plan-journal.mjs": {
+      "installed_sha256": "04c03e466ffc0f56f69638042a51d556c41e47e40f4e305d2319c62ce3e26b6e",
+      "upstream_sha256": "04c03e466ffc0f56f69638042a51d556c41e47e40f4e305d2319c62ce3e26b6e",
+      "source_path": "src/eval/plan-journal.mjs"
+    },
+    ".codex/harness-runtime/src/eval/plan-workspace.mjs": {
+      "installed_sha256": "f5bd85e489568e34c4213b140eca306e0e2900836f6b5735df69e6e846676ae2",
+      "upstream_sha256": "f5bd85e489568e34c4213b140eca306e0e2900836f6b5735df69e6e846676ae2",
+      "source_path": "src/eval/plan-workspace.mjs"
+    },
+    ".codex/harness-runtime/src/eval/recording.mjs": {
+      "installed_sha256": "bca090c57dddc422ae477812ad44f195a9b10df12c06867d9ec36a7efd6c2c1b",
+      "upstream_sha256": "bca090c57dddc422ae477812ad44f195a9b10df12c06867d9ec36a7efd6c2c1b",
+      "source_path": "src/eval/recording.mjs"
+    },
+    ".codex/harness-runtime/src/eval/report.mjs": {
+      "installed_sha256": "a6bd9d7da9e3e593ba0eebd17906a1a54b97fe45281e8536672224ad7114ea07",
+      "upstream_sha256": "a6bd9d7da9e3e593ba0eebd17906a1a54b97fe45281e8536672224ad7114ea07",
+      "source_path": "src/eval/report.mjs"
+    },
+    ".codex/harness-runtime/src/eval/runner.mjs": {
+      "installed_sha256": "1684d89f6c14c3ae5925ac2cfd29970085a777007de11709e15b60f387396282",
+      "upstream_sha256": "1684d89f6c14c3ae5925ac2cfd29970085a777007de11709e15b60f387396282",
+      "source_path": "src/eval/runner.mjs"
+    },
+    ".codex/harness-runtime/src/eval/runtime-observer.mjs": {
+      "installed_sha256": "9f33483c26696a23c84fe1d6695b802023c838fe084b0f67ba8f99390507f539",
+      "upstream_sha256": "9f33483c26696a23c84fe1d6695b802023c838fe084b0f67ba8f99390507f539",
+      "source_path": "src/eval/runtime-observer.mjs"
+    },
+    ".codex/harness-runtime/src/eval/util.mjs": {
+      "installed_sha256": "031e26e5bd83fd1dd7030c2462771dfc7378d01227dd47ae928a8da947f5723d",
+      "upstream_sha256": "031e26e5bd83fd1dd7030c2462771dfc7378d01227dd47ae928a8da947f5723d",
+      "source_path": "src/eval/util.mjs"
+    },
+    ".codex/harness-runtime/src/eval/workspace-preflight.mjs": {
+      "installed_sha256": "6e259fa6dd2ed46f41738276b3074befd693c8c61575e8c5abde12b8f04d7b29",
+      "upstream_sha256": "6e259fa6dd2ed46f41738276b3074befd693c8c61575e8c5abde12b8f04d7b29",
+      "source_path": "src/eval/workspace-preflight.mjs"
+    },
+    ".codex/harness-runtime/src/eval/workspace.mjs": {
+      "installed_sha256": "cb85983c8665b0e69e983255333f622a9f431647f55e16e1baec85b8e7765c76",
+      "upstream_sha256": "cb85983c8665b0e69e983255333f622a9f431647f55e16e1baec85b8e7765c76",
+      "source_path": "src/eval/workspace.mjs"
+    },
+    ".codex/harness-runtime/src/eval/yaml.mjs": {
+      "installed_sha256": "fb640bc00bc4effe7586d6f6b1a555ecdb410524f6204279164d42f359b8fabf",
+      "upstream_sha256": "fb640bc00bc4effe7586d6f6b1a555ecdb410524f6204279164d42f359b8fabf",
+      "source_path": "src/eval/yaml.mjs"
+    },
+    ".codex/harness-runtime/src/gates/index.mjs": {
+      "installed_sha256": "883c54c3c81871bcd5005421679999aed10f92e0efcd53f8c588786e1bbf0108",
+      "upstream_sha256": "883c54c3c81871bcd5005421679999aed10f92e0efcd53f8c588786e1bbf0108",
+      "source_path": "src/gates/index.mjs"
+    },
+    ".codex/harness-runtime/src/gates/lifecycle.mjs": {
+      "installed_sha256": "d9be3a06599f3292baf3fb872721a39e28fc93204cb8125afc7471d945b6ac76",
+      "upstream_sha256": "d9be3a06599f3292baf3fb872721a39e28fc93204cb8125afc7471d945b6ac76",
+      "source_path": "src/gates/lifecycle.mjs"
+    },
+    ".codex/harness-runtime/src/gates/native-permission.mjs": {
+      "installed_sha256": "76d1c937a9c62fbebb88ad3497128e94d1b1f94f57e8bf9e9a77753d18581667",
+      "upstream_sha256": "76d1c937a9c62fbebb88ad3497128e94d1b1f94f57e8bf9e9a77753d18581667",
+      "source_path": "src/gates/native-permission.mjs"
+    },
+    ".codex/harness-runtime/src/gates/plans-index.mjs": {
+      "installed_sha256": "77c3230c0a9205c4775978a0558f0c0e0b7c7841b953adfc45fedf5048f08d67",
+      "upstream_sha256": "77c3230c0a9205c4775978a0558f0c0e0b7c7841b953adfc45fedf5048f08d67",
+      "source_path": "src/gates/plans-index.mjs"
+    },
+    ".codex/harness-runtime/src/installer/index.mjs": {
+      "installed_sha256": "bcb01ac81406cb64f15af9c9d6bf0bdbd4f10f01cda7f2fd934945131ce42eec",
+      "upstream_sha256": "bcb01ac81406cb64f15af9c9d6bf0bdbd4f10f01cda7f2fd934945131ce42eec",
+      "source_path": "src/installer/index.mjs"
+    },
+    ".codex/harness-runtime/src/installer/local-exclude.mjs": {
+      "installed_sha256": "876afe0c579df2e407ca15938d1e24cab3adbfb2d80cf2a44804d22ae9110981",
+      "upstream_sha256": "876afe0c579df2e407ca15938d1e24cab3adbfb2d80cf2a44804d22ae9110981",
+      "source_path": "src/installer/local-exclude.mjs"
+    },
+    ".codex/harness-runtime/src/installer/lock.mjs": {
+      "installed_sha256": "cce4157bf3323cec80abee4c9e6128602eb4e312fffcbd73d3e32d03d426da8b",
+      "upstream_sha256": "cce4157bf3323cec80abee4c9e6128602eb4e312fffcbd73d3e32d03d426da8b",
+      "source_path": "src/installer/lock.mjs"
+    },
+    ".codex/harness-runtime/src/installer/orchestrator-hook.mjs": {
+      "installed_sha256": "a785c386d46194016e151051b6715a1660e28829d063e1cc11e4ab765ed39474",
+      "upstream_sha256": "a785c386d46194016e151051b6715a1660e28829d063e1cc11e4ab765ed39474",
+      "source_path": "src/installer/orchestrator-hook.mjs"
+    },
+    ".codex/harness-runtime/src/installer/source-checkout.mjs": {
+      "installed_sha256": "efb5f952ec9cf908a5aca4eb02405b59623bf56519d7b37f19dd725f8263e1b6",
+      "upstream_sha256": "efb5f952ec9cf908a5aca4eb02405b59623bf56519d7b37f19dd725f8263e1b6",
+      "source_path": "src/installer/source-checkout.mjs"
+    },
+    ".codex/harness-runtime/src/installer/update.mjs": {
+      "installed_sha256": "946f802316a63d9c6b983a3f6130520be0384b47b9424cd0e859c37a867f98d8",
+      "upstream_sha256": "946f802316a63d9c6b983a3f6130520be0384b47b9424cd0e859c37a867f98d8",
+      "source_path": "src/installer/update.mjs"
+    },
+    ".codex/harness-runtime/src/installer/worktree-runtime.mjs": {
+      "installed_sha256": "b31f2e8120836308cd9b7db60450e22292436e4386fb65600bc5ce0b1f14cb06",
+      "upstream_sha256": "b31f2e8120836308cd9b7db60450e22292436e4386fb65600bc5ce0b1f14cb06",
+      "source_path": "src/installer/worktree-runtime.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/evidence.mjs": {
+      "installed_sha256": "885280c3a63b2624420050d3f12956eab48a2b93a8f1f6061295db67b5e6ad0d",
+      "upstream_sha256": "885280c3a63b2624420050d3f12956eab48a2b93a8f1f6061295db67b5e6ad0d",
+      "source_path": "src/knowledge/evidence.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/merge.mjs": {
+      "installed_sha256": "b99df979a8e96bb0f37a91ce3cb4332c27b1c2bb22f14bcf66b9e430061218a0",
+      "upstream_sha256": "b99df979a8e96bb0f37a91ce3cb4332c27b1c2bb22f14bcf66b9e430061218a0",
+      "source_path": "src/knowledge/merge.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/model.mjs": {
+      "installed_sha256": "fa6c0d424e1cf67f71fc386fd0249b390cf18b27bfb8e341ab8ca70404ac011b",
+      "upstream_sha256": "fa6c0d424e1cf67f71fc386fd0249b390cf18b27bfb8e341ab8ca70404ac011b",
+      "source_path": "src/knowledge/model.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/registry.mjs": {
+      "installed_sha256": "ac2ce972e64a4b309cad3adc642a371f915bd3ec88ea7e4c19840145a1bd57ef",
+      "upstream_sha256": "ac2ce972e64a4b309cad3adc642a371f915bd3ec88ea7e4c19840145a1bd57ef",
+      "source_path": "src/knowledge/registry.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/research.mjs": {
+      "installed_sha256": "d72ac138b52e68cba6c523165b8046662b2769e0c4c84cb41f800f8bb5406b1b",
+      "upstream_sha256": "d72ac138b52e68cba6c523165b8046662b2769e0c4c84cb41f800f8bb5406b1b",
+      "source_path": "src/knowledge/research.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/runtime-evidence.mjs": {
+      "installed_sha256": "af65007b57f1dbe0f995e0f1aba71a1bfa2b9ef5d7297ebe076e674cedb3c03d",
+      "upstream_sha256": "af65007b57f1dbe0f995e0f1aba71a1bfa2b9ef5d7297ebe076e674cedb3c03d",
+      "source_path": "src/knowledge/runtime-evidence.mjs"
+    },
+    ".codex/harness-runtime/src/knowledge/validation.mjs": {
+      "installed_sha256": "53b9e732e14c71937f0baba28c1ef294320ef7e6f2aedacd5780db4848d6ef49",
+      "upstream_sha256": "53b9e732e14c71937f0baba28c1ef294320ef7e6f2aedacd5780db4848d6ef49",
+      "source_path": "src/knowledge/validation.mjs"
+    },
+    ".codex/harness-runtime/src/observability/diagnostic-logs.mjs": {
+      "installed_sha256": "d3e6f2856ac9eadb64c9af1b3713bb3ddef4e85ab3d57a2852ce4fc809aba204",
+      "upstream_sha256": "d3e6f2856ac9eadb64c9af1b3713bb3ddef4e85ab3d57a2852ce4fc809aba204",
+      "source_path": "src/observability/diagnostic-logs.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/authoring.mjs": {
+      "installed_sha256": "f3680c50ca3d334d32ad094e92212e4496e57fa2a00198968230754f425b6e08",
+      "upstream_sha256": "f3680c50ca3d334d32ad094e92212e4496e57fa2a00198968230754f425b6e08",
+      "source_path": "src/tracker/authoring.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/contracts.mjs": {
+      "installed_sha256": "edfa8fa95f27bdadf766fdcdecb72834612b782329b500518ddea16af387ec87",
+      "upstream_sha256": "edfa8fa95f27bdadf766fdcdecb72834612b782329b500518ddea16af387ec87",
+      "source_path": "src/tracker/contracts.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/helpers.mjs": {
+      "installed_sha256": "f5264737734f000d1e0457cc9d3667fba655e707bcfbf28cc08b8cb2f548d478",
+      "upstream_sha256": "f5264737734f000d1e0457cc9d3667fba655e707bcfbf28cc08b8cb2f548d478",
+      "source_path": "src/tracker/helpers.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/index.mjs": {
+      "installed_sha256": "33a6aff0dd42fa1e4a307d6e209b0776d1160606372d94efc0daa7af2006e90a",
+      "upstream_sha256": "33a6aff0dd42fa1e4a307d6e209b0776d1160606372d94efc0daa7af2006e90a",
+      "source_path": "src/tracker/index.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/lifecycle.mjs": {
+      "installed_sha256": "9af2dd581c78510acb16e01549a6c09831f8c47993daef0ce7e928d4e88571cf",
+      "upstream_sha256": "9af2dd581c78510acb16e01549a6c09831f8c47993daef0ce7e928d4e88571cf",
+      "source_path": "src/tracker/lifecycle.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/render.mjs": {
+      "installed_sha256": "94e7d5349f845f1242a10eb9c2a63d7709b2c80829fc2b9611e0563311c4b0e4",
+      "upstream_sha256": "94e7d5349f845f1242a10eb9c2a63d7709b2c80829fc2b9611e0563311c4b0e4",
+      "source_path": "src/tracker/render.mjs"
+    },
+    ".codex/harness-runtime/src/tracker/source.mjs": {
+      "installed_sha256": "a0d32cae62e1dba9e2f5870a0a3c266dda24a09fe0071787a4c34a1c2088180f",
+      "upstream_sha256": "a0d32cae62e1dba9e2f5870a0a3c266dda24a09fe0071787a4c34a1c2088180f",
+      "source_path": "src/tracker/source.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/completion.mjs": {
+      "installed_sha256": "fb12849639952d8f8a4f4d41e31b9c320b3d3cbec90e3abc2ffcbb36c8c179fe",
+      "upstream_sha256": "fb12849639952d8f8a4f4d41e31b9c320b3d3cbec90e3abc2ffcbb36c8c179fe",
+      "source_path": "src/workflow/completion.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/composer-workspace.mjs": {
+      "installed_sha256": "71f24923cdee34b89c1ce6e6620d611fdb9c9efbbec5a31b063b2c35665e22b5",
+      "upstream_sha256": "71f24923cdee34b89c1ce6e6620d611fdb9c9efbbec5a31b063b2c35665e22b5",
+      "source_path": "src/workflow/composer-workspace.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/execution-state.mjs": {
+      "installed_sha256": "d2a128cafb3869ac197f82476b438576ce1c2e0d69f096e6d7e2b2747417aa0b",
+      "upstream_sha256": "d2a128cafb3869ac197f82476b438576ce1c2e0d69f096e6d7e2b2747417aa0b",
+      "source_path": "src/workflow/execution-state.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/execution.mjs": {
+      "installed_sha256": "29db39c3983c751c4375a8d3829230dc102d1d4800e03af16f3fc86c9c9e1dfb",
+      "upstream_sha256": "29db39c3983c751c4375a8d3829230dc102d1d4800e03af16f3fc86c9c9e1dfb",
+      "source_path": "src/workflow/execution.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/index.mjs": {
+      "installed_sha256": "af0ac688dea987552bf2d319a90f320f980541d67c19d5a93f176c5a8fdc1818",
+      "upstream_sha256": "af0ac688dea987552bf2d319a90f320f980541d67c19d5a93f176c5a8fdc1818",
+      "source_path": "src/workflow/index.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/loader.mjs": {
+      "installed_sha256": "7b6d1264910172a48503525ff5b7d8546462dac24e97b23bbb7eacfdedbfc8d9",
+      "upstream_sha256": "7b6d1264910172a48503525ff5b7d8546462dac24e97b23bbb7eacfdedbfc8d9",
+      "source_path": "src/workflow/loader.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/plan-review.mjs": {
+      "installed_sha256": "fcabb47584b40739b163b293f19d49e7de91f810006dea11f9fc4098d06283f9",
+      "upstream_sha256": "fcabb47584b40739b163b293f19d49e7de91f810006dea11f9fc4098d06283f9",
+      "source_path": "src/workflow/plan-review.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/project-readiness.mjs": {
+      "installed_sha256": "fa399b879dfb8f3bd1efa950816816a1f0d44827137e23c7cac844d356f56d80",
+      "upstream_sha256": "fa399b879dfb8f3bd1efa950816816a1f0d44827137e23c7cac844d356f56d80",
+      "source_path": "src/workflow/project-readiness.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/questions.mjs": {
+      "installed_sha256": "83aaba4c83904e756522103e56ace75e0d565f6e45be68a8d989013c92b73e02",
+      "upstream_sha256": "83aaba4c83904e756522103e56ace75e0d565f6e45be68a8d989013c92b73e02",
+      "source_path": "src/workflow/questions.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/review-attempts.mjs": {
+      "installed_sha256": "82861a5d7f5f2a1fb0d97daea58ed47acff010628236c069c1bb894d8b37ecc2",
+      "upstream_sha256": "82861a5d7f5f2a1fb0d97daea58ed47acff010628236c069c1bb894d8b37ecc2",
+      "source_path": "src/workflow/review-attempts.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/review-delta.mjs": {
+      "installed_sha256": "cf1ba7413d5f23409b3e9fc7cade9436637952a08af5dd29be410817e4bec492",
+      "upstream_sha256": "cf1ba7413d5f23409b3e9fc7cade9436637952a08af5dd29be410817e4bec492",
+      "source_path": "src/workflow/review-delta.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/session-output.mjs": {
+      "installed_sha256": "5e5e80bb78c6611b764d2e1cd1cf02fcfffcbf65f91ad0f2a5f3df8b13ca36a3",
+      "upstream_sha256": "5e5e80bb78c6611b764d2e1cd1cf02fcfffcbf65f91ad0f2a5f3df8b13ca36a3",
+      "source_path": "src/workflow/session-output.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/skill-execution.mjs": {
+      "installed_sha256": "a483a6efee7e78b5c84255af255ecf8838838b8601210bddadf431e927b987e1",
+      "upstream_sha256": "a483a6efee7e78b5c84255af255ecf8838838b8601210bddadf431e927b987e1",
+      "source_path": "src/workflow/skill-execution.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/spec-review.mjs": {
+      "installed_sha256": "dff386f94f82ae68ce8af956c85e391dd4bafc53a4278c9006623084ad7bd3f8",
+      "upstream_sha256": "dff386f94f82ae68ce8af956c85e391dd4bafc53a4278c9006623084ad7bd3f8",
+      "source_path": "src/workflow/spec-review.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/stage-gates.mjs": {
+      "installed_sha256": "cc198fde8b8420e168c550ed0d4a32c5ae84a5f22bf144681f422cb261c81389",
+      "upstream_sha256": "cc198fde8b8420e168c550ed0d4a32c5ae84a5f22bf144681f422cb261c81389",
+      "source_path": "src/workflow/stage-gates.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/stage-input.mjs": {
+      "installed_sha256": "7cf4349dc2e0860c99a765528ea7c2daaecf6e928e8ae28d6cb83bf9df617a4b",
+      "upstream_sha256": "7cf4349dc2e0860c99a765528ea7c2daaecf6e928e8ae28d6cb83bf9df617a4b",
+      "source_path": "src/workflow/stage-input.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/startup-state.mjs": {
+      "installed_sha256": "bdae02c97836fc3c7dd1a490e2d437d2efdb2a3221b7deff768610f55f588796",
+      "upstream_sha256": "bdae02c97836fc3c7dd1a490e2d437d2efdb2a3221b7deff768610f55f588796",
+      "source_path": "src/workflow/startup-state.mjs"
+    },
+    ".codex/harness-runtime/src/workflow/worktrees.mjs": {
+      "installed_sha256": "a5fa2ccac03324ded6b097869d8b40ad599cfae3e7bd92dbcce28a7bc93cbee1",
+      "upstream_sha256": "a5fa2ccac03324ded6b097869d8b40ad599cfae3e7bd92dbcce28a7bc93cbee1",
+      "source_path": "src/workflow/worktrees.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/checkpoint.mjs": {
+      "installed_sha256": "1bbbb900527789e39b2b9da0b92892cf9882b5c5523fa882dd36acb08564d084",
+      "upstream_sha256": "1bbbb900527789e39b2b9da0b92892cf9882b5c5523fa882dd36acb08564d084",
+      "source_path": "src/wrapper/checkpoint.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/conflict.mjs": {
+      "installed_sha256": "a1431b1223db9569342d4f6134c3936d92edfaab584d2631fcce4c3892e1eaf3",
+      "upstream_sha256": "a1431b1223db9569342d4f6134c3936d92edfaab584d2631fcce4c3892e1eaf3",
+      "source_path": "src/wrapper/conflict.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/context-policy.mjs": {
+      "installed_sha256": "aee2a18e58eae264b8ba194bc5d11f9b2aa3f3a5ec0682f693249fd4a4259b8e",
+      "upstream_sha256": "aee2a18e58eae264b8ba194bc5d11f9b2aa3f3a5ec0682f693249fd4a4259b8e",
+      "source_path": "src/wrapper/context-policy.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/dispatch.mjs": {
+      "installed_sha256": "6eb94e185f3e45ff0588b7d5729c547fbd0df5a4b0ffa34be295a444ed01f5c1",
+      "upstream_sha256": "6eb94e185f3e45ff0588b7d5729c547fbd0df5a4b0ffa34be295a444ed01f5c1",
+      "source_path": "src/wrapper/dispatch.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/index.mjs": {
+      "installed_sha256": "906049474c7efc5c54feb58f54347b217f237eaa7215d957254d0ce020b74cc5",
+      "upstream_sha256": "906049474c7efc5c54feb58f54347b217f237eaa7215d957254d0ce020b74cc5",
+      "source_path": "src/wrapper/index.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/reconciliation.mjs": {
+      "installed_sha256": "ff56e965669df36ce56a71933b044ca9bac98d5d125087ae7b700387f2c329a4",
+      "upstream_sha256": "ff56e965669df36ce56a71933b044ca9bac98d5d125087ae7b700387f2c329a4",
+      "source_path": "src/wrapper/reconciliation.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/repair.mjs": {
+      "installed_sha256": "34ebcf21c4959184931df979c4d9da51824731e3003e1257aee02db39d9c9247",
+      "upstream_sha256": "34ebcf21c4959184931df979c4d9da51824731e3003e1257aee02db39d9c9247",
+      "source_path": "src/wrapper/repair.mjs"
+    },
+    ".codex/harness-runtime/src/wrapper/scheduler.mjs": {
+      "installed_sha256": "0a9ec99beaa7bec98599bdb0557f5ff5db24f1d299b14fc1b892c69389cb70c5",
+      "upstream_sha256": "0a9ec99beaa7bec98599bdb0557f5ff5db24f1d299b14fc1b892c69389cb70c5",
+      "source_path": "src/wrapper/scheduler.mjs"
+    },
+    ".codex/internal-skills/architecture-review/GUIDE.md": {
+      "installed_sha256": "f6a1551d899bfc0936844a67a486976629755f4f58b45a8cd743cbaeb51dbf8d",
+      "upstream_sha256": "f6a1551d899bfc0936844a67a486976629755f4f58b45a8cd743cbaeb51dbf8d",
+      "source_path": ".codex/internal-skills/architecture-review/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/architecture-spec/GUIDE.md": {
+      "installed_sha256": "bcb40489882243ebb24337ee6d83d88200895ad71e51d920b18a5b702efa3141",
+      "upstream_sha256": "bcb40489882243ebb24337ee6d83d88200895ad71e51d920b18a5b702efa3141",
+      "source_path": ".codex/internal-skills/architecture-spec/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/architecture-spec/references/template.md": {
+      "installed_sha256": "7d57b147e47e699a64797e425f7de62ff8c3815c9ac1a8572c40244d441f9fcb",
+      "upstream_sha256": "7d57b147e47e699a64797e425f7de62ff8c3815c9ac1a8572c40244d441f9fcb",
+      "source_path": ".codex/internal-skills/architecture-spec/references/template.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/architecture-spec/references/topics.md": {
+      "installed_sha256": "860751da38e721f3258a601b2447f54c4aeafbf3ccc324babbd2a599eb28a8d4",
+      "upstream_sha256": "860751da38e721f3258a601b2447f54c4aeafbf3ccc324babbd2a599eb28a8d4",
+      "source_path": ".codex/internal-skills/architecture-spec/references/topics.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/code-research/GUIDE.md": {
+      "installed_sha256": "a437b8c0857e08e6e8cc224c3e0dd666decdbf404ac255d8e3e35dc247208a09",
+      "upstream_sha256": "a437b8c0857e08e6e8cc224c3e0dd666decdbf404ac255d8e3e35dc247208a09",
+      "source_path": ".codex/internal-skills/code-research/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/codebase-design/GUIDE.md": {
+      "installed_sha256": "edfe0a24db5390927d8f450415eb075b6148c4380ae5aeb2b4ab98965c2c2905",
+      "upstream_sha256": "edfe0a24db5390927d8f450415eb075b6148c4380ae5aeb2b4ab98965c2c2905",
+      "source_path": ".codex/internal-skills/codebase-design/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/codebase-design/references/effective-java-notes.md": {
+      "installed_sha256": "c3d0193eb33a61501dd8f5701d657c9c43637a8b4a502a52a658e90c744ac13a",
+      "upstream_sha256": "c3d0193eb33a61501dd8f5701d657c9c43637a8b4a502a52a658e90c744ac13a",
+      "source_path": ".codex/internal-skills/codebase-design/references/effective-java-notes.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/ddd-design/GUIDE.md": {
+      "installed_sha256": "c36ab706e080bea486f052166ac0b75a4ae24dd11457d6a4d0a6185548a392bb",
+      "upstream_sha256": "c36ab706e080bea486f052166ac0b75a4ae24dd11457d6a4d0a6185548a392bb",
+      "source_path": ".codex/internal-skills/ddd-design/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/ddd-design/references/model-continuity.md": {
+      "installed_sha256": "e7a1f52494ac112ca14a031a80609af8a8aab2d23522ddfa096c7fd412d28368",
+      "upstream_sha256": "e7a1f52494ac112ca14a031a80609af8a8aab2d23522ddfa096c7fd412d28368",
+      "source_path": ".codex/internal-skills/ddd-design/references/model-continuity.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/domain-modeling/GUIDE.md": {
+      "installed_sha256": "89a36a176328a18620aa15a9b78c8c88e73dc5fe2766c106480e1691eef0cee2",
+      "upstream_sha256": "89a36a176328a18620aa15a9b78c8c88e73dc5fe2766c106480e1691eef0cee2",
+      "source_path": ".codex/internal-skills/domain-modeling/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/domain-modeling/references/language-lifecycle.md": {
+      "installed_sha256": "0166a8f50abcd43dec49a5d062f0f1bce1e4d3866bb63959daaa27e0210b57a8",
+      "upstream_sha256": "0166a8f50abcd43dec49a5d062f0f1bce1e4d3866bb63959daaa27e0210b57a8",
+      "source_path": ".codex/internal-skills/domain-modeling/references/language-lifecycle.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/event-storming/GUIDE.md": {
+      "installed_sha256": "3c86ad2457f123c7cdd0abedfb9de2c62b92c63fea23bd461b58353c4d7298fd",
+      "upstream_sha256": "3c86ad2457f123c7cdd0abedfb9de2c62b92c63fea23bd461b58353c4d7298fd",
+      "source_path": ".codex/internal-skills/event-storming/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/frontend-figma/GUIDE.md": {
+      "installed_sha256": "24aa26b829e778fedb1df26966788322e009716cfbd63f72f69161c9011734f7",
+      "upstream_sha256": "24aa26b829e778fedb1df26966788322e009716cfbd63f72f69161c9011734f7",
+      "source_path": ".codex/internal-skills/frontend-figma/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/frontend-implement/GUIDE.md": {
+      "installed_sha256": "47d1690be009bfa8672770ed8b9b1256b5fcc3078785b0e009846c685bad144e",
+      "upstream_sha256": "47d1690be009bfa8672770ed8b9b1256b5fcc3078785b0e009846c685bad144e",
+      "source_path": ".codex/internal-skills/frontend-implement/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/frontend-visual-review/GUIDE.md": {
+      "installed_sha256": "bff85f4c6df9dfba9ba29deb4f3b8c939f10d8e1149348349669eb0a5a89609d",
+      "upstream_sha256": "bff85f4c6df9dfba9ba29deb4f3b8c939f10d8e1149348349669eb0a5a89609d",
+      "source_path": ".codex/internal-skills/frontend-visual-review/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/grill-with-docs/GUIDE.md": {
+      "installed_sha256": "8f2ccfe37395dd3564351ce952d09d27748869f7fd01b001ff8c1e37b0a8343e",
+      "upstream_sha256": "8f2ccfe37395dd3564351ce952d09d27748869f7fd01b001ff8c1e37b0a8343e",
+      "source_path": ".codex/internal-skills/grill-with-docs/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/grill-with-docs/references/how-to-grill.md": {
+      "installed_sha256": "a872e331d2d61e4b7d5977f56eb81effac5eb2cedf6e5732210804f7965d3ea5",
+      "upstream_sha256": "a872e331d2d61e4b7d5977f56eb81effac5eb2cedf6e5732210804f7965d3ea5",
+      "source_path": ".codex/internal-skills/grill-with-docs/references/how-to-grill.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/implement/GUIDE.md": {
+      "installed_sha256": "b2e3b9ba64b95a8a9b5bad425bef3712ff0fcd7ef29ea393beb783cf93aa104a",
+      "upstream_sha256": "b2e3b9ba64b95a8a9b5bad425bef3712ff0fcd7ef29ea393beb783cf93aa104a",
+      "source_path": ".codex/internal-skills/implement/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/implementation-guidance/GUIDE.md": {
+      "installed_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
+      "upstream_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
+      "source_path": ".codex/internal-skills/implementation-guidance/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/implementation-guidance/references/template.md": {
+      "installed_sha256": "84efa5ccf94c0823f33cf8503fb1f77062b8f173ae7e0aacebfcd1b048313efe",
+      "upstream_sha256": "84efa5ccf94c0823f33cf8503fb1f77062b8f173ae7e0aacebfcd1b048313efe",
+      "source_path": ".codex/internal-skills/implementation-guidance/references/template.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/plan-review/GUIDE.md": {
+      "installed_sha256": "befda9a7d57c8cf18a2e0e987eec2ce647b732f617c2504a3e81a298ef7b576e",
+      "upstream_sha256": "befda9a7d57c8cf18a2e0e987eec2ce647b732f617c2504a3e81a298ef7b576e",
+      "source_path": ".codex/internal-skills/plan-review/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/plantuml-diagrams/GUIDE.md": {
+      "installed_sha256": "b2fbb428b1ef5faf86f6b4d9262b50336ed387eedd2cdf61127bc3c752513397",
+      "upstream_sha256": "b2fbb428b1ef5faf86f6b4d9262b50336ed387eedd2cdf61127bc3c752513397",
+      "source_path": ".codex/internal-skills/plantuml-diagrams/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/product-spec/GUIDE.md": {
+      "installed_sha256": "128bf10caa70a3c58248845884aa13fdc76dcd3669dfc80fca3831d6fec8b138",
+      "upstream_sha256": "128bf10caa70a3c58248845884aa13fdc76dcd3669dfc80fca3831d6fec8b138",
+      "source_path": ".codex/internal-skills/product-spec/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/product-spec/references/template.md": {
+      "installed_sha256": "cfe0e7fd3c1d239aca42182e1ef6ea5927ff474d19a6e35f209f62094a523a8e",
+      "upstream_sha256": "cfe0e7fd3c1d239aca42182e1ef6ea5927ff474d19a6e35f209f62094a523a8e",
+      "source_path": ".codex/internal-skills/product-spec/references/template.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/product-spec/references/topics.md": {
+      "installed_sha256": "cb81a41267b800b5808794edf7610085cef182073cdcc82d7a99eca51d555e48",
+      "upstream_sha256": "cb81a41267b800b5808794edf7610085cef182073cdcc82d7a99eca51d555e48",
+      "source_path": ".codex/internal-skills/product-spec/references/topics.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/review-coordination/GUIDE.md": {
+      "installed_sha256": "dc5816b7d906c508ea5872c845e3e7b563448ecf5865ee49cd662120a9496283",
+      "upstream_sha256": "dc5816b7d906c508ea5872c845e3e7b563448ecf5865ee49cd662120a9496283",
+      "source_path": ".codex/internal-skills/review-coordination/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/session-worktree/GUIDE.md": {
+      "installed_sha256": "b3adfb773555e1ed3744b0b497c8d73f297d066de6c3ee8619e868562d1d7155",
+      "upstream_sha256": "b3adfb773555e1ed3744b0b497c8d73f297d066de6c3ee8619e868562d1d7155",
+      "source_path": ".codex/internal-skills/session-worktree/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/session-worktree/references/parallel.md": {
+      "installed_sha256": "318968058b70d99fc02b2a08ae7d6d089bc7ffd7147106a13c91eb2bb6e21806",
+      "upstream_sha256": "318968058b70d99fc02b2a08ae7d6d089bc7ffd7147106a13c91eb2bb6e21806",
+      "source_path": ".codex/internal-skills/session-worktree/references/parallel.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/session-worktree/references/sequential.md": {
+      "installed_sha256": "2dc2fc379e00d0193359f3d3c5ecea650c201187f066d5b58c091ad6275df1ad",
+      "upstream_sha256": "2dc2fc379e00d0193359f3d3c5ecea650c201187f066d5b58c091ad6275df1ad",
+      "source_path": ".codex/internal-skills/session-worktree/references/sequential.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/session-worktree/references/worktree-cli.md": {
+      "installed_sha256": "b0b43f76f78ef3e32487c01d6ba8a90b47e7cf2fa68172e9e98d59bd96b376cc",
+      "upstream_sha256": "b0b43f76f78ef3e32487c01d6ba8a90b47e7cf2fa68172e9e98d59bd96b376cc",
+      "source_path": ".codex/internal-skills/session-worktree/references/worktree-cli.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/skill-execution/GUIDE.md": {
+      "installed_sha256": "d916b63fa9b56d5d50b83f1a24c703989f5090020a46f4d5caf01a3b4ff6b400",
+      "upstream_sha256": "d916b63fa9b56d5d50b83f1a24c703989f5090020a46f4d5caf01a3b4ff6b400",
+      "source_path": ".codex/internal-skills/skill-execution/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/skill-execution/bindings.json": {
+      "installed_sha256": "ec6248e7fab642f248c5fe487070bb89d80b21f02c56de77d8a2512bcee213e9",
+      "upstream_sha256": "ec6248e7fab642f248c5fe487070bb89d80b21f02c56de77d8a2512bcee213e9",
+      "source_path": ".codex/internal-skills/skill-execution/bindings.json"
+    },
+    ".codex/internal-skills/skill-execution/schemas/input.schema.json": {
+      "installed_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",
+      "upstream_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",
+      "source_path": ".codex/internal-skills/skill-execution/schemas/input.schema.json"
+    },
+    ".codex/internal-skills/skill-execution/schemas/question.schema.json": {
+      "installed_sha256": "b4e2e4b353f18a52e66fe1c49b4df616a03e804941d3e8c5d10988062e99fe74",
+      "upstream_sha256": "b4e2e4b353f18a52e66fe1c49b4df616a03e804941d3e8c5d10988062e99fe74",
+      "source_path": ".codex/internal-skills/skill-execution/schemas/question.schema.json"
+    },
+    ".codex/internal-skills/skill-execution/schemas/result.schema.json": {
+      "installed_sha256": "5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5",
+      "upstream_sha256": "5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5",
+      "source_path": ".codex/internal-skills/skill-execution/schemas/result.schema.json"
+    },
+    ".codex/internal-skills/skill-execution/schemas/return.schema.json": {
+      "installed_sha256": "46ce5b5b87b9e550ad02c30150b31ec3d0b96b4ccb794d54f3d180d1451fdb1b",
+      "upstream_sha256": "46ce5b5b87b9e550ad02c30150b31ec3d0b96b4ccb794d54f3d180d1451fdb1b",
+      "source_path": ".codex/internal-skills/skill-execution/schemas/return.schema.json"
+    },
+    ".codex/internal-skills/spec-review/GUIDE.md": {
+      "installed_sha256": "736ac989fa249ade9100046111e695a725b4ec1f42c9f7b133a1e94c16eee6de",
+      "upstream_sha256": "736ac989fa249ade9100046111e695a725b4ec1f42c9f7b133a1e94c16eee6de",
+      "source_path": ".codex/internal-skills/spec-review/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/spec-review/references/review-criteria.md": {
+      "installed_sha256": "ffb36cedd3b8393ae7eddb8193dd91045c2016efb4b001cc997edf3994441e34",
+      "upstream_sha256": "ffb36cedd3b8393ae7eddb8193dd91045c2016efb4b001cc997edf3994441e34",
+      "source_path": ".codex/internal-skills/spec-review/references/review-criteria.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/sync-contracts/GUIDE.md": {
+      "installed_sha256": "345f91fcaa808d8eee51101151471bf80c07b2eb87dc787f4f46104faf7d7431",
+      "upstream_sha256": "345f91fcaa808d8eee51101151471bf80c07b2eb87dc787f4f46104faf7d7431",
+      "source_path": ".codex/internal-skills/sync-contracts/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/sync-contracts/references/format.md": {
+      "installed_sha256": "16a057ecb9f82462f861746868a7d7f10bd8ac4c66de78c8634e4259d8f4b327",
+      "upstream_sha256": "16a057ecb9f82462f861746868a7d7f10bd8ac4c66de78c8634e4259d8f4b327",
+      "source_path": ".codex/internal-skills/sync-contracts/references/format.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/testing-guidance/GUIDE.md": {
+      "installed_sha256": "d169645622c832e43a1b8b8ab7a47dad2859d0942dfbee72dab97ebf3cc09100",
+      "upstream_sha256": "d169645622c832e43a1b8b8ab7a47dad2859d0942dfbee72dab97ebf3cc09100",
+      "source_path": ".codex/internal-skills/testing-guidance/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/testing-guidance/references/template.md": {
+      "installed_sha256": "077c48f4a25b5795fabb77bce1f2ff9d7a706352a5185db5764d3ad0bdbca7b6",
+      "upstream_sha256": "077c48f4a25b5795fabb77bce1f2ff9d7a706352a5185db5764d3ad0bdbca7b6",
+      "source_path": ".codex/internal-skills/testing-guidance/references/template.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/workflow-compose/GUIDE.md": {
+      "installed_sha256": "32eb3273f870b8a157b3c6753cdfeba805ebfab5a63ac467713a0a7756bd2b44",
+      "upstream_sha256": "32eb3273f870b8a157b3c6753cdfeba805ebfab5a63ac467713a0a7756bd2b44",
+      "source_path": ".codex/internal-skills/workflow-compose/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/internal-skills/workflow-compose/schemas/workflow.schema.json": {
+      "installed_sha256": "caa9ba69f17a96b24b7c5fc8ab7b28b2fda097f79848ffa810558becfc6fe815",
+      "upstream_sha256": "caa9ba69f17a96b24b7c5fc8ab7b28b2fda097f79848ffa810558becfc6fe815",
+      "source_path": ".codex/internal-skills/workflow-compose/schemas/workflow.schema.json"
+    },
+    ".codex/internal-skills/worktree-create/GUIDE.md": {
+      "installed_sha256": "56f28446fd7926b20ec8e6eadf3e2069a3d585ecb01756197189e2b242347331",
+      "upstream_sha256": "56f28446fd7926b20ec8e6eadf3e2069a3d585ecb01756197189e2b242347331",
+      "source_path": ".codex/internal-skills/worktree-create/GUIDE.md",
+      "source_transform": "project-local-paths-v1"
+    },
+    ".codex/schemas/decision/architecture-decision.schema.yaml": {
+      "installed_sha256": "be18010357259bf2c6600479e191e16420b9435c102bd54f82bb02ba910c9dda",
+      "upstream_sha256": "be18010357259bf2c6600479e191e16420b9435c102bd54f82bb02ba910c9dda",
+      "source_path": ".codex/schemas/decision/architecture-decision.schema.yaml"
+    },
+    ".codex/schemas/decision/material-approval.schema.yaml": {
+      "installed_sha256": "93edeea091d3fddd32ad15799e8682c88fe6fefc69568acfce8b6b0e6cce7d19",
+      "upstream_sha256": "93edeea091d3fddd32ad15799e8682c88fe6fefc69568acfce8b6b0e6cce7d19",
+      "source_path": ".codex/schemas/decision/material-approval.schema.yaml"
+    },
+    ".codex/schemas/decision/review.schema.yaml": {
+      "installed_sha256": "937b760f826238c385a04c9bd4bb47da4b032418c81e5adf02e476e7631760fe",
+      "upstream_sha256": "937b760f826238c385a04c9bd4bb47da4b032418c81e5adf02e476e7631760fe",
+      "source_path": ".codex/schemas/decision/review.schema.yaml"
+    },
+    ".codex/schemas/decision/system-targets.schema.yaml": {
+      "installed_sha256": "89b6ee5f46ffd2ad2bce4def6a52bb82874f8bed2af5e12e55bf350eb759a3ad",
+      "upstream_sha256": "89b6ee5f46ffd2ad2bce4def6a52bb82874f8bed2af5e12e55bf350eb759a3ad",
+      "source_path": ".codex/schemas/decision/system-targets.schema.yaml"
+    },
+    ".codex/schemas/knowledge/claim.schema.yaml": {
+      "installed_sha256": "adc37de4454cddcf5ac0ee541cae5570a9348bff5c5344af10cfbf931ccd285b",
+      "upstream_sha256": "adc37de4454cddcf5ac0ee541cae5570a9348bff5c5344af10cfbf931ccd285b",
+      "source_path": ".codex/schemas/knowledge/claim.schema.yaml"
+    },
+    ".codex/schemas/knowledge/evidence.schema.yaml": {
+      "installed_sha256": "56b4c4741ccec520f5ff2296ac2d748694964afb1b21acfc8001016f2ff3a460",
+      "upstream_sha256": "56b4c4741ccec520f5ff2296ac2d748694964afb1b21acfc8001016f2ff3a460",
+      "source_path": ".codex/schemas/knowledge/evidence.schema.yaml"
+    },
+    ".codex/schemas/knowledge/principle.schema.yaml": {
+      "installed_sha256": "c2201b43ce703feb19b11e7677930e32c19008400ae32e26643c82044159f645",
+      "upstream_sha256": "c2201b43ce703feb19b11e7677930e32c19008400ae32e26643c82044159f645",
+      "source_path": ".codex/schemas/knowledge/principle.schema.yaml"
+    },
+    ".codex/schemas/knowledge/source.schema.yaml": {
+      "installed_sha256": "5bab5f508a88fc9c9bf3ce0eea6b5c3c23c75bda7b584e3a999aad42e0ca1f50",
+      "upstream_sha256": "5bab5f508a88fc9c9bf3ce0eea6b5c3c23c75bda7b584e3a999aad42e0ca1f50",
+      "source_path": ".codex/schemas/knowledge/source.schema.yaml"
+    },
+    ".codex/schemas/tracker/implementation-pr.schema.yaml": {
+      "installed_sha256": "8f3a1252621fb649a6498db25c52fb354b41664ce3fc2b199d979781f5596985",
+      "upstream_sha256": "8f3a1252621fb649a6498db25c52fb354b41664ce3fc2b199d979781f5596985",
+      "source_path": ".codex/schemas/tracker/implementation-pr.schema.yaml"
+    },
+    ".codex/schemas/tracker/plan-set.schema.yaml": {
+      "installed_sha256": "4b2bec9edfce03d116b624507ad684d51c1da8ee9342635e02546acf995ef1b3",
+      "upstream_sha256": "4b2bec9edfce03d116b624507ad684d51c1da8ee9342635e02546acf995ef1b3",
+      "source_path": ".codex/schemas/tracker/plan-set.schema.yaml"
+    },
+    ".codex/schemas/tracker/split-plan.schema.yaml": {
+      "installed_sha256": "0588c6d8f8b54730dd12b17945334eea845e82d4d50c7cd1596f1fa4357e0c43",
+      "upstream_sha256": "0588c6d8f8b54730dd12b17945334eea845e82d4d50c7cd1596f1fa4357e0c43",
+      "source_path": ".codex/schemas/tracker/split-plan.schema.yaml"
+    },
+    ".codex/schemas/workflow.schema.yaml": {
+      "installed_sha256": "1b3b11934db5f7803a6a1c4dfec403a0771a51e0dc5f2ccad8403f7fe6fd1c3b",
+      "upstream_sha256": "1b3b11934db5f7803a6a1c4dfec403a0771a51e0dc5f2ccad8403f7fe6fd1c3b",
+      "source_path": ".codex/schemas/workflow.schema.yaml"
+    },
+    ".codex/scripts/harness-code-review.mjs": {
+      "installed_sha256": "4292847df82561354c21cc8ae5108c919ae97ece841d29835c20c8e9832a3881",
+      "upstream_sha256": "4292847df82561354c21cc8ae5108c919ae97ece841d29835c20c8e9832a3881",
+      "source_path": ".codex/scripts/harness-code-review.mjs"
+    },
+    ".codex/scripts/harness-contracts.mjs": {
+      "installed_sha256": "0bf17fe7c6540c450b485baf3a73c5e846eed0a4f662db454047f4b8eff31be5",
+      "upstream_sha256": "0bf17fe7c6540c450b485baf3a73c5e846eed0a4f662db454047f4b8eff31be5",
+      "source_path": ".codex/scripts/harness-contracts.mjs"
+    },
+    ".codex/scripts/harness-decision-gate.mjs": {
+      "installed_sha256": "79b3c90acb8d8d2a2ff795eda0b1c5c28608da0d18affc4a341bacc82d2f14ed",
+      "upstream_sha256": "79b3c90acb8d8d2a2ff795eda0b1c5c28608da0d18affc4a341bacc82d2f14ed",
+      "source_path": ".codex/scripts/harness-decision-gate.mjs"
+    },
+    ".codex/scripts/harness-exec.mjs": {
+      "installed_sha256": "5054dda18d42c7aaef8440804eef60c45546ae69070695158f5add5ec3306723",
+      "upstream_sha256": "5054dda18d42c7aaef8440804eef60c45546ae69070695158f5add5ec3306723",
+      "source_path": ".codex/scripts/harness-exec.mjs"
+    },
+    ".codex/scripts/harness-knowledge.mjs": {
+      "installed_sha256": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
+      "upstream_sha256": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
+      "source_path": ".codex/scripts/harness-knowledge.mjs"
+    },
+    ".codex/scripts/harness-orchestrator-hook.mjs": {
+      "installed_sha256": "1d1487287acd7de6a556aa95ae83b5b61f5c88c8ffbe87901d82ee81968df490",
+      "upstream_sha256": "1d1487287acd7de6a556aa95ae83b5b61f5c88c8ffbe87901d82ee81968df490",
+      "source_path": ".codex/scripts/harness-orchestrator-hook.mjs"
+    },
+    ".codex/scripts/harness-plan-review.mjs": {
+      "installed_sha256": "786cb581ef4fa66628f60df6c2f31c4e26ad3133530c9a85b4aed7c771819d4a",
+      "upstream_sha256": "786cb581ef4fa66628f60df6c2f31c4e26ad3133530c9a85b4aed7c771819d4a",
+      "source_path": ".codex/scripts/harness-plan-review.mjs"
+    },
+    ".codex/scripts/harness-review-status.mjs": {
+      "installed_sha256": "1273bd2081061875d5d924c8ed15e8370c82d4f76f4d1786751d8a94f5897ea4",
+      "upstream_sha256": "1273bd2081061875d5d924c8ed15e8370c82d4f76f4d1786751d8a94f5897ea4",
+      "source_path": ".codex/scripts/harness-review-status.mjs"
+    },
+    ".codex/scripts/harness-session-output.mjs": {
+      "installed_sha256": "0e41ab7d5d2453731e77a7dcc2a91375810cc4e61eed6abec3f7a6f060de911c",
+      "upstream_sha256": "0e41ab7d5d2453731e77a7dcc2a91375810cc4e61eed6abec3f7a6f060de911c",
+      "source_path": ".codex/scripts/harness-session-output.mjs"
+    },
+    ".codex/scripts/harness-setup.mjs": {
+      "installed_sha256": "3f113c4020031bf7a96b095a6d70e0b52ecacb56321a4027e9fbfefa8dcc0eaa",
+      "upstream_sha256": "3f113c4020031bf7a96b095a6d70e0b52ecacb56321a4027e9fbfefa8dcc0eaa",
+      "source_path": ".codex/scripts/harness-setup.mjs"
+    },
+    ".codex/scripts/harness-skill-exec.mjs": {
+      "installed_sha256": "a583306cd41b72ea07bfc210b07adb583b2d47906e8bcc4d3c8907b7fac36a87",
+      "upstream_sha256": "a583306cd41b72ea07bfc210b07adb583b2d47906e8bcc4d3c8907b7fac36a87",
+      "source_path": ".codex/scripts/harness-skill-exec.mjs"
+    },
+    ".codex/scripts/harness-skill-execution.mjs": {
+      "installed_sha256": "92b4d48deeb8f72b472c7d61b65f6bba2f7bd1af58916eaf4f35bce60dd1f7e7",
+      "upstream_sha256": "92b4d48deeb8f72b472c7d61b65f6bba2f7bd1af58916eaf4f35bce60dd1f7e7",
+      "source_path": ".codex/scripts/harness-skill-execution.mjs"
+    },
+    ".codex/scripts/harness-spec-review.mjs": {
+      "installed_sha256": "c0354d021bc4c5e8138fd08a398b866f5f690def6effd6c74ff16f0b99049135",
+      "upstream_sha256": "c0354d021bc4c5e8138fd08a398b866f5f690def6effd6c74ff16f0b99049135",
+      "source_path": ".codex/scripts/harness-spec-review.mjs"
+    },
+    ".codex/scripts/harness-tracker.mjs": {
+      "installed_sha256": "4407caa61fc25f5f8be1541260b2448be07fc2fda8a9ce0a708bc27acc4e248c",
+      "upstream_sha256": "4407caa61fc25f5f8be1541260b2448be07fc2fda8a9ce0a708bc27acc4e248c",
+      "source_path": ".codex/scripts/harness-tracker.mjs"
+    },
+    ".codex/scripts/harness-victorialogs.mjs": {
+      "installed_sha256": "0e8a637ab38f2e8d36740fc9aa33d67cd1bf8e938917d4d441a452f23a301278",
+      "upstream_sha256": "0e8a637ab38f2e8d36740fc9aa33d67cd1bf8e938917d4d441a452f23a301278",
+      "source_path": ".codex/scripts/harness-victorialogs.mjs"
+    },
+    ".codex/scripts/harness-workflow-complete.mjs": {
+      "installed_sha256": "a9a96c2307412f7954e7381548d450dbd77032365acdedb73037d2ab0ee29cf2",
+      "upstream_sha256": "a9a96c2307412f7954e7381548d450dbd77032365acdedb73037d2ab0ee29cf2",
+      "source_path": ".codex/scripts/harness-workflow-complete.mjs"
+    },
+    ".codex/scripts/harness-workflow-worktree.mjs": {
+      "installed_sha256": "53e350b913b99296a570f64ccc5cd871c9c196783ec6c97045bea21ba3fe2ce8",
+      "upstream_sha256": "53e350b913b99296a570f64ccc5cd871c9c196783ec6c97045bea21ba3fe2ce8",
+      "source_path": ".codex/scripts/harness-workflow-worktree.mjs"
+    },
+    ".codex/scripts/harness-workspace-preflight.mjs": {
+      "installed_sha256": "7c9234ee24207eb004d42eae23e7347cf58696d70bffec131902acfeff8528f9",
+      "upstream_sha256": "7c9234ee24207eb004d42eae23e7347cf58696d70bffec131902acfeff8528f9",
+      "source_path": ".codex/scripts/harness-workspace-preflight.mjs"
+    },
+    ".codex/scripts/plans-index-gate.mjs": {
+      "installed_sha256": "cee208f0971f2380cfcf01fe590d2c7e09876e1a649750c249c95b356a3a589b",
+      "upstream_sha256": "cee208f0971f2380cfcf01fe590d2c7e09876e1a649750c249c95b356a3a589b",
+      "source_path": ".codex/scripts/plans-index-gate.mjs"
+    },
+    ".codex/scripts/workspace-preflight-cli.mjs": {
+      "installed_sha256": "961da1aa4a702ba7164b7a4f7ad7659ac0fdfa41e67380b38dc339db694a91fb",
+      "upstream_sha256": "961da1aa4a702ba7164b7a4f7ad7659ac0fdfa41e67380b38dc339db694a91fb",
+      "source_path": ".codex/scripts/workspace-preflight-cli.mjs"
+    },
+    ".codex/scripts/workspace-preflight-core.mjs": {
+      "installed_sha256": "27d1aff6c71d09225f8fbe5b07c58b73daa5ab50cfb322169f8540ba266a40f3",
+      "upstream_sha256": "27d1aff6c71d09225f8fbe5b07c58b73daa5ab50cfb322169f8540ba266a40f3",
+      "source_path": ".codex/scripts/workspace-preflight-core.mjs"
+    },
+    ".codex/tools/plantuml-bootstrap.mjs": {
+      "installed_sha256": "d3236faa2cbcb0f629b127ab57a360318547c1aec6957a93ec167a85c3602fcf",
+      "upstream_sha256": "d3236faa2cbcb0f629b127ab57a360318547c1aec6957a93ec167a85c3602fcf",
+      "source_path": "bin/plantuml-bootstrap.mjs"
+    },
+    ".codex/tools/plantuml-render.mjs": {
+      "installed_sha256": "9236155e6f5c44fa64c8856671a4c7b46e4a7ce8d09a974a2822ef9f1ecd95a8",
+      "upstream_sha256": "9236155e6f5c44fa64c8856671a4c7b46e4a7ce8d09a974a2822ef9f1ecd95a8",
+      "source_path": "bin/plantuml-render.mjs"
+    },
+    ".codex/workflows/code-review.yaml": {
+      "installed_sha256": "877ea2c60eb3bb5868504d438ecf29059b4f3730b08c97fe474844a636f6f5ff",
+      "upstream_sha256": "877ea2c60eb3bb5868504d438ecf29059b4f3730b08c97fe474844a636f6f5ff",
+      "source_path": ".codex/workflows/code-review.yaml"
+    },
+    ".codex/workflows/frontend-design.yaml": {
+      "installed_sha256": "2a000b6c81fb2d3511b9df72c81cb2a3504aa7383bd17f464048fc952f264102",
+      "upstream_sha256": "2a000b6c81fb2d3511b9df72c81cb2a3504aa7383bd17f464048fc952f264102",
+      "source_path": ".codex/workflows/frontend-design.yaml"
+    },
+    ".codex/workflows/implement-wrapper.yaml": {
+      "installed_sha256": "f671a9bf146095fc88ae45be1b5c2dac8c964d89362956e25104b9b0f61dd85b",
+      "upstream_sha256": "f671a9bf146095fc88ae45be1b5c2dac8c964d89362956e25104b9b0f61dd85b",
+      "source_path": ".codex/workflows/implement-wrapper.yaml"
+    },
+    ".codex/workflows/knowledge-harvest-workflow.yaml": {
+      "installed_sha256": "ef695cc570918df54d2257394b98059276968fadc1a735fa17626a38cb204eb0",
+      "upstream_sha256": "ef695cc570918df54d2257394b98059276968fadc1a735fa17626a38cb204eb0",
+      "source_path": ".codex/workflows/knowledge-harvest-workflow.yaml"
+    },
+    ".codex/workflows/spec-me.yaml": {
+      "installed_sha256": "e76fdf1ef32ca0453fd2dc54b8c2b31c3409de5372862e144a10b6663b103f09",
+      "upstream_sha256": "e76fdf1ef32ca0453fd2dc54b8c2b31c3409de5372862e144a10b6663b103f09",
+      "source_path": ".codex/workflows/spec-me.yaml"
+    },
+    ".codex/workflows/to-ticket.yaml": {
+      "installed_sha256": "8c2c028ed869f6411a83a852f374276113a543bfdbdca5c5f50ca08bc643c9bc",
+      "upstream_sha256": "8c2c028ed869f6411a83a852f374276113a543bfdbdca5c5f50ca08bc643c9bc",
+      "source_path": ".codex/workflows/to-ticket.yaml"
+    },
+    ".github/pull_request_template.md": {
+      "installed_sha256": "4a773c8b13e402f6e7b2c5fe02d78f74cf2dc094045b7952f45b3021eb62f552",
+      "upstream_sha256": "4a773c8b13e402f6e7b2c5fe02d78f74cf2dc094045b7952f45b3021eb62f552",
+      "source_path": ".github/pull_request_template.md"
+    },
+    ".github/workflows/harness-contracts.yml": {
+      "installed_sha256": "b6ee636b31161025aaf26c52d349f873d5b6fb49ac63e4faf154d79648b299c5",
+      "upstream_sha256": "b6ee636b31161025aaf26c52d349f873d5b6fb49ac63e4faf154d79648b299c5",
+      "source_path": ".github/workflows/harness-contracts.yml"
+    },
+    ".harness/contracts.mjs": {
+      "installed_sha256": "5b01e5713b817d99f80819bd0feb1a8802581a91e6ad66e6a2f561d14faac8db",
+      "upstream_sha256": "5b01e5713b817d99f80819bd0feb1a8802581a91e6ad66e6a2f561d14faac8db",
+      "source_path": "src/contracts/contracts.mjs"
+    }
+  }
+}

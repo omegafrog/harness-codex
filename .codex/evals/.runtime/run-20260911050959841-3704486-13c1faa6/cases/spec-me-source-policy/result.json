@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "case_id": "spec-me-source-policy",
+  "workflow": "spec-me",
+  "critical": true,
+  "state": "failed",
+  "reason": "agent_execution_timeout",
+  "passed": false,
+  "execution_result": {
+    "state": "failed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 90032,
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "spec_complete": false,
+      "ambiguity_resolved": false
+    },
+    "missing": [
+      "spec_complete",
+      "ambiguity_resolved"
+    ],
+    "artifact_files": [
+      ".eval-output/specs/496/product-spec.md",
+      ".eval-output/specs/496/ambiguity-resolved.json"
+    ],
+    "evidence": {
+      "spec_complete": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ]
+      },
+      "ambiguity_resolved": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.15,
+    "trajectory_quality": 0.52,
+    "quality": 0.2795,
+    "dimensions": {
+      "requirement_coverage": 0,
+      "ambiguity_resolution": 0,
+      "action_relevance": 1,
+      "unnecessary_backtracking": 1
+    },
+    "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+    "evaluator_snapshot": {
+      "model": "deterministic-v1",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 90032,
+    "tool_calls": 4,
+    "turns": 2,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050959841-3704486-13c1faa6/cases/spec-me-source-policy/recording.jsonl"
+  }
+}

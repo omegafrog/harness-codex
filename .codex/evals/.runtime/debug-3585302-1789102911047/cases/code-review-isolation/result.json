@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "case_id": "code-review-isolation",
+  "workflow": "code-review",
+  "critical": false,
+  "state": "failed",
+  "reason": "agent_execution_failure",
+  "passed": false,
+  "execution_result": {
+    "state": "failed",
+    "exit_code": 1,
+    "signal": null,
+    "duration_ms": 145,
+    "command": [
+      "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+      "evals/fixtures/emit-eval.mjs",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "review_verdict_preserved": false,
+      "reviewer_isolated": false
+    },
+    "missing": [
+      "review_verdict_preserved",
+      "reviewer_isolated"
+    ],
+    "artifact_files": [],
+    "evidence": {
+      "review_verdict_preserved": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/review/verdict.json"
+        ],
+        "observed_files": []
+      },
+      "reviewer_isolated": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/review/contexts.json"
+        ],
+        "observed_files": []
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.15,
+    "trajectory_quality": 0.4,
+    "quality": 0.2375,
+    "dimensions": {
+      "requirement_coverage": 0,
+      "ambiguity_resolution": 1,
+      "action_relevance": 0.6111,
+      "unnecessary_backtracking": 1
+    },
+    "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+    "evaluator_snapshot": {
+      "model": "deterministic-v1",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 145,
+    "tool_calls": 0,
+    "turns": 16,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3585302-1789102911047/cases/code-review-isolation/recording.jsonl"
+  }
+}

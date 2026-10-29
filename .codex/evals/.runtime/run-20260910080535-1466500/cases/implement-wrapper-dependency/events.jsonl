@@ -1,0 +1,2 @@
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":1,"timestamp":"2026-09-10T08:07:15.317Z","type":"case_started","payload":{"case_id":"implement-wrapper-dependency","workflow":"implement-wrapper"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":2,"timestamp":"2026-09-10T08:07:15.335Z","type":"process_started","payload":{"command":["codex","exec","--json"],"cwd":"/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910080535-1466500/cases/implement-wrapper-dependency/workspace"}}

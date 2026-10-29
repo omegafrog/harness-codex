@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "case_id": "spec-me-source-policy",
+  "workflow": "spec-me",
+  "critical": true,
+  "state": "passed",
+  "reason": null,
+  "passed": true,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 69469,
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": true,
+    "results": {
+      "spec_complete": true,
+      "ambiguity_resolved": true
+    },
+    "missing": [],
+    "artifact_files": [
+      ".eval-output/specs/496/product-spec.md",
+      ".eval-output/specs/496/ambiguity-resolved.json"
+    ],
+    "evidence": {
+      "spec_complete": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ]
+      },
+      "ambiguity_resolved": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.88,
+    "trajectory_quality": 0.93,
+    "dimensions": {
+      "requirement_coverage": 0.9,
+      "correctness": 0.86,
+      "ambiguity_resolution": 0.95,
+      "usefulness": 0.82,
+      "relevance": 0.98,
+      "coherence": 0.95,
+      "proportionality": 0.86
+    },
+    "rationale": "Both required artifacts were written successfully, the source-reading hard gate was respected, and the settled list ambiguity was explicitly addressed. The trajectory was concise and avoided forbidden follow-ups, collaboration tools, architecture work, and extra calls. Because the bundle does not include artifact contents, detailed section coverage and semantic correctness cannot be fully verified; usefulness and correctness are therefore slightly discounted.",
+    "quality": 0.8975,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 41743,
+    "latency_ms": 69469,
+    "tool_calls": 1,
+    "turns": 3,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-source-policy/recording.jsonl"
+  }
+}

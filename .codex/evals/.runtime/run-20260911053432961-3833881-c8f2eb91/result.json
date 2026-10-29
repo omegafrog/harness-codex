@@ -1,0 +1,24 @@
+{
+  "state": "failed",
+  "passed": false,
+  "suite_id": "p0",
+  "counts": {
+    "total": 4,
+    "passed": 1,
+    "failed": 3,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": false,
+    "pass_rate": false,
+    "mean_quality": true,
+    "p10_quality": true,
+    "overall": true,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true
+  }
+}

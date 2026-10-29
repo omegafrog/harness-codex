@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`code-review` 스킬을 적용하겠습니다. 지정된 입력을 확인하고, 격리된 리뷰어를 시작할 수 없다는 상태와 판정 부재를 `.eval-output/review/contexts.json`에 기록한 뒤 JSON 파싱을 검증하겠습니다.\n\n`.eval-output/review/contexts.json`을 생성하고 파일 존재와 JSON 파싱을 검증했습니다.\n\n- 기준점: `HEAD` (`df7a5836`)\n- Standards·Spec: 격리 리뷰어 시작 불가, 판정 없음\n- 리뷰 시뮬레이션이나 ID 생성 없이 기록\n- `src/`와 specs 변경 없음"
+}

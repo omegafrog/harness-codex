@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`spec-me`를 적용하되, 요청하신 현재 작업 공간과 두 파일로 범위를 제한하겠습니다. 완료된 작업은 기본 `list`에서 숨기고 `list --all`에서 표시하도록 명세에 기록한 뒤 검증하겠습니다.\n\n지정한 두 파일을 생성하고 내용을 검증했습니다.\n\n- `.eval-output/specs/496/product-spec.md`\n- `.eval-output/specs/496/ambiguity-resolved.json`\n\n완료 작업은 기본 `list`에서 숨기고 `list --all`에서 표시하도록 확정했습니다. Architecture 단계는 시작하지 않았습니다."
+}

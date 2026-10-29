@@ -1,0 +1,3 @@
+{
+  "output": "[eval]:1\nfor\\\n^^^^\nExpected unicode escape\nSyntaxError: Invalid or unexpected token\n    at makeContextifyScript (node:internal/vm:194:14)\n    at compileScript (node:internal/process/execution:388:10)\n    at evalTypeScript (node:internal/process/execution:260:22)\n    at node:internal/main/eval_string:71:3\nNode.js v24.12.0"
+}

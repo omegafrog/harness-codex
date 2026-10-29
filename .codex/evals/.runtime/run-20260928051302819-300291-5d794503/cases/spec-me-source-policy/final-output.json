@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`spec-me` 스킬을 적용하되, 이번 평가에서 명시한 범위에 따라 확정된 Product 요구사항과 모호성 해소 기록만 지정된 두 파일에 작성하겠습니다.\n\n지정된 두 파일에 Product Spec과 모호성 해소 기록을 작성했습니다. 완료 작업은 기본 목록에서 숨기고 `list --all`에서 표시하도록 명시했습니다."
+}

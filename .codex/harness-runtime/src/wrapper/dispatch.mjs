@@ -1,0 +1,627 @@
+import { sessionDirectory, sessionOutputPath } from '../workflow/session-output.mjs';
+import { mkdir } from 'node:fs/promises';
+import { isAbsolute, resolve as resolvePath } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { checkRetirement, LifecycleGateRegistry, runLifecycleHook } from "../gates/lifecycle.mjs";
+import { inspectWorkspace } from "../eval/workspace-preflight.mjs";
+import { ResourceGraph } from "../eval/plan-workspace.mjs";
+import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
+import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
+import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
+import { reconcileCompletion } from "./reconciliation.mjs";
+import { runBoundedReviewRepair, reserveImplementationRepair, assertPlanningReviewSnapshot } from "./repair.mjs";
+import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
+import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
+import { inspectPlanSet, validateCanonicalPlanReference } from "../workflow/plan-review.mjs";
+
+const WORKSPACE_PREFLIGHT_REGISTRY = new LifecycleGateRegistry({
+  hooks: {
+    before_dispatch: ["workspace", "tracker_sync", "project_readiness"],
+    before_handoff: [],
+    before_complete: [],
+    after_merge: [],
+  },
+});
+const execFileAsync = promisify(execFile);
+
+async function captureWorkspaceFingerprint(root) {
+  const [{ stdout: gitRoot }, headResult, { stdout: status }] = await Promise.all([
+    execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: root, encoding: "utf8" }),
+    execFileAsync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root, encoding: "utf8" }).catch((error) => {
+      if (error.code === 128) return { stdout: "" };
+      throw error;
+    }),
+    execFileAsync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }),
+  ]);
+  return { root: resolvePath(gitRoot.trim()), head: headResult.stdout.trim() || null, status: status.replaceAll("\r\n", "\n") };
+}
+
+function required(value, name) {
+  if (!value) throw new TypeError(`${name} is required`);
+  return value;
+}
+
+export function resolveImplementationProfile({ config = null, model = null, reasoningEffort = null } = {}) {
+  const resolvedModel = model || config?.agents?.implementation_model || config?.agents?.default_model || null;
+  const resolvedReasoning = reasoningEffort || config?.agents?.implementation_reasoning_effort || null;
+  return { model: resolvedModel, reasoning_effort: resolvedReasoning };
+}
+
+export function resolveReviewerProfile({ config = null, profile = null } = {}) {
+  const resolvedModel = profile?.model || config?.agents?.implementation_model || config?.agents?.low_performance_model || config?.agents?.default_model || null;
+  const resolvedEffort = profile?.reasoning_effort || config?.agents?.implementation_reasoning_effort || config?.agents?.low_performance_reasoning_effort || null;
+  return { model: resolvedModel, reasoning_effort: resolvedEffort };
+}
+
+/**
+ * Dispatches one fresh implement context. It does not run an agent loop or
+ * interpret workflow stages; the injected spawn adapter owns process/agent
+ * creation.
+ */
+export async function dispatchImplementPlan({
+  plan,
+  planSetId,
+  repository,
+  slotRegistry,
+  spawnImplement,
+  checkpointStore = null,
+  dependencyFacts = {},
+  resourceFacts = {},
+  smartZone = null,
+  workspace = null,
+  model = null,
+  config = null,
+  reasoningEffort = null,
+  fixedPoint = null,
+  plans = null,
+  completedPlanIds = [],
+  fixedGroupBase = null,
+  executionLine = null,
+  worktreeManager = null,
+  workspaceGroupId = null,
+  runId = null,
+  schedulingWave = 0,
+  readGitState = null,
+  readTestState = null,
+  workspaceVerifier = null,
+  implementationProfile = null,
+  trackerPort = null,
+} = {}) {
+  required(plan?.id, "plan.id");
+  required(planSetId, "planSetId");
+  required(repository, "repository");
+  required(slotRegistry, "slotRegistry");
+  required(spawnImplement, "spawnImplement");
+  if (typeof spawnImplement !== "function") throw new TypeError("spawnImplement must be a function");
+  if (!smartZone || typeof smartZone !== "object" || !["dispatch", "before-next-action", "after-action"].includes(smartZone.phase) || !["fits", "handoff-required"].includes(smartZone.state) || typeof smartZone.evidence !== "string" || !smartZone.evidence.trim()) throw new TypeError("A valid Smart Zone assessment is required before dispatch");
+  if (typeof readGitState !== "function" || typeof readTestState !== "function") throw new TypeError("readGitState and readTestState are required");
+  required(checkpointStore, "checkpointStore");
+  required(plans, "plans");
+  const profile = resolveImplementationProfile({ config, model, reasoningEffort });
+  if (!profile.model) throw new TypeError("implementation model is unresolved; run setup before dispatch");
+  const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
+  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || null, schedulingWave });
+  if (!schedule.ready_plans.includes(plan.id)) {
+    const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
+    error.reason = "dependency_not_ready";
+    error.schedule = schedule;
+    throw error;
+  }
+  const parallelGroup = schedule.parallel_groups.find((group) => group.type === "parallel" && group.plan_ids.includes(plan.id));
+  if (!parallelGroup && !workspace && !executionLine) {
+    const error = new Error("Sequential dispatch requires an explicit active session executionLine");
+    error.reason = "execution_line_required";
+    throw error;
+  }
+  const graph = new ResourceGraph(Object.values(schedule.plan_by_id));
+  const runningPlanIds = typeof slotRegistry.runningPlanIds === "function"
+    ? slotRegistry.runningPlanIds()
+    : slotRegistry.activePlanIds().filter((activePlanId) => slotRegistry.get(activePlanId)?.state === "running");
+  for (const activePlanId of runningPlanIds) {
+    if (activePlanId === plan.id) continue;
+    const activePlan = schedule.plan_by_id[activePlanId];
+    if (!activePlan || graph.conflicts(plan.id, activePlanId)) {
+      const error = new Error(`Plan ${plan.id} conflicts with active plan ${activePlanId}`);
+      error.reason = "resource_conflict";
+      error.schedule = schedule;
+      throw error;
+    }
+  }
+  let dispatchWorkspace = workspace;
+  let workspaceAllocated = false;
+  const verifyWorkspace = workspaceVerifier || (typeof worktreeManager?.verify === "function"
+    ? ({ workspace: workspaceHandle, fixedGroupBase: base, planSetId: expectedPlanSetId }) => worktreeManager.verify(workspaceHandle, { fixedGroupBase: base, planSetId: expectedPlanSetId })
+    : null);
+  const stored = await checkpointStore.read();
+  const previous = await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState });
+  let attempt = (previous?.attempt || 0) + 1;
+  let checkpoint = {
+    ...(previous || {}),
+    orchestration_state: "running",
+    attempt,
+    review_fixed_point: fixedPoint || previous?.review_fixed_point || null,
+    smart_zone: smartZone,
+    handoff_reason: null,
+    blocker: null,
+  };
+  if (smartZone.state === "handoff-required") {
+    await checkpointStore.write({ ...checkpoint, orchestration_state: "handoff-required", handoff_reason: "context-threshold", next_action: "start a fresh implement context for the same plan" });
+    attempt += 1;
+    checkpoint = { ...checkpoint, attempt, handoff_reason: "context-threshold", next_action: "continue the same plan in a fresh implement context" };
+  }
+  let slot;
+  try {
+    if (!dispatchWorkspace && worktreeManager) {
+      dispatchWorkspace = await worktreeManager.allocate({
+        planId: plan.id,
+        planSetId,
+        mode: parallelGroup ? "parallel" : "sequential",
+        fixedGroupBase: parallelGroup?.fixed_group_base || null,
+        executionLine: executionLine,
+        groupId: parallelGroup ? parallelGroup.group_id : workspaceGroupId || "execution-line",
+      });
+      workspaceAllocated = true;
+    }
+    if (parallelGroup && workspaceGroupId && workspaceGroupId !== parallelGroup.group_id) {
+      const error = new Error(`Plan ${plan.id} cannot override logical parallel group ${parallelGroup.group_id}`);
+      error.reason = "workspace_group_mismatch";
+      error.schedule = schedule;
+      throw error;
+    }
+    if (parallelGroup && (!dispatchWorkspace || typeof dispatchWorkspace !== "object" || dispatchWorkspace.mode !== "parallel" || dispatchWorkspace.owned !== true || typeof dispatchWorkspace.workspace !== "string" || dispatchWorkspace.baseSha !== parallelGroup.fixed_group_base || dispatchWorkspace.fixedGroupBase !== parallelGroup.fixed_group_base || dispatchWorkspace.groupId !== parallelGroup.group_id || typeof verifyWorkspace !== "function")) {
+      const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
+      error.reason = "workspace_isolation_required";
+      error.schedule = schedule;
+      throw error;
+    }
+    const requestedWorkspaceRoot = (typeof dispatchWorkspace === "string" ? dispatchWorkspace : dispatchWorkspace?.workspace)
+      || executionLine;
+    if (!isAbsolute(requestedWorkspaceRoot)) {
+      const error = new Error("Dispatch workspace root must be an explicit absolute path");
+      error.reason = "workspace_root_required";
+      throw error;
+    }
+    const workspacePreflight = await inspectWorkspace({ workspaceRoot: requestedWorkspaceRoot, cwd: requestedWorkspaceRoot });
+    const workspaceGate = await runLifecycleHook({
+      hook: "before_dispatch",
+      registry: WORKSPACE_PREFLIGHT_REGISTRY,
+      state: { workspace: workspacePreflight, workspace_root: requestedWorkspaceRoot },
+      eventWriter: await checkpointStore.eventWriter(),
+      evidencePath: checkpointStore.paths.events_path,
+    });
+    if (workspaceGate.status !== "pass") {
+      const error = new Error(`Plan ${plan.id} workspace preflight failed: ${workspaceGate.reason}`);
+      error.reason = "workspace_preflight_failed";
+      error.workspace_preflight = workspaceGate;
+      throw error;
+    }
+    const workspaceRoot = resolvePath(workspacePreflight.workspace_root);
+    const planReviewGate = await inspectPlanSet({ root: workspaceRoot, planSetId, phase: "dispatch", planId: plan.id, trackerPort });
+    if (planReviewGate.status !== "pass") {
+      const error = new Error(`Plan ${plan.id} plan-review gate failed: ${planReviewGate.reason}`);
+      error.reason = "plan_review_failed";
+      error.plan_review = planReviewGate;
+      throw error;
+    }
+    const originalWorkspaceFingerprint = workspaceRoot === resolvePath(repository)
+      ? null
+      : await captureWorkspaceFingerprint(repository);
+    if (parallelGroup) {
+      const verification = await verifyWorkspace({ workspace: dispatchWorkspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id, planSetId });
+      if (verification?.valid !== true) {
+        const error = new Error(`Plan ${plan.id} worktree verification failed: ${verification?.reason || "unknown"}`);
+        error.reason = "workspace_isolation_required";
+        error.verification = verification;
+        error.schedule = schedule;
+        throw error;
+      }
+    }
+    const prompt = buildImplementPrompt({
+      repository,
+      workspaceRoot,
+      workspaceBranch: parallelGroup ? null : dispatchWorkspace?.branch || null,
+      workspaceMode: parallelGroup ? "parallel" : "sequential",
+      planSetId,
+      planId: plan.id,
+      planPath: planReviewGate.details.plan_reference,
+      productSpecPath: planReviewGate.details.product_spec_path,
+      architectureSpecPath: planReviewGate.details.architecture_spec_path,
+      planReviewRefs: { ...planReviewGate.details, repository_root: workspaceRoot },
+      dependencyFacts,
+      resourceFacts,
+      smartZone: smartZone.state,
+      checkpointPath: checkpointStore.paths.checkpoint_path,
+    });
+    slot = slotRegistry.acquire(plan.id, { attempt, workspace: dispatchWorkspace });
+    await checkpointStore.write(checkpoint);
+    const session = sessionDirectory(workspaceRoot);
+    const temporaryDirectory = sessionOutputPath(workspaceRoot, "tmp");
+    await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
+    const child = await spawnImplement({
+      agent_type: "implement",
+      plan_id: plan.id,
+      plan_set_id: planSetId,
+      prompt,
+      model: profile.model,
+      reasoning_effort: profile.reasoning_effort,
+      fixed_point: fixedPoint,
+      schedule,
+      fresh_context: true,
+      empty_context: true,
+      context_policy: contextPolicy,
+      attempt,
+      cwd: workspaceRoot,
+      session_directory: session,
+      env: { HARNESS_SESSION_DIR: session, TMPDIR: temporaryDirectory, TMP: temporaryDirectory, TEMP: temporaryDirectory },
+      workspace_root: workspaceRoot,
+      ...(parallelGroup ? {} : { workspace_branch: dispatchWorkspace?.branch || null, workspace: dispatchWorkspace }),
+    });
+    if (child?.context_id) slot.context_id = child.context_id;
+    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, plan_review: { ...planReviewGate.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: dispatchWorkspace?.branch || null, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
+  } catch (error) {
+    let evidencePersisted = false;
+    try {
+      await checkpointStore.write({ ...checkpoint, blocker: { kind: "dispatch", summary: error.message, unblock_condition: "retry with a fresh implement context" }, next_action: "retry dispatch in a fresh implement context", handoff_reason: "retry" });
+      evidencePersisted = true;
+    } finally {
+      if (workspaceAllocated) {
+        const cleanup = await worktreeManager.cleanup(dispatchWorkspace, { evidencePersisted });
+        if (cleanup.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+      }
+      if (slot) slotRegistry.release(slot);
+    }
+    throw error;
+  }
+}
+
+/** Run Standards and Spec reviews in independent fresh contexts. */
+export async function runIndependentReviewers({
+  plan,
+  implementation,
+  spawnReviewer,
+  fixedPoint = null,
+  planSetId = null,
+  repository = null,
+  productSpecPath = null,
+  architectureSpecPath = null,
+  commitList = null,
+  diff = null,
+  config = null,
+  reviewerProfile = null,
+  planReviewRefs = null,
+  trackerPort = null,
+} = {}) {
+  required(plan?.id, "plan.id");
+  if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
+  required(fixedPoint, "fixedPoint");
+  const reviewFixedPoint = fixedPoint;
+  required(implementation?.commit_sha, "implementation.commit_sha");
+  required(repository, "repository");
+  required(planSetId || plan.plan_set_id, "planSetId");
+  const resolvedPlanSetId = planSetId || plan.plan_set_id;
+  if (!Array.isArray(commitList) || commitList.length === 0 || !commitList.includes(reviewFixedPoint) || !commitList.includes(implementation.commit_sha)) throw new TypeError("commitList must include fixedPoint and implementation.commit_sha");
+  if (typeof diff !== "string" || !diff.trim()) throw new TypeError("diff must be a non-empty string");
+  const expectedProductSpecPath = `docs/specs/${resolvedPlanSetId}/product-spec.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${resolvedPlanSetId}/architecture-spec.md`;
+  const approvedProductPath = planReviewRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const safeProjectPath = (path) => typeof path === "string" && path.length > 0 && !path.startsWith("/") && !path.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
+  if (!safeProjectPath(approvedProductPath) || !safeProjectPath(approvedArchitecturePath)) throw new TypeError("Spec paths must be safe workspace-relative paths");
+  if (planReviewRefs?.repository_root && resolvePath(repository) !== resolvePath(planReviewRefs.repository_root)) throw new TypeError("Reviewer repository must be the workspace whose plan review inputs were checked");
+  if (productSpecPath && productSpecPath !== approvedProductPath) throw new TypeError(`productSpecPath must be ${approvedProductPath}`);
+  if (architectureSpecPath && architectureSpecPath !== approvedArchitecturePath) throw new TypeError(`architectureSpecPath must be ${approvedArchitecturePath}`);
+  if (planReviewRefs) validateCanonicalPlanReference(planReviewRefs.canonical_plan);
+  const reviewInput = {
+    repository,
+    fixed_point: reviewFixedPoint,
+    implementation_commit_sha: implementation.commit_sha,
+    commit_list: commitList,
+    diff_range: { from: reviewFixedPoint, to: implementation.commit_sha },
+    diff,
+    product_spec_path: productSpecPath || approvedProductPath,
+    architecture_spec_path: architectureSpecPath || approvedArchitecturePath,
+    completion_kind: 'plan_implemented',
+    ...(planReviewRefs ? { plan_set_id: resolvedPlanSetId, planning_snapshot_sha256: planReviewRefs.review_snapshot_sha256 } : {}),
+    ...(planReviewRefs?.canonical_plan ? { canonical_plan: planReviewRefs.canonical_plan } : {}),
+  };
+  await assertPlanningReviewSnapshot({ root: repository, planId: plan.id, reviewInput, trackerPort });
+  const roles = [
+    { role: "standards", agent_type: "standards_reviewer" },
+    { role: "spec", agent_type: "spec_reviewer" },
+  ];
+  const reviewerModel = resolveReviewerProfile({ config, profile: reviewerProfile });
+  if (!reviewerModel.model || !reviewerModel.reasoning_effort) throw new TypeError("reviewer model or reasoning effort is unresolved; configure both before review");
+  const contextPolicy = resolveContextPolicy({ config, profile: reviewerProfile });
+  const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
+    let report;
+    try {
+      const contextDecision = selectContextPolicy({ policy: contextPolicy, actor: "reviewer" });
+      report = await spawnReviewer({
+        agent_type,
+        model: reviewerModel.model,
+        reasoning_effort: reviewerModel.reasoning_effort,
+        plan_id: plan.id,
+        implementation,
+        ...reviewInput,
+        fresh_context: contextDecision.fresh_context,
+        empty_context: contextDecision.empty_context,
+        context_policy: contextDecision,
+      });
+    } catch (error) {
+      return {
+        role,
+        state: "error",
+        independent: false,
+        fresh_context: false,
+        context_id: null,
+        reviewer_agent_type: agent_type,
+        implementation_commit_sha: null,
+        error: { message: error.message, name: error.name },
+        report: null,
+      };
+    }
+    const provenance = report?.provenance || {};
+    const implementationCommitSha = report?.implementation_commit_sha || provenance.implementation_commit_sha || null;
+    return {
+      role,
+      state: report?.state || report?.verdict || "unknown",
+      independent: report?.independent === true || provenance.independent === true,
+      fresh_context: report?.fresh_context === true || provenance.fresh_context === true,
+      context_id: report?.context_id || provenance.context_id || null,
+      reviewer_agent_type: agent_type,
+      implementation_commit_sha: implementationCommitSha,
+      review_input: reviewInput,
+      report,
+    };
+  }));
+  const contextIds = reports.map((review) => review.context_id).filter(Boolean);
+  const independentContexts = contextIds.length === reports.length && new Set(contextIds).size === reports.length;
+  return reports.map((review) => ({ ...review, independent: review.independent && independentContexts }));
+}
+
+/**
+ * Execute the wrapper lifecycle through injected adapters. Waiting, process
+ * management, and tracker access remain outside this module's workflow logic.
+ */
+export async function executeImplementPlan({
+  captureFixedPoint,
+  waitForImplementation,
+  spawnReviewer,
+  trackerSnapshot = null,
+  pr = {},
+  trackerMode = "github",
+  dependents = [],
+  captureReviewInput = null,
+  ...dispatchOptions
+} = {}) {
+  if (typeof captureFixedPoint !== "function") throw new TypeError("captureFixedPoint is required");
+  if (typeof waitForImplementation !== "function") throw new TypeError("waitForImplementation is required");
+  if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer is required");
+  const checkpoint = await dispatchOptions.checkpointStore.read();
+  const fixedPoint = checkpoint?.review_fixed_point || checkpoint?.lifecycle_evidence?.fixed_point || await captureFixedPoint();
+  if (!fixedPoint) throw new TypeError("captureFixedPoint must return a fixed point");
+  const dispatched = await dispatchImplementPlan({ ...dispatchOptions, fixedPoint, spawnImplement: dispatchOptions.spawnImplement });
+  if (!dispatched.dispatched) return { fixed_point: fixedPoint, dispatch: dispatched, state: dispatched.state };
+  let implementation;
+  let workspaceCleanupPromise = null;
+  const cleanupWorkspace = async (evidencePersisted) => {
+    if (!dispatched.workspace_allocated || !dispatched.worktree_manager) return null;
+    workspaceCleanupPromise ||= Promise.resolve().then(async () => {
+      const cleanup = await dispatched.worktree_manager.cleanup(dispatched.workspace, { evidencePersisted });
+      if (cleanup.cleanup?.state === "passed" && dispatched.workspace_branch && implementation?.commit_sha) {
+        const reachability = await dispatched.worktree_manager.verifyCommitReachable(dispatched.workspace, implementation.commit_sha);
+        if (!reachability.valid) return { ...cleanup, commit_reachability: reachability, cleanup: { state: "failed", final_case_state: "inconclusive", reason: reachability.reason, error: `Implementation commit ${implementation.commit_sha} is not reachable from ${dispatched.workspace_branch}` } };
+        return { ...cleanup, commit_reachability: reachability };
+      }
+      return cleanup;
+    });
+    return workspaceCleanupPromise;
+  };
+  try {
+    const completedImplementation = await waitForImplementation(dispatched.child, dispatched);
+    if (typeof completedImplementation?.workspace_root !== "string"
+      || resolvePath(completedImplementation.workspace_root) !== dispatched.workspace_root
+      || (dispatched.workspace_branch && completedImplementation.workspace_branch !== dispatched.workspace_branch)) {
+      const error = new Error(`Implementation workspace mismatch: expected ${dispatched.workspace_root}${dispatched.workspace_branch ? ` on ${dispatched.workspace_branch}` : ""}, got ${completedImplementation?.workspace_root || "missing"}${completedImplementation?.workspace_branch ? ` on ${completedImplementation.workspace_branch}` : ""}`);
+      error.reason = "workspace_mismatch";
+      throw error;
+    }
+    implementation = { ...completedImplementation, fixed_point: fixedPoint };
+  } catch (error) {
+    let evidencePersisted = false;
+    if (dispatchOptions.checkpointStore) {
+      try {
+        await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "retry the same plan with a fresh context" }, next_action: "retry the implementation execution", handoff_reason: "retry" });
+        evidencePersisted = true;
+      } catch (persistError) {
+        error.checkpoint_error = persistError.message;
+      }
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+    if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
+    throw error;
+  }
+  if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
+  let reviewDiff = implementation.diff || dispatchOptions.implementationDiff || null;
+  let reviewCommitList = implementation.commit_list || dispatchOptions.implementationCommitList || null;
+  let reviews;
+  let reviewRepair;
+  try {
+    if ((reviewDiff === null || !Array.isArray(reviewCommitList) || reviewCommitList.length === 0) && typeof captureReviewInput === "function") {
+      const captured = await captureReviewInput({ fixed_point: fixedPoint, implementation_commit_sha: implementation.commit_sha, implementation });
+      reviewDiff = reviewDiff || captured?.diff || null;
+      if (!Array.isArray(reviewCommitList) || reviewCommitList.length === 0) reviewCommitList = captured?.commit_list || null;
+    }
+    reviews = await runIndependentReviewers({
+      plan: dispatchOptions.plan,
+      implementation,
+      spawnReviewer,
+      fixedPoint,
+      planSetId: dispatchOptions.planSetId,
+      repository: dispatched.workspace_root,
+      productSpecPath: dispatched.plan_review.product_spec_path,
+      architectureSpecPath: dispatched.plan_review.architecture_spec_path,
+      planReviewRefs: dispatched.plan_review,
+      trackerPort: dispatchOptions.trackerPort,
+      commitList: reviewCommitList,
+      diff: reviewDiff,
+      config: dispatchOptions.config || null,
+      reviewerProfile: dispatchOptions.reviewerProfile || null,
+    });
+    const repairConfig = dispatchOptions.reviewRepair || {};
+    const reviewInput = reviews.find((review) => review.review_input)?.review_input;
+    reviewRepair = await runBoundedReviewRepair({
+      plan: dispatchOptions.plan,
+      initialImplementation: implementation,
+      initialReviews: reviews,
+      reviewInput,
+      maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
+      dispatchRepair: repairConfig.dispatch || null,
+      runReviewers: repairConfig.review || null,
+      reserveRepair: (input) => reserveImplementationRepair({ root: dispatched.workspace_root, planId: dispatchOptions.plan.id, trackerPort: dispatchOptions.trackerPort, ...input }),
+    });
+    implementation = reviewRepair.implementation;
+    reviews = reviewRepair.reviews;
+  } catch (error) {
+    let evidencePersisted = false;
+    if (dispatchOptions.checkpointStore) {
+      try {
+        await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
+        evidencePersisted = true;
+      } catch (persistError) {
+        error.checkpoint_error = persistError.message;
+      }
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+    throw error;
+  }
+  try {
+  const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
+  let originalWorkspaceCheck = null;
+  if (dispatched.original_workspace_fingerprint) {
+    try {
+      const current = await captureWorkspaceFingerprint(dispatchOptions.repository);
+      const expected = dispatched.original_workspace_fingerprint;
+      originalWorkspaceCheck = {
+        valid: current.root === expected.root && current.head === expected.head && current.status === expected.status,
+        expected,
+        actual: current,
+      };
+    } catch (error) {
+      originalWorkspaceCheck = { valid: false, error: error.message, expected: dispatched.original_workspace_fingerprint };
+    }
+  }
+  const retirement = dispatchOptions.retirement === undefined ? null
+    : await checkRetirement({ retirement: { ...dispatchOptions.retirement, workspace_root: dispatched.workspace_root } });
+  const readiness = await inspectProjectReadiness({ workspace_root: dispatched.workspace_root, deferContractSync: true, base_ref: typeof fixedPoint === 'string' ? fixedPoint : fixedPoint.commit_sha || null });
+  const contractDocs = readiness.execution.status !== 'pass' ? readiness.execution : readiness.contract_sync || readiness.contracts;
+  const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
+  let planReview = await inspectPlanSet({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
+  const reviewedSnapshot = reviews[0]?.review_input?.planning_snapshot_sha256;
+  if (planReview.status === 'pass' && reviewedSnapshot && planReview.details.review_snapshot_sha256 !== reviewedSnapshot) planReview = { status: 'blocked', reason: 'review_snapshot_changed', violations: ['plan_review'] };
+  const completionEvidence = {
+    trackerSync,
+    planReview,
+    contractDocs,
+    fixed_point: fixedPoint,
+    implementation,
+    tests: actual.tests,
+    reviews,
+    review_repair: reviewRepair,
+    pr,
+    required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
+    ...(retirement ? { retirement } : {}),
+  };
+  const existingBlocker = actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? { ...(reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason }), ...(reviewRepair.resume_condition ? { unblock_condition: reviewRepair.resume_condition } : {}) } : null);
+  let completion = reconcileCompletion({
+    completionKind: 'plan_implemented',
+    plan: dispatchOptions.plan,
+    implementation,
+    reviews,
+    tests: actual.tests,
+    requiredOutcomes: dispatchOptions.requiredOutcomes || dispatchOptions.plan?.required_outcomes || [],
+    requiredOutcomeEvidence: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
+    evidence: completionEvidence,
+    retirement,
+    contractDocs,
+    trackerSync,
+    planReview,
+    blocker: existingBlocker,
+    pr,
+    trackerSnapshot,
+    trackerMode,
+    dependents,
+  });
+  if (originalWorkspaceCheck?.valid === false) {
+    completion = { ...completion, can_complete: false, state: "blocked", unresolved: [...completion.unresolved, "workspace:original-workspace-changed"] };
+  }
+  let workspaceCleanup = null;
+  let completionEvidencePersisted = false;
+  try {
+    await dispatchOptions.checkpointStore.write({
+    ...actual,
+    orchestration_state: actual.orchestration_state || "running",
+    last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
+    blocker: completion.can_complete ? null : existingBlocker || { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
+    next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : reviewRepair?.next_action || "resolve completion gate findings",
+    lifecycle_evidence: {
+      fixed_point: fixedPoint,
+      contract_docs: contractDocs,
+      tracker_sync: trackerSync,
+      plan_review: planReview,
+      ...(retirement ? { retirement } : {}),
+      implementation: {
+        state: implementation.state || null,
+        commit_sha: implementation.commit_sha || null,
+        workspace_root: dispatched.workspace_root,
+        workspace_branch: dispatched.workspace_branch,
+        original_workspace_unchanged: originalWorkspaceCheck?.valid ?? null,
+      },
+      reviews: reviews.map(({ role, state, context_id, implementation_commit_sha }) => ({ role, state, context_id, implementation_commit_sha })),
+      review_repair: reviewRepair ? { state: reviewRepair.state, reason: reviewRepair.reason, rounds: reviewRepair.rounds } : null,
+      pr: { merged: pr.merged === true },
+      tracker_reconciliation: completion.tracker_reconciliation,
+      completion: { state: completion.state, unresolved: completion.unresolved },
+    },
+    });
+    completionEvidencePersisted = true;
+  } finally {
+    workspaceCleanup = await cleanupWorkspace(completionEvidencePersisted);
+  }
+  if (workspaceCleanup?.cleanup?.state === "failed") {
+    completion = {
+      ...completion,
+      can_complete: false,
+      state: "blocked",
+      unresolved: [...completion.unresolved, "workspace:cleanup"],
+    };
+    await dispatchOptions.checkpointStore.write({
+      blocker: { kind: "worktree_leak", summary: workspaceCleanup.cleanup.error || workspaceCleanup.cleanup.reason, unblock_condition: "resolve the worktree leak before dispatching another plan in this pool" },
+      next_action: "resolve worktree cleanup before continuing",
+      last_completed_step: "completion gate blocked by workspace cleanup",
+    });
+  }
+  if (originalWorkspaceCheck?.valid === false) {
+    await dispatchOptions.checkpointStore.write({
+      blocker: { kind: "workspace_integrity", summary: "Original workspace changed during isolated implementation", unblock_condition: "restore the original workspace state and re-run the isolated plan" },
+      next_action: "resolve original workspace changes before continuing",
+      last_completed_step: "completion gate blocked by original workspace mutation",
+    });
+  }
+  return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, review_repair: reviewRepair, completion, workspace_cleanup: workspaceCleanup, state: completion.state };
+  } catch (error) {
+    let evidencePersisted = false;
+    try {
+      await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "resolve the execution error and retry with a fresh context" }, next_action: "resolve the execution error before continuing", handoff_reason: "retry" });
+      evidencePersisted = true;
+    } catch (persistError) {
+      error.checkpoint_error = persistError.message;
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+    throw error;
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "state": "failed",
+  "passed": false,
+  "suite_id": "p0",
+  "counts": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": true,
+    "pass_rate": false,
+    "mean_quality": true,
+    "p10_quality": false,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true,
+    "case_token_regression": true,
+    "case_latency_regression": true
+  },
+  "attempt": {
+    "number": 1,
+    "kind": "first",
+    "retry_of": null
+  },
+  "attempt_stats": {
+    "first_attempt": {
+      "count": 4,
+      "passed": 3,
+      "failed": 1,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 305,
+        "tool_calls": 11,
+        "turns": 0,
+        "handoffs": 0
+      }
+    },
+    "retry_attempts": {
+      "count": 0,
+      "passed": 0,
+      "failed": 0,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 0,
+        "tool_calls": 0,
+        "turns": 0,
+        "handoffs": 0
+      }
+    }
+  },
+  "inconclusive_reasons": {},
+  "regressions": {
+    "tokens": {
+      "available": true,
+      "ratio": -1,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": true,
+      "ratio": -0.9986,
+      "passed": true
+    },
+    "cases": {
+      "spec-me-source-policy": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9987,
+          "passed": true
+        }
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.999,
+          "passed": true
+        }
+      },
+      "implement-wrapper-dependency": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9969,
+          "passed": true
+        }
+      },
+      "code-review-isolation": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9988,
+          "passed": true
+        }
+      }
+    }
+  }
+}

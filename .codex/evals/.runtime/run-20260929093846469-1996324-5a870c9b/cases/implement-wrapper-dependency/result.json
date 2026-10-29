@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "case_id": "implement-wrapper-dependency",
+  "workflow": "implement-wrapper",
+  "critical": false,
+  "state": "inconclusive",
+  "reason": "environment_provisioning_failure",
+  "passed": false,
+  "execution_result": {
+    "state": "inconclusive",
+    "exit_code": null,
+    "signal": null,
+    "duration_ms": 0,
+    "command": null
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "plan_dispatched": false,
+      "dependency_satisfied": false
+    },
+    "missing": [
+      "plan_dispatched",
+      "dependency_satisfied"
+    ],
+    "artifact_files": [],
+    "evidence": {
+      "plan_dispatched": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/implementation/plan-dispatched.json"
+        ],
+        "observed_files": []
+      },
+      "dependency_satisfied": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/implementation/dependency-satisfied.json"
+        ],
+        "observed_files": []
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0,
+    "trajectory_quality": 0,
+    "quality": 0,
+    "dimensions": {},
+    "rationale": "평가 불가",
+    "evaluator_snapshot": null
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 0,
+    "tool_calls": 0,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260929093846469-1996324-5a870c9b/cases/implement-wrapper-dependency",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260929093846469-1996324-5a870c9b/cases/implement-wrapper-dependency/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260929093846469-1996324-5a870c9b/cases/implement-wrapper-dependency/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260929093846469-1996324-5a870c9b/cases/implement-wrapper-dependency/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260929093846469-1996324-5a870c9b/cases/implement-wrapper-dependency/recording.jsonl"
+  }
+}

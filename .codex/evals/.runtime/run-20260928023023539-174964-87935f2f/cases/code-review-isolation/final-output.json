@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`code-review` 스킬의 격리 리뷰어 사용 불가 절차를 적용하겠습니다. 지정된 입력을 읽고, 두 리뷰어를 시작하지 못해 판정이 없다는 기록을 작성한 뒤 JSON 파싱을 검증하겠습니다.\n\n`.eval-output/review/contexts.json`을 생성하고 파일 존재 및 JSON 파싱을 검증했습니다.\n\nStandards와 Spec 모두 격리 리뷰어를 시작할 수 없어 `not_started`로 기록했습니다. 리뷰 판정과 agent/context ID는 `null`이며, `src/`와 specs는 수정하지 않았습니다."
+}

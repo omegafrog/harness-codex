@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "case_id": "implement-wrapper-dependency",
+  "workflow": "implement-wrapper",
+  "critical": false,
+  "state": "failed",
+  "reason": "required_outcome_failure",
+  "passed": false,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 76,
+    "command": [
+      "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+      "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "plan_dispatched": false,
+      "dependency_satisfied": false
+    },
+    "missing": [
+      "plan_dispatched",
+      "dependency_satisfied"
+    ],
+    "artifact_files": [],
+    "evidence": {
+      "plan_dispatched": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/implementation/plan-dispatched.json"
+        ],
+        "observed_files": []
+      },
+      "dependency_satisfied": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/implementation/dependency-satisfied.json"
+        ],
+        "observed_files": []
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.78,
+    "trajectory_quality": 0.34,
+    "dimensions": {
+      "requirement_coverage": 0.9,
+      "correctness": 0.75,
+      "ambiguity_resolution": 0.8,
+      "usefulness": 0.85,
+      "relevance": 0.3,
+      "coherence": 0.35,
+      "proportionality": 0.45
+    },
+    "rationale": "Both required JSON artifacts were produced successfully and the recorded outcomes passed. However, the trajectory dispatched the plan before performing the dependency check, contrary to the requested sequence, and made a forbidden external GitHub request despite explicit instructions not to use external systems. These violations substantially reduce trajectory quality and somewhat reduce overall task quality.",
+    "quality": 0.626,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 76,
+    "tool_calls": 3,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-1790559805261/cases/implement-wrapper-dependency/recording.jsonl"
+  }
+}

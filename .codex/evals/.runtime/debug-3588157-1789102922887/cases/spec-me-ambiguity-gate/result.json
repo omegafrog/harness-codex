@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "case_id": "spec-me-ambiguity-gate",
+  "workflow": "spec-me",
+  "critical": true,
+  "state": "failed",
+  "reason": "required_outcome_failure",
+  "passed": false,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 164,
+    "command": [
+      "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+      "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "spec_complete": true,
+      "ambiguity_resolved": false
+    },
+    "missing": [
+      "ambiguity_resolved"
+    ],
+    "artifact_files": [
+      ".eval-output/specs/496/product-spec.md",
+      ".eval-output/specs/496/ambiguity-resolved.json"
+    ],
+    "evidence": {
+      "spec_complete": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ]
+      },
+      "ambiguity_resolved": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.475,
+    "trajectory_quality": 0.76,
+    "quality": 0.5747,
+    "dimensions": {
+      "requirement_coverage": 0.5,
+      "ambiguity_resolution": 0,
+      "action_relevance": 1,
+      "unnecessary_backtracking": 1
+    },
+    "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+    "evaluator_snapshot": {
+      "model": "deterministic-v1",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 164,
+    "tool_calls": 3,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/debug-3588157-1789102922887/cases/spec-me-ambiguity-gate/recording.jsonl"
+  }
+}

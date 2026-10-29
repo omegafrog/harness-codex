@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "case_id": "code-review-isolation",
+  "workflow": "code-review",
+  "critical": false,
+  "state": "passed",
+  "reason": null,
+  "passed": true,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 51068,
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": true,
+    "results": {
+      "reviewer_isolation_blocked": true
+    },
+    "missing": [],
+    "artifact_files": [
+      ".eval-output/review/contexts.json"
+    ],
+    "evidence": {
+      "reviewer_isolation_blocked": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/review/contexts.json"
+        ],
+        "observed_files": [
+          ".eval-output/review/contexts.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.98,
+    "trajectory_quality": 0.9,
+    "dimensions": {
+      "requirement_coverage": 1,
+      "correctness": 0.98,
+      "ambiguity_resolution": 0.97,
+      "usefulness": 0.9,
+      "relevance": 0.92,
+      "coherence": 0.88,
+      "proportionality": 0.84
+    },
+    "rationale": "The required isolation-blocked outcome was fully achieved: the artifact records both reviewers as not_started, preserves null identifiers and verdicts, avoids simulated findings, creates the required JSON file, and verifies that it exists and parses. The trajectory followed the unavailable-subagent rule and respected the no-edit/no-external-system constraints. Quality is slightly reduced by one failed command caused by quoting and a redundant retry, though the recovery was direct and successful.",
+    "quality": 0.952,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 78652,
+    "latency_ms": 51068,
+    "tool_calls": 3,
+    "turns": 3,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928023023539-174964-87935f2f/cases/code-review-isolation/recording.jsonl"
+  }
+}

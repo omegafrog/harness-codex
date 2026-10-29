@@ -1,0 +1,4 @@
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":1,"timestamp":"2026-09-10T08:33:46.525Z","type":"case_started","payload":{"case_id":"spec-me-ambiguity-gate","workflow":"spec-me"}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":2,"timestamp":"2026-09-10T08:33:46.775Z","type":"process_started","payload":{"command":["node","evals/fixtures/emit-eval.mjs"],"cwd":"/home/jiwoo/workspace/harness/.codex/evals/.runtime/baseline-metrics-check/cases/spec-me-ambiguity-gate/workspace"}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":3,"timestamp":"2026-09-10T08:33:46.819Z","type":"process_exited","payload":{"exit_code":1,"signal":null,"status":"error","duration_ms":46}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":4,"timestamp":"2026-09-10T08:33:46.822Z","type":"evidence_flushed","payload":{"case_id":"spec-me-ambiguity-gate"}}

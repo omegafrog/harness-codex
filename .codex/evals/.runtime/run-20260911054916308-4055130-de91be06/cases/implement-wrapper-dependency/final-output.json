@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\nimplement-wrapper 스킬을 적용해 plan.md를 읽고, 요청하신 의존성 확인과 디스패치 기록만 순서대로 작성하겠습니다.\n\nplan.md를 읽고 요청한 순서대로 기록했습니다.\n\n- `dependency-satisfied.json`: `\"satisfied\": true`\n- `plan-dispatched.json`: `\"plan_id\": \"plan-1\"`\n\n두 파일은 `.eval-output/implementation/`에 생성했습니다. 소스 수정이나 에이전트 실행은 하지 않았습니다."
+}

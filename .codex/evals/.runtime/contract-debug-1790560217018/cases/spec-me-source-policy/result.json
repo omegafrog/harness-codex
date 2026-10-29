@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "case_id": "spec-me-source-policy",
+  "workflow": "spec-me",
+  "critical": true,
+  "state": "passed",
+  "reason": null,
+  "passed": true,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 64,
+    "command": [
+      "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+      "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": true,
+    "results": {
+      "spec_complete": true,
+      "ambiguity_resolved": true
+    },
+    "missing": [],
+    "artifact_files": [
+      ".eval-output/specs/496/product-spec.md",
+      ".eval-output/specs/496/ambiguity-resolved.json"
+    ],
+    "evidence": {
+      "spec_complete": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ]
+      },
+      "ambiguity_resolved": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.95,
+    "trajectory_quality": 0.95,
+    "dimensions": {
+      "correctness": 0.95
+    },
+    "rationale": "deterministic",
+    "quality": 0.95,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 64,
+    "tool_calls": 3,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/spec-me-source-policy/recording.jsonl"
+  }
+}

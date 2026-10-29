@@ -1,0 +1,194 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--json",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--sandbox",
+    "workspace-write",
+    "--config",
+    "sandbox_workspace_write.network_access=false"
+  ],
+  "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050308413-3604880-2fb610ed/cases/code-review-isolation/workspace",
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "durationMs": 11748,
+  "inconclusiveReason": null,
+  "finalOutput": "Reading prompt from stdin...\n`code-review` 스킬을 적용하겠습니다. 요청대로 이 프로세스에서 Standards와 Spec을 각각 검토하고 결과 파일을 작성하겠습니다. 별도 에이전트 격리는 사용하지 않으므로, 두 검토의 구분과 실제 컨텍스트 격리의 한계를 결과에 명시하겠습니다.\n",
+  "records": [
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 1,
+      "timestamp": "2026-09-11T05:06:04.248Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "process_started",
+      "payload": {
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ],
+        "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050308413-3604880-2fb610ed/cases/code-review-isolation/workspace",
+        "workflow": "code-review"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 2,
+      "timestamp": "2026-09-11T05:06:04.505Z",
+      "actor": "codex",
+      "kind": "message",
+      "payload": {
+        "text": "Reading prompt from stdin...",
+        "stream": "stderr"
+      },
+      "source": "stdout_fallback"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 3,
+      "timestamp": "2026-09-11T05:06:04.804Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "thread.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 4,
+      "timestamp": "2026-09-11T05:06:04.818Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "turn.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 5,
+      "timestamp": "2026-09-11T05:06:10.748Z",
+      "actor": "codex",
+      "kind": "message",
+      "correlation_id": "item_0",
+      "action": "agent_message",
+      "payload": {
+        "text": "`code-review` 스킬을 적용하겠습니다. 요청대로 이 프로세스에서 Standards와 Spec을 각각 검토하고 결과 파일을 작성하겠습니다. 별도 에이전트 격리는 사용하지 않으므로, 두 검토의 구분과 실제 컨텍스트 격리의 한계를 결과에 명시하겠습니다.\n"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 6,
+      "timestamp": "2026-09-11T05:06:15.573Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_1",
+      "action": "write_file",
+      "payload": {
+        "command": "/bin/zsh -lc \"pwd; rg --files -g 'AGENTS.md' -g '*spec*' -g '*policy*' -g '*ADR*' -g 'change.diff' -g 'CONTEXT*' -g '*constraints*' -g '*conventions*' -g 'harness.yaml' -g '*rules*' -g '*review*' -g '*.md' .codex docs .agents .eval-output 2>/dev/null\"",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 7,
+      "timestamp": "2026-09-11T05:06:15.938Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_1",
+      "action": "write_file",
+      "payload": {
+        "command": "/bin/zsh -lc \"pwd; rg --files -g 'AGENTS.md' -g '*spec*' -g '*policy*' -g '*ADR*' -g 'change.diff' -g 'CONTEXT*' -g '*constraints*' -g '*conventions*' -g 'harness.yaml' -g '*rules*' -g '*review*' -g '*.md' .codex docs .agents .eval-output 2>/dev/null\"",
+        "exit_code": 2
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 8,
+      "timestamp": "2026-09-11T05:06:15.945Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_2",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'cat .agents/skills/code-review/SKILL.md; git rev-parse HEAD; git status --short; cat change.diff'",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 9,
+      "timestamp": "2026-09-11T05:06:15.952Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_2",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'cat .agents/skills/code-review/SKILL.md; git rev-parse HEAD; git status --short; cat change.diff'",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 10,
+      "timestamp": "2026-09-11T05:06:15.992Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "process_exited",
+      "payload": {
+        "exit_code": 0,
+        "signal": null,
+        "status": "success",
+        "duration_ms": 11748
+      },
+      "source": "structured_event"
+    }
+  ],
+  "snapshot": {
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ],
+    "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911050308413-3604880-2fb610ed/cases/code-review-isolation/workspace",
+    "model": null,
+    "model_config": null,
+    "workflow": "code-review",
+    "permission_profile": "eval-workspace",
+    "native_sandbox": "workspace-write",
+    "environment_profile": "p0-default"
+  },
+  "failFast": true,
+  "hardCapExceeded": null
+}

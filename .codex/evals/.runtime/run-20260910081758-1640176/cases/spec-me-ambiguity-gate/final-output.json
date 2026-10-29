@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`spec-me`와 `caveman` 사용. 먼저 모호성 식별·질문·해결. 해결 전 Architecture 진행 안 함.\n자료 확인 중. Product 단계 규칙상 코드/테스트 안 봄. 문서·체크리스트만 읽고 최고 영향 모호성 1개씩 질문.\nProduct → Architecture 진행 중단. 먼저 범위 확정 필요.\n\n이번 Product Spec이 다룰 제품 문제/변경은 무엇인가?\n\n권장 답변: `현재 문제 → 사용자 목표 → 기대 결과` 1~3문장."
+}

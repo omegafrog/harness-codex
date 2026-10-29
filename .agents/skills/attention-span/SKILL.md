@@ -5,6 +5,10 @@ description: GitHub의 alexgreensh/attention-span 스타일 스킬을 찾아 설
 
 # Attention Span 스킬 관리자
 
+## 실행 모델과 반환
+
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [공통 skill 실행 계약](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 caller가 실제 model·effort를 resolve하여 subagent spawn에 전달한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+
 공식 저장소는 [alexgreensh/attention-span](https://github.com/alexgreensh/attention-span)이다. 실행할 때마다 GitHub에서 현재 스킬 목록과 내용을 확인한다. 기본 목록은 `attention-kind`, `spartan`, `rundown`, `tldr`이며, 저장소에 새 스킬이 추가되면 함께 보여준다.
 
 ## 요청 해석

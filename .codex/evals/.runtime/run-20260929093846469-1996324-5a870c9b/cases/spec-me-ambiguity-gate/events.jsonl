@@ -1,0 +1,4 @@
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":1,"timestamp":"2026-09-29T09:38:47.453Z","type":"case_started","payload":{"case_id":"spec-me-ambiguity-gate","workflow":"spec-me"}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":2,"timestamp":"2026-09-29T09:38:48.242Z","type":"case_error","payload":{"reason":"environment_provisioning_failure","message":"Harness installation failed in case workspace: Installation failed: skills installation failed with exit code 1\n"}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":3,"timestamp":"2026-09-29T09:38:48.246Z","type":"evidence_flushed","payload":{"case_id":"spec-me-ambiguity-gate"}}
+{"schema_version":1,"stream_id":"case-spec-me-ambiguity-gate","seq":4,"timestamp":"2026-09-29T09:38:48.254Z","type":"case_finalized","payload":{"state":"inconclusive","reason":"environment_provisioning_failure"}}

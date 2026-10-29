@@ -1,0 +1,4 @@
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":1,"timestamp":"2026-09-29T09:38:48.272Z","type":"case_started","payload":{"case_id":"implement-wrapper-dependency","workflow":"implement-wrapper"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":2,"timestamp":"2026-09-29T09:38:49.110Z","type":"case_error","payload":{"reason":"environment_provisioning_failure","message":"Harness installation failed in case workspace: Installation failed: skills installation failed with exit code 1\n"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":3,"timestamp":"2026-09-29T09:38:49.115Z","type":"evidence_flushed","payload":{"case_id":"implement-wrapper-dependency"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":4,"timestamp":"2026-09-29T09:38:49.128Z","type":"case_finalized","payload":{"state":"inconclusive","reason":"environment_provisioning_failure"}}

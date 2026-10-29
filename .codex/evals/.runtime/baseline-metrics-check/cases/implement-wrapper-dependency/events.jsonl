@@ -1,0 +1,4 @@
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":1,"timestamp":"2026-09-10T08:33:46.878Z","type":"case_started","payload":{"case_id":"implement-wrapper-dependency","workflow":"implement-wrapper"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":2,"timestamp":"2026-09-10T08:33:47.099Z","type":"process_started","payload":{"command":["node","evals/fixtures/emit-eval.mjs"],"cwd":"/home/jiwoo/workspace/harness/.codex/evals/.runtime/baseline-metrics-check/cases/implement-wrapper-dependency/workspace"}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":3,"timestamp":"2026-09-10T08:33:47.162Z","type":"process_exited","payload":{"exit_code":1,"signal":null,"status":"error","duration_ms":71}}
+{"schema_version":1,"stream_id":"case-implement-wrapper-dependency","seq":4,"timestamp":"2026-09-10T08:33:47.166Z","type":"evidence_flushed","payload":{"case_id":"implement-wrapper-dependency"}}

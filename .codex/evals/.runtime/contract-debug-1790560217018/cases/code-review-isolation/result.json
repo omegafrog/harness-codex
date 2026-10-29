@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "case_id": "code-review-isolation",
+  "workflow": "code-review",
+  "critical": false,
+  "state": "failed",
+  "reason": "required_outcome_failure",
+  "passed": false,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 47,
+    "command": [
+      "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+      "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "reviewer_isolation_blocked": false
+    },
+    "missing": [
+      "reviewer_isolation_blocked"
+    ],
+    "artifact_files": [
+      ".eval-output/review/contexts.json"
+    ],
+    "evidence": {
+      "reviewer_isolation_blocked": {
+        "action_matched": false,
+        "required_files": [
+          ".eval-output/review/contexts.json"
+        ],
+        "observed_files": [
+          ".eval-output/review/contexts.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.2,
+    "trajectory_quality": 0.95,
+    "dimensions": {
+      "correctness": 0.95
+    },
+    "rationale": "deterministic",
+    "quality": 0.4625,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 47,
+    "tool_calls": 2,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560217018/cases/code-review-isolation/recording.jsonl"
+  }
+}

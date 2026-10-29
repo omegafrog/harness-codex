@@ -12,7 +12,7 @@
 
 `grill-with-docs` runs a coverage-driven interview one decision at a time. It offers a recommended answer, waits for the user's response, and keeps vocabulary and durable decisions current.
 
-It incorporates the question selection and interaction contract of [grilling](../../../.codex/skills/grilling/SKILL.md) and the documentation responsibilities of `domain-modeling`. The interview loop below applies that shared question policy to documented coverage.
+It incorporates the question selection and interaction contract of [grilling](../../../.agents/skills/grilling/SKILL.md) and the documentation responsibilities of `domain-modeling`. The interview loop below applies that shared question policy to documented coverage.
 
 ## Required preparation
 
@@ -32,7 +32,7 @@ Within the evidence allowed by the calling skill, repository evidence, existing 
 
 ## Interview loop
 
-Select questions using the shared [grilling](../../../.codex/skills/grilling/SKILL.md) criteria. Use repository evidence and settled decisions to resolve implementation details, and record engineering rationale without presenting it as a user's decision.
+Select questions using the shared [grilling](../../../.agents/skills/grilling/SKILL.md) criteria. Use repository evidence and settled decisions to resolve implementation details, and record engineering rationale without presenting it as a user's decision.
 
 While any stakeholder decision is `PARTIAL` or `UNRESOLVED`:
 

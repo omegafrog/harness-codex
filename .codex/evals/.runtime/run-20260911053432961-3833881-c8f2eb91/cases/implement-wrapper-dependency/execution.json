@@ -1,0 +1,275 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--json",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--sandbox",
+    "workspace-write",
+    "--config",
+    "sandbox_workspace_write.network_access=false"
+  ],
+  "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911053432961-3833881-c8f2eb91/cases/implement-wrapper-dependency/workspace",
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "durationMs": 19209,
+  "inconclusiveReason": null,
+  "finalOutput": "Reading prompt from stdin...\nimplement-wrapper 스킬을 적용해 plan.md를 확인하고, 요청한 순서대로 의존성 확인과 dispatch 기록만 작성하겠습니다.\n\nplan.md를 읽고 순서대로 기록했습니다.\n\n- `.eval-output/implementation/dependency-satisfied.json`: `{\"satisfied\": true}`\n- `.eval-output/implementation/plan-dispatched.json`: `{\"plan_id\": \"plan-1\"}`",
+  "records": [
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 1,
+      "timestamp": "2026-09-11T05:37:08.641Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "process_started",
+      "payload": {
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ],
+        "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911053432961-3833881-c8f2eb91/cases/implement-wrapper-dependency/workspace",
+        "workflow": "implement-wrapper"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 2,
+      "timestamp": "2026-09-11T05:37:08.784Z",
+      "actor": "codex",
+      "kind": "message",
+      "payload": {
+        "text": "Reading prompt from stdin...",
+        "stream": "stderr"
+      },
+      "source": "stdout_fallback"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 3,
+      "timestamp": "2026-09-11T05:37:08.980Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "thread.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 4,
+      "timestamp": "2026-09-11T05:37:08.994Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "turn.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 5,
+      "timestamp": "2026-09-11T05:37:14.093Z",
+      "actor": "codex",
+      "kind": "message",
+      "correlation_id": "item_0",
+      "action": "agent_message",
+      "payload": {
+        "text": "implement-wrapper 스킬을 적용해 plan.md를 확인하고, 요청한 순서대로 의존성 확인과 dispatch 기록만 작성하겠습니다.\n"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 6,
+      "timestamp": "2026-09-11T05:37:15.364Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_1",
+      "action": "command_execution",
+      "target": ".codex/harness.yaml",
+      "payload": {
+        "command": "/bin/zsh -lc 'cat .codex/harness.yaml .agents/skills/implement-wrapper/SKILL.md plan.md'",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 7,
+      "timestamp": "2026-09-11T05:37:15.370Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_1",
+      "action": "command_execution",
+      "target": ".codex/harness.yaml",
+      "payload": {
+        "command": "/bin/zsh -lc 'cat .codex/harness.yaml .agents/skills/implement-wrapper/SKILL.md plan.md'",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 8,
+      "timestamp": "2026-09-11T05:37:18.673Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_2",
+      "action": "write_file",
+      "target": ".eval-output/implementation/dependency-satisfied.json",
+      "payload": {
+        "changes": [
+          {
+            "path": ".eval-output/implementation/dependency-satisfied.json",
+            "kind": "add"
+          }
+        ]
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 9,
+      "timestamp": "2026-09-11T05:37:18.864Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_2",
+      "action": "write_file",
+      "target": ".eval-output/implementation/dependency-satisfied.json",
+      "status": "success",
+      "payload": {
+        "changes": [
+          {
+            "path": ".eval-output/implementation/dependency-satisfied.json",
+            "kind": "add"
+          }
+        ]
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 10,
+      "timestamp": "2026-09-11T05:37:22.443Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_3",
+      "action": "write_file",
+      "target": ".eval-output/implementation/plan-dispatched.json",
+      "payload": {
+        "changes": [
+          {
+            "path": ".eval-output/implementation/plan-dispatched.json",
+            "kind": "add"
+          }
+        ]
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 11,
+      "timestamp": "2026-09-11T05:37:22.571Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_3",
+      "action": "write_file",
+      "target": ".eval-output/implementation/plan-dispatched.json",
+      "status": "success",
+      "payload": {
+        "changes": [
+          {
+            "path": ".eval-output/implementation/plan-dispatched.json",
+            "kind": "add"
+          }
+        ]
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 12,
+      "timestamp": "2026-09-11T05:37:26.910Z",
+      "actor": "codex",
+      "kind": "message",
+      "correlation_id": "item_4",
+      "action": "agent_message",
+      "payload": {
+        "text": "plan.md를 읽고 순서대로 기록했습니다.\n\n- `.eval-output/implementation/dependency-satisfied.json`: `{\"satisfied\": true}`\n- `.eval-output/implementation/plan-dispatched.json`: `{\"plan_id\": \"plan-1\"}`"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 13,
+      "timestamp": "2026-09-11T05:37:26.934Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "turn.completed",
+      "payload": {
+        "tokens": 75432
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-implement-wrapper-dependency",
+      "seq": 14,
+      "timestamp": "2026-09-11T05:37:27.848Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "process_exited",
+      "payload": {
+        "exit_code": 0,
+        "signal": null,
+        "status": "success",
+        "duration_ms": 19209
+      },
+      "source": "structured_event"
+    }
+  ],
+  "snapshot": {
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ],
+    "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911053432961-3833881-c8f2eb91/cases/implement-wrapper-dependency/workspace",
+    "model": null,
+    "model_config": null,
+    "workflow": "implement-wrapper",
+    "permission_profile": "eval-workspace",
+    "native_sandbox": "workspace-write",
+    "environment_profile": "p0-default"
+  },
+  "failFast": false,
+  "hardCapExceeded": null
+}

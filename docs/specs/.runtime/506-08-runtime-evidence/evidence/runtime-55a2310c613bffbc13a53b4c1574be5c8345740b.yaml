@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "runtime-55a2310c613bffbc13a53b4c1574be5c8345740b",
+  "evidence": {
+    "schema_version": 1,
+    "id": "runtime-55a2310c613bffbc13a53b4c1574be5c8345740b",
+    "origin_project": "harness-codex",
+    "environment": {
+      "runtime": "node 24.12.0",
+      "platform": "linux"
+    },
+    "timestamp": "2026-10-16T12:06:53.761Z",
+    "type": "failure_test",
+    "execution_status": "failed",
+    "measurement_validity": "invalid",
+    "observations": [
+      {
+        "metric": "case_result_state",
+        "value": "failed",
+        "unit": "state"
+      },
+      {
+        "metric": "quality",
+        "value": 0,
+        "unit": "score"
+      },
+      {
+        "metric": "tokens",
+        "value": 0,
+        "unit": "tokens"
+      },
+      {
+        "metric": "latency_ms",
+        "value": 91,
+        "unit": "ms"
+      },
+      {
+        "metric": "tool_calls",
+        "value": 0,
+        "unit": "calls"
+      },
+      {
+        "metric": "turns",
+        "value": 30,
+        "unit": "turns"
+      },
+      {
+        "metric": "handoffs",
+        "value": 0,
+        "unit": "handoffs"
+      },
+      {
+        "metric": "required_outcome_passed",
+        "value": 0,
+        "unit": "boolean"
+      },
+      {
+        "metric": "hard_gates_passed",
+        "value": 1,
+        "unit": "boolean"
+      }
+    ],
+    "source_reference": "cap-647952-1792152413732-1/spec-me-source-policy",
+    "execution_purpose": "code_validation",
+    "decision_ids": []
+  },
+  "summary": "Harness case spec-me-source-policy finished with state failed.",
+  "status": "pending_approval",
+  "history": [
+    {
+      "status": "pending_approval",
+      "actor": "import",
+      "at": "2026-10-16T12:07:04.748Z"
+    }
+  ]
+}

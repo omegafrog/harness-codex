@@ -1,0 +1,121 @@
+{
+  "state": "failed",
+  "passed": false,
+  "suite_id": "p0",
+  "counts": {
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": false,
+    "pass_rate": false,
+    "mean_quality": true,
+    "p10_quality": true,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true,
+    "case_token_regression": false,
+    "case_latency_regression": false
+  },
+  "attempt": {
+    "number": 1,
+    "kind": "first",
+    "retry_of": null
+  },
+  "attempt_stats": {
+    "first_attempt": {
+      "count": 4,
+      "passed": 0,
+      "failed": 4,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 355610,
+        "latency_ms": 277770,
+        "tool_calls": 15,
+        "turns": 14,
+        "handoffs": 0
+      }
+    },
+    "retry_attempts": {
+      "count": 0,
+      "passed": 0,
+      "failed": 0,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 0,
+        "tool_calls": 0,
+        "turns": 0,
+        "handoffs": 0
+      }
+    }
+  },
+  "inconclusive_reasons": {},
+  "regressions": {
+    "tokens": {
+      "available": true,
+      "ratio": -0.0635,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": true,
+      "ratio": 0.2395,
+      "passed": true
+    },
+    "cases": {
+      "spec-me-source-policy": {
+        "tokens": {
+          "available": true,
+          "ratio": -0.0149,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.1676,
+          "passed": true
+        }
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": {
+          "available": true,
+          "ratio": 0.2017,
+          "passed": false
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.028,
+          "passed": true
+        }
+      },
+      "implement-wrapper-dependency": {
+        "tokens": {
+          "available": true,
+          "ratio": 0.1748,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.2099,
+          "passed": true
+        }
+      },
+      "code-review-isolation": {
+        "tokens": {
+          "available": true,
+          "ratio": -0.2931,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.5662,
+          "passed": false
+        }
+      }
+    }
+  }
+}

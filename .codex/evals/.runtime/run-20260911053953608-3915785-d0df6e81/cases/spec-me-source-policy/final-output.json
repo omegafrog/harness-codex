@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`spec-me` 스킬을 적용하되, 명시하신 범위에 따라 확정된 Product Spec과 결정 JSON 두 파일만 작성하겠습니다.\n"
+}

@@ -1,0 +1,209 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--json",
+    "--sandbox",
+    "workspace-write"
+  ],
+  "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910083948-1956202/cases/code-review-isolation/workspace",
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "durationMs": 16877,
+  "finalOutput": "Reading prompt from stdin...\n`code-review` 스킬 사용. HEAD 기준 diff 검토, 독립 Spec/Standards 판정 보존, 수정 없음.",
+  "records": [
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 2,
+      "timestamp": "2026-09-10T08:42:59.602Z",
+      "actor": "codex",
+      "kind": "message",
+      "payload": {
+        "text": "Reading prompt from stdin...",
+        "stream": "stderr"
+      },
+      "source": "stdout_fallback"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 3,
+      "timestamp": "2026-09-10T08:42:59.861Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "thread.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 4,
+      "timestamp": "2026-09-10T08:42:59.916Z",
+      "actor": "codex",
+      "kind": "process_event",
+      "action": "turn.started",
+      "payload": {},
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 5,
+      "timestamp": "2026-09-10T08:43:05.142Z",
+      "actor": "codex",
+      "kind": "message",
+      "correlation_id": "item_0",
+      "action": "agent_message",
+      "payload": {
+        "text": "`code-review` 스킬 사용. HEAD 기준 diff 검토, 독립 Spec/Standards 판정 보존, 수정 없음."
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 6,
+      "timestamp": "2026-09-10T08:43:06.954Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_1",
+      "action": "command_execution",
+      "payload": {
+        "command": "/bin/zsh -lc \"sed -n '1,240p' .codex/skills/code-review/SKILL.md\"",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 7,
+      "timestamp": "2026-09-10T08:43:06.956Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_1",
+      "action": "command_execution",
+      "payload": {
+        "command": "/bin/zsh -lc \"sed -n '1,240p' .codex/skills/code-review/SKILL.md\"",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 8,
+      "timestamp": "2026-09-10T08:43:16.146Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_2",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'git branch -a --no-color && git show-ref --heads --tags'",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 9,
+      "timestamp": "2026-09-10T08:43:16.161Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_2",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'git branch -a --no-color && git show-ref --heads --tags'",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 10,
+      "timestamp": "2026-09-10T08:43:16.171Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_3",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'git status --short --branch && git log --oneline --decorate -12'",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 11,
+      "timestamp": "2026-09-10T08:43:16.198Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_3",
+      "action": "read_file",
+      "payload": {
+        "command": "/bin/zsh -lc 'git status --short --branch && git log --oneline --decorate -12'",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 12,
+      "timestamp": "2026-09-10T08:43:16.226Z",
+      "actor": "codex",
+      "kind": "tool_call",
+      "correlation_id": "item_4",
+      "action": "write_file",
+      "payload": {
+        "command": "/bin/zsh -lc \"sed -n '1,220p' .codex/harness.yaml 2>/dev/null || true\"",
+        "exit_code": null
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 13,
+      "timestamp": "2026-09-10T08:43:16.232Z",
+      "actor": "codex",
+      "kind": "tool_result",
+      "correlation_id": "item_4",
+      "action": "write_file",
+      "payload": {
+        "command": "/bin/zsh -lc \"sed -n '1,220p' .codex/harness.yaml 2>/dev/null || true\"",
+        "exit_code": 0
+      },
+      "source": "structured_event"
+    }
+  ],
+  "snapshot": {
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "workspace-write"
+    ],
+    "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910083948-1956202/cases/code-review-isolation/workspace",
+    "model": null,
+    "model_config": null,
+    "permission_profile": "eval-workspace",
+    "native_sandbox": "workspace-write",
+    "environment_profile": "p0-default",
+    "external_port": {
+      "mode": "replay",
+      "fixture": "/home/jiwoo/workspace/harness/evals/recordings/code-review-isolation.jsonl",
+      "mutation": "deny-by-default",
+      "integration": false
+    }
+  },
+  "failFast": true,
+  "hardCapExceeded": null
+}

@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "suite_id": "p0",
+  "state": "passed",
+  "passed": true,
+  "counts": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "quality": {
+    "mean": 0.944,
+    "p10": 0.944,
+    "overall": 0.944
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 309,
+    "tool_calls": 0,
+    "turns": 8,
+    "handoffs": 0
+  },
+  "baseline": {
+    "id": "p0-baseline",
+    "harness_version": "0.1.0",
+    "model": "configured-codex",
+    "model_config": "configured-default",
+    "environment_profile": "p0-default",
+    "metrics": null
+  },
+  "regressions": {
+    "tokens": {
+      "available": false,
+      "ratio": null,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": false,
+      "ratio": null,
+      "passed": true
+    }
+  },
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": true,
+    "pass_rate": true,
+    "mean_quality": true,
+    "p10_quality": true,
+    "overall": true,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true
+  },
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-source-policy",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 73,
+        "command": [
+          "node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-source-policy/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "spec_complete": true,
+          "ambiguity_resolved": true
+        },
+        "missing": []
+      },
+      "quality": {
+        "task_quality": 1,
+        "trajectory_quality": 0.84,
+        "quality": 0.944,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 73,
+        "tool_calls": 0,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-source-policy",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-source-policy/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-source-policy/trajectory.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-source-policy/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-ambiguity-gate",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 58,
+        "command": [
+          "node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-ambiguity-gate/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "spec_complete": true,
+          "ambiguity_resolved": true
+        },
+        "missing": []
+      },
+      "quality": {
+        "task_quality": 1,
+        "trajectory_quality": 0.84,
+        "quality": 0.944,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 58,
+        "tool_calls": 0,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-ambiguity-gate",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-ambiguity-gate/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/spec-me-ambiguity-gate/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "implement-wrapper-dependency",
+      "workflow": "implement-wrapper",
+      "critical": false,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 79,
+        "command": [
+          "node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/implement-wrapper-dependency/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "plan_dispatched": true,
+          "dependency_satisfied": true
+        },
+        "missing": []
+      },
+      "quality": {
+        "task_quality": 1,
+        "trajectory_quality": 0.84,
+        "quality": 0.944,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 79,
+        "tool_calls": 0,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/implement-wrapper-dependency",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/implement-wrapper-dependency/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/implement-wrapper-dependency/trajectory.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/implement-wrapper-dependency/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "code-review-isolation",
+      "workflow": "code-review",
+      "critical": false,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 99,
+        "command": [
+          "node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/code-review-isolation/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "review_verdict_preserved": true,
+          "reviewer_isolated": true
+        },
+        "missing": []
+      },
+      "quality": {
+        "task_quality": 1,
+        "trajectory_quality": 0.84,
+        "quality": 0.944,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 99,
+        "tool_calls": 0,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/code-review-isolation",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/code-review-isolation/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/code-review-isolation/trajectory.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/cases/code-review-isolation/recording.jsonl"
+      }
+    }
+  ],
+  "run_id": "final-contract-e2e-7",
+  "config_snapshot": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-7/config-snapshot.json"
+}

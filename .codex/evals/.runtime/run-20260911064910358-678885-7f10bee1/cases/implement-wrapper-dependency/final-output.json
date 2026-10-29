@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`implement-wrapper` 스킬을 적용해 `plan.md`를 확인하고, 요청하신 의존성 확인과 dispatch 기록만 순서대로 작성하겠습니다.\n\n`plan.md`를 읽고 요청한 순서대로 기록했습니다.\n\n- `.eval-output/implementation/dependency-satisfied.json`: `\"satisfied\": true`\n- `.eval-output/implementation/plan-dispatched.json`: `\"plan_id\": \"plan-1\"`\n\n소스 수정, 외부 시스템 사용, 에이전트 생성 없이 완료했습니다."
+}

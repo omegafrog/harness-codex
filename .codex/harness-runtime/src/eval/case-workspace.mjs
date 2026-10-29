@@ -1,0 +1,235 @@
+import { access, cp, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
+import { promisify } from "node:util";
+import { EvalInconclusiveError } from "./errors.mjs";
+import { ensureDir, isWithin } from "./util.mjs";
+
+const execFileAsync = promisify(execFile);
+export const TARGET_PATH_FIELDS = Object.freeze(["path", "file", "file_path", "workspace_path", "absolute_path"]);
+
+export function workspaceTargetCandidates(target) {
+  if (typeof target === "string") return [target];
+  if (!target || typeof target !== "object" || Array.isArray(target)) return [];
+  return TARGET_PATH_FIELDS.filter((field) => typeof target[field] === "string").map((field) => target[field]);
+}
+
+export function resolveWorkspaceTarget(workspace, targetPath) {
+  const foreignWindowsAbsolute = process.platform !== "win32" && win32.isAbsolute(targetPath) && !posix.isAbsolute(targetPath);
+  if (foreignWindowsAbsolute) return null;
+  const normalized = process.platform === "win32" ? targetPath.replaceAll("/", "\\") : targetPath.replaceAll("\\", "/");
+  return isAbsolute(normalized) || posix.isAbsolute(normalized) || win32.isAbsolute(normalized)
+    ? normalized
+    : resolve(workspace, normalized);
+}
+
+export function workspaceTargetEscapes(workspace, targetPath) {
+  const resolvedTarget = resolveWorkspaceTarget(workspace, targetPath);
+  return !resolvedTarget || !isWithin(workspace, resolvedTarget);
+}
+
+export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath = null }) {
+  const caseDir = join(runDir, "cases", caseSpec.id);
+  const workspace = join(caseDir, "workspace");
+  const stagingWorkspace = join(caseDir, `.workspace-staging-${process.pid}-${Date.now()}`);
+  const isolatedHome = join(stagingWorkspace, ".eval-home");
+  const isolatedCodexHome = join(stagingWorkspace, ".eval-codex-home");
+  const isolatedTmp = join(stagingWorkspace, ".eval-tmp");
+  await ensureDir(caseDir);
+  await mkdir(stagingWorkspace, { recursive: false });
+  try {
+    if (fixturePath) {
+      await assertNoSymlinks(fixturePath, "Fixture", "corrupted_fixture");
+      await stat(fixturePath);
+      await cp(fixturePath, stagingWorkspace, { recursive: true, force: false, errorOnExist: false });
+    }
+
+    await execFileAsync("git", ["init", "-q", stagingWorkspace]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.email", "eval@example.invalid"]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.name", "Eval Runner"]);
+    await writeFile(join(stagingWorkspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n.eval-output/\n", "utf8");
+
+    await installHarnessRuntime({ root, workspace: stagingWorkspace });
+
+    await execFileAsync("git", ["-C", stagingWorkspace, "add", "--all"]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
+    await Promise.all([ensureDir(isolatedHome), ensureDir(isolatedCodexHome), ensureDir(isolatedTmp)]);
+    try {
+      await access(workspace);
+      throw new EvalInconclusiveError("environment_provisioning_failure", `Case workspace already exists: ${workspace}`);
+    } catch (error) {
+      if (error instanceof EvalInconclusiveError) throw error;
+      if (error.code !== "ENOENT") throw error;
+    }
+    await rename(stagingWorkspace, workspace);
+  } catch (error) {
+    const classified = error.code === "ENOENT" && fixturePath
+      ? new EvalInconclusiveError("corrupted_fixture", `Unable to provision fixture: ${fixturePath}`, { cause: error })
+      : error;
+    try { await rm(stagingWorkspace, { recursive: true, force: false }); } catch (cleanupError) {
+      throw new EvalInconclusiveError("workspace_cleanup_failure", `Unable to clean failed case workspace: ${stagingWorkspace}`, { cause: classified, cleanupError });
+    }
+    if (classified instanceof EvalInconclusiveError) throw classified;
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: classified });
+  }
+  return {
+    caseDir,
+    workspace: resolve(workspace),
+    allowedWriteScope: resolve(workspace),
+    isolatedHome: join(workspace, ".eval-home"),
+    isolatedCodexHome: join(workspace, ".eval-codex-home"),
+    isolatedTmp: join(workspace, ".eval-tmp"),
+    root,
+  };
+}
+
+async function installHarnessRuntime({ root, workspace }) {
+  const rootPath = await realpath(root);
+  const installer = resolve(root, "bin/harness-install.mjs");
+  let installerPath;
+  try {
+    installerPath = await realpath(installer);
+  } catch (error) {
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Harness installer is unavailable: ${installer}`, { cause: error });
+  }
+  if (!isWithin(rootPath, installerPath)) {
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Harness installer escapes source root: ${installerPath}`);
+  }
+  await assertNoSymlinks(installer, "Harness installer", "environment_provisioning_failure");
+
+  try {
+    await execFileAsync(
+      process.execPath,
+      [installerPath, "install", "--project", workspace, "--force"],
+      { cwd: rootPath, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+  } catch (error) {
+    throw new EvalInconclusiveError(
+      "environment_provisioning_failure",
+      `Harness installation failed in case workspace: ${error.stderr || error.stdout || error.message}`,
+      { cause: error },
+    );
+  }
+
+  const sourceAgents = resolve(root, "AGENTS.md");
+  const targetAgents = join(workspace, "AGENTS.md");
+  try {
+    await access(sourceAgents);
+    await assertNoSymlinks(sourceAgents, "Harness agent instructions", "environment_provisioning_failure");
+    await cp(sourceAgents, targetAgents, { force: false, errorOnExist: true });
+  } catch (error) {
+    if (error instanceof EvalInconclusiveError || error.code !== "ENOENT") throw error;
+  }
+
+  // Eval cases need a deterministic Harness configuration, while the normal installer
+  // intentionally leaves project-specific .codex/harness.yaml creation to $setup.
+  const sourceConfig = resolve(root, ".codex/harness.yaml");
+  try {
+    await access(sourceConfig);
+    await assertNoSymlinks(sourceConfig, "Harness eval configuration", "environment_provisioning_failure");
+    const targetConfig = join(workspace, ".codex", "harness.yaml");
+    const existing = await lstat(targetConfig).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+    if (!existing) {
+      await ensureDir(dirname(targetConfig));
+      await cp(sourceConfig, targetConfig, { force: false, errorOnExist: true });
+    }
+  } catch (error) {
+    if (error instanceof EvalInconclusiveError || error.code !== "ENOENT") throw error;
+  }
+}
+
+async function assertNoSymlinks(path, label, reason) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) {
+    throw new EvalInconclusiveError(reason, `${label} contains a symbolic link: ${path}`);
+  }
+  if (!info.isDirectory()) return;
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    await assertNoSymlinks(join(path, entry.name), label, reason);
+  }
+}
+
+export async function assertWorkspaceTarget(workspace, target) {
+  const targetPaths = workspaceTargetCandidates(target);
+  if (targetPaths.length === 0) return true;
+  const workspaceReal = await realpath(workspace);
+  for (const targetPath of targetPaths) {
+    const resolvedTarget = resolveWorkspaceTarget(workspace, targetPath);
+    if (!resolvedTarget || !isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${targetPath}`, { workspace, target });
+    let probe = resolvedTarget;
+    while (true) {
+      try {
+        if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${targetPath}`, { workspace, target });
+        break;
+      } catch (error) {
+        if (error instanceof EvalInconclusiveError) throw error;
+        if (error.code !== "ENOENT" || probe === workspace) break;
+        probe = dirname(probe);
+      }
+    }
+  }
+  return true;
+}
+
+export async function cleanupCaseWorkspace(handle, { evidencePersisted = false } = {}) {
+  if (!handle?.workspace) throw new TypeError("workspace handle is required");
+  const authPath = join(handle.isolatedCodexHome || join(handle.workspace, ".eval-codex-home"), "auth.json");
+  let credentialCleanup = { removed: true, present: false };
+  try {
+    await lstat(authPath);
+    credentialCleanup = { removed: false, present: true };
+    try {
+      await rm(authPath, { force: false });
+      credentialCleanup = { removed: true, present: true };
+    } catch (error) {
+      if (error.code === "ENOENT") credentialCleanup = { removed: true, present: false };
+      else {
+        credentialCleanup = { removed: false, present: true, error: error.message };
+        return {
+          state: "failed",
+          reason: "workspace_cleanup_failure",
+          final_case_state: "inconclusive",
+          dirty: null,
+          workspace: handle.workspace,
+          error: "Unable to remove isolated Codex credentials",
+          credential_cleanup: credentialCleanup,
+        };
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      credentialCleanup = { removed: false, present: null, error: error.message };
+      return {
+        state: "failed",
+        reason: "workspace_cleanup_failure",
+        final_case_state: "inconclusive",
+        dirty: null,
+        workspace: handle.workspace,
+        error: "Unable to inspect isolated Codex credentials",
+        credential_cleanup: credentialCleanup,
+      };
+    }
+  }
+  if (!evidencePersisted) {
+    return {
+      state: "failed",
+      reason: "workspace_cleanup_failure",
+      final_case_state: "inconclusive",
+      dirty: null,
+      workspace: handle.workspace,
+      error: "Evidence was not persisted before cleanup",
+      credential_cleanup: credentialCleanup,
+    };
+  }
+  try {
+    const status = await execFileAsync("git", ["-C", handle.workspace, "status", "--porcelain", "--untracked-files=all"]);
+    const dirtyFiles = status.stdout.split("\n").filter(Boolean);
+    if (dirtyFiles.length > 0) {
+      return { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive", dirty: true, dirty_files: dirtyFiles, workspace: handle.workspace, credential_cleanup: credentialCleanup };
+    }
+    await rm(handle.workspace, { recursive: true, force: false });
+    return { state: "passed", reason: null, dirty: false, workspace: handle.workspace, credential_cleanup: credentialCleanup };
+  } catch (error) {
+    return { state: "failed", reason: "workspace_cleanup_failure", final_case_state: "inconclusive", workspace: handle.workspace, error: error.message, credential_cleanup: credentialCleanup };
+  }
+}

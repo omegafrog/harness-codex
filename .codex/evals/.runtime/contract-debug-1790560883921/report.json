@@ -1,0 +1,552 @@
+{
+  "schema_version": 1,
+  "suite_id": "p0",
+  "state": "failed",
+  "passed": false,
+  "counts": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "quality": {
+    "mean": 0.8281,
+    "p10": 0.4625
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 305,
+    "tool_calls": 11,
+    "turns": 0,
+    "handoffs": 0
+  },
+  "baseline": {
+    "id": "p0-baseline",
+    "harness_version": "0.1.0",
+    "model": "configured-codex",
+    "model_config": "configured-default",
+    "environment_profile": "p0-default",
+    "harness_commit": "962f7d4",
+    "source_run_id": "run-20260911064009308-548442-fa9268bc",
+    "metrics": {
+      "tokens": 379707,
+      "latency_ms": 224091
+    },
+    "case_metrics": {
+      "spec-me-source-policy": {
+        "tokens": 38444,
+        "latency_ms": 54201,
+        "tool_calls": 1,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": 84763,
+        "latency_ms": 71750,
+        "tool_calls": 3,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "implement-wrapper-dependency": {
+        "tokens": 73850,
+        "latency_ms": 25141,
+        "tool_calls": 4,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "code-review-isolation": {
+        "tokens": 182650,
+        "latency_ms": 72999,
+        "tool_calls": 8,
+        "turns": 4,
+        "handoffs": 0
+      }
+    }
+  },
+  "regressions": {
+    "tokens": {
+      "available": true,
+      "ratio": -1,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": true,
+      "ratio": -0.9986,
+      "passed": true
+    },
+    "cases": {
+      "spec-me-source-policy": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9987,
+          "passed": true
+        }
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.999,
+          "passed": true
+        }
+      },
+      "implement-wrapper-dependency": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9969,
+          "passed": true
+        }
+      },
+      "code-review-isolation": {
+        "tokens": {
+          "available": true,
+          "ratio": -1,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.9988,
+          "passed": true
+        }
+      }
+    }
+  },
+  "attempt": {
+    "number": 1,
+    "kind": "first",
+    "retry_of": null
+  },
+  "attempt_stats": {
+    "first_attempt": {
+      "count": 4,
+      "passed": 3,
+      "failed": 1,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 305,
+        "tool_calls": 11,
+        "turns": 0,
+        "handoffs": 0
+      }
+    },
+    "retry_attempts": {
+      "count": 0,
+      "passed": 0,
+      "failed": 0,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 0,
+        "tool_calls": 0,
+        "turns": 0,
+        "handoffs": 0
+      }
+    }
+  },
+  "inconclusive_reasons": {},
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": true,
+    "pass_rate": false,
+    "mean_quality": true,
+    "p10_quality": false,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true,
+    "case_token_regression": true,
+    "case_latency_regression": true
+  },
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-source-policy",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 70,
+        "command": [
+          "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "spec_complete": true,
+          "ambiguity_resolved": true
+        },
+        "missing": [],
+        "artifact_files": [
+          ".eval-output/specs/496/product-spec.md",
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ]
+          },
+          "ambiguity_resolved": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ]
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.95,
+        "trajectory_quality": 0.95,
+        "dimensions": {
+          "correctness": 0.95
+        },
+        "rationale": "deterministic",
+        "quality": 0.95,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 70,
+        "tool_calls": 3,
+        "turns": 0,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-source-policy/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-ambiguity-gate",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 72,
+        "command": [
+          "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "spec_complete": true,
+          "ambiguity_resolved": true
+        },
+        "missing": [],
+        "artifact_files": [
+          ".eval-output/specs/496/product-spec.md",
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ]
+          },
+          "ambiguity_resolved": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ]
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.95,
+        "trajectory_quality": 0.95,
+        "dimensions": {
+          "correctness": 0.95
+        },
+        "rationale": "deterministic",
+        "quality": 0.95,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 72,
+        "tool_calls": 3,
+        "turns": 0,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/spec-me-ambiguity-gate/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "implement-wrapper-dependency",
+      "workflow": "implement-wrapper",
+      "critical": false,
+      "state": "passed",
+      "reason": null,
+      "passed": true,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 78,
+        "command": [
+          "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": true,
+        "results": {
+          "plan_dispatched": true,
+          "dependency_satisfied": true
+        },
+        "missing": [],
+        "artifact_files": [
+          ".eval-output/implementation/plan-dispatched.json",
+          ".eval-output/implementation/dependency-satisfied.json"
+        ],
+        "evidence": {
+          "plan_dispatched": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/implementation/plan-dispatched.json"
+            ],
+            "observed_files": [
+              ".eval-output/implementation/plan-dispatched.json"
+            ]
+          },
+          "dependency_satisfied": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/implementation/dependency-satisfied.json"
+            ],
+            "observed_files": [
+              ".eval-output/implementation/dependency-satisfied.json"
+            ]
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.95,
+        "trajectory_quality": 0.95,
+        "dimensions": {
+          "correctness": 0.95
+        },
+        "rationale": "deterministic",
+        "quality": 0.95,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 78,
+        "tool_calls": 3,
+        "turns": 0,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/implement-wrapper-dependency/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "code-review-isolation",
+      "workflow": "code-review",
+      "critical": false,
+      "state": "failed",
+      "reason": "required_outcome_failure",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 85,
+        "command": [
+          "/home/jiwoo/.nvm/versions/node/v24.12.0/bin/node",
+          "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "reviewer_isolation_blocked": false
+        },
+        "missing": [
+          "reviewer_isolation_blocked"
+        ],
+        "artifact_files": [
+          ".eval-output/review/contexts.json"
+        ],
+        "evidence": {
+          "reviewer_isolation_blocked": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/review/contexts.json"
+            ],
+            "observed_files": [
+              ".eval-output/review/contexts.json"
+            ]
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.2,
+        "trajectory_quality": 0.95,
+        "dimensions": {
+          "correctness": 0.95
+        },
+        "rationale": "deterministic",
+        "quality": 0.4625,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 85,
+        "tool_calls": 2,
+        "turns": 0,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921/cases/code-review-isolation/recording.jsonl"
+      }
+    }
+  ],
+  "run_id": "contract-debug-1790560883921",
+  "harness_commit": "1189dac17c6cb877b98d9f8082db5b0d43c601e9",
+  "run_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/contract-debug-1790560883921"
+}

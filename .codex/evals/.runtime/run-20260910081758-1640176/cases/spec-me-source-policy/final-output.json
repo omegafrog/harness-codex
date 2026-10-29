@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`product-spec` + `caveman` 사용. 목표: 코드 읽지 않고, 모호성 해소 후 완전한 Product Spec 작성. 먼저 규칙 읽음.\n경로 별칭 해석 수정. 실제 skill 루트에서 다시 읽음.\n규칙상 인터뷰 전 필수 문서 읽음: coverage topics, spec template, `grill-with-docs`, 프로젝트 product context. 소스·테스트 코드는 읽지 않음.\n`CONTEXT.md` 없음 확인. 현재 제품/기능 요구 자체도 없음. 인터뷰 첫 결정은 대상 제품·문제·사용자 범위. `grill-with-docs` 필수 질문 규칙 추가 확인 중.\n첫 결정: 어떤 제품/기능을 명세할까?\n\n권장 답변 형식:\n\n`기능명 / 해결할 문제 / 주요 사용자 / 원하는 결과 / ticket-id`\n\n대상 없으면 Product Spec 작성 불가."
+}

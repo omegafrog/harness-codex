@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "case_id": "spec-me-ambiguity-gate",
+  "workflow": "spec-me",
+  "critical": true,
+  "state": "passed",
+  "reason": null,
+  "passed": true,
+  "execution_result": {
+    "state": "passed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 63276,
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=false"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null,
+    "dirty": false,
+    "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate/workspace"
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": true,
+    "results": {
+      "spec_complete": true,
+      "ambiguity_resolved": true
+    },
+    "missing": [],
+    "artifact_files": [
+      ".eval-output/specs/496/product-spec.md",
+      ".eval-output/specs/496/ambiguity-resolved.json"
+    ],
+    "evidence": {
+      "spec_complete": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/product-spec.md"
+        ]
+      },
+      "ambiguity_resolved": {
+        "action_matched": true,
+        "required_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ],
+        "observed_files": [
+          ".eval-output/specs/496/ambiguity-resolved.json"
+        ]
+      }
+    }
+  },
+  "quality": {
+    "task_quality": 0.92,
+    "trajectory_quality": 0.94,
+    "dimensions": {
+      "requirement_coverage": 0.97,
+      "correctness": 0.9,
+      "ambiguity_resolution": 1,
+      "artifact_usefulness": 0.86,
+      "relevance": 0.97,
+      "coherence": 0.96,
+      "proportionality": 0.94
+    },
+    "rationale": "Both required artifacts were created and verified, the visibility ambiguity was explicitly resolved, and Architecture work, source/test inspection, collaboration tools, and MCP were avoided. The product spec is useful and includes requirements, use cases, rules, edge cases, and acceptance criteria, though it contains a minor malformed quote in REQ-001 and is somewhat more expansive than necessary. The trajectory was direct and proportionate, with no duplicate actions or backtracking.",
+    "quality": 0.927,
+    "evaluator_snapshot": {
+      "model": "gpt-5.6-luna",
+      "model_config": "configured-default",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 83584,
+    "latency_ms": 63276,
+    "tool_calls": 4,
+    "turns": 3,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+    "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate/external-events.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260928020842505-152178-cc0d8725/cases/spec-me-ambiguity-gate/recording.jsonl"
+  }
+}

@@ -1,0 +1,601 @@
+{
+  "schema_version": 1,
+  "suite_id": "p0",
+  "state": "failed",
+  "passed": false,
+  "counts": {
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "quality": {
+    "mean": 0.3915,
+    "p10": 0.3915,
+    "overall": 0.3915
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 34776,
+    "tool_calls": 4,
+    "turns": 8,
+    "handoffs": 0
+  },
+  "baseline": {
+    "id": "p0-baseline",
+    "harness_version": "0.1.0",
+    "model": "configured-codex",
+    "model_config": "configured-default",
+    "environment_profile": "p0-default",
+    "metrics": null
+  },
+  "regressions": {
+    "tokens": {
+      "available": false,
+      "ratio": null,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": false,
+      "ratio": null,
+      "passed": true
+    }
+  },
+  "checks": {
+    "hard_gate_failures": false,
+    "critical_case_pass_rate": false,
+    "pass_rate": false,
+    "mean_quality": false,
+    "p10_quality": false,
+    "overall": false,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true
+  },
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-source-policy",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "failed",
+      "reason": "hard_gate_violation",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 8158,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy/workspace"
+      },
+      "hard_gates": {
+        "passed": false,
+        "violations": [
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-spec-me-source-policy",
+              "seq": 4,
+              "timestamp": "2026-09-11T04:40:52.477Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          },
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-spec-me-source-policy",
+              "seq": 5,
+              "timestamp": "2026-09-11T04:40:52.493Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          }
+        ],
+        "failFast": true,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "spec_complete": false,
+          "ambiguity_resolved": false
+        },
+        "missing": [
+          "spec_complete",
+          "ambiguity_resolved"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": []
+          },
+          "ambiguity_resolved": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.15,
+        "trajectory_quality": 0.84,
+        "quality": 0.3915,
+        "dimensions": {
+          "requirement_coverage": 0,
+          "ambiguity_resolution": 0,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 8158,
+        "tool_calls": 1,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-source-policy/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-ambiguity-gate",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "failed",
+      "reason": "hard_gate_violation",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 8282,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate/workspace"
+      },
+      "hard_gates": {
+        "passed": false,
+        "violations": [
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-spec-me-ambiguity-gate",
+              "seq": 4,
+              "timestamp": "2026-09-11T04:41:01.357Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          },
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-spec-me-ambiguity-gate",
+              "seq": 5,
+              "timestamp": "2026-09-11T04:41:01.379Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          }
+        ],
+        "failFast": true,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "spec_complete": false,
+          "ambiguity_resolved": false
+        },
+        "missing": [
+          "spec_complete",
+          "ambiguity_resolved"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": []
+          },
+          "ambiguity_resolved": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.15,
+        "trajectory_quality": 0.84,
+        "quality": 0.3915,
+        "dimensions": {
+          "requirement_coverage": 0,
+          "ambiguity_resolution": 0,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 8282,
+        "tool_calls": 1,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/spec-me-ambiguity-gate/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "implement-wrapper-dependency",
+      "workflow": "implement-wrapper",
+      "critical": false,
+      "state": "failed",
+      "reason": "hard_gate_violation",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 8550,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency/workspace"
+      },
+      "hard_gates": {
+        "passed": false,
+        "violations": [
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-implement-wrapper-dependency",
+              "seq": 4,
+              "timestamp": "2026-09-11T04:41:10.407Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          },
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-implement-wrapper-dependency",
+              "seq": 5,
+              "timestamp": "2026-09-11T04:41:10.431Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          }
+        ],
+        "failFast": true,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "plan_dispatched": false,
+          "dependency_satisfied": false
+        },
+        "missing": [
+          "plan_dispatched",
+          "dependency_satisfied"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "plan_dispatched": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/implementation/plan-dispatched.json"
+            ],
+            "observed_files": []
+          },
+          "dependency_satisfied": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/implementation/dependency-satisfied.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.15,
+        "trajectory_quality": 0.84,
+        "quality": 0.3915,
+        "dimensions": {
+          "requirement_coverage": 0,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 8550,
+        "tool_calls": 1,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/implement-wrapper-dependency/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "code-review-isolation",
+      "workflow": "code-review",
+      "critical": false,
+      "state": "failed",
+      "reason": "hard_gate_violation",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 9786,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation/workspace"
+      },
+      "hard_gates": {
+        "passed": false,
+        "violations": [
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-code-review-isolation",
+              "seq": 4,
+              "timestamp": "2026-09-11T04:41:20.705Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          },
+          {
+            "gate": "workspace_escape",
+            "mode": "fail_fast",
+            "evidence": {
+              "schema_version": 1,
+              "stream_id": "case-code-review-isolation",
+              "seq": 5,
+              "timestamp": "2026-09-11T04:41:20.751Z",
+              "type": "hard_gate_violation",
+              "payload": {
+                "gate": "workspace_escape",
+                "mode": "fail_fast",
+                "action": "command_execution",
+                "target": "/bin/zsh"
+              },
+              "gate": "workspace_escape",
+              "mode": "fail_fast"
+            }
+          }
+        ],
+        "failFast": true,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "review_verdict_preserved": false,
+          "reviewer_isolated": false
+        },
+        "missing": [
+          "review_verdict_preserved",
+          "reviewer_isolated"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "review_verdict_preserved": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/review/verdict.json"
+            ],
+            "observed_files": []
+          },
+          "reviewer_isolated": {
+            "action_matched": false,
+            "required_files": [
+              ".eval-output/review/contexts.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.15,
+        "trajectory_quality": 0.84,
+        "quality": 0.3915,
+        "dimensions": {
+          "requirement_coverage": 0,
+          "ambiguity_resolution": 1,
+          "action_relevance": 1,
+          "unnecessary_backtracking": 1
+        },
+        "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+        "evaluator_snapshot": {
+          "model": "deterministic-v1",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 9786,
+        "tool_calls": 1,
+        "turns": 2,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/cases/code-review-isolation/recording.jsonl"
+      }
+    }
+  ],
+  "run_id": "run-20260911044043750-3271431-9c6e69f9",
+  "config_snapshot": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260911044043750-3271431-9c6e69f9/config-snapshot.json"
+}

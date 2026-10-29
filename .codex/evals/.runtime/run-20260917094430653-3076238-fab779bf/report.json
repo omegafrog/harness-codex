@@ -1,0 +1,582 @@
+{
+  "schema_version": 1,
+  "suite_id": "p0",
+  "state": "failed",
+  "passed": false,
+  "counts": {
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "inconclusive": 0,
+    "conclusive": 4
+  },
+  "quality": {
+    "mean": 0.8807,
+    "p10": 0.746
+  },
+  "efficiency": {
+    "tokens": 355610,
+    "latency_ms": 277770,
+    "tool_calls": 15,
+    "turns": 14,
+    "handoffs": 0
+  },
+  "baseline": {
+    "id": "p0-baseline",
+    "harness_version": "0.1.0",
+    "model": "configured-codex",
+    "model_config": "configured-default",
+    "environment_profile": "p0-default",
+    "harness_commit": "962f7d4",
+    "source_run_id": "run-20260911064009308-548442-fa9268bc",
+    "metrics": {
+      "tokens": 379707,
+      "latency_ms": 224091
+    },
+    "case_metrics": {
+      "spec-me-source-policy": {
+        "tokens": 38444,
+        "latency_ms": 54201,
+        "tool_calls": 1,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": 84763,
+        "latency_ms": 71750,
+        "tool_calls": 3,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "implement-wrapper-dependency": {
+        "tokens": 73850,
+        "latency_ms": 25141,
+        "tool_calls": 4,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "code-review-isolation": {
+        "tokens": 182650,
+        "latency_ms": 72999,
+        "tool_calls": 8,
+        "turns": 4,
+        "handoffs": 0
+      }
+    }
+  },
+  "regressions": {
+    "tokens": {
+      "available": true,
+      "ratio": -0.0635,
+      "passed": true
+    },
+    "latency_ms": {
+      "available": true,
+      "ratio": 0.2395,
+      "passed": true
+    },
+    "cases": {
+      "spec-me-source-policy": {
+        "tokens": {
+          "available": true,
+          "ratio": -0.0149,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.1676,
+          "passed": true
+        }
+      },
+      "spec-me-ambiguity-gate": {
+        "tokens": {
+          "available": true,
+          "ratio": 0.2017,
+          "passed": false
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": -0.028,
+          "passed": true
+        }
+      },
+      "implement-wrapper-dependency": {
+        "tokens": {
+          "available": true,
+          "ratio": 0.1748,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.2099,
+          "passed": true
+        }
+      },
+      "code-review-isolation": {
+        "tokens": {
+          "available": true,
+          "ratio": -0.2931,
+          "passed": true
+        },
+        "latency_ms": {
+          "available": true,
+          "ratio": 0.5662,
+          "passed": false
+        }
+      }
+    }
+  },
+  "attempt": {
+    "number": 1,
+    "kind": "first",
+    "retry_of": null
+  },
+  "attempt_stats": {
+    "first_attempt": {
+      "count": 4,
+      "passed": 0,
+      "failed": 4,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 355610,
+        "latency_ms": 277770,
+        "tool_calls": 15,
+        "turns": 14,
+        "handoffs": 0
+      }
+    },
+    "retry_attempts": {
+      "count": 0,
+      "passed": 0,
+      "failed": 0,
+      "inconclusive": 0,
+      "efficiency": {
+        "tokens": 0,
+        "latency_ms": 0,
+        "tool_calls": 0,
+        "turns": 0,
+        "handoffs": 0
+      }
+    }
+  },
+  "inconclusive_reasons": {},
+  "checks": {
+    "hard_gate_failures": true,
+    "critical_case_pass_rate": false,
+    "pass_rate": false,
+    "mean_quality": true,
+    "p10_quality": true,
+    "inconclusive_rate": true,
+    "minimum_conclusive_cases": true,
+    "token_regression": true,
+    "latency_regression": true,
+    "case_token_regression": false,
+    "case_latency_regression": false
+  },
+  "cases": [
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-source-policy",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "failed",
+      "reason": "required_outcome_failure",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 63287,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "spec_complete": false,
+          "ambiguity_resolved": false
+        },
+        "missing": [
+          "spec_complete",
+          "ambiguity_resolved"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": []
+          },
+          "ambiguity_resolved": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.62,
+        "trajectory_quality": 0.98,
+        "dimensions": {
+          "requirement_coverage": 0.55,
+          "correctness": 0.6,
+          "ambiguity_resolution": 0.9,
+          "usefulness": 0.6,
+          "relevance": 0.99,
+          "coherence": 0.98,
+          "proportionality": 0.99
+        },
+        "rationale": "The trajectory is highly relevant and disciplined: it performed one write action, produced the two required artifact paths, explicitly resolved the list ambiguity, avoided forbidden source/tool actions, and stopped. However, the bundle provides no contents of either file, so coverage, correctness, stable IDs, required sections, acceptance criteria, and the actual ambiguity record cannot be verified; existence evidence alone is insufficient for a higher task-quality score.",
+        "quality": 0.746,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 37873,
+        "latency_ms": 63287,
+        "tool_calls": 1,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-source-policy/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "spec-me-ambiguity-gate",
+      "workflow": "spec-me",
+      "critical": true,
+      "state": "failed",
+      "reason": "case_hard_cap_exceeded",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 69738,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "spec_complete": false,
+          "ambiguity_resolved": false
+        },
+        "missing": [
+          "spec_complete",
+          "ambiguity_resolved"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "spec_complete": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/product-spec.md"
+            ],
+            "observed_files": []
+          },
+          "ambiguity_resolved": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/specs/496/ambiguity-resolved.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.9,
+        "trajectory_quality": 0.82,
+        "dimensions": {
+          "requirement_coverage": 0.95,
+          "correctness": 0.9,
+          "ambiguity_resolution": 0.98,
+          "usefulness": 0.8,
+          "relevance": 0.95,
+          "coherence": 0.9,
+          "proportionality": 0.7,
+          "workflow_compliance": 0.88
+        },
+        "rationale": "The supplied evidence confirms both required artifacts were written, the visibility ambiguity was explicitly settled, and Architecture was not started. Detailed artifact contents are unavailable, so spec usefulness cannot be scored higher with confidence. The trajectory was focused and respected the requested boundary, but it exceeded the token hard cap, included one failed validation attempt, and incurred a duplicate action.",
+        "quality": 0.872,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 101857,
+        "latency_ms": 69738,
+        "tool_calls": 5,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/spec-me-ambiguity-gate/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "implement-wrapper-dependency",
+      "workflow": "implement-wrapper",
+      "critical": false,
+      "state": "failed",
+      "reason": "required_outcome_failure",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 30417,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "plan_dispatched": false,
+          "dependency_satisfied": false
+        },
+        "missing": [
+          "plan_dispatched",
+          "dependency_satisfied"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "plan_dispatched": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/implementation/plan-dispatched.json"
+            ],
+            "observed_files": []
+          },
+          "dependency_satisfied": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/implementation/dependency-satisfied.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 1,
+        "trajectory_quality": 1,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "correctness": 1,
+          "ambiguity_resolution": 1,
+          "usefulness": 1,
+          "relevance": 1,
+          "coherence": 1,
+          "proportionality": 1
+        },
+        "rationale": "Both required artifacts were created with the correct values and in the required dependency-check-before-dispatch order. The trajectory was concise, relevant, successful, and respected the synthetic constraints by avoiding source edits, agents, and external systems.",
+        "quality": 1,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 86758,
+        "latency_ms": 30417,
+        "tool_calls": 4,
+        "turns": 3,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/implement-wrapper-dependency/recording.jsonl"
+      }
+    },
+    {
+      "schema_version": 1,
+      "case_id": "code-review-isolation",
+      "workflow": "code-review",
+      "critical": false,
+      "state": "failed",
+      "reason": "case_hard_cap_exceeded",
+      "passed": false,
+      "execution_result": {
+        "state": "passed",
+        "exit_code": 0,
+        "signal": null,
+        "duration_ms": 114328,
+        "command": [
+          "codex",
+          "exec",
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--sandbox",
+          "workspace-write",
+          "--config",
+          "sandbox_workspace_write.network_access=false"
+        ]
+      },
+      "cleanup": {
+        "state": "passed",
+        "reason": null,
+        "dirty": false,
+        "workspace": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation/workspace"
+      },
+      "hard_gates": {
+        "passed": true,
+        "violations": [],
+        "failFast": false,
+        "continueExecution": false
+      },
+      "required_outcome": {
+        "passed": false,
+        "results": {
+          "review_verdict_preserved": false,
+          "reviewer_isolated": false
+        },
+        "missing": [
+          "review_verdict_preserved",
+          "reviewer_isolated"
+        ],
+        "artifact_files": [],
+        "evidence": {
+          "review_verdict_preserved": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/review/verdict.json"
+            ],
+            "observed_files": []
+          },
+          "reviewer_isolated": {
+            "action_matched": true,
+            "required_files": [
+              ".eval-output/review/contexts.json"
+            ],
+            "observed_files": []
+          }
+        }
+      },
+      "quality": {
+        "task_quality": 0.94,
+        "trajectory_quality": 0.84,
+        "dimensions": {
+          "requirement_coverage": 1,
+          "correctness": 0.95,
+          "ambiguity_resolution": 0.92,
+          "usefulness": 0.93,
+          "relevance": 0.96,
+          "coherence": 0.94,
+          "proportionality": 0.7
+        },
+        "rationale": "The required verdict preservation and reviewer isolation evidence passed, with separate Standards and Spec outcomes and no prohibited source/spec edits. The trajectory was relevant and coherent, but exceeded the 90-second latency cap and included one duplicate action, reducing proportionality.",
+        "quality": 0.905,
+        "evaluator_snapshot": {
+          "model": "gpt-5.6-luna",
+          "model_config": "configured-default",
+          "rubric_version": "1"
+        }
+      },
+      "efficiency": {
+        "tokens": 129122,
+        "latency_ms": 114328,
+        "tool_calls": 5,
+        "turns": 5,
+        "handoffs": 0
+      },
+      "artifacts": {
+        "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation",
+        "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation/events.jsonl",
+        "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation/trajectory.jsonl",
+        "external_events": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation/external-events.jsonl",
+        "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf/cases/code-review-isolation/recording.jsonl"
+      }
+    }
+  ],
+  "run_id": "run-20260917094430653-3076238-fab779bf",
+  "harness_commit": "6da8cfb4bb532d5833229cfe11aef3ba26d9620e",
+  "run_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260917094430653-3076238-fab779bf"
+}

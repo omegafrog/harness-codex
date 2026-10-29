@@ -1,0 +1,84 @@
+{
+  "command": [
+    "node",
+    "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs"
+  ],
+  "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-2/cases/code-review-isolation/workspace",
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "durationMs": 27,
+  "finalOutput": "[OUTCOME:review_verdict_preserved]\n[OUTCOME:reviewer_isolated]",
+  "records": [
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 2,
+      "timestamp": "2026-09-10T08:49:58.789Z",
+      "actor": "codex",
+      "kind": "message",
+      "payload": {
+        "text": "[OUTCOME:review_verdict_preserved]"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 3,
+      "timestamp": "2026-09-10T08:49:58.790Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "review_verdict_preserved",
+      "payload": {
+        "outcome": "review_verdict_preserved"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 4,
+      "timestamp": "2026-09-10T08:49:58.790Z",
+      "actor": "codex",
+      "kind": "message",
+      "payload": {
+        "text": "[OUTCOME:reviewer_isolated]"
+      },
+      "source": "structured_event"
+    },
+    {
+      "schema_version": 1,
+      "stream_id": "trajectory-code-review-isolation",
+      "seq": 5,
+      "timestamp": "2026-09-10T08:49:58.791Z",
+      "actor": "harness",
+      "kind": "process_event",
+      "action": "reviewer_isolated",
+      "payload": {
+        "outcome": "reviewer_isolated"
+      },
+      "source": "structured_event"
+    }
+  ],
+  "snapshot": {
+    "command": [
+      "node",
+      "/home/jiwoo/workspace/harness/evals/fixtures/emit-eval.mjs"
+    ],
+    "cwd": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/final-contract-e2e-2/cases/code-review-isolation/workspace",
+    "model": null,
+    "model_config": null,
+    "permission_profile": "eval-workspace",
+    "native_sandbox": "workspace-write",
+    "environment_profile": "p0-default",
+    "external_port": {
+      "mode": "replay",
+      "fixture": "/home/jiwoo/workspace/harness/evals/recordings/code-review-isolation.jsonl",
+      "mutation": "deny-by-default",
+      "integration": false
+    }
+  },
+  "failFast": false,
+  "hardCapExceeded": null
+}

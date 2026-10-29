@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "case_id": "code-review-isolation",
+  "workflow": "code-review",
+  "critical": false,
+  "state": "failed",
+  "reason": "agent_execution_timeout",
+  "passed": false,
+  "execution_result": {
+    "state": "failed",
+    "exit_code": 0,
+    "signal": null,
+    "duration_ms": 90031,
+    "command": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "workspace-write"
+    ]
+  },
+  "cleanup": {
+    "state": "passed",
+    "reason": null
+  },
+  "hard_gates": {
+    "passed": true,
+    "violations": [],
+    "failFast": false,
+    "continueExecution": false
+  },
+  "required_outcome": {
+    "passed": false,
+    "results": {
+      "review_verdict_preserved": false,
+      "reviewer_isolated": false
+    },
+    "missing": [
+      "review_verdict_preserved",
+      "reviewer_isolated"
+    ]
+  },
+  "quality": {
+    "task_quality": 0.15,
+    "trajectory_quality": 0.4,
+    "quality": 0.2375,
+    "dimensions": {
+      "requirement_coverage": 0,
+      "ambiguity_resolution": 1,
+      "action_relevance": 1,
+      "unnecessary_backtracking": 1
+    },
+    "rationale": "Versioned artifact bundle 기반 deterministic rubric 평가.",
+    "evaluator_snapshot": {
+      "model": "deterministic-v1",
+      "rubric_version": "1"
+    }
+  },
+  "efficiency": {
+    "tokens": 0,
+    "latency_ms": 90031,
+    "tool_calls": 17,
+    "turns": 4,
+    "handoffs": 0
+  },
+  "artifacts": {
+    "case_dir": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910082622-1762657/cases/code-review-isolation",
+    "event_stream": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910082622-1762657/cases/code-review-isolation/events.jsonl",
+    "trajectory": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910082622-1762657/cases/code-review-isolation/trajectory.jsonl",
+    "recording": "/home/jiwoo/workspace/harness/.codex/evals/.runtime/run-20260910082622-1762657/cases/code-review-isolation/recording.jsonl"
+  }
+}

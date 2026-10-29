@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "runtime-cc8c3c0e77aabdadb16e0f91eb396919fa9eca1a",
+  "evidence": {
+    "schema_version": 1,
+    "id": "runtime-cc8c3c0e77aabdadb16e0f91eb396919fa9eca1a",
+    "origin_project": "harness-codex",
+    "environment": {
+      "runtime": "node 24.12.0",
+      "platform": "linux"
+    },
+    "timestamp": "2026-10-07T04:25:48.652Z",
+    "type": "failure_test",
+    "execution_status": "failed",
+    "measurement_validity": "invalid",
+    "observations": [
+      {
+        "metric": "case_result_state",
+        "value": "failed",
+        "unit": "state"
+      },
+      {
+        "metric": "quality",
+        "value": 0.0175,
+        "unit": "score"
+      },
+      {
+        "metric": "tokens",
+        "value": 0,
+        "unit": "tokens"
+      },
+      {
+        "metric": "latency_ms",
+        "value": 15,
+        "unit": "ms"
+      },
+      {
+        "metric": "tool_calls",
+        "value": 0,
+        "unit": "calls"
+      },
+      {
+        "metric": "turns",
+        "value": 0,
+        "unit": "turns"
+      },
+      {
+        "metric": "handoffs",
+        "value": 0,
+        "unit": "handoffs"
+      },
+      {
+        "metric": "required_outcome_passed",
+        "value": 0,
+        "unit": "boolean"
+      },
+      {
+        "metric": "hard_gates_passed",
+        "value": 1,
+        "unit": "boolean"
+      }
+    ],
+    "source_reference": "native-denial-173061-1791347123432-1/implement-wrapper-dependency",
+    "execution_purpose": "code_validation",
+    "decision_ids": []
+  },
+  "summary": "Harness case implement-wrapper-dependency finished with state failed.",
+  "status": "pending_approval",
+  "history": [
+    {
+      "status": "pending_approval",
+      "actor": "import",
+      "at": "2026-10-07T04:26:03.630Z"
+    }
+  ]
+}

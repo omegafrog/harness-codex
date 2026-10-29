@@ -20,7 +20,7 @@
 
 1. 요청 원문과 확인된 입력을 읽고 필요한 결과와 승인 범위를 정리한다. 업무 결정이 부족하면 미확정 사항을 결과 파일에 기록하고 `USER_DECISION_REQUIRED`를 반환한다.
 2. 실제 사용 가능한 skill의 entrypoint와 각 skill의 입력·산출물·반환 코드를 읽는다. 새 기능의 Product/Architecture Spec 작성은 `spec-me`, 승인된 Spec의 분할은 `to-ticket`, 승인된 plan 구현은 `implement-wrapper`, 구현 리뷰는 `code-review`, 최종 사용자 검증은 `e2e-test`로 구성한다. 버그 진단·frontend 등 요청된 독립 workflow의 경계를 유지한다. 승인되지 않은 구현·게시 단계를 실행 가능 상태로 만들지 않는다.
-3. Spec 작성 뒤의 독립 Spec 리뷰, 전체 split plan 작성 뒤의 plan-review, plan별 구현·단위 테스트 뒤의 독립 구현 리뷰를 배치한다. 모든 plan 통합 뒤 최종 E2E를 배치한다. `to-ticket` 요청은 `.codex/skills/orchestrator/references/to-ticket.md`의 stage 구성과 산출물 계약을 workflow로 만든다:
+3. Spec 작성 뒤의 독립 Spec 리뷰, 전체 split plan 작성 뒤의 plan-review, plan별 구현·단위 테스트 뒤의 독립 구현 리뷰를 배치한다. 모든 plan 통합 뒤 최종 E2E를 배치한다. `to-ticket` 요청은 `.agents/skills/orchestrator/references/to-ticket.md`의 stage 구성과 산출물 계약을 workflow로 만든다:
    - `plan_split`: `to-ticket` / `to_ticket`; output `plan_set_draft`.
    - `plan_review`: `plan-review` / `plan_reviewer`, `needs: [plan_split]`; input `plan_set_draft`, output `plan_review_result`.
    - `plan_revision`: `to-ticket` / `to_ticket`, `needs: [plan_split, plan_review]`; inputs `plan_set_draft`, `plan_review_result`, output `plan_set_revision`.

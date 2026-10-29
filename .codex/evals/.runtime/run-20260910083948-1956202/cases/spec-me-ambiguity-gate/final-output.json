@@ -1,0 +1,3 @@
+{
+  "output": "Reading prompt from stdin...\n`spec-me` + `caveman` 적용. 먼저 지침과 현재 문서 확인 → 모호성 질문 → 해소 전 Architecture 진행 금지.\nProduct 단계부터 시작. Product Spec은 소스 코드 조사 금지. 현재 용어·기존 Spec·요청 입력만 확인하고, material ambiguity 1개씩 묻는다.\nProduct 단계에서 material ambiguity 발견:\n\n실행 후 workspace 격리 reset/cleanup 실패 시 판정이 미정. 추천:\n\n- 실행 중 실제 `workspace_escape`·외부 mutation 감지 → `failed`\n- cleanup/reset 실패 또는 격리 검증 불가 → `inconclusive`\n- evidence 보존, pass rate 제외, 동일 workspace 재시도 금지\n\n이 규칙으로 Product Spec에 확정할까요?"
+}
