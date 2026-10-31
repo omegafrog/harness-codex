@@ -15,14 +15,17 @@ try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
     const k = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'plan-set-id', 'request', 'codex-session-id', 'recompose'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
+    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'plan-set-id', 'request', 'codex-session-id', 'recompose', 'continue-composition'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
   if (!isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute root and execution-id are required');
   if (opts.request !== undefined) {
-    if (opts.recompose && (opts.recompose !== 'true' || !opts['worktree-ref'])) throw new Error('Recompose requires --recompose true and --worktree-ref');
-    if (opts['worktree-ref'] && !opts.recompose) throw new Error('Existing worktree input requires explicit --recompose true');
-    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], codex_session_id: opts['codex-session-id'], recompose_worktree_ref: opts.recompose ? opts['worktree-ref'] : null });
+    if (opts.recompose && opts['continue-composition']) throw new Error('Choose recompose or continue-composition');
+    if (opts.recompose && opts.recompose !== 'true') throw new Error('--recompose requires true');
+    if (opts['continue-composition'] && opts['continue-composition'] !== 'true') throw new Error('--continue-composition requires true');
+    if ((opts.recompose || opts['continue-composition']) && !opts['worktree-ref']) throw new Error('Continuing existing composition requires --worktree-ref');
+    if (opts['worktree-ref'] && !opts.recompose && !opts['continue-composition']) throw new Error('Existing worktree input requires explicit --recompose true or --continue-composition true');
+    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], codex_session_id: opts['codex-session-id'], recompose_worktree_ref: opts.recompose ? opts['worktree-ref'] : null, continue_worktree_ref: opts['continue-composition'] ? opts['worktree-ref'] : null });
     process.stdout.write(`${JSON.stringify(record)}\n`);
     process.exit(0);
   }
