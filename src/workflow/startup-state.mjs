@@ -71,7 +71,13 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       const document = await readJson(session, 'runtime/orchestrator/workflow.json');
       const state = document?.state || await readJson(session, 'runtime/orchestrator/state.json');
       if (!state) {
-        if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) currentOrphan = true;
+        // A freshly allocated compose worktree is still owned work, even before
+        // recordExecutionState has written the first workflow state.
+        if (sessionRecord?.state === 'active') {
+          issues.push({ path: join(session, 'worktree.json'), reason: 'active_worktree_without_workflow_state' });
+        } else if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) {
+          currentOrphan = true;
+        }
         continue;
       }
       if (![currentSession, legacySession].includes(session) && !records.some((record) => dirname(record.record_path) === session)) {
