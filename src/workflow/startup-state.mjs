@@ -136,7 +136,16 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = 'Matching Codex session workflow is terminal';
+  // A composed workflow in another linked worktree must be handed off from
+  // the original repository session rather than dispatching its first stage.
+  const handoffRequired = hint === 'resume_candidate'
+    && registered[0]?.workspace === root
+    && associatedRecord?.status === 'verified_active'
+    && associatedRecord.workspace_root !== root
+    && Boolean(states[0]?.workflow_path);
   return {
+    handoff_required: handoffRequired,
+    handoff_workspace: handoffRequired ? associatedRecord.workspace_root : null,
     schema_version: 1, codex_session_id: codexSessionId || null, workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: states.slice(0, 8), matching_workflow_count: states.length, omitted_workflow_count: Math.max(0, states.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
