@@ -67,7 +67,15 @@ test('installed consumer CLI composes, validates, persists and resumes its first
       assert.equal(complete.state.stages['workflow-compose'].status, 'completed');
     };
 
-    await compose('compose-1');
+    const initialArgs = ['--root', tree.workspace, '--worktree-ref', worktreeRef, '--execution-id', 'compose-1'];
+    invoke(tree.workspace, 'harness-execution-state.mjs', ...initialArgs, '--status', 'running');
+    invoke(tree.workspace, 'harness-execution-state.mjs', ...initialArgs, '--status', 'failed', '--code', 'EXECUTION_ERROR', '--reason', 'Simulated interrupted initial worker');
+    assert.equal((await inspectStartupState({ workspaceRoot: root, codexSessionId: sessionId })).decision_hint, 'resume_candidate');
+    const recovered = invoke(tree.workspace, 'harness-compose-workspace.mjs',
+      '--root', tree.workspace, '--worktree-ref', worktreeRef, '--continue-composition', 'true',
+      '--plan-set-id', 'calculator', '--request', '간단한 계산기 웹 앱', '--execution-id', 'compose-recovered', '--codex-session-id', sessionId);
+    assert.equal(recovered.workspace, tree.workspace);
+    await compose('compose-recovered');
     assert.equal((await inspectStartupState({ workspaceRoot: root, codexSessionId: sessionId })).decision_hint, 'resume_candidate');
     const prepare = invoke(tree.workspace, 'harness-prepare-input.mjs', '--worktree-ref', worktreeRef, '--workflow-ref', flowPath, '--stage-id', 'spec');
     assert.equal(prepare.input.skill, 'spec-me');
