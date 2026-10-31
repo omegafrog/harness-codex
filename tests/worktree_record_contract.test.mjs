@@ -134,12 +134,19 @@ test('workflow completion verifies result and immutable state, then supports idl
     await recordExecutionState({ root, input, binding, status: 'running' });
     const running = JSON.parse(await readFile(path, 'utf8'));
     assert.equal(running.state.current_stage, 'workflow-compose');
-    const tampered = workflowDefinition({ ...running.state, codex_session_id: 'tampered' });
+    const paused = await recordExecutionState({ root, input, binding, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: 'runtime/executions/compose-1/result.json' });
+    assert.equal(paused.workflow_status, 'waiting');
+    const resumed = makeInput('compose-resumed');
+    resumed.context.compose_resume = true;
+    await recordExecutionState({ root, input: resumed, binding, status: 'running' });
+    const continued = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(continued.state.stages['workflow-compose'].execution_id, 'compose-resumed');
+    const tampered = workflowDefinition({ ...continued.state, codex_session_id: 'tampered' });
     await writeFile(path, JSON.stringify(tampered));
-    await assert.rejects(complete(input), /Compose modified orchestrator state/);
+    await assert.rejects(complete(resumed), /Compose modified orchestrator state/);
 
-    await writeFile(path, JSON.stringify(workflowDefinition(running.state)));
-    await complete(input);
+    await writeFile(path, JSON.stringify(workflowDefinition(continued.state)));
+    await complete(resumed);
     let workflow = JSON.parse(await readFile(path, 'utf8'));
     assert.equal(workflow.state.status, 'created');
     assert.equal(workflow.state.current_stage, 'spec');
