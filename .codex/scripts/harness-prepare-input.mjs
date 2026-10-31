@@ -38,6 +38,7 @@ try {
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Worktree record must be a regular file');
   const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
   const root = await realpath(record.workspace);
+  if (repository !== root) throw new Error('Stage dispatch requires running from the prepared worktree; open a new Codex session in that directory');
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);
