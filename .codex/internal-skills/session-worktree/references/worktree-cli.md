@@ -14,7 +14,7 @@
 
 `create`를 제외한 명령은 `--root`가 필수다. `create`의 stdout에 포함된 `session_directory`가 정본 파일의 위치다. workflow와 하위 단계는 이 JSON을 읽어 worktree 정보를 얻고, 종료 CLI는 파일에서 ID와 원본 경로를 읽는다. `finish`는 소유권과 브랜치를 확인하고 백업이나 recovery archive를 만들지 않고 worktree와 `.io`를 제거한다. workflow 요청마다 개별 필드를 복사하지 않는다.
 
-`worktree.json`은 worktree 소유·위치와 현재 단계 ID를 기록한다. 전체 단계 정의와 실행 상태는 `runtime/orchestrator/workflow.json`의 `stages`와 `state`에 있다. 아래의 필수 여부는 현재 `parseWorktreeRecord` 검증 기준이다. 검증기가 추가 필드를 거부하지는 않으므로, 표에 없는 값은 계약된 필드로 간주하지 않는다.
+`worktree.json`은 worktree 소유·위치와 현재 단계 ID를 기록한다. 실제 선택한 단계의 실행 상태는 `runtime/orchestrator/state.json`에 기록한다. 아래 필수 여부는 `parseWorktreeRecord` 검증 기준이다.
 
 | JSON field | 필수 | 값과 의미 |
 |---|---|---|
@@ -37,7 +37,7 @@
 
 파서는 선택 필드의 경로·시각·commit 형식과 `outcome`을 별도로 검증하지 않는다. 위 경로와 의미는 생성·사용 코드의 동작이며, 파일 존재·Git 등록·브랜치 일치 확인은 별도 lifecycle 검사에서 수행한다.
 
-단계 enum 정본은 `src/workflow/worktree-stages.mjs`의 `WORKTREE_STAGE`다. 각 값은 스킬 ID이며, 설치된 프로젝트에서는 `.codex/harness-runtime/src/workflow/worktree-stages.mjs`에 있다. `worktree.json`에는 단계의 skill을, `workflow.json`의 `state.current_stage`에는 해당 workflow의 단계 ID를 기록한다. 같은 skill을 여러 단계가 사용하면 workflow의 단계 ID로 구별한다.
+단계 enum 정본은 `src/workflow/worktree-stages.mjs`의 `WORKTREE_STAGE`다. 각 값은 스킬 ID이며, 설치된 프로젝트에서는 `.codex/harness-runtime/src/workflow/worktree-stages.mjs`에 있다. `worktree.json`과 실행 상태의 현재 단계에는 선택한 skill ID를 기록한다.
 
 ```sh
 node .codex/scripts/harness-workflow-worktree.mjs create --root <source_workspace>

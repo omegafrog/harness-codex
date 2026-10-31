@@ -81,8 +81,8 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
-      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && ACTIVE.has(state.status)) {
-        states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
+      if (ref === null && (ACTIVE.has(state.status) || TERMINAL.has(state.status))) {
+        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: state.stages?.[WORKTREE_STAGE.WORKFLOW_COMPOSE]?.status !== 'completed', orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
       if (typeof ref !== 'string' || isAbsolute(ref) || win32.isAbsolute(ref) || ref.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid workflow reference');
@@ -118,12 +118,14 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
     } catch (error) { issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: error.message }); }
   }
   const currentRecord = records.find((record) => record.current);
-  const associatedRecord = states.length === 1 ? records.find((record) => dirname(record.record_path) === states[0].session_directory) : null;
+  const activeStates = states.filter((state) => ACTIVE.has(state.status));
+  const selectedStates = activeStates.length ? activeStates : states.slice(-1);
+  const associatedRecord = selectedStates.length === 1 ? records.find((record) => dirname(record.record_path) === selectedStates[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || states.length > 1 || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || activeStates.length > 1 || currentRecord?.status === 'recovery_required' || (activeStates.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (states.length === 1 && ACTIVE.has(states[0].status)) {
+  } else if (activeStates.length === 1) {
     hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
@@ -131,7 +133,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   return {
     schema_version: 1, codex_session_id: codexSessionId || null, workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
-    matching_workflows: states.slice(0, 8), matching_workflow_count: states.length, omitted_workflow_count: Math.max(0, states.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
+    matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
     issues: issues.slice(0, 8), omitted_issue_count: Math.max(0, issues.length - 8), decision_hint: hint, reason,
   };
 }
@@ -145,13 +147,14 @@ export async function refreshWorkflowProgress(observed, event) {
   const state = workflow?.state || await readJson(session, 'runtime/orchestrator/state.json');
   if (!state) return null;
   const statuses = new Set(['pending', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'skipped']);
-  const stages = (workflow?.stages || []).map(({ id, needs = [] }) => {
+  const definitions = workflow?.stages || Object.keys(state.stages || {}).filter((id) => id !== WORKTREE_STAGE.WORKFLOW_COMPOSE).map((id) => ({ id }));
+  const stages = definitions.map(({ id, needs = [] }) => {
     const entry = state.stages?.[id];
     if (entry && !statuses.has(entry.status)) throw new Error(`Invalid stage status: ${id}`);
     return { id, needs, status: entry?.status || 'pending', execution_id: entry?.execution_id || null, result_ref: entry?.result_ref || null, reason: entry?.reason || null };
   });
   const counts = Object.fromEntries([...statuses].map((status) => [status, stages.filter((stage) => stage.status === status).length]));
-  const progress = { schema_version: 1, codex_session_id: state.codex_session_id, workflow_id: workflow?.workflow_id || null, status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: 'completed_stages / total_stages; not effort or time', total_stages: stages.length, counts, completion_percent: stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
+  const progress = { schema_version: 1, codex_session_id: state.codex_session_id, workflow_id: workflow?.workflow_id || null, status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
   const path = 'runtime/orchestrator/progress.json';
   await assertWorkspaceTarget(session, path);
   const { randomUUID } = await import('node:crypto');

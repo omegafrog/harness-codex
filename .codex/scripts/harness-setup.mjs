@@ -20,7 +20,12 @@ for (let i = 0; i < args.length; i += 2) {
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
-const gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+let gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+if (gitRoot.status !== 0) {
+  const initialized = spawnSync('git', ['init', '-b', 'main'], { cwd: root, encoding: 'utf8' });
+  if (initialized.status !== 0) throw new Error(`git init failed: ${initialized.stderr}`);
+  gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+}
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
 const native = Boolean(options['--answers']);
 let document, configurationHash;
@@ -215,12 +220,18 @@ async function main() {
     { value: 'local-markdown', label: 'local-markdown' },
     { value: 'github', label: 'GitHub Project' },
   ], config.tracker?.mode);
-  let tracker;
+  let tracker, createRepository = null;
   if (mode === 'local-markdown') {
-    tracker = { mode, local_markdown: { ...(config.tracker?.local_markdown || {}), directory: await ask('티켓 디렉터리', config.tracker?.local_markdown?.directory || '.scratch/issues') } };
+    tracker = { mode, local_markdown: { ...(config.tracker?.local_markdown || {}), directory: 'docs/plans' } };
   } else {
     const repository = await ask('GitHub repository (owner/repo)', config.tracker?.github?.repository || '');
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('repository는 owner/repo 형식이어야 합니다.');
+    const repositoryCheck = spawnSync('gh', ['api', `repos/${repository}`, '--jq', '.name'], { cwd: root, encoding: 'utf8' });
+    if (repositoryCheck.status !== 0) {
+      if (!/HTTP 404/.test(repositoryCheck.stderr || '')) throw new Error(`GitHub repository 확인 실패: ${repositoryCheck.stderr || repositoryCheck.error?.message}`);
+      const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }]);
+      createRepository = { repository, visibility };
+    }
     const owner = await ask('Project owner', config.tracker?.github?.project_owner || repository.split('/')[0]);
     let projects = JSON.parse(exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
     if (!projects.length) {
@@ -296,7 +307,12 @@ async function main() {
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (createRepository) {
+    const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' });
+    if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
+    exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
+  }
   if (useBeads) await setupBeads();
 
   let configText = oldConfig || '';
@@ -350,6 +366,19 @@ async function main() {
     await copyFile(sourcePath, targetPath);
     console.log(`Created ${target}`);
   }
+  for (const [target, content] of Object.entries({
+    'docs/agents/EXEC.md': '',
+    'docs/agents/execution.json': '{"schema_version":1,"profiles":{}}\n',
+    'docs/contracts/product.md': '',
+    'docs/contracts/architecture.md': '',
+    'docs/contracts/manifest.json': '{}\n',
+    'docs/contracts/architecture.html': '',
+  })) {
+    const targetPath = join(root, target);
+    await mkdir(dirname(targetPath), { recursive: true });
+    try { await writeFile(targetPath, content, { flag: 'wx' }); console.log(`Created ${target}`); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; console.log(`Preserved ${target}`); }
+  }
   const gitignore = join(root, '.gitignore');
   const ignoreText = await readFile(gitignore, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   if (!/^\.io\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.io/\n`);
@@ -360,7 +389,7 @@ async function main() {
     exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--shared-guidance-root', root, '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
     console.log('OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·실행 profile·공식 MCP 두 개를 준비했습니다. victorialogs-local-setup 스킬로 기존 앱의 개발 로그를 연결하세요.');
   }
-  console.log('다음 단계: 프로젝트 source·CI·compose를 분석해 EXEC/execution.json과 통합 계약을 준비한 뒤 workspace preflight를 실행하세요.');
+  console.log('다음 단계: 필수 파일 존재 여부를 확인하고 workflow 구성을 진행하세요.');
 }
 
 main().then(() => {

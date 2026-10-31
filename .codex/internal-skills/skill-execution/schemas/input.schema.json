@@ -76,7 +76,20 @@
       }
     },
     "context": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "transition": {
+          "type": "object",
+          "required": ["from_stage", "code", "result_ref", "summary"],
+          "additionalProperties": false,
+          "properties": {
+            "from_stage": { "type": "string", "minLength": 1 },
+            "code": { "type": "string", "minLength": 1 },
+            "result_ref": { "type": "string", "minLength": 1 },
+            "summary": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
     }
   }
 }

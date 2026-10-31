@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateComposedWorkflow, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
+import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
@@ -26,14 +26,38 @@ async function collectAnswers(session, prefix, questions, answer) {
 
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, answer = null, reviewAdmissionRef = null, subtask = null, subtaskResult = null, resumeSubtask = null, reviewSubtask = null, reviewResult = null, reviewDetails = false }) {
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
-  const workflow = await readSkillSessionJson({ root, session_directory: session, path: workflowRef });
-  await validateComposedWorkflow({ root, session_directory: session, workflow });
-  const state = workflow.state || await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
-  if (state.schema_version !== 1 || state.workflow_ref !== workflowRef) throw new Error('Workflow state/reference mismatch');
-  const stage = workflow.stages.find((item) => item.id === stageId);
-  if (!stage) throw new Error(`Unknown workflow stage: ${stageId}`);
+  const state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
+  if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
+  const prepared = await readExecutionInput({ root, execution_id: state.stages['workflow-compose'].execution_id });
+  const stage = { id: stageId, skill: stageId, scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
   const input_refs = [];
   const producer_result_refs = {};
+  const lastStage = state.current_stage;
+  const last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
+  let transition;
+  if (last && (lastStage !== stageId || ['SPEC_REVISION_REQUIRED', 'PLAN_REVISION_REQUIRED', 'IMPLEMENTATION_REVISION_REQUIRED'].includes(last.code))) {
+    if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
+    const allowed = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+    if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
+    if (!allowed[last.code] && last.code !== 'OK') throw new Error('Resolve the previous stage before selecting another');
+    const priorInput = await readExecutionInput({ root, execution_id: last.execution_id });
+    const priorReturn = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${last.execution_id}/return.json` });
+    await validateSkillReturn({ root, input: priorInput, envelope: priorReturn });
+    const priorResult = priorReturn.result || await readSkillSessionJson({ root, session_directory: session, path: last.result_ref });
+    if (allowed[last.code]) {
+      const signature = (result) => JSON.stringify([result.code, result.summary, result.artifacts.map(({ kind, sha256 }) => [kind, sha256])]);
+      const matching = [];
+      for (const attempt of last.attempts || []) {
+        if (attempt.code !== last.code || !attempt.result_ref) continue;
+        const result = await readSkillSessionJson({ root, session_directory: session, path: attempt.result_ref });
+        if (signature(result) === signature(priorResult)) matching.push(attempt.execution_id);
+      }
+      if (matching.length >= 2) throw new Error('Revision repeated without changed evidence; inspect and report before retrying');
+    }
+    input_refs.push(...priorResult.artifacts);
+    producer_result_refs[lastStage] = { base: 'session', path: last.result_ref };
+    transition = { from_stage: lastStage, code: last.code, result_ref: last.result_ref, summary: priorResult.summary };
+  }
   const composer = state.stages?.['workflow-compose'];
   let worktree_ref;
   if (composer?.result_ref) {
@@ -263,7 +287,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const execution_id = `${dispatched ? 'subtask' : stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  const input = { schema_version: 1, execution_id, skill: dispatched ? dispatched.request.skill : stage.skill, workspace_root: root, shared_guidance_root: shared, session_directory: taskSession, scope: dispatched ? dispatched.request.purpose : stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: dispatched ? execution_id : stage.id, control_session_directory: session, ...(dispatched ? { parent_stage_id: stage.id, parent_execution_id: previous.execution_id, subtask_index: dispatched.index, ...(dispatched.request.role && dispatched.request.role !== 'default' ? { role: dispatched.request.role } : {}) } : stage.role === 'default' ? {} : { role: stage.role }), workflow_ref: workflowRef, ...conversation, ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(completedSubtasks.length ? { completed_subtasks: completedSubtasks } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: dispatched ? [] : stage.conditions, gates: dispatched ? [] : stage.gates, outputs: dispatched ? [] : stage.outputs } };
+  const input = { schema_version: 1, execution_id, skill: dispatched ? dispatched.request.skill : stage.skill, workspace_root: root, shared_guidance_root: shared, session_directory: taskSession, scope: dispatched ? dispatched.request.purpose : stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: dispatched ? execution_id : stage.id, control_session_directory: session, ...(dispatched ? { parent_stage_id: stage.id, parent_execution_id: previous.execution_id, subtask_index: dispatched.index, ...(dispatched.request.role && dispatched.request.role !== 'default' ? { role: dispatched.request.role } : {}) } : {}), workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(completedSubtasks.length ? { completed_subtasks: completedSubtasks } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: dispatched ? [] : stage.conditions, gates: dispatched ? [] : stage.gates, outputs: dispatched ? [] : stage.outputs } };
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });

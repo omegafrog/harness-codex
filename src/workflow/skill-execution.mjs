@@ -5,11 +5,9 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { loadNamedWorkflow, WORKFLOW_STAGE_GATE_IDS } from './loader.mjs';
-import { LifecycleGateRegistry } from '../gates/lifecycle.mjs';
+import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
-import { WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const CODES = {
@@ -148,50 +146,6 @@ async function resolveInputWorktree(root, input) {
   return { ...input, workspace_root: record.workspace, shared_guidance_root: record.return_root, session_directory: record.session_directory, context: { ...input.context, ...(record.plan_set_id ? { plan_set_id: record.plan_set_id } : {}) } };
 }
 
-export async function validateComposedWorkflow({ root, session_directory, workflow }) {
-  const { state, ...definition } = workflow;
-  validate(definition, await json(join(root, '.codex/internal-skills/workflow-compose/schemas/workflow.schema.json')));
-  const session = await resolveSkillSession(root, session_directory);
-  const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-  const stages = new Map(workflow.stages.map((stage) => [stage.id, stage]));
-  requireValue(stages.size === workflow.stages.length, 'Duplicate workflow stage IDs');
-  const gates = new Set([...WORKFLOW_STAGE_GATE_IDS, ...new LifecycleGateRegistry().checks.keys()]);
-  const visited = new Set(), active = new Set();
-  function ancestors(id) {
-    requireValue(stages.has(id), `Unknown dependency stage: ${id}`);
-    requireValue(!active.has(id), `Cyclic workflow dependency: ${id}`);
-    if (visited.has(id)) return;
-    active.add(id);
-    for (const dependency of stages.get(id).needs) ancestors(dependency);
-    active.delete(id); visited.add(id);
-  }
-  for (const stage of stages.values()) {
-    ancestors(stage.id);
-    requireValue(bindings.skills[stage.skill] && stage.skill !== 'workflow-compose' && !bindings.main_session_skills.includes(stage.skill), `Invalid workflow task skill: ${stage.skill}`);
-    requireValue(Object.values(WORKTREE_STAGE).includes(stage.skill), `Workflow task skill missing from worktree stage enum: ${stage.skill}`);
-    const paths = [`.codex/internal-skills/${stage.skill}/GUIDE.md`, `.agents/skills/${stage.skill}/SKILL.md`, `.codex/skills/${stage.skill}/SKILL.md`];
-    let found = false;
-    for (const path of paths) {
-      try { await readReference(root, { base: 'workspace', path }, session); found = true; break; }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-    requireValue(found, `Missing task skill entrypoint: ${stage.skill}`);
-    if (stage.role !== 'default') await readReference(root, { base: 'workspace', path: `.codex/agents/${stage.role}.toml` }, session);
-    requireValue(stage.gates.every((gate) => gates.has(gate)), `Unknown workflow gate in stage ${stage.id}`);
-    requireValue(new Set(stage.outputs.map((output) => output.id)).size === stage.outputs.length, `Duplicate output IDs in stage ${stage.id}`);
-    const dependencies = new Set();
-    const collect = (id) => { for (const dependency of stages.get(id).needs) if (!dependencies.has(dependency)) { dependencies.add(dependency); collect(dependency); } };
-    collect(stage.id);
-    for (const input of stage.inputs) {
-      if (input.from_stage) {
-        requireValue(dependencies.has(input.from_stage), `Input producer is not a dependency: ${input.from_stage}`);
-        requireValue(stages.get(input.from_stage).outputs.some((output) => output.id === input.artifact), `Unknown producer artifact: ${input.artifact}`);
-      } else await readReference(root, input, session);
-    }
-  }
-  return { valid: true, stage_count: stages.size };
-}
-
 export async function validateSkillInput({ root, input }) {
   input = await resolveInputWorktree(root, input);
   validate(input, await json(join(root, CONTRACT, 'schemas/input.schema.json')));
@@ -291,9 +245,10 @@ export async function validateSkillReturn({ root, input, envelope }) {
     requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
   }
   if (input.skill === 'workflow-compose' && envelope.status === 'completed') {
-    const workflows = result.artifacts.filter((item) => item.kind === 'request_workflow');
-    requireValue(workflows.length === 1 && workflows[0].base === 'session' && workflows[0].path === 'runtime/orchestrator/workflow.json', 'Workflow composition must return one canonical workflow artifact');
-    await validateComposedWorkflow({ root, session_directory: session, workflow: JSON.parse(await readReference(root, workflows[0], session)) });
+    requireValue(result.worktree_ref === input.context?.worktree_ref, 'Prepared worktree reference must match input');
+    const { parseWorktreeRecord } = await import('./worktrees.mjs');
+    const record = parseWorktreeRecord(await readFile(result.worktree_ref, 'utf8'));
+    requireValue(record.state === 'active' && record.workspace === root && record.session_directory === session, 'Prepared worktree must be active and canonical');
   }
   return { valid: true, usable_result: true, ...envelope };
 }

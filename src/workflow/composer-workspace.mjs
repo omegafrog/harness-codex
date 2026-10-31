@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
 import { resolveSkillSession } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
@@ -8,6 +9,17 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(codex_session_id || '')) throw new Error('Execution ID and actual Codex session ID are required');
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  let branch;
+  try { branch = git('symbolic-ref', '--quiet', '--short', 'HEAD'); } catch { branch = null; }
+  if (branch === 'main') {
+    let hasHead = true;
+    try { git('rev-parse', '--verify', 'HEAD'); } catch { hasHead = false; }
+    if (!hasHead) {
+      if (git('status', '--porcelain')) throw new Error('Source workspace must be clean before creating the initial commit');
+      git('commit', '--allow-empty', '--only', '-m', 'chore: initialize repository');
+    }
+  }
   const record = await createWorkflowWorktree({ workspace_root: root, plan_set_id });
   const input = {
     schema_version: 1, execution_id, skill: 'workflow-compose',

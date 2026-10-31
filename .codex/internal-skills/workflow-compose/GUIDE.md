@@ -1,10 +1,7 @@
 # Workflow 준비
 
-사용자의 최초 요청 원문은 실행 입력의 `scope`에서 읽는다. 준비 명령은 main 브랜치에서 worktree를 만든 뒤 그 안에 입력을 작성한다. 메인 workspace에는 `.io`를 만들지 않는다.
+사용자의 최초 요청 원문은 실행 입력의 `scope`에서 읽는다. 준비 명령은 첫 커밋이 없는 main 브랜치에서 프로젝트 파일을 포함하지 않는 빈 초기 커밋을 만든 뒤 worktree를 생성하고 그 안에 입력을 작성한다. Git identity나 commit 실패는 그대로 보고한다. 메인 workspace에는 `.io`를 만들지 않는다.
 
 1. 실행 입력의 `context.worktree_ref`로 준비된 정본 `worktree.json`을 읽는다. worktree 준비는 호출자의 `harness-compose-workspace.mjs`가 담당한다.
-2. 사용자 요청에 필요한 skill, 단계와 의존 관계를 결정하고 `.codex/internal-skills/workflow-compose/schemas/workflow.schema.json`에 맞는 `runtime/orchestrator/workflow.json`을 실행 session에 작성한다. 기존 파일에 `state`가 있으면 그대로 보존한다.
-3. `completed/OK` 반환에 `worktree_ref`와 `request_workflow` artifact (`base: session`, `path: runtime/orchestrator/workflow.json`)를 포함한다. worktree 생성만으로 compose가 완료된 것으로 보고하지 않는다.
-4. 호출자는 반환과 workflow를 검증하고 `harness-execution-state.mjs`로 완료 상태를 기록한 뒤에만 다음 세션을 안내한다.
-
-기존 `runtime/orchestrator/workflow.json`을 갱신할 때는 기존 `state` 객체를 그대로 보존한다. 새 workflow는 실행기가 compose 완료 후 상태를 `created`로 초기화한다.
+2. 정본 worktree 기록과 준비 상태를 확인하고 `completed/OK`에 `worktree_ref`를 반환한다. 단계 선택과 분기는 메인 orchestrator가 담당한다.
+3. 호출자는 준비 결과를 검증하고 완료 상태를 기록한 뒤 다음 세션을 안내한다.

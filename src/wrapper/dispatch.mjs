@@ -517,7 +517,7 @@ export async function executeImplementPlan({
   const retirement = dispatchOptions.retirement === undefined ? null
     : await checkRetirement({ retirement: { ...dispatchOptions.retirement, workspace_root: dispatched.workspace_root } });
   const readiness = await inspectProjectReadiness({ workspace_root: dispatched.workspace_root, deferContractSync: true, base_ref: typeof fixedPoint === 'string' ? fixedPoint : fixedPoint.commit_sha || null });
-  const contractDocs = readiness.execution.status !== 'pass' ? readiness.execution : readiness.contract_sync || readiness.contracts;
+  const contractDocs = readiness.status !== 'pass' ? readiness : { status: 'deferred', reason: 'sync_after_implementation_complete' };
   const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
   let planReview = await inspectPlanSet({ root: dispatched.workspace_root, planSetId: dispatchOptions.planSetId, phase: "completion", planId: dispatchOptions.plan?.id, trackerPort: dispatchOptions.trackerPort });
   const reviewedSnapshot = reviews[0]?.review_input?.planning_snapshot_sha256;

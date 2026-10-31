@@ -19,7 +19,7 @@ orchestrated workflow는 `context.stage_id`에 따라 한 단계만 수행한다
 |---|---|---|
 | `plan_split` | [split](references/split.md) | 결과의 `plan_set_draft`를 `plan_review`에 전달한다. |
 | `plan_revision` | [revision](references/revision.md) | 최신 `plan_review_result`를 전달하고, 완료 뒤 fresh `plan_review`를 다시 실행한다. |
-| `plan_finalize` | [finalize](references/finalize.md) | 최신 pass review를 확인하고 Beads 및 configured tracker 발행을 수행한다. |
+| `plan_finalize` | [finalize](references/finalize.md) | 최신 pass review를 확인하고 configured tracker에 발행한다. Beads 사용 시 mirror를 연결한다. |
 
 독립 reviewer stage는 [plan-review GUIDE](../../../.codex/internal-skills/plan-review/GUIDE.md)를 사용한다. [리뷰 준비와 결과 처리](references/review-routing.md)에 따라 reviewer 실행은 각 회차마다 새 context로 시작하고, 결과와 gate를 기록한다. 리뷰 한도에 도달하거나 Spec 변경이 필요하면 해당 상태와 근거를 orchestrator에 반환한다.
 

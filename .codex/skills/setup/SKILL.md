@@ -16,9 +16,9 @@ Initialize repository-owned context, agent model tiers, and tracker settings bef
 ## 설치와 초기 기준 커밋
 
 1. 대상 Git root와 현재 branch를 확인하고 설치 전에 `git status --short --untracked-files=all`과 staged 경로를 session에 기록한다. 기존 변경과 미추적 파일은 사용자 소유로 보존한다. 아직 설치되지 않았다면 사용 가능한 `harness-codex install --project <절대 경로>`로 설치한다. 설치 CLI를 찾을 수 없으면 임의의 원격 소스를 추정하지 말고 중단한다.
-2. 아래 설정 선택과 실행·계약 문서 준비를 모두 마치고 Doctor를 재실행한다. `configured`는 설정 선택 완료이며 준비·커밋 완료가 아니다.
+2. 아래 설정 선택과 필수 파일 준비를 마친 뒤 `npx --yes --package github:omegafrog/harness-codex harness-codex-doctor --project <repository-root>`로 Doctor를 실행한다. `configured`는 설정 선택 완료이며 준비·커밋 완료가 아니다.
 3. 설치 전 상태와 실제 생성·수정 목록을 대조해 이번 setup이 만든 프로젝트 소유 준비 파일만 정확한 경로별로 식별한다. `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/agents/EXEC.md`, `docs/agents/execution.json`, guidance, `docs/contracts/**`, 필요한 `.gitignore` 등 실제 이번 setup이 변경한 파일이 대상이다. `.codex/`, `.agents/`, `.harness/`, 세션 출력과 설치 전 이미 변경됐거나 미추적이던 사용자 파일은 포함하지 않는다. 사용자가 이전 setup 산출물의 커밋을 명시적으로 요청한 경우에만 실제 해당 경로와 내용을 확인해 포함할 수 있다. 기존 변경과 겹치거나 소유권이 불명확하면 해당 경로를 자동 커밋하지 말고 이유를 보고한다.
-4. Git root에서 `git add -- <식별한 경로들>` 후 `git commit --only -m "chore: initialize harness setup" -- <동일 경로들>`로 준비 파일만 커밋한다. 경로가 없으면 빈 커밋을 만들지 않는다. 첫 커밋 이전의 저장소에서 setup 외의 미커밋 제품 파일이 있으면 불완전한 제품 기준을 만들지 말고 중단한다. 사용자 파일이나 기존 staged 변경을 함께 커밋하거나 stash·삭제하지 않는다. Git identity, hook 또는 commit 오류는 그대로 보고하고 중단한다. Push는 하지 않는다.
+4. Git root에서 `git add -- <식별한 경로들>` 후 `git commit --only -m "chore: initialize harness setup" -- <동일 경로들>`로 준비 파일만 커밋한다. 첫 커밋 이전의 저장소에서 setup 외의 미커밋 제품 파일이 있으면 보존하고 중단한다. Git identity, hook 또는 commit 오류는 그대로 보고한다. GitHub tracker의 origin에 branch가 없으면 이 기준 commit을 현재 branch로 push한다.
 5. 커밋에 포함된 경로와 `git status --short --untracked-files=all`을 확인한다. 준비 파일이 기준 commit에 포함되고 다른 변경도 없을 때 새 workflow worktree를 시작한다. 기존 사용자 변경이 남으면 보존하고 clean workspace가 필요한 이유를 보고한다.
 
 ## Codex 내부 선택 흐름
@@ -47,17 +47,17 @@ Create `docs/agents/implementation-guidance.md` and `docs/agents/testing-guidanc
 
 When later architecture work establishes reusable models, link `docs/architecture/domain-model.md` from `CONTEXT-MAP.md` under the DDD model continuity contract; do not seed imaginary aggregates during setup. Verification maps belong to the consumer project and can be seeded/maintained with `maintain-verification`; launch/server configuration remains in `docs/agents/EXEC.md`.
 
-## 실행 계약 준비
+## 프로젝트 파일 준비
 
-일반 검증은 기본 CLI 명령을 `docs/agents/EXEC.md`에 기록한다. `docs/agents/execution.json`에는 명시적 최종 사용자 흐름 E2E만 등록하고, 각 E2E profile은 `purpose: "e2e"`, 정확한 command, required_env, config_inputs, prepare, verify_config, dependencies 및 timeout/poll 값을 포함한다. 필요한 설정 갱신과 실제 readiness를 검증하는 프로젝트 명령을 사용한다. 인프라/prepare 불필요의 근거를 EXEC에 기록한다. 기존 사용자 프로필은 보존하고 Harness 원본의 명령을 소비 프로젝트에 복사하지 않는다. 불명확한 값은 추정하거나 사용자에게 채팅으로 묻지 않는다. 정확한 누락값과 이를 찾지 못한 source 범위를 기록하고 관련 실행을 차단한다.
+CLI는 누락된 `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/product.md`, `docs/contracts/architecture.md`, `docs/contracts/manifest.json`, `docs/contracts/architecture.html`을 생성하고 기존 파일은 보존한다. setup은 파일 존재만 확인하며 내용을 요구하지 않는다. E2E 실행 조건은 E2E 스킬이 실행 시 확인한다.
 
 ## 설치·업데이트 및 구현 전 준비 복구
 
 설치·업데이트가 `project_preparation_required`를 보고하거나 구현 진입의 `--for-implementation` 검사가 실패하면 이 준비 절차를 호출자가 수행한다. 파일 누락 자체를 외부 blocker로 넘기거나 커밋 후까지 미루지 않는다. 기존 model/tracker 선택을 다시 묻지 않고 누락·불일치 범위만 보완한다.
 
-1. 명시한 `workspace_root`에서 source·테스트·기존 EXEC·package/build scripts·CI·compose·config loader를 읽는다. 예정 검증에 필요한 집중 테스트와 해당 시 E2E 프로필을 위 실행 계약 형식으로 작성한다. 환경값·인프라를 추정하거나 테스트를 직접 실행하지 않는다.
-2. `sync-contracts`로 기존 전체 기능·용어·DDD 모델을 조사하고 실제 통합 계약·연결 다이어그램·manifest를 생성/동기화한다. 빈 manifest, Harness 원본 계약 복사, seal만으로 의미 검토 대체는 금지한다. 기존 소비 프로젝트 문서·프로필은 보존하며 필요한 부분을 갱신한다.
-3. `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`을 같은 cwd에서 재실행한다. `valid: true` 전에는 구현·구현 커밋·In Progress 전환·agent dispatch를 시작하지 않는다. 설치·업데이트는 doctor도 재실행한다. 해결할 수 없는 업무 결정이나 비밀값은 대화로 묻지 말고 정확한 차단 사유로 보고한다.
+1. 누락된 필수 파일을 생성하고 기존 파일은 보존한다. setup은 실행 조건이나 계약 내용을 검사하지 않는다.
+2. 최종 구현 완료 시에는 `sync-contracts`로 실제 통합 계약을 검증한다.
+3. `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`을 같은 cwd에서 재실행하고 `valid: true`를 확인한다. 설치·업데이트의 Doctor 검사는 위 초기 기준 커밋 절차를 따른다. 해결할 수 없는 업무 결정이나 비밀값은 정확한 차단 사유로 보고한다.
 4. 준비 변경을 실행 기준 branch에 보존한 뒤 fixed point/병렬 fixed base를 확정한다. 이미 구현된 작업의 복구는 기존 구현·commit·stash·tracker 상태를 보존하고 준비 후 원래 검증/완료 절차로 재개한다. 불필요한 stash·상태 되돌리기나 제품 코드 수정은 하지 않는다.
 
 자동 검사는 프로필 형식과 계약 snapshot 정합성을 확인한다. 선택한 프로필이 실제 예정 검증/인프라를 포괄하는지는 호출자가 source와 계획으로 확인하고, 실행 시 launcher가 환경·설정·readiness를 다시 검증한다.
@@ -102,7 +102,7 @@ Model and reasoning-effort options come from the live Codex app-server schema th
 
 ## Beads Project Board
 
-Beads 사용 여부, CLI 설치, 기존 workspace 보존, 원격 bootstrap 또는 새 초기화 확인은 모두 `harness-setup.mjs --answers`가 반환하는 질문을 Codex native UI에서 제출받아 처리한다. 일반 채팅 질문이나 별도 터미널로 승인·초기화를 대체하지 않는다. CLI가 성공한 경우에만 project root에서 `bd status`를 확인한다. 사용자가 Beads를 선택하지 않았으면 Beads 명령을 실행하지 않으며, 해당 프로젝트의 `to-ticket`이 Beads 의존으로 막힌다는 사실을 setup 결과에 기록한다.
+Beads 사용 여부, CLI 설치, 기존 workspace 보존, 원격 bootstrap 또는 새 초기화 확인은 `harness-setup.mjs --answers`가 반환하는 질문을 Codex native UI에서 제출받아 처리한다. Beads를 선택한 경우 CLI 성공 뒤 project root에서 `bd status`를 확인한다. 선택한 tracker의 계획 발행과 구현은 Beads 사용 여부와 독립적으로 수행한다.
 
 Linked Git worktrees in the same repository share the Beads workspace through Git common-directory discovery. Do not initialize a separate board in a linked worktree or copy `.beads` into it. For a remote-backed schema migration, designate one clone to migrate and publish; every other clone adopts that result with the Beads-supported bootstrap procedure. Never migrate multiple clones independently.
 
@@ -112,9 +112,7 @@ Tracker options and GitHub Project field validation are provided by `harness-set
 
 ## 통합 계약 연속성
 
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
-
-초기 setup에서 통합 계약이 없다면 기존 source·테스트·Spec을 조사하여 `sync-contracts` 형식으로 최초 bundle과 다이어그램을 생성한다. 빈 manifest나 예시 모델을 설치 프로젝트의 실제 모델로 취급하지 않는다. Product/Architecture 문서는 생성할 수 있으며 product code를 새로 만드는 것은 setup 범위가 아니다. 기존 업무 지식만으로 확인할 수 없는 규칙은 질문하지 않고 미확정·미완료로 기록해 관련 설계/구현을 차단한다.
+setup은 통합 계약 파일의 존재만 확인한다. 빈 초기 파일은 제품 계약이 아니다. 실제 계약의 조사·작성·정합성 검사는 후속 계약 작업과 최종 구현 완료 단계에서 수행한다.
 
 ## Tracker 보드 표시와 새 mirror 정책
 

@@ -22,8 +22,8 @@ async function projectConfig(root) {
   return parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).tracker;
 }
 async function localTicket(root, config, ref) {
-  if (isAbsolute(ref) || ref.split(/[\\/]/).includes('..') || !config.local_markdown?.directory) throw new Error('Invalid local ticket path');
-  const directory = resolve(root, config.local_markdown.directory), path = resolve(root, ref);
+  if (isAbsolute(ref) || ref.split(/[\\/]/).includes('..') || !/^docs\/plans\/[^/]+\/[^/]+\.md$/.test(ref)) throw new Error('Invalid local plan path');
+  const directory = resolve(root, 'docs/plans'), path = resolve(root, ref);
   const rel = relative(directory, path);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error('Ticket must be inside configured local directory');
   await assertWorkspaceTarget(root, ref);
@@ -168,15 +168,16 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');
   if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
   const config = await projectConfig(root);
-  const bead = await mirror(root, ref, run); // Resolve uniqueness before either write.
-  metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
+  const beadsEnabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled !== false;
+  const bead = beadsEnabled ? await mirror(root, ref, run) : null;
+  if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
   const context = {};
   let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
   try {
     const desired = status || tracker.status;
-    if (desired === 'in-progress' && (classification || bead.metadata.harness_classification) === 'backlog') throw new Error('Commit backlog classification before starting execution');
+    if (desired === 'in-progress' && (classification || bead?.metadata.harness_classification) === 'backlog') throw new Error('Commit backlog classification before starting execution');
     await writer.append('tracker_sync_started', { ticket_ref: ref, desired, previous: tracker.status, phase, classification }, { critical: true });
     if (tracker.status !== desired) {
       if (config.mode === 'github') {
@@ -195,6 +196,11 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     }
     tracker = await readTracker(root, config, ref, run, context);
     if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
+    if (!bead) {
+      const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
+      await writer.append('tracker_sync', result, { critical: true });
+      return result;
+    }
     const expected = TRACKER_STATES[desired][1];
     if (bead.status !== expected) {
       await run('bd', expected === 'closed' ? ['close', bead.id, '--reason', 'Canonical tracker implementation verification completed'] : ['update', bead.id, '--status', expected], root);
