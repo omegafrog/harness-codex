@@ -71,7 +71,13 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       const document = await readJson(session, 'runtime/orchestrator/workflow.json');
       const state = document?.state || await readJson(session, 'runtime/orchestrator/state.json');
       if (!state) {
-        if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) currentOrphan = true;
+        // A freshly allocated compose worktree is still owned work, even before
+        // recordExecutionState has written the first workflow state.
+        if (sessionRecord?.state === 'active') {
+          issues.push({ path: join(session, 'worktree.json'), reason: 'active_worktree_without_workflow_state' });
+        } else if ([currentSession, legacySession].includes(session) && await readJson(session, 'runtime/orchestrator/workflow.json')) {
+          currentOrphan = true;
+        }
         continue;
       }
       if (![currentSession, legacySession].includes(session) && !records.some((record) => dirname(record.record_path) === session)) {
@@ -81,7 +87,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
-      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && ACTIVE.has(state.status)) {
+      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && (ACTIVE.has(state.status) || state.status === 'failed')) {
         states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
@@ -121,14 +127,25 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   const associatedRecord = states.length === 1 ? records.find((record) => dirname(record.record_path) === states[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || states.length > 1 || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || states.length > 1 || states.some((item) => item.composition_pending && !records.some((record) => dirname(record.record_path) === item.session_directory && record.status === 'verified_active')) || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (states.length === 1 && ACTIVE.has(states[0].status)) {
-    hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
+  } else if (states.length === 1 && (ACTIVE.has(states[0].status) || (states[0].composition_pending && states[0].status === 'failed' && associatedRecord?.status === 'verified_active'))) {
+    hint = 'resume_candidate'; reason = states[0].composition_pending && states[0].status === 'failed'
+      ? 'Failed composition is owned and may be continued after inspection'
+      : 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = 'Matching Codex session workflow is terminal';
+  // A composed workflow in another linked worktree must be handed off from
+  // the original repository session rather than dispatching its first stage.
+  const handoffRequired = hint === 'resume_candidate'
+    && registered[0]?.workspace === root
+    && associatedRecord?.status === 'verified_active'
+    && associatedRecord.workspace_root !== root
+    && Boolean(states[0]?.workflow_path);
   return {
+    handoff_required: handoffRequired,
+    handoff_workspace: handoffRequired ? associatedRecord.workspace_root : null,
     schema_version: 1, codex_session_id: codexSessionId || null, workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: states.slice(0, 8), matching_workflow_count: states.length, omitted_workflow_count: Math.max(0, states.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),

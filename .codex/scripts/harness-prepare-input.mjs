@@ -20,6 +20,8 @@ try {
   }
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !isAbsolute(options['workflow-ref'] || '') || !options['stage-id']) throw new Error('Absolute worktree-ref and workflow-ref, and stage-id are required');
   const repository = await realpath(execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim());
+  const preparedWorkspace = await realpath(dirname(dirname(options['worktree-ref'])));
+  if (repository !== preparedWorkspace) throw new Error('Stage dispatch requires running from the prepared worktree; open a new Codex session in that directory');
   const workflowPath = options['workflow-ref'];
   const session = await resolveSkillSession(repository, dirname(dirname(dirname(workflowPath))));
   const workflowRef = relative(session, workflowPath);
@@ -38,6 +40,7 @@ try {
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Worktree record must be a regular file');
   const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
   const root = await realpath(record.workspace);
+  if (repository !== root) throw new Error('Stage dispatch requires running from the prepared worktree; open a new Codex session in that directory');
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);

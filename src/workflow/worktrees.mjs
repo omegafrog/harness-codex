@@ -202,7 +202,11 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   const workspace = join(dirname(returnRoot), '.harness-worktrees', basename(returnRoot), worktreeId);
   const sessionBranch = branch || `harness/worktree/${worktreeId}`;
   await git(workspace_root, ['check-ref-format', '--branch', sessionBranch]);
-  if (!branch && await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch');
+  if (!branch) {
+    const main = await git(workspace_root, ['rev-parse', '--verify', 'refs/heads/main']).catch(() => null);
+    if (!main) throw new Error('Source repository requires a committed main branch before workflow composition');
+    if (await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch; commit or stash changes first');
+  }
   await mkdir(dirname(workspace), { recursive: true });
   const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, branch: sessionBranch, plan_set_id });
   try {

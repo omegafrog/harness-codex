@@ -293,6 +293,9 @@ export async function validateSkillReturn({ root, input, envelope }) {
   if (input.skill === 'workflow-compose' && envelope.status === 'completed') {
     const workflows = result.artifacts.filter((item) => item.kind === 'request_workflow');
     requireValue(workflows.length === 1 && workflows[0].base === 'session' && workflows[0].path === 'runtime/orchestrator/workflow.json', 'Workflow composition must return one canonical workflow artifact');
+    // The runtime appends execution state to workflow.json after composition.
+    // A content hash of this mutable artifact would immediately become stale.
+    requireValue(workflows[0].sha256 === null, 'Mutable workflow artifact must use sha256:null');
     await validateComposedWorkflow({ root, session_directory: session, workflow: JSON.parse(await readReference(root, workflows[0], session)) });
   }
   return { valid: true, usable_result: true, ...envelope };
