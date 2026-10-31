@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
+import { createWorkflowWorktree, finishWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
 import { resolveSkillSession } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 
@@ -15,8 +15,18 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     session_directory: record.session_directory, scope: request, input_refs: [],
     context: { plan_set_id: record.plan_set_id, worktree_ref: join(record.session_directory, 'worktree.json'), codex_session_id, stage_id: 'workflow-compose' },
   };
-  const input_path = await writeExecutionInput(record.workspace, input, record.plan_set_id);
-  return { ...record, input_path };
+  try {
+    const input_path = await writeExecutionInput(record.workspace, input, record.plan_set_id);
+    return { ...record, input_path };
+  } catch (error) {
+    try {
+      const cleanup = await finishWorkflowWorktree({ workspace_root: record.workspace, repository_root: record.return_root, worktree_id: record.worktree_id, outcome: 'failed' });
+      error.message += `; compose input cleanup=${cleanup.state}`;
+    } catch (cleanupError) {
+      error.message += `; compose input cleanup failed: ${cleanupError.message}`;
+    }
+    throw error;
+  }
 }
 
 // Only the deterministic worktree lifecycle runs outside the model sandbox.
