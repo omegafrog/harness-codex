@@ -62,11 +62,15 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     if (state && state.schema_version !== 1) throw new Error('Invalid workflow state schema');
     if (state && input.context?.workflow_ref && state.workflow_ref !== input.context.workflow_ref) throw new Error('Workflow reference mismatch');
-    if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') {
-      const recompose = input.context?.recompose === true && state.workflow_ref === 'runtime/orchestrator/workflow.json'
-        && state.stages?.[stage]?.status === 'completed'
-        && !Object.entries(state.stages || {}).some(([id, entry]) => id !== stage && entry.status === 'running');
-      if (!recompose) throw new Error('Workflow already active; explicit idle recomposition is required');
+    if (status === 'running' && input.skill === 'workflow-compose' && state) {
+      const prior = state.stages?.[stage];
+      if (prior?.status === 'running' && prior.execution_id === input.execution_id) throw new Error('Compose stage already running; use a fresh execution ID after interruption');
+      if (prior?.status !== 'running' && (ACTIVE_WORKFLOW_STATES.has(state.status) || prior)) {
+        const idle = !Object.entries(state.stages || {}).some(([id, entry]) => id !== stage && entry.status === 'running');
+        const recompose = input.context?.recompose === true && state.workflow_ref === 'runtime/orchestrator/workflow.json' && prior?.status === 'completed' && idle;
+        const continuation = input.context?.compose_resume === true && ['waiting', 'blocked', 'failed'].includes(prior?.status) && idle;
+        if (!recompose && !continuation) throw new Error('Workflow already active; explicit idle recomposition or continuation is required');
+      }
     }
     if (status === 'completed' && input.skill === 'workflow-compose') {
       const baseline = JSON.parse(await readFile(composeSnapshot, 'utf8'));
@@ -81,12 +85,17 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
     const now = new Date().toISOString();
-    const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
+    const freshComposeAttempt = input.skill === 'workflow-compose' && status === 'running' && previous?.execution_id !== input.execution_id;
+    const priorWorkflowStatus = input.skill === 'workflow-compose'
+      ? freshComposeAttempt && !input.context?.compose_resume
+        ? (state.workflow_ref ? state.status : 'created')
+        : (previous?.prior_workflow_status || (state.workflow_ref ? state.status : 'created'))
+      : (previous?.prior_workflow_status ?? null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) {
         entry.prior_workflow_status = priorWorkflowStatus;
-        entry.prior_current_stage = state.current_stage;
+        entry.prior_current_stage = input.context?.compose_resume ? (previous?.prior_current_stage || state.current_stage) : state.current_stage;
       }
       entry.started_at = now;
       if (previous?.execution_id !== input.execution_id) { delete entry.child; delete entry.finished_at; }
