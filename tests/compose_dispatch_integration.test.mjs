@@ -76,7 +76,25 @@ test('installed consumer CLI composes, validates, persists and resumes its first
       '--plan-set-id', 'calculator', '--request', '간단한 계산기 웹 앱', '--execution-id', 'compose-recovered', '--codex-session-id', sessionId);
     assert.equal(recovered.workspace, tree.workspace);
     await compose('compose-recovered');
-    assert.equal((await inspectStartupState({ workspaceRoot: root, codexSessionId: sessionId })).decision_hint, 'resume_candidate');
+
+    // The original session may report the worktree but must not dispatch its first stage.
+    const originalStartup = await inspectStartupState({ workspaceRoot: root, codexSessionId: sessionId });
+    assert.equal(originalStartup.decision_hint, 'resume_candidate');
+    assert.equal(originalStartup.handoff_required, true);
+    assert.equal(originalStartup.handoff_workspace, tree.workspace);
+    assert.equal((await inspectStartupState({ workspaceRoot: tree.workspace, codexSessionId: 'separate-worktree-session' })).handoff_required, false);
+    const hook = (cwd) => JSON.parse(execFileSync(process.execPath, [join(cwd, '.codex/scripts/harness-orchestrator-hook.mjs')], {
+      cwd, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId }),
+    })).hookSpecificOutput.additionalContext;
+    const originalHook = hook(root);
+    assert.match(originalHook, /handoff_required/);
+    assert.match(originalHook, /Do not prepare or execute any downstream workflow stage/);
+    const worktreeHook = hook(tree.workspace);
+    assert.match(worktreeHook, /In the prepared worktree session only/);
+    assert.throws(() => invoke(root, 'harness-prepare-input.mjs', '--worktree-ref', worktreeRef, '--workflow-ref', flowPath, '--stage-id', 'spec'),
+      /Stage dispatch requires running from the prepared worktree/);
+
+    // Only reopening the prepared worktree allows the orchestrator to resolve the next stage.
     const prepare = invoke(tree.workspace, 'harness-prepare-input.mjs', '--worktree-ref', worktreeRef, '--workflow-ref', flowPath, '--stage-id', 'spec');
     assert.equal(prepare.input.skill, 'spec-me');
     assert.equal(prepare.input.scope, 'Write a calculator spec');
