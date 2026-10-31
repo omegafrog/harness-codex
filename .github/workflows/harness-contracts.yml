@@ -6,6 +6,18 @@ on:
 permissions:
   contents: read
 jobs:
+  compose-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Test compose/worktree runtime
+        run: node --test tests/worktree_record_contract.test.mjs
   contracts:
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +30,6 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Test compose/worktree runtime
-        run: node --test tests/worktree_record_contract.test.mjs
       - name: Check canonical contracts and revision
         env:
           CONTRACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
