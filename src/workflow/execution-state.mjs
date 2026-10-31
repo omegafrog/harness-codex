@@ -84,7 +84,10 @@ export async function recordExecutionState({ root, input, binding, status, code 
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
     if (status === 'running') {
-      if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
+      if (input.skill === 'workflow-compose' && priorWorkflowStatus) {
+        entry.prior_workflow_status = priorWorkflowStatus;
+        entry.prior_current_stage = state.current_stage;
+      }
       entry.started_at = now;
       if (previous?.execution_id !== input.execution_id) { delete entry.child; delete entry.finished_at; }
       if (owner) entry.owner = owner;
@@ -96,8 +99,8 @@ export async function recordExecutionState({ root, input, binding, status, code 
     state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';
     if (input.skill === 'workflow-compose' && status === 'completed') {
-      state.current_stage = priorWorkflowStatus && workflow.stages?.some((item) => item.id === state.current_stage)
-        ? state.current_stage : workflow.stages?.[0]?.id || null;
+      state.current_stage = priorWorkflowStatus && workflow.stages?.some((item) => item.id === previous?.prior_current_stage)
+        ? previous.prior_current_stage : workflow.stages?.[0]?.id || null;
     } else state.current_stage = workflowStage;
     const stageSkill = state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE ? WORKTREE_STAGE.WORKFLOW_COMPOSE : workflow.stages?.find((item) => item.id === state.current_stage)?.skill;
     if (!Object.values(WORKTREE_STAGE).includes(stageSkill)) throw new Error('Current stage is not in the workflow or stage enum');
