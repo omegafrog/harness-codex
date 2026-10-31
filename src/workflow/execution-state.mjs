@@ -1,7 +1,8 @@
 import { mkdir, rename, rm, writeFile, unlink, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { join } from 'node:path';
-import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs';
+import { resolveSkillSession, readSkillSessionJson, validateSkillReturn } from './skill-execution.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
@@ -37,13 +38,20 @@ export async function recordExecutionState({ root, input, binding, status, code 
   await assertWorkspaceTarget(session, `${directory}/workflow.json`);
   await mkdir(join(session, directory), { recursive: true });
   const lock = join(session, directory, '.state.lock');
+  const composeSnapshot = join(session, directory, `.compose-state-${input.execution_id}.json`);
   await mkdir(lock);
   try {
     let workflow;
     try { workflow = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/workflow.json` }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     workflow ||= { schema_version: 1, stages: [] };
-    if (input.skill === 'workflow-compose' && status === 'completed' && (!Array.isArray(workflow.stages) || !workflow.stages.length || !workflow.stages[0]?.id)) throw new Error('Completed workflow composition requires a workflow with an initial stage');
+    if (input.skill === 'workflow-compose' && status === 'completed') {
+      if (!Array.isArray(workflow.stages) || !workflow.stages.length || !workflow.stages[0]?.id) throw new Error('Completed workflow composition requires a workflow with an initial stage');
+      if (code !== 'OK' || result_ref !== `runtime/executions/${input.execution_id}/result.json`) throw new Error('Completed composition requires its verified OK result');
+      const envelope = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${input.execution_id}/return.json` });
+      if (envelope.status !== 'completed' || envelope.code !== code || envelope.result_ref !== result_ref) throw new Error('Compose completion does not match its validated return');
+      await validateSkillReturn({ root, input, envelope });
+    }
     const workflowStage = input.context?.parent_stage_id || stage;
     if (input.context?.workflow_ref && !workflow.stages?.some((item) => item.id === workflowStage)) throw new Error('Current stage is not in the workflow');
     let state = workflow.state;
@@ -54,7 +62,16 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     if (state && state.schema_version !== 1) throw new Error('Invalid workflow state schema');
     if (state && input.context?.workflow_ref && state.workflow_ref !== input.context.workflow_ref) throw new Error('Workflow reference mismatch');
-    if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') throw new Error('Workflow already active');
+    if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') {
+      const recompose = input.context?.recompose === true && state.workflow_ref === 'runtime/orchestrator/workflow.json'
+        && state.stages?.[stage]?.status === 'completed'
+        && !Object.entries(state.stages || {}).some(([id, entry]) => id !== stage && entry.status === 'running');
+      if (!recompose) throw new Error('Workflow already active; explicit idle recomposition is required');
+    }
+    if (status === 'completed' && input.skill === 'workflow-compose') {
+      const baseline = JSON.parse(await readFile(composeSnapshot, 'utf8'));
+      if (!isDeepStrictEqual(state, baseline)) throw new Error('Compose modified orchestrator state; state must be preserved exactly');
+    }
     state ||= { schema_version: 1, codex_session_id: codexSessionId, workflow_ref: null, stages: {} };
     if (codexSessionId) state.codex_session_id = codexSessionId;
     const previous = state.stages?.[stage];
@@ -79,13 +96,17 @@ export async function recordExecutionState({ root, input, binding, status, code 
     state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';
     if (input.skill === 'workflow-compose' && status === 'completed') {
-      state.current_stage = priorWorkflowStatus && state.current_stage !== WORKTREE_STAGE.WORKFLOW_COMPOSE ? state.current_stage : workflow.stages?.[0]?.id || null;
+      state.current_stage = priorWorkflowStatus && workflow.stages?.some((item) => item.id === state.current_stage)
+        ? state.current_stage : workflow.stages?.[0]?.id || null;
     } else state.current_stage = workflowStage;
     const stageSkill = state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE ? WORKTREE_STAGE.WORKFLOW_COMPOSE : workflow.stages?.find((item) => item.id === state.current_stage)?.skill;
     if (!Object.values(WORKTREE_STAGE).includes(stageSkill)) throw new Error('Current stage is not in the workflow or stage enum');
     state.updated_at = now;
     if (input.skill === 'workflow-compose' && status === 'completed') state.workflow_ref = 'runtime/orchestrator/workflow.json';
     workflow.state = state;
+    if (input.skill === 'workflow-compose' && status === 'running') {
+      await writeFile(composeSnapshot, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    }
     const temporary = join(session, directory, `.workflow-${randomUUID()}.json`);
     try { await writeFile(temporary, JSON.stringify(workflow, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, join(session, directory, 'workflow.json')); }
     finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
