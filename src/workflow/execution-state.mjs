@@ -122,5 +122,6 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     if (migrated) await unlink(join(session, directory, 'state.json'));
     await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [], codex_session_id: codexSessionId }, 'SkillExecution');
+    return { schema_version: 1, execution_id: input.execution_id, stage, status: state.stages[stage].status, workflow_status: state.status, current_stage: state.current_stage, result_ref: state.stages[stage].result_ref };
   } finally { await rm(lock, { recursive: true }); }
 }
