@@ -7,4 +7,4 @@
 3. `completed/OK` 반환에 `worktree_ref`와 `request_workflow` artifact (`base: session`, `path: runtime/orchestrator/workflow.json`, `kind: request_workflow`, `sha256: null`)를 포함한다. 실행기가 이 파일에 상태를 추가하므로 변경되는 workflow 파일에 고정 해시를 넣지 않는다. worktree 생성만으로 compose가 완료된 것으로 보고하지 않는다.
 4. 호출자는 반환과 workflow를 검증하고 `harness-execution-state.mjs`로 완료 상태를 기록한 뒤에만 다음 세션을 안내한다.
 
-기존 `runtime/orchestrator/workflow.json`을 갱신할 때는 기존 `state` 객체를 그대로 보존한다. 실행기는 compose 시작 시 저장한 상태와 결과의 상태를 비교하고 변경되면 완료를 차단한다. 새 workflow는 실행기가 compose 완료 후 상태를 `created`로 초기화한다. 활성 workflow 변경은 작업 실행 중이 아닐 때만 `harness-compose-workspace.mjs --recompose --worktree-ref <worktree.json> ...`로 준비한다.
+기존 `runtime/orchestrator/workflow.json`을 갱신할 때는 기존 `state` 객체를 그대로 보존한다. 실행기는 compose 시작 시 저장한 상태와 결과의 상태를 비교하고 변경되면 완료를 차단한다. 새 workflow는 실행기가 compose 완료 후 상태를 `created`로 초기화한다. 활성 workflow 변경은 작업 실행 중이 아닐 때만 `harness-compose-workspace.mjs --recompose true --worktree-ref <worktree.json> ...`로 준비한다. 질문·차단·실패로 일시 중단된 compose는 기존 worktree에서 새 실행 ID로 `--continue-composition true --worktree-ref <worktree.json>`을 사용하고, 저장된 Codex thread가 있다면 정적 호출기의 `--resume`으로 해당 대화를 이어간다. 실행 ID를 재사용하지 않는다.
