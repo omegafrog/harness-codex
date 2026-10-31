@@ -87,7 +87,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
       if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
-      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && ACTIVE.has(state.status)) {
+      if (ref === null && state.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE && (ACTIVE.has(state.status) || state.status === 'failed')) {
         states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: null, status: state.status, current_stage: state.current_stage, composition_pending: true, orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
@@ -129,8 +129,10 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
   if (!current || relevantIssues.length || states.length > 1 || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (states.length === 1 && ACTIVE.has(states[0].status)) {
-    hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
+  } else if (states.length === 1 && (ACTIVE.has(states[0].status) || (states[0].composition_pending && states[0].status === 'failed'))) {
+    hint = 'resume_candidate'; reason = states[0].composition_pending && states[0].status === 'failed'
+      ? 'Failed composition is owned and may be continued after inspection'
+      : 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = 'Matching Codex session workflow is terminal';
