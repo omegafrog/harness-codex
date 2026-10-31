@@ -17,7 +17,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - name: Test compose/worktree runtime
-        run: node --test tests/worktree_record_contract.test.mjs
+        run: node --test tests/worktree_record_contract.test.mjs tests/compose_dispatch_integration.test.mjs
   contracts:
     runs-on: ubuntu-latest
     steps:
