@@ -1,9 +1,10 @@
 import { provisionWorktreeRuntime } from '../installer/worktree-runtime.mjs';
-import { legacySessionDirectory, sessionDirectory, sessionOutputPath } from './session-output.mjs';
+import { sessionDirectory } from './session-output.mjs';
+import { WORKTREE_STAGE } from './worktree-stages.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
-import { cp, lstat, mkdir, readFile, readlink, readdir, realpath, rename, writeFile, open, unlink, chmod } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, rename, open, unlink, chmod } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, basename } from 'node:path';
 
 const exec = promisify(execFile);
@@ -17,7 +18,7 @@ const PLAN_SET_SLUG_LENGTH = 64;
 function validatePlanSetId(value) {
   if (value !== undefined && (typeof value !== 'string' || !PLAN_SET_ID.test(value))) throw new Error('Invalid plan_set_id');
 }
-function planSetSlug(featureName) {
+export function planSetSlug(featureName) {
   if (typeof featureName !== 'string' || !featureName.trim()) throw new Error('feature_name is required to generate plan_set_id');
   const slug = featureName.normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, PLAN_SET_SLUG_LENGTH).replace(/-+$/g, '');
   if (!slug) throw new Error('feature_name must contain an English letter or digit so it can form a readable plan_set_id');
@@ -35,6 +36,7 @@ export function parseWorktreeRecord(text) {
     || !['workspace', 'common', 'return_root', 'session_directory'].every((key) => isAbsolute(record[key] || ''))
     || typeof record.branch !== 'string' || !record.branch) throw new Error('Invalid worktree.json');
   validatePlanSetId(record.plan_set_id);
+  if (record.current_stage !== undefined && !Object.values(WORKTREE_STAGE).includes(record.current_stage)) throw new Error('Invalid worktree current_stage');
   if (record.agent_sessions !== undefined) {
     if (!record.agent_sessions || typeof record.agent_sessions !== 'object' || Array.isArray(record.agent_sessions)) throw new Error('Invalid worktree agent_sessions');
     for (const [key, entry] of Object.entries(record.agent_sessions)) {
@@ -45,35 +47,30 @@ export function parseWorktreeRecord(text) {
 }
 async function storage(repository) {
   const common = await realpath(resolve(repository, await git(repository, ['rev-parse', '--git-common-dir'])));
-  const directory = dirname(sessionDirectory(repository));
+  const directory = join(common, 'harness-reservations');
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const info = await lstat(directory);
-  if (await realpath(directory) !== directory || info.isSymbolicLink()) throw new Error('Unsafe worktree recovery directory');
-  if ((info.mode & 0o777) !== 0o700) await chmod(directory, 0o700);
   return { common, directory };
 }
 async function location(root, repository = root) {
   if (!isAbsolute(root || '') || !isAbsolute(repository || '')) throw new Error('Absolute workspace and repository roots are required');
   const store = await storage(repository);
   const workspace = resolve(root);
-  let directory = sessionDirectory(workspace, { repositoryRoot: repository });
-  const legacyDirectory = legacySessionDirectory(workspace, { repositoryRoot: repository });
-  let prior = await readFile(join(legacyDirectory, 'worktree.json'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-  if (!prior) {
-    const receipt = await readFile(join(legacyDirectory, 'receipt.json'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-    if (receipt && JSON.parse(receipt)?.worktree_id) prior = receipt;
+  const directory = join(workspace, '.io');
+  const reservation = join(store.directory, `${createHash('sha256').update(workspace).digest('hex')}.json`);
+  const present = await lstat(workspace).then((info) => info.isDirectory(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  const recordExists = present && await lstat(join(directory, 'worktree.json')).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  if (present && !recordExists) {
+    const reserved = await lstat(reservation).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+    if (reserved) return { ...store, directory, workspace, session_directory: directory, worktree_file: reservation, legacy_record: reservation };
   }
-  if (prior && parseWorktreeRecord(prior).state !== 'removed') {
-    const current = await readFile(join(directory, 'worktree.json'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-    if (current) throw new Error('Multiple worktree records require recovery');
-    directory = legacyDirectory;
-  }
-  return { ...store, directory, workspace, session_directory: directory, worktree_file: join(directory, 'worktree.json'), legacy_record: join(directory, 'receipt.json') };
+  if (present) await mkdir(directory, { recursive: true, mode: 0o700 });
+  return { ...store, directory, workspace, session_directory: directory, worktree_file: present ? join(directory, 'worktree.json') : reservation, legacy_record: present ? join(directory, 'receipt.json') : reservation };
 }
 async function readWorktreeRecord(place) {
   try { return parseWorktreeRecord(await readFile(place.worktree_file, 'utf8')); }
   catch (error) {
     if (error.code !== 'ENOENT') throw error;
+    if (place.legacy_record === place.worktree_file) throw error;
     const record = parseWorktreeRecord(await readFile(place.legacy_record, 'utf8'));
     await durableJson(place.worktree_file, record);
     await unlink(place.legacy_record);
@@ -83,14 +80,7 @@ async function readWorktreeRecord(place) {
 async function writeWorktreeRecord(place, record) {
   parseWorktreeRecord(JSON.stringify(record));
   await durableJson(place.worktree_file, record);
-  await unlink(place.legacy_record).catch((error) => { if (error.code !== 'ENOENT') throw error; });
-}
-async function readArchivedWorktree(recovery) {
-  try { return parseWorktreeRecord(await readFile(join(recovery, 'worktree.json'), 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    return parseWorktreeRecord(await readFile(join(recovery, 'receipt.json'), 'utf8'));
-  }
+  if (place.legacy_record !== place.worktree_file) await unlink(place.legacy_record).catch((error) => { if (error.code !== 'ENOENT') throw error; });
 }
 async function describe(root) {
   const workspace = await realpath(root);
@@ -109,7 +99,7 @@ export async function reserveWorkflowWorktree({ workspace_root, repository_root,
   try { await lstat(place.workspace); throw new Error('Allocation path already exists'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { const old = await readWorktreeRecord(place); if (old.state !== 'removed') throw new Error('Allocation already has a pending owner'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const source_workspace = await realpath(repository_root);
-  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), state: 'allocating', session_directory: place.session_directory };
+  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), state: 'allocating', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, session_directory: place.session_directory };
   await writeWorktreeRecord(place, record);
   return record;
   });
@@ -127,7 +117,10 @@ async function registerWorktree({ workspace_root, return_root, plan_set_id } = {
     if (plan_set_id && existing.plan_set_id && existing.plan_set_id !== plan_set_id) throw new Error('Worktree plan_set_id mismatch');
     if (existing.state === 'allocating' && existing.branch === details.branch && existing.common === details.common) {
       const record = { ...existing, ...details, ...(existing.plan_set_id || plan_set_id ? { plan_set_id: existing.plan_set_id || plan_set_id } : {}), state: 'active' };
-      await writeWorktreeRecord(place, record); return record;
+      await mkdir(place.directory, { recursive: true, mode: 0o700 });
+      await durableJson(join(place.directory, 'worktree.json'), record);
+      if (place.worktree_file !== join(place.directory, 'worktree.json')) await unlink(place.worktree_file);
+      return record;
     }
     if (existing.state !== 'removed' && existing.git_dir !== details.git_dir) throw new Error('Worktree already belongs to another active owner');
     if (existing.state === 'active') {
@@ -140,7 +133,7 @@ async function registerWorktree({ workspace_root, return_root, plan_set_id } = {
     }
     if (existing.state !== 'removed') throw new Error('Finish the pending cleanup before registering another worktree');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), state: 'active', registered_at: new Date().toISOString() };
+  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), state: 'active', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, registered_at: new Date().toISOString() };
   await writeWorktreeRecord(place, record);
   return record;
 }
@@ -184,8 +177,22 @@ export async function recordWorkflowSession({ workspace_root, repository_root = 
   });
 }
 
-export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, signal = null } = {}) {
+export async function recordWorktreeStage({ workspace_root, repository_root, current_stage } = {}) {
+  if (!Object.values(WORKTREE_STAGE).includes(current_stage)) throw new Error('Invalid worktree current_stage');
+  const place = await location(workspace_root, repository_root);
+  return withWorktreeLock(place, async () => {
+    const record = await readWorktreeRecord(place);
+    if (record.state !== 'active' || record.workspace !== place.workspace || record.common !== place.common || record.session_directory !== place.session_directory) throw new Error('Worktree ownership mismatch while recording stage');
+    const actual = await describe(place.workspace);
+    if (actual.common !== record.common || actual.branch !== record.branch || actual.git_dir !== record.git_dir) throw new Error('Worktree changed while recording stage');
+    await writeWorktreeRecord(place, { ...record, current_stage });
+  });
+}
+
+export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, feature_name, signal = null } = {}) {
   if (!isAbsolute(workspace_root || '')) throw new Error('Absolute source workspace is required');
+  if (plan_set_id && feature_name) throw new Error('Provide either plan_set_id or feature_name');
+  if (feature_name) plan_set_id = planSetSlug(feature_name);
   validatePlanSetId(plan_set_id);
   const sourceWorkspace = await realpath(workspace_root);
   const returnRoot = await realpath(return_root || sourceWorkspace);
@@ -195,12 +202,16 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   const workspace = join(dirname(returnRoot), '.harness-worktrees', basename(returnRoot), worktreeId);
   const sessionBranch = branch || `harness/worktree/${worktreeId}`;
   await git(workspace_root, ['check-ref-format', '--branch', sessionBranch]);
-  if (!branch && await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch');
+  if (!branch) {
+    const main = await git(workspace_root, ['rev-parse', '--verify', 'refs/heads/main']).catch(() => null);
+    if (!main) throw new Error('Source repository requires a committed main branch before workflow composition');
+    if (await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch; commit or stash changes first');
+  }
   await mkdir(dirname(workspace), { recursive: true });
   const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, branch: sessionBranch, plan_set_id });
   try {
     if (branch) await git(workspace_root, ['worktree', 'add', '--', workspace, branch]);
-    else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'HEAD']);
+    else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'main']);
     signal?.throwIfAborted();
     const record = await registerWorkflowWorktree({ workspace_root: workspace, return_root: returnRoot, plan_set_id });
     await provisionWorktreeRuntime(sourceWorkspace, workspace);
@@ -212,82 +223,23 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   }
 }
 
-async function digestTree(root) {
-  const hash = createHash('sha256');
-  async function walk(path, name) {
-    const info = await lstat(path);
-    hash.update(`${name}\0${info.mode}\0`);
-    if (info.isSymbolicLink()) hash.update(await readlink(path));
-    else if (info.isFile()) hash.update(await readFile(path));
-    else if (info.isDirectory()) for (const child of (await readdir(path)).sort()) {
-      if (!name && child === '.git') continue;
-      await walk(join(path, child), name ? `${name}/${child}` : child);
-    }
-    else throw new Error(`Cannot safely archive special file: ${name}`);
-  }
-  // Directory root permissions are intentionally private in the archive.
-  for (const child of (await readdir(root)).sort()) if (child !== '.git') await walk(join(root, child), child);
-  return hash.digest('hex');
-}
-
 async function finishRegisteredWorktree({ workspace_root, repository_root = workspace_root, worktree_id = null, outcome = 'aborted' } = {}) {
   if (!['completed', 'aborted', 'failed', 'handoff'].includes(outcome)) throw new Error('Invalid worktree exit outcome');
   const place = await location(workspace_root, repository_root);
   let record;
   try { record = await readWorktreeRecord(place); }
   catch (error) { if (error.code === 'ENOENT') return { state: 'not-owned', workspace_root, reason: 'No worktree.json; workspace preserved' }; throw error; }
-  if (record.workspace !== place.workspace || record.common !== place.common || (record.worktree_id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.worktree_id)) || (worktree_id && record.worktree_id !== worktree_id)) throw new Error('Worktree ownership mismatch: worktree.json does not match this worktree');
-  if (record.state === 'removed') {
-    try { await lstat(place.workspace); throw new Error('Workspace path was reused; register the new worktree explicitly'); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    return { state: 'removed', workspace_root, return_root: record.return_root, recovery_path: record.recovery_path, already_removed: true };
-  }
-  let recovery = record.recovery_path || null;
-  try {
-    try { await lstat(place.workspace); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      const listed = await git(record.return_root, ['worktree', 'list', '--porcelain', '-z']);
-      if (listed.split('\0').includes(`worktree ${place.workspace}`)) throw new Error('Missing path remains registered in Git');
-      if (record.state !== 'allocating') {
-        const archived = await readArchivedWorktree(recovery);
-        if (archived.workspace !== place.workspace || archived.tree_sha256 !== await digestTree(join(recovery, 'files')) || await git(record.return_root, ['rev-parse', archived.recovery_ref]) !== archived.head) throw new Error('Recovery archive no longer verifies');
-      }
-      await writeWorktreeRecord(place, { ...record, state: 'removed' });
-      return { state: 'removed', workspace_root, return_root: record.return_root, recovery_path: recovery, already_removed: true };
-    }
+  if (record.workspace !== place.workspace || record.common !== place.common || (worktree_id && record.worktree_id !== worktree_id)) throw new Error('Worktree ownership mismatch');
+  const exists = await lstat(place.workspace).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  if (exists) {
     const current = await describe(place.workspace);
-    if (record.state === 'allocating' && current.branch === record.branch && current.common === record.common) record = { ...record, ...current, state: 'active' };
-    if (current.git_dir !== record.git_dir || current.common !== record.common || current.branch !== record.branch) throw new Error('Worktree identity/branch changed; cleanup refused');
-    const returnRoot = await realpath(record.return_root);
-    if (within(place.workspace, returnRoot) || await realpath(resolve(returnRoot, await git(returnRoot, ['rev-parse', '--git-common-dir']))) !== record.common) throw new Error('Return workspace no longer matches repository');
-    recovery = sessionOutputPath(place.workspace, `recovery/${randomUUID()}`, { repositoryRoot: record.return_root });
-    await mkdir(recovery, { mode: 0o700 });
-    const files = join(recovery, 'files');
-    const before = await digestTree(place.workspace);
-    await cp(place.workspace, files, { recursive: true, dereference: false, verbatimSymlinks: true, filter: (path) => path !== join(place.workspace, '.git') });
-    const index = await readFile(join(current.git_dir, 'index'));
-    await writeFile(join(recovery, 'index'), index, { mode: 0o600 });
-    if (before !== await digestTree(place.workspace) || before !== await digestTree(files) || current.head !== await git(place.workspace, ['rev-parse', 'HEAD']) || !index.equals(await readFile(join(current.git_dir, 'index')))) throw new Error('Workspace changed during archive; stop writers and retry');
-    const staged = await git(place.workspace, ['ls-files', '--stage', '-z']);
-    const blobs = [...new Set(staged.split('\0').flatMap((line) => { const m = line.match(/^(?:100644|100755|120000) ([a-f0-9]+) [0-3]\t/); return m ? [m[1]] : []; }))];
-    const treeCommand = exec('git', ['mktree'], { cwd: record.return_root, encoding: 'utf8' });
-    treeCommand.child.stdin.end(blobs.map((oid, i) => `100644 blob ${oid}\tindex-${i}\n`).join(''));
-    const staged_ref = `refs/harness/recovery/index-${randomUUID()}`;
-    await git(record.return_root, ['update-ref', staged_ref, (await treeCommand).stdout.trim()]);
-    const recovery_ref = `refs/harness/recovery/${randomUUID()}`;
-    await git(returnRoot, ['update-ref', recovery_ref, current.head]);
-    const snapshot = { ...record, outcome, head: current.head, tree_sha256: before, staged_ref, recovery_ref, recovery_path: recovery, archived_at: new Date().toISOString(), state: 'archived' };
-    await durableJson(join(recovery, 'worktree.json'), snapshot);
-    await writeWorktreeRecord(place, snapshot);
-    await git(returnRoot, ['worktree', 'remove', '--force', '--', place.workspace]);
-    const listed = await git(returnRoot, ['worktree', 'list', '--porcelain', '-z']);
-    if (listed.split('\0').includes(`worktree ${place.workspace}`)) throw new Error('Worktree is still registered after removal');
-    await writeWorktreeRecord(place, { ...snapshot, state: 'removed', removed_at: new Date().toISOString() });
-    return { state: 'removed', workspace_root, return_root: returnRoot, recovery_path: recovery, recovery_ref, branch: current.branch, head: current.head };
-  } catch (error) {
-    await writeWorktreeRecord(place, { ...record, state: 'cleanup-failed', recovery_path: recovery, error: error.message, outcome });
-    return { state: 'failed', workspace_root, return_root: record.return_root, recovery_path: recovery, error: error.message, retry: 'Stop owned writers and rerun finish from return_root with --repository' };
+    if (current.common !== record.common || current.branch !== record.branch || (record.git_dir && current.git_dir !== record.git_dir)) throw new Error('Worktree identity/branch changed; cleanup refused');
+    await git(record.return_root, ['worktree', 'remove', '--force', '--', place.workspace]);
   }
+  const listed = await git(record.return_root, ['worktree', 'list', '--porcelain', '-z']);
+  if (listed.split('\0').includes(`worktree ${place.workspace}`)) throw new Error('Worktree is still registered after removal');
+  if (place.worktree_file.startsWith(`${place.directory}/`) === false) await unlink(place.worktree_file).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  return { state: 'removed', workspace_root, return_root: record.return_root, outcome };
 }
 
 async function withWorktreeLock(place, action) {
@@ -303,7 +255,7 @@ async function withWorktreeLock(place, action) {
     lock = await open(lockPath, 'wx', 0o600);
   }
   try { await lock.writeFile(JSON.stringify({ pid: process.pid })); return await action(); }
-  finally { await lock.close(); await unlink(lockPath); }
+  finally { await lock.close(); await unlink(lockPath).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
 }
 
 export async function finishWorkflowWorktree(options = {}) {
@@ -312,21 +264,11 @@ export async function finishWorkflowWorktree(options = {}) {
 }
 
 export async function listWorkflowWorktrees({ workspace_root } = {}) {
-  const { directory } = await storage(workspace_root);
-  const directories = [...new Set([directory, dirname(legacySessionDirectory(workspace_root))])];
-  const entries = (await Promise.all(directories.map(async (parent) => (await readdir(parent).catch((error) => { if (error.code === 'ENOENT') return []; throw error; })).filter((name) => /^[a-f0-9]{64}$/.test(name)).map((name) => ({ parent, name })) ))).flat();
-  const records = await Promise.all(entries.map(async ({ parent, name }) => {
-    const place = { worktree_file: join(parent, name, 'worktree.json'), legacy_record: join(parent, name, 'receipt.json') };
-    try { return parseWorktreeRecord(await readFile(place.worktree_file, 'utf8')); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    let legacy;
-    try { legacy = JSON.parse(await readFile(place.legacy_record, 'utf8')); }
+  const listing = await git(workspace_root, ['worktree', 'list', '--porcelain', '-z']);
+  const workspaces = listing.split('\0').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
+  const records = await Promise.all(workspaces.map(async (workspace) => {
+    try { return parseWorktreeRecord(await readFile(join(workspace, '.io', 'worktree.json'), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-    if (!legacy?.worktree_id) return null;
-    const record = parseWorktreeRecord(JSON.stringify(legacy));
-    await durableJson(place.worktree_file, record);
-    await unlink(place.legacy_record);
-    return record;
   }));
   return records.filter((record) => record && record.state !== 'removed');
 }
