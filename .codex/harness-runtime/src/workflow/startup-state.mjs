@@ -127,9 +127,9 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   const associatedRecord = states.length === 1 ? records.find((record) => dirname(record.record_path) === states[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || states.length > 1 || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || states.length > 1 || states.some((item) => item.composition_pending && !records.some((record) => dirname(record.record_path) === item.session_directory && record.status === 'verified_active')) || currentRecord?.status === 'recovery_required' || (ACTIVE.has(states[0]?.status) && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (states.length === 1 && (ACTIVE.has(states[0].status) || (states[0].composition_pending && states[0].status === 'failed'))) {
+  } else if (states.length === 1 && (ACTIVE.has(states[0].status) || (states[0].composition_pending && states[0].status === 'failed' && associatedRecord?.status === 'verified_active'))) {
     hint = 'resume_candidate'; reason = states[0].composition_pending && states[0].status === 'failed'
       ? 'Failed composition is owned and may be continued after inspection'
       : 'Current repository has a persisted active workflow';
