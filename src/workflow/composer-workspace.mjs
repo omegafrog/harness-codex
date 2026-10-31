@@ -15,6 +15,11 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     if (recompose_worktree_ref !== join(session, 'worktree.json')) throw new Error('Recompose worktree reference is not canonical');
     record = parseWorktreeRecord(await readFile(recompose_worktree_ref, 'utf8'));
     if (record.state !== 'active' || record.session_directory !== session || await realpath(record.workspace) !== await realpath(root) || record.plan_set_id !== plan_set_id) throw new Error('Recompose requires the active, matching worktree and plan set');
+    const current = JSON.parse(await readFile(join(session, 'runtime/orchestrator/workflow.json'), 'utf8'));
+    const state = current.state;
+    if (state?.workflow_ref !== 'runtime/orchestrator/workflow.json' || state.stages?.['workflow-compose']?.status !== 'completed' || Object.values(state.stages || {}).some((entry) => entry.status === 'running')) {
+      throw new Error('Recompose requires a completed composition and no running stages');
+    }
   } else {
     record = await createWorkflowWorktree({ workspace_root: root, plan_set_id });
   }
