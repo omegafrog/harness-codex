@@ -2,7 +2,8 @@ import { readFile, writeFile, realpath, lstat } from "node:fs/promises";
 import { resolve, relative, isAbsolute, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const DIRECTORY = "docs/contracts";
 const MANIFEST = `${DIRECTORY}/manifest.json`;
@@ -31,17 +32,18 @@ async function safePath(root, path) {
   return target;
 }
 const read = async (root, path) => readFile(await safePath(root, path), "utf8");
-function git(root, args) { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
-function previous(root, baseRef) {
+const execFileAsync = promisify(execFile);
+async function git(root, args) { return (await execFileAsync("git", args, { cwd: root, encoding: "utf8" })).stdout; }
+async function previous(root, baseRef) {
   const ref = baseRef || "HEAD";
   if (!/^[a-zA-Z0-9_./~-]+$/.test(ref) || ref.startsWith("-")) throw new Error("Invalid base ref");
-  try { git(root, ["rev-parse", "--verify", `${ref}^{commit}`]); }
+  try { await git(root, ["rev-parse", "--verify", `${ref}^{commit}`]); }
   catch (error) {
-    if (baseRef || git(root, ["rev-parse", "--is-inside-work-tree"]).trim() !== "true") throw error;
+    if (baseRef || (await git(root, ["rev-parse", "--is-inside-work-tree"])).trim() !== "true") throw error;
     return null;
   }
-  if (!git(root, ["ls-tree", "--name-only", ref, "--", MANIFEST]).trim()) return null;
-  return JSON.parse(git(root, ["show", `${ref}:${MANIFEST}`]));
+  if (!(await git(root, ["ls-tree", "--name-only", ref, "--", MANIFEST])).trim()) return null;
+  return JSON.parse(await git(root, ["show", `${ref}:${MANIFEST}`]));
 }
 function sections(markdown) {
   return new Map([...markdown.matchAll(/<a id="([a-z][a-z0-9-]*)"><\/a>\s*\n## ([^\n]+)\n([\s\S]*?)(?=<a id="|$)/g)].map((m) => [m[1], { name: m[2].trim(), body: m[3] }]));
@@ -57,7 +59,7 @@ async function snapshot(root, manifest) {
   for (const path of new Set([...manifest.source_roots, "docs/specs", "docs/plans"])) {
     if (path === "." || path.startsWith(DIRECTORY) || path.startsWith(".git/")) throw new Error(`Invalid source root: ${path}`);
     if (manifest.source_roots.includes(path)) await safePath(root, path);
-    const paths = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", path]).split("\0").filter(Boolean);
+    const paths = (await git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", path])).split("\0").filter(Boolean);
     for (const source of paths) {
       if (source.startsWith("docs/plans/.runtime/")) continue;
       // Deleted tracked paths belong to the previous snapshot; their absence must change the hash set.
@@ -178,7 +180,7 @@ export async function inspectContracts({ workspace_root, base_ref = null } = {})
     const errors = await validate(workspace_root, manifest);
     const hashes = await snapshot(workspace_root, manifest);
     if (JSON.stringify(hashes) !== JSON.stringify(manifest.hashes)) errors.push("Contract/source snapshot changed; reconcile and seal");
-    const old = previous(workspace_root, base_ref);
+    const old = await previous(workspace_root, base_ref);
     if (old && JSON.stringify(old) !== JSON.stringify(manifest) && manifest.revision <= old.revision) errors.push("Contract revision must increase from base");
     if (await read(workspace_root, `${DIRECTORY}/architecture.html`) !== await viewer(workspace_root, manifest)) errors.push("Architecture HTML is stale");
     return { status: errors.length ? "fail" : "pass", reason: errors.length ? "contracts_out_of_sync" : "contracts_current", revision: manifest.revision, violations: errors, evidence_path: MANIFEST };
@@ -192,7 +194,7 @@ export async function sealContracts({ workspace_root, change_summary, no_contrac
   if (!text(change_summary)) throw new Error("A review change summary is required");
   const manifest = JSON.parse(await read(workspace_root, MANIFEST));
   const hashes = await snapshot(workspace_root, manifest);
-  const old = previous(workspace_root);
+  const old = await previous(workspace_root);
   const baseline = manifest.hashes || old?.hashes;
   const sourcesChanged = baseline && Object.keys({ ...baseline, ...hashes }).some((p) => !p.startsWith(DIRECTORY) && p !== "@model" && baseline[p] !== hashes[p]);
   const docsChanged = !baseline || ["product.md", "architecture.md"].some((p) => baseline[`${DIRECTORY}/${p}`] !== hashes[`${DIRECTORY}/${p}`]);

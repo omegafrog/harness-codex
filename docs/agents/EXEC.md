@@ -219,7 +219,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ### Orchestrator 작업 실행
 
-메인 orchestrator는 [정적 호출기 지침](../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
+메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
 
 orchestrator는 `harness-execution-state.mjs`로 시작·결과·실패 상태와 진행률을 기록한다. `context.codex_session_id`, `context.stage_id`와 필요한 제어 session 경로를 입력에 지정한다.

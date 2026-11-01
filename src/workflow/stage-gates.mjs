@@ -8,10 +8,17 @@ import { assertWorkspaceTarget } from "../eval/case-workspace.mjs";
 export const SYSTEM_TARGET_GATE_ID = "system_targets_complete";
 export const DECISION_EVIDENCE_GATE_ID = "decision_evidence_complete";
 export const DECISION_REVIEW_GATE_ID = "decision_review_complete";
+export const PRODUCT_DIAGRAM_COMPLETION_GATE_ID = "product_diagram_completion";
+export const ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID = "architecture_diagram_completion";
 export const LEARNING_MODE_CONDITION_ID = "learning_mode";
 const SAFE_TICKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function evaluateWorkflowCondition(conditionId, input = {}) {
+  if (conditionId === "product_diagram_required" || conditionId === "architecture_diagram_required") {
+    const applies = input[conditionId];
+    if (typeof applies !== "boolean") throw new TypeError(`input.${conditionId} must be a boolean`);
+    return { condition_id: conditionId, applies };
+  }
   if (conditionId !== LEARNING_MODE_CONDITION_ID) throw new TypeError(`No workflow condition evaluator is registered for: ${conditionId}`);
   const session = input.review_session;
   const mode = session?.mode ?? input.mode ?? "Learning";
@@ -114,6 +121,9 @@ async function evaluateDiagramCompletion({ root, ticketId, axis }) {
   }
 }
 
+export const evaluateProductDiagramCompletion = (input) => evaluateDiagramCompletion({ ...input, axis: "product" });
+export const evaluateArchitectureDiagramCompletion = (input) => evaluateDiagramCompletion({ ...input, axis: "architecture" });
+
 async function loadDecisionContext(root, ticketId) {
   const targets = await readSystemTargets({ root, ticketId });
   if (targets.decision_metadata?.decision_layer_version !== 1) return { targets, legacy: true };
@@ -182,8 +192,8 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
 }
 
 const REGISTERED_STAGE_GATES = new Map([
-  ["product_diagram_completion", ({ root, ticketId }) => evaluateDiagramCompletion({ root, ticketId, axis: "product" })],
-  ["architecture_diagram_completion", ({ root, ticketId }) => evaluateDiagramCompletion({ root, ticketId, axis: "architecture" })],
+  [PRODUCT_DIAGRAM_COMPLETION_GATE_ID, evaluateProductDiagramCompletion],
+  [ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID, evaluateArchitectureDiagramCompletion],
   ["architecture_adversarial_review", ({ root, ticketId, specReviews }) => inspectSpecReviews({ root, ticketId, reviews: specReviews })],
   [SYSTEM_TARGET_GATE_ID, evaluateSystemTargetsComplete],
   [DECISION_EVIDENCE_GATE_ID, evaluateDecisionEvidenceComplete],

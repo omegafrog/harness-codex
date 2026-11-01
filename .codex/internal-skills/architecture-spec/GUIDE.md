@@ -4,9 +4,9 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 필요한 하위 작업을 서브에이전트에 위임하고 결과 파일과 공통 envelope를 반환한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
-내부 작업에서 독립 리뷰를 요청할 때는 공통 계약의 `review_request`에 reviewer skill·role·범위와 `context_path`를 기록한다. `context_path`는 실제로 확인된 Decision ID, review mode, 사용자 주장 및 근거를 담은 session 상대 JSON 경로이며 검토 대상 산출물도 반환한다. 재검토 요청에는 이전 `architecture_review` 보고서와 변경 구간, 직접 영향을 받는 관계 및 미해결 finding을 포함한다. 통과된 무관한 항목을 다시 검토하도록 요청하지 않는다. 미확정 입력이나 승인을 추정하지 않는다. 리뷰 결과로 같은 Codex session이 재개되면 `context.review_result_ref`가 지정한 결과 파일을 읽어 findings와 미해결 gate를 처리한다.
+독립 리뷰 요청의 `review_request`에 reviewer의 `skill`, `agent_profile`, 범위와 `context_path`를 기록한다. `context_path`는 확인된 Decision ID, review mode, 사용자 주장과 근거를 담은 session 상대 JSON이다. 재검토에는 이전 보고서의 변경 구간과 미해결 finding을 포함한다. 재개 시 `context.review_result_ref`에서 결과를 읽는다.
 
 ## Purpose
 
@@ -27,6 +27,10 @@ Turn the Product Spec into an implementable architecture contract.
 Architecture Spec drafting does not execute tests, services, or infrastructure and does not require `docs/agents/EXEC.md` or `docs/agents/execution.json` to exist. When a proposed decision changes how the application is launched or verified, inspect those files if present and record any missing execution-contract work in the implementation impact; do not block Spec authoring on that preparation.
 
 ## Process
+
+`agent_profile: spec_document_writer`로 호출되면 전달된 확정 결정·근거와 template로 Spec을 작성한다. 필요한 결정이 빠졌으면 누락 사항을 caller에게 반환한다. 아래 조사·인터뷰·결정 절차는 상위 설계 작업이 수행한다.
+
+The caller runs the research, interview, and decision process. `spec_document_writer` only serializes settled decisions into the template; it does not run the following process.
 
 1. Read the Product Spec and guidance first.
 2. MUST read `references/topics.md` before starting the architecture interview; use every topic as the coverage checklist.

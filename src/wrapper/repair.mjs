@@ -1,5 +1,6 @@
 import { inspectReviewHistory, updateReviewAttempt } from '../workflow/review-attempts.mjs';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { inspectPlanSet } from '../workflow/plan-review.mjs';
 
@@ -118,8 +119,8 @@ export function classifyReviewFindings(reviews = []) {
   return { repairable, blockers, deferred, advisory, has_findings: repairable.length > 0 || blockers.length > 0 };
 }
 
-export function implementationReviewRoot(root) {
-  const primary = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' }).split('\0')[0];
+export async function implementationReviewRoot(root) {
+  const primary = (await promisify(execFile)('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' })).stdout.split('\0')[0];
   if (!primary.startsWith('worktree ')) throw new Error('Cannot resolve the primary review workspace');
   return primary.slice(9);
 }
@@ -131,7 +132,7 @@ export async function assertPlanningReviewSnapshot({ root, planId, reviewInput, 
 }
 
 export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null }) {
-  const primaryRoot = implementationReviewRoot(root);
+  const primaryRoot = await implementationReviewRoot(root);
   const scope = { root: primaryRoot, scope: `implementation-${planId}` };
   if (resolution !== undefined) {
     const prior = await inspectReviewHistory(scope);

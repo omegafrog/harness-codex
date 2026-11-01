@@ -78,7 +78,8 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
         issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: 'workflow_without_worktree_record' });
         continue;
       }
-      if ([currentSession, legacySession].includes(session) && state.codex_session_id && codexSessionId && state.codex_session_id !== codexSessionId) currentForeign = true;
+      const ownerSessionId = sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id;
+      if ([currentSession, legacySession].includes(session) && ownerSessionId && codexSessionId && ownerSessionId !== codexSessionId) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
       if (ref === null && (ACTIVE.has(state.status) || TERMINAL.has(state.status))) {
@@ -119,6 +120,21 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
   }
   const currentRecord = records.find((record) => record.current);
   const activeStates = states.filter((state) => ACTIVE.has(state.status));
+  const worktreeCandidates = [];
+  for (const state of activeStates) {
+    const record = records.find((item) => dirname(item.record_path) === state.session_directory && item.status === 'verified_active');
+    if (!record) continue;
+    const ledger = (await readJson(state.session_directory, 'runtime/orchestrator/workflow.json'))?.state || await readJson(state.session_directory, 'runtime/orchestrator/state.json');
+    const executionId = ledger?.stages?.[WORKTREE_STAGE.WORKFLOW_COMPOSE]?.execution_id;
+    let request = null;
+    if (executionId) {
+      try {
+        const { input } = await findExecutionInput(record.workspace_root, executionId);
+        if (input.skill === 'workflow-compose' && input.context?.worktree_ref === record.record_path && typeof input.scope === 'string') request = input.scope.slice(0, 2000);
+      } catch (error) { if (error.code !== 'ENOENT') issues.push({ path: record.record_path, reason: `compose_input_invalid: ${error.message}` }); }
+    }
+    worktreeCandidates.push({ workspace_root: record.workspace_root, worktree_ref: record.record_path, request, status: state.status, current_stage: state.current_stage });
+  }
   const selectedStates = activeStates.length ? activeStates : states.slice(-1);
   const associatedRecord = selectedStates.length === 1 ? records.find((record) => dirname(record.record_path) === selectedStates[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
@@ -134,6 +150,7 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
     schema_version: 1, codex_session_id: codexSessionId || null, workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
+    worktree_candidates: worktreeCandidates.slice(0, 8), omitted_worktree_candidate_count: Math.max(0, worktreeCandidates.length - 8),
     issues: issues.slice(0, 8), omitted_issue_count: Math.max(0, issues.length - 8), decision_hint: hint, reason,
   };
 }
@@ -154,7 +171,8 @@ export async function refreshWorkflowProgress(observed, event) {
     return { id, needs, status: entry?.status || 'pending', execution_id: entry?.execution_id || null, result_ref: entry?.result_ref || null, reason: entry?.reason || null };
   });
   const counts = Object.fromEntries([...statuses].map((status) => [status, stages.filter((stage) => stage.status === status).length]));
-  const progress = { schema_version: 1, codex_session_id: state.codex_session_id, workflow_id: workflow?.workflow_id || null, status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
+  const record = await readJson(session, 'worktree.json');
+  const progress = { schema_version: 1, codex_session_id: record?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, workflow_id: workflow?.workflow_id || null, status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
   const path = 'runtime/orchestrator/progress.json';
   await assertWorkspaceTarget(session, path);
   const { randomUUID } = await import('node:crypto');

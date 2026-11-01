@@ -6,7 +6,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 구현 전 workspace 확인은 workflow runtime dispatch의 `before_dispatch` workspace gate가 수행한다. skill 절차와 구현 agent는 `harness-workspace-preflight.mjs`를 별도로 실행하지 않는다. gate 실패는 spawn을 막고 정확한 결과를 caller에게 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
 
@@ -101,6 +101,8 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 `docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
 
 ## 테스트·서비스 실행 전제
+
+최종 E2E 실행에 필요한 앱 실행 방법·환경·시나리오가 확정되지 않았다면 구현 단계에서 사용자에게 확인하고 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 실제 실행 조건을 기록한다.
 
 일반 단위·회귀 검증은 프로젝트 `docs/agents/EXEC.md`의 명령을 해당 언어의 기본 CLI로 실행한다. `harness-exec`와 `execution.json`은 명시적 사용자 흐름 E2E에만 사용하며, 그 외 profile을 만들거나 runner로 감싸지 않는다. 실제 E2E에서는 실행 인자·필수 환경·설정 검사와 dependency readiness를 확인하고 receipt를 보고한다.
 

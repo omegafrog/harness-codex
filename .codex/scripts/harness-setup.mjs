@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { existsSync } from 'node:fs';
@@ -20,11 +21,16 @@ for (let i = 0; i < args.length; i += 2) {
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
-let gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+const execFileAsync = promisify(execFile);
+const commandResult = async (command, args, cwd = root) => {
+  try { return { status: 0, ...(await execFileAsync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })) }; }
+  catch (error) { return { status: typeof error.code === 'number' ? error.code : null, stdout: error.stdout || '', stderr: error.stderr || '', error }; }
+};
+let gitRoot = await commandResult('git', ['rev-parse', '--show-toplevel']);
 if (gitRoot.status !== 0) {
-  const initialized = spawnSync('git', ['init', '-b', 'main'], { cwd: root, encoding: 'utf8' });
+  const initialized = await commandResult('git', ['init', '-b', 'main']);
   if (initialized.status !== 0) throw new Error(`git init failed: ${initialized.stderr}`);
-  gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+  gitRoot = await commandResult('git', ['rev-parse', '--show-toplevel']);
 }
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
 const native = Boolean(options['--answers']);
@@ -72,8 +78,8 @@ const confirm = async (label, initial = 'n', context = null) => {
     console.log('y 또는 n을 입력해 주세요.');
   }
 };
-const exec = (command, args, cwd = root) => {
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+const exec = async (command, args, cwd = root) => {
+  const result = await commandResult(command, args, cwd);
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${result.stderr || result.error?.message || `exit ${result.status}`}`);
   return result.stdout.trim();
 };
@@ -130,7 +136,6 @@ function setYamlScalar(source, path, value) {
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-const commandResult = (command, args, cwd = root) => spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
 async function hasLocalBeadsDatabase(path, depth = 3) {
   const entries = await readdir(path, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
   for (const entry of entries) {
@@ -141,36 +146,39 @@ async function hasLocalBeadsDatabase(path, depth = 3) {
 }
 
 async function setupBeads() {
-  let version = commandResult('bd', ['version']);
+  let version = await commandResult('bd', ['version']);
   if (version.status !== 0) {
     console.log('Beads CLI가 설치되어 있지 않습니다.');
     if (!await confirm('npm install --global @beads/bd 를 실행할까요?')) throw new Error('Beads CLI 설치가 승인되지 않아 setup을 중단했습니다.');
-    exec('npm', ['install', '--global', '@beads/bd']);
-    version = commandResult('bd', ['version']);
+    await exec('npm', ['install', '--global', '@beads/bd']);
+    version = await commandResult('bd', ['version']);
     if (version.status !== 0) throw new Error(`Beads 설치 후에도 CLI 실행 실패: ${version.stderr || version.error?.message}`);
   }
 
-  const current = commandResult('bd', ['where']);
+  const current = await commandResult('bd', ['where']);
   if (current.status === 0) {
-    exec('bd', ['status']);
+    await exec('bd', ['status']);
     console.log('기존 Beads workspace를 보존했습니다.');
     return;
   }
 
-  const remote = commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']);
+  const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
+  if (origin.error) throw origin.error;
+  if (origin.status !== 0 && !/No such remote/i.test(origin.stderr || '')) throw new Error(`Git origin 확인 실패: ${origin.stderr || `exit ${origin.status}`}`);
+  const remote = origin.status === 0 ? await commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']) : { status: 0, stdout: '' };
   if (remote.status !== 0) throw new Error(`Beads 원격 workspace 확인 실패: ${remote.stderr || remote.error?.message || `exit ${remote.status}`}`);
   if (remote.stdout.trim()) {
-    const preview = commandResult('bd', ['bootstrap', '--dry-run']);
+    const preview = await commandResult('bd', ['bootstrap', '--dry-run']);
     if (preview.status !== 0) throw new Error(`Beads bootstrap 사전 확인 실패: ${preview.stderr || preview.error?.message}`);
     console.log(preview.stdout);
     if (!await confirm('기존 원격 Beads workspace를 이 프로젝트에서 채택할까요?')) throw new Error('Beads 원격 채택이 승인되지 않아 setup을 중단했습니다.');
-    exec('bd', ['bootstrap']);
+    await exec('bd', ['bootstrap']);
   } else {
     if (await hasLocalBeadsDatabase(join(root, '.beads'))) throw new Error('기존 로컬 Beads database가 있으나 활성 workspace가 아닙니다. 데이터를 보존하고 setup을 중단했습니다.');
     if (!await confirm('원격 데이터가 없습니다. 새 Beads workspace를 초기화할까요?')) throw new Error('Beads 초기화가 승인되지 않아 setup을 중단했습니다.');
-    exec('bd', ['init', '--skip-agents', '--init-if-missing']);
+    await exec('bd', ['init', '--skip-agents', '--init-if-missing']);
   }
-  exec('bd', ['status']);
+  await exec('bd', ['status']);
   console.log('Beads workspace 준비 완료.');
 }
 
@@ -226,31 +234,31 @@ async function main() {
   } else {
     const repository = await ask('GitHub repository (owner/repo)', config.tracker?.github?.repository || '');
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('repository는 owner/repo 형식이어야 합니다.');
-    const repositoryCheck = spawnSync('gh', ['api', `repos/${repository}`, '--jq', '.name'], { cwd: root, encoding: 'utf8' });
+    const repositoryCheck = await commandResult('gh', ['api', `repos/${repository}`, '--jq', '.name']);
     if (repositoryCheck.status !== 0) {
       if (!/HTTP 404/.test(repositoryCheck.stderr || '')) throw new Error(`GitHub repository 확인 실패: ${repositoryCheck.stderr || repositoryCheck.error?.message}`);
       const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }]);
       createRepository = { repository, visibility };
     }
     const owner = await ask('Project owner', config.tracker?.github?.project_owner || repository.split('/')[0]);
-    let projects = JSON.parse(exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
+    let projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
     if (!projects.length) {
       const title = `${repository.split('/')[1]}-workflow`;
       if (!await confirm(`Project가 없습니다. '${title}'을 만들까요?`)) throw new Error('GitHub Project가 선택되지 않았습니다.');
-      exec('gh', ['project', 'create', '--owner', owner, '--title', title]);
-      projects = JSON.parse(exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
+      await exec('gh', ['project', 'create', '--owner', owner, '--title', title]);
+      projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
     }
     const chosen = await choose('GitHub Project 선택', projects.map((item) => ({ value: String(item.number), label: `#${item.number} ${item.title}` })), String(config.tracker?.github?.project_number || ''));
-    const fields = JSON.parse(exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
+    const fields = JSON.parse(await exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
     let statusField = fields.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
     if (!statusField) {
       if (!await confirm('Workflow Status 필드(Planned, In Progress, Blocked, Done)를 만들까요?')) throw new Error('Workflow Status 필드가 없어 설정을 중단했습니다.');
-      exec('gh', ['project', 'field-create', chosen, '--owner', owner, '--name', 'Workflow Status', '--data-type', 'SINGLE_SELECT', '--single-select-options', 'Planned,In Progress,Blocked,Done']);
+      await exec('gh', ['project', 'field-create', chosen, '--owner', owner, '--name', 'Workflow Status', '--data-type', 'SINGLE_SELECT', '--single-select-options', 'Planned,In Progress,Blocked,Done']);
       statusField = { name: 'Workflow Status' };
     }
     const options = statusField.options?.map((option) => option.name) || [];
     if (['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !options.includes(name))) {
-      const refreshed = JSON.parse(exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
+      const refreshed = JSON.parse(await exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
       statusField = refreshed.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
       const refreshedOptions = statusField?.options?.map((option) => option.name) || [];
       if (!statusField || ['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !refreshedOptions.includes(name))) throw new Error('Workflow Status의 네 상태를 API에서 확인하지 못했습니다.');
@@ -281,7 +289,7 @@ async function main() {
     else {
       do {
         const projectRoot = resolve(await ask('수집할 프로젝트 Git root', projects.length ? '' : root));
-        if (exec('git', ['rev-parse', '--show-toplevel'], projectRoot) !== projectRoot) throw new Error('프로젝트 Git root를 입력해야 합니다.');
+        if (await exec('git', ['rev-parse', '--show-toplevel'], projectRoot) !== projectRoot) throw new Error('프로젝트 Git root를 입력해야 합니다.');
         const id = await ask('프로젝트 ID (영문·숫자·_·-)', projectRoot.split('/').at(-1));
         if (!/^[a-zA-Z0-9_-]+$/.test(id) || projects.some((item) => item.id === id || item.root === projectRoot)) throw new Error('프로젝트 ID와 root는 유일해야 합니다.');
         const services = [];
@@ -309,9 +317,9 @@ async function main() {
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
   if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
   if (createRepository) {
-    const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' });
+    const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
     if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
-    exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
+    await exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
   }
   if (useBeads) await setupBeads();
 
@@ -384,9 +392,9 @@ async function main() {
   if (!/^\.io\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.io/\n`);
   console.log(`Updated .codex/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
   console.log(`Tracker configured: ${mode}`);
-  if (useBeads) console.log('Beads workspace verification/initialization remains a separate explicit step: run bd status, and initialize only after checking local and remote data.');
+  if (useBeads) console.log('Beads workspace 상태를 확인했습니다.');
   if (useVictoriaLogs) {
-    exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--shared-guidance-root', root, '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
+    await exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--shared-guidance-root', root, '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
     console.log('OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·실행 profile·공식 MCP 두 개를 준비했습니다. victorialogs-local-setup 스킬로 기존 앱의 개발 로그를 연결하세요.');
   }
   console.log('다음 단계: 필수 파일 존재 여부를 확인하고 workflow 구성을 진행하세요.');

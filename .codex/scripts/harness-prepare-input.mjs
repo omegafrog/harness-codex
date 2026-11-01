@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 let sourceCheckout = false;
 try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
@@ -11,7 +12,7 @@ const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'review-admission-ref', 'subtask', 'subtask-result', 'resume-subtask', 'review-subtask', 'review-result', 'review-details']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'subtask-result', 'resume-subtask', 'review-subtask', 'review-result', 'review-details']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -19,7 +20,7 @@ try {
     options[key] = process.argv[i + 1];
   }
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
-  const repository = await realpath(execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim());
+  const repository = await realpath((await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim());
   const session = await resolveSkillSession(repository, dirname(options['worktree-ref']));
   const workflowRef = null;
   const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });
@@ -39,7 +40,7 @@ try {
   await resolveSkillSession(root, session);
   const codexSessionId = record.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null;
   if (options['review-details'] && options['review-details'] !== '1') throw new Error('Invalid review detail request');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, subtask: options.subtask ?? null, subtaskResult: options['subtask-result'] ?? null, resumeSubtask: options['resume-subtask'] ?? null, reviewSubtask: options['review-subtask'] ?? null, reviewResult: options['review-result'] ?? null, reviewDetails: options['review-details'] === '1' });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, subtask: options.subtask ?? null, subtaskResult: options['subtask-result'] ?? null, resumeSubtask: options['resume-subtask'] ?? null, reviewSubtask: options['review-subtask'] ?? null, reviewResult: options['review-result'] ?? null, reviewDetails: options['review-details'] === '1' });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

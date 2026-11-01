@@ -5,11 +5,13 @@ description: Implement one approved split plan in the orchestrator-selected work
 
 # implement-wrapper
 
+최종 E2E에 필요한 실행 방법이나 환경이 아직 정해지지 않았다면 구현 workflow에서 사용자에게 확인하고 실제 조건을 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 기록한다.
+
 orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 
 ## 실행 계약
 
-기본 `model_tier`는 `implementation`이다. `agents.implementation_model`과 `agents.implementation_reasoning_effort`의 실제 값은 orchestrator가 [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`에 전달한다.
+기본 `model_tier`는 `implementation`이다. 모델과 effort는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)이 setup 설정에서 해석한다.
 
 세션 입력의 `input_refs`에서 승인된 plan·Spec 산출물을 읽고 `context.producer_result_refs`와 `context.previous_result_ref`가 지정한 파일에서 이전 실행 결과를 확인한다. plan 경로는 runtime plan-review gate가 반환한 정확한 `plan_reference`를 사용한다. ID나 디렉터리명으로 경로를 다시 만들지 않는다.
 

@@ -1,6 +1,7 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
@@ -15,6 +16,7 @@ import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATI
 const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
+const execFileAsync = promisify(execFile);
 
 async function inspectExecutionAssets(root, diagnostics) {
   const bindingsPath = join(root, '.codex/internal-skills/skill-execution/bindings.json');
@@ -29,13 +31,14 @@ async function inspectExecutionAssets(root, diagnostics) {
     return;
   }
   const paths = [
-    '.codex/internal-skills/static-caller/GUIDE.md',
+    '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/schemas/input.schema.json',
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
-    ...['prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'static-call', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
-    ...Object.keys(bindings.skills).filter((name) => name !== 'workflow-compose').map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
-    ...['plan_split', 'plan_revision', 'plan_finalize'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-${name}.schema.json`),
+    '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'codex-run', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
+    ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.codex/harness-runtime')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['output-schema', 'codex-process', 'cli-session', 'worktree-stages'].map((name) => `.codex/harness-runtime/src/workflow/${name}.mjs`));
@@ -267,7 +270,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     // A divergent, unregistered agent profile was preserved as consumer-owned during install.
     const preservedAgentProfile = (file) => file.startsWith(".codex/agents/") && !lock.files[file]
       && currentAssets[file] && currentAssets[file].installed_sha256 !== currentAssets[file].upstream_sha256;
-    const ownedFiles = new Set([...installedFiles].filter((file) => managedPaths.has(file)
+    const ownedFiles = new Set([...installedFiles].filter((file) => file !== '.codex/harness.yaml' && managedPaths.has(file)
       && !preservedAgentProfile(file)));
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
@@ -340,11 +343,15 @@ async function inspectAuthoring(root, diagnostics) {
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
-  const gitRoot = spawnSync('git', ['-C', repositoryRoot, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const git = async (args) => {
+    try { return { status: 0, ...(await execFileAsync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' })) }; }
+    catch (error) { return { status: typeof error.code === 'number' ? error.code : null, stdout: error.stdout || '' }; }
+  };
+  const gitRoot = await git(['rev-parse', '--show-toplevel']);
   if (gitRoot.status === 0 && resolve(gitRoot.stdout.trim()) === repositoryRoot) {
-    const ignored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.io/worktree.json'], { encoding: 'utf8' });
+    const ignored = await git(['check-ignore', '--no-index', '-q', '.io/worktree.json']);
     if (ignored.status !== 0) diagnostics.push(diagnostic('runtime_not_ignored', 'error', 'Harness workflow session files are not ignored by Git', join(repositoryRoot, '.io')));
-    const inputIgnored = spawnSync('git', ['-C', repositoryRoot, 'check-ignore', '--no-index', '-q', '.io/probe/skill/execution/input.json'], { encoding: 'utf8' });
+    const inputIgnored = await git(['check-ignore', '--no-index', '-q', '.io/probe/skill/execution/input.json']);
     if (inputIgnored.status !== 0) diagnostics.push(diagnostic('execution_input_not_ignored', 'error', 'Harness execution inputs are not ignored by Git', join(repositoryRoot, '.io')));
   }
   const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');

@@ -5,6 +5,9 @@ import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validate
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
+import { assertExecutionStopped } from './execution-state.mjs';
+
+const profileOf = (value) => (value?.agent_profile ?? value?.role) === 'default' ? null : (value?.agent_profile ?? value?.role ?? null);
 
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || !['spec-me', 'to-ticket'].includes(input.skill)) return input;
@@ -15,17 +18,36 @@ function storedStageInput(input) {
 
 async function collectAnswers(session, prefix, questions, answer) {
   let incoming;
-  try { incoming = JSON.parse(answer); } catch { throw new Error('Answers must be a JSON array'); }
-  const path = join(session, prefix, 'answers.json');
+  try { incoming = JSON.parse(answer); } catch { incoming = questions.length === 1 ? [{ question_id: questions[0].question_id, answer }] : null; }
+  if (!Array.isArray(incoming) && questions.length === 1 && typeof incoming === 'string') incoming = [{ question_id: questions[0].question_id, answer: incoming }];
+  const path = join(session, prefix, 'pending-answers.json');
   let previous = [];
   try { previous = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
+  if (previous.length && incoming.every((entry) => previous.some((item) => item.question_id === entry.question_id && item.answer === entry.answer))) incoming = [];
   const merged = mergeAnswers(questions, previous, incoming);
   await writeFile(path, JSON.stringify(merged.answers, null, 2) + '\n', { mode: 0o600 });
   return merged;
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, answer = null, reviewAdmissionRef = null, subtask = null, subtaskResult = null, resumeSubtask = null, reviewSubtask = null, reviewResult = null, reviewDetails = false }) {
+async function executionThreadId({ root, session, executionId, worktreeRef }) {
+  let threadId;
+  try { threadId = (await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${executionId}/exec.stderr.json` })).thread_id; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) {
+    if (!worktreeRef) throw new Error('Codex session ID missing from execution log');
+    const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
+    const matches = Object.values(record.agent_sessions || {}).filter((entry) => entry.execution_id === executionId);
+    if (matches.length !== 1) throw new Error('Codex session ID missing or ambiguous in canonical worktree record');
+    threadId = matches[0].session_id;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) throw new Error('Codex session ID missing from execution');
+  return threadId;
+}
+
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, answer = null, feedback = null, reviewAdmissionRef = null, subtask = null, subtaskResult = null, resumeSubtask = null, reviewSubtask = null, reviewResult = null, reviewDetails = false }) {
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
+  if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || subtask !== null || subtaskResult !== null || reviewSubtask !== null || reviewResult !== null || reviewDetails || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
   const state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   const prepared = await readExecutionInput({ root, execution_id: state.stages['workflow-compose'].execution_id });
@@ -117,7 +139,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const targetResult = targetReturn.result || await readSkillSessionJson({ root, session_directory: taskSession, path: targetReturn.result_ref });
     const request = targetResult.review_request;
     if (request?.context_path) request.context = await readSkillSessionJson({ root, session_directory: taskSession, path: request.context_path });
-    if (!request || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.role || '') || typeof request.purpose !== 'string' || !request.purpose.trim() || !request.context || typeof request.context !== 'object' || Array.isArray(request.context)) throw new Error('Structured review request with skill, role, purpose and context is required');
+    if (!request || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profileOf(request) || '') || typeof request.purpose !== 'string' || !request.purpose.trim() || !request.context || typeof request.context !== 'object' || Array.isArray(request.context)) throw new Error('Structured review request with skill, agent profile, purpose and context is required');
     const execution_id = `subtask-${randomUUID()}`;
     let input;
     if (reviewResult === null) {
@@ -132,14 +154,14 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         reviewGate = evaluateWorkflowStage({ workflow: await loadNamedWorkflow('spec-me', { root }), stageId: 'review-architecture-decisions', input: { review_session: details.review_session, mode: details.review_mode } });
         if (reviewGate.action !== 'dispatch') throw new Error('Architecture review is skipped by the selected review mode');
       }
-      input = { schema_version: 1, execution_id, skill: request.skill, workspace_root: root, shared_guidance_root: targetInput.shared_guidance_root, session_directory: taskSession, scope: request.purpose, input_refs: targetResult.artifacts, context: { codex_session_id: codexSessionId, stage_id: execution_id, control_session_directory: session, workflow_ref: workflowRef, parent_stage_id: stageId, parent_execution_id: previous.execution_id, reviewed_execution_id: reviewSubtask, role: request.role, review_context_ref: request.context_path, target_result_ref: targetReturn.result_ref, ...(reviewGate ? { review_gate: reviewGate, review_checklist: reviewChecklist } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), outputs: [] } };
+      input = { schema_version: 1, execution_id, skill: request.skill, workspace_root: root, shared_guidance_root: targetInput.shared_guidance_root, session_directory: taskSession, scope: request.purpose, input_refs: targetResult.artifacts, context: { codex_session_id: codexSessionId, stage_id: execution_id, control_session_directory: session, workflow_ref: workflowRef, parent_stage_id: stageId, parent_execution_id: previous.execution_id, reviewed_execution_id: reviewSubtask, agent_profile: profileOf(request), review_context_ref: request.context_path, target_result_ref: targetReturn.result_ref, ...(reviewGate ? { review_gate: reviewGate, review_checklist: reviewChecklist } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), outputs: [] } };
     } else {
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(reviewResult)) throw new Error('Invalid reviewer execution ID');
       const reviewerPrefix = `runtime/executions/${reviewResult}`;
       const reviewerInput = await readExecutionInput({ root, execution_id: reviewResult });
       const reviewerReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${reviewerPrefix}/return.json` });
       const reviewerState = state.stages?.[reviewResult];
-      if (reviewerInput.context?.reviewed_execution_id !== reviewSubtask || reviewerInput.context?.parent_stage_id !== stageId || reviewerInput.context?.parent_execution_id !== previous.execution_id || reviewerInput.skill !== request.skill || reviewerInput.context?.role !== request.role || reviewerInput.workspace_root !== root || reviewerInput.session_directory !== taskSession || reviewerState?.result_ref !== reviewerReturn.result_ref || reviewerState?.code !== reviewerReturn.code || reviewerState?.result_session_directory !== taskSession || !['completed', 'waiting'].includes(reviewerState?.status)) throw new Error('Reviewer result does not match the pending review');
+      if (reviewerInput.context?.reviewed_execution_id !== reviewSubtask || reviewerInput.context?.parent_stage_id !== stageId || reviewerInput.context?.parent_execution_id !== previous.execution_id || reviewerInput.skill !== request.skill || profileOf(reviewerInput.context) !== profileOf(request) || reviewerInput.workspace_root !== root || reviewerInput.session_directory !== taskSession || reviewerState?.result_ref !== reviewerReturn.result_ref || reviewerState?.code !== reviewerReturn.code || reviewerState?.result_session_directory !== taskSession || !['completed', 'waiting'].includes(reviewerState?.status)) throw new Error('Reviewer result does not match the pending review');
       await validateSkillReturn({ root, input: reviewerInput, envelope: reviewerReturn });
       const reviewerResult = reviewerReturn.result || await readSkillSessionJson({ root, session_directory: taskSession, path: reviewerReturn.result_ref });
       if (!(reviewerReturn.status === 'completed' && reviewerReturn.code === 'OK') && !(reviewerReturn.status === 'action_required' && reviewerResult.artifacts.length > 0)) throw new Error('Reviewer has not returned a usable review');
@@ -156,6 +178,20 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     return { input: storedInput, path, session_directory: taskSession };
   }
   if (reviewResult !== null) throw new Error('Reviewer result requires a pending review target');
+  if (resumeSubtask !== null && feedback !== null) {
+    if (previous?.code !== 'SUBTASK_REQUIRED' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(resumeSubtask)) throw new Error('Feedback requires a child of the pending stage');
+    const childState = state.stages?.[resumeSubtask];
+    const childInput = await readExecutionInput({ root, execution_id: resumeSubtask });
+    if (childState?.status !== 'failed' || childState.result_session_directory !== taskSession || childInput.context?.parent_stage_id !== stageId || childInput.context?.parent_execution_id !== previous.execution_id || childInput.workspace_root !== root || childInput.session_directory !== taskSession) throw new Error('Feedback target is not a failed child of this stage');
+    const threadId = await executionThreadId({ root, session: taskSession, executionId: resumeSubtask, worktreeRef });
+    const execution_id = `subtask-${randomUUID()}`;
+    const input = { ...childInput, execution_id, context: { ...childInput.context, codex_session_id: codexSessionId, stage_id: execution_id, resume_session_id: threadId } };
+    await validateSkillInput({ root, input });
+    const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
+    await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });
+    await writeFile(join(taskSession, 'runtime/executions', execution_id, 'feedback.json'), JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    return { input: storedStageInput(input), path, session_directory: taskSession };
+  }
   if (resumeSubtask !== null) {
     if (previous?.code !== 'SUBTASK_REQUIRED' || (answer === null && !reviewDetails) || (answer !== null && reviewDetails) || subtask !== null || subtaskResult !== null || reviewAdmissionRef) throw new Error('Subtask resume requires an answer or review detail request');
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(resumeSubtask)) throw new Error('Invalid subtask execution ID');
@@ -201,6 +237,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const childExecutionId = previousInput.context?.subtask_result_execution_id || /^runtime\/executions\/([A-Za-z0-9_-]+)\/result\.json$/.exec(previousInput.context?.subtask_result_ref || '')?.[1];
     if (!childExecutionId || completedSubtasks.some((item) => item.execution_id === childExecutionId)) continue;
     const childState = state.stages?.[childExecutionId];
+    if (childState?.status === 'blocked' && childState.code === 'DEPENDENCY_INCOMPLETE' && childState.result_session_directory === taskSession) continue;
     if (childState?.status !== 'completed' || childState.result_session_directory !== taskSession) throw new Error('Completed subtask state is missing or mismatched');
     const childInput = await readExecutionInput({ root, execution_id: childExecutionId });
     const childReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${childExecutionId}/return.json` });
@@ -212,7 +249,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   let conversation = {};
   let dispatched = null;
-  if (subtask !== null || subtaskResult !== null || (previous?.code === 'SUBTASK_REQUIRED' && answer === null)) {
+  if (subtask !== null || subtaskResult !== null || (previous?.code === 'SUBTASK_REQUIRED' && answer === null && feedback === null)) {
     if (answer !== null) throw new Error('Choose a subtask or answer the waiting execution, not both');
     if (previous?.code !== 'SUBTASK_REQUIRED' || !previous.result_ref) throw new Error('Stage has no pending subtask');
     if ((subtask === null) === (subtaskResult === null)) throw new Error('Select a pending subtask or supply its completed execution');
@@ -230,6 +267,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (!/^(0|[1-9][0-9]*)$/.test(subtask)) throw new Error('Subtask must be a zero-based index');
       const request = requests[Number(subtask)];
       if (!request || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill || '') || typeof request.purpose !== 'string' || !request.purpose.trim()) throw new Error('Invalid subtask request');
+      input_refs.push(...parentResult.artifacts);
       dispatched = { request, index: Number(subtask) };
     } else {
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(subtaskResult)) throw new Error('Invalid subtask execution ID');
@@ -238,16 +276,36 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const envelope = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
       const reused = childInput.context?.parent_execution_id !== previous.execution_id;
       if ((reused && !completedSubtasks.some((item) => item.execution_id === subtaskResult)) || childInput.context?.parent_stage_id !== stageId || childInput.workspace_root !== root || childInput.session_directory !== taskSession) throw new Error('Subtask does not belong to the pending stage');
-      const request = reused ? requests.find((item) => item.skill === childInput.skill && (item.role === 'default' ? null : item.role || null) === (childInput.context.role || null)) : requests[childInput.context.subtask_index];
-      if (!request || request.skill !== childInput.skill || (request.role === 'default' ? null : request.role || null) !== (childInput.context.role || null)) throw new Error('Subtask does not match the pending request');
+      const request = reused ? requests.find((item) => item.skill === childInput.skill && profileOf(item) === profileOf(childInput.context)) : requests[childInput.context.subtask_index];
+      if (!request || request.skill !== childInput.skill || profileOf(request) !== profileOf(childInput.context)) throw new Error('Subtask does not match the pending request');
       await validateSkillReturn({ root, input: childInput, envelope });
-      if (envelope.status !== 'completed' || envelope.code !== 'OK') throw new Error('Subtask has not completed successfully');
+      if (!((envelope.status === 'completed' && envelope.code === 'OK') || (envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE'))) throw new Error('Subtask has no usable result');
       const childState = state.stages?.[subtaskResult];
-      if (childState?.status !== 'completed' || childState.execution_id !== subtaskResult || childState.result_ref !== envelope.result_ref || childState.result_session_directory !== taskSession) throw new Error('Completed subtask state is missing or mismatched');
+      if (childState?.status !== envelope.status || childState.execution_id !== subtaskResult || childState.result_ref !== envelope.result_ref || childState.result_session_directory !== taskSession) throw new Error('Subtask state is missing or mismatched');
       const childResult = envelope.result || await readSkillSessionJson({ root, session_directory: taskSession, path: envelope.result_ref });
       input_refs.push(...childResult.artifacts);
-      conversation = { previous_result_ref: previous.result_ref, parent_stage_result_ref: parentReturn.result_ref, subtask_result_ref: envelope.result_ref, subtask_result_execution_id: subtaskResult, subtask_index: requests.indexOf(request), ...(reused ? { subtask_reused: true } : {}) };
+      const parentLog = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${previous.execution_id}/exec.stderr.json` });
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentLog.thread_id || '')) throw new Error('Codex session ID missing from parent execution');
+      conversation = { previous_result_ref: previous.result_ref, parent_stage_result_ref: parentReturn.result_ref, subtask_result_ref: envelope.result_ref, subtask_result_execution_id: subtaskResult, subtask_index: requests.indexOf(request), resume_session_id: parentLog.thread_id, ...(reused ? { subtask_reused: true } : {}) };
     }
+  }
+  if (feedback !== null) {
+    let interrupted = previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && previous.reason === 'Execution interrupted after its processes exited' && previous.result_ref === null;
+    if (!interrupted && previous?.status === 'running' && previous.result_ref === null) {
+      await assertExecutionStopped(previous);
+      interrupted = true;
+    }
+    if (!interrupted && !(((previous?.status === 'waiting' && previous.code === 'SUBTASK_REQUIRED') || previous?.status === 'blocked') && previous.result_ref)) throw new Error('Feedback requires a pending subtask request, blocked stage or confirmed interrupted stage');
+    const prefix = `runtime/executions/${previous.execution_id}`;
+    const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
+    if (!interrupted) {
+      const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
+      await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
+      if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code) throw new Error('Feedback target does not match stage state');
+    }
+    const threadId = await executionThreadId({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    conversation = { ...(previous.result_ref ? { previous_result_ref: previous.result_ref } : {}), resume_session_id: threadId };
   }
   if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {
     if (answer === null) throw new Error('User answer required before resuming this stage');
@@ -287,10 +345,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const execution_id = `${dispatched ? 'subtask' : stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  const input = { schema_version: 1, execution_id, skill: dispatched ? dispatched.request.skill : stage.skill, workspace_root: root, shared_guidance_root: shared, session_directory: taskSession, scope: dispatched ? dispatched.request.purpose : stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: dispatched ? execution_id : stage.id, control_session_directory: session, ...(dispatched ? { parent_stage_id: stage.id, parent_execution_id: previous.execution_id, subtask_index: dispatched.index, ...(dispatched.request.role && dispatched.request.role !== 'default' ? { role: dispatched.request.role } : {}) } : {}), workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(completedSubtasks.length ? { completed_subtasks: completedSubtasks } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: dispatched ? [] : stage.conditions, gates: dispatched ? [] : stage.gates, outputs: dispatched ? [] : stage.outputs } };
+  const input = { schema_version: 1, execution_id, skill: dispatched ? dispatched.request.skill : stage.skill, workspace_root: root, shared_guidance_root: shared, session_directory: taskSession, scope: dispatched ? dispatched.request.purpose : stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: dispatched ? execution_id : stage.id, control_session_directory: session, ...(dispatched ? { parent_stage_id: stage.id, parent_execution_id: previous.execution_id, subtask_index: dispatched.index, ...(profileOf(dispatched.request) ? { agent_profile: profileOf(dispatched.request) } : {}) } : {}), workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(completedSubtasks.length ? { completed_subtasks: completedSubtasks } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: dispatched ? [] : stage.conditions, gates: dispatched ? [] : stage.gates, outputs: dispatched ? [] : stage.outputs } };
+  input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });
+  if (feedback !== null) await writeFile(join(taskSession, 'runtime/executions', execution_id, 'feedback.json'), JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const storedInput = storedStageInput(input);
   return { input: storedInput, path, session_directory: taskSession, ...(answer !== null ? { answer: Array.isArray(answer) ? answer : { ...(conversation.question_id ? { question_id: conversation.question_id } : {}), answer } } : {}) };
 }

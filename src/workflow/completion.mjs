@@ -1,11 +1,13 @@
 import { isAbsolute } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { loadNamedWorkflow } from './loader.mjs';
 import { LifecycleGateRegistry, runLifecycleHook } from '../gates/lifecycle.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
 import { finishWorkflowWorktree } from './worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
+const execFileAsync = promisify(execFile);
 
 export function completionKindForWorkflow(workflowId) {
   return ({
@@ -36,7 +38,8 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry: new LifecycleGateRegistry({ hooks }), eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
-    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' }).trim(), verdict, evidence_path };
+    const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();
+    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path };
     await writer.append('workflow_completion', result, { critical: true });
   } catch (error) { failure = error; }
   finally {

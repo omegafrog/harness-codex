@@ -28,6 +28,10 @@ async function processAlive(identity) {
   return current.boot === identity.boot && current.start === identity.start && current.state !== 'Z';
 }
 
+export async function assertExecutionStopped(entry) {
+  for (const identity of [entry?.owner, entry?.child]) if (await processAlive(identity)) throw new Error('Stage already running');
+}
+
 export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
@@ -54,11 +58,12 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (state && state.schema_version !== 1) throw new Error('Invalid workflow state schema');
     if (state && input.context?.workflow_ref && state.workflow_ref !== input.context.workflow_ref) throw new Error('Workflow reference mismatch');
     if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') throw new Error('Workflow already active');
-    state ||= { schema_version: 1, codex_session_id: codexSessionId, workflow_ref: null, stages: {} };
-    if (codexSessionId) state.codex_session_id = codexSessionId;
+    state ||= { schema_version: 1, workflow_ref: null, stages: {} };
+    if (input.context?.worktree_ref) delete state.codex_session_id;
+    else if (codexSessionId) state.codex_session_id = codexSessionId;
     const previous = state.stages?.[stage];
     if (status === 'running' && previous?.status === 'running' && previous.execution_id !== input.execution_id) {
-      if (await processAlive(previous.owner) || await processAlive(previous.child)) throw new Error('Stage already running');
+      await assertExecutionStopped(previous);
       previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its processes exited'; previous.finished_at = new Date().toISOString();
     }
     if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
