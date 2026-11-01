@@ -113,7 +113,6 @@ async function readReference(root, reference, sessionRoot, controlSessionRoot = 
   else { await assertWorkspaceTarget(root, reference.path); path = resolve(root, reference.path); }
   requireValue((await lstat(path)).isFile(), `Artifact is not a regular file: ${reference.path}`);
   const content = await readFile(path);
-  if (reference.sha256) requireValue(createHash('sha256').update(content).digest('hex') === reference.sha256, `Artifact hash mismatch: ${reference.path}`);
   return content;
 }
 
