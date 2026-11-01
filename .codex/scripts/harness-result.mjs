@@ -51,18 +51,12 @@ try {
     }
     delete envelope.result.artifact_contents;
   }
-  if (envelope.result.question || envelope.result.questions?.length) {
+  if (envelope.result.questions?.length) {
     if (!['USER_DECISION_REQUIRED', 'REVIEW_REQUIRED'].includes(envelope.code)) throw new Error('Questions require a waiting decision or review');
     const withoutId = ({ question_id, ...question }) => question;
     const questions = (envelope.result.questions || []).map(withoutId);
     if (questions.some((question, index) => questions.slice(0, index).some((prior) => isDeepStrictEqual(prior, question)))) throw new Error('Duplicate questions in batch');
-    if (envelope.result.question) {
-      const single = withoutId(envelope.result.question);
-      if (questions.length && !questions.some((question) => isDeepStrictEqual(question, single))) throw new Error('Single question conflicts with question batch');
-      if (!questions.length) questions.push(single);
-    }
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
-    envelope.result.question = null;
   }
   if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');
   await validateSkillReturn({ root: opts.root, input, envelope });

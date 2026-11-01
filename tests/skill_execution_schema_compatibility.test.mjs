@@ -14,26 +14,27 @@ import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
 const schemas = '.codex/internal-skills/skill-execution/schemas';
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
 
-test('flow schemas retain legacy question validation', async () => {
+test('flow schemas expose only the questions array', async () => {
   const files = await readdir(join(schemas, 'flows'));
   for (const file of files.filter((name) => name.endsWith('.schema.json'))) {
     const schema = await readJson(join(schemas, 'flows', file));
-    assert.ok(schema.properties.question, `${file} accepts legacy question records`);
+    assert.equal(Object.hasOwn(schema.properties, 'question'), false, file);
     assert.ok(schema.properties.questions);
     assert.ok(schema.required.includes('questions'));
   }
 });
 
-test('generated output schemas omit optional legacy question but preserve required question', async () => {
+test('generated output schemas expose questions without a singular result field', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-output-schema-'));
   try {
-    for (const [skill, expected] of [['spec-me', false], ['workflow-compose', true]]) {
+    for (const skill of ['spec-me', 'workflow-compose']) {
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
-      assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), expected);
-      assert.equal(schema.properties.result.required.includes('question'), expected);
-      if (skill === 'spec-me') assert.ok(Object.hasOwn(schema.properties.result.properties, 'questions'));
+      assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);
+      assert.equal(schema.properties.result.required.includes('question'), false);
+      assert.ok(Object.hasOwn(schema.properties.result.properties, 'questions'));
+      assert.ok(schema.properties.result.required.includes('questions'));
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -75,7 +76,22 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
     assert.ok(updated.retired.includes(oldSchema));
     await assert.rejects(readFile(join(root, oldSchema)), { code: 'ENOENT' });
     assert.equal(await readFile(join(updated.backup_directory, oldSchema), 'utf8'), oldContent);
-    for (const name of ['common.schema.json', 'plan-review.schema.json', 'spec-review.schema.json']) await readFile(join(root, '.codex/internal-skills/skill-execution/schemas/flows', name));
+    for (const name of ['common.schema.json', 'plan-review.schema.json', 'spec-review.schema.json']) {
+      const schema = await readJson(join(root, '.codex/internal-skills/skill-execution/schemas/flows', name));
+      assert.equal(Object.hasOwn(schema.properties, 'question'), false);
+      assert.ok(schema.required.includes('questions'));
+    }
+    for (const skill of ['grilling', 'spec-me']) {
+      const instructions = await readFile(join(root, '.agents/skills', skill, 'SKILL.md'), 'utf8');
+      assert.match(instructions, /결과의 `questions` 배열/);
+      assert.doesNotMatch(instructions, /결과의 `question`에/);
+    }
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project owned');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC.md/);
+    assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
+    execFileSync('git', ['check-ignore', '-v', '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json'], { cwd: root });
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   } finally {

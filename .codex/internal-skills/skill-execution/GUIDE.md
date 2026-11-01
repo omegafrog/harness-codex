@@ -1,5 +1,7 @@
 # 실행 조율
 
+모든 skill 실행 결과는 질문이 하나여도 `questions` 배열만 사용한다. 질문이 없으면 빈 배열을 반환하며 결과 최상위에 `question` 필드를 사용하지 않는다. 배열 항목의 `question`은 질문 문장이다.
+
 실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다.
 
 orchestrator가 직접 시작하는 단계는 `harness-codex-run.mjs`로 실행한다. 그 단계 내부의 위임 작업은 Codex native subagent 도구를 사용하고, 각 요청에 skill 지침, agent profile, 목적, 필요한 입력 context와 결과 계약을 전달한다. 부모 세션 재개는 같은 Codex 대화를 이어가므로 그 대화에 남은 위임 context와 session 산출물을 확인해 계속한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
