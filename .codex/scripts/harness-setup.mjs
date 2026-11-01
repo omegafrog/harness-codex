@@ -1,38 +1,55 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve, relative } from 'node:path';
+import { dirname, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+let sourceCheckout = false;
+try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
+const runtime = existsSync(new URL('../harness-runtime/src/workflow/project-readiness.mjs', import.meta.url)) && !sourceCheckout ? new URL('../harness-runtime/src/', import.meta.url) : new URL('../../src/', import.meta.url);
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--answers SESSION_JSON]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --answers SESSION_JSON]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
+  if (args[i] === '--check' && !options['--check']) { options['--check'] = true; i -= 1; continue; }
   if (!['--root', '--answers'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Usage: harness-setup.mjs [--root PROJECT_ROOT] [--answers SESSION_JSON]');
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
-let gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+if (options['--check']) {
+  if (options['--answers']) throw new Error('--check cannot be combined with --answers');
+  const { inspectSetupConfiguration } = await import(new URL('workflow/project-readiness.mjs', runtime));
+  process.stdout.write(`${JSON.stringify(await inspectSetupConfiguration({ workspace_root: root }))}\n`);
+  process.exit(0);
+}
+const execFileAsync = promisify(execFile);
+const commandResult = async (command, args, cwd = root) => {
+  try { return { status: 0, ...(await execFileAsync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })) }; }
+  catch (error) { return { status: typeof error.code === 'number' ? error.code : null, stdout: error.stdout || '', stderr: error.stderr || '', error }; }
+};
+let gitRoot = await commandResult('git', ['rev-parse', '--show-toplevel']);
 if (gitRoot.status !== 0) {
-  const initialized = spawnSync('git', ['init', '-b', 'main'], { cwd: root, encoding: 'utf8' });
+  const initialized = await commandResult('git', ['init', '-b', 'main']);
   if (initialized.status !== 0) throw new Error(`git init failed: ${initialized.stderr}`);
-  gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+  gitRoot = await commandResult('git', ['rev-parse', '--show-toplevel']);
 }
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
 const native = Boolean(options['--answers']);
-let document, configurationHash;
+let document;
 if (native) {
-  const output = await import(new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/session-output.mjs')) ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs', import.meta.url).href);
+  const output = await import(new URL('workflow/session-output.mjs', runtime).href);
   const input = resolve(root, options['--answers']);
-  output.sessionOutputPath(root, relative(output.sessionDirectory(root), input));
+  const answerRef = relative(output.sessionDirectory(root), input).split(sep).join('/');
+  if (!/^runtime\/setup\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/answers\.json$/i.test(answerRef)) throw new Error('Setup answers must belong to a unique setup session');
+  output.sessionOutputPath(root, answerRef);
   document = JSON.parse(await readFile(input, 'utf8'));
   if (!document.answers || typeof document.answers !== 'object' || Array.isArray(document.answers) || Object.values(document.answers).some((value) => typeof value !== 'string')) throw new Error('answers must be a map of question IDs to selected string values');
   console.log = (...values) => process.stderr.write(values.join(' ') + '\n');
@@ -52,8 +69,8 @@ function nativeAnswer(prompt, current = '', choices = null, context = null) {
 }
 const rl = native ? null : createInterface({ input: stdin, output: stdout });
 const ask = async (label, initial = '') => native ? nativeAnswer(label, initial) : (await rl.question(`${label}${initial ? ` [${initial}]` : ''}: `)).trim() || initial;
-const choose = async (label, options, current = '') => {
-  if (native) return nativeAnswer(label, current, options);
+const choose = async (label, options, current = '', context = null) => {
+  if (native) return nativeAnswer(label, current, options, context);
   options.forEach((option, index) => console.log(`  ${index + 1}) ${option.label}${option.value === current ? ' (현재값)' : ''}`));
   for (;;) {
     const answer = await ask(label), index = Number(answer);
@@ -72,8 +89,8 @@ const confirm = async (label, initial = 'n', context = null) => {
     console.log('y 또는 n을 입력해 주세요.');
   }
 };
-const exec = (command, args, cwd = root) => {
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+const exec = async (command, args, cwd = root) => {
+  const result = await commandResult(command, args, cwd);
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${result.stderr || result.error?.message || `exit ${result.status}`}`);
   return result.stdout.trim();
 };
@@ -130,7 +147,6 @@ function setYamlScalar(source, path, value) {
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-const commandResult = (command, args, cwd = root) => spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
 async function hasLocalBeadsDatabase(path, depth = 3) {
   const entries = await readdir(path, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
   for (const entry of entries) {
@@ -141,215 +157,43 @@ async function hasLocalBeadsDatabase(path, depth = 3) {
 }
 
 async function setupBeads() {
-  let version = commandResult('bd', ['version']);
+  let version = await commandResult('bd', ['version']);
   if (version.status !== 0) {
     console.log('Beads CLI가 설치되어 있지 않습니다.');
     if (!await confirm('npm install --global @beads/bd 를 실행할까요?')) throw new Error('Beads CLI 설치가 승인되지 않아 setup을 중단했습니다.');
-    exec('npm', ['install', '--global', '@beads/bd']);
-    version = commandResult('bd', ['version']);
+    await exec('npm', ['install', '--global', '@beads/bd']);
+    version = await commandResult('bd', ['version']);
     if (version.status !== 0) throw new Error(`Beads 설치 후에도 CLI 실행 실패: ${version.stderr || version.error?.message}`);
   }
 
-  const current = commandResult('bd', ['where']);
+  const current = await commandResult('bd', ['where']);
   if (current.status === 0) {
-    exec('bd', ['status']);
+    await exec('bd', ['status']);
     console.log('기존 Beads workspace를 보존했습니다.');
     return;
   }
 
-  const remote = commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']);
+  const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
+  if (origin.error) throw origin.error;
+  if (origin.status !== 0 && !/No such remote/i.test(origin.stderr || '')) throw new Error(`Git origin 확인 실패: ${origin.stderr || `exit ${origin.status}`}`);
+  const remote = origin.status === 0 ? await commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']) : { status: 0, stdout: '' };
   if (remote.status !== 0) throw new Error(`Beads 원격 workspace 확인 실패: ${remote.stderr || remote.error?.message || `exit ${remote.status}`}`);
   if (remote.stdout.trim()) {
-    const preview = commandResult('bd', ['bootstrap', '--dry-run']);
+    const preview = await commandResult('bd', ['bootstrap', '--dry-run']);
     if (preview.status !== 0) throw new Error(`Beads bootstrap 사전 확인 실패: ${preview.stderr || preview.error?.message}`);
     console.log(preview.stdout);
     if (!await confirm('기존 원격 Beads workspace를 이 프로젝트에서 채택할까요?')) throw new Error('Beads 원격 채택이 승인되지 않아 setup을 중단했습니다.');
-    exec('bd', ['bootstrap']);
+    await exec('bd', ['bootstrap']);
   } else {
     if (await hasLocalBeadsDatabase(join(root, '.beads'))) throw new Error('기존 로컬 Beads database가 있으나 활성 workspace가 아닙니다. 데이터를 보존하고 setup을 중단했습니다.');
     if (!await confirm('원격 데이터가 없습니다. 새 Beads workspace를 초기화할까요?')) throw new Error('Beads 초기화가 승인되지 않아 setup을 중단했습니다.');
-    exec('bd', ['init', '--skip-agents', '--init-if-missing']);
+    await exec('bd', ['init', '--skip-agents', '--init-if-missing']);
   }
-  exec('bd', ['status']);
+  await exec('bd', ['status']);
   console.log('Beads workspace 준비 완료.');
 }
 
-async function main() {
-  const models = await readModelList();
-  const parserUrl = existsSync(join(root, '.codex/harness-runtime/src/eval/yaml.mjs'))
-    ? new URL('../harness-runtime/src/eval/yaml.mjs', import.meta.url)
-    : new URL('../../src/eval/yaml.mjs', import.meta.url);
-  const { parseYaml } = await import(parserUrl.href);
-  const configPath = join(root, '.codex/harness.yaml');
-  const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  const budgetPath = join(root, '.codex/context-budget.json');
-  const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  configurationHash = createHash('sha256').update(oldConfig).update(oldBudget).digest('hex');
-  if (native && Object.keys(document.answers).length && document.configuration_hash !== configurationHash) throw new Error('Project configuration changed; restart native setup with current choices');
-  const config = parseYaml(oldConfig);
-  const selection = {};
-  for (const [key, title, recommendation] of [
-    ['high_performance', '복잡한 설계·최종 검토 모델', '가장 높은 추론 성능'],
-    ['implementation', '일반 구현 모델', '가벼운 모델과 high effort'],
-    ['execution', '서버·E2E 실행과 polling 모델', '균형 잡힌 모델과 medium effort'],
-    ['low_performance', '문서·제한된 조사 모델', '가장 가벼운 모델과 low effort'],
-  ]) {
-    console.log(`\n${title} — 권장: ${recommendation}`);
-    models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
-    const model = await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), config.agents?.[`${key}_model`]);
-    const selected = models.find((item) => item.id === model);
-    const efforts = selected.supportedReasoningEfforts.map((item) => ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
-    const effort = await choose(`${title} 추론 강도 선택`, efforts, config.agents?.[`${key}_reasoning_effort`]);
-    selection[`${key}_model`] = model;
-    selection[`${key}_reasoning_effort`] = effort;
-  }
-  selection.default_model = selection.low_performance_model;
-
-  const previousBudget = oldBudget ? JSON.parse(oldBudget) : {};
-  const contextBudget = { schema_version: 1 };
-  for (const [key, prompt] of [['context_window_tokens', '선택 모델 공통 context 한도(tokens)'], ['max_plan_tokens', 'plan 하나의 최대 예상 토큰'], ['handoff_reserve_tokens', 'checkpoint·인계용 예비 토큰']]) {
-    const answer = await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
-    contextBudget[key] = answer.trim() ? Number(answer) : NaN;
-  }
-  const budgetModule = new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/skill-execution.mjs')) ? '../harness-runtime/src/workflow/skill-execution.mjs' : '../../src/workflow/skill-execution.mjs', import.meta.url);
-  const { validateContextBudget } = await import(budgetModule.href);
-  validateContextBudget(contextBudget);
-
-  console.log('\n티켓 추적 방식');
-  const mode = await choose('Tracker 선택', [
-    { value: 'local-markdown', label: 'local-markdown' },
-    { value: 'github', label: 'GitHub Project' },
-  ], config.tracker?.mode);
-  let tracker, createRepository = null;
-  if (mode === 'local-markdown') {
-    tracker = { mode, local_markdown: { ...(config.tracker?.local_markdown || {}), directory: 'docs/plans' } };
-  } else {
-    const repository = await ask('GitHub repository (owner/repo)', config.tracker?.github?.repository || '');
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('repository는 owner/repo 형식이어야 합니다.');
-    const repositoryCheck = spawnSync('gh', ['api', `repos/${repository}`, '--jq', '.name'], { cwd: root, encoding: 'utf8' });
-    if (repositoryCheck.status !== 0) {
-      if (!/HTTP 404/.test(repositoryCheck.stderr || '')) throw new Error(`GitHub repository 확인 실패: ${repositoryCheck.stderr || repositoryCheck.error?.message}`);
-      const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }]);
-      createRepository = { repository, visibility };
-    }
-    const owner = await ask('Project owner', config.tracker?.github?.project_owner || repository.split('/')[0]);
-    let projects = JSON.parse(exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
-    if (!projects.length) {
-      const title = `${repository.split('/')[1]}-workflow`;
-      if (!await confirm(`Project가 없습니다. '${title}'을 만들까요?`)) throw new Error('GitHub Project가 선택되지 않았습니다.');
-      exec('gh', ['project', 'create', '--owner', owner, '--title', title]);
-      projects = JSON.parse(exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
-    }
-    const chosen = await choose('GitHub Project 선택', projects.map((item) => ({ value: String(item.number), label: `#${item.number} ${item.title}` })), String(config.tracker?.github?.project_number || ''));
-    const fields = JSON.parse(exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
-    let statusField = fields.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
-    if (!statusField) {
-      if (!await confirm('Workflow Status 필드(Planned, In Progress, Blocked, Done)를 만들까요?')) throw new Error('Workflow Status 필드가 없어 설정을 중단했습니다.');
-      exec('gh', ['project', 'field-create', chosen, '--owner', owner, '--name', 'Workflow Status', '--data-type', 'SINGLE_SELECT', '--single-select-options', 'Planned,In Progress,Blocked,Done']);
-      statusField = { name: 'Workflow Status' };
-    }
-    const options = statusField.options?.map((option) => option.name) || [];
-    if (['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !options.includes(name))) {
-      const refreshed = JSON.parse(exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
-      statusField = refreshed.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
-      const refreshedOptions = statusField?.options?.map((option) => option.name) || [];
-      if (!statusField || ['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !refreshedOptions.includes(name))) throw new Error('Workflow Status의 네 상태를 API에서 확인하지 못했습니다.');
-    }
-    tracker = { mode, github: { ...(config.tracker?.github || {}), repository, project_owner: owner, project_number: Number(chosen), status_field: 'Workflow Status', assignees: { spec_me: config.tracker?.github?.assignees?.spec_me || '@me', codex: config.tracker?.github?.assignees?.codex || '@copilot' } } };
-  }
-
-  const useBeads = await confirm('Beads를 프로젝트 작업 보드로 사용할까요?', config.beads?.enabled === false ? 'n' : 'y');
-  const useVictoriaLogs = await confirm('로컬 관측성(OpenTelemetry Collector + VictoriaLogs + VictoriaMetrics + 공식 MCP 2개)을 구성할까요?', config.observability?.victorialogs?.local?.enabled === false ? 'n' : 'y');
-  const askInteger = async (label, initial, max) => {
-    for (;;) {
-      const value = Number(await ask(label, String(initial)));
-      if (Number.isInteger(value) && value >= 1 && value <= max) return value;
-      console.log(`1~${max} 사이 정수를 입력해 주세요.`);
-    }
-  };
-  const logPort = useVictoriaLogs ? await askInteger('VictoriaLogs localhost port', config.observability?.victorialogs?.local?.port || 9428, 65535) : null;
-  const retentionDays = useVictoriaLogs ? await askInteger('로그 보존 일수', config.observability?.victorialogs?.local?.retention_days || 7, 30) : null;
-  const metricsPort = useVictoriaLogs ? await askInteger('VictoriaMetrics localhost port', config.observability?.victoriametrics?.local?.port || 8428, 65535) : null;
-  const otelPort = useVictoriaLogs ? await askInteger('OpenTelemetry Collector OTLP HTTP localhost port', config.observability?.opentelemetry?.local?.port || 4318, 65535) : null;
-  if (useVictoriaLogs && new Set([logPort, metricsPort, otelPort]).size !== 3) throw new Error('로그·메트릭·OTLP 포트는 달라야 합니다.');
-  const metricsRetention = useVictoriaLogs ? await askInteger('메트릭 보존 일수', config.observability?.victoriametrics?.local?.retention_days || 7, 30) : null;
-  let projects = [];
-  if (useVictoriaLogs) {
-    console.log('Docker bridge를 사용합니다. 앱→Collector는 localhost 공개 포트, 컨테이너→WSL 앱은 host.docker.internal 주소를 사용합니다.');
-    const previous = await readFile(join(root, 'docs/observability/victorialogs/config.json'), 'utf8').then(JSON.parse).catch((error) => { if (error.code !== 'ENOENT') throw error; return {}; });
-    if (previous.projects?.length && previous.projects.every((item) => item.services.every((service) => service.scrape_url)) && await confirm('기존 프로젝트·Actuator 대상 목록을 유지할까요?', 'y')) projects = previous.projects;
-    else {
-      do {
-        const projectRoot = resolve(await ask('수집할 프로젝트 Git root', projects.length ? '' : root));
-        if (exec('git', ['rev-parse', '--show-toplevel'], projectRoot) !== projectRoot) throw new Error('프로젝트 Git root를 입력해야 합니다.');
-        const id = await ask('프로젝트 ID (영문·숫자·_·-)', projectRoot.split('/').at(-1));
-        if (!/^[a-zA-Z0-9_-]+$/.test(id) || projects.some((item) => item.id === id || item.root === projectRoot)) throw new Error('프로젝트 ID와 root는 유일해야 합니다.');
-        const services = [];
-        do {
-          const name = await ask('Spring service 이름 (spring.application.name)');
-          const metrics_url = await ask('Actuator Prometheus 전체 URL (실제 포트 포함)');
-          const url = new URL(metrics_url);
-          if (!/^[a-zA-Z0-9_.-]+$/.test(name) || services.some((item) => item.name === name) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('서비스 이름 또는 Actuator URL이 올바르지 않습니다. 비밀값 없는 HTTP(S) URL을 입력하세요.');
-          const suggested = new URL(metrics_url);
-          if (['127.0.0.1', 'localhost', '[::1]'].includes(suggested.hostname)) suggested.hostname = 'host.docker.internal';
-          const scrape_url = await ask('컨테이너에서 접근할 Actuator URL (Docker Desktop/WSL은 host.docker.internal)', suggested.href);
-          const scrape = new URL(scrape_url);
-          if (!['http:', 'https:'].includes(scrape.protocol) || scrape.username || scrape.password || scrape.search || scrape.hash) throw new Error('비밀값 없는 컨테이너용 Actuator HTTP(S) URL을 입력하세요.');
-          services.push({ name, metrics_url, scrape_url });
-        } while (await confirm('이 프로젝트에 서비스를 더 등록할까요?'));
-        projects.push({ id, root: projectRoot, services });
-      } while (await confirm('다른 프로젝트를 더 등록할까요?'));
-    }
-  }
-  console.log('\n선택 요약');
-  for (const [key, value] of Object.entries(selection)) console.log(`  ${key}: ${value}`);
-  console.log(`  tracker: ${mode}`);
-  console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
-  console.log(`  VictoriaLogs local: ${useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
-  for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
-  if (createRepository) {
-    const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' });
-    if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
-    exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
-  }
-  if (useBeads) await setupBeads();
-
-  let configText = oldConfig || '';
-  for (const [key, value] of Object.entries(selection)) configText = setYamlScalar(configText, ['agents', key], value);
-  configText = setYamlScalar(configText, ['tracker', 'mode'], mode);
-  if (mode === 'local-markdown') configText = setYamlScalar(configText, ['tracker', 'local_markdown', 'directory'], tracker.local_markdown.directory);
-  else {
-    for (const [key, value] of Object.entries({ repository: tracker.github.repository, project_owner: tracker.github.project_owner, project_number: tracker.github.project_number, status_field: tracker.github.status_field, spec_me: tracker.github.assignees.spec_me, codex: tracker.github.assignees.codex })) {
-      const path = key === 'spec_me' || key === 'codex' ? ['tracker', 'github', 'assignees', key] : ['tracker', 'github', key];
-      configText = setYamlScalar(configText, path, value);
-    }
-  }
-  configText = setYamlScalar(configText, ['beads', 'enabled'], useBeads);
-  configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'enabled'], useVictoriaLogs);
-  configText = setYamlScalar(configText, ['observability', 'victoriametrics', 'local', 'enabled'], useVictoriaLogs);
-  configText = setYamlScalar(configText, ['observability', 'opentelemetry', 'local', 'enabled'], useVictoriaLogs);
-  if (useVictoriaLogs) {
-    configText = setYamlScalar(configText, ['observability', 'opentelemetry', 'local', 'port'], otelPort);
-    configText = setYamlScalar(configText, ['observability', 'victoriametrics', 'local', 'port'], metricsPort);
-    configText = setYamlScalar(configText, ['observability', 'victoriametrics', 'local', 'retention_days'], metricsRetention);
-    configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'port'], logPort);
-    configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'retention_days'], retentionDays);
-    if (config.observability?.signoz?.local?.enabled) configText = setYamlScalar(configText, ['observability', 'signoz', 'local', 'enabled'], false);
-  }
-  const output = await import(new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/session-output.mjs')) ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs', import.meta.url).href);
-  const backup = output.sessionOutputPath(root, `runtime/setup/backups/harness-${Date.now()}.yaml`);
-  await mkdir(dirname(backup), { recursive: true });
-  if (oldConfig) await writeFile(backup, oldConfig, { mode: 0o600 });
-  if (oldBudget) await writeFile(`${backup}.context-budget.json`, oldBudget, { mode: 0o600 });
-  await mkdir(dirname(configPath), { recursive: true });
-  const temporary = output.sessionOutputPath(root, `tmp/setup-${Date.now()}.yaml`);
-  await writeFile(temporary, configText, { mode: 0o600 });
-  await rename(temporary, configPath);
-  const temporaryBudget = output.sessionOutputPath(root, `tmp/context-budget-${Date.now()}.json`);
-  await writeFile(temporaryBudget, `${JSON.stringify(contextBudget, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporaryBudget, budgetPath);
-
+async function prepareProjectFiles() {
   const seedFiles = [
     ['CONTEXT.md', '.codex/skills/setup/assets/CONTEXT.md'],
     ['CONTEXT-MAP.md', '.codex/skills/setup/assets/CONTEXT-MAP.md'],
@@ -382,11 +226,241 @@ async function main() {
   const gitignore = join(root, '.gitignore');
   const ignoreText = await readFile(gitignore, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   if (!/^\.io\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.io/\n`);
+}
+
+async function main() {
+  const parserUrl = new URL('eval/yaml.mjs', runtime);
+  const { parseYaml } = await import(parserUrl.href);
+  const configPath = join(root, '.codex/harness.yaml');
+  const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const budgetPath = join(root, '.codex/context-budget.json');
+  const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const config = parseYaml(oldConfig);
+  const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('workflow/project-readiness.mjs', runtime));
+  const existing = await inspectSetupConfiguration({ workspace_root: root });
+  const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
+  const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
+    { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
+  ], 'reuse', { agents: config.agents || {}, tracker: config.tracker || {}, beads: config.beads || {}, observability: config.observability || {} }) === 'reuse';
+  if (reuse && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
+    await prepareProjectFiles();
+    console.log('기존 설정을 유지했습니다.');
+    return;
+  }
+  const tiers = ['high_performance', 'implementation', 'execution', 'low_performance'];
+  const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
+  const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
+  const needsModelList = !reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !validEffort(config.agents?.[`${key}_reasoning_effort`]));
+  const models = needsModelList ? await readModelList() : [];
+  const selection = {};
+  for (const [key, title, recommendation] of [
+    ['high_performance', '복잡한 설계·최종 검토 모델', '가장 높은 추론 성능'],
+    ['implementation', '일반 구현 모델', '가벼운 모델과 high effort'],
+    ['execution', '서버·E2E 실행과 polling 모델', '균형 잡힌 모델과 medium effort'],
+    ['low_performance', '문서·제한된 조사 모델', '가장 가벼운 모델과 low effort'],
+  ]) {
+    console.log(`\n${title} — 권장: ${recommendation}`);
+    models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
+    const currentModel = config.agents?.[`${key}_model`];
+    const currentEffort = config.agents?.[`${key}_reasoning_effort`];
+    const model = reuse && hasText(currentModel) ? currentModel : await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), currentModel);
+    let effort = currentEffort;
+    if (!reuse || !validEffort(currentEffort)) {
+      const selected = models.find((item) => item.id === model);
+      if (!selected) throw new Error(`Configured model is unavailable: ${model}`);
+      const efforts = selected.supportedReasoningEfforts.map((item) => ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
+      effort = await choose(`${title} 추론 강도 선택`, efforts, currentEffort);
+    }
+    selection[`${key}_model`] = model;
+    selection[`${key}_reasoning_effort`] = effort;
+  }
+  selection.default_model = selection.low_performance_model;
+
+  let previousBudget = {};
+  try { if (oldBudget) previousBudget = JSON.parse(oldBudget); } catch {}
+  const { validateContextBudget } = await import(new URL('workflow/skill-execution.mjs', runtime));
+  let validBudget = false;
+  try { validateContextBudget(previousBudget); validBudget = true; } catch {}
+  const budgetKeys = ['context_window_tokens', 'max_plan_tokens', 'handoff_reserve_tokens'];
+  const missingBudgetField = budgetKeys.some((key) => !Number.isSafeInteger(previousBudget[key]) || previousBudget[key] <= 0);
+  const contextBudget = { schema_version: 1 };
+  for (const [key, prompt] of [['context_window_tokens', '선택 모델 공통 context 한도(tokens)'], ['max_plan_tokens', 'plan 하나의 최대 예상 토큰'], ['handoff_reserve_tokens', 'checkpoint·인계용 예비 토큰']]) {
+    const useCurrent = reuse && (validBudget || missingBudgetField) && Number.isSafeInteger(previousBudget[key]) && previousBudget[key] > 0;
+    const answer = useCurrent ? String(previousBudget[key]) : await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
+    contextBudget[key] = answer.trim() ? Number(answer) : NaN;
+  }
+  validateContextBudget(contextBudget);
+
+  console.log('\n티켓 추적 방식');
+  const reuseTracker = reuse && hasTrackerConfiguration(config.tracker);
+  const mode = reuse && ['local-markdown', 'github'].includes(config.tracker?.mode) ? config.tracker.mode : await choose('Tracker 선택', [
+    { value: 'local-markdown', label: 'local-markdown' },
+    { value: 'github', label: 'GitHub Project' },
+  ], config.tracker?.mode);
+  let tracker, createRepository = null;
+  if (reuseTracker) tracker = config.tracker;
+  else if (mode === 'local-markdown') {
+    const current = config.tracker?.local_markdown?.directory;
+    const directory = reuse && hasText(current) ? current : await ask('로컬 계획 디렉터리', current || 'docs/plans');
+    if (!directory || directory.startsWith('/') || directory.split(/[\\/]/).includes('..')) throw new Error('로컬 계획 디렉터리는 프로젝트 상대경로여야 합니다.');
+    tracker = { mode, local_markdown: { ...(config.tracker?.local_markdown || {}), directory } };
+  } else {
+    const existingGithub = config.tracker?.github || {};
+    const reuseRepository = reuse && /^[\w.-]+\/[\w.-]+$/.test(existingGithub.repository || '');
+    const repository = reuseRepository ? existingGithub.repository : await ask('GitHub repository (owner/repo)', existingGithub.repository || '');
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('repository는 owner/repo 형식이어야 합니다.');
+    if (!reuseRepository) {
+      const repositoryCheck = await commandResult('gh', ['api', `repos/${repository}`, '--jq', '.name']);
+      if (repositoryCheck.status !== 0) {
+        if (!/HTTP 404/.test(repositoryCheck.stderr || '')) throw new Error(`GitHub repository 확인 실패: ${repositoryCheck.stderr || repositoryCheck.error?.message}`);
+        const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }]);
+        createRepository = { repository, visibility };
+      }
+    }
+    const owner = reuse && hasText(existingGithub.project_owner) ? existingGithub.project_owner : await ask('Project owner', existingGithub.project_owner || repository.split('/')[0]);
+    let chosen;
+    if (reuse && Number.isSafeInteger(existingGithub.project_number) && existingGithub.project_number > 0) chosen = String(existingGithub.project_number);
+    else {
+      let projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
+      if (!projects.length) {
+        const title = `${repository.split('/')[1]}-workflow`;
+        if (!await confirm(`Project가 없습니다. '${title}'을 만들까요?`)) throw new Error('GitHub Project가 선택되지 않았습니다.');
+        await exec('gh', ['project', 'create', '--owner', owner, '--title', title]);
+        projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
+      }
+      chosen = await choose('GitHub Project 선택', projects.map((item) => ({ value: String(item.number), label: `#${item.number} ${item.title}` })), String(existingGithub.project_number || ''));
+    }
+    let statusField = reuse && hasText(existingGithub.status_field) ? { name: existingGithub.status_field } : null;
+    if (!statusField) {
+    const fields = JSON.parse(await exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
+    statusField = fields.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
+    if (!statusField) {
+      if (!await confirm('Workflow Status 필드(Planned, In Progress, Blocked, Done)를 만들까요?')) throw new Error('Workflow Status 필드가 없어 설정을 중단했습니다.');
+      await exec('gh', ['project', 'field-create', chosen, '--owner', owner, '--name', 'Workflow Status', '--data-type', 'SINGLE_SELECT', '--single-select-options', 'Planned,In Progress,Blocked,Done']);
+      statusField = { name: 'Workflow Status' };
+    }
+    const options = statusField.options?.map((option) => option.name) || [];
+    if (['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !options.includes(name))) {
+      const refreshed = JSON.parse(await exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
+      statusField = refreshed.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
+      const refreshedOptions = statusField?.options?.map((option) => option.name) || [];
+      if (!statusField || ['Planned', 'In Progress', 'Blocked', 'Done'].some((name) => !refreshedOptions.includes(name))) throw new Error('Workflow Status의 네 상태를 API에서 확인하지 못했습니다.');
+    }
+    }
+    tracker = { mode, github: { ...existingGithub, repository, project_owner: owner, project_number: Number(chosen), status_field: statusField.name, assignees: { spec_me: existingGithub.assignees?.spec_me || '@me', codex: existingGithub.assignees?.codex || '@copilot' } } };
+  }
+
+  const reuseBeads = reuse && typeof config.beads?.enabled === 'boolean';
+  const reuseObservability = reuse && typeof config.observability?.victorialogs?.local?.enabled === 'boolean';
+  const useBeads = reuseBeads ? config.beads.enabled : await confirm('Beads를 프로젝트 작업 보드로 사용할까요?', config.beads?.enabled === false ? 'n' : 'y');
+  const useVictoriaLogs = reuseObservability ? config.observability.victorialogs.local.enabled : await confirm('로컬 관측성(OpenTelemetry Collector + VictoriaLogs + VictoriaMetrics + 공식 MCP 2개)을 구성할까요?', config.observability?.victorialogs?.local?.enabled === false ? 'n' : 'y');
+  const askInteger = async (label, initial, max) => {
+    for (;;) {
+      const value = Number(await ask(label, String(initial)));
+      if (Number.isInteger(value) && value >= 1 && value <= max) return value;
+      console.log(`1~${max} 사이 정수를 입력해 주세요.`);
+    }
+  };
+  const configureObservability = useVictoriaLogs && !reuseObservability;
+  const logPort = configureObservability ? await askInteger('VictoriaLogs localhost port', config.observability?.victorialogs?.local?.port || 9428, 65535) : null;
+  const retentionDays = configureObservability ? await askInteger('로그 보존 일수', config.observability?.victorialogs?.local?.retention_days || 7, 30) : null;
+  const metricsPort = configureObservability ? await askInteger('VictoriaMetrics localhost port', config.observability?.victoriametrics?.local?.port || 8428, 65535) : null;
+  const otelPort = configureObservability ? await askInteger('OpenTelemetry Collector OTLP HTTP localhost port', config.observability?.opentelemetry?.local?.port || 4318, 65535) : null;
+  if (configureObservability && new Set([logPort, metricsPort, otelPort]).size !== 3) throw new Error('로그·메트릭·OTLP 포트는 달라야 합니다.');
+  const metricsRetention = configureObservability ? await askInteger('메트릭 보존 일수', config.observability?.victoriametrics?.local?.retention_days || 7, 30) : null;
+  let projects = [];
+  if (configureObservability) {
+    console.log('Docker bridge를 사용합니다. 앱→Collector는 localhost 공개 포트, 컨테이너→WSL 앱은 host.docker.internal 주소를 사용합니다.');
+    const previous = await readFile(join(root, 'docs/observability/victorialogs/config.json'), 'utf8').then(JSON.parse).catch((error) => { if (error.code !== 'ENOENT') throw error; return {}; });
+    if (previous.projects?.length && previous.projects.every((item) => item.services.every((service) => service.scrape_url)) && await confirm('기존 프로젝트·Actuator 대상 목록을 유지할까요?', 'y')) projects = previous.projects;
+    else {
+      do {
+        const projectRoot = resolve(await ask('수집할 프로젝트 Git root', projects.length ? '' : root));
+        if (await exec('git', ['rev-parse', '--show-toplevel'], projectRoot) !== projectRoot) throw new Error('프로젝트 Git root를 입력해야 합니다.');
+        const id = await ask('프로젝트 ID (영문·숫자·_·-)', projectRoot.split('/').at(-1));
+        if (!/^[a-zA-Z0-9_-]+$/.test(id) || projects.some((item) => item.id === id || item.root === projectRoot)) throw new Error('프로젝트 ID와 root는 유일해야 합니다.');
+        const services = [];
+        do {
+          const name = await ask('Spring service 이름 (spring.application.name)');
+          const metrics_url = await ask('Actuator Prometheus 전체 URL (실제 포트 포함)');
+          const url = new URL(metrics_url);
+          if (!/^[a-zA-Z0-9_.-]+$/.test(name) || services.some((item) => item.name === name) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('서비스 이름 또는 Actuator URL이 올바르지 않습니다. 비밀값 없는 HTTP(S) URL을 입력하세요.');
+          const suggested = new URL(metrics_url);
+          if (['127.0.0.1', 'localhost', '[::1]'].includes(suggested.hostname)) suggested.hostname = 'host.docker.internal';
+          const scrape_url = await ask('컨테이너에서 접근할 Actuator URL (Docker Desktop/WSL은 host.docker.internal)', suggested.href);
+          const scrape = new URL(scrape_url);
+          if (!['http:', 'https:'].includes(scrape.protocol) || scrape.username || scrape.password || scrape.search || scrape.hash) throw new Error('비밀값 없는 컨테이너용 Actuator HTTP(S) URL을 입력하세요.');
+          services.push({ name, metrics_url, scrape_url });
+        } while (await confirm('이 프로젝트에 서비스를 더 등록할까요?'));
+        projects.push({ id, root: projectRoot, services });
+      } while (await confirm('다른 프로젝트를 더 등록할까요?'));
+    }
+  }
+  console.log('\n선택 요약');
+  for (const [key, value] of Object.entries(selection)) console.log(`  ${key}: ${value}`);
+  console.log(`  tracker: ${mode}`);
+  console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
+  console.log(`  VictoriaLogs local: ${reuseObservability ? '기존 설정 유지' : useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
+  for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
+  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (createRepository) {
+    const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
+    if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
+    await exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
+  }
+  if (useBeads) await setupBeads();
+
+  const currentConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  let configText = currentConfig;
+  for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(config.agents?.[key]) : hasText(config.agents?.[key]))) configText = setYamlScalar(configText, ['agents', key], value);
+  if (!reuse || !['local-markdown', 'github'].includes(config.tracker?.mode)) configText = setYamlScalar(configText, ['tracker', 'mode'], mode);
+  if (!reuseTracker && mode === 'local-markdown' && (!reuse || !hasText(config.tracker?.local_markdown?.directory))) configText = setYamlScalar(configText, ['tracker', 'local_markdown', 'directory'], tracker.local_markdown.directory);
+  else if (!reuseTracker) {
+    for (const [key, value] of Object.entries(mode === 'github' ? { repository: tracker.github.repository, project_owner: tracker.github.project_owner, project_number: tracker.github.project_number, status_field: tracker.github.status_field, spec_me: tracker.github.assignees.spec_me, codex: tracker.github.assignees.codex } : {})) {
+      const path = key === 'spec_me' || key === 'codex' ? ['tracker', 'github', 'assignees', key] : ['tracker', 'github', key];
+      const prior = key === 'spec_me' || key === 'codex' ? config.tracker?.github?.assignees?.[key] : config.tracker?.github?.[key];
+      if (reuse && (key === 'project_number' ? Number.isSafeInteger(prior) && prior > 0 : hasText(prior))) continue;
+      configText = setYamlScalar(configText, path, value);
+    }
+  }
+  if (!reuseBeads) configText = setYamlScalar(configText, ['beads', 'enabled'], useBeads);
+  if (!reuseObservability) for (const provider of ['victorialogs', 'victoriametrics', 'opentelemetry']) configText = setYamlScalar(configText, ['observability', provider, 'local', 'enabled'], useVictoriaLogs);
+  if (configureObservability) {
+    configText = setYamlScalar(configText, ['observability', 'opentelemetry', 'local', 'port'], otelPort);
+    configText = setYamlScalar(configText, ['observability', 'victoriametrics', 'local', 'port'], metricsPort);
+    configText = setYamlScalar(configText, ['observability', 'victoriametrics', 'local', 'retention_days'], metricsRetention);
+    configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'port'], logPort);
+    configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'retention_days'], retentionDays);
+    if (config.observability?.signoz?.local?.enabled) configText = setYamlScalar(configText, ['observability', 'signoz', 'local', 'enabled'], false);
+  }
+  const output = await import(new URL('workflow/session-output.mjs', runtime).href);
+  let finalBudget = contextBudget;
+  if (reuse && !validBudget && missingBudgetField && currentBudget) {
+    try { finalBudget = { ...JSON.parse(currentBudget), schema_version: 1 }; } catch { finalBudget = { schema_version: 1 }; }
+    for (const key of budgetKeys) if (!Number.isSafeInteger(previousBudget[key]) || previousBudget[key] <= 0) finalBudget[key] = contextBudget[key];
+    validateContextBudget(finalBudget);
+  }
+  const backup = output.sessionOutputPath(root, `runtime/setup/backups/harness-${Date.now()}.yaml`);
+  await mkdir(dirname(backup), { recursive: true });
+  if (currentConfig) await writeFile(backup, currentConfig, { mode: 0o600 });
+  if (currentBudget) await writeFile(`${backup}.context-budget.json`, currentBudget, { mode: 0o600 });
+  await mkdir(dirname(configPath), { recursive: true });
+  const temporary = output.sessionOutputPath(root, `tmp/setup-${Date.now()}.yaml`);
+  await writeFile(temporary, configText, { mode: 0o600 });
+  await rename(temporary, configPath);
+  if (!reuse || !validBudget) {
+    const temporaryBudget = output.sessionOutputPath(root, `tmp/context-budget-${Date.now()}.json`);
+    await writeFile(temporaryBudget, `${JSON.stringify(finalBudget, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporaryBudget, budgetPath);
+  }
+
+  await prepareProjectFiles();
   console.log(`Updated .codex/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
   console.log(`Tracker configured: ${mode}`);
-  if (useBeads) console.log('Beads workspace verification/initialization remains a separate explicit step: run bd status, and initialize only after checking local and remote data.');
-  if (useVictoriaLogs) {
-    exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--shared-guidance-root', root, '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
+  if (useBeads) console.log('Beads workspace 상태를 확인했습니다.');
+  if (configureObservability) {
+    await exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
     console.log('OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·실행 profile·공식 MCP 두 개를 준비했습니다. victorialogs-local-setup 스킬로 기존 앱의 개발 로그를 연결하세요.');
   }
   console.log('다음 단계: 필수 파일 존재 여부를 확인하고 workflow 구성을 진행하세요.');
@@ -395,6 +469,6 @@ async function main() {
 main().then(() => {
   if (native) process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
 }).catch((error) => {
-  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', configuration_hash: configurationHash, question: error.question }) + '\n');
+  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', question: error.question }) + '\n');
   else { console.error(error.message); process.exitCode = 1; }
 }).finally(() => rl?.close());

@@ -10,7 +10,7 @@ description: Coordinate workflow composition and stage execution in the main ses
 ## 시작
 
 1. hook이 전달한 [상태 판정](references/session-state.md)과 사용자 메시지로 기존 작업 재개 또는 새 작업 시작을 결정한다. 재개 시 `orchestrator_session_id`와 stage별 `agent_sessions`를 사용해 기존 Codex 대화를 이어간다. `inspect_required`이면 필요한 확인·복구 작업을 호출한다.
-2. 새 작업은 [setup](../setup/SKILL.md)의 진입 조건을 확인하고 필요한 경우 메인 세션에서 setup을 완료한 뒤 [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)를 호출한다. Git의 첫 commit이 없는 상태는 초기 저장소의 정상적인 준비 상태로 판단해 setup이 처리하도록 한다. 상태 확인 명령의 예상된 부재와 실제 실행 실패를 구분하고 사용자에게서 받은 중단 조건을 따른다.
+2. 새 작업은 hook의 `setup_configuration`을 확인하고 없으면 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --check`를 실행한다. `configured`이면 setup과 재사용 질문을 건너뛰고 [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)를 호출한다. `setup_required`이면 누락 사유를 확인해 [setup](../setup/SKILL.md)을 실행한다. 이전 setup 답변 파일의 존재는 setup 필요 조건이 아니다. Git의 첫 commit이 없는 상태는 초기 저장소의 정상적인 준비 상태로 판단해 setup이 처리하도록 한다. 상태 확인 명령의 예상된 부재와 실제 실행 실패를 구분하고 사용자에게서 받은 중단 조건을 따른다.
 3. `completed / OK`이면 준비된 worktree를 확인하고 사용자 요청·종료 범위·승인된 산출물을 바탕으로 다음 스킬을 선택한다. 그 외에는 반환 코드에 따라 필요한 조치를 결정한다.
 4. 새 worktree가 준비되면 사용자에게 그 작업 위치에서 새 Codex 세션을 열고 기존 workflow를 이어가도록 안내한다. 준비된 worktree와 기록을 보존하고, 새 세션이 시작되기 전에는 후속 작업 단계를 실행하지 않는다. 이미 해당 worktree에서 재개한 세션에는 다시 안내하지 않는다.
 

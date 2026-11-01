@@ -23,15 +23,12 @@ Initialize repository-owned context, agent model tiers, and tracker settings bef
 
 ## Codex 내부 선택 흐름
 
-1. `harness-session-output.mjs --root <absolute-project-root>`로 session directory를 구하고 그 안의 `runtime/setup/answers.json`을 만든다. 최초 내용은 `{"answers":{}}`이며 이전 사용자 답이 있으면 보존한다.
-2. 같은 cwd에서 다음 비대화 명령을 실행한다. 이 명령은 사용자 입력을 stdin에서 기다리지 않고 다음 질문 또는 적용 결과를 JSON으로 반환한다.
-
-   `node .codex/scripts/harness-setup.mjs --root <absolute-project-root> --answers <session_directory>/runtime/setup/answers.json`
-
-3. `status: needs_input`이면 `question.prompt/options/current/context`를 읽어 **사용 가능한 `request_user_input_async` 또는 `request_user_input` 선택 도구**로 표시한다. 도구의 실제 availability와 mode 제한을 지키며 지원되지 않는 도구를 호출하거나 mode를 임의 전환하지 않는다. 도구가 없으면 네이티브 UI 미지원 사유를 보고하고 중단하며 PTY/별도 창으로 우회하지 않는다. `type: text`도 같은 네이티브 입력 도구를 사용한다. 선택지가 도구의 표시 한도를 넘으면 페이지를 나누되 실제 선택 항목을 누락하지 않는다.
-4. 사용자가 제출한 응답만 `answers[question.id]`에 해당 option.value 또는 입력 문자열로 기록하고 응답의 `configuration_hash`도 보존한다. 최종 적용 질문은 context의 실제 선택 요약을 함께 표시한다. 기본값·권장값·선택 도구의 사전 선택을 제출로 간주하지 않는다. AI가 모델·effort·tracker·관측성 값을 임의 선택하지 않는다. 도구 label을 backend value로 정확히 매핑한다.
-5. 2~4를 반복한다. CLI는 실제 Codex app-server의 live model/effort와 프로젝트 상태에서 질문을 만들며 유효하지 않은 선택·변경된 configuration snapshot을 거부한다. 답을 기다릴 때는 실제 native UI 요청을 유지하며 “터미널이 입력 대기 중”이라는 보고만 남기고 종료하지 않는다. 사용자 취소/무응답은 적용 승인이 아니다.
-6. `status: configured`와 exit 0을 받은 뒤 실제 source 기반 실행 계약·통합 계약 준비로 이어간다. `needs_input`의 exit 0은 완료가 아니다. CLI 오류는 원문을 보고하고 설정 미완료로 남긴다. 일반적인 terminal CLI는 수동 사용을 위해 유지하되 `$setup`은 이 native UI 경로만 사용한다.
+1. `harness-session-output.mjs --root <absolute-project-root>`로 session directory를 구한다. 새 setup 요청마다 그 안에 새 UUID를 사용한 `runtime/setup/<setup-id>/answers.json`을 만들고 `{"answers":{}}`로 시작한다. 이전 실행의 답변 파일을 읽거나 덮어쓰지 않는다. 같은 setup의 질문을 이어갈 때만 이 파일을 사용한다.
+2. 같은 cwd에서 `node .codex/scripts/harness-setup.mjs --root <absolute-project-root> --answers <해당 setup의 절대 answers.json 경로>`를 실행하고 프로세스 종료를 기다린다. 기존 설정이 있으면 CLI가 현재 설정을 재사용할지 새로 설정할지 먼저 묻는다. 재사용을 선택하면 유효한 값은 유지하고 누락·오류 항목만 확인한다. `status: configured`만 적용 완료다.
+3. `status: needs_input`이면 `question.prompt/options/current/context`를 읽는다. `request_user_input_async({"questions":[{"title":"질문 전체와 필요한 context","options":["선택지 label"]}]})` 형식으로 표시한다. CLI의 `question` 객체를 그대로 전달하지 않는다. `title`에 prompt와 필요한 context를 넣고 options 객체는 label 문자열 배열로 바꾼다. text 입력은 options를 생략한다. 실제 사용 가능한 도구가 없으면 중단하며 PTY나 별도 창으로 우회하지 않는다.
+4. `{ "accepted": true }`는 질문 접수일 뿐 답변이 아니다. 실제 응답을 기다려 label을 해당 value로 매핑하고 `answers[question.id]`에 저장한다. 기본값·권장값·사전 선택을 제출로 취급하지 않는다. 사용자 답을 추정하지 않는다.
+5. 2~4를 반복한다. CLI는 실제 Codex app-server의 live model/effort와 프로젝트 상태에서 질문을 만들며 유효하지 않은 선택을 거부한다. 답을 기다릴 때는 실제 native UI 요청을 유지하며 “터미널이 입력 대기 중”이라는 보고만 남기고 종료하지 않는다. 사용자 취소/무응답은 적용 승인이 아니다.
+6. `status: configured`와 exit 0을 받은 뒤 초기 기준 commit 준비로 이어간다. `needs_input`과 exit 0은 다음 질문을 뜻한다. CLI 오류는 원문과 종료 코드를 보고하고 사용자에게서 받은 중단 조건을 따른다. 일반적인 terminal CLI는 수동 사용을 위해 유지하되 `$setup`은 이 native UI 경로만 사용한다.
 
 CLI는 선택지 발견·검증·설정 적용을 소유하고 스킬은 native UI 전달만 맡는다. 프로젝트 기존 파일은 보존한다. `observability.victorialogs.local.enabled: true`이면 설치된 `victorialogs-local-setup`을 이어 실행해 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·공식 MCP 두 개와 실제 앱 개발 profile을 연결한다. 앱 기준 metrics_url과 컨테이너 기준 scrape_url을 구분하고 포트를 추정하지 않는다. GUI·숨은 PTY나 별도 설치 절차를 요구하지 않는다.
 

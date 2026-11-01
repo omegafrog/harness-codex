@@ -210,7 +210,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## Codex native setup UI
 
-`$setup`은 session 내부 `runtime/setup/answers.json`에서 사용자 응답을 관리하고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 stdin 대기 없이 needs_input과 live 선택지·안정적인 question ID·configuration_hash를 반환한다. 스킬은 사용 가능한 native request_user_input_async/request_user_input 도구에 표시하고 제출된 value만 저장해 다시 호출한다. 답·기본값을 agent가 추정하지 않고 도구 미지원 시 정확한 사유를 보고한다. needs_input은 완료가 아니며 configured와 exit=0 뒤 source 기반 준비를 이어간다. 잘못된 option·stale config snapshot·session 밖 답 파일은 거부한다. 별도 GUI/설치기 메뉴/agent-only PTY는 사용하지 않는다. 수동 CLI는 유지한다.
+`$setup`은 실행마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 기존 설정이 있으면 재사용 또는 재설정을 질문하고, 재사용 시 유효한 값은 보존하며 누락 항목만 묻는다. 질문과 제출된 답만 해당 실행 파일에 보관하며 이전 설정 해시를 사용하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 스킬은 native 선택 도구에서 실제 제출된 value만 저장한다. 잘못된 option과 session 밖 답 파일은 거부한다. 수동 CLI는 유지한다.
 
 ## 구현 리뷰 회귀 검사
 
