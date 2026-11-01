@@ -55,7 +55,7 @@ if (native) {
   console.log = (...values) => process.stderr.write(values.join(' ') + '\n');
 } else if (!stdin.isTTY || !stdout.isTTY) throw new Error('Setup requires an interactive terminal; Codex native choices use --answers SESSION_JSON.');
 class PendingQuestion extends Error {
-  constructor(question) { super('needs_input'); this.question = question; }
+  constructor(pending) { super('needs_input'); this.pending = pending; }
 }
 const occurrences = new Map();
 function nativeAnswer(prompt, current = '', choices = null, context = null) {
@@ -469,6 +469,6 @@ async function main() {
 main().then(() => {
   if (native) process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
 }).catch((error) => {
-  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', question: error.question }) + '\n');
+  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', pending: error.pending }) + '\n');
   else { console.error(error.message); process.exitCode = 1; }
 }).finally(() => rl?.close());

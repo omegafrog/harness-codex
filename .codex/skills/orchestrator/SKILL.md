@@ -34,7 +34,7 @@ description: Coordinate workflow composition and stage execution in the main ses
 | `SPEC_REVISION_REQUIRED` | Spec 담당 stage로 회귀한다. |
 | `PLAN_REVISION_REQUIRED` | 계획 담당 stage로 회귀한다. |
 | `IMPLEMENTATION_REVISION_REQUIRED` | 관련 구현 stage로 회귀한다. |
-| `USER_DECISION_REQUIRED` | 제시된 쟁점·선택지·영향·재개 조건으로 사용자에게 질문하고 [질문 스키마](../../../.codex/internal-skills/skill-execution/schemas/question.schema.json)에 맞는 질문을 확인하고 실제 답변을 담당 skill에 전달한다. |
+| `USER_DECISION_REQUIRED` | 제시된 쟁점·선택지·영향·재개 조건으로 사용자에게 질문하고 [질문 스키마](../../../.codex/internal-skills/skill-execution/schemas/question.schema.json)에 맞는 질문을 확인한다. 질문 문장은 항목의 `title`이며 실제 답변을 담당 skill에 전달한다. |
 | `blocked` | 필요한 조건의 해소를 기다리고 근거가 반환되면 재개를 결정한다. |
 | `failed` | 반환된 사유와 재시도 정책에 따라 수정 작업·재실행을 결정한다. |
 | `cancelled` | 실행기와 소유 lifecycle의 종료 절차를 호출한다. |
