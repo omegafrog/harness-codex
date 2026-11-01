@@ -15,7 +15,9 @@ function storedStageInput(input) {
 
 async function collectAnswers(session, prefix, questions, answer) {
   let incoming;
-  try { incoming = JSON.parse(answer); } catch { throw new Error('Answers must be a JSON array'); }
+  try { incoming = JSON.parse(answer); } catch { incoming = questions.length === 1 ? [{ question_id: questions[0].question_id, answer }] : null; }
+  if (!Array.isArray(incoming) && questions.length === 1 && typeof incoming === 'string') incoming = [{ question_id: questions[0].question_id, answer: incoming }];
+  if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
   const path = join(session, prefix, 'answers.json');
   let previous = [];
   try { previous = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -168,25 +170,17 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
       if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     }
-    let questionRef, question;
-    if (!reviewDetails) {
-      questionRef = result.artifacts.find((item) => item.kind === 'user_question');
-      if (questionRef) {
-        if (questionRef.base !== 'session') throw new Error('Subtask question artifact must be in the task session');
-      }
-      question = result.question || (questionRef ? await readSkillSessionJson({ root, session_directory: taskSession, path: questionRef.path }) : null);
-    }
     const log = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/exec.stderr.json` });
     const threadId = log.thread_id || /(?:^|\n)session id:\s*([0-9a-f-]{36})(?:\n|$)/i.exec(log.stderr || '')?.[1];
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) throw new Error('Codex session ID missing from subtask execution');
     const execution_id = `subtask-${randomUUID()}`;
     const { answer_ref, question_ref, ...priorContext } = childInput.context;
-    const input = { ...childInput, execution_id, input_refs: [...childInput.input_refs, ...(reviewDetails ? result.artifacts : [])], context: { ...priorContext, codex_session_id: codexSessionId, stage_id: execution_id, resume_session_id: threadId, previous_result_ref: envelope.result_ref, ...(reviewDetails ? { review_details_requested: true } : question ? { ...(questionRef ? { question_ref: questionRef.path } : {}), question_id: question.question_id } : {}) } };
+    const input = { ...childInput, execution_id, input_refs: [...childInput.input_refs, ...(reviewDetails ? result.artifacts : [])], context: { ...priorContext, codex_session_id: codexSessionId, stage_id: execution_id, resume_session_id: threadId, previous_result_ref: envelope.result_ref, ...(reviewDetails ? { review_details_requested: true } : {}) } };
     await validateSkillInput({ root, input });
     const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
     await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });
     const storedInput = storedStageInput(input);
-    return { input: storedInput, path, session_directory: taskSession, ...(!reviewDetails ? { answer: batchAnswers ? batchAnswers.answers : { ...(question ? { question_id: question.question_id } : {}), answer } } : {}) };
+    return { input: storedInput, path, session_directory: taskSession, ...(!reviewDetails ? { answer: batchAnswers.answers } : {}) };
   }
   if (reviewDetails) throw new Error('Review detail request requires a subtask to resume');
   const parentExecutions = new Set([...(previous?.attempts || []), previous].filter(Boolean).map((item) => item.execution_id));
@@ -264,10 +258,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
       answer = batchAnswers.answers;
     }
-    const questionRef = result.artifacts.find((item) => item.kind === 'user_question');
-    if (questionRef && questionRef.base !== 'session') throw new Error('Previous question artifact must be in the task session');
-    const question = result.question || (questionRef ? await readSkillSessionJson({ root, session_directory: previousSession, path: questionRef.path }) : null);
-    conversation = { previous_result_ref: previous.result_ref, ...(question ? { ...(questionRef ? { question_ref: questionRef.path } : {}), question_id: question.question_id } : {}), resume_session_id: threadId };
+    conversation = { previous_result_ref: previous.result_ref, resume_session_id: threadId };
   }
   let shared = root;
   const { sessionDirectory } = await import('./session-output.mjs');

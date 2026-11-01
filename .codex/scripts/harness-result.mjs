@@ -2,7 +2,6 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 let sourceCheckout = false;
 try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
@@ -27,20 +26,23 @@ try {
   if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
   const prefix = `runtime/executions/${input.execution_id}`;
   if (opts.return !== `${prefix}/return.json`) throw new Error('Return must belong to the requested execution');
+  if (envelope.result_ref !== null && envelope.result_ref !== `${prefix}/result.json`) throw new Error('Result must belong to the requested execution');
+  if (envelope.result_ref) {
+    try {
+      const existing = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref });
+      for (const key of ['execution_id', 'skill', 'status', 'code']) if (existing[key] !== envelope[key]) throw new Error(`Result ${key} mismatch`);
+      envelope.result = existing;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
   if (envelope.result.questions?.length) {
-    if (envelope.code !== 'REVIEW_REQUIRED') throw new Error('Questions require REVIEW_REQUIRED');
+    if (!['REVIEW_REQUIRED', 'USER_DECISION_REQUIRED'].includes(envelope.code)) throw new Error('Questions require a waiting decision or review');
     envelope.result.questions = identifyQuestions(input.execution_id, envelope.result.questions.map(({ question_id, ...question }) => question));
   }
   if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = `${prefix}/result.json`;
   await validateSkillReturn({ root: opts.root, input, envelope });
   if (envelope.result_ref) {
     const path = join(session, envelope.result_ref);
-    try {
-      if (!isDeepStrictEqual(JSON.parse(await readFile(path, 'utf8')), envelope.result)) throw new Error('Worker result file differs from its session response');
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      await writeFile(path, JSON.stringify(envelope.result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    }
+    await writeFile(path, JSON.stringify(envelope.result, null, 2) + '\n', { mode: 0o600 });
   }
   await writeFile(join(session, opts.return), JSON.stringify(envelope, null, 2) + '\n', { mode: 0o600 });
   process.stdout.write(`${JSON.stringify(envelope)}\n`);

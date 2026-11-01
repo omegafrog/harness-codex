@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWorktreeRecord } from '../src/workflow/worktrees.mjs';
@@ -33,6 +33,12 @@ test('installed readiness checks required files without validating their content
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
+    const flows = join(root, '.codex/internal-skills/skill-execution/schemas/flows');
+    for (const name of (await readdir(flows)).filter((name) => name.endsWith('.schema.json'))) {
+      const schema = JSON.parse(await readFile(join(flows, name), 'utf8'));
+      assert.equal(Object.hasOwn(schema.properties, 'question'), false, name);
+      assert.ok(schema.required.includes('questions'), name);
+    }
     const { inspectProjectReadiness } = await import(`file://${join(root, '.codex/harness-runtime/src/workflow/project-readiness.mjs')}`);
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'blocked');
     for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
@@ -114,12 +120,27 @@ test('installed compose creates an initial commit in an empty repository', async
     assert.equal(args[args.indexOf('--sandbox') + 1], 'read-only');
     assert.equal(args.includes('--add-dir'), false);
     await writeFile(inputPath, JSON.stringify(stageInput.input));
+    const schemaOutput = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-output-schema.mjs'), '--root', tree.workspace, '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' }));
+    const generatedSchema = JSON.parse(await readFile(schemaOutput.path, 'utf8'));
+    assert.equal(Object.hasOwn(generatedSchema.properties.result.properties, 'question'), false);
+    assert.ok(generatedSchema.properties.result.required.includes('questions'));
+    const prefix = `runtime/executions/${next.input.execution_id}`;
+    const result = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], questions: [{ question_id: 'scope', question: '범위는?', options: [{ id: 'a', label: '기본', consequence: '기본 계산' }, { id: 'b', label: '확장', consequence: '추가 계산' }], recommended_option_id: 'a', rationale: '작은 범위' }], required_subtasks: [], review_request: null };
+    const envelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: `${prefix}/result.json`, result };
+    await writeFile(join(tree.session_directory, prefix, 'result.json'), JSON.stringify(result));
+    await writeFile(join(tree.session_directory, prefix, 'return.json'), JSON.stringify(envelope));
+    const resultCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--execution-id', next.input.execution_id, '--return', `${prefix}/return.json`];
+    const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(validated.result.questions[0].question_id, `${next.input.execution_id}:1`);
+    assert.equal(Object.hasOwn(validated.result, 'question'), false);
+    await writeFile(join(tree.session_directory, prefix, 'result.json'), JSON.stringify({ ...result, question: result.questions[0] }));
+    await assert.rejects(async () => execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, stdio: 'pipe' }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: `runtime/executions/${next.input.execution_id}/result.json` });
     const state = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
     assert.equal(state.current_stage, 'spec-me');
     assert.equal(state.stages['spec-me'].status, 'waiting');
-    const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], question: null, questions: [], required_subtasks: [], review_request: null };
+    const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], questions: [], required_subtasks: [], review_request: null };
     const specRef = `runtime/executions/${next.input.execution_id}/result.json`;
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(specResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: specRef, result: specResult }));
@@ -130,7 +151,7 @@ test('installed compose creates an initial commit in an empty repository', async
     const planInput = await findExecutionInput(tree.workspace, plan.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const planRef = `runtime/executions/${plan.input.execution_id}/result.json`;
-    const planResult = { schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '수용 조건 보완 필요', artifacts: [], question: null, questions: [], required_subtasks: [], review_request: null };
+    const planResult = { schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '수용 조건 보완 필요', artifacts: [], questions: [], required_subtasks: [], review_request: null };
     await writeFile(join(tree.session_directory, planRef), JSON.stringify(planResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${plan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef, result: planResult }));
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef });
@@ -140,7 +161,7 @@ test('installed compose creates an initial commit in an empty repository', async
     const revisionInput = await findExecutionInput(tree.workspace, revision.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const revisionRef = `runtime/executions/${revision.input.execution_id}/result.json`;
-    const revisionResult = { schema_version: 1, execution_id: revision.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 세분화 필요', artifacts: [], question: null, questions: [], required_subtasks: [], review_request: null };
+    const revisionResult = { schema_version: 1, execution_id: revision.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 세분화 필요', artifacts: [], questions: [], required_subtasks: [], review_request: null };
     await writeFile(join(tree.session_directory, revisionRef), JSON.stringify(revisionResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${revision.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: revision.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef, result: revisionResult }));
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef });
@@ -149,16 +170,16 @@ test('installed compose creates an initial commit in an empty repository', async
     assert.equal(replan.input.context.transition.result_ref, revisionRef);
     const replanInput = await findExecutionInput(tree.workspace, replan.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
-    const question = { question_id: 'choice-1', question: '계획을 선택하세요', options: [{ id: 'a', label: 'A', consequence: 'A 적용' }, { id: 'b', label: 'B', consequence: 'B 적용' }], recommended_option_id: 'a', rationale: '테스트' };
+    const question = { question_id: `${replan.input.execution_id}:1`, question: '계획을 선택하세요', options: [{ id: 'a', label: 'A', consequence: 'A 적용' }, { id: 'b', label: 'B', consequence: 'B 적용' }], recommended_option_id: 'a', rationale: '테스트' };
     const waitingRef = `runtime/executions/${replan.input.execution_id}/result.json`;
-    const waitingResult = { schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], question, questions: [], required_subtasks: [], review_request: null };
+    const waitingResult = { schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], questions: [question], required_subtasks: [], review_request: null };
     await writeFile(join(tree.session_directory, waitingRef), JSON.stringify(waitingResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${replan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef, result: waitingResult }));
     await writeFile(join(tree.session_directory, `runtime/executions/${replan.input.execution_id}/exec.stderr.json`), JSON.stringify({ thread_id: record.worktree_id }));
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef });
     const resumed = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--answer', 'a'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(resumed.input.context.resume_session_id, record.worktree_id);
-    assert.equal(resumed.answer.question_id, 'choice-1');
+    assert.equal(resumed.answer[0].question_id, `${replan.input.execution_id}:1`);
     await assert.rejects(readFile(join(tree.session_directory, 'runtime/orchestrator/workflow.json')), { code: 'ENOENT' });
     assert.equal(git('ls-tree', '-r', '--name-only', 'HEAD'), '');
     const status = git('status', '--short');

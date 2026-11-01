@@ -1,5 +1,7 @@
 # 실행별 명령
 
+모든 skill 결과는 질문이 하나여도 `questions` 배열만 사용하고, 질문이 없으면 빈 배열을 반환한다. 배열 항목의 `question`은 질문 문장이다.
+
 메인 orchestrator는 작업에 필요한 명령만 순서대로 호출한다. worktree가 준비된 `spec-me`와 `to-ticket`의 입력에는 작업 위치 정보를 `context.worktree_ref`로만 전달한다.. 명령의 `<workspace_root>` 등 꺾쇠 표기는 실제 값으로 바꿔 실행한다.
 
 1. `node "<workspace_root>/.codex/scripts/harness-prepare-input.mjs" --worktree-ref <절대 worktree.json 경로> --stage-id <선택한 skill ID>`로 선택한 단계의 입력 파일을 준비한다.

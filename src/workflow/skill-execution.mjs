@@ -229,7 +229,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const questions = result.artifacts.filter((item) => item.kind === 'user_question');
   const resultQuestions = result.questions?.length ? result.questions : undefined;
   if (resultQuestions !== undefined) {
-    requireValue(envelope.code === 'REVIEW_REQUIRED' && Array.isArray(resultQuestions) && resultQuestions.length > 0, 'Question batch requires REVIEW_REQUIRED');
+    requireValue(['REVIEW_REQUIRED', 'USER_DECISION_REQUIRED'].includes(envelope.code) && Array.isArray(resultQuestions) && resultQuestions.length > 0, 'Question batch requires a waiting decision or review');
     const schema = await json(join(root, CONTRACT, 'schemas/question.schema.json'));
     for (const [index, question] of resultQuestions.entries()) {
       validate(question, schema);
@@ -239,10 +239,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   }
   if (envelope.code === 'USER_DECISION_REQUIRED' || questions.length) {
     requireValue(questions.length <= 1 && (questions.length === 0 || questions[0].base === 'session'), 'Question requires at most one session user_question artifact');
-    const question = result.question || (questions.length ? JSON.parse(await readReference(root, questions[0], session)) : null);
-    requireValue(question, 'User decision requires an inline question');
-    validate(question, await json(join(root, CONTRACT, 'schemas/question.schema.json')));
-    requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
+    requireValue(resultQuestions, 'User decision requires questions');
   }
   if (input.skill === 'workflow-compose' && envelope.status === 'completed') {
     requireValue(result.worktree_ref === input.context?.worktree_ref, 'Prepared worktree reference must match input');
