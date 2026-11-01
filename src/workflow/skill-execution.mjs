@@ -13,7 +13,7 @@ const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
 const CODES = {
   completed: ['OK'],
-  action_required: ['REVIEW_REQUIRED', 'SUBTASK_REQUIRED', 'SPEC_REVISION_REQUIRED', 'PLAN_REVISION_REQUIRED', 'IMPLEMENTATION_REVISION_REQUIRED', 'USER_DECISION_REQUIRED'],
+  action_required: ['REVIEW_REQUIRED', 'SPEC_REVISION_REQUIRED', 'PLAN_REVISION_REQUIRED', 'IMPLEMENTATION_REVISION_REQUIRED', 'USER_DECISION_REQUIRED'],
   blocked: ['ENVIRONMENT_UNAVAILABLE', 'PERMISSION_REQUIRED', 'DEPENDENCY_INCOMPLETE', 'INPUT_MISSING', 'MODEL_BINDING_UNAVAILABLE'],
   failed: ['EXECUTION_ERROR', 'INVALID_INPUT', 'ARTIFACT_WRITE_FAILED'],
   cancelled: ['CANCELLED'],
@@ -198,28 +198,26 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
   const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
   const schemaResult = structuredClone(result);
-  for (const request of [...(schemaResult.required_subtasks || []), ...(schemaResult.review_request ? [schemaResult.review_request] : [])]) {
+  if (schemaResult.review_request) {
+    const request = schemaResult.review_request;
     requireValue(!(Object.hasOwn(request, 'role') && Object.hasOwn(request, 'agent_profile')), 'Ambiguous agent profile');
     if (Object.hasOwn(request, 'agent_profile')) { request.role = request.agent_profile; delete request.agent_profile; }
   }
   validate(schemaResult, resultSchema);
   for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(result[key] === envelope[key], `Result ${key} mismatch`);
   for (const reference of result.artifacts) await readReference(root, reference, session, controlSession);
-  const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-  for (const request of [...(result.required_subtasks || []), ...(result.review_request ? [result.review_request] : [])]) {
-    // Legacy records remain readable; newly generated outputs use agent_profile.
-    if (!Object.hasOwn(request, 'agent_profile')) continue;
-    requireValue(typeof request.skill === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill) && Object.hasOwn(bindings.skills, request.skill) && !bindings.main_session_skills?.includes(request.skill), `Unregistered subtask skill: ${request.skill}`);
+  if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
+    const request = result.review_request;
+    const bindings = await json(join(root, CONTRACT, 'bindings.json'));
+    requireValue(typeof request.skill === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill) && Object.hasOwn(bindings.skills, request.skill) && !bindings.main_session_skills?.includes(request.skill), `Unregistered review skill: ${request.skill}`);
     const entries = [`.codex/internal-skills/${request.skill}/GUIDE.md`, `.agents/skills/${request.skill}/SKILL.md`, `.codex/skills/${request.skill}/SKILL.md`];
     const present = await Promise.all(entries.map((path) => readReference(root, { base: 'workspace', path }, session).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; })));
-    requireValue(present.some(Boolean), `Subtask skill instruction missing: ${request.skill}`);
-    const profile = request.agent_profile ?? request.role;
-    if (profile && profile !== 'default') {
-      requireValue(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile), 'Invalid agent profile');
-      await readReference(root, { base: 'workspace', path: `.codex/agents/${profile}.toml` }, session);
+    requireValue(present.some(Boolean), `Review skill instruction missing: ${request.skill}`);
+    if (request.agent_profile !== null && request.agent_profile !== 'default') {
+      requireValue(typeof request.agent_profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.agent_profile), 'Invalid agent profile');
+      await readReference(root, { base: 'workspace', path: `.codex/agents/${request.agent_profile}.toml` }, session);
     }
   }
-  if (envelope.code === 'SUBTASK_REQUIRED') requireValue(result.required_subtasks?.length > 0, 'Subtask request is empty');
   if (result.review_request) {
     const context = JSON.parse(await readReference(root, { base: 'session', path: result.review_request.context_path }, session, controlSession));
     requireValue(context && typeof context === 'object' && !Array.isArray(context), 'Review context must be an object');

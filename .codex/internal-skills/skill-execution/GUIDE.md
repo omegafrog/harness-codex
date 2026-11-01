@@ -5,6 +5,7 @@
 orchestrator가 직접 시작하는 단계는 `harness-codex-run.mjs`로 실행한다. 그 단계 내부의 위임 작업은 Codex native subagent 도구를 사용하고, 각 요청에 skill 지침, agent profile, 목적, 필요한 입력 context와 결과 계약을 전달한다. 부모 세션 재개는 같은 Codex 대화를 이어가므로 그 대화에 남은 위임 context와 session 산출물을 확인해 계속한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
 
 부모 stage 프로세스가 중단되면 [실행과 결과](references/dispatch.md)의 중단 복구 절차로 같은 부모 Codex 대화를 재개한다. 재개된 대화의 native subagent 기록과 현재 작업 context를 이어 쓰며, Harness `agent_sessions`에 없는 subagent ID를 만들거나 완료되지 않은 위임을 완료로 추정하지 않는다.
+stage 내부 위임은 반환 code나 dispatcher 요청을 만들지 않는다. stage가 native subagent 결과를 확인하고 자기 산출물·리뷰·질문을 마무리해 공통 결과를 반환하며, 다음 workflow stage는 orchestrator만 선택한다.
 
 - 입력 준비와 최초 worktree 생성: [입력 준비](references/input.md)
 - 출력 계약과 실행 상태: [스키마와 실행 상태](references/state.md)

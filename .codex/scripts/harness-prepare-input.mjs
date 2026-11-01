@@ -12,7 +12,7 @@ const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'subtask-result', 'resume-subtask', 'review-subtask', 'review-result', 'review-details']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -39,8 +39,7 @@ try {
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);
   const codexSessionId = record.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null;
-  if (options['review-details'] && options['review-details'] !== '1') throw new Error('Invalid review detail request');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, subtask: options.subtask ?? null, subtaskResult: options['subtask-result'] ?? null, resumeSubtask: options['resume-subtask'] ?? null, reviewSubtask: options['review-subtask'] ?? null, reviewResult: options['review-result'] ?? null, reviewDetails: options['review-details'] === '1' });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

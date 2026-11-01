@@ -12,6 +12,8 @@ const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await im
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
+const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
+const { parseWorktreeRecord, recordWorkflowSession } = await import(new URL('worktrees.mjs', base));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -54,7 +56,20 @@ try {
   const prompt = `Read ${guide} and ${location.path}.${profile ? ` Read .codex/agents/${profile}.toml.` : ''}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const resume = input.context?.resume_session_id;
   const command = ['exec', '--sandbox', sandbox, ...(sandbox !== 'read-only' && input.shared_guidance_root !== root ? ['--add-dir', input.shared_guidance_root] : []), '--cd', root, '--model', binding.model, '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', schema, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
-  const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => process.stderr.write(`${JSON.stringify({ event: 'started', pid })}\n`), onThread: async (threadId) => process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`) });
+  const owner = await processIdentity(process.pid);
+  if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
+  await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });
+  const record = parseWorktreeRecord(await readFile(opts['worktree-ref'], 'utf8'));
+  const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => {
+    const child = await processIdentity(pid);
+    if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
+    await recordExecutionState({ root, input, binding, status: 'running', owner, child });
+    process.stderr.write(`${JSON.stringify({ event: 'started', pid })}\n`);
+  }, onThread: async (threadId) => {
+    if (resume && threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
+    await recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: input.context.stage_id, session_id: threadId, execution_id: input.execution_id });
+    process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`);
+  } });
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ exit_code: result.code, stderr: result.stderr, codex_errors: result.errors, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
   process.stdout.write(`${JSON.stringify({ ...result, binding: executionBinding })}\n`);

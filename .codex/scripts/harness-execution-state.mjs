@@ -19,6 +19,7 @@ try {
   }
   if (!isAbsolute(opts.root || '') || !['running', 'completed', 'action_required', 'blocked', 'failed', 'cancelled'].includes(opts.status)) throw new Error('Absolute root, execution-id and valid status are required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Valid execution-id is required');
+  if (opts.status === 'running') throw new Error('Runner records running state; invoke harness-codex-run.mjs directly');
   const session = await cliSession(opts.root, opts['worktree-ref']);
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');

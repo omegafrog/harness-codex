@@ -68,9 +68,7 @@ try {
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
     envelope.result.question = null;
   }
-  for (const request of [...(envelope.result.required_subtasks || []), ...(envelope.result.review_request ? [envelope.result.review_request] : [])]) {
-    if (!Object.hasOwn(request, 'agent_profile') || Object.hasOwn(request, 'role')) throw new Error('New requests require agent_profile');
-  }
+  if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');
   await validateSkillReturn({ root: opts.root, input, envelope });
   if (envelope.result_ref) {
     const path = join(session, envelope.result_ref);

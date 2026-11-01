@@ -33,8 +33,7 @@ main에서 기존 작업을 찾는 요청이면 hook의 `worktree_candidates`와
 | 반환 | orchestrator의 처리 |
 |---|---|
 | `completed/OK` | workflow에서 다음 실행할 stage를 선택한다. |
-| `REVIEW_REQUIRED` | 리뷰를 요청한 작업은 독립 reviewer를 호출한다. reviewer가 findings와 함께 반환하면 결과를 읽고 기존 작업을 수정·보완하거나 결정이 필요한 쟁점을 처리한 뒤 필요한 부분을 재검토한다. 미통과 결과를 승인으로 취급하지 않는다. |
-| `SUBTASK_REQUIRED` | 부모 stage의 같은 Codex 대화를 재개하고 반환된 요청의 skill, profile, 목적, 입력 context 및 결과 계약을 확인해 미처리 작업을 native subagent에 위임한다. 대화에 이미 남은 위임 결과는 검증해 재사용하고, 저장되지 않은 subagent 식별자나 완료 상태를 추정하지 않는다. |
+| `REVIEW_REQUIRED` | 요청 결과의 `review_request`가 있으면 `context_path`를 읽어 지정된 skill/profile/purpose로 현재 부모 Codex 대화에서 native reviewer를 직접 호출한다. 요청이 없으면 `implement-wrapper`처럼 stage 산출물과 검증 근거를 바탕으로 독립 reviewer를 선택한다. 결과를 요청한 작업에 전달해 findings를 해결하거나 사용자 결정을 받고, 필요한 부분을 새 reviewer로 재검토한다. reviewer 질문은 사용자에게 제시한 뒤 실제 답을 같은 native reviewer 대화에 전달하고, 미통과 결과를 승인으로 취급하지 않는다. 별도 child-stage 실행으로 변환하지 않는다. |
 | `SPEC_REVISION_REQUIRED` | Spec 담당 stage로 회귀한다. |
 | `PLAN_REVISION_REQUIRED` | 계획 담당 stage로 회귀한다. |
 | `IMPLEMENTATION_REVISION_REQUIRED` | 관련 구현 stage로 회귀한다. |
@@ -44,7 +43,9 @@ main에서 기존 작업을 찾는 요청이면 hook의 `worktree_candidates`와
 | `failed` | `reason=Execution interrupted after its processes exited`, `code=EXECUTION_ERROR`, 결과 없음이면 같은 `stage-id`로 `harness-prepare-input.mjs --feedback`을 호출해 기록된 부모 Codex 대화를 재개한다. 그 외에는 반환 사유와 재시도 정책에 따라 수정 작업·재실행을 결정한다. |
 | `cancelled` | 실행기와 소유 lifecycle의 종료 절차를 호출한다. |
 
-workflow의 완료 단계와 필수 gate·completion receipt가 통과한 결과를 받으면 전체 완료를 보고한다. `spec-me`의 stage 반환 `completed/OK`만으로 workflow 완료를 선언하지 않는다. stage 반환 상태와 산출물 검증이 성공한 뒤 orchestrator가 준비된 canonical worktree에서 완료 gate를 호출하고, `state=completed` 및 `completion_kind=spec_ready_for_planning`을 확인한 다음에만 성공 receipt를 사용자에게 보고하거나 `to-ticket`에 넘긴다.
+reviewer 결과를 작업 stage에 돌려줄 때는 기존 waiting 실행을 같은 Codex 대화에서 재개한다: `node .codex/scripts/harness-prepare-input.mjs --worktree-ref <canonical worktree.json> --stage-id <stage-id> --feedback '<finding 요약과 session 산출물 경로>'`. 이 경로는 저장된 `REVIEW_REQUIRED` 반환과 session을 검증하고 reviewer 결과를 feedback으로 전달한다. reviewer 질문은 사용자에게 제시한 뒤 답을 같은 native reviewer 대화에 전달하고, reviewer가 완료한 결과를 stage에 feedback으로 돌려준다. stage 자체가 `USER_DECISION_REQUIRED`를 반환한 경우에만 답을 받은 뒤 `--answer`로 해당 stage 실행을 재개한다.
+
+workflow의 완료 단계와 필수 gate·completion receipt가 통과한 결과를 받으면 전체 완료를 보고한다. `spec-me`의 stage 반환 `completed/OK`만으로 workflow 완료를 선언하지 않는다. stage 반환 상태와 산출물 검증이 성공한 뒤 orchestrator가 준비된 canonical worktree에서 완료 gate를 호출하고, `state=completed` 및 `completion_kind=spec_ready_for_planning`을 확인한 다음에만 성공 receipt를 사용자에게 보고한다. 다음 stage가 범위에 있으면 orchestrator가 `to-ticket`을 별도 실행한다.
 
 `spec-me` 완료 CLI를 호출하기 전에 session-relative state JSON을 준비한다. `ticket_id`는 canonical worktree 기록의 `plan_set_id`다. `spec_reviews.architecture`에는 `runtime/spec-reviews/<plan_set_id>.json`에 저장한 architecture review record 전체를 넣는다. 이는 `axis`, `ticket_id`, `reviewer_id`, `author_ids`, `fork_turns`, `verdict`, `inputs`, `findings`를 포함해야 한다. `tracker_sync.ticket_refs`에는 구성된 tracker의 정확한 ticket reference 배열을 넣는다. 예: `{"ticket_id":"<plan_set_id>","spec_reviews":{"architecture":<review record>},"tracker_sync":{"ticket_refs":["<exact tracker ref>"]}}`.
 

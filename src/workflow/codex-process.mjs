@@ -13,7 +13,7 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
       }
     } catch {}
   };
-  const child = spawn('codex', args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn('sh', ['-c', 'IFS= read -r ready && [ "$ready" = HARNESS_START ] && exec "$@"', 'harness-launch', 'codex', ...args], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const stop = () => child.kill('SIGTERM');
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
@@ -28,7 +28,7 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
   const completion = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
   try {
     await onStart(child.pid);
-    child.stdin.end(prompt);
+    child.stdin.end(`HARNESS_START\n${prompt}`);
     const code = await completion;
     if (buffer) consume(buffer);
     await sessionSave;

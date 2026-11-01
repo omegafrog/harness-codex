@@ -28,11 +28,17 @@ async function processAlive(identity) {
   return current.boot === identity.boot && current.start === identity.start && current.state !== 'Z';
 }
 
-export async function assertExecutionStopped(entry) {
-  for (const identity of [entry?.owner, entry?.child]) if (await processAlive(identity)) throw new Error('Stage already running');
+export async function assertExecutionStopped(entry, { root, session } = {}) {
+  const identities = [entry?.owner, ...(entry?.runner_managed && !entry?.child ? [] : [entry?.child])];
+  for (const identity of identities.filter(Boolean)) if (await processAlive(identity)) throw new Error('Stage already running');
+  if (identities.some((identity) => !identity)) {
+    if (!root || !session || !entry?.execution_id) throw new Error('Stage already running or process identity unavailable; inspection required');
+    const log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${entry.execution_id}/exec.stderr.json` });
+    if (!Number.isInteger(log.exit_code) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
+  }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
   const stage = input.context?.stage_id || input.skill;
@@ -62,8 +68,13 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (input.context?.worktree_ref) delete state.codex_session_id;
     else if (codexSessionId) state.codex_session_id = codexSessionId;
     const previous = state.stages?.[stage];
+    if (runnerClaim && previous?.status === 'running' && previous.execution_id === input.execution_id) {
+      if (!previous.owner) throw new Error('Stage process identity unavailable; inspection required');
+      if (await processAlive(previous.owner) || (previous.child && await processAlive(previous.child))) throw new Error('Stage runner already active');
+      throw new Error('Execution was already started; resume it with a new execution ID');
+    }
     if (status === 'running' && previous?.status === 'running' && previous.execution_id !== input.execution_id) {
-      await assertExecutionStopped(previous);
+      await assertExecutionStopped(previous, { root, session });
       previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its processes exited'; previous.finished_at = new Date().toISOString();
     }
     if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
@@ -73,7 +84,8 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.child; delete entry.finished_at; }
+      if (previous?.execution_id !== input.execution_id) { delete entry.owner; delete entry.child; delete entry.runner_managed; delete entry.finished_at; }
+      if (runnerClaim) entry.runner_managed = true;
       if (owner) entry.owner = owner;
       if (child) entry.child = child;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];
