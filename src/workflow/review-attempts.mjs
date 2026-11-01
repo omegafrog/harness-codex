@@ -3,8 +3,21 @@ import { readFile, writeFile, open, rename, unlink } from 'node:fs/promises';
 import { sessionOutputPath } from './session-output.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const SPEC_PREPARATION_ABORT = 'pre-dispatch preparation: ';
+const MAX_PREPARATION_ABORTS = 3;
 const same = (a, b) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
 function requireValue(value, message) { if (!value) throw new Error(message); }
+function trailingPreparationAbortCount(history) {
+  const start = history.preparation_resolution?.after || 0;
+  const pending = history.attempts.slice(start);
+  const previousSubstantive = pending.findLastIndex((item) => !item.pre_dispatch_preparation);
+  return pending.slice(previousSubstantive + 1).filter((item) => item.pre_dispatch_preparation).length;
+}
+function lastSubstantiveAttempt(history) { return history.attempts.findLast((item) => !item.pre_dispatch_preparation); }
+function lastRecordedReview(history) { return history.attempts.findLast((item) => item.review && ['pass', 'revise'].includes(item.status)); }
+function resolutionApplied(history, substantive) {
+  return Boolean(history.resolution && (!substantive || history.attempts.indexOf(substantive) < history.resolution.after));
+}
 function historyPath(root, scope, options = {}) {
   requireValue(ID.test(scope || ''), 'Valid review scope is required');
   return sessionOutputPath(root, `runtime/reviews/${scope}.json`, options);
@@ -12,6 +25,7 @@ function historyPath(root, scope, options = {}) {
 function validateHistory(history) {
   requireValue(Array.isArray(history.attempts) && (history.repairs === undefined || Array.isArray(history.repairs)), 'Invalid review history');
   requireValue(!history.resolution || Number.isSafeInteger(history.resolution.after) && history.resolution.after > 0 && history.resolution.after <= history.attempts.length && history.attempts[history.resolution.after - 1].round === 3 && !['active', 'pass'].includes(history.attempts[history.resolution.after - 1].status) && typeof history.resolution.reason === 'string' && history.resolution.reason.trim(), 'Invalid review resolution');
+  requireValue(!history.preparation_resolution || Number.isSafeInteger(history.preparation_resolution.after) && history.preparation_resolution.after > 0 && history.preparation_resolution.after <= history.attempts.length && history.attempts.slice(0, history.preparation_resolution.after).at(-1)?.pre_dispatch_preparation && typeof history.preparation_resolution.reason === 'string' && history.preparation_resolution.reason.startsWith('preparation recovery: ') && history.preparation_resolution.reason.trim().length > 'preparation recovery: '.length, 'Invalid preparation recovery');
   const repairs = history.repairs || [];
   requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && Number.isSafeInteger(item.limit) && item.limit >= item.round && item.limit <= 2 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
   requireValue(!history.repair_resolution || Number.isSafeInteger(history.repair_resolution.after) && history.repair_resolution.after > 0 && history.repair_resolution.after <= repairs.length && repairs[history.repair_resolution.after - 1].round === repairs[history.repair_resolution.after - 1].limit && typeof history.repair_resolution.reason === 'string' && history.repair_resolution.reason.trim() && ((!history.repair_resolution.previous_snapshot_sha256 && !history.repair_resolution.current_snapshot_sha256) || (/^[a-f0-9]{64}$/.test(history.repair_resolution.previous_snapshot_sha256 || '') && /^[a-f0-9]{64}$/.test(history.repair_resolution.current_snapshot_sha256 || '') && history.repair_resolution.previous_snapshot_sha256 !== history.repair_resolution.current_snapshot_sha256)), 'Invalid repair resolution');
@@ -65,21 +79,32 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
       requireValue(inputs && Object.keys(inputs).length > 0, 'Review inputs are required');
       requireValue(last?.status !== 'active', 'A review is already active; record its result or abort it before dispatch');
       requireValue(!last || last.status === 'aborted' || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
-      const round = !last || last.status === 'pass' || history.resolution?.after === history.attempts.length ? 1 : last.round + 1;
+      const trailingPreparationAborts = trailingPreparationAbortCount(history);
+      if (scope.startsWith('spec-')) requireValue(trailingPreparationAborts < MAX_PREPARATION_ABORTS, 'Spec review preparation retry limit exhausted; record preparation recovery before retrying');
+      const substantive = lastSubstantiveAttempt(history);
+      const round = !substantive || substantive.status === 'pass' || resolutionApplied(history, substantive) ? 1 : substantive.round + 1;
       requireValue(round <= 3, 'Review retry budget exhausted (initial review plus two retries); present unresolved findings for a scope or decision resolution');
       const attempt = { id: randomUUID(), round, status: 'active', inputs };
       history.attempts.push(attempt);
-      result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_inputs: last?.review && ['pass', 'revise'].includes(last.status) ? last.inputs : null, previous_findings: history.attempts.findLast((item) => item.review)?.review.findings || [] };
+      const previousReview = lastRecordedReview(history);
+      result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_inputs: previousReview?.inputs || null, previous_findings: previousReview?.review.findings || [] };
     } else if (action === 'resolve') {
-      requireValue(last && last.status !== 'active' && last.status !== 'pass' && last.round === 3, 'Resolve requires an exhausted review cycle');
       requireValue(typeof reason === 'string' && reason.trim(), 'Explicit user scope/decision resolution is required');
-      history.resolution = { after: history.attempts.length, reason };
-      result = { status: 'pass', reason: 'user_resolution_recorded' };
+      if (scope.startsWith('spec-') && trailingPreparationAbortCount(history) >= MAX_PREPARATION_ABORTS) {
+        requireValue(last?.status === 'aborted' && last.pre_dispatch_preparation && reason.startsWith('preparation recovery: ') && reason.trim().length > 'preparation recovery: '.length, 'Preparation recovery must state the repaired pre-dispatch cause');
+        history.preparation_resolution = { after: history.attempts.length, reason };
+        result = { status: 'pass', reason: 'preparation_recovery_recorded' };
+      } else {
+        requireValue(last && last.status !== 'active' && last.status !== 'pass' && last.round === 3, 'Resolve requires an exhausted review cycle');
+        history.resolution = { after: history.attempts.length, reason };
+        result = { status: 'pass', reason: 'user_resolution_recorded' };
+      }
     } else {
       requireValue(last?.status === 'active' && last.id === attemptId, 'No active review matches this attempt ID');
       if (action === 'abort') {
         requireValue(typeof reason === 'string' && reason.trim(), 'Abort reason is required');
         last.status = 'aborted'; last.reason = reason;
+        if (scope.startsWith('spec-') && reason.startsWith(SPEC_PREPARATION_ABORT)) last.pre_dispatch_preparation = true;
       } else {
         requireValue(action === 'record', 'Unknown review attempt action');
         requireValue(review && ['pass', 'revise', 'reject', 'blocked'].includes(review.verdict), 'Review verdict is required');
@@ -118,27 +143,28 @@ export async function reviewAdmissionPreviousInputs({ root, scope, attemptId }) 
   const history = await readHistory(historyPath(root, scope, { create: false }));
   const index = history.attempts.findIndex((item) => item.id === attemptId);
   requireValue(index >= 0, 'Review admission attempt is missing');
-  const previous = history.attempts[index - 1];
-  return previous?.review && ['pass', 'revise'].includes(previous.status) ? previous.inputs : null;
+  return history.attempts.slice(0, index).findLast((item) => item.review && ['pass', 'revise'].includes(item.status))?.inputs || null;
 }
 
 
 export async function inspectReviewHistory({ root, scope }) {
   const path = historyPath(root, scope, { create: false });
   const history = await readHistory(path);
-  const last = history.attempts.at(-1);
+  const last = history.attempts.at(-1), substantive = lastSubstantiveAttempt(history);
   const repair = scope.startsWith('implementation-');
   const cycle = repair ? (history.repairs || []).slice(history.repair_resolution?.after || 0) : null;
-  const reset = history.resolution?.after === history.attempts.length;
-  const used = repair ? cycle.length : !last || last.status === 'pass' || reset ? 0 : last.round;
+  const reset = resolutionApplied(history, substantive);
+  const lastReview = lastRecordedReview(history);
+  const used = repair ? cycle.length : !substantive || substantive.status === 'pass' || reset ? 0 : substantive.round;
   const limit = repair ? cycle[0]?.limit ?? null : 3;
   requireValue(Number.isSafeInteger(used) && used >= 0 && (limit === null || Number.isSafeInteger(limit) && limit >= 0), 'Invalid review budget');
-  return { root, scope, evidence_path: path, recorded_state: repair ? cycle.length ? 'repair-reserved' : 'no-current-reservation' : last?.status || 'not-started',
-    ...(last?.review ? { last_review: last.review, last_attempt_id: last.id, last_round: last.round } : {}),
+  return { root, scope, evidence_path: path, recorded_state: repair ? cycle.length ? 'repair-reserved' : 'no-current-reservation' : last?.pre_dispatch_preparation ? substantive?.status || 'aborted' : last?.status || 'not-started',
+    ...(last?.pre_dispatch_preparation ? { last_attempt_status: last.status } : {}),
+    ...(lastReview ? { last_review: lastReview.review, last_attempt_id: lastReview.id, last_round: lastReview.round } : {}),
     budget: { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) },
-    next_admission_requires_resolution: repair ? cycle.length > 0 && used >= limit : Boolean(last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
-    findings: repair ? cycle.at(-1)?.findings || [] : last?.review?.findings || [],
+    next_admission_requires_resolution: repair ? cycle.length > 0 && used >= limit : Boolean(scope.startsWith('spec-') && trailingPreparationAbortCount(history) >= MAX_PREPARATION_ABORTS || last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
+    findings: repair ? cycle.at(-1)?.findings || [] : lastReview?.review.findings || [],
     ...(repair && cycle.length ? { plan_set_id: cycle[0].inputs.plan_set_id || null, planning_snapshot_sha256: cycle[0].inputs.planning_snapshot_sha256 || null } : {}),
     findings_source: repair ? 'last-repair-reservation' : 'last-recorded-review',
-    reason: last?.reason || null, resolution: repair ? history.repair_resolution || null : history.resolution || null };
+    reason: last?.reason || null, resolution: repair ? history.repair_resolution || null : history.preparation_resolution?.after === history.attempts.length ? history.preparation_resolution : history.resolution || null };
 }
