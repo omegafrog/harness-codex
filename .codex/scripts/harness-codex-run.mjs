@@ -1,7 +1,30 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
-import { lstat, readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+
+async function codexResumeWriteDirs(sessionId, env) {
+  const home = resolve(env.CODEX_HOME || join(env.HOME || '', '.codex'));
+  const sessionRoot = join(home, 'sessions');
+  const dirs = new Set();
+  async function findSession(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        const found = await findSession(path);
+        if (found) return found;
+      } else if (entry.isFile() && entry.name.endsWith(`${sessionId}.jsonl`)) return dirname(path);
+    }
+    return null;
+  }
+  const sessionDir = await findSession(await realpath(sessionRoot));
+  if (!sessionDir) throw new Error(`Codex resume session file not found under ${sessionRoot}: ${sessionId}`);
+  dirs.add(await realpath(sessionDir));
+  for (const path of ['thread-writer-locks', 'shell_snapshots', 'tmp/arg0', 'tmp/arg0-linux']) {
+    try { dirs.add(await realpath(join(home, path))); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  return [...dirs];
+}
 
 let sourceCheckout = false;
 try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
@@ -55,7 +78,8 @@ try {
   const executionBinding = { ...binding, sandbox };
   const prompt = `Read ${guide} and ${location.path}.${profile ? ` Read .codex/agents/${profile}.toml.` : ''}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const resume = input.context?.resume_session_id;
-  const command = ['exec', '--sandbox', sandbox, '--cd', root, '--model', binding.model, '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', schema, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
+  const resumeWriteDirs = resume ? await codexResumeWriteDirs(resume, process.env) : [];
+  const command = ['exec', '--sandbox', sandbox, ...resumeWriteDirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model, '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', schema, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
   const owner = await processIdentity(process.pid);
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
   await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });

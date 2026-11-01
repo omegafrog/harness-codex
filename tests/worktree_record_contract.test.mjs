@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWorktreeRecord } from '../src/workflow/worktrees.mjs';
@@ -457,7 +457,12 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(fakeCodex, '#!/usr/bin/env node\nconst fs=require("fs");const a=process.argv;const schema=a[a.indexOf("--output-schema")+1];if(!fs.existsSync(schema)||JSON.parse(fs.readFileSync(schema,"utf8")).properties.execution_id.const!==process.env.TEST_CODEX_EXECUTION_ID)process.exit(41);let p="";process.stdin.on("data",x=>p+=x);process.stdin.on("end",()=>{fs.writeFileSync(a[a.indexOf("--output-last-message")+1],process.env.TEST_CODEX_RETURN);fs.writeFileSync(process.env.TEST_CODEX_PROMPT,p);fs.writeFileSync(process.env.TEST_CODEX_ARGS,JSON.stringify(a));console.log(JSON.stringify({type:"thread.started",thread_id:process.env.TEST_CODEX_THREAD}));});\n');
     await chmod(fakeCodex, 0o755);
     const promptPath = join(tree.session_directory, 'runtime/executions', runId, 'test-prompt');
-    const environment = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEST_CODEX_RETURN: JSON.stringify(envelope), TEST_CODEX_PROMPT: promptPath, TEST_CODEX_ARGS: join(tree.session_directory, 'runtime/executions', runId, 'test-args'), TEST_CODEX_THREAD: record.worktree_id, TEST_CODEX_EXECUTION_ID: runId };
+    const codexHome = join(parent, 'codex-home');
+    const codexSessionDir = join(codexHome, 'sessions/2026/11/01');
+    await mkdir(codexSessionDir, { recursive: true });
+    for (const path of ['thread-writer-locks', 'shell_snapshots', 'tmp/arg0', 'tmp/arg0-linux']) await mkdir(join(codexHome, path), { recursive: true });
+    await writeFile(join(codexSessionDir, `rollout-test-${record.worktree_id}.jsonl`), '');
+    const environment = { ...process.env, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH}`, TEST_CODEX_RETURN: JSON.stringify(envelope), TEST_CODEX_PROMPT: promptPath, TEST_CODEX_ARGS: join(tree.session_directory, 'runtime/executions', runId, 'test-args'), TEST_CODEX_THREAD: record.worktree_id, TEST_CODEX_EXECUTION_ID: runId };
     const execution = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.equal(execution.code, 0);
     assert.equal(execution.threadId, record.worktree_id);
@@ -510,6 +515,12 @@ test('compose creates input only in the worktree and leaves main without .io', a
     environment.TEST_CODEX_EXECUTION_ID = 'spec-resume';
     const resumedRun = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'spec-resume'], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.equal(resumedRun.threadId, record.worktree_id);
+    const resumedArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
+    const addDirs = resumedArgs.flatMap((value, index) => value === '--add-dir' ? [resumedArgs[index + 1]] : []);
+    assert.ok(addDirs.includes(await realpath(codexSessionDir)));
+    assert.ok(addDirs.includes(await realpath(join(codexHome, 'thread-writer-locks'))));
+    assert.ok(addDirs.includes(await realpath(join(codexHome, 'tmp/arg0'))));
+    assert.ok(!addDirs.includes(codexHome));
     assert.match(await readFile(promptPath, 'utf8'), /answers\.json/);
     const interruptedInput = { ...next.input, execution_id: 'interrupted-parent' };
     await writeExecutionInput(tree.workspace, interruptedInput, tree.plan_set_id);
