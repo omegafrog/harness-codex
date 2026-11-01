@@ -59,12 +59,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     transition = { from_stage: lastStage, code: last.code, result_ref: last.result_ref, summary: priorResult.summary };
   }
   const composer = state.stages?.['workflow-compose'];
-  let worktree_ref;
-  if (composer?.result_ref) {
-    const result = await readSkillSessionJson({ root, session_directory: session, path: composer.result_ref });
-    const preparedInput = await readExecutionInput({ root, execution_id: composer.execution_id });
-    worktree_ref = preparedInput.context?.worktree_ref || result.worktree_ref;
-  }
+  const preparedInput = await readExecutionInput({ root, execution_id: composer.execution_id });
+  const worktree_ref = preparedInput.context?.worktree_ref;
   if (worktreeRef && worktree_ref !== worktreeRef) throw new Error('Worktree reference does not match workflow');
   let taskSession = session;
   let plan_set_id;

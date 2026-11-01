@@ -4,4 +4,4 @@
 
 1. 실행 입력의 `context.worktree_ref`로 준비된 정본 `worktree.json`을 읽는다. worktree 준비는 호출자의 `harness-compose-workspace.mjs`가 담당한다.
 2. 정본 worktree 기록과 준비 상태를 확인하고 `completed/OK`에 `worktree_ref`를 반환한다. 단계 선택과 분기는 메인 orchestrator가 담당한다.
-3. 호출자는 준비 결과를 검증하고 완료 상태를 기록한 뒤 다음 세션을 안내한다.
+3. 준비 명령이 정본 worktree와 완료 상태를 기록한다. 호출자는 반환 결과를 확인하고 다음 세션을 안내한다. 결과 경로를 지정하거나 별도로 완료 상태를 기록하지 않는다.

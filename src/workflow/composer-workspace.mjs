@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { createWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
 import { resolveSkillSession } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
+import { recordExecutionState } from './execution-state.mjs';
 
 export async function createComposerWorkspace({ root, plan_set_id, request, execution_id, codex_session_id }) {
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
@@ -28,6 +29,7 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     context: { plan_set_id: record.plan_set_id, worktree_ref: join(record.session_directory, 'worktree.json'), codex_session_id, stage_id: 'workflow-compose' },
   };
   const input_path = await writeExecutionInput(record.workspace, input, record.plan_set_id);
+  await recordExecutionState({ root: record.workspace, input, binding: { model: null, reasoning_effort: null }, status: 'completed', code: 'OK' });
   return { ...record, input_path };
 }
 

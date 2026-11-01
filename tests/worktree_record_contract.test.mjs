@@ -82,10 +82,10 @@ test('installed compose creates an initial commit in an empty repository', async
     await updateProject({ sourceRoot, targetRoot: root });
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
     const prepared = await findExecutionInput(tree.workspace, 'compose-1');
-    const resultRef = 'runtime/executions/compose-1/result.json';
-    await mkdir(join(tree.session_directory, 'runtime/executions/compose-1'), { recursive: true });
-    await writeFile(join(tree.session_directory, resultRef), JSON.stringify({ worktree_ref: join(tree.session_directory, 'worktree.json') }));
-    await recordExecutionState({ root: tree.workspace, input: prepared.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: resultRef });
+    const composeState = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8')).stages['workflow-compose'];
+    assert.equal(composeState.status, 'completed');
+    assert.equal(composeState.result_ref, null);
+    await assert.rejects(recordExecutionState({ root: tree.workspace, input: prepared.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: join(tree.session_directory, 'worktree.json') }), /does not accept a result path/);
     const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(next.input.skill, 'spec-me');
     assert.equal(next.input.context.role, undefined);

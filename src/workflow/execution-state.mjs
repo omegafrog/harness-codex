@@ -29,6 +29,7 @@ async function processAlive(identity) {
 }
 
 export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null }) {
+  if (input.skill === 'workflow-compose' && result_ref !== null) throw new Error('Workflow composition does not accept a result path');
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
   const stage = input.context?.stage_id || input.skill;

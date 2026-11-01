@@ -24,11 +24,10 @@ try {
   const workflowRef = null;
   const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });
   const composer = state.stages?.['workflow-compose'];
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(composer?.execution_id || '') || !composer.result_ref) throw new Error('Workflow composition record is missing');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(composer?.execution_id || '') || composer.status !== 'completed' || composer.code !== 'OK') throw new Error('Workflow composition record is missing');
   const input = await readExecutionInput({ root: repository, execution_id: composer.execution_id });
-  const result = await readSkillSessionJson({ root: repository, session_directory: session, path: composer.result_ref });
   const worktreeRef = options['worktree-ref'];
-  if ((input.context?.worktree_ref || result.worktree_ref) !== worktreeRef) throw new Error('Worktree reference does not match workflow');
+  if (input.context?.worktree_ref !== worktreeRef) throw new Error('Worktree reference does not match workflow');
   await resolveSkillSession(repository, dirname(worktreeRef));
   const info = await lstat(worktreeRef);
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Worktree record must be a regular file');
