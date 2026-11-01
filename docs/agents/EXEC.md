@@ -210,12 +210,30 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## Codex native setup UI
 
-`$setup`은 session 내부 `runtime/setup/answers.json`에서 사용자 응답을 관리하고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 stdin 대기 없이 needs_input과 live 선택지·안정적인 question ID·configuration_hash를 반환한다. 스킬은 사용 가능한 native request_user_input_async/request_user_input 도구에 표시하고 제출된 value만 저장해 다시 호출한다. 답·기본값을 agent가 추정하지 않고 도구 미지원 시 정확한 사유를 보고한다. needs_input은 완료가 아니며 configured와 exit=0 뒤 source 기반 준비를 이어간다. 잘못된 option·stale config snapshot·session 밖 답 파일은 거부한다. 별도 GUI/설치기 메뉴/agent-only PTY는 사용하지 않는다. 수동 CLI는 유지한다.
+`$setup`은 실행마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 기존 설정이 있으면 재사용 또는 재설정을 질문하고, 재사용 시 유효한 값은 보존하며 누락 항목만 묻는다. 질문과 제출된 답만 해당 실행 파일에 보관하며 이전 설정 해시를 사용하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 스킬은 native 선택 도구에서 실제 제출된 value만 저장한다. 잘못된 option과 session 밖 답 파일은 거부한다. 수동 CLI는 유지한다.
 
 ## 구현 리뷰 회귀 검사
 
 `implementation-review-check` profile은 plan별 영속 수정 한도, 재개·worktree 교체, 지적 분류, 중간 plan과 최종 계약 gate, 설치·업데이트된 CLI와 Git 가시성, 읽기 전용 통합 리뷰 조회, 양쪽 결과 수집과 planning snapshot 변경 차단을 검사한다. 수정 한도 reset은 새 독립 계획 리뷰와 dispatch를 통과한 planning snapshot 변경이 있을 때만 허용하고, 일반 진행 지시로는 초기화되지 않는지도 검사한다. 임시 Git/file fixture를 사용하며 별도 서버·DB와 생성 설정이 없어 prepare/dependencies는 빈 배열이다. `node --test tests/wrapper_repair.test.mjs tests/review_status.test.mjs tests/session-output.test.mjs tests/wrapper_dispatch.test.mjs tests/wrapper_reconciliation.test.mjs tests/wrapper_checkpoint.test.mjs tests/plan_review.test.mjs tests/installer_update.test.mjs tests/tracker_contract.test.mjs`로 실행한다.
 
+
+### 소비자 테스트 저장소의 workflow 재실행
+
+사용자가 소비자 workflow 재실행을 요청하면 `/home/jiwoo/workspace/harness-test`가 Git `main`의 clean 상태인지, 설치된 Harness 버전과 Doctor 결과가 적절한지 먼저 확인한다. 기존 linked worktree 정리는 명시적으로 요청된 경우에만 수행한다. 삭제 전 각 worktree의 tracked·untracked 변경과 `.io`를 포함한 전체 내용을 백업하고 백업을 검증한다. 다른 저장소의 worktree는 건드리지 않는다.
+
+workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 lock을 만들고 linked worktree를 생성한다. 이 테스트의 **상위 `codex exec`는 쓰기 제한이 없는 환경에서** `--sandbox danger-full-access`로 실행한다. 바깥 sandbox가 Git 공통 디렉터리 쓰기를 막으면 이 옵션만으로 해제되지 않으므로 실행 전 쓰기 가능 여부를 확인하고, 막혀 있으면 재시도나 상태 수정 없이 사유를 보고한다. stage 실행은 각 스킬의 기존 실행 계약을 따른다.
+
+Luna medium을 지정한 계산기 테스트는 다음 순서로 실행한다. 첫 명령의 최종 응답에서 생성된 worktree 위치를 확인해 두 번째 명령의 `<생성된-worktree-절대경로>`에 넣는다. `$orchestrator`가 shell 변수로 확장되지 않도록 프롬프트는 작은따옴표로 감싼다.
+
+```bash
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+  -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어'
+
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+  -C '<생성된-worktree-절대경로>' '$orchestrator 계속 진행해'
+```
+
+로그와 마지막 응답은 각 실행의 `.io` 아래에 보존한다. 사용자가 중단 시 개입하지 말라고 한 테스트에서는 오류·중단 후 실행 상태나 산출물을 수정하거나 재시도하지 않고 실제 결과를 보고한다. 정상적으로 질문이 반환되면 기존에 승인되거나 위임된 선택을 사용한다. `spec-me` 완료 receipt와 Spec·리뷰 산출물을 확인하고 요청한 단계에서 멈춘다.
 
 ### Orchestrator 작업 실행
 

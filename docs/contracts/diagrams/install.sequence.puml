@@ -22,20 +22,22 @@ update -> update : 폐기 managed skill backup 후 제거
 update --> install : lock·변경·backup 경로
 install --> 사용자 : $setup 안내
 사용자 -> setupSkill : $setup 실행
+setupSkill -> setup : 현재 설정 재사용 또는 재설정 선택
+setup --> setupSkill : 기존 설정과 누락 항목 확인
 loop needs_input 질문이 남아 있음
   setupSkill -> setup : --root ROOT --answers <sessionJSON>
-  setup --> setupSkill : needs_input {question: {id, prompt, type, options, current, context}, configuration_hash}
+  setup --> setupSkill : needs_input {question: {id, prompt, type, options, current, context}}
   setupSkill -> nativeUI : request_user_input_async / request_user_input(question)
   nativeUI --> 사용자 : prompt·options·context 표시; 마지막 확인은 context summary 포함
   사용자 -> nativeUI : 제출한 선택값
   nativeUI --> setupSkill : 선택값 반환
-  setupSkill -> setupSkill : session JSON {answers: {questionId: submittedValue}, configuration_hash} 저장
+  setupSkill -> setupSkill : session JSON {answers: {questionId: submittedValue}} 저장
 end
 setupSkill -> setup : 다음 질문까지 재실행; 마지막은 context summary 확인
 alt configured and exit 0
   setup --> setupSkill : 설정 적용 완료·configured
   setupSkill --> 사용자 : 이후 준비 계속
-else snapshot stale·option invalid·apply 실패
+else option invalid·apply 실패
   setup --> setupSkill : 오류; configured 아님
   setupSkill --> 사용자 : 중단; 후속 준비 안 함
 end
@@ -73,7 +75,7 @@ else 선택 안 함
   setup --> 사용자 : 관측성 구성 생략
 end
 note over setup, logs
-  질문 ID는 prompt와 occurrence로 안정화한다. stale configuration snapshot, 유효하지 않은 option, session 외부 파일은 거부한다.
+  질문 ID는 prompt와 occurrence로 안정화한다. setup 실행별 답 파일을 사용하며 유효하지 않은 option과 session 외부 파일은 거부한다.
   마지막 native 확인은 context summary를 보여준다. 설정 적용과 exit 0 이후에만 configured를 반환한다.
   수동 terminal mode는 유지한다. $setup skill은 native UI 답변만 session JSON으로 전달한다.
   setup은 서버를 자동 실행하지 않는다.

@@ -291,7 +291,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.ok(reviewRequest.properties.agent_profile.enum.includes('architecture_review_lead'));
     assert.ok(reviewRequest.properties.agent_profile.enum.includes('default'));
     assert.ok(reviewRequest.properties.agent_profile.enum.includes(null));
-    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [], questions: [{ question_id: 'scope', question: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
+    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionResult));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
     await writeFile(join(resultDir, 'return.json'), JSON.stringify(answerEnvelope));
@@ -302,7 +302,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);
     assert.equal(validated.result.questions.length, 1);
     assert.equal(validated.result.questions[0].question_id, `${next.input.execution_id}:1`);
+    assert.equal(validated.result.questions[0].title, '범위는?');
     assert.deepEqual(validated.result, JSON.parse(await readFile(join(resultDir, 'result.json'), 'utf8')));
+    const { title, ...oldItem } = questionResult.questions[0];
+    await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...questionResult, questions: [{ ...oldItem, question: title }] }));
+    assert.throws(() => execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, stdio: 'pipe' }));
+    await writeFile(join(resultDir, 'result.json'), JSON.stringify(validated.result));
     await writeFile(join(resultDir, 'return.json'), JSON.stringify({ ...answerEnvelope, status: 'completed', code: 'OK' }));
     assert.throws(() => execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, stdio: 'pipe' }));
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'result.json'), 'utf8')), validated.result);
@@ -358,7 +363,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: resultRefForQuestion });
     const implementationReviewResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Implementation review findings: adjust behavior covered by test case A.'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(implementationReviewResume.input.context.resume_session_id, record.worktree_id);
-    const multi = { ...questionResult, questions: [questionResult.questions[0], { ...questionResult.questions[0], question_id: 'input', question: '입력 방식은?' }] };
+    const multi = { ...questionResult, questions: [questionResult.questions[0], { ...questionResult.questions[0], question_id: 'input', title: '입력 방식은?' }] };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(multi));
     await writeFile(join(resultDir, 'return.json'), JSON.stringify({ ...answerEnvelope, result: multi }));
     const normalized = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
@@ -413,7 +418,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(replan.input.context.transition.result_ref, revisionRef);
     const replanInput = await findExecutionInput(tree.workspace, replan.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
-    const question = { question_id: `${replan.input.execution_id}:1`, question: '계획을 선택하세요', options: [{ id: 'a', label: 'A', consequence: 'A 적용' }, { id: 'b', label: 'B', consequence: 'B 적용' }], recommended_option_id: 'a', rationale: '테스트' };
+    const question = { question_id: `${replan.input.execution_id}:1`, title: '계획을 선택하세요', options: [{ id: 'a', label: 'A', consequence: 'A 적용' }, { id: 'b', label: 'B', consequence: 'B 적용' }], recommended_option_id: 'a', rationale: '테스트' };
     const waitingRef = `runtime/executions/${replan.input.execution_id}/result.json`;
     const waitingResult = { schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], questions: [question], review_request: null };
     await writeFile(join(tree.session_directory, waitingRef), JSON.stringify(waitingResult));

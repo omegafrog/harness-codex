@@ -104,7 +104,7 @@
         "additionalProperties": false,
         "required": [
           "question_id",
-          "question",
+          "title",
           "options",
           "recommended_option_id",
           "rationale"
@@ -114,7 +114,7 @@
             "type": "string",
             "minLength": 1
           },
-          "question": {
+          "title": {
             "type": "string",
             "minLength": 1
           },

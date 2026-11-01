@@ -21,6 +21,9 @@ test('flow schemas expose only the questions array', async () => {
     assert.equal(Object.hasOwn(schema.properties, 'question'), false, file);
     assert.ok(schema.properties.questions);
     assert.ok(schema.required.includes('questions'));
+    const item = schema.properties.questions.items;
+    assert.ok(item.required.includes('title'), file);
+    assert.equal(Object.hasOwn(item.properties, 'question'), false, file);
   }
 });
 
@@ -35,6 +38,9 @@ test('generated output schemas expose questions without a singular result field'
       assert.equal(schema.properties.result.required.includes('question'), false);
       assert.ok(Object.hasOwn(schema.properties.result.properties, 'questions'));
       assert.ok(schema.properties.result.required.includes('questions'));
+      const item = schema.properties.result.properties.questions.items;
+      assert.ok(item.required.includes('title'));
+      assert.equal(Object.hasOwn(item.properties, 'question'), false);
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -46,6 +52,41 @@ test('input context types canonical and legacy profile keys', async () => {
   for (const key of ['agent_profile', 'role']) {
     assert.equal(schema.properties.context.properties[key].type, 'string');
     assert.match('spec_document_writer', new RegExp(schema.properties.context.properties[key].pattern));
+  }
+});
+
+test('installed stage accepts changed documents while preserving review snapshots', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-mutable-artifact-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const session = join(root, '.io');
+    await mkdir(session, { recursive: true });
+    const path = 'product-spec.md';
+    const originalHash = createHash('sha256').update('original').digest('hex');
+    await writeFile(join(root, path), 'revised');
+    const reference = { base: 'workspace', path, kind: 'product-spec', sha256: originalHash };
+    const input = { schema_version: 1, execution_id: 'stage-1', skill: 'spec-me', workspace_root: root, session_directory: session, scope: 'calculator', input_refs: [reference] };
+    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Updated', artifacts: [reference], questions: [], review_request: null };
+    const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
+    await validateSkillInput({ root, input });
+    assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
+    await rm(join(root, path));
+    await assert.rejects(validateSkillInput({ root, input }), { code: 'ENOENT' });
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'consumer owned');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
+    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/skill-execution.mjs'], { cwd: root });
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
