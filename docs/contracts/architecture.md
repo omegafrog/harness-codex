@@ -15,12 +15,12 @@ Harness의 단일 Bounded Context. workflow·review·evidence·실행 상태를 
 다른 내부 Context는 현재 없다. 내부는 동기 함수 호출/Promise로 연결한다. 외부 [Codex](architecture.md#codex-external)는 subprocess/plugin CLI, [OpenTelemetry Collector](architecture.md#opentelemetry-collector-external)·[VictoriaLogs](architecture.md#victorialogs-external)·[VictoriaMetrics](architecture.md#victoriametrics-external)는 선택적 로컬 개발 수집·조회 경계, [GitHub](architecture.md#github-external)와 [Beads](architecture.md#beads-external)는 adapter/CLI 경계다. 파일 journal의 append/replay와 tracker 상태는 별개 경계이며 분산 transaction이나 exactly-once를 가정하지 않는다. 실패는 checkpoint와 retry/unblock 근거를 남긴다.
 
 ### 내부 구성요소
-[installer-service](architecture.md#installer-service) · [doctor-service](architecture.md#doctor-service) · [workspace-service](architecture.md#workspace-service) · [wrapper-service](architecture.md#wrapper-service) · [decision-service](architecture.md#decision-service) · [evidence-service](architecture.md#evidence-service) · [eval-service](architecture.md#eval-service) · [contracts-service](architecture.md#contracts-service) · [checkpoint-store](architecture.md#checkpoint-store) · [workflow-completion-service](architecture.md#workflow-completion-service) · [tracker-lifecycle](architecture.md#tracker-lifecycle) · [workflow-worktrees](architecture.md#workflow-worktrees) · [session-output-service](architecture.md#session-output-service) · [execution-service](architecture.md#execution-service) · [spec-review-service](architecture.md#spec-review-service) · [plan-traceability-service](architecture.md#plan-traceability-service)
+[installer-service](architecture.md#installer-service) · [doctor-service](architecture.md#doctor-service) · [workspace-service](architecture.md#workspace-service) · [wrapper-service](architecture.md#wrapper-service) · [decision-service](architecture.md#decision-service) · [evidence-service](architecture.md#evidence-service) · [eval-service](architecture.md#eval-service) · [contracts-service](architecture.md#contracts-service) · [checkpoint-store](architecture.md#checkpoint-store) · [workflow-completion-service](architecture.md#workflow-completion-service) · [tracker-lifecycle](architecture.md#tracker-lifecycle) · [workflow-worktrees](architecture.md#workflow-worktrees) · [session-output-service](architecture.md#session-output-service) · [execution-service](architecture.md#execution-service) · [spec-review-service](architecture.md#spec-review-service) · [plan-review-service](architecture.md#plan-review-service)
 
 ### 배포
 현재 package.json의 CLI가 같은 package로 배포된다. 측정된 독립 release·장애 격리·성능 요구가 현재 경계로 충족되지 않을 때 별도 배포를 검토한다. broker나 모듈별 서버를 선제 도입하지 않는다.
 
-내부 workflow 절차는 `.codex/internal-skills/<id>/GUIDE.md`와 supporting files를 원본·소비자에 같은 경로로 배포한다. 공개 진입점은 원본 `.codex/skills/<id>/SKILL.md`, 소비자 `.agents/skills/<id>/SKILL.md`다. 기존 workflow loader가 내부 GUIDE를 먼저 해석하고 skill ID는 유지한다. installer discovery·lock·skills-only 경로가 내부 자산도 관리하며, 내부 대체 파일이 있는 구형 관리 공개 파일은 백업 후 제거한다. Markdown과 agent profile의 공개 스킬 경로는 기존 project-local transform으로 치환한다. [설치·이전 회귀](../../tests/internal_skills.test.mjs)는 실제 소비자 트리의 비노출·workflow 해석·상호 링크·구형 사본 백업/제거를 검증한다.
+내부 workflow 절차는 `.codex/internal-skills/<id>/GUIDE.md`와 supporting files를 원본·소비자에 같은 경로로 배포한다. 공개 진입점은 원본 `.codex/skills/<id>/SKILL.md`, 소비자 `.agents/skills/<id>/SKILL.md`다. 기존 workflow loader가 내부 GUIDE를 먼저 해석하고 skill ID는 유지한다. installer discovery·lock·skills-only 경로가 내부 자산도 관리하며, 내부 대체 파일이 있는 구형 관리 공개 파일은 백업 후 제거한다. Markdown과 agent profile의 공개 스킬 경로는 기존 project-local transform으로 치환한다. [설치 consumer 회귀](../../tests/worktree_record_contract.test.mjs)는 실제 소비자 트리의 비노출·workflow 해석·상호 링크·구형 사본 백업/제거를 검증한다.
 
 <a id="codex-external"></a>
 ## Codex CLI
@@ -107,7 +107,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 수정일: 2026-10-24
 
 ### 설명
-설치 CLI는 프로젝트 자산 동기화를 수행한다. setup CLI가 live model/effort, tracker, Beads, OTel 관측성 사용 여부·세 endpoint 포트·저장소별 보존 기간·프로젝트/서비스별 실제 Actuator URL을 Codex CLI 내부 native UI에서 수집한다. harness-setup.mjs --check는 현재 설정과 context budget을 읽기 전용으로 확인하고, --answers는 setup 실행별 답 파일을 검증하며, 다음 needs_input 질문의 안정적인 ID·prompt·type·options/current/context 또는 configured 결과를 JSON으로 반환한 뒤 종료한다. 입력용 stdin/PTY를 남기지 않는다. 스킬은 실제 노출된 request_user_input_async/request_user_input 도구를 통해 제출된 value만 답 파일에 전달한다. 기존 설정은 명시적 setup에서 재사용 또는 재설정하고 재사용 시 유효한 값은 보존한다. 설정 해시는 요구하지 않으며 잘못된 선택은 거부하고 변경 적용 전 실제 선택 요약을 표시한다. 수동 CLI는 유지하되 $setup은 별도 GUI·설치기 메뉴를 호출하지 않는다. 선택 시 harness-victorialogs.mjs가 compose·Collector·scrape·개발 Spring/OTel config·공식 MCP 두 개 설정과 실행 profile을 준비하고 victorialogs-local-setup이 실제 앱 개발 profile을 source에 맞춰 연결한다. SigNoz marketplace 자동 등록은 제거했다. [자산 동기화](../../src/installer/update.mjs) · [설치 CLI](../../bin/harness-install.mjs) · [Native setup engine](../../.codex/scripts/harness-setup.mjs) · [관측성 설정](../../.codex/scripts/harness-victorialogs.mjs).
+설치 CLI는 프로젝트 자산 동기화를 수행한다. setup CLI가 live model/effort, tracker, Beads, OTel 관측성 사용 여부·세 endpoint 포트·저장소별 보존 기간·프로젝트/서비스별 실제 Actuator URL을 Codex CLI 내부 native UI에서 수집한다. harness-setup.mjs --check는 현재 설정과 context budget을 읽기 전용으로 확인하고, --answers는 setup 실행별 답 파일을 검증하며, 다음 needs_input 질문의 안정적인 ID·prompt·type·options/current/context 또는 configured 결과를 JSON으로 반환한 뒤 종료한다. 입력용 stdin/PTY를 남기지 않는다. 스킬은 실제 노출된 request_user_input_async/request_user_input 도구를 통해 제출된 value만 답 파일에 전달한다. 기존 설정은 명시적 setup에서 재사용 또는 재설정하고 재사용 시 유효한 값은 보존한다. 설정 해시는 요구하지 않으며 잘못된 선택은 거부하고 변경 적용 전 실제 선택 요약을 표시한다. 수동 CLI는 유지하되 $setup은 별도 GUI·설치기 메뉴를 호출하지 않는다. 선택 시 harness-victorialogs.mjs가 compose·Collector·scrape·개발 Spring/OTel config·공식 MCP 두 개 설정과 실행 profile을 준비하고 victorialogs-local-setup이 실제 앱 개발 profile을 source에 맞춰 연결한다. SigNoz marketplace 자동 등록은 제거했다. [자산 동기화](../../.harness/src/installer/update.mjs) · [설치 CLI](../../bin/harness-install.mjs) · [Native setup engine](../../.codex/scripts/harness-setup.mjs) · [관측성 설정](../../.codex/scripts/harness-victorialogs.mjs).
 
 ### 메서드
 [updateProject](architecture.md#update-method) · [setupVictoriaLogs](architecture.md#setup-victorialogs-method) · [validateDiagnosticLog](architecture.md#validate-diagnostic-log-method)
@@ -118,14 +118,14 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 ### 동작
 관리 자산 발견→hash 비교→백업/교체→lock 반영. `src/**/*.mjs`는 installed runtime 경로로 자동 배포되어 workflow completion 정책도 fresh install/update에 전달된다. exclude 변경은 실제 Git root가 설치 대상 root와 일치할 때만 수행해 초기화 전 하위 디렉터리 설치가 부모 저장소에 영향을 주지 않는다. install/update는 원본 checkout에서 설치를 건너뛰기 전 낡은 로컬 .codex exclude를 정리한다. 설치에는 VictoriaLogs helper·스킬·assets를 포함하고 소비 프로젝트 setup에서 선택할 때 설정을 생성한다. backend는 별도 harness-exec foreground profile로 시작한다. 관리 lock으로 식별한 폐기 signoz-local-setup 스킬은 session backup 후 제거한다. 이전 사용자 데이터·서버·전역 plugin/MCP는 임의 제거하지 않는다.
 
-`harness-recover`의 [스킬 지침](../../.codex/skills/harness-recover/SKILL.md)은 기존 doctor·preflight·tracker·worktree CLI를 증상별로 조회하고 사용자 승인 후 해당 소유 절차를 호출한다. 별도 runtime 상태나 복구 실행기를 추가하지 않는다. installer의 재귀 skill discovery와 경로 변환으로 소비 프로젝트에 설치·갱신하고, Doctor의 lock inventory 검사와 기존 ignore 경로를 적용한다. [설치 회귀 검사](../../tests/installer_update.test.mjs)는 최초 배포·누락 진단·업데이트 복원·lock·Git 비노출과 준비 문서 보존을 확인한다.
+`harness-recover`의 [스킬 지침](../../.codex/skills/harness-recover/SKILL.md)은 기존 doctor·preflight·tracker·worktree CLI를 증상별로 조회하고 사용자 승인 후 해당 소유 절차를 호출한다. 별도 runtime 상태나 복구 실행기를 추가하지 않는다. installer의 재귀 skill discovery와 경로 변환으로 소비 프로젝트에 설치·갱신하고, Doctor의 lock inventory 검사와 기존 ignore 경로를 적용한다. [설치 consumer 회귀 검사](../../tests/worktree_record_contract.test.mjs)는 최초 배포·누락 진단·업데이트 복원·lock·Git 비노출과 준비 문서 보존을 확인한다.
 
 <a id="update-method"></a>
 ## updateProject
 수정일: 2026-10-23
 
 ### 설명
-updateProject의 실제 public entrypoint. [소스](../../src/installer/update.mjs).
+updateProject의 실제 public entrypoint. [소스](../../.harness/src/installer/update.mjs).
 
 ### 필요 엔티티
 사용자 파일·source descriptor·managed lock
@@ -133,7 +133,7 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 ### 동작
 관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. workflow completion runtime을 업데이트할 때는 이전 설치본과 같은 tracked asset 경로를 사용한다.
 
-설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
+설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../.harness/src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
 
 <a id="setup-victorialogs-method"></a>
 ## setupVictoriaLogs
@@ -143,17 +143,17 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 setup CLI가 선택한 로컬 VictoriaLogs 구성을 프로젝트 자산과 실행 계약으로 준비한다. [소스](../../.codex/scripts/harness-victorialogs.mjs).
 
 ### 필요 엔티티
-프로젝트 root·사용자가 선택한 localhost port·보존 일수·기존 profile/config·공통 Git directory·원본 프로젝트 session directory.·shared_guidance_root와 진단 로그 v1 계약.
+프로젝트 root·사용자가 선택한 localhost port·보존 일수·기존 profile/config·공통 Git directory·원본 프로젝트 session directory.·활성 workspace 지침과 진단 로그 v1 계약.
 
 ### 동작
-로그/메트릭/OTLP 포트 중복·범위, 저장소별 보존 기간, 유일한 프로젝트 ID/Git root와 서비스·비밀값 없는 HTTP(S) 앱 기준 Actuator URL과 컨테이너 기준 scrape_url을 검증한다. compose·otel-collector.yaml·scrape.json·Spring 개발 config·otel-javaagent.properties·README·공식 stdio MCP 두 개를 준비한다. 기존 MCP 항목·업무 지침·다른 실행 profile은 보존한다. managed 실행 profile은 새 config_inputs로 갱신하고 설정 불일치는 실행 전 차단한다. target 변경 후 setup으로 scrape를 재생성해야 한다. 구형 host network/Fluent Bit compose와 Collector config는 session backup 후 bridge 구성으로 교체하고 구형 파일·offset은 복구용으로 보존한다. 진단 v1 schema·예시·Docker 없는 원본 JSONL 검사 profile도 배포한다. 같은 Git common directory의 shared_guidance_root를 확인해 구현/테스트 지침의 관리 항목을 갱신한다. 각 실제 Spring 앱의 SDK/appender 또는 개발 외부 Java agent와 Actuator/Prometheus registry 연결은 source-aware 설치 스킬이 수행하며 production artifact 분리를 확인한다. 로그 source가 없는 Node 원본의 설정 준비와 실제 앱 수집을 구분한다. setup은 서버를 시작하지 않으며 start/check/stop은 harness-exec profile을 사용한다. check는 Collector·두 backend API만 확인한다. 데이터·queue는 원본 프로젝트 session 내부에 보존하고 컨테이너 UID/GID를 실행 사용자에 맞춰 host의 소유권 문제를 피한다. 앱·컨테이너별 주소 관점과 공개 port·내부 service DNS를 EXEC에 기록한다. infrastructure profile은 최초 Collector image 준비·config 검증에 180초를 허용한다. 연결 probe는 listener 내부 known-response를 먼저 확인하고 필수 경로 실패를 nonzero로 보고한다. synthetic OTLP 이벤트의 실제 LogsQL 검색과 WSL 임시 Prometheus endpoint의 up=1을 확인한 실행 근거를 보존하며 실제 Spring emitter 준수·MCP handshake와 구분한다.
+로그/메트릭/OTLP 포트 중복·범위, 저장소별 보존 기간, 유일한 프로젝트 ID/Git root와 서비스·비밀값 없는 HTTP(S) 앱 기준 Actuator URL과 컨테이너 기준 scrape_url을 검증한다. compose·otel-collector.yaml·scrape.json·Spring 개발 config·otel-javaagent.properties·README·공식 stdio MCP 두 개를 준비한다. 기존 MCP 항목·업무 지침·다른 실행 profile은 보존한다. managed 실행 profile은 새 config_inputs로 갱신하고 설정 불일치는 실행 전 차단한다. target 변경 후 setup으로 scrape를 재생성해야 한다. 구형 host network/Fluent Bit compose와 Collector config는 session backup 후 bridge 구성으로 교체하고 구형 파일·offset은 복구용으로 보존한다. 진단 v1 schema·예시·Docker 없는 원본 JSONL 검사 profile도 배포한다. 실행 중인 workspace의 구현/테스트 지침을 갱신한다. 각 실제 Spring 앱의 SDK/appender 또는 개발 외부 Java agent와 Actuator/Prometheus registry 연결은 source-aware 설치 스킬이 수행하며 production artifact 분리를 확인한다. 로그 source가 없는 Node 원본의 설정 준비와 실제 앱 수집을 구분한다. setup은 서버를 시작하지 않으며 start/check/stop은 harness-exec profile을 사용한다. check는 Collector·두 backend API만 확인한다. 데이터·queue는 원본 프로젝트 session 내부에 보존하고 컨테이너 UID/GID를 실행 사용자에 맞춰 host의 소유권 문제를 피한다. 앱·컨테이너별 주소 관점과 공개 port·내부 service DNS를 EXEC에 기록한다. infrastructure profile은 최초 Collector image 준비·config 검증에 180초를 허용한다. 연결 probe는 listener 내부 known-response를 먼저 확인하고 필수 경로 실패를 nonzero로 보고한다. synthetic OTLP 이벤트의 실제 LogsQL 검색과 WSL 임시 Prometheus endpoint의 up=1을 확인한 실행 근거를 보존하며 실제 Spring emitter 준수·MCP handshake와 구분한다.
 
 <a id="validate-diagnostic-log-method"></a>
 ## validateDiagnosticLog
 수정일: 2026-10-22
 
 ### 설명
-[사용자 진단 v1 계약](../../.codex/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md)의 typed LogRecord를 검사하는 순수 함수다. [소스](../../src/observability/diagnostic-logs.mjs).
+[사용자 진단 v1 계약](../../.codex/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md)의 typed LogRecord를 검사하는 순수 함수다. [소스](../../.harness/src/observability/diagnostic-logs.mjs).
 
 ### 필요 엔티티
 정규화된 원본 JSON record와 배포 v1 JSON Schema. 새로운 BC/Aggregate 없이 기존 Harness 설치·검증 지원 경계에 둔다.
@@ -166,7 +166,7 @@ Timestamp·EventName·Resource·Attributes, 일곱 catalog별 required/outcome, 
 수정일: 2026-10-23
 
 ### 설명
-현재 src/doctor/doctor.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/doctor/doctor.mjs).
+현재 src/doctor/doctor.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/doctor/doctor.mjs).
 
 ### 메서드
 [runDoctor](architecture.md#doctor-method)
@@ -182,7 +182,7 @@ Timestamp·EventName·Resource·Attributes, 일곱 catalog별 required/outcome, 
 수정일: 2026-10-23
 
 ### 설명
-runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
+runDoctor의 실제 public entrypoint. [소스](../../.harness/src/doctor/doctor.mjs).
 
 ### 필요 엔티티
 설치 설정·runtime·진단 결과
@@ -228,7 +228,7 @@ inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후�
 수정일: 2026-10-24
 
 ### 설명
-현재 src/wrapper/dispatch.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/wrapper/dispatch.mjs).
+현재 src/wrapper/dispatch.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/wrapper/dispatch.mjs).
 
 ### 메서드
 [reserveImplementationRepair](architecture.md#reserve-implementation-repair-method) · [executeImplementPlan](architecture.md#execute-method)
@@ -237,7 +237,7 @@ inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후�
 plan·checkpoint·fixed point·review 결과·tracker snapshot (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-구현 reviewer 입력은 completion_kind:plan_implemented와 canonical_plan의 kind/reference/input_key/hash_algorithm/normalization/sha256를 전달한다. 공유 원장의 가상 키와 실제 파일·GitHub 정본을 구분한다. validateCanonicalPlanReference가 metadata 누락·지원하지 않는 정규화·잘못된 참조를 spawn 전에 거부한다. 정본 본문 hash는 frontmatter-status-excluded-v1로 시작 YAML frontmatter의 status 행만 제외하며 실제 내용 일치는 traceability snapshot gate가 검사한다. source·실행 프로필은 지정된 구현 commit을, Spec·계획은 승인 snapshot을 기준으로 검토한다. 수정 전 영속 예약을 확보하고 구조화 지적 전체를 수정한다. 두 축을 Promise.all로 수집한 뒤 동일 planning snapshot을 기준으로 수정한다. 입력에 plan_set_id·planning_snapshot_sha256을 전달하고 reviewer 생성 전·repair 예약 전 현재 dispatch 승인 및 fingerprint를 검사한다. 최종 completion traceability의 fingerprint도 비교해 검토 중 바뀌고 재승인된 계획으로 옛 리뷰를 통과시키는 경로를 차단한다.
+구현 reviewer 입력은 completion_kind:plan_implemented와 canonical_plan의 kind/reference/input_key/hash_algorithm/normalization/sha256를 전달한다. 공유 원장의 가상 키와 실제 파일·GitHub 정본을 구분한다. validateCanonicalPlanReference가 metadata 누락·지원하지 않는 정규화·잘못된 참조를 spawn 전에 거부한다. plan-review gate가 Spec·계획 snapshot의 freshness와 canonical plan의 정규화 hash를 확인한다. source·실행 프로필은 지정된 구현 commit을, Spec·계획은 승인 snapshot을 기준으로 검토한다. 수정 전 영속 예약을 확보하고 구조화 지적 전체를 수정한다. 두 축을 Promise.all로 수집한 뒤 동일 planning snapshot을 기준으로 수정한다. 입력에 plan_set_id·planning_snapshot_sha256을 전달하고 reviewer 생성 전·repair 예약 전 현재 dispatch 승인을 검사한다. 최종 completion gate도 현재 계획 검토 snapshot을 확인한다.
 
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
@@ -246,7 +246,7 @@ workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→r
 수정일: 2026-10-24
 
 ### 설명
-executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dispatch.mjs).
+executeImplementPlan의 실제 public entrypoint. [소스](../../.harness/src/wrapper/dispatch.mjs).
 
 ### 필요 엔티티
 plan·checkpoint·fixed point·review 결과·tracker snapshot
@@ -256,18 +256,18 @@ plan·checkpoint·fixed point·review 결과·tracker snapshot
 
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
-dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. managed worktree caller는 source project root(`return_root`)를 absolute `shared_guidance_root`로 구현/test worker에 전달하고, 동일 Git common directory인지 검증한다. implementer는 공유 구현·테스트 지침을 읽고, test runner는 공유 테스트 지침을 읽는다. worker는 branch-local copy를 참조하지 않는다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
+dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. managed worktree caller는 실행 중인 `workspace_root`의 추적 구현·테스트 지침을 worker에 전달한다. implementer와 test runner는 해당 workspace의 지침을 읽고, workflow owner는 사용자 선호/확인된 교훈을 그 파일에 기록해 branch와 함께 push한다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
 
 구현·계획·Standards 리뷰는 testing-guidance GUIDE의 비즈니스 로직 단위 테스트 기준을 공유한다. 구현 agent의 test-first 권고를 제거하고 승인 Spec 기반 구현과 소유 업무 규칙의 실행 가능한 요구사항 사례를 적용한다. 설치기는 기존 agent profile 및 내부 GUIDE/공개 skill 재귀 배포·경로 변환을 사용하며 Doctor inventory와 관리 자산 ignore 소유권을 유지한다.
 
-구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eLearningComplete](../../src/eval/contracts.mjs)는 학습 상태만 별도로 보고한다. lifecycle tests gate와 wrapper testsPassed는 현재 필수 테스트의 실제 결과로 판정한다. 학습 분류·대상 파일·lesson·예방 조치가 미완료이면 e2e_learning을 pending으로 남기되 테스트 통과와 workflow 완료를 막지 않는다. 재사용할 교훈이 없으면 not_reusable과 판단 근거만 기록하고 파일 갱신을 요구하지 않는다. 실패 이력은 다음 성공 뒤에도 보존한다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
+구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eLearningComplete](../../.harness/src/eval/contracts.mjs)는 학습 상태만 별도로 보고한다. lifecycle tests gate와 wrapper testsPassed는 현재 필수 테스트의 실제 결과로 판정한다. 학습 분류·대상 파일·lesson·예방 조치가 미완료이면 e2e_learning을 pending으로 남기되 테스트 통과와 workflow 완료를 막지 않는다. 재사용할 교훈이 없으면 not_reusable과 판단 근거만 기록하고 파일 갱신을 요구하지 않는다. 실패 이력은 다음 성공 뒤에도 보존한다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
 
 <a id="reserve-implementation-repair-method"></a>
 ## reserveImplementationRepair
 수정일: 2026-10-24
 
 ### 설명
-wrapper runtime과 수동 구현 workflow의 수정 예약을 같은 영속 기록으로 연결한다. [소스](../../src/wrapper/repair.mjs), [CLI](../../.codex/scripts/harness-code-review.mjs)
+wrapper runtime과 수동 구현 workflow의 수정 예약을 같은 영속 기록으로 연결한다. [소스](../../.harness/src/wrapper/repair.mjs), [CLI](../../.codex/scripts/harness-code-review.mjs)
 
 ### 필요 엔티티
 실행 workspace·plan ID·fixed point/구현 commit/diff/Spec 경로를 담은 reviewInput·두 독립 fresh reviewer 응답·설정된 수정 한도·명시적 사용자 재개 사유.
@@ -280,7 +280,7 @@ Git worktree 목록의 primary checkout에 저장 위치를 고정한다. review
 수정일: 2026-10-16
 
 ### 설명
-현재 src/decision/review.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/decision/review.mjs).
+현재 src/decision/review.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/decision/review.mjs).
 
 ### 속성
 | 속성 | 타입 | 설명 |
@@ -293,14 +293,14 @@ Git worktree 목록의 primary checkout에 저장 위치를 고정한다. review
 ### 비즈니스 규칙
 BR-decisions: 승인·근거·review 상태의 충분성을 판단한다. 여러 artifact의 계약이어서 entity 없는 함수형 모델에서 이 모듈이 규칙을 소유한다.
 
-`spec-me`의 조회 우선 orchestration은 [내부 근거 스킬](../../.codex/skills/spec-me/references/decision-knowledge.md)이 소유한다. 기존 `src/knowledge/registry.mjs`의 `lookupPrinciples`/`readEvidence`를 읽기 전용으로 사용하고 부족분 수집·승인은 기존 knowledge-harvest workflow 역할에 위임한다. 신규 runtime gate나 공개 entrypoint는 추가하지 않는다. supporting reference는 기존 installer의 재귀 탐색으로 `.agents/skills/spec-me/references/`에 설치·갱신되며 [설치 소비자 회귀 검사](../../tests/installer_update.test.mjs)로 내용·호출 링크·lock·비노출을 확인한다.
+`spec-me`의 조회 우선 orchestration은 [내부 근거 스킬](../../.codex/skills/spec-me/references/decision-knowledge.md)이 소유한다. 기존 `src/knowledge/registry.mjs`의 `lookupPrinciples`/`readEvidence`를 읽기 전용으로 사용하고 부족분 수집·승인은 기존 knowledge-harvest workflow 역할에 위임한다. 신규 runtime gate나 공개 entrypoint는 추가하지 않는다. supporting reference는 기존 installer의 재귀 탐색으로 `.agents/skills/spec-me/references/`에 설치·갱신되며 [설치 schema·Doctor 회귀 검사](../../tests/skill_execution_schema_compatibility.test.mjs)로 내용·호출 링크·lock·비노출을 확인한다.
 
 <a id="decision-method"></a>
 ## evaluateDecisionGate
 수정일: 2026-10-16
 
 ### 설명
-evaluateDecisionGate의 실제 public entrypoint. [소스](../../src/decision/review.mjs).
+evaluateDecisionGate의 실제 public entrypoint. [소스](../../.harness/src/decision/review.mjs).
 
 ### 비즈니스 규칙
 BR-decisions: 승인·근거·review 상태의 충분성을 판단한다. 여러 artifact의 계약이어서 entity 없는 함수형 모델에서 이 모듈이 규칙을 소유한다. 기능 [decisions](product.md#decisions)의 규칙과 수용 조건을 적용하며 검증은 해당 Product section의 테스트를 참조한다.
@@ -310,7 +310,7 @@ BR-decisions: 승인·근거·review 상태의 충분성을 판단한다. 여러
 수정일: 2026-10-16
 
 ### 설명
-현재 src/knowledge/evidence.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/knowledge/evidence.mjs).
+현재 src/knowledge/evidence.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/knowledge/evidence.mjs).
 
 ### 속성
 | 속성 | 타입 | 설명 |
@@ -328,7 +328,7 @@ BR-evidence: 공개 summary 승인 전이를 검증한다. 게시와 승인 arti
 수정일: 2026-10-16
 
 ### 설명
-approveEvidenceSummary의 실제 public entrypoint. [소스](../../src/knowledge/evidence.mjs).
+approveEvidenceSummary의 실제 public entrypoint. [소스](../../.harness/src/knowledge/evidence.mjs).
 
 ### 비즈니스 규칙
 BR-evidence: 공개 summary 승인 전이를 검증한다. 게시와 승인 artifact의 관계를 이 모듈이 소유하며 호출자가 상태를 임의로 우회하지 않는다. 기능 [evidence](product.md#evidence)의 규칙과 수용 조건을 적용하며 검증은 해당 Product section의 테스트를 참조한다.
@@ -338,7 +338,7 @@ BR-evidence: 공개 summary 승인 전이를 검증한다. 게시와 승인 arti
 수정일: 2026-10-16
 
 ### 설명
-현재 src/eval/runner.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/eval/runner.mjs).
+현재 src/eval/runner.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/eval/runner.mjs).
 
 ### 메서드
 [runSuite](architecture.md#suite-method)
@@ -354,7 +354,7 @@ case 실행→측정·분류→report·event 보존→cleanup을 조립한다. �
 수정일: 2026-10-16
 
 ### 설명
-runSuite의 실제 public entrypoint. [소스](../../src/eval/runner.mjs).
+runSuite의 실제 public entrypoint. [소스](../../.harness/src/eval/runner.mjs).
 
 ### 필요 엔티티
 suite·case·격리 workspace·grader 결과
@@ -367,7 +367,7 @@ case 실행→측정·분류→report·event 보존→cleanup을 조립한다. �
 수정일: 2026-10-16
 
 ### 설명
-현재 src/contracts/contracts.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/contracts/contracts.mjs).
+현재 src/contracts/contracts.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.harness/src/contracts/contracts.mjs).
 
 ### 속성
 | 속성 | 타입 | 설명 |
@@ -385,7 +385,7 @@ BR-contracts-feature: 필수 구성·source/diagram 정합성·version을 판정
 수정일: 2026-10-16
 
 ### 설명
-inspectContracts의 실제 public entrypoint. [소스](../../src/contracts/contracts.mjs).
+inspectContracts의 실제 public entrypoint. [소스](../../.harness/src/contracts/contracts.mjs).
 
 ### 비즈니스 규칙
 BR-contracts-feature: 필수 구성·source/diagram 정합성·version을 판정한다. inspect는 읽기 전용이다. 의미적 DDD 적합성은 별도 reviewer 책임이다. 기능 [contracts-feature](product.md#contracts-feature)의 규칙과 수용 조건을 적용하며 검증은 해당 Product section의 테스트를 참조한다.
@@ -395,7 +395,7 @@ BR-contracts-feature: 필수 구성·source/diagram 정합성·version을 판정
 수정일: 2026-10-16
 
 ### 설명
-검토한 통합 계약 버전과 snapshot·HTML을 기록한다. [소스](../../src/contracts/contracts.mjs).
+검토한 통합 계약 버전과 snapshot·HTML을 기록한다. [소스](../../.harness/src/contracts/contracts.mjs).
 
 ### 비즈니스 규칙
 BR-contracts-feature: source만 바뀌면 계약 수정 또는 영향 없음의 구체적 검토 사유를 요구한다. 형식 검사 후 version 증가·원본 hash·HTML을 기록한다. 동일 입력은 버전을 올리지 않는다. 실패는 pass로 기록하지 않는다.
@@ -405,7 +405,7 @@ BR-contracts-feature: source만 바뀌면 계약 수정 또는 영향 없음의 
 수정일: 2026-10-24
 
 ### 설명
-append-only journal로 plan 상태를 보존하는 실제 class. Aggregate root로 선언하지 않는다. [소스](../../src/wrapper/checkpoint.mjs).
+append-only journal로 plan 상태를 보존하는 실제 class. Aggregate root로 선언하지 않는다. [소스](../../.harness/src/wrapper/checkpoint.mjs).
 
 ### 필요 엔티티
 plan ID·workflow status·tests·lifecycle evidence·event writer.
@@ -451,7 +451,7 @@ journal을 읽고 replay하여 checkpoint를 복원한다.
 수정일: 2026-10-23
 
 ### 설명
-모든 manifest workflow의 정상 완료를 판정하는 공통 실행 경계. [소스](../../src/workflow/completion.mjs).
+모든 manifest workflow의 정상 완료를 판정하는 공통 실행 경계. [소스](../../.harness/src/workflow/completion.mjs).
 
 ### 필요 엔티티
 시작 commit SHA·workflow ID·검증된 workspace·기존 lifecycle evidence·journal writer.
@@ -480,7 +480,7 @@ workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state
 수정일: 2026-10-16
 
 ### 설명
-기존 tracker 모듈 내부에서 configured tracker와 Beads의 네 lifecycle 상태를 연결하는 조립 책임. 독립 Bounded Context·Aggregate·배포 서버를 만들지 않는다. [소스](../../src/tracker/lifecycle.mjs).
+기존 tracker 모듈 내부에서 configured tracker와 Beads의 네 lifecycle 상태를 연결하는 조립 책임. 독립 Bounded Context·Aggregate·배포 서버를 만들지 않는다. [소스](../../.harness/src/tracker/lifecycle.mjs).
 
 ### 필요 엔티티
 설정된 tracker·exact external_ref·v1 Beads mirror·phase/classification metadata·실행 결과·local journal. 객체형 DDD entity는 별도 선언하지 않는다.
@@ -522,7 +522,7 @@ status는 planned/in-progress/blocked/completed만 허용한다. backlog는 harn
 수정일: 2026-10-17
 
 ### 설명
-기존 control-plane의 workflow worktree 소유권·종료 조립 책임이다. 별도 Context/서버를 도입하지 않는다. [소스](../../src/workflow/worktrees.mjs).
+기존 control-plane의 workflow worktree 소유권·종료 조립 책임이다. 별도 Context/서버를 도입하지 않는다. [소스](../../.harness/src/workflow/worktrees.mjs).
 
 ### 필요 엔티티
 Git common directory·소유 receipt·workflow ID·branch/HEAD·return_root·작업 파일과 staged index·종료 outcome.
@@ -603,7 +603,7 @@ allocating/active/archived/cleanup-failed receipt를 조회한다. 이전 실행
 수정일: 2026-10-24
 
 ### 설명
-기존 control-plane 내부의 파일 출력 경계 조립 책임이다. 별도 Context·Aggregate·서버를 만들지 않는다. [소스](../../src/workflow/session-output.mjs).
+기존 control-plane 내부의 파일 출력 경계 조립 책임이다. 별도 Context·Aggregate·서버를 만들지 않는다. [소스](../../.harness/src/workflow/session-output.mjs).
 
 ### 필요 엔티티
 절대 workspace_root·살아 있는 repositoryRoot·Git common directory·상대 출력 경로.
@@ -645,7 +645,7 @@ worktree 제거 후에도 보존되는 canonical 세션 디렉터리를 반환�
 수정일: 2026-10-19
 
 ### 설명
-기존 control-plane 안에서 테스트·서버·인프라의 실행 전제와 process lifecycle을 조립한다. 별도 Context·Aggregate·배포 서버를 추가하지 않는다. [소스](../../src/workflow/execution.mjs).
+기존 control-plane 안에서 테스트·서버·인프라의 실행 전제와 process lifecycle을 조립한다. 별도 Context·Aggregate·배포 서버를 추가하지 않는다. [소스](../../.harness/src/workflow/execution.mjs).
 
 ### 필요 엔티티
 workspace_root·profile_id·process 환경·프로젝트 execution.json·설정 원본·readiness 명령·AbortSignal·session directory. 구성 데이터이며 DDD entity로 선언하지 않는다.
@@ -678,13 +678,13 @@ required_env와 모든 `${VAR}`를 prepare 전 검증한다. 재실행 가능한
 수정일: 2026-10-24
 
 ### 설명
-기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [소스](../../src/workflow/spec-review.mjs).
+기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [소스](../../.harness/src/workflow/spec-review.mjs).
 
 ### 필요 엔티티
 workspace root·ticket ID·review axis·사용자 원문 request.md·Spec/diagram·현행 계약/용어/모델·검토한 추가 근거 파일·실제 agent metadata·reviewer 판정/지적. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
-호출자는 확정 답변·Spec·다이어그램을 함께 반영한 뒤 begin으로 검토 슬롯과 snapshot을 확보한다. Architecture begin은 현재 Product pass를 확인한다. 공통 실행 기록은 [review-attempts](../../src/workflow/review-attempts.mjs)가 관리하며 Spec·계획 CLI가 함께 사용한다. Learning의 설계 방어는 해당 Decision 검토 단계가 담당한다.
+호출자는 확정 답변·Spec·다이어그램을 함께 반영한 뒤 begin으로 검토 슬롯과 snapshot을 확보한다. Architecture begin은 현재 Product pass를 확인한다. 공통 실행 기록은 [review-attempts](../../.harness/src/workflow/review-attempts.mjs)가 관리하며 Spec·계획 CLI가 함께 사용한다. Learning의 설계 방어는 해당 Decision 검토 단계가 담당한다.
 
 spec-me의 Product 작성/diagram 후 고성능 모델의 새 reviewer를 생성하고 pass 후 설계한다. 최종 계약/용어/diagram이 안정된 뒤 stale Product를 갱신하고 다른 새 reviewer가 Architecture를 검토한다. 매 수정본은 새 agent/fork_turns:none으로 보내며 의미 변경은 기존 interview로 돌아간다. reviewer는 읽기 전용으로 JSON 판정과 근거를 반환하고 caller가 원본 응답을 session/runtime/spec-reviews/에 attempt별 보존한다. 이 흐름은 Learning mode 여부와 무관하다. stage gate 및 lifecycle spec_reviews는 기록·입력 hash·작성자 독립성·미해결 중대 지적을 검사한다. completeWorkflow는 로컬 manifest가 spec_reviews를 제거해도 spec-me/to-ticket 필수 검사를 복원한다. to-ticket은 새 worktree의 현재 파일로 검증하고 stale/missing이면 계획 전에 중단한다. 실제 spawn의 진위나 의미적 완전성은 hash만으로 증명하지 않으며 caller가 실제 tool 결과와 대조한다.
 
@@ -696,7 +696,7 @@ spec-me의 Product 작성/diagram 후 고성능 모델의 새 reviewer를 생성
 수정일: 2026-10-24
 
 ### 설명
-기존 리뷰 원장의 상태·지적·현재 묶음 한도를 읽는 파생 조회다. [소스](../../src/workflow/review-attempts.mjs), [CLI](../../.codex/scripts/harness-review-status.mjs), [조정 절차](../../.codex/internal-skills/spec-review/references/review-coordination.md).
+기존 리뷰 원장의 상태·지적·현재 묶음 한도를 읽는 파생 조회다. [소스](../../.harness/src/workflow/review-attempts.mjs), [CLI](../../.codex/scripts/harness-review-status.mjs), [조정 절차](../../.codex/internal-skills/review-coordination/GUIDE.md).
 
 ### 필요 엔티티
 workspace root·Spec ticket/axis·plan set·구현 plan scope와 기존 history. 선택한 현재 구현 리뷰는 원본 응답의 두 축·동일 입력 metadata를 검사한다.
@@ -737,7 +737,7 @@ axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fo
 수정일: 2026-10-24
 
 ### 설명
-Spec·계획 CLI가 공유하는 검토 시작·판정 기록·종료·사용자 결정에 따른 재개 처리다. [소스](../../src/workflow/review-attempts.mjs)
+Spec·계획 CLI가 공유하는 검토 시작·판정 기록·종료·사용자 결정에 따른 재개 처리다. [소스](../../.harness/src/workflow/review-attempts.mjs)
 
 ### 필요 엔티티
 workspace root·ticket/axis 또는 plan set scope·입력 snapshot·attempt ID·실제 reviewer 응답·취소/사용자 결정 사유.
@@ -754,7 +754,7 @@ session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begi
 수정일: 2026-10-24
 
 ### 설명
-기존 Spec·계획 gate에서 시작된 검토의 완료 여부를 확인한다. [소스](../../src/workflow/review-attempts.mjs)
+기존 Spec·계획 gate에서 시작된 검토의 완료 여부를 확인한다. [소스](../../.harness/src/workflow/review-attempts.mjs)
 
 ### 필요 엔티티
 workspace root·scope·gate가 검사 중인 reviewer 응답.
@@ -762,59 +762,83 @@ workspace root·scope·gate가 검사 중인 reviewer 응답.
 ### 동작
 실행 원장이 있으면 마지막 attempt의 pass 상태와 reviewer ID·입력 hash가 검사 중인 응답과 일치해야 한다. 실행 원장이 없는 기존 receipt는 기존 gate의 독립성·freshness·지적 검사를 적용한다. 원장이 active/revise/stale/aborted이면 진행을 차단한다.
 
-<a id="plan-traceability-service"></a>
-## src/workflow/plan-traceability.mjs
-수정일: 2026-10-24
+<a id="plan-review-service"></a>
+## src/workflow/plan-review.mjs
+수정일: 2026-11-01
 
 ### 설명
-기존 control-plane에서 plan set의 요구사항 coverage, 독립 리뷰의 현재성, 구현 evidence를 조립하는 책임이다. 별도 Context·Aggregate·서비스를 추가하지 않는다. [소스](../../src/workflow/plan-traceability.mjs).
+기존 control-plane에서 전체 plan set의 입력 snapshot과 독립 리뷰 freshness를 관리한다. 별도 Context·Aggregate·서비스를 추가하지 않는다. [소스](../../.harness/src/workflow/plan-review.mjs).
 
 ### 필요 엔티티
-plan set ID·ticket ID·Spec/요청/결정/다이어그램/계약 입력·canonical plan·review metadata·실행 profile/receipt. 객체형 DDD entity로 선언하지 않는다.
+workspace root·plan set ID·Product/Architecture Spec·canonical split plan·review attempt metadata. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
-begin은 기존 snapshot의 정본·요구 inventory·coverage 검사를 먼저 수행하고 공통 실행 기록에 검토 슬롯을 확보한다. record는 reviewer 응답과 현행 입력을 대조한다. planning/dispatch/completion은 시작된 검토의 pass 기록을 확인한다.
-
-`docs/plans/<plan-set-id>/traceability.json`을 읽어 requirement 선언과 `source_path#ID` coverage, canonical per-plan 본문, 수용 조건·반례·검증 사례, 독립 리뷰와 snapshot freshness를 검사한다. 새 planning 원장은 schema_version 2이며 각 covered requirement를 소유 plan별 수용 기준과 검증 사례에 연결하고, cross-plan integration 검증은 owner plan에 연결한다. handoff 기록은 생산·소비 plan의 기준과 소비 측 검증 사례를 연결한다. 구형 schema_version 1은 기존 reviewed dispatch/completion에서 읽지만 새 planning에는 허용하지 않는다. impact는 stale coverage에서도 변경된 ID와 영향 계획을 보고하며 불확실 시 전체 계획을 보수적으로 지목한다. dispatch는 검증 전 spawn을 차단하고 completion은 선택 profile의 harness-exec receipt 및 현재 source/test hash를 확인한다. 해시는 의미적 정확성이나 reviewer/tool 신원을 증명하지 않는다.
+`snapshotPlanSet`은 plan index, 두 Spec, split plan 파일과 존재하는 요청·결정·Context·통합 계약·실행 계약을 SHA-256 snapshot으로 만든다. `updatePlanReview`는 공통 review-attempt 기록을 갱신하고, `validatePlanReviewAdmission`은 stage 진입 시 승인 snapshot과 active attempt를 대조한다. `inspectPlanSet`은 planning·dispatch·completion에서 pass된 독립 리뷰와 현행 입력 hash를 확인하고, dispatch/completion에는 선택 plan이 reviewed set에 포함됐는지 확인한다. `inspectPlanSetImpact`는 직전 리뷰와 현재 snapshot의 변경 경로 및 영향 plan ID를 반환한다. runtime은 요구사항 coverage 원장, requirement별 구현 증거, 의미적 리뷰 정확성을 판정하지 않는다.
 
 ### 메서드
-[snapshotPlanTraceability](architecture.md#snapshot-plan-traceability-method) · [inspectPlanTraceability](architecture.md#inspect-plan-traceability-method) · [inspectTraceabilityImpact](architecture.md#inspect-traceability-impact-method)
+[snapshotPlanSet](architecture.md#snapshot-plan-set-method) · [validatePlanReviewAdmission](architecture.md#validate-plan-review-admission-method) · [inspectPlanSet](architecture.md#inspect-plan-set-method) · [inspectPlanSetImpact](architecture.md#inspect-plan-set-impact-method) · [updatePlanReview](architecture.md#update-plan-review-method)
 
-<a id="snapshot-plan-traceability-method"></a>
-## snapshotPlanTraceability
-수정일: 2026-10-20
+<a id="snapshot-plan-set-method"></a>
+## snapshotPlanSet
+수정일: 2026-11-01
 
 ### 설명
-현재 계획 검토에 필요한 선언 입력과 canonical plan 본문을 정규화해 hash한다.
+계획 검토에 필요한 Spec·계획·프로젝트 기준 입력을 읽고 경로별 SHA-256을 계산한다.
 
 ### 필요 엔티티
 workspace root·plan set ID.
 
 ### 동작
-요청·Spec·결정·diagram·계약·plan 본문과 원장 planning content를 수집한다. 요구사항 선언은 제목의 ID 또는 `- **BR-38:**` / `- **BR-38**:` 형식의 강조 목록 항목에서만 인식한다. 본문에서 ID를 언급하거나 일반 목록에 적은 diagram inventory는 선언으로 계산하지 않는다. implementation evidence와 일반 source 변경은 제외한다.
+plan index에서 Product/Architecture Spec 경로를 정하고 canonical split plan 파일을 모두 수집한다. 선택 입력이 존재하면 request·system targets·CONTEXT·CONTEXT-MAP·product/architecture contracts·execution.json도 snapshot에 포함한다. 안전한 workspace-relative regular file만 읽는다.
 
-<a id="inspect-plan-traceability-method"></a>
-## inspectPlanTraceability
-수정일: 2026-10-20
+<a id="validate-plan-review-admission-method"></a>
+## validatePlanReviewAdmission
+수정일: 2026-11-01
 
 ### 설명
-planning·dispatch·completion 단계별 추적 검사다.
+stage 시작 시 전달된 plan-review admission이 현행 snapshot 및 active review attempt와 일치하는지 확인한다.
+
+### 필요 엔티티
+workspace root·plan set ID·admission attempt ID와 입력 hash.
+
+### 동작
+현재 snapshot과 admission 입력을 경로별로 비교하고, 공통 review-attempt 원장의 active slot 및 delta baseline을 검증한다. 입력 변경·다른 attempt·stale baseline은 차단한다.
+
+<a id="inspect-plan-set-method"></a>
+## inspectPlanSet
+수정일: 2026-11-01
+
+### 설명
+planning·dispatch·completion 단계에서 계획 리뷰 gate를 검사한다.
 
 ### 필요 엔티티
 workspace root·plan set ID·phase·선택 plan ID.
 
 ### 동작
-planning은 독립 fresh review와 전체 coverage를 검사하고 dispatch는 통과 전에 spawn을 차단한다. completion은 requirement별 구현·검증 파일 hash와 성공한 선택 profile의 session receipt를 대조한다.
+독립 리뷰 기록의 pass 상태와 모든 snapshot hash가 현재 입력과 일치해야 한다. dispatch와 선택 plan completion은 해당 plan이 reviewed set에 있어야 한다. canonical plan 응답에는 파일 참조와 frontmatter status 행을 제외한 본문 hash를 반환한다.
 
-<a id="inspect-traceability-impact-method"></a>
-## inspectTraceabilityImpact
-수정일: 2026-10-20
+<a id="inspect-plan-set-impact-method"></a>
+## inspectPlanSetImpact
+수정일: 2026-11-01
 
 ### 설명
-현재 요구사항·계획 입력과 저장된 review snapshot의 차이를 조회한다.
+마지막 독립 리뷰 snapshot과 현재 입력의 변경 경로 및 영향을 받는 plan ID를 계산한다.
 
 ### 필요 엔티티
 workspace root·plan set ID.
 
 ### 동작
-변경 경로와 추가·수정·삭제된 qualified requirement ID 및 영향 계획을 반환한다. 불확실한 변경은 전체 계획을 보수적으로 무효화하며 입력이나 tracker 상태를 갱신하지 않는다.
+현재 snapshot과 마지막 리뷰 hash를 비교한다. 입력이 달라지면 현재 plan set의 plan IDs를 재검토 대상으로 반환하고, 같으면 변경 경로가 없음을 반환한다.
+
+<a id="update-plan-review-method"></a>
+## updatePlanReview
+수정일: 2026-11-01
+
+### 설명
+공통 review-attempt 원장에 계획 리뷰 attempt의 시작·기록·중단·해결 상태를 갱신한다.
+
+### 필요 엔티티
+workspace root·plan set ID·action·attempt ID·review 결과 또는 사유.
+
+### 동작
+일반 갱신은 현재 plan snapshot을 attempt 입력으로 기록하며 abort/resolve는 snapshot 없이 기존 원장 상태를 전이한다. review history는 workflow return_root의 공통 session 위치에 보존한다.

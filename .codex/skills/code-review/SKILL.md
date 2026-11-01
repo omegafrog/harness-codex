@@ -9,7 +9,7 @@ description: Review the diff between HEAD and a fixed point with independent Sta
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## What it does
 
@@ -63,10 +63,10 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis using its role profile and return its findings. Do not dispatch another reviewer. The caller coordinates the two independent executions below.
 
 1. Confirm the fixed point first.
-2. Use the static caller to read the reviewer model and reasoning effort from setup configuration. Managed calls return `REVIEW_REQUIRED`; the orchestrator dispatches the reviewers.
+2. Use the execution coordinator to read the reviewer model and reasoning effort from setup configuration. The current execution dispatches the reviewers as independent subagents.
 3. If either value is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys. Model configuration belongs to the caller; do not invoke setup automatically.
-4. Dispatch a fresh `code-review` execution with `context.role="standards_reviewer"` using the [independent execution commands](../../../.codex/internal-skills/static-caller/GUIDE.md). Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
-5. Dispatch a separate fresh `code-review` execution with `context.role="spec_reviewer"` using the same commands. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
+4. Dispatch a fresh `standards_reviewer` subagent following the [execution coordination guide](../../../.codex/internal-skills/skill-execution/GUIDE.md). Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
+5. Dispatch a separate fresh `spec_reviewer` subagent. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
    For every planned implementation, include the current Product and Architecture Specs and every canonical plan. Require the reviewer to compare their behavior and constraints directly; a plan set may still omit part of a Spec.
 6. Preserve the actual execution and Codex thread identifiers returned by the two calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
 7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for the independent execution.

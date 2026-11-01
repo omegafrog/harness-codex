@@ -9,7 +9,7 @@ description: Evaluate Harness workflow changes with the repo's eval suites, comp
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## Purpose
 
@@ -56,7 +56,7 @@ npx --yes --package github:omegafrog/harness-codex \
   harness-eval run --suite <suite-id>
 ```
 
-`harness-eval` resolves suites, cases, fixtures, recordings, and the eval implementation from its own Harness package root, so consumer repositories do not need copies of `evals/`, `bin/`, or `src/eval/`.
+`harness-eval` resolves suites, cases, fixtures, recordings, and the eval implementation from its own Harness package root, so consumer repositories do not need copies of `evals/`, `bin/`, or `.harness/src/eval/`.
 
 Installed mode evaluates the Harness package resolved by that package command. It does not evaluate arbitrary local edits made directly to copied `.agents/skills/*` files in the consumer repository. If local Harness-source modifications must be evaluated, use source checkout mode.
 
@@ -83,7 +83,7 @@ In installed mode, obtain suite/case information from the package-backed evaluat
 Select suites deterministically.
 
 1. If the user names a suite, run that suite.
-2. In source checkout mode, if common eval infrastructure changed (`src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
+2. In source checkout mode, if common eval infrastructure changed (`.harness/src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
 3. If a Harness skill or workflow changed and suite case mapping is available, select suites containing cases for the affected workflow(s).
 4. If no exact mapping is available and `p0` exists, run `p0` as the smoke/regression suite and explicitly report that coverage is limited to `p0`.
 5. Never claim full Harness coverage when only a subset of suites ran.
@@ -92,7 +92,7 @@ When only one suite exists, use it unless the user explicitly requests otherwise
 
 ## Execute
 
-Before running a suite, read the project's canonical `<shared_guidance_root>/docs/agents/testing-guidance.md`. In a managed worktree, receive `shared_guidance_root` as the original project root (`return_root`) and verify it shares the same Git common directory as `workspace_root`.
+Before running a suite, read the active workspace's `<workspace_root>/docs/agents/testing-guidance.md`. In a managed worktree, use that worktree copy so project-specific test memory stays with the evaluated branch.
 
 Use the mode-specific command above. Do not copy Harness eval implementation into a consumer repository just to run evaluation.
 

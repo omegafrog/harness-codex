@@ -11,7 +11,6 @@
     "summary",
     "artifacts",
     "questions",
-    "required_subtasks",
     "review_request",
     "inputs",
     "findings",
@@ -49,7 +48,6 @@
       "enum": [
         "OK",
         "REVIEW_REQUIRED",
-        "SUBTASK_REQUIRED",
         "SPEC_REVISION_REQUIRED",
         "PLAN_REVISION_REQUIRED",
         "IMPLEMENTATION_REVISION_REQUIRED",
@@ -168,32 +166,6 @@
         }
       }
     },
-    "required_subtasks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "skill",
-          "role",
-          "purpose"
-        ],
-        "properties": {
-          "skill": {
-            "type": "string"
-          },
-          "role": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "purpose": {
-            "type": "string"
-          }
-        }
-      }
-    },
     "review_request": {
       "anyOf": [
         {
@@ -210,7 +182,10 @@
               "type": "string"
             },
             "role": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "purpose": {
               "type": "string"

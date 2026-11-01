@@ -19,7 +19,7 @@ participant "Product Spec reviewer" as productReviewer
 participant "Architecture Spec reviewer" as architectureReviewer
 participant "review-attempts.mjs" as reviewAttempts
 participant "inspectSpecReviews" as inspectReviews
-participant "inspectPlanTraceability" as traceability
+participant "plan-review.mjs" as planReview
 participant "독립 plan reviewer" as planReviewer
 participant "to-ticket planning" as toTicket
 participant "completeWorkflow" as complete
@@ -93,21 +93,26 @@ else 검증 통과
   else 독립 검토 통과 및 입력 hash 일치
     inspectReviews --> 사용자 : spec-me 완료 허용
     inspectReviews --> toTicket : planning 허용
-    toTicket -> traceability : snapshot(plan_set_id, ticket_id, source·계획 본문)
-    traceability --> toTicket : 규칙 inventory·canonical 참조·현재 hash
-    toTicket -> reviewAttempts : updateReviewAttempt(action=begin, plan set snapshot)
+    toTicket -> planReview : snapshotPlanSet(plan_set_id)
+    planReview --> toTicket : Spec·plan·project input hash
+    toTicket -> planReview : updatePlanReview(action=begin)
+    planReview -> reviewAttempts : updateReviewAttempt(action=begin, 현재 snapshot)
     alt admission 거부
-      reviewAttempts --> toTicket : active slot·변경 없는 입력·재시도 한도 초과
+      reviewAttempts --> planReview : active slot·변경 없는 입력·재시도 한도 초과
+      planReview --> toTicket : admission 거부
       toTicket --> 사용자 : 계획 검토 보류와 재시도 시점 안내
     else admission 허용
-      reviewAttempts --> toTicket : attempt 허용
+      reviewAttempts --> planReview : attempt 허용
+      planReview --> toTicket : attempt ID와 snapshot
       toTicket -> planReviewer : 전체 원문·전체 계획·원장 리뷰 (context 미상속)
       planReviewer --> toTicket : pass 또는 근거 포함 finding
-      toTicket -> reviewAttempts : updateReviewAttempt(action=record, plan 결과)
-      reviewAttempts --> toTicket : 기록 완료
+      toTicket -> planReview : updatePlanReview(action=record, plan 결과)
+      planReview -> reviewAttempts : updateReviewAttempt(action=record)
+      reviewAttempts --> planReview : 기록 완료
+      planReview --> toTicket : 기록된 plan review
     end
-    toTicket -> traceability : check(planning, 독립 리뷰 입력 hash)
-    traceability --> toTicket : 누락·stale 차단 또는 planning pass
+    toTicket -> planReview : inspectPlanSet(planning)
+    planReview --> toTicket : fresh pass 및 snapshot 일치 여부
   end
   execute -> checkpoint : read()
   checkpoint -> session : sessionDirectory(workspace_root)
@@ -121,12 +126,12 @@ else 검증 통과
     execute --> 사용자 : agent 파견 차단 (spawnImplement 미호출)
   else project_readiness 통과
     readiness --> gates : pass
-  gates -> traceability : check(dispatch, plan_id, canonical tracker 본문)
-  alt 추적 근거 누락 또는 stale
-    traceability --> gates : blocked
+  gates -> planReview : inspectPlanSet(dispatch, plan_id)
+  alt 리뷰 누락·stale 또는 plan 미포함
+    planReview --> gates : blocked
     gates --> execute : spawn 전 차단
   else 독립 계획 리뷰와 참조 일치
-    traceability --> gates : pass
+    planReview --> gates : pass
   gates -> inspect : inspectTrackerSync()
   inspect -> tracker : canonical 상태 읽기
   inspect -> beads : mirror 상태 읽기
@@ -169,14 +174,14 @@ else 검증 통과
       end
     end
     execute -> checkpoint : write(단계·test evidence)
-    execute -> traceability : check(completion, source/test hash·session receipt)
-    traceability --> execute : pass 또는 구현 완료 차단
+    execute -> planReview : inspectPlanSet(completion, plan_id)
+    planReview --> execute : 최신 리뷰 snapshot 및 plan 포함 여부
     execute -> execute : validateCanonicalPlanReference(plan)
     note right of execute
       최초 code reviewer 파견 직전 metadata 검증
       kind·reference·input_key·hash_algorithm=sha256
       normalization=frontmatter-status-excluded-v1·digest 형식 필수
-      정규화 본문 내용 검증은 앞선 traceability 검사에서 수행
+      정규화 본문 hash는 plan-review check 응답과 대조
     end note
     execute -> execute : assertPlanningReviewSnapshot(plan_set_id, planning_snapshot_sha256)
     note right of execute

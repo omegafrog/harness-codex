@@ -1,6 +1,6 @@
 # Testing and verification guidance
 
-This provider-neutral document stores durable project-specific testing preferences. All linked worktrees read the canonical copy in the original project root supplied as `shared_guidance_root`. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
+This provider-neutral document stores durable project-specific testing preferences for this workspace. A managed workflow reads and updates the copy in its active worktree so the durable memory change can be reviewed and pushed with that branch. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
 
 ## Active guidance
 

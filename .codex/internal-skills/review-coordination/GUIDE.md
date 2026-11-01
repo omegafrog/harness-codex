@@ -4,7 +4,7 @@
 
 | 리뷰 대상 | 소유 orchestrator | 리뷰 절차 |
 |---|---|---|
-| Architecture Spec | spec-me workflow의 최상위 orchestrator | `spec-review` |
+| Architecture Spec | `spec-me` | `spec-review` |
 | split plan 집합 | to-ticket workflow의 최상위 orchestrator | `plan-review` |
 | 구현 코드 | `code-review`를 호출한 구현 workflow | `code-review` |
 
@@ -13,8 +13,8 @@
 1. 현재 실행 중인 관련 reviewer 결과를 모두 수집·기록한 뒤 수정 범위를 정한다. 결과가 아직 없으면 해당 scope를 pending으로 표시하고, 종료된 reviewer의 누락은 해당 재시도 절차로 처리한다.
 2. 원본 finding을 축별로 보존하고 같은 원인의 지적을 연결해 수정표를 대화 또는 기존 checkpoint 근거로 제시한다. `지적 ID·근거 / 원인 / 영향 Spec·plan·diagram·코드·테스트 / 수정 또는 반박 근거 / 필요한 사용자 결정`을 함께 적는다. 새 guard·예약·상태가 다른 정상·경쟁·복구 경로에 만드는 영향을 같은 수정 범위에 포함한다.
 3. 사용자 결정이 필요하면 아래 통합 조회로 관련 축의 기록과 한도를 함께 읽는다. 실제 사용자에게는 해결할 쟁점과 영향을 받는 scope별 현재/남은 한도·필요 결정·재개 조건을 한 번에 제시한다. 이미 관찰한 다른 한도 문제도 같은 요청에 포함한다. 추가 검토로 새 쟁점이 발견되면 그 근거를 별도로 설명한다.
-4. 사용자가 승인한 결정의 원문·범위를 보존하고, 해당하는 소유 CLI의 resolve를 각 scope에 적용한다. 기록된 pass는 현재 snapshot gate로 재확인한다. 아직 실행 중인 검토는 기다리며, 사용자의 범위 결정과 기술적 한도 재개 승인을 구분한다.
-5. 확정 답변과 수정표에 해당하는 문서·정본 plan·원장·diagram·코드·검증을 함께 반영하고 현재성을 확인한 뒤 새 admission/commit으로 재검토한다. 활성 검토가 읽는 입력을 수정해야 하면 해당 reviewer를 종료하고 abort를 기록한 뒤 새 snapshot으로 시작한다. 검토 중 snapshot을 유지하는 것은 caller의 편집 책임이며 runtime은 변경을 탐지해 stale 결과·repair 예약·완료를 차단한다.
+4. 사용자가 승인한 결정의 원문·범위를 보존하고, 해당하는 소유 CLI의 resolve를 각 scope에 적용한다. Spec review의 준비 abort 한도에 도달했으면 복구된 준비 조건을 `resolve --reason 'preparation recovery: <복구 내용>'`으로 기록한다. 이는 사용자 요구/범위 결정이 아니며 substantive review 회차도 초기화하지 않는다. 기록된 pass는 현재 snapshot gate로 재확인한다. 아직 실행 중인 검토는 기다리며, 사용자의 범위 결정과 기술적 한도 재개 승인을 구분한다.
+5. 확정 답변과 수정표에 해당하는 문서·정본 plan·원장·diagram·코드·검증을 함께 반영하고 현재성을 확인한 뒤 새 admission/commit으로 재검토한다. 활성 검토가 읽는 입력을 수정해야 하면 해당 reviewer를 종료하고 abort를 기록한 뒤 새 snapshot으로 시작한다. Architecture Spec에서 reviewer dispatch 전에 발생한 준비 실패만 spec-me 소유 절차의 `pre-dispatch preparation: <원인>` 사유로 기록한다. reviewer dispatch 뒤의 종료와 legacy abort는 일반 substantive attempt로 계산한다. 검토 중 snapshot을 유지하는 것은 caller의 편집 책임이며 runtime은 변경을 탐지해 stale 결과·repair 예약·완료를 차단한다.
 
 ## 통합 조회 CLI
 

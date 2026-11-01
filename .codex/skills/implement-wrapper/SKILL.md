@@ -5,11 +5,13 @@ description: Implement one approved split plan in the orchestrator-selected work
 
 # implement-wrapper
 
+최종 E2E에 필요한 실행 방법이나 환경이 아직 정해지지 않았다면 구현 workflow에서 사용자에게 확인하고 실제 조건을 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 기록한다.
+
 orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 
 ## 실행 계약
 
-기본 `model_tier`는 `implementation`이다. `agents.implementation_model`과 `agents.implementation_reasoning_effort`의 실제 값은 orchestrator가 [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`에 전달한다.
+기본 `model_tier`는 `implementation`이다. 모델과 effort는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)이 setup 설정에서 해석한다.
 
 세션 입력의 `input_refs`에서 승인된 plan·Spec 산출물을 읽고 `context.producer_result_refs`와 `context.previous_result_ref`가 지정한 파일에서 이전 실행 결과를 확인한다. plan 경로는 runtime plan-review gate가 반환한 정확한 `plan_reference`를 사용한다. ID나 디렉터리명으로 경로를 다시 만들지 않는다.
 
@@ -17,7 +19,7 @@ orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [
 
 ## 구현
 
-1. 원본 프로젝트의 `shared_guidance_root`에서 implementation/testing guidance를 읽고, 승인 plan의 요구 ID·수용 조건·구현 범위와 대조한다. 두 루트가 같은 Git 저장소인지 확인한다.
+1. 활성 `workspace_root`의 implementation/testing guidance를 읽고, 승인 plan의 요구 ID·수용 조건·구현 범위와 대조한다. 관리 worktree에서는 원본 checkout의 지침 파일을 대신 읽지 않는다.
 2. 전달된 fixed point와 기존 checkpoint를 보존하고 해당 plan만 구현한다. plan에서 지정한 비즈니스 로직 단위 테스트를 작성·실행한다. 테스트 작성은 [testing guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md), 실행은 EXEC의 기본 CLI 명령을 따른다. `harness-exec`는 최종 사용자 흐름 E2E에만 사용한다.
 3. 요구별 변경 파일·검증 파일·실행 receipt와 commit을 기존 traceability/checkpoint 형식으로 기록한다. 이전 실패·측정 근거를 보존한다.
 4. 상세 결과 객체를 공통 envelope의 `result` 필드로 반환한다. 실행기가 이를 검증하고 복구 경로에 보존한다.

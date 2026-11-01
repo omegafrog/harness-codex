@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/review-attempts.mjs', import.meta.url);
-const runtime = existsSync(installed) ? installed : new URL('../../src/workflow/review-attempts.mjs', import.meta.url);
-const { inspectReviewHistory } = await import(runtime.href);
-const { sessionOutputPath } = await import(new URL('./session-output.mjs', runtime).href);
-const { implementationReviewRoot, classifyReviewFindings, validReviewProvenance } = await import(new URL('../wrapper/repair.mjs', runtime).href);
+const installed = new URL('../../.harness/src/workflow/review-attempts.mjs', import.meta.url);
+const { inspectReviewHistory } = await import(installed.href);
+const { sessionOutputPath } = await import(new URL('./session-output.mjs', installed).href);
+const { implementationReviewRoot, classifyReviewFindings, validReviewProvenance } = await import(new URL('../wrapper/repair.mjs', installed).href);
 try {
   const args = process.argv.slice(2), options = {};
   for (let i = 0; i < args.length; i++) {
@@ -17,8 +15,8 @@ try {
   if (!options['--root'] || !['--ticket', '--plan-set', '--plan'].some((key) => options[key])) throw new Error('Usage: harness-review-status.mjs --root DIR [--spec-root DIR] [--ticket ID] [--plan-set ID] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
   for (const key of ['--ticket', '--plan-set', '--plan']) if (options[key] && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options[key])) throw new Error('Invalid review scope ID');
   const root = resolve(options['--root']), specRoot = resolve(options['--spec-root'] || root);
-  const primary = implementationReviewRoot(root);
-  if (implementationReviewRoot(specRoot) !== primary) throw new Error('Spec and plan roots must share the same repository');
+  const [primary, specPrimary] = await Promise.all([implementationReviewRoot(root), implementationReviewRoot(specRoot)]);
+  if (specPrimary !== primary) throw new Error('Spec and plan roots must share the same repository');
   const scopes = [];
   if (options['--ticket']) scopes.push({ root: specRoot, scope: `spec-${options['--ticket']}-architecture` });
   if (options['--plan-set']) scopes.push({ root, scope: `plan-${options['--plan-set']}` });

@@ -1,16 +1,12 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/spec-review.mjs', import.meta.url);
-const source = new URL('../../src/workflow/spec-review.mjs', import.meta.url);
-const { snapshotSpecReview, inspectSpecReviews } = await import(existsSync(installed) && !sourceCheckout ? installed.href : source.href);
-const outputModule = new URL('./session-output.mjs', existsSync(installed) && !sourceCheckout ? installed : source);
+const installed = new URL('../../.harness/src/workflow/spec-review.mjs', import.meta.url);
+const { snapshotSpecReview, inspectSpecReviews } = await import(installed.href);
+const outputModule = new URL('./session-output.mjs', installed);
 const { sessionOutputPath, sessionDirectory } = await import(outputModule.href);
-const { updateReviewAttempt } = await import(new URL('./review-attempts.mjs', existsSync(installed) && !sourceCheckout ? installed : source).href);
-const { reviewDelta } = await import(new URL('./review-delta.mjs', existsSync(installed) && !sourceCheckout ? installed : source).href);
+const { updateReviewAttempt } = await import(new URL('./review-attempts.mjs', installed).href);
+const { reviewDelta } = await import(new URL('./review-delta.mjs', installed).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() }, inputs = [];
   for (let i = 0; i < args.length; i++) {

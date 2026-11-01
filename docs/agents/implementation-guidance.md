@@ -1,6 +1,6 @@
 # Implementation-only guidance
 
-This provider-neutral Markdown document stores reusable implementation preferences. All linked worktrees read and update this canonical copy in the original project root (`shared_guidance_root`). Product behavior belongs in product contracts; target architecture belongs in architecture contracts. Keep tool-specific setup in the relevant integration configuration, not in these guidance entries.
+This provider-neutral Markdown document stores reusable implementation preferences for this project workspace. A managed workflow reads and updates the copy in its active worktree so the durable memory change can be reviewed and pushed with that branch. Product behavior belongs in product contracts; target architecture belongs in architecture contracts. Keep tool-specific setup in the relevant integration configuration, not in these guidance entries.
 
 ## Active guidance
 

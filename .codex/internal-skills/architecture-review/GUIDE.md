@@ -4,7 +4,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## 역할
 
@@ -24,7 +24,7 @@ Architecture 대안을 선택하기 전에 `spec-me`의 [결정 근거 조회·�
 
 ## 진행 순서
 
-1. 호출자는 role/skill dispatch 전에 `src/workflow/stage-gates.mjs`(설치 프로젝트는 `.codex/harness-runtime/src/workflow/stage-gates.mjs`)의 export를 import해 `evaluateWorkflowStage({ workflow, stageId, input: { review_session } })`를 실행하고 결과를 reviewer에게 전달한다. `workflow`는 실제 spec-me workflow를, `stageId`는 `review-architecture-decisions`를 사용한다. 결과가 `skip`이면 Normal 절차를 진행하고 `dispatch`일 때 Learning reviewer를 생성한다. 입력에서 mode가 생략되면 Learning이며, `Normal`은 사용자 역할로 기록된 명시적 선택 이력이 있을 때만 유효하다.
+1. 호출자는 role/skill dispatch 전에 `.harness/src/workflow/stage-gates.mjs` export를 import해 `evaluateWorkflowStage({ workflow, stageId, input: { review_session } })`를 실행하고 결과를 reviewer에게 전달한다. `workflow`는 실제 spec-me workflow를, `stageId`는 `review-architecture-decisions`를 사용한다. 결과가 `skip`이면 Normal 절차를 진행하고 `dispatch`일 때 Learning reviewer를 생성한다. 입력에서 mode가 생략되면 Learning이며, `Normal`은 사용자 역할로 기록된 명시적 선택 이력이 있을 때만 유효하다.
 2. 사용자의 설계 주장과 근거를 먼저 보존한다. 각 이의의 user claim, System Target, Principle, Evidence ID 및 provenance를 기록한다. 적용 가능한 참조가 없으면 `unavailable_refs`에 이유를 명시한다. 사용할 수 없는 참조는 만들거나 추정하지 않는다.
 3. Reviewer가 새로 발견한 source, claims 또는 context는 원문 위치, 내용, 한정 조건과 함께 사용자에게 먼저 제시한다. 전체 제시 문자열을 `presented_content`로 material approval에 저장하고 그 정확한 내용에 대해 사용자가 승인할 때까지 Reviewer 근거로 쓰지 않는다. 같은 source/claim ID의 본문이 바뀌면 새 내용으로 다시 제시하고 다시 승인받는다. Reviewer는 승인 기록의 snapshot만 사용하며 live ID를 통해 내용을 조용히 바꾸지 않는다.
 4. 사용자가 자료를 거부하면 해당 자료를 제외한다. 대체 자료를 찾거나 충분한 근거가 없으면 결정을 보류한다. Material use approval은 Principle approval과 별개다.

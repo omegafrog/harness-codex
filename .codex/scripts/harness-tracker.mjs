@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/tracker/lifecycle.mjs', import.meta.url);
-const source = new URL('../../src/tracker/lifecycle.mjs', import.meta.url);
-const { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } = await import(existsSync(installed) ? installed.href : source.href);
+const installed = new URL('../../.harness/src/tracker/lifecycle.mjs', import.meta.url);
+const { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } = await import(installed.href);
 try {
   const [command, ...args] = process.argv.slice(2), options = { workspace_root: process.cwd() };
   const flags = { '--root': 'workspace_root', '--status': 'status', '--phase': 'phase', '--classification': 'classification' };

@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/execution.mjs', import.meta.url);
-const source = new URL('../../src/workflow/execution.mjs', import.meta.url);
-const { runExecution } = await import(existsSync(installed) && !sourceCheckout ? installed.href : source.href);
+const installed = new URL('../../.harness/src/workflow/execution.mjs', import.meta.url);
+const { runExecution } = await import(installed.href);
 const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Interrupted: ${name}`)));
 try {

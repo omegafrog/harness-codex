@@ -1,19 +1,14 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-const installedRuntime = new URL("../harness-runtime/src/workflow/stage-gates.mjs", import.meta.url);
-const sourceRuntime = new URL("../../src/workflow/stage-gates.mjs", import.meta.url);
-const { DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, evaluateDecisionEvidenceComplete, evaluateDecisionReviewComplete, evaluateSystemTargetsComplete, SYSTEM_TARGET_GATE_ID } = await import((existsSync(fileURLToPath(installedRuntime)) ? installedRuntime : sourceRuntime).href);
-const installedDecision = new URL("../harness-runtime/src/decision/artifacts.mjs", import.meta.url);
-const decisionRuntime = existsSync(fileURLToPath(installedDecision)) ? "../harness-runtime/src/decision/" : "../../src/decision/";
-const { readArchitectureDecisionForHash } = await import(new URL(`${decisionRuntime}artifacts.mjs`, import.meta.url));
-const { computeApprovalHash } = await import(new URL(`${decisionRuntime}approval.mjs`, import.meta.url));
+const installedRuntime = new URL("../../.harness/src/workflow/stage-gates.mjs", import.meta.url);
+const decisionRuntime = new URL("../../.harness/src/decision/", import.meta.url);
+const { ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, evaluateArchitectureDiagramCompletion, evaluateDecisionEvidenceComplete, evaluateDecisionReviewComplete, evaluateProductDiagramCompletion, evaluateSystemTargetsComplete, PRODUCT_DIAGRAM_COMPLETION_GATE_ID, SYSTEM_TARGET_GATE_ID } = await import(installedRuntime.href);
+const { readArchitectureDecisionForHash } = await import(new URL('artifacts.mjs', decisionRuntime));
+const { computeApprovalHash } = await import(new URL('approval.mjs', decisionRuntime));
 
 function parseArgs(args) {
   if (args.length === 5 && args[0] === "decision_subject_hash" && args[1] === "--ticket" && args[2] && args[3] === "--decision" && args[4]) return { gateId: args[0], ticketId: args[2], decisionId: args[4] };
-  if (args.length !== 3 || ![SYSTEM_TARGET_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID].includes(args[0]) || args[1] !== "--ticket" || !args[2]) {
-    throw new TypeError(`Usage: node .codex/scripts/harness-decision-gate.mjs <${[SYSTEM_TARGET_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID].join("|")}> --ticket <ticket-id> | decision_subject_hash --ticket <ticket-id> --decision <decision-id>`);
+  if (args.length !== 3 || ![SYSTEM_TARGET_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, PRODUCT_DIAGRAM_COMPLETION_GATE_ID, ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID].includes(args[0]) || args[1] !== "--ticket" || !args[2]) {
+    throw new TypeError(`Usage: node .codex/scripts/harness-decision-gate.mjs <${[SYSTEM_TARGET_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, PRODUCT_DIAGRAM_COMPLETION_GATE_ID, ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID].join("|")}> --ticket <ticket-id> | decision_subject_hash --ticket <ticket-id> --decision <decision-id>`);
   }
   return { gateId: args[0], ticketId: args[2] };
 }
@@ -28,6 +23,8 @@ try {
       [SYSTEM_TARGET_GATE_ID, evaluateSystemTargetsComplete],
       [DECISION_EVIDENCE_GATE_ID, evaluateDecisionEvidenceComplete],
       [DECISION_REVIEW_GATE_ID, evaluateDecisionReviewComplete],
+      [PRODUCT_DIAGRAM_COMPLETION_GATE_ID, evaluateProductDiagramCompletion],
+      [ARCHITECTURE_DIAGRAM_COMPLETION_GATE_ID, evaluateArchitectureDiagramCompletion],
     ]).get(gateId);
     const result = await evaluator({ root: process.cwd(), ticketId });
     if (result.rule_id !== gateId) throw new TypeError(`Unsupported decision gate: ${gateId}`);

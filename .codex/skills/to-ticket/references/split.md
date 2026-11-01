@@ -1,12 +1,12 @@
 # Plan split
 
-`plan_split` stage가 승인된 Product/Architecture Spec을 vertical plan으로 분할하고 review 입력을 만든다.
+`to-ticket`의 initial phase가 승인된 Product/Architecture Spec을 vertical plan으로 분할하고 review 입력을 만든다.
 
 ## 입력과 분석
 
 1. `context.worktree_ref`가 가리키는 정본 `worktree.json`에서 `workspace`, `session_directory`, `branch`, `head`, `return_root`, `plan_set_id`를 읽는다. `plan_set_id`가 없으면 중단한다. Tracker ticket ID와 같을 필요는 없다. `workspace`를 작업 위치로 사용한다. 진입 시 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --defer-tracker-sync --json`을 실행해 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다.
 2. 요청 원문, Product/Architecture Spec, 현행 `docs/contracts/`와 연결 다이어그램, 관련 System Target·accepted Architecture Decision을 읽는다. 전달된 Spec 경로를 우선하고, 별도 지정이 없으면 `docs/specs/<plan-set-id>/request.md`, `docs/specs/<plan-set-id>/product-spec.md`, `docs/specs/<plan-set-id>/architecture-spec.md`를 읽는다. split 경계·기존 owner·실행 전제를 Spec에서 판별할 수 있는 만큼 현재 코드 조사가 필요하면 `code-research`를 실행한다.
-3. 원본 프로젝트의 `<shared_guidance_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 plan 예상 토큰과 산정 근거를 기록하고, 각 plan이 한도 안에 들도록 나눈다. Architecture Spec에 material technology choice가 있으면 `system-targets.yaml`의 `decision_metadata.decision_layer_version: 1`과 Architecture Decision ID, 승인 `decision_evidence_complete` 및 `decision_review_complete` 결과를 확인한다.
+3. 활성 workspace의 `<workspace_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 plan 예상 토큰과 산정 근거를 기록하고, 각 plan이 한도 안에 들도록 나눈다. Architecture Spec에 material technology choice가 있으면 `system-targets.yaml`의 `decision_metadata.decision_layer_version: 1`과 Architecture Decision ID, 승인 `decision_evidence_complete` 및 `decision_review_complete` 결과를 확인한다.
 
 ## 분할 제안과 승인
 
@@ -24,4 +24,4 @@
 
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 Product/Architecture Spec 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 split plan을 표현한다.
 
-Canonical plan과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. `completed/OK`로 끝내며 Beads와 configured tracker 티켓 발행은 `plan_finalize` stage에서 수행한다.
+Canonical plan과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환하고, reviewer가 읽을 session context file `runtime/to-ticket/plan-review-context.json`을 저장한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical plans를 작성한 뒤 `action_required / REVIEW_REQUIRED`와 `review_request` (`skill: plan-review`, `agent_profile: plan_reviewer`, `context_path: runtime/to-ticket/plan-review-context.json`)를 반환해 메인 orchestrator가 독립 fresh reviewer를 호출하도록 한다. Beads와 configured tracker 티켓 발행은 pass review snapshot gate를 통과한 author resume에서만 수행한다.

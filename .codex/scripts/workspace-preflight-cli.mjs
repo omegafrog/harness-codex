@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { inspectWorkspace } from "./workspace-preflight-core.mjs";
 
 export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd = process.cwd()) {
@@ -15,16 +14,14 @@ export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd
   const result = await inspectWorkspace({ workspaceRoot: options.workspaceRoot, cwd });
   if (result.valid && options.deferTrackerSync) result.tracker_sync = { status: "deferred", reason: "to_ticket_batch_publish" };
   if (result.valid && !options.deferTrackerSync) {
-    const installed = new URL("../harness-runtime/src/tracker/lifecycle.mjs", import.meta.url);
-    const source = new URL("../../src/tracker/lifecycle.mjs", import.meta.url);
-    const { inspectTrackerSync } = await import(existsSync(installed) ? installed.href : source.href);
+    const installed = new URL("../../.harness/src/tracker/lifecycle.mjs", import.meta.url);
+    const { inspectTrackerSync } = await import(installed.href);
     result.tracker_sync = await inspectTrackerSync({ workspace_root: result.workspace_root });
     if (result.tracker_sync.status !== "pass") { result.valid = false; result.reason = result.tracker_sync.reason; }
   }
   if (result.valid && options.forImplementation) {
-    const installed = new URL('../harness-runtime/src/workflow/project-readiness.mjs', import.meta.url);
-    const source = new URL('../../src/workflow/project-readiness.mjs', import.meta.url);
-    const { inspectProjectReadiness } = await import(existsSync(installed) ? installed.href : source.href);
+    const installed = new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url);
+    const { inspectProjectReadiness } = await import(installed.href);
     result.project_readiness = await inspectProjectReadiness({ workspace_root: result.workspace_root, deferContractSync: true });
     if (result.project_readiness.contract_sync?.status === "deferred") result.contract_sync = result.project_readiness.contract_sync;
     if (result.project_readiness.status !== 'pass') { result.valid = false; result.reason = result.project_readiness.reason; }

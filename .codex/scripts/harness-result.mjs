@@ -1,14 +1,12 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
-const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
-const base = existsSync(new URL('skill-execution.mjs', installed)) && !sourceCheckout ? installed : new URL('../../src/workflow/', import.meta.url);
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn } = await import(new URL('skill-execution.mjs', base));
-const { identifyQuestions } = await import(new URL('questions.mjs', base));
-const { cliSession } = await import(new URL('cli-session.mjs', base));
+import { isDeepStrictEqual } from 'node:util';
+const installed = new URL('../../.harness/src/workflow/', import.meta.url);
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('skill-execution.mjs', installed));
+const { identifyQuestions } = await import(new URL('questions.mjs', installed));
+const { cliSession } = await import(new URL('cli-session.mjs', installed));
+const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -22,23 +20,45 @@ try {
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');
   if (input.session_directory !== session) throw new Error('Input session directory does not match caller session');
+  await validateSkillInput({ root: opts.root, input });
   const envelope = await readSkillSessionJson({ root: opts.root, session_directory: session, path: opts.return });
   if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
   const prefix = `runtime/executions/${input.execution_id}`;
   if (opts.return !== `${prefix}/return.json`) throw new Error('Return must belong to the requested execution');
-  if (envelope.result_ref !== null && envelope.result_ref !== `${prefix}/result.json`) throw new Error('Result must belong to the requested execution');
+  if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = `${prefix}/result.json`;
   if (envelope.result_ref) {
-    try {
-      const existing = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref });
-      for (const key of ['execution_id', 'skill', 'status', 'code']) if (existing[key] !== envelope[key]) throw new Error(`Result ${key} mismatch`);
-      envelope.result = existing;
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (envelope.result_ref !== `${prefix}/result.json`) throw new Error('Result must belong to the requested execution');
+    try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  if (Object.hasOwn(envelope.result, 'artifact_contents')) {
+    const profile = input.context?.agent_profile || input.context?.role;
+    if (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8'))) throw new Error('Inline artifacts require a read-only agent profile');
+    const items = envelope.result.artifact_contents;
+    if (!Array.isArray(items) || items.length > 32) throw new Error('Invalid inline artifacts');
+    const names = new Set();
+    for (const item of items) {
+      if (!item || Object.keys(item).sort().join(',') !== 'content,kind,name' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(item.name || '') || item.name === '.' || item.name === '..' || names.has(item.name) || typeof item.kind !== 'string' || !item.kind.trim() || typeof item.content !== 'string' || Buffer.byteLength(item.content) > 1024 * 1024) throw new Error('Invalid inline artifact');
+      names.add(item.name);
+    }
+    for (const item of items) {
+      const relative = `${prefix}/artifacts/${item.name}`;
+      await assertWorkspaceTarget(session, relative);
+      await mkdir(join(session, prefix, 'artifacts'), { recursive: true, mode: 0o700 });
+      await assertWorkspaceTarget(session, relative);
+      await writeFile(join(session, relative), item.content, { flag: 'wx', mode: 0o600 });
+      envelope.result.artifacts.push({ base: 'session', path: relative, kind: item.kind, sha256: null });
+    }
+    delete envelope.result.artifact_contents;
   }
   if (envelope.result.questions?.length) {
-    if (!['REVIEW_REQUIRED', 'USER_DECISION_REQUIRED'].includes(envelope.code)) throw new Error('Questions require a waiting decision or review');
-    envelope.result.questions = identifyQuestions(input.execution_id, envelope.result.questions.map(({ question_id, ...question }) => question));
+    if (!['USER_DECISION_REQUIRED', 'REVIEW_REQUIRED'].includes(envelope.code)) throw new Error('Questions require a waiting decision or review');
+    const withoutId = ({ question_id, ...question }) => question;
+    const questions = (envelope.result.questions || []).map(withoutId);
+    if (questions.some((question, index) => questions.slice(0, index).some((prior) => isDeepStrictEqual(prior, question)))) throw new Error('Duplicate questions in batch');
+    envelope.result.questions = identifyQuestions(input.execution_id, questions);
   }
-  if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = `${prefix}/result.json`;
+  if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');
   await validateSkillReturn({ root: opts.root, input, envelope });
   if (envelope.result_ref) {
     const path = join(session, envelope.result_ref);

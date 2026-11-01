@@ -11,7 +11,7 @@ Hot-path contract:
 - Run ordinary unit and regression checks with the project native CLI and commands documented in EXEC.md. Reserve harness-exec and execution.json profiles for explicitly requested end-user E2E; require current arguments, configuration checks, and dependency readiness for those runs. Report missing E2E setup to the caller.
 - Role: run only the requested E2E test or server-backed verification and report its runtime result.
 - Use `.codex/internal-skills/implement/GUIDE.md` only for the runtime-verification boundary; do not perform implementation work.
-- Require caller-supplied absolute `shared_guidance_root`; verify its Git common directory matches `workspace_root`, then read `<shared_guidance_root>/docs/agents/testing-guidance.md` before selecting or starting verification. Never substitute a worktree-local copy.
+- Read `docs/agents/testing-guidance.md` from the active `workspace_root` before selecting or starting verification. This tracked file belongs to the executing project workspace; never read or update the original checkout's copy for a managed worktree.
 - Do not edit implementation files, tests, Specs, plans, or configuration.
 - Start required processes, capture stdout/stderr and exit codes, poll until completion or the supplied timeout, and terminate owned processes after collection.
 - Distinguish passed, failed, timed out, and environment-blocked results.

@@ -6,7 +6,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## What it does
 
@@ -35,7 +35,7 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
-The caller dispatches a fresh `code-research` execution with `context.role="code_researcher"` through the [independent execution commands](../static-caller/GUIDE.md). Supply the research request and referenced inputs, let the static caller read the configured model and effort, and use a separate Codex session. The researcher inspects only the relevant source and tests, does not edit files or make design decisions, and returns a concise report with file paths. The caller reads the result and decides what to pass to the next skill.
+The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files or make design decisions, and returns a concise report with source locations and inspected commit. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out
 

@@ -1,14 +1,12 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const installed = new URL("../../../../.codex/harness-runtime/src/workflow/session-output.mjs", import.meta.url);
-const source = new URL("../../../../src/workflow/session-output.mjs", import.meta.url);
-const { sessionDirectory, sessionOutputPath } = await import(existsSync(installed) ? installed.href : source.href);
+const installed = new URL("../../../../.harness/src/workflow/session-output.mjs", import.meta.url);
+const { sessionDirectory, sessionOutputPath } = await import(installed.href);
 function assertSessionManifest(root, manifest) {
   sessionOutputPath(root, relative(sessionDirectory(root), manifest));
 }

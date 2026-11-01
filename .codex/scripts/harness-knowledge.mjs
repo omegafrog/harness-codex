@@ -1,18 +1,14 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const runtimeBase = new URL("../harness-runtime/src/", import.meta.url);
-const sourceBase = new URL("../../src/", import.meta.url);
-const base = existsSync(fileURLToPath(new URL("knowledge/evidence.mjs", runtimeBase))) ? runtimeBase : sourceBase;
+const runtimeBase = new URL("../../.harness/src/", import.meta.url);
 const [evidence, impact, registry, research, validation, runtimeEvidence] = await Promise.all([
-  import(new URL("knowledge/evidence.mjs", base).href),
-  import(new URL("decision/impact.mjs", base).href),
-  import(new URL("knowledge/registry.mjs", base).href),
-  import(new URL("knowledge/research.mjs", base).href),
-  import(new URL("knowledge/validation.mjs", base).href),
-  import(new URL("knowledge/runtime-evidence.mjs", base).href),
+  import(new URL("knowledge/evidence.mjs", runtimeBase).href),
+  import(new URL("decision/impact.mjs", runtimeBase).href),
+  import(new URL("knowledge/registry.mjs", runtimeBase).href),
+  import(new URL("knowledge/research.mjs", runtimeBase).href),
+  import(new URL("knowledge/validation.mjs", runtimeBase).href),
+  import(new URL("knowledge/runtime-evidence.mjs", runtimeBase).href),
 ]);
 const { approveEvidenceSummary, importEvidence, publishEvidenceSummary, readStagedEvidence, rejectEvidenceSummary, stageEvidenceSummary } = evidence;
 const { markDeprecatedPrincipleImpacts } = impact;

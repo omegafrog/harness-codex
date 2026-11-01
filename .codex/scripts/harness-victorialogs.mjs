@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { copyFile, lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
@@ -8,25 +9,23 @@ import { dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const runtime = existsSync(new URL('../harness-runtime/src/workflow/session-output.mjs', import.meta.url))
-  ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs';
-const { sessionDirectory, sessionOutputPath } = await import(new URL(runtime, import.meta.url).href);
+const { sessionDirectory, sessionOutputPath } = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
 const args = process.argv.slice(2);
 const action = args.shift();
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
-  if (!['--root', '--port', '--retention-days', '--input', '--shared-guidance-root', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].includes(args[i]) || !args[i + 1] || Object.hasOwn(options, args[i])) throw new Error('Expected setup|validate|start|stop|check|mcp --root DIR [--port N --retention-days N]');
+  if (!['--root', '--port', '--retention-days', '--input', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].includes(args[i]) || !args[i + 1] || Object.hasOwn(options, args[i])) throw new Error('Expected setup|validate|start|stop|check|mcp --root DIR [--port N --retention-days N]');
   options[args[i]] = args[i + 1];
 }
 if (!['setup', 'validate', 'start', 'stop', 'check', 'mcp', 'mcp-metrics', 'validate-logs'].includes(action)) throw new Error('Expected setup|validate|start|stop|check|mcp');
 if (action !== 'setup' && ['--port', '--retention-days', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].some((key) => options[key])) throw new Error('Runtime uses config.json; port and retention options are only valid for setup');
 if (action !== 'validate-logs' && options['--input']) throw new Error('--input requires validate-logs');
-if (action !== 'setup' && options['--shared-guidance-root']) throw new Error('--shared-guidance-root requires setup');
 const root = await realpath(resolve(options['--root'] || process.cwd()));
-const git = (argv) => execFileSync('git', argv, { cwd: root, encoding: 'utf8' }).trim();
-if (await realpath(git(['rev-parse', '--show-toplevel'])) !== root) throw new Error('--root must be the repository root');
+const execFileAsync = promisify(execFile);
+const git = async (argv) => (await execFileAsync('git', argv, { cwd: root, encoding: 'utf8' })).stdout.trim();
+if (await realpath(await git(['rev-parse', '--show-toplevel'])) !== root) throw new Error('--root must be the repository root');
 const directory = join(root, 'docs/observability/victorialogs');
-const project = `harness-vl-${createHash('sha256').update(await realpath(git(['rev-parse', '--path-format=absolute', '--git-common-dir']))).digest('hex').slice(0, 12)}`;
+const project = `harness-vl-${createHash('sha256').update(await realpath(await git(['rev-parse', '--path-format=absolute', '--git-common-dir']))).digest('hex').slice(0, 12)}`;
 const configPath = join(directory, 'config.json');
 const integer = (value, min, max, label) => {
   const number = Number(value);
@@ -60,8 +59,8 @@ async function normalizeConfig(config) {
     if (!item || typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(item.id) || ids.has(item.id)) throw new Error('Project IDs must be unique safe names');
     if (typeof item.root !== 'string' || !isAbsolute(item.root)) throw new Error('Project root must be absolute');
     item.root = await realpath(item.root);
-    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: item.root, encoding: 'utf8' }).trim();
-    const common = await realpath(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: item.root, encoding: 'utf8' }).trim());
+    const top = (await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: item.root, encoding: 'utf8' })).stdout.trim();
+    const common = await realpath((await execFileAsync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: item.root, encoding: 'utf8' })).stdout.trim());
     if (await realpath(top) !== item.root || roots.has(common)) throw new Error('Project roots must identify distinct Git repositories');
     ids.add(item.id); roots.add(common);
     if (!Array.isArray(item.services)) throw new Error('Project services must be an array');
@@ -109,9 +108,7 @@ async function validateLogFile() {
   if (!options['--input']) throw new Error('validate-logs requires --input FILE');
   const schemaPath = join(directory, 'diagnostic-log.schema.json');
   const schema = JSON.parse(await readFile(existsSync(schemaPath) ? schemaPath : assetSource('diagnostic-log.schema.json'), 'utf8'));
-  const validator = existsSync(new URL('../harness-runtime/src/observability/diagnostic-logs.mjs', import.meta.url))
-    ? '../harness-runtime/src/observability/diagnostic-logs.mjs' : '../../src/observability/diagnostic-logs.mjs';
-  const { validateDiagnosticLog } = await import(new URL(validator, import.meta.url).href);
+  const { validateDiagnosticLog } = await import(new URL('../../.harness/src/observability/diagnostic-logs.mjs', import.meta.url).href);
   let records = 0, invalid = 0;
   const violations = [];
   const inspect = (text, line) => {
@@ -137,9 +134,7 @@ async function validateLogFile() {
   if (status !== 'pass') process.exitCode = 1;
 }
 async function setupVictoriaLogs() {
-  const guidanceRoot = await realpath(resolve(options['--shared-guidance-root'] || root));
-  const guidanceCommon = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: guidanceRoot, encoding: 'utf8' }).trim();
-  if (await realpath(guidanceCommon) !== await realpath(git(['rev-parse', '--path-format=absolute', '--git-common-dir']))) throw new Error('shared_guidance_root must share the project Git common directory');
+  const guidanceRoot = root;
   const old = existsSync(configPath) ? await readConfig() : {};
   const config = await normalizeConfig({
     ...old,
@@ -213,7 +208,7 @@ async function main() {
   if (action === 'setup') return setupVictoriaLogs();
   if (action === 'validate-logs') return validateLogFile();
   const config = await readConfig();
-  const primaryRoot = git(['worktree', 'list', '--porcelain']).split('\n').find((line) => line.startsWith('worktree ')).slice(9);
+  const primaryRoot = (await git(['worktree', 'list', '--porcelain'])).split('\n').find((line) => line.startsWith('worktree ')).slice(9);
   const data = sessionOutputPath(primaryRoot, 'runtime/observability/victorialogs/data');
   const state = sessionOutputPath(primaryRoot, 'runtime/observability/victorialogs/otel-collector');
   const metricsData = sessionOutputPath(primaryRoot, 'runtime/observability/victoriametrics/data');

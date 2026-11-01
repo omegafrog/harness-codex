@@ -6,7 +6,7 @@
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [정적 호출기](../static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 실행은 지정된 작업만 수행하고 결과 파일을 저장한 뒤 공통 envelope만 반환한다. 추가 agent·리뷰·단계 전환이 필요하면 orchestrator에 상태 코드로 반환한다.
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## What it does
 
@@ -50,8 +50,8 @@ While any stakeholder decision is `PARTIAL` or `UNRESOLVED`:
 8. `ACCEPTED`, an unambiguous answer, or explicit delegation may settle the stakeholder decision including its material conditions and exceptions. Resolve delegated and ordinary engineering details from evidence and the approved scope; identify their author and rationale accurately.
 9. Reassess affected existing terms as model meaning/ownership/lifecycle settles, not only newly coined terms. Read the [proactive language review](../domain-modeling/references/language-lifecycle.md). Propose implied definition/rename/retirement changes yourself; resolve material meaning choices in this same interview. Once the model decision settles the naming consequence, update it without an extra standalone rename-approval round. Classify the resulting terms using the durable-vocabulary placement rules.
 10. Update `CONTEXT.md` for project-wide or explicitly context-scoped canonical terms; update `CONTEXT-MAP.md` for settled bounded-context names, responsibilities, or relationships. Keep Spec-only wording ticket-scoped.
-11. When the user explicitly gives a reusable implementation preference, record it through `implementation-guidance` in `<shared_guidance_root>/docs/agents/implementation-guidance.md`, with scope and provenance. Use the original project root supplied by the caller (or the current project root outside a managed worktree); never update a worktree-local copy. Do not record inferred preferences or product/architecture decisions there.
-12. When the user explicitly gives a reusable test-running preference, record it through `testing-guidance` in `<shared_guidance_root>/docs/agents/testing-guidance.md`; use the same canonical-root rule.
+11. When the user explicitly gives a reusable implementation preference, record it through `implementation-guidance` in `<workspace_root>/docs/agents/implementation-guidance.md`, with scope and provenance. Use the active workflow workspace so the memory update is part of its branch. Do not record developer/skill instructions, inferred preferences, or product/architecture decisions there.
+12. When the user explicitly gives a reusable test-running preference, record it through `testing-guidance` in `<workspace_root>/docs/agents/testing-guidance.md`.
 13. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
 14. Repeat until no material stakeholder decision remains unresolved. Complete ordinary engineering details without turning each one into an interview question.
 

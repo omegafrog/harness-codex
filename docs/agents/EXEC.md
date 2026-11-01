@@ -40,7 +40,7 @@
 
 ## E2E 실패 학습 계약
 
-E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 근거와 반복 여부를 기록한다. 반복되거나 재사용할 예방 절차가 확인되면 원본 프로젝트의 `docs/agents/testing-guidance.md`를 반드시 갱신한다. 실행값·URL·포트·readiness profile은 `docs/agents/execution.json`, 운영자가 따라야 할 준비·진단 절차는 이 문서에 반영하고 서로 일치시킨다. 테스트 결과와 학습 상태를 분리하며 학습 pending은 테스트 통과나 workflow 완료를 막지 않는다. `e2e-learning-check` profile의 `config_inputs`에는 이 규칙, 검증 코드와 관련 테스트를 포함한다.
+E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 근거와 반복 여부를 기록한다. 반복되거나 재사용할 예방 절차가 확인되면 활성 workspace의 `docs/agents/testing-guidance.md`를 갱신한다. 실행값·URL·포트·readiness profile은 `docs/agents/execution.json`, 운영자가 따라야 할 준비·진단 절차는 이 문서에 반영하고 서로 일치시킨다. 테스트 결과와 학습 상태를 분리하며 학습 pending은 테스트 통과나 workflow 완료를 막지 않는다. `e2e-learning-check` profile의 `config_inputs`에는 이 규칙, 검증 코드와 관련 테스트를 포함한다.
 
 ## Harness 검증 경로 실행
 
@@ -114,7 +114,7 @@ Git 프로젝트는 `<git-common-dir>/harness-workflows/sessions/<workspace-hash
 
 ## 테스트·서비스 실행 계약
 
-구현 선호사항과 테스트 실행 선호사항은 각각 프로젝트 소유 문서 `docs/agents/implementation-guidance.md`와 `docs/agents/testing-guidance.md`에 기록한다. 관리 worktree에서는 호출자가 원본 프로젝트 루트를 절대 `shared_guidance_root`로 전달해야 하며, 이는 `session-worktree`의 `return_root`와 같다. `shared_guidance_root`와 활성 `workspace_root`의 Git common directory가 같은지 확인하고 worktree 내부 복사본 대신 공용 원본을 읽는다. 구현 agent는 편집 전에 구현 지침을, 테스트·서비스 실행 runner는 실행 전에 테스트 지침을 읽는다. 구현 agent도 검증을 실행할 때 테스트 지침을 함께 읽는다. 지침이 승인된 Spec이나 실행 계약과 충돌하면 진행하지 않고 호출자에게 보고한다.
+구현 선호사항과 테스트 실행 선호사항은 각각 활성 프로젝트 workspace의 `docs/agents/implementation-guidance.md`와 `docs/agents/testing-guidance.md`에 기록한다. 관리 worktree에서는 실행 중인 `workspace_root`의 추적 파일을 읽고 갱신한다. 이 파일은 workflow branch와 함께 review·push되므로 원본 checkout의 사본을 대신 사용하지 않는다. 구현 agent는 편집 전에 구현 지침을, 테스트·서비스 실행 runner는 실행 전에 테스트 지침을 읽는다. 구현 agent도 검증을 실행할 때 테스트 지침을 함께 읽는다. 지침이 승인된 Spec이나 실행 계약과 충돌하면 진행하지 않고 호출자에게 보고한다.
 
 일반 단위·회귀 검증은 아래 프로젝트별 명령을 저장소 루트에서 기본 CLI로 직접 실행한다. `docs/agents/execution.json`과 `harness-exec`는 명시적 사용자 흐름 E2E에만 사용하며, 이 저장소에는 현재 그런 E2E profile이 없다. E2E profile을 추가할 때는 `purpose: "e2e"`와 실제 실행 준비/readiness 검증을 포함한다.
 
@@ -157,7 +157,7 @@ reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> -
 
 native `.codex/hooks.json`의 `UserPromptSubmit`에는 `harness-orchestrator-hook.mjs`가 등록된다. 명령 hook은 canonical `worktree.json`·같은 Codex session ID의 orchestrator 상태와 Git worktree 등록·경로·branch를 읽기 전용으로 대조하고 `resume_candidate`, `compose_candidate`, `inspect_required`를 전달한다. 기록 생성·legacy 이전·복구·Git 변경은 수행하지 않는다. 새 요청 여부는 메인이 메시지와 관측 상태를 함께 보고 판단하며, 생성 작업은 workflow-compose subagent에 맡긴다. installer는 다른 hook을 보존하고 해당 등록만 동기화하며 변경 전 설정을 session에 백업한다. Doctor가 등록 누락·손상을 진단한다. 새 hook은 Codex의 `/hooks`에서 신뢰 검토를 거쳐야 실행된다. protocol·신뢰 규칙은 [공식 hook 문서](https://learn.chatgpt.com/docs/hooks)를 따른다.
 
-setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-skill-execution.mjs budget --root <shared_guidance_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
+setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-skill-execution.mjs budget --root <workspace_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
 
 `model-binding-check`는 공개 skill의 binding 등록과 설정·workflow tier inventory를 검사한다. `internal-skills-check`는 skill 설치·업데이트·Doctor·Git 가시성, model/effort binding, 작은 반환 envelope와 파일 기반 결과 검증을 포함한다. `harness-skill-execution.mjs binding`은 실제 설정을 해석하고 `validate-return`은 session의 입력·반환·상세 결과·산출물을 대조한다. 이 명령들은 agent를 생성하거나 외부 tracker를 변경하지 않는다. orchestrator skill이 실제 spawn 도구와 기존 workflow lifecycle을 사용한다.
 
@@ -183,13 +183,13 @@ E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 
 
 ## VictoriaLogs 개발 관측성 설치
 
-setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여부, 로그/메트릭 포트와 보존 일수, OTLP HTTP 포트, 프로젝트/서비스별 앱 기준 metrics_url·컨테이너 기준 scrape_url을 터미널에서 수집한다. `harness-victorialogs.mjs setup`이 compose·otel-collector.yaml·scrape.json·개발 Spring config·otel-javaagent.properties·공식 MCP 두 개·공용 지침을 준비한다. 기본 포트는 9428/8428/4318이고 저장소 보존은 각각 7일이다. 기본 compose bridge를 사용한다. host에는 127.0.0.1:<설정 port>만 publish하고 내부 listener는 0.0.0.0:4318/9428/8428이다. 앱→Collector는 공개 localhost, Collector/MCP→backend는 compose service DNS, Metrics→WSL 앱은 scrape_url의 host.docker.internal:<실제 port/path>로 연결한다. Desktop host networking 활성화나 WSL gateway IP에 의존하지 않는다. Collector는 native OTLP LogRecord를 받아 VictoriaLogs OTLP HTTP endpoint로 protobuf export한다. Vector·Fluent Bit은 설치하지 않고 session JSON 파일을 tail하지 않는다. `victorialogs-local-setup`이 실제 source의 개발 SDK/appender 또는 외부 Java agent와 Actuator/Prometheus registry를 연결한다. production artifact에서 개발 의존성을 제외하고 SDK/agent 중복 전송을 막는다. 기본 관리 명령은 `harness-victorialogs.mjs start|check|stop`으로 직접 실행한다. 최종 사용자 흐름 E2E만 별도 E2E profile을 사용한다. check는 세 API readiness이며 실제 수집은 앱 로그 검색과 project/service별 최신 up=1로 별도 확인한다. 이 Node 원본에는 Spring 앱이 없으므로 설치 fixture·오프라인 진단 검사와 설정 검증 범위를 보고하고 실제 앱 수집을 확인한 것으로 쓰지 않는다.
+setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여부, 로그/메트릭 포트와 보존 일수, OTLP HTTP 포트, 프로젝트/서비스별 앱 기준 metrics_url·컨테이너 기준 scrape_url을 터미널에서 수집한다. `harness-victorialogs.mjs setup`이 compose·otel-collector.yaml·scrape.json·개발 Spring config·otel-javaagent.properties·공식 MCP 두 개·활성 workspace 지침을 준비한다. 기본 포트는 9428/8428/4318이고 저장소 보존은 각각 7일이다. 기본 compose bridge를 사용한다. host에는 127.0.0.1:<설정 port>만 publish하고 내부 listener는 0.0.0.0:4318/9428/8428이다. 앱→Collector는 공개 localhost, Collector/MCP→backend는 compose service DNS, Metrics→WSL 앱은 scrape_url의 host.docker.internal:<실제 port/path>로 연결한다. Desktop host networking 활성화나 WSL gateway IP에 의존하지 않는다. Collector는 native OTLP LogRecord를 받아 VictoriaLogs OTLP HTTP endpoint로 protobuf export한다. Vector·Fluent Bit은 설치하지 않고 session JSON 파일을 tail하지 않는다. `victorialogs-local-setup`이 실제 source의 개발 SDK/appender 또는 외부 Java agent와 Actuator/Prometheus registry를 연결한다. production artifact에서 개발 의존성을 제외하고 SDK/agent 중복 전송을 막는다. 기본 관리 명령은 `harness-victorialogs.mjs start|check|stop`으로 직접 실행한다. 최종 사용자 흐름 E2E만 별도 E2E profile을 사용한다. check는 세 API readiness이며 실제 수집은 앱 로그 검색과 project/service별 최신 up=1로 별도 확인한다. 이 Node 원본에는 Spring 앱이 없으므로 설치 fixture·오프라인 진단 검사와 설정 검증 범위를 보고하고 실제 앱 수집을 확인한 것으로 쓰지 않는다.
 
 공식 MCP Docker 이미지는 stdio client subprocess로 필요 시 실행한다. 전역 provider 설정은 자동 수정하지 않으며 SigNoz marketplace 자동 등록은 제거한다. 관리 lock으로 식별된 폐기 skill만 session backup 후 제거하고 기존 사용자 데이터와 전역 plugin은 유지한다. 데이터/offset은 원본 프로젝트 session directory, linked-worktree 로그는 같은 Git common directory의 sessions에서 수집한다. Docker daemon과 Compose v2가 전제이며 서버·이미지 pull·Spring 앱을 검증 명목으로 자동 실행하지 않는다.
 
 ## Spring Boot diagnostic v1 검증
 
-`diagnostic-log-check`는 사용자 v1의 일곱 이벤트, 필수 Resource/Attributes, outcome·숫자/boolean·Trace ID·timestamp 및 offline JSONL CLI를 집중 검증한다. `node --test tests/diagnostic_logs.test.mjs`를 사용하며 Docker/앱/인프라는 필요하지 않다. 소비 프로젝트 setup은 스키마·예시·수집 매핑과 공용 구현/테스트 지침을 설치하고 `victorialogs-diagnostic-logs` profile을 생성한다. 그 profile의 HARNESS_DIAGNOSTIC_LOG_FILE은 실제 emitter 원본 JSONL 경로다. 원본 타입 검사와 VictoriaLogs 저장 후 string 표현을 구분한다. 일반 unit 검증이나 실패 학습을 이유로 E2E를 추가 실행하지 않는다.
+`diagnostic-log-check`는 사용자 v1의 일곱 이벤트, 필수 Resource/Attributes, outcome·숫자/boolean·Trace ID·timestamp 및 offline JSONL CLI를 집중 검증한다. `node --test tests/diagnostic_logs.test.mjs`를 사용하며 Docker/앱/인프라는 필요하지 않다. 소비 프로젝트 setup은 스키마·예시·수집 매핑과 workspace별 구현/테스트 메모리를 설치하고 `victorialogs-diagnostic-logs` profile을 생성한다. 그 profile의 HARNESS_DIAGNOSTIC_LOG_FILE은 실제 emitter 원본 JSONL 경로다. 원본 타입 검사와 VictoriaLogs 저장 후 string 표현을 구분한다. 일반 unit 검증이나 실패 학습을 이유로 E2E를 추가 실행하지 않는다.
 
 
 ## Beads 자동 백업의 table file 누락 복구
@@ -217,9 +217,27 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 `implementation-review-check` profile은 plan별 영속 수정 한도, 재개·worktree 교체, 지적 분류, 중간 plan과 최종 계약 gate, 설치·업데이트된 CLI와 Git 가시성, 읽기 전용 통합 리뷰 조회, 양쪽 결과 수집과 planning snapshot 변경 차단을 검사한다. 수정 한도 reset은 새 독립 계획 리뷰와 dispatch를 통과한 planning snapshot 변경이 있을 때만 허용하고, 일반 진행 지시로는 초기화되지 않는지도 검사한다. 임시 Git/file fixture를 사용하며 별도 서버·DB와 생성 설정이 없어 prepare/dependencies는 빈 배열이다. `node --test tests/wrapper_repair.test.mjs tests/review_status.test.mjs tests/session-output.test.mjs tests/wrapper_dispatch.test.mjs tests/wrapper_reconciliation.test.mjs tests/wrapper_checkpoint.test.mjs tests/plan_review.test.mjs tests/installer_update.test.mjs tests/tracker_contract.test.mjs`로 실행한다.
 
 
+### 소비자 테스트 저장소의 workflow 재실행
+
+사용자가 소비자 workflow 재실행을 요청하면 `/home/jiwoo/workspace/harness-test`가 Git `main`의 clean 상태인지, 설치된 Harness 버전과 Doctor 결과가 적절한지 먼저 확인한다. 기존 linked worktree 정리는 명시적으로 요청된 경우에만 수행한다. 삭제 전 각 worktree의 tracked·untracked 변경과 `.io`를 포함한 전체 내용을 백업하고 백업을 검증한다. 다른 저장소의 worktree는 건드리지 않는다.
+
+workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 lock을 만들고 linked worktree를 생성한다. 이 테스트의 **상위 `codex exec`는 쓰기 제한이 없는 환경에서** `--sandbox danger-full-access`로 실행한다. 바깥 sandbox가 Git 공통 디렉터리 쓰기를 막으면 이 옵션만으로 해제되지 않으므로 실행 전 쓰기 가능 여부를 확인하고, 막혀 있으면 재시도나 상태 수정 없이 사유를 보고한다. stage 실행은 각 스킬의 기존 실행 계약을 따른다.
+
+Luna medium을 지정한 계산기 테스트는 다음 순서로 실행한다. 첫 명령의 최종 응답에서 생성된 worktree 위치를 확인해 두 번째 명령의 `<생성된-worktree-절대경로>`에 넣는다. `$orchestrator`가 shell 변수로 확장되지 않도록 프롬프트는 작은따옴표로 감싼다.
+
+```bash
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+  -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어'
+
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+  -C '<생성된-worktree-절대경로>' '$orchestrator 계속 진행해'
+```
+
+로그와 마지막 응답은 각 실행의 `.io` 아래에 보존한다. 사용자가 중단 시 개입하지 말라고 한 테스트에서는 오류·중단 후 실행 상태나 산출물을 수정하거나 재시도하지 않고 실제 결과를 보고한다. 정상적으로 질문이 반환되면 기존에 승인되거나 위임된 선택을 사용한다. `spec-me` 완료 receipt와 Spec·리뷰 산출물을 확인하고 요청한 단계에서 멈춘다.
+
 ### Orchestrator 작업 실행
 
-메인 orchestrator는 [정적 호출기 지침](../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
+메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
 
 orchestrator는 `harness-execution-state.mjs`로 시작·결과·실패 상태와 진행률을 기록한다. `context.codex_session_id`, `context.stage_id`와 필요한 제어 session 경로를 입력에 지정한다.

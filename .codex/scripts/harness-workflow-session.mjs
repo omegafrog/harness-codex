@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
-const installed = new URL('../harness-runtime/src/workflow/worktrees.mjs', import.meta.url);
-const { recordWorkflowSession } = await import(existsSync(installed) && !sourceCheckout ? installed.href : new URL('../../src/workflow/worktrees.mjs', import.meta.url).href);
+const installed = new URL('../../.harness/src/workflow/worktrees.mjs', import.meta.url);
+const { recordWorkflowSession } = await import(installed.href);
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {

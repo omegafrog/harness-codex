@@ -9,9 +9,6 @@ import { dirname, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
-const runtime = existsSync(new URL('../harness-runtime/src/workflow/project-readiness.mjs', import.meta.url)) && !sourceCheckout ? new URL('../harness-runtime/src/', import.meta.url) : new URL('../../src/', import.meta.url);
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
   console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --answers SESSION_JSON]');
@@ -26,7 +23,7 @@ for (let i = 0; i < args.length; i += 2) {
 const root = resolve(options['--root'] || process.cwd());
 if (options['--check']) {
   if (options['--answers']) throw new Error('--check cannot be combined with --answers');
-  const { inspectSetupConfiguration } = await import(new URL('workflow/project-readiness.mjs', runtime));
+  const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   process.stdout.write(`${JSON.stringify(await inspectSetupConfiguration({ workspace_root: root }))}\n`);
   process.exit(0);
 }
@@ -45,7 +42,7 @@ if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new E
 const native = Boolean(options['--answers']);
 let document;
 if (native) {
-  const output = await import(new URL('workflow/session-output.mjs', runtime).href);
+  const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
   const input = resolve(root, options['--answers']);
   const answerRef = relative(output.sessionDirectory(root), input).split(sep).join('/');
   if (!/^runtime\/setup\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/answers\.json$/i.test(answerRef)) throw new Error('Setup answers must belong to a unique setup session');
@@ -229,14 +226,14 @@ async function prepareProjectFiles() {
 }
 
 async function main() {
-  const parserUrl = new URL('eval/yaml.mjs', runtime);
+  const parserUrl = new URL('../../.harness/src/eval/yaml.mjs', import.meta.url);
   const { parseYaml } = await import(parserUrl.href);
   const configPath = join(root, '.codex/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const budgetPath = join(root, '.codex/context-budget.json');
   const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const config = parseYaml(oldConfig);
-  const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('workflow/project-readiness.mjs', runtime));
+  const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   const existing = await inspectSetupConfiguration({ workspace_root: root });
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
@@ -278,7 +275,7 @@ async function main() {
 
   let previousBudget = {};
   try { if (oldBudget) previousBudget = JSON.parse(oldBudget); } catch {}
-  const { validateContextBudget } = await import(new URL('workflow/skill-execution.mjs', runtime));
+  const { validateContextBudget } = await import(new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url));
   let validBudget = false;
   try { validateContextBudget(previousBudget); validBudget = true; } catch {}
   const budgetKeys = ['context_window_tokens', 'max_plan_tokens', 'handoff_reserve_tokens'];
@@ -434,7 +431,7 @@ async function main() {
     configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'retention_days'], retentionDays);
     if (config.observability?.signoz?.local?.enabled) configText = setYamlScalar(configText, ['observability', 'signoz', 'local', 'enabled'], false);
   }
-  const output = await import(new URL('workflow/session-output.mjs', runtime).href);
+  const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
   let finalBudget = contextBudget;
   if (reuse && !validBudget && missingBudgetField && currentBudget) {
     try { finalBudget = { ...JSON.parse(currentBudget), schema_version: 1 }; } catch { finalBudget = { schema_version: 1 }; }

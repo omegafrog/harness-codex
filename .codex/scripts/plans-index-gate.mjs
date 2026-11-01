@@ -1,9 +1,7 @@
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-const installed = new URL("../harness-runtime/src/gates/plans-index.mjs", import.meta.url);
-const source = new URL("../../src/gates/plans-index.mjs", import.meta.url);
-export const { inspectPlansIndex } = await import(existsSync(installed) ? installed.href : source.href);
+const installed = new URL("../../.harness/src/gates/plans-index.mjs", import.meta.url);
+export const { inspectPlansIndex } = await import(installed.href);
 
 function readArguments(argv) {
   const values = {};

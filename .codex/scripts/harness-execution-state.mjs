@@ -1,15 +1,9 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { isAbsolute } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
-const source = new URL('../../src/workflow/', import.meta.url);
-const base = existsSync(new URL('execution-state.mjs', installed)) && !sourceCheckout ? installed : source;
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, resolveSkillBinding } = await import(new URL('skill-execution.mjs', base));
-const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
-const { cliSession } = await import(new URL('cli-session.mjs', base));
+const installed = new URL('../../.harness/src/workflow/', import.meta.url);
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, resolveSkillBinding } = await import(new URL('skill-execution.mjs', installed));
+const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', installed));
+const { cliSession } = await import(new URL('cli-session.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -19,6 +13,7 @@ try {
   }
   if (!isAbsolute(opts.root || '') || !['running', 'completed', 'action_required', 'blocked', 'failed', 'cancelled'].includes(opts.status)) throw new Error('Absolute root, execution-id and valid status are required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Valid execution-id is required');
+  if (opts.status === 'running') throw new Error('Runner records running state; invoke harness-codex-run.mjs directly');
   const session = await cliSession(opts.root, opts['worktree-ref']);
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');

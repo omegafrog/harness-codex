@@ -9,18 +9,14 @@ description: Split approved product and architecture specifications into vertica
 
 ## 실행 모델과 반환
 
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 해당 tier를 우선한다. [정적 호출기](../../../.codex/internal-skills/static-caller/GUIDE.md)에 따라 `harness-static-call.mjs`가 스킬의 binding과 setup 설정을 읽어 model·effort를 선택한다. `execution_id`를 받은 호출은 해당 stage 파일에 지정된 작업을 수행하고 결과 파일과 공통 envelope를 반환한다.
+기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 해당 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. `execution_id`를 받은 호출은 해당 stage 파일에 지정된 작업을 수행하고 결과 파일과 공통 envelope를 반환한다.
 
-## Stage별 절차
+## Single executor stage
 
-orchestrated workflow는 `context.stage_id`에 따라 한 단계만 수행한다.
+`to-ticket` is one executor stage. Use [split](references/split.md) on the initial invocation, [revision](references/revision.md) when resumed with a recorded `revise` review, and [finalize](references/finalize.md) when resumed with a recorded `pass` review. The reviewer is never an executor stage: after the author returns `REVIEW_REQUIRED`, the main orchestrator calls a fresh native `plan_reviewer` subagent, records the result, then resumes this same author session with `harness-prepare-input.mjs --feedback`.
 
-| `stage_id` | 수행 파일 | 완료 뒤 orchestrator 처리 |
-|---|---|---|
-| `plan_split` | [split](references/split.md) | 결과의 `plan_set_draft`를 `plan_review`에 전달한다. |
-| `plan_revision` | [revision](references/revision.md) | 최신 `plan_review_result`를 전달하고, 완료 뒤 fresh `plan_review`를 다시 실행한다. |
-| `plan_finalize` | [finalize](references/finalize.md) | 최신 pass review를 확인하고 configured tracker에 발행한다. Beads 사용 시 mirror를 연결한다. |
+- No review feedback: obtain the user's actual approval for the proposed split, write canonical plans, then return `REVIEW_REQUIRED` with a `review_request` and a session context artifact.
+- Review feedback with `verdict=revise`: read the exact record path, repair only the plan set in scope, then return `REVIEW_REQUIRED` for a new review attempt.
+- Review feedback with `verdict=pass`: verify the record and current snapshot with `harness-plan-review.mjs check --phase planning`, then finalize and publish. Do not publish before this gate passes.
 
-독립 reviewer stage는 [plan-review GUIDE](../../../.codex/internal-skills/plan-review/GUIDE.md)를 사용한다. [리뷰 준비와 결과 처리](references/review-routing.md)에 따라 reviewer 실행은 각 회차마다 새 context로 시작하고, 결과와 gate를 기록한다. 리뷰 한도에 도달하거나 Spec 변경이 필요하면 해당 상태와 근거를 orchestrator에 반환한다.
-
-Standalone 호출은 `split → fresh plan-review → revision/review 반복 → finalize` 순서를 직접 수행한다. reviewer 결과가 pass인 시점에만 finalization으로 진행한다.
+The orchestrator presents real user questions and preserves actual answers. A user answer resolves only the asked decision; it does not make a review pass. Standalone use follows the same split → orchestrator review → author resume loop and completion gate.

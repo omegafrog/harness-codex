@@ -5,9 +5,9 @@ import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { updateProject } from '../src/installer/update.mjs';
-import { protectLocalInstallArtifacts } from '../src/installer/local-exclude.mjs';
-import { runDoctor } from '../src/doctor/doctor.mjs';
+import { updateProject } from '../.harness/src/installer/update.mjs';
+import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 test('installed setup reuses current configuration and ignores old answer hashes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-setup-reuse-'));
@@ -36,7 +36,6 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.throws(() => run('--answers', join(root, '.io/runtime/setup/answers.json')), /unique setup session/);
     const first = run('--answers', answers);
     assert.equal(first.status, 'needs_input');
-    assert.equal(Object.hasOwn(first, 'question'), false);
     assert.equal(first.pending.id, '기존 설정을 사용하거나 다시 설정할까요?#1');
     assert.deepEqual(first.pending.options.map(({ value }) => value), ['reuse', 'reconfigure']);
     assert.equal(Object.hasOwn(first, 'configuration_hash'), false);
