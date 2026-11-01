@@ -60,6 +60,12 @@ test('installed readiness checks required files without validating their content
     await updateProject({ sourceRoot, targetRoot: root });
     const installedSpecMe = await readFile(join(root, '.agents/skills/spec-me/SKILL.md'), 'utf8');
     assert.doesNotMatch(installedSpecMe, /Resolve the source tracker ticket before writing the Specs/);
+    assert.match(installedSpecMe, /explicitly states a reusable implementation-only or test-running preference/);
+    assert.match(installedSpecMe, /inside the active `workspace_root`/);
+    assert.doesNotMatch(installedSpecMe, /original-project `shared_guidance_root`/);
+    const installedGuidance = await readFile(join(root, '.codex/internal-skills/implementation-guidance/GUIDE.md'), 'utf8');
+    assert.match(installedGuidance, /<workspace_root>\/docs\/agents\/implementation-guidance\.md/);
+    assert.match(installedGuidance, /workflow branch when committed and pushed/);
     const installedSpecReview = await readFile(join(root, '.agents/skills/spec-me/references/adversarial-spec-review.md'), 'utf8');
     assert.match(installedSpecReview, /pre-dispatch preparation/);
     assert.match(installedSpecReview, /substantive attempt/);
@@ -127,6 +133,45 @@ test('installed readiness checks required files without validating their content
     assert.match(visibleApplicationFile, /src\/application-change\.js/);
     assert.doesNotMatch(visibleApplicationFile, /\.codex\/scripts\/harness-setup\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('installed setup writes reusable guidance to the active linked worktree', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'workspace-memory-install-'));
+  const root = join(parent, 'main');
+  const workspace = join(parent, 'worktree');
+  try {
+    await mkdir(root);
+    const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+    git(root, 'init', '-q', '-b', 'main');
+    git(root, 'config', 'user.name', 'Contract');
+    git(root, 'config', 'user.email', 'contract@example.test');
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    const original = '# Implementation guidance\n\n## Active guidance\n\n';
+    const testOriginal = '# Testing guidance\n\n## Active guidance\n\n';
+    await writeFile(join(root, 'docs/agents/implementation-guidance.md'), original);
+    await writeFile(join(root, 'docs/agents/testing-guidance.md'), testOriginal);
+    git(root, 'add', 'docs/agents');
+    git(root, '-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Add workspace memory');
+    git(root, 'worktree', 'add', '-q', '-b', 'memory-worktree', workspace);
+
+    const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+    await protectLocalInstallArtifacts(workspace, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: workspace });
+    const helper = join(workspace, '.codex/scripts/harness-victorialogs.mjs');
+    execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--port', '19428', '--retention-days', '7'], { cwd: workspace, stdio: 'pipe' });
+
+    const activeGuidance = await readFile(join(workspace, 'docs/agents/implementation-guidance.md'), 'utf8');
+    assert.match(activeGuidance, /opentelemetry-local-observability-v2/);
+    assert.equal(await readFile(join(root, 'docs/agents/implementation-guidance.md'), 'utf8'), original);
+    assert.equal(await readFile(join(root, 'docs/agents/testing-guidance.md'), 'utf8'), testOriginal);
+    const worktreeStatus = git(workspace, 'status', '--short', '--untracked-files=all').toString('utf8');
+    assert.match(worktreeStatus, /docs\/agents\/implementation-guidance\.md/);
+    assert.match(worktreeStatus, /docs\/agents\/testing-guidance\.md/);
+    assert.match(worktreeStatus, /docs\/agents\/EXEC\.md/);
+    assert.doesNotMatch(worktreeStatus, /\.codex\/scripts\/harness-victorialogs\.mjs/);
+    assert.throws(() => execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--shared-guidance-root', root], { cwd: workspace, stdio: 'pipe' }));
+  } finally { await rm(parent, { recursive: true, force: true }); }
 });
 
 test('installed local tracker progresses split plans without Beads', async () => {
@@ -401,6 +446,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     const envelope = { schema_version: 1, execution_id: 'compose-1', skill: 'workflow-compose', status: 'completed', code: 'OK', result_ref: 'runtime/executions/compose-1/result.json', result };
     assert.equal((await validateSkillReturn({ root: tree.workspace, input: found.input, envelope })).valid, true);
     const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(next.input.shared_guidance_root, undefined);
     const runId = next.input.execution_id;
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--status', 'running'], { cwd: tree.workspace, stdio: 'pipe' }));
     const beforeRunner = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
@@ -430,6 +476,13 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.doesNotMatch(consumerStatus, /\.io\/runtime\/executions/);
     const stageArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
     assert.equal(stageArgs[stageArgs.indexOf('--enable') + 1], 'multi_agent');
+    assert.equal(stageArgs.includes('--add-dir'), false);
+    await mkdir(join(tree.workspace, 'docs/agents'), { recursive: true });
+    await writeFile(join(tree.workspace, 'docs/agents/implementation-guidance.md'), '# Active worktree memory\n');
+    const workspaceMemoryStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: tree.workspace, encoding: 'utf8' });
+    const originalCheckoutStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(workspaceMemoryStatus, /docs\/agents\/implementation-guidance\.md/);
+    assert.doesNotMatch(originalCheckoutStatus, /implementation-guidance\.md/);
     const nested = { ...next.input, execution_id: 'nested-child', context: { ...next.input.context, parent_execution_id: runId } };
     await writeExecutionInput(tree.workspace, nested, tree.plan_set_id);
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'nested-child'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));

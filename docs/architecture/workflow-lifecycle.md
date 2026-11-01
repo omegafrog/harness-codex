@@ -65,7 +65,7 @@ flowchart TD
 | `P` | `to-ticket`이 소유하는 임시 worktree | 보존한 Spec branch를 다시 checkout한 경로 |
 | `E` | 순차 구현 위치이자 병렬 구현의 최종 통합 위치 | 각 plan의 `workspace_root`·`workspace_branch`, index의 같은 값 |
 | `W_i` | 병렬 계획 하나의 격리 worker worktree | `WorktreeManager.allocate` 반환값 |
-| `shared_guidance_root` | 구현·테스트 지침의 원래 프로젝트 위치 | 상위가 전달한 절대 경로. managed workflow에서는 `return_root` |
+| `workspace_root` | 구현·테스트 장기 지침의 작업별 위치 | 활성 workspace의 추적 문서. managed workflow에서는 선택된 worktree |
 | `session_directory(X)` | 경로 X의 로컬 로그·증거·복구 저장소 | `harness-session-output.mjs --root X` 결과 |
 | `review_fixed_point` | 구현 시작 직전 HEAD. 수정 리뷰에서도 유지 | 구현자가 한 번 캡처하고 checkpoint에 보존 |
 | `workspace_mode` | 구현 슬롯의 `sequential` 또는 `parallel` | wrapper의 의존성·공유 자원 판단 |
@@ -98,7 +98,7 @@ flowchart TD
 | 프로젝트 설정 | `.codex/harness.yaml` | tracker mode, agent model/effort, Project·assignee 설정 해석 |
 | 현행 업무 계약 | `docs/contracts/product.md`, `architecture.md`, `manifest.json`, 연결 diagram | 읽기 전용 baseline. Spec·계획 단계에서 seal하지 않음 |
 | 용어·모델 | `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/architecture/domain-model.md`, 관련 ADR·constraints | 현재 구현 사실과 승인 target 구분 |
-| 공용 사용자 지침 | 원래 프로젝트의 `docs/agents/implementation-guidance.md`, `testing-guidance.md` | 명시적인 재사용 선호가 생긴 경우에만 provenance와 함께 갱신 |
+| 프로젝트 메모리 | 활성 workspace의 `docs/agents/implementation-guidance.md`, `testing-guidance.md` | 명시적인 사용자 선호·확인된 교훈을 provenance와 함께 기록하고 branch로 push |
 | 실행 계약 | 활성 root의 `docs/agents/EXEC.md`, `execution.json` | 필요한 profile·설정·readiness 누락을 복구하거나 시작 차단 |
 | runtime 미설치·필수 설정 누락 | `setup/SKILL.md` | 설치·설정·기본 문서 준비 후 재검사. 추정한 model이나 직접 실행으로 우회하지 않음 |
 
@@ -178,7 +178,7 @@ flowchart TD
 | W6 | `buildImplementPrompt` → fresh 구현 agent | 모델/effort, 정확한 plan·Spec·checkpoint·의존성·자원·retirement | agent 한 개에 plan 한 개, 명시 cwd·workspace_root·mode/reference | stale/missing plan review면 실제 spawn 금지. 모델이 없으면 setup |
 | W7 | checkpoint 및 Smart Zone | 실제 Git/test 상태·이전 실패·남은 맥락 | 같은 plan 재시도용 fresh agent 또는 다음 plan용 fresh agent | plan 간 agent 재사용 금지. context 한도 자체는 tracker Blocked 사유가 아님 |
 
-필수 dispatch 입력은 repository, 절대 workspace_root/cwd, plan_set_id/plan_id, canonical plan reference, Product/Architecture 경로, plan-review snapshot, shared_guidance_root, session_directory, workspace_mode/reference, 고정점, checkpoint, dependency/resource facts, model/effort다. 병렬 worker에는 별도 workspace_branch와 group/base가 들어간다. 제거 대상으로 승인된 경로는 runtime `retirement.removed_paths`와 reason으로 전달한다.
+필수 dispatch 입력은 repository, 절대 workspace_root/cwd, plan_set_id/plan_id, canonical plan reference, Product/Architecture 경로, plan-review snapshot, session_directory, workspace_mode/reference, 고정점, checkpoint, dependency/resource facts, model/effort다. shared_guidance_root는 workflow-compose만 worktree 생성을 위해 사용한다. 병렬 worker에는 별도 workspace_branch와 group/base가 들어간다. 제거 대상으로 승인된 경로는 runtime `retirement.removed_paths`와 reason으로 전달한다.
 
 현재 prompt builder는 전달된 방식에 맞는 reference 한 개의 절대 경로를 넣고, 다른 방식이나 worktree-creation 절차를 추가 로드하지 말라고 명시한다. 순차·병렬 결정은 runtime의 scheduling 결과에서 전달된다.
 
@@ -376,7 +376,7 @@ stateDiagram-v2
 | `CONTEXT.md` | Product·Architecture·계획·구현·리뷰 | 확정된 용어와 승인된 폐기·대체 기록 |
 | `CONTEXT-MAP.md` | Architecture baseline·계획·구현·리뷰 | 확정 context 이름·소유·관계 |
 | `docs/architecture/domain-model.md`, constraints·관련 ADR | baseline·설계·구현·리뷰 | 승인 target과 실제 구현 사실을 구분해 영향 범위 갱신 |
-| 원래 root의 implementation-guidance·testing-guidance | 인터뷰의 명시 선호 기록, 구현·검증 | 해당 guidance 내부 스킬. branch-local 사본은 정본이 아님 |
+| 활성 workspace의 implementation-guidance·testing-guidance | 명시 선호·확인된 교훈 기록, 구현·검증 | 해당 guidance 내부 스킬. 이 workspace의 추적 파일이 정본 |
 | EXEC.md·execution.json | 준비·조사·계획·검증 | 실행 전제가 바뀌는 구현 또는 준비 복구 |
 | `.codex/repository-conventions.md` | Standards review | 없다면 default-rules reference 사용 |
 | `docs/verification/features.md` | 해당 검증·E2E·통합 | 검증한 변경 범위만 갱신; 전체 지도 정합성은 maintain-verification |

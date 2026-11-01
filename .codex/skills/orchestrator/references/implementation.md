@@ -4,7 +4,7 @@
 
 ## 실행 배정
 
-원본 프로젝트의 `<shared_guidance_root>/.codex/context-budget.json`과 plan의 예상 토큰을 읽는다. 계획이 현재 `max_plan_tokens`를 넘으면 `to-ticket` 단계로 돌아가 재분할한다. 실행 중 context 사용량을 판단할 때는 `harness-skill-execution.mjs budget --root <shared_guidance_root> --estimate <다음 작업 예상 토큰> --used <관측된 사용 토큰>`으로 `action_fits`를 확인한다. `used + estimate > context_window_tokens - handoff_reserve_tokens`이면 checkpoint 후 새 context로 재개한다. 관측 사용량이 없으면 정량 판정을 했다고 주장하지 않고 필요한 입력을 요청한다. worker가 Smart Zone을 재판단하지 않게 한다.
+활성 workspace의 `<workspace_root>/.codex/context-budget.json`과 plan의 예상 토큰을 읽는다. 계획이 현재 `max_plan_tokens`를 넘으면 `to-ticket` 단계로 돌아가 재분할한다. 실행 중 context 사용량을 판단할 때는 `harness-skill-execution.mjs budget --root <workspace_root> --estimate <다음 작업 예상 토큰> --used <관측된 사용 토큰>`으로 `action_fits`를 확인한다. `used + estimate > context_window_tokens - handoff_reserve_tokens`이면 checkpoint 후 새 context로 재개한다. 관측 사용량이 없으면 정량 판정을 했다고 주장하지 않고 필요한 입력을 요청한다. worker가 Smart Zone을 재판단하지 않게 한다.
 
 기존 scheduler가 반환한 `ready_plans`, `waiting_plans`, `parallel_groups`와 공유 자원 근거를 사용한다. 충돌·미확정 자원이 있으면 순차로, 독립 plan은 가용 동시 실행 수 안에서 병렬로 배정한다. plan별 실행 슬롯은 같은 plan의 중복 실행을 막는 단위다. 여러 plan의 슬롯은 동시에 실행할 수 있다.
 

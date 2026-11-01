@@ -16,13 +16,12 @@ const args = process.argv.slice(2);
 const action = args.shift();
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
-  if (!['--root', '--port', '--retention-days', '--input', '--shared-guidance-root', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].includes(args[i]) || !args[i + 1] || Object.hasOwn(options, args[i])) throw new Error('Expected setup|validate|start|stop|check|mcp --root DIR [--port N --retention-days N]');
+  if (!['--root', '--port', '--retention-days', '--input', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].includes(args[i]) || !args[i + 1] || Object.hasOwn(options, args[i])) throw new Error('Expected setup|validate|start|stop|check|mcp --root DIR [--port N --retention-days N]');
   options[args[i]] = args[i + 1];
 }
 if (!['setup', 'validate', 'start', 'stop', 'check', 'mcp', 'mcp-metrics', 'validate-logs'].includes(action)) throw new Error('Expected setup|validate|start|stop|check|mcp');
 if (action !== 'setup' && ['--port', '--retention-days', '--metrics-port', '--metrics-retention-days', '--otel-port', '--projects'].some((key) => options[key])) throw new Error('Runtime uses config.json; port and retention options are only valid for setup');
 if (action !== 'validate-logs' && options['--input']) throw new Error('--input requires validate-logs');
-if (action !== 'setup' && options['--shared-guidance-root']) throw new Error('--shared-guidance-root requires setup');
 const root = await realpath(resolve(options['--root'] || process.cwd()));
 const execFileAsync = promisify(execFile);
 const git = async (argv) => (await execFileAsync('git', argv, { cwd: root, encoding: 'utf8' })).stdout.trim();
@@ -139,9 +138,7 @@ async function validateLogFile() {
   if (status !== 'pass') process.exitCode = 1;
 }
 async function setupVictoriaLogs() {
-  const guidanceRoot = await realpath(resolve(options['--shared-guidance-root'] || root));
-  const guidanceCommon = (await execFileAsync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: guidanceRoot, encoding: 'utf8' })).stdout.trim();
-  if (await realpath(guidanceCommon) !== await realpath(await git(['rev-parse', '--path-format=absolute', '--git-common-dir']))) throw new Error('shared_guidance_root must share the project Git common directory');
+  const guidanceRoot = root;
   const old = existsSync(configPath) ? await readConfig() : {};
   const config = await normalizeConfig({
     ...old,

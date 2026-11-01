@@ -179,12 +179,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const question = result.question || (questionRef ? await readSkillSessionJson({ root, session_directory: previousSession, path: questionRef.path }) : null);
     conversation = { previous_result_ref: previous.result_ref, ...(question ? { ...(questionRef ? { question_ref: questionRef.path } : {}), question_id: question.question_id } : {}), resume_session_id: threadId };
   }
-  let shared = root;
-  const { sessionDirectory } = await import('./session-output.mjs');
-  try {
-    const record = await readSkillSessionJson({ root, session_directory: sessionDirectory(root, { create: false }), path: 'worktree.json' });
-    shared = record.return_root;
-  } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let plan_review_admission;
   if (stage.skill === 'plan-review') {
     if (!reviewAdmissionRef) throw new Error('Plan review requires an admitted snapshot');
@@ -193,7 +187,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, shared_guidance_root: shared, session_directory: taskSession, scope: stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { codex_session_id: codexSessionId, stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);

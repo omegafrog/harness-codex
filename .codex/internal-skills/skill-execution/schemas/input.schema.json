@@ -25,10 +25,6 @@
       "type": "string",
       "minLength": 1
     },
-    "shared_guidance_root": {
-      "type": "string",
-      "minLength": 1
-    },
     "session_directory": {
       "type": "string",
       "minLength": 1

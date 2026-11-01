@@ -21,10 +21,10 @@ const CODES = {
 
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
 async function json(path) { return JSON.parse(await readFile(path, 'utf8')); }
-async function validateSharedGuidanceRoot(root, sharedRoot) {
+async function validateSameRepository(root, sharedRoot) {
   const common = async (path) => realpath(resolve(path, (await execFileAsync('git', ['rev-parse', '--git-common-dir'], { cwd: path, encoding: 'utf8' })).stdout.trim()));
   const [workspaceCommon, guidanceCommon] = await Promise.all([common(root), common(sharedRoot)]);
-  requireValue(workspaceCommon === guidanceCommon, 'shared_guidance_root must share the workspace Git common directory');
+  requireValue(workspaceCommon === guidanceCommon, 'Worktree return_root must share the workspace Git common directory');
 }
 
 export function validateContextBudget(policy) {
@@ -102,7 +102,7 @@ export async function resolveSkillSession(root, provided = null) {
   const chosen = resolve(provided || sessionDirectory(resolve(root), { create: false }));
   requireValue(isAbsolute(chosen) && basename(chosen) === '.io', 'Invalid execution session directory');
   const workspace = dirname(chosen);
-  await validateSharedGuidanceRoot(root, workspace);
+  await validateSameRepository(root, workspace);
   requireValue(await realpath(chosen) === chosen, 'Execution session must not be a symlink');
   return chosen;
 }
@@ -140,12 +140,13 @@ async function resolveInputWorktree(root, input) {
   const { parseWorktreeRecord } = await import('./worktrees.mjs');
   const record = parseWorktreeRecord(await readFile(ref, 'utf8'));
   requireValue(record.state === 'active' && record.session_directory === directory && await realpath(record.workspace) === await realpath(root), 'Worktree does not match execution workspace');
-  await validateSharedGuidanceRoot(root, record.return_root);
+  await validateSameRepository(root, record.return_root);
   requireValue(!input.context.plan_set_id || input.context.plan_set_id === record.plan_set_id, 'Input plan_set_id conflicts with worktree record');
-  for (const [key, value] of Object.entries({ workspace_root: record.workspace, shared_guidance_root: record.return_root, session_directory: record.session_directory })) {
+  for (const [key, value] of Object.entries({ workspace_root: record.workspace, session_directory: record.session_directory })) {
     requireValue(input[key] === undefined || input[key] === value, `Input ${key} conflicts with worktree record`);
   }
-  return { ...input, workspace_root: record.workspace, shared_guidance_root: record.return_root, session_directory: record.session_directory, context: { ...input.context, ...(record.plan_set_id ? { plan_set_id: record.plan_set_id } : {}) } };
+  const { shared_guidance_root: _legacyGuidanceRoot, ...stageInput } = input;
+  return { ...stageInput, workspace_root: record.workspace, session_directory: record.session_directory, context: { ...input.context, ...(record.plan_set_id ? { plan_set_id: record.plan_set_id } : {}) } };
 }
 
 export async function validateSkillInput({ root, input }) {
@@ -157,8 +158,6 @@ export async function validateSkillInput({ root, input }) {
     requireValue(typeof input.context?.plan_set_id === 'string' && typeof input.context?.codex_session_id === 'string' && input.context?.stage_id === 'workflow-compose', 'Compose context is incomplete');
   }
   requireValue(await realpath(input.workspace_root) === await realpath(root), 'Input workspace does not match caller root');
-  requireValue(isAbsolute(input.shared_guidance_root), 'shared_guidance_root must be absolute');
-  await validateSharedGuidanceRoot(root, input.shared_guidance_root);
   if (input.context?.agent_profile || input.context?.role) {
     requireValue(!(input.context.agent_profile && input.context.role), 'Ambiguous agent profile');
     const profile = input.context.agent_profile || input.context.role;
@@ -177,8 +176,6 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const flowSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   validate(input, schemas[0]); validate(envelope, schemas[1]);
   requireValue(isAbsolute(input.workspace_root) && await realpath(input.workspace_root) === await realpath(root), 'Input workspace does not match caller root');
-  requireValue(isAbsolute(input.shared_guidance_root), 'shared_guidance_root must be absolute');
-  await validateSharedGuidanceRoot(root, input.shared_guidance_root);
   const session = await resolveSkillSession(root, input.session_directory);
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const key of ['execution_id', 'skill']) requireValue(input[key] === envelope[key], `Return ${key} mismatch`);
