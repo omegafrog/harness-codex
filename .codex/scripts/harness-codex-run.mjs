@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 let sourceCheckout = false;
@@ -11,6 +11,7 @@ const { runCodexProcess } = await import(new URL('codex-process.mjs', base));
 const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
+const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -29,6 +30,11 @@ try {
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow: opts.workflow || null, stage: opts.stage || null });
   const prefix = join(session, 'runtime/executions', opts['execution-id']);
   const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'return.json');
+  if (!existsSync(schema)) await writeOutputSchema({ root, input, prefix: `runtime/executions/${opts['execution-id']}`, path: schema });
+  const schemaInfo = await lstat(schema);
+  if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
+  const outputSchema = JSON.parse(await readFile(schema, 'utf8'));
+  if (outputSchema.properties?.execution_id?.const !== opts['execution-id'] || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
   const internal = `.codex/internal-skills/${input.skill}/GUIDE.md`;
   const publicSkill = `.agents/skills/${input.skill}/SKILL.md`;
   const guide = [internal, publicSkill, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
