@@ -36,7 +36,7 @@ if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new E
 const native = Boolean(options['--answers']);
 let document, configurationHash;
 if (native) {
-  const output = await import(new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/session-output.mjs')) ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs', import.meta.url).href);
+  const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
   const input = resolve(root, options['--answers']);
   output.sessionOutputPath(root, relative(output.sessionDirectory(root), input));
   document = JSON.parse(await readFile(input, 'utf8'));
@@ -184,9 +184,7 @@ async function setupBeads() {
 
 async function main() {
   const models = await readModelList();
-  const parserUrl = existsSync(join(root, '.codex/harness-runtime/src/eval/yaml.mjs'))
-    ? new URL('../harness-runtime/src/eval/yaml.mjs', import.meta.url)
-    : new URL('../../src/eval/yaml.mjs', import.meta.url);
+  const parserUrl = new URL('../../.harness/src/eval/yaml.mjs', import.meta.url);
   const { parseYaml } = await import(parserUrl.href);
   const configPath = join(root, '.codex/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
@@ -219,7 +217,7 @@ async function main() {
     const answer = await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
     contextBudget[key] = answer.trim() ? Number(answer) : NaN;
   }
-  const budgetModule = new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/skill-execution.mjs')) ? '../harness-runtime/src/workflow/skill-execution.mjs' : '../../src/workflow/skill-execution.mjs', import.meta.url);
+  const budgetModule = new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url);
   const { validateContextBudget } = await import(budgetModule.href);
   validateContextBudget(contextBudget);
 
@@ -345,7 +343,7 @@ async function main() {
     configText = setYamlScalar(configText, ['observability', 'victorialogs', 'local', 'retention_days'], retentionDays);
     if (config.observability?.signoz?.local?.enabled) configText = setYamlScalar(configText, ['observability', 'signoz', 'local', 'enabled'], false);
   }
-  const output = await import(new URL(existsSync(join(root, '.codex/harness-runtime/src/workflow/session-output.mjs')) ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs', import.meta.url).href);
+  const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
   const backup = output.sessionOutputPath(root, `runtime/setup/backups/harness-${Date.now()}.yaml`);
   await mkdir(dirname(backup), { recursive: true });
   if (oldConfig) await writeFile(backup, oldConfig, { mode: 0o600 });

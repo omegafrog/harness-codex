@@ -16,4 +16,4 @@ GitHub mode의 parent는 `epic`으로 만들고 child 생성에 `--parent <beads
 
 GitHub 발행 뒤 Beads 항목에 Issue URL 기반 `external_ref`와 `harness_tracker_version=1`, `harness_classification=committed`, `harness_phase=planning` metadata를 연결한다. 완료 state의 `tracker_sync.ticket_refs`에 parent와 모든 child `owner/repo#number`를 담아 lifecycle gate가 tracker와 Beads mirror를 대조하도록 한다. Dependency edge는 선택한 tracker와 Beads 양쪽에 기록하며 GitHub parent-child 관계는 [batch publish 절차](github-batch-publish.md)로 생성·검증한다.
 
-`plan_finalize`는 선택한 configured tracker에 parent/child 티켓을 발행하고 Beads 항목과 연결한다. 이후 lifecycle 상태 동기화는 공용 Beads 스킬의 v1 mirror 절차를 사용한다.
+`to-ticket`의 finalization phase는 선택한 configured tracker에 parent/child 티켓을 발행하고 Beads 항목과 연결한다. 이후 lifecycle 상태 동기화는 공용 Beads 스킬의 v1 mirror 절차를 사용한다.

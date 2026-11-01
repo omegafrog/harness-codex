@@ -4,14 +4,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseWorktreeRecord } from '../src/workflow/worktrees.mjs';
-import { recordExecutionState, processIdentity } from '../src/workflow/execution-state.mjs';
-import { WORKTREE_STAGE } from '../src/workflow/worktree-stages.mjs';
-import { findExecutionInput, writeExecutionInput } from '../src/workflow/execution-input.mjs';
-import { readExecutionInput } from '../src/workflow/skill-execution.mjs';
-import { finishWorkflowWorktree } from '../src/workflow/worktrees.mjs';
-import { updateProject } from '../src/installer/update.mjs';
-import { protectLocalInstallArtifacts } from '../src/installer/local-exclude.mjs';
+import { parseWorktreeRecord } from '../.harness/src/workflow/worktrees.mjs';
+import { recordExecutionState, processIdentity } from '../.harness/src/workflow/execution-state.mjs';
+import { WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
+import { findExecutionInput, writeExecutionInput } from '../.harness/src/workflow/execution-input.mjs';
+import { readExecutionInput } from '../.harness/src/workflow/skill-execution.mjs';
+import { finishWorkflowWorktree } from '../.harness/src/workflow/worktrees.mjs';
+import { updateProject } from '../.harness/src/installer/update.mjs';
+import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -57,7 +57,22 @@ test('installed readiness checks required files without validating their content
     const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    await updateProject({ sourceRoot, targetRoot: root });
+    const legacyRuntimePath = '.codex/harness-runtime/src/workflow/old-runtime.mjs';
+    const legacyRuntimeText = 'legacy runtime';
+    await mkdir(join(root, legacyRuntimePath, '..'), { recursive: true });
+    await writeFile(join(root, legacyRuntimePath), legacyRuntimeText);
+    const runtimeLockPath = join(root, '.codex/harness-lock.json');
+    const legacyLock = JSON.parse(await readFile(runtimeLockPath, 'utf8'));
+    const legacyHash = createHash('sha256').update(legacyRuntimeText).digest('hex');
+    legacyLock.files[legacyRuntimePath] = { installed_sha256: legacyHash, upstream_sha256: legacyHash, source_path: legacyRuntimePath };
+    await writeFile(runtimeLockPath, JSON.stringify(legacyLock));
+    const { runDoctor: inspectLegacyDoctor } = await import('../.harness/src/doctor/doctor.mjs');
+    assert.ok((await inspectLegacyDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'legacy_runtime_present'));
+    const runtimeMigration = await updateProject({ sourceRoot, targetRoot: root });
+    await assert.rejects(readFile(join(root, legacyRuntimePath)), { code: 'ENOENT' });
+    assert.equal(await readFile(join(runtimeMigration.backup_directory, legacyRuntimePath), 'utf8'), legacyRuntimeText);
+    const { checkRetirement } = await import('../.harness/src/gates/lifecycle.mjs');
+    assert.equal((await checkRetirement({ retirement: { workspace_root: root, removed_paths: ['src', '.codex/harness-runtime/src'] } })).status, 'pass');
     const installedSpecMe = await readFile(join(root, '.agents/skills/spec-me/SKILL.md'), 'utf8');
     assert.doesNotMatch(installedSpecMe, /Resolve the source tracker ticket before writing the Specs/);
     assert.match(installedSpecMe, /explicitly states a reusable implementation-only or test-running preference/);
@@ -70,7 +85,7 @@ test('installed readiness checks required files without validating their content
     assert.match(installedSpecReview, /pre-dispatch preparation/);
     assert.match(installedSpecReview, /substantive attempt/);
     assert.match(installedSpecReview, /REVIEW_REQUIRED/);
-    const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.codex/harness-runtime/src/workflow/review-attempts.mjs')}`);
+    const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
     const installedAdmission = await installedReviewAttempt({ root, scope: 'spec-installed-architecture', action: 'begin', inputs: { spec: 'hash' } });
     const installedAbort = await installedReviewAttempt({ root, scope: 'spec-installed-architecture', action: 'abort', attemptId: installedAdmission.attempt_id, reason: 'pre-dispatch preparation: missing reviewer inputs' });
     assert.equal(installedAbort.round, 1);
@@ -83,9 +98,9 @@ test('installed readiness checks required files without validating their content
     await assert.rejects(installedReviewAttempt({ root, scope: 'spec-installed-architecture', action: 'begin', inputs: { spec: 'hash' } }), /preparation retry limit exhausted/);
     await installedReviewAttempt({ root, scope: 'spec-installed-architecture', action: 'resolve', reason: 'preparation recovery: reviewer inputs are available' });
     assert.equal((await installedReviewAttempt({ root, scope: 'spec-installed-architecture', action: 'begin', inputs: { spec: 'hash' } })).round, 1);
-    const { inspectProjectReadiness } = await import(`file://${join(root, '.codex/harness-runtime/src/workflow/project-readiness.mjs')}`);
-    const { writeOutputSchema } = await import(`file://${join(root, '.codex/harness-runtime/src/workflow/output-schema.mjs')}`);
-    const { evaluateWorkflowCondition } = await import(`file://${join(root, '.codex/harness-runtime/src/workflow/stage-gates.mjs')}`);
+    const { inspectProjectReadiness } = await import(`file://${join(root, '.harness/src/workflow/project-readiness.mjs')}`);
+    const { writeOutputSchema } = await import(`file://${join(root, '.harness/src/workflow/output-schema.mjs')}`);
+    const { evaluateWorkflowCondition } = await import(`file://${join(root, '.harness/src/workflow/stage-gates.mjs')}`);
     const generatedSchemaPath = join(root, '.io', 'installed-schema.json');
     await writeOutputSchema({ root, input: { execution_id: 'installed-spec', skill: 'spec-me', context: { stage_id: 'spec-me' } }, prefix: 'runtime/executions/installed-spec', path: generatedSchemaPath });
     const generatedSchema = JSON.parse(await readFile(generatedSchemaPath, 'utf8'));
@@ -113,7 +128,7 @@ test('installed readiness checks required files without validating their content
     const installedDoctor = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' }));
     assert.equal(installedDoctor.passed, true);
     assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.codex/harness.yaml')), false);
-    const { runDoctor } = await import('../src/doctor/doctor.mjs');
+    const { runDoctor } = await import('../.harness/src/doctor/doctor.mjs');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'blocked');
@@ -124,13 +139,23 @@ test('installed readiness checks required files without validating their content
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'pass');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC.md/);
-    assert.doesNotMatch(status, /\.codex|\.agents|\.harness/);
+    assert.doesNotMatch(status, /\.codex|\.agents|\.harness\/src/);
+    assert.match(status, /\.harness\/contracts\.mjs/);
     const ignoredHarnessFile = execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-setup.mjs'], { cwd: root, encoding: 'utf8' });
     assert.match(ignoredHarnessFile, /\.codex\/scripts\/harness-setup\.mjs/);
+    const ignoredRuntimeFile = execFileSync('git', ['check-ignore', '-v', '.harness/src/installer/update.mjs'], { cwd: root, encoding: 'utf8' });
+    assert.match(ignoredRuntimeFile, /\.harness\/src\/installer\/update\.mjs/);
     await mkdir(join(root, 'src'), { recursive: true });
     await writeFile(join(root, 'src/application-change.js'), 'export const changed = true;\n');
+    for (const path of ['.codex/application-notes.md', '.agents/application-skill/SKILL.md', '.harness/application-notes.md']) {
+      await mkdir(join(root, path, '..'), { recursive: true });
+      await writeFile(join(root, path), 'application-owned');
+    }
     const visibleApplicationFile = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(visibleApplicationFile, /src\/application-change\.js/);
+    assert.match(visibleApplicationFile, /\.codex\/application-notes\.md/);
+    assert.match(visibleApplicationFile, /\.agents\/application-skill\/SKILL\.md/);
+    assert.match(visibleApplicationFile, /\.harness\/application-notes\.md/);
     assert.doesNotMatch(visibleApplicationFile, /\.codex\/scripts\/harness-setup\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -185,7 +210,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
     await mkdir(join(root, 'docs/plans/calculator'), { recursive: true });
     await writeFile(join(root, 'docs/plans/calculator/calculator.md'), '---\nstatus: planned\n---\n# 계산기\n');
-    const { syncTrackerStatus, readTrackerStatus } = await import(`file://${join(root, '.codex/harness-runtime/src/tracker/lifecycle.mjs')}`);
+    const { syncTrackerStatus, readTrackerStatus } = await import(`file://${join(root, '.harness/src/tracker/lifecycle.mjs')}`);
     const ticket_ref = 'docs/plans/calculator/calculator.md';
     assert.equal((await syncTrackerStatus({ workspace_root: root, ticket_ref, status: 'in-progress' })).status, 'pass');
     assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref })).canonical_status, 'in-progress');
@@ -206,7 +231,7 @@ test('compose rejects an unprepared project without leaving an active worktree',
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
     await rm(join(root, 'docs/agents/EXEC.md'));
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
     assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, stdio: 'pipe' }), /Command failed/);
     assert.equal(git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).length, 1);
@@ -229,7 +254,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('commit', '-m', 'setup baseline');
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
     const prepared = { input: await readExecutionInput({ root: tree.workspace, execution_id: 'compose-1' }) };
@@ -282,7 +307,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'result.json'), 'utf8')), validated.result);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SUBTASK_REQUIRED', result_ref: resultRefForQuestion });
-    const { prepareStageInput } = await import(`file://${join(tree.workspace, '.codex/harness-runtime/src/workflow/stage-input.mjs')}`);
+    const { prepareStageInput } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-input.mjs')}`);
     await assert.rejects(prepareStageInput({ root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, stageId: 'spec-me', codexSessionId: record.worktree_id }), /pending subagent identity and result are not recorded.*in-place recovery is unsupported/i);
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--subtask', '0'], { cwd: tree.workspace, stdio: 'pipe' }));
     const blockedStage = { ...questionResult, status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', question: null, questions: [] };
@@ -423,7 +448,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
-    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
     const found = await findExecutionInput(tree.workspace, 'compose-1');
@@ -434,7 +459,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(found.input.scope, '작은 계산기 웹 앱');
     assert.equal(found.input.context.control_session_directory, undefined);
     assert.deepEqual(found.input.input_refs, []);
-    const { resolveSkillSession, validateSkillInput, validateSkillReturn } = await import(`file://${join(tree.workspace, '.codex/harness-runtime/src/workflow/skill-execution.mjs')}`);
+    const { resolveSkillSession, validateSkillInput, validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
     await validateSkillInput({ root: tree.workspace, input: found.input });
     await assert.rejects(validateSkillInput({ root: tree.workspace, input: { ...found.input, context: { worktree_ref: found.input.context.worktree_ref } } }), /required/);
     const foreign = join(parent, 'foreign');
@@ -525,7 +550,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     const interruptedInput = { ...next.input, execution_id: 'interrupted-parent' };
     await writeExecutionInput(tree.workspace, interruptedInput, tree.plan_set_id);
     const interruptedStoredInput = await readExecutionInput({ root: tree.workspace, execution_id: interruptedInput.execution_id });
-    const runtime = `file://${join(tree.workspace, '.codex/harness-runtime/src/workflow')}`;
+    const runtime = `file://${join(tree.workspace, '.harness/src/workflow')}`;
     const { recordExecutionState: recordInstalledState } = await import(`${runtime}/execution-state.mjs`);
     const { recordWorkflowSession: recordInstalledSession } = await import(`${runtime}/worktrees.mjs`);
     const liveIdentity = await processIdentity(process.pid);

@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/startup-state.mjs', import.meta.url);
-const { inspectStartupState, refreshWorkflowProgress } = await import(existsSync(installed) && !sourceCheckout ? installed.href : new URL('../../src/workflow/startup-state.mjs', import.meta.url).href);
+const installed = new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url);
+const { inspectStartupState, refreshWorkflowProgress } = await import(installed.href);
 
 try {
   let input = '';

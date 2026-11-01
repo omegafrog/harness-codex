@@ -5,14 +5,14 @@
 | 규칙 | 현재 enforcement | 남는 판단/한계 |
 |---|---|---|
 | 전달 workspace와 실제 Git worktree가 일치해야 한다 | `.codex/scripts/harness-workspace-preflight.mjs`, `tests/workspace_preflight.test.mjs`, dispatch의 before_dispatch hook | 작업별로 hook/명령을 실제 실행했는지 확인 필요 |
-| 승인된 decision과 review만 인계한다 | `src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | decision opt-in이 없는 legacy artifact에는 같은 gate를 강제하지 않음 |
-| tracker 구조 입력을 검증 후 렌더한다 | `src/tracker/contracts.mjs`, `src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |
-| 원본 workflow가 오래된 설치 스킬을 선택하지 않는다 | `src/workflow/loader.mjs`, `tests/workflow_loader.test.mjs`의 source/consumer 우선순위 검사 | consumer의 설치 사본 최신화는 installer update가 담당 |
-| 현재 저장소의 진행 중 workflow는 Codex session ID 변경과 무관하게 재개하고, 중복 stage 실행은 막는다 | `src/workflow/startup-state.mjs`, `src/workflow/stage-input.mjs`, `src/workflow/execution-state.mjs`; `tests/orchestrator_hook.test.mjs`, `tests/skill_execution.test.mjs`, installed-consumer case in `tests/installer_update.test.mjs` | 같은 저장소에 여러 활성 workflow가 있으면 orchestrator가 정확한 대상을 판단해야 함; 다른 Git common directory나 검증되지 않은 worktree는 계속 차단 |
-| 스킬의 supporting reference도 갱신된다 | `src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
-| checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
+| 승인된 decision과 review만 인계한다 | `.harness/src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | decision opt-in이 없는 legacy artifact에는 같은 gate를 강제하지 않음 |
+| tracker 구조 입력을 검증 후 렌더한다 | `.harness/src/tracker/contracts.mjs`, `.harness/src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |
+| 원본 workflow가 오래된 설치 스킬을 선택하지 않는다 | `.harness/src/workflow/loader.mjs`, `tests/workflow_loader.test.mjs`의 source/consumer 우선순위 검사 | consumer의 설치 사본 최신화는 installer update가 담당 |
+| 현재 저장소의 진행 중 workflow는 Codex session ID 변경과 무관하게 재개하고, 중복 stage 실행은 막는다 | `.harness/src/workflow/startup-state.mjs`, `.harness/src/workflow/stage-input.mjs`, `.harness/src/workflow/execution-state.mjs`; `tests/orchestrator_hook.test.mjs`, `tests/skill_execution.test.mjs`, installed-consumer case in `tests/installer_update.test.mjs` | 같은 저장소에 여러 활성 workflow가 있으면 orchestrator가 정확한 대상을 판단해야 함; 다른 Git common directory나 검증되지 않은 worktree는 계속 차단 |
+| 스킬의 supporting reference도 갱신된다 | `.harness/src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
+| checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `.harness/src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
 | 업무 규칙은 선언된 owner에서 보호한다 | `ddd-design/references/model-continuity.md`, Spec reviewer의 실제 source/caller/우회 경로 검토와 프로젝트별 domain/dependency 검사 | 범용 JavaScript 구조 검사로 DDD 의미를 자동 판정하지 않음 |
-| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
+| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
 | E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
@@ -20,9 +20,9 @@
 
 ## 통합 계약 완료 gate
 
-Spec·계획 리뷰의 반복 제한은 `src/workflow/review-attempts.mjs`와 리뷰 CLI의 `begin/record/abort/resolve`가 관리한다. 대상별 실행 중복, 미변경 입력 재요청, 최초 검토 후 재검토 2회 초과를 차단하고 원본 판정·지적·stale을 session에 보존한다. Spec review는 Architecture 축만 수행하며 Product Spec은 요구사항 입력으로 snapshot에 포함한다. 시작된 검토의 pass 기록은 기존 Spec·계획 gate에서 확인한다. 사용자 결정의 진위, 리뷰 전 문서 일괄 반영과 reviewer 역할 선택은 호출자의 검토 계약이다. 근거: 세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 반복 Spec·계획 리뷰 및 Learning 자료 승인 대기. 신규·업데이트 설치의 실행·Git 가시성은 `spec-review-check` profile로 확인한다. 기존 실행의 receipt는 당시 검증 형식을 유지하며 새 검토부터 실행 기록을 생성한다.
+Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.mjs`와 리뷰 CLI의 `begin/record/abort/resolve`가 관리한다. 대상별 실행 중복, 미변경 입력 재요청, 최초 검토 후 재검토 2회 초과를 차단하고 원본 판정·지적·stale을 session에 보존한다. Spec review는 Architecture 축만 수행하며 Product Spec은 요구사항 입력으로 snapshot에 포함한다. 시작된 검토의 pass 기록은 기존 Spec·계획 gate에서 확인한다. 사용자 결정의 진위, 리뷰 전 문서 일괄 반영과 reviewer 역할 선택은 호출자의 검토 계약이다. 근거: 세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 반복 Spec·계획 리뷰 및 Learning 자료 승인 대기. 신규·업데이트 설치의 실행·Git 가시성은 `spec-review-check` profile로 확인한다. 기존 실행의 receipt는 당시 검증 형식을 유지하며 새 검토부터 실행 기록을 생성한다.
 
-`src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
+`.harness/src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
 
 문서에는 전체 Product 규칙과 DDD 구성요소별 상세를 보존한다. `.puml`의 모든 DDD 이름은 stable section으로 연결하고, renderer가 SVG에 원본 SHA를 붙인다. `seal`은 검토 사유와 변경 snapshot을 기록하고 revision을 올리며 `check`는 base보다 증가했는지 검사한다. source만 바뀌고 계약이 같으면 구체적인 영향 없음 근거를 요구한다. `architecture.html`은 같은 페이지 안에서 SVG 이름→상세 이동을 제공한다.
 
@@ -30,13 +30,13 @@ Spec·계획 리뷰의 반복 제한은 `src/workflow/review-attempts.mjs`와 �
 
 ## Tracker lifecycle와 mirror gate
 
-`src/tracker/lifecycle.mjs`의 공통 코드가 신규 v1 mirror를 exact external_ref로 연결한다. GitHub project/field metadata는 한 번의 read/check/sync invocation 안에서만 resolve하며 해당 ref의 issue/item/status는 각 검증 시 다시 읽는다. 호출 간 캐시나 오류시 성공 fallback은 없다. `readTrackerStatus`는 mirror 없이 configured exact ref의 canonical 상태를 읽으며 incomplete pagination은 오류로 둔다. `syncTrackerStatus`는 canonical 상태 변경·재조회 후 Beads를 반영하고 재조회한다. phase/classification은 metadata로 분리한다. 부분 실패는 local journal에 남기며 canonical을 rollback하지 않는다. `inspectTrackerSync`는 mirror 일관성 gate다.
+`.harness/src/tracker/lifecycle.mjs`의 공통 코드가 신규 v1 mirror를 exact external_ref로 연결한다. GitHub project/field metadata는 한 번의 read/check/sync invocation 안에서만 resolve하며 해당 ref의 issue/item/status는 각 검증 시 다시 읽는다. 호출 간 캐시나 오류시 성공 fallback은 없다. `readTrackerStatus`는 mirror 없이 configured exact ref의 canonical 상태를 읽으며 incomplete pagination은 오류로 둔다. `syncTrackerStatus`는 canonical 상태 변경·재조회 후 Beads를 반영하고 재조회한다. phase/classification은 metadata로 분리한다. 부분 실패는 local journal에 남기며 canonical을 rollback하지 않는다. `inspectTrackerSync`는 mirror 일관성 gate다.
 
 모든 workflow의 `tracker_sync`와 시작 workspace preflight, 실제 dispatch 전 검사, 실제 wrapper completion이 이를 호출한다. 중복/미연결 ref, 네 상태 밖의 값, metadata 누락, canonical/mirror 불일치는 실행·정상 완료·종속 plan 해제를 차단한다. 설치 runtime에도 같은 module/CLI가 배포된다. 기존 데이터는 이동·재분류하지 않고 새로 등록된 version1 mirror에 적용한다. GitHub 기본 Status와 Issue closure는 이 코드의 갱신 대상이 아니다.
 
 ## Workflow worktree 종료 gate
 
-`src/workflow/worktrees.mjs`가 allocating 소유 receipt를 Git add 전에 기록하고 reserve/register/finish를 경로별 PID lock으로 직렬화한다. 일반 main checkout/비소유 linked worktree는 삭제하지 않는다. `completeWorkflow`의 outer finally는 preflight/manifest/검증/기록 실패도 처리한다. state JSON 파싱 오류와 CLI SIGINT/SIGTERM도 종료 경로로 연결한다. owned plan allocation 실패·실행/리뷰 오류·완료는 WorktreeManager의 같은 archiver를 사용한다.
+`.harness/src/workflow/worktrees.mjs`가 allocating 소유 receipt를 Git add 전에 기록하고 reserve/register/finish를 경로별 PID lock으로 직렬화한다. 일반 main checkout/비소유 linked worktree는 삭제하지 않는다. `completeWorkflow`의 outer finally는 preflight/manifest/검증/기록 실패도 처리한다. state JSON 파싱 오류와 CLI SIGINT/SIGTERM도 종료 경로로 연결한다. owned plan allocation 실패·실행/리뷰 오류·완료는 WorktreeManager의 같은 archiver를 사용한다.
 
 미커밋·untracked·ignored 파일·staged index를 worktree 밖 영속 세션의 recovery/에 복사하고 hash/HEAD/index 일치를 확인한 후 제거한다. HEAD와 staged blobs를 별도 ref로 보호하므로 GC 이후에도 복구 근거를 유지한다. branch는 삭제하지 않는다. runtime journal·로그는 처음부터 같은 session_directory에 직접 기록하여 제거 후에도 경로를 유지한다. 제거 후 등록 해제와 receipt 상태를 확인하며, 삭제 후 receipt 실패도 다음 finish가 archive/ref를 검증하여 복구한다. 실패는 경로·복구 자료·재시도 원인을 반환하고 정상 완료가 아니다.
 
@@ -44,15 +44,15 @@ Spec·계획 리뷰의 반복 제한은 `src/workflow/review-attempts.mjs`와 �
 
 ## 세션 출력 경계
 
-`src/workflow/session-output.mjs`의 공통 resolver가 workspace별 Git common 세션 경로와 상대 출력 경로를 결정하고 이탈·symlink·공유 hardlink·특수 파일 대상을 거부한다. 재사용한 세션 root도 0700으로 제한한다. plan/completion/tracker/eval/external-port/knowledge/review/E2E manifest가 이를 호출한다. 완료 CLI의 --state 입력도 세션 상대 경로만 허용한다. agent/process의 TMPDIR/TMP/TEMP와 browser 출력 지정은 EXEC·skill·profile·dispatch 계약으로 적용한다. 외부 도구 전역 cache와 telemetry를 OS sandbox로 차단하지는 않는다. 최종 source·문서·registry와 Git/Beads 관리 metadata는 원래 경로를 유지한다.
+`.harness/src/workflow/session-output.mjs`의 공통 resolver가 workspace별 Git common 세션 경로와 상대 출력 경로를 결정하고 이탈·symlink·공유 hardlink·특수 파일 대상을 거부한다. 재사용한 세션 root도 0700으로 제한한다. plan/completion/tracker/eval/external-port/knowledge/review/E2E manifest가 이를 호출한다. 완료 CLI의 --state 입력도 세션 상대 경로만 허용한다. agent/process의 TMPDIR/TMP/TEMP와 browser 출력 지정은 EXEC·skill·profile·dispatch 계약으로 적용한다. 외부 도구 전역 cache와 telemetry를 OS sandbox로 차단하지는 않는다. 최종 source·문서·registry와 Git/Beads 관리 metadata는 원래 경로를 유지한다.
 
 ## 실행 전제 누락
 
-일반 단위·회귀 검증을 `harness-exec`에 감싸는 지침은 test profile과 런타임 환경 주입을 불필요하게 강제했다. 일반 검증은 EXEC에 기록한 기본 CLI로 직접 실행하고, `execution.json`은 명시적 사용자 흐름 E2E profile만 둔다. `src/workflow/execution.mjs`는 `purpose: "e2e"`가 아닌 profile 실행을 거부하지만, 기존 profile manifest의 readiness 검증은 그대로 허용한다. argv/env 검사→설정 prepare/verify→dependency readiness→설정 변경 재검증을 통과한 경우에만 E2E command를 spawn한다. 빈 profile 객체는 E2E가 없는 프로젝트를 뜻한다. `tests/execution.test.mjs`는 비 E2E profile 거부 및 E2E의 missing value, stale config, missing infra, config drift main 미실행을 확인한다. profile 요구의 충분성은 실제 entrypoint·config loader·infra·CI 리뷰 대상이다.
+일반 단위·회귀 검증을 `harness-exec`에 감싸는 지침은 test profile과 런타임 환경 주입을 불필요하게 강제했다. 일반 검증은 EXEC에 기록한 기본 CLI로 직접 실행하고, `execution.json`은 명시적 사용자 흐름 E2E profile만 둔다. `.harness/src/workflow/execution.mjs`는 `purpose: "e2e"`가 아닌 profile 실행을 거부하지만, 기존 profile manifest의 readiness 검증은 그대로 허용한다. argv/env 검사→설정 prepare/verify→dependency readiness→설정 변경 재검증을 통과한 경우에만 E2E command를 spawn한다. 빈 profile 객체는 E2E가 없는 프로젝트를 뜻한다. `tests/execution.test.mjs`는 비 E2E profile 거부 및 E2E의 missing value, stale config, missing infra, config drift main 미실행을 확인한다. profile 요구의 충분성은 실제 entrypoint·config loader·infra·CI 리뷰 대상이다.
 
 ## Fresh Spec 적대적 리뷰
 
-spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Architecture Spec만 새 reviewer로 검토한다. reviewer는 요청 원문·Product/Architecture Spec·확정 답변과 현행 프로젝트 근거를 직접 읽으며 parent/writer 분석을 상속하지 않는다. 공통 [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md)에 따라 DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결, 요구 구현에 필요한 인프라 완전성을 평가한다. `src/workflow/spec-review.mjs`가 필수/추가 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 Architecture review 누락·self author·상속·중대 지적·stale Spec/Product/source 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
+spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Architecture Spec만 새 reviewer로 검토한다. reviewer는 요청 원문·Product/Architecture Spec·확정 답변과 현행 프로젝트 근거를 직접 읽으며 parent/writer 분석을 상속하지 않는다. 공통 [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md)에 따라 DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결, 요구 구현에 필요한 인프라 완전성을 평가한다. `.harness/src/workflow/spec-review.mjs`가 필수/추가 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 Architecture review 누락·self author·상속·중대 지적·stale Spec/Product/source 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
 
 ## 설치/업데이트의 반복 수동 수리 방지
 
@@ -72,7 +72,7 @@ spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Archi
 
 ## 요구사항·계획·구현 추적
 
-`src/workflow/plan-review.mjs`는 Product/Architecture Spec과 전체 canonical plan을 독립 리뷰가 직접 대조하도록 하며, session runtime에는 current-input hash만 저장한다. `to-ticket` 완료는 독립 `plan_reviewer`가 전체 canonical 계획을 읽은 현재 hash를 요구한다. wrapper dispatch는 workspace preflight 뒤 Spec·전체 계획·tracker body를 다시 읽고, 미통과 시 implementer spawn 전에 차단한다. completion은 구현/검증 파일 hash와 계획된 직접 실행 검증의 결과를 확인한다. feature-level E2E는 모든 split plan 통합 후 한 번 실행하며 `harness-exec` receipt를 남긴다. lifecycle completion도 현재 plan-review snapshot 검사를 재실행한다.
+`.harness/src/workflow/plan-review.mjs`는 Product/Architecture Spec과 전체 canonical plan을 독립 리뷰가 직접 대조하도록 하며, session runtime에는 current-input hash만 저장한다. `to-ticket` 완료는 독립 `plan_reviewer`가 전체 canonical 계획을 읽은 현재 hash를 요구한다. wrapper dispatch는 workspace preflight 뒤 Spec·전체 계획·tracker body를 다시 읽고, 미통과 시 implementer spawn 전에 차단한다. completion은 구현/검증 파일 hash와 계획된 직접 실행 검증의 결과를 확인한다. feature-level E2E는 모든 split plan 통합 후 한 번 실행하며 `harness-exec` receipt를 남긴다. lifecycle completion도 현재 plan-review snapshot 검사를 재실행한다.
 
 `tests/plan_review.test.mjs`와 `node --test` 직접 검증이 Spec·계획 snapshot, stale review, dispatch 차단을 검사한다. 자동 검사는 구조·현재성·receipt 형식을 증명하지만 Spec의 의미적 범위가 plan 전체에 빠짐없이 반영되었는지는 자동 검사로 증명하지 않으며 독립 reviewer가 판단한다. 독립 reviewer가 원문과 전체 계획에서 counterexample을 찾아 판단한다. Receipt 구조 검사는 작성 주체의 암호학적 신원을 증명하지 않는다.
 

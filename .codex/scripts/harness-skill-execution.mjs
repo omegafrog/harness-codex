@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { isAbsolute } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/skill-execution.mjs', import.meta.url);
-const moduleUrl = existsSync(installed) && !sourceCheckout ? installed : new URL('../../src/workflow/skill-execution.mjs', import.meta.url);
-const { resolveSkillBinding, resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn, assessContextBudget } = await import(moduleUrl.href);
+const installed = new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url);
+const { resolveSkillBinding, resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn, assessContextBudget } = await import(installed.href);
 try {
   const [action, ...args] = process.argv.slice(2);
   const options = {};

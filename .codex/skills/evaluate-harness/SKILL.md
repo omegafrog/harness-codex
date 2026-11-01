@@ -56,7 +56,7 @@ npx --yes --package github:omegafrog/harness-codex \
   harness-eval run --suite <suite-id>
 ```
 
-`harness-eval` resolves suites, cases, fixtures, recordings, and the eval implementation from its own Harness package root, so consumer repositories do not need copies of `evals/`, `bin/`, or `src/eval/`.
+`harness-eval` resolves suites, cases, fixtures, recordings, and the eval implementation from its own Harness package root, so consumer repositories do not need copies of `evals/`, `bin/`, or `.harness/src/eval/`.
 
 Installed mode evaluates the Harness package resolved by that package command. It does not evaluate arbitrary local edits made directly to copied `.agents/skills/*` files in the consumer repository. If local Harness-source modifications must be evaluated, use source checkout mode.
 
@@ -83,7 +83,7 @@ In installed mode, obtain suite/case information from the package-backed evaluat
 Select suites deterministically.
 
 1. If the user names a suite, run that suite.
-2. In source checkout mode, if common eval infrastructure changed (`src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
+2. In source checkout mode, if common eval infrastructure changed (`.harness/src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
 3. If a Harness skill or workflow changed and suite case mapping is available, select suites containing cases for the affected workflow(s).
 4. If no exact mapping is available and `p0` exists, run `p0` as the smoke/regression suite and explicitly report that coverage is limited to `p0`.
 5. Never claim full Harness coverage when only a subset of suites ran.

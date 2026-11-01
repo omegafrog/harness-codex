@@ -1,6 +1,6 @@
 # Plan split
 
-`plan_split` stage가 승인된 Product/Architecture Spec을 vertical plan으로 분할하고 review 입력을 만든다.
+`to-ticket`의 initial phase가 승인된 Product/Architecture Spec을 vertical plan으로 분할하고 review 입력을 만든다.
 
 ## 입력과 분석
 
@@ -24,4 +24,4 @@
 
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 Product/Architecture Spec 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 split plan을 표현한다.
 
-Canonical plan과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. `completed/OK`로 끝내며 Beads와 configured tracker 티켓 발행은 `plan_finalize` stage에서 수행한다.
+Canonical plan과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환하고, reviewer가 읽을 session context file `runtime/to-ticket/plan-review-context.json`을 저장한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical plans를 작성한 뒤 `action_required / REVIEW_REQUIRED`와 `review_request` (`skill: plan-review`, `agent_profile: plan_reviewer`, `context_path: runtime/to-ticket/plan-review-context.json`)를 반환해 메인 orchestrator가 독립 fresh reviewer를 호출하도록 한다. Beads와 configured tracker 티켓 발행은 pass review snapshot gate를 통과한 author resume에서만 수행한다.

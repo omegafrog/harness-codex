@@ -37,7 +37,7 @@
 
 파서는 선택 필드의 경로·시각·commit 형식과 `outcome`을 별도로 검증하지 않는다. 위 경로와 의미는 생성·사용 코드의 동작이며, 파일 존재·Git 등록·브랜치 일치 확인은 별도 lifecycle 검사에서 수행한다.
 
-단계 enum 정본은 `src/workflow/worktree-stages.mjs`의 `WORKTREE_STAGE`다. 각 값은 스킬 ID이며, 설치된 프로젝트에서는 `.codex/harness-runtime/src/workflow/worktree-stages.mjs`에 있다. `worktree.json`과 실행 상태의 현재 단계에는 선택한 skill ID를 기록한다.
+단계 enum 정본은 `.harness/src/workflow/worktree-stages.mjs`의 `WORKTREE_STAGE`다. 각 값은 스킬 ID이며, `worktree.json`과 실행 상태의 현재 단계에는 선택한 skill ID를 기록한다.
 
 ```sh
 node .codex/scripts/harness-workflow-worktree.mjs create --root <source_workspace>

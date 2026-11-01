@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/stage-input.mjs', import.meta.url);
-const base = existsSync(installed) && !sourceCheckout ? new URL('../harness-runtime/src/workflow/', import.meta.url) : new URL('../../src/workflow/', import.meta.url);
+const base = new URL('../../.harness/src/workflow/', import.meta.url);
 const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));

@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { updateProject, discoverManagedAssetPaths } from '../src/installer/update.mjs';
-import { protectLocalInstallArtifacts } from '../src/installer/local-exclude.mjs';
-import { runDoctor } from '../src/doctor/doctor.mjs';
+import { updateProject, discoverManagedAssetPaths } from '../.harness/src/installer/update.mjs';
+import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { writeOutputSchema } from '../src/workflow/output-schema.mjs';
+import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
 
 const schemas = '.codex/internal-skills/skill-execution/schemas';
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
@@ -78,6 +78,84 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
     for (const name of ['common.schema.json', 'plan-review.schema.json', 'spec-review.schema.json']) await readFile(join(root, '.codex/internal-skills/skill-execution/schemas/flows', name));
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('installed to-ticket uses skill binding and records a fresh review against the full current snapshot', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-to-ticket-install-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  high_performance_model: gpt-6.1-sol\n  high_performance_reasoning_effort: high\n');
+
+    const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
+    const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
+    const { resolveSkillBinding } = await import(`${installedRuntime}/skill-execution.mjs`);
+    const workflow = await loadNamedWorkflow('to-ticket', { root });
+    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket']);
+    assert.ok(workflow.stages.every((stage) => !Object.hasOwn(stage, 'model_tier')));
+    assert.equal((await resolveSkillBinding({ root, skill: 'to-ticket', workflow: 'to-ticket', stage: 'to-ticket' })).model_tier, 'high_performance');
+    const installedReviewSchema = await readJson(join(root, '.codex/internal-skills/plan-review/review-record.schema.json'));
+    assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'inputs', 'findings']);
+
+    const planRoot = join(root, 'docs/plans/sample');
+    const specRoot = join(root, 'docs/specs/sample');
+    await mkdir(planRoot, { recursive: true });
+    await mkdir(join(specRoot, 'diagrams'), { recursive: true });
+    await writeFile(join(planRoot, 'plans.md'), '- Product Spec: `docs/specs/sample/product-spec.md`\n- Architecture Spec: `docs/specs/sample/architecture-spec.md`\n- [plan](slice.md)\n');
+    await writeFile(join(planRoot, 'slice.md'), '# Slice\n');
+    await writeFile(join(specRoot, 'product-spec.md'), '![diagram](diagrams/flow.svg)\n');
+    await writeFile(join(specRoot, 'architecture-spec.md'), '# Architecture\n');
+    await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>reviewed</svg>\n');
+
+    const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
+    const begin = JSON.parse(execFileSync(process.execPath, [cli, 'begin', '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8' }));
+    assert.ok(begin.inputs['docs/specs/sample/diagrams/flow.svg']);
+    const reviewsDirectory = join(root, '.io/runtime/reviews');
+    await mkdir(reviewsDirectory, { recursive: true });
+    const reviewPath = join(reviewsDirectory, 'result.json');
+    await writeFile(reviewPath, JSON.stringify({
+      schema_version: 1,
+      attempt_id: begin.attempt_id,
+      plan_set_id: 'sample',
+      reviewer_id: 'native-plan-reviewer-1',
+      author_ids: ['plan-split-execution-1'],
+      fork_turns: 'none',
+      verdict: 'pass',
+      inputs: Object.entries(begin.inputs).map(([path, sha256]) => ({ path, sha256 })),
+      findings: [],
+    }));
+    const recorded = JSON.parse(execFileSync(process.execPath, [cli, 'record', '--root', root, '--plan-set', 'sample', '--attempt', begin.attempt_id, '--reviews', 'runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(recorded.status, 'pass');
+    assert.equal(JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' })).status, 'pass');
+
+    await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>changed</svg>\n');
+    let stale;
+    try {
+      execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' });
+      assert.fail('stale plan review should be blocked');
+    } catch (error) {
+      assert.equal(error.status, 1);
+      stale = JSON.parse(error.stdout.toString());
+    }
+    assert.equal(stale.status, 'blocked');
+
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'consumer-owned setup\n');
+    await mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/application-note.md'), 'consumer-owned\n');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/application-note\.md/);
+    assert.doesNotMatch(status, /\.codex\/scripts\/harness-plan-review\.mjs|\.harness\/src\/workflow\/plan-review\.mjs|\.io\/runtime\/reviews/);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.io/runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }), /\.io/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

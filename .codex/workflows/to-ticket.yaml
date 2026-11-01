@@ -1,7 +1,7 @@
 schema_version: 1
 id: to-ticket
 orchestrator: orchestrator
-roles: [to_ticket, plan_reviewer]
+roles: [to_ticket]
 skills: [orchestrator, worktree-create, to-ticket, plan-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight, spec_reviews]
@@ -9,23 +9,7 @@ hooks:
   before_complete: [tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_review]
   after_merge: []
 stages:
-  - id: plan_split
+  - id: to-ticket
     role: to_ticket
     skill: to-ticket
-    model_tier: high_performance
     needs: []
-  - id: plan_review
-    role: plan_reviewer
-    skill: plan-review
-    model_tier: high_performance
-    needs: [plan_split]
-  - id: plan_revision
-    role: to_ticket
-    skill: to-ticket
-    model_tier: high_performance
-    needs: [plan_split, plan_review]
-  - id: plan_finalize
-    role: to_ticket
-    skill: to-ticket
-    model_tier: high_performance
-    needs: [plan_split, plan_review]

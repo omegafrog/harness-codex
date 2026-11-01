@@ -5,9 +5,9 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
-import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
-import { isHarnessSourceCheckout } from "../src/installer/source-checkout.mjs";
+import { updateProject, writeHarnessLock } from "../.harness/src/installer/index.mjs";
+import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
+import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -179,18 +179,18 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
-    ".codex/harness-runtime/src/workflow/stage-gates.mjs",
-    ".codex/harness-runtime/src/workflow/startup-state.mjs",
-    ".codex/harness-runtime/src/workflow/execution-state.mjs",
-    ".codex/harness-runtime/src/workflow/stage-input.mjs",
-    ".codex/harness-runtime/src/workflow/spec-review.mjs",
-    ".codex/harness-runtime/src/workflow/review-attempts.mjs",
-    ".codex/harness-runtime/src/wrapper/repair.mjs",
-    ".codex/harness-runtime/src/knowledge/evidence.mjs",
+    ".harness/src/workflow/stage-gates.mjs",
+    ".harness/src/workflow/startup-state.mjs",
+    ".harness/src/workflow/execution-state.mjs",
+    ".harness/src/workflow/stage-input.mjs",
+    ".harness/src/workflow/spec-review.mjs",
+    ".harness/src/workflow/review-attempts.mjs",
+    ".harness/src/wrapper/repair.mjs",
+    ".harness/src/knowledge/evidence.mjs",
     ".codex/scripts/harness-plan-review.mjs",
     ".codex/scripts/harness-code-review.mjs",
     ".codex/scripts/harness-review-status.mjs",
-    ".codex/harness-runtime/src/workflow/plan-review.mjs",
+    ".harness/src/workflow/plan-review.mjs",
   ]) {
     await stat(join(projectRoot, path));
   }

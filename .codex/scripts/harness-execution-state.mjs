@@ -1,15 +1,9 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { isAbsolute } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
-const source = new URL('../../src/workflow/', import.meta.url);
-const base = existsSync(new URL('execution-state.mjs', installed)) && !sourceCheckout ? installed : source;
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, resolveSkillBinding } = await import(new URL('skill-execution.mjs', base));
-const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
-const { cliSession } = await import(new URL('cli-session.mjs', base));
+const installed = new URL('../../.harness/src/workflow/', import.meta.url);
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, resolveSkillBinding } = await import(new URL('skill-execution.mjs', installed));
+const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', installed));
+const { cliSession } = await import(new URL('cli-session.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {

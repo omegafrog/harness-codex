@@ -9,9 +9,7 @@ import { dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const runtime = existsSync(new URL('../harness-runtime/src/workflow/session-output.mjs', import.meta.url))
-  ? '../harness-runtime/src/workflow/session-output.mjs' : '../../src/workflow/session-output.mjs';
-const { sessionDirectory, sessionOutputPath } = await import(new URL(runtime, import.meta.url).href);
+const { sessionDirectory, sessionOutputPath } = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
 const args = process.argv.slice(2);
 const action = args.shift();
 const options = {};
@@ -110,9 +108,7 @@ async function validateLogFile() {
   if (!options['--input']) throw new Error('validate-logs requires --input FILE');
   const schemaPath = join(directory, 'diagnostic-log.schema.json');
   const schema = JSON.parse(await readFile(existsSync(schemaPath) ? schemaPath : assetSource('diagnostic-log.schema.json'), 'utf8'));
-  const validator = existsSync(new URL('../harness-runtime/src/observability/diagnostic-logs.mjs', import.meta.url))
-    ? '../harness-runtime/src/observability/diagnostic-logs.mjs' : '../../src/observability/diagnostic-logs.mjs';
-  const { validateDiagnosticLog } = await import(new URL(validator, import.meta.url).href);
+  const { validateDiagnosticLog } = await import(new URL('../../.harness/src/observability/diagnostic-logs.mjs', import.meta.url).href);
   let records = 0, invalid = 0;
   const violations = [];
   const inspect = (text, line) => {

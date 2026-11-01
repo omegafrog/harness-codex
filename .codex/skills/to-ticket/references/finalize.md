@@ -1,6 +1,6 @@
 # Plan finalization
 
-`plan_finalize` stage는 최신 review 결과가 pass인 plan set을 tracker 발행 가능한 상태로 확정한다.
+같은 `to-ticket` executor stage가 `feedback.json`에 최신 reviewer verdict `pass`가 포함됐을 때 이 phase를 수행한다.
 
 작업 전에 `context.worktree_ref`의 정본 `worktree.json`을 읽어 작업 worktree, session과 `plan_set_id`를 확인한다. 기록이 없거나 ID가 없으면 중단한다. 해당 worktree의 `docs/plans/<plan-set-id>/`를 사용한다.
 

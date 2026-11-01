@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInputs } from '../src/workflow/review-attempts.mjs';
+import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInputs } from '../.harness/src/workflow/review-attempts.mjs';
 
 test('only explicit pre-dispatch spec preparation aborts are outside the review retry budget', async () => {
   const root = await mkdtemp(join(tmpdir(), 'spec-review-attempts-'));

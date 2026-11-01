@@ -26,10 +26,8 @@ async function codexResumeWriteDirs(sessionId, env) {
   return [...dirs];
 }
 
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
-const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
-const base = existsSync(new URL('codex-process.mjs', installed)) && !sourceCheckout ? installed : new URL('../../src/workflow/', import.meta.url);
+const installed = new URL('../../.harness/src/workflow/', import.meta.url);
+const base = installed;
 const { runCodexProcess } = await import(new URL('codex-process.mjs', base));
 const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));

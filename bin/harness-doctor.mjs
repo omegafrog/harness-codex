@@ -5,9 +5,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const installed = new URL("../harness-runtime/src/doctor/index.mjs", import.meta.url);
+const installed = new URL("../../.harness/src/doctor/index.mjs", import.meta.url);
 const installedRuntime = existsSync(installed);
-const { runDoctor } = await import(installedRuntime ? installed.href : new URL("../src/doctor/index.mjs", import.meta.url).href);
+const { runDoctor } = await import(installedRuntime ? installed.href : new URL("../.harness/src/doctor/index.mjs", import.meta.url).href);
 
 function usage() {
   return `Usage: harness-codex-doctor [options]

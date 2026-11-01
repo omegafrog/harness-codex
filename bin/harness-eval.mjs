@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { sessionOutputPath } from "../src/workflow/session-output.mjs";
+import { sessionOutputPath } from "../.harness/src/workflow/session-output.mjs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadHarnessConfig, resolvePortablePath } from "../src/eval/case-loader.mjs";
-import { retryRuntimeEvidence } from "../src/eval/runtime-observer.mjs";
-import { runSuite } from "../src/eval/runner.mjs";
+import { loadHarnessConfig, resolvePortablePath } from "../.harness/src/eval/case-loader.mjs";
+import { retryRuntimeEvidence } from "../.harness/src/eval/runtime-observer.mjs";
+import { runSuite } from "../.harness/src/eval/runner.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

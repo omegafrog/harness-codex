@@ -5,8 +5,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { updateProject } from "../src/installer/update.mjs";
-import { evaluateWorkflowStage } from "../src/workflow/stage-gates.mjs";
+import { updateProject } from "../.harness/src/installer/update.mjs";
+import { evaluateWorkflowStage } from "../.harness/src/workflow/stage-gates.mjs";
 
 for (const condition of ["product_diagram_required", "architecture_diagram_required"]) {
   const workflow = { stages: [{ id: "diagram", condition }] };

@@ -448,20 +448,20 @@ stateDiagram-v2
 
 ### 주요 runtime 근거
 
-- [worktree 생성·소유·복구·삭제](../../src/workflow/worktrees.mjs)
-- [순차 재사용·병렬 배정·통합·cleanup](../../src/eval/plan-workspace.mjs)
-- [scheduler와 모드별 prompt](../../src/wrapper/scheduler.mjs)
-- [dispatch와 개별 plan 완료 검사](../../src/wrapper/dispatch.mjs)
-- [완료 평가·tracker reconciliation](../../src/wrapper/reconciliation.mjs)
-- [공통 workflow 완료와 finally](../../src/workflow/completion.mjs)
-- [session 경로 resolver](../../src/workflow/session-output.mjs)
-- [순수 workspace 검사](../../src/eval/workspace-preflight.mjs)
+- [worktree 생성·소유·복구·삭제](../../.harness/src/workflow/worktrees.mjs)
+- [순차 재사용·병렬 배정·통합·cleanup](../../.harness/src/eval/plan-workspace.mjs)
+- [scheduler와 모드별 prompt](../../.harness/src/wrapper/scheduler.mjs)
+- [dispatch와 개별 plan 완료 검사](../../.harness/src/wrapper/dispatch.mjs)
+- [완료 평가·tracker reconciliation](../../.harness/src/wrapper/reconciliation.mjs)
+- [공통 workflow 완료와 finally](../../.harness/src/workflow/completion.mjs)
+- [session 경로 resolver](../../.harness/src/workflow/session-output.mjs)
+- [순수 workspace 검사](../../.harness/src/eval/workspace-preflight.mjs)
 - [CLI workspace·tracker·준비 preflight](../../.codex/scripts/workspace-preflight-cli.mjs)
-- [계획 리뷰 current-input 검사](../../src/workflow/plan-review.mjs)
-- [fresh Spec 리뷰 구조·snapshot 검사](../../src/workflow/spec-review.mjs)
-- [tracker 상태·mirror mutation](../../src/tracker/lifecycle.mjs)
-- [실행 profile과 receipt](../../src/workflow/execution.mjs)
-- [설계 Decision artifact](../../src/decision/artifacts.mjs), [설계 리뷰 이력](../../src/decision/review.mjs)
+- [계획 리뷰 current-input 검사](../../.harness/src/workflow/plan-review.mjs)
+- [fresh Spec 리뷰 구조·snapshot 검사](../../.harness/src/workflow/spec-review.mjs)
+- [tracker 상태·mirror mutation](../../.harness/src/tracker/lifecycle.mjs)
+- [실행 profile과 receipt](../../.harness/src/workflow/execution.mjs)
+- [설계 Decision artifact](../../.harness/src/decision/artifacts.mjs), [설계 리뷰 이력](../../.harness/src/decision/review.mjs)
 
 ## 13. 주요 명령과 실행 root
 
@@ -539,7 +539,7 @@ stateDiagram-v2
 
 ### schema·형식 계약
 
-- tracker 입력 형식: `.codex/schemas/tracker/plan-set.schema.yaml`, `split-plan.schema.yaml`, `implementation-pr.schema.yaml`; 실제 검증·렌더는 `src/tracker/contracts.mjs`, `render.mjs`, source-authoring 모듈을 따른다.
+- tracker 입력 형식: `.codex/schemas/tracker/plan-set.schema.yaml`, `split-plan.schema.yaml`, `implementation-pr.schema.yaml`; 실제 검증·렌더는 `.harness/src/tracker/contracts.mjs`, `render.mjs`, source-authoring 모듈을 따른다.
 - 계획 리뷰는 Product/Architecture Spec과 canonical plan을 직접 대조하며, session runtime에는 review current-input snapshot만 보존한다.
 - System Targets·Decision·Review·Knowledge JSON/YAML의 필수 필드는 `.codex/schemas/decision/`, `.codex/schemas/knowledge/`와 각 validation 모듈을 따른다.
 - 통합 계약의 모델·기능·diagram·source inventory 형식은 `sync-contracts/references/format.md`와 `docs/contracts/manifest.json`을 따른다.

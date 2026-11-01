@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCodexProcess } from '../src/workflow/codex-process.mjs';
+import { runCodexProcess } from '../.harness/src/workflow/codex-process.mjs';
 
 test('starts Codex only after its process identity was recorded', async () => {
   const root = await mkdtemp(join(tmpdir(), 'codex-gate-'));

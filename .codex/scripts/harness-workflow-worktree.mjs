@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-let sourceCheckout = false;
-try { sourceCheckout = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).name === '@omegafrog/harness-codex'; } catch {}
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
-const installed = new URL('../harness-runtime/src/workflow/worktrees.mjs', import.meta.url);
-const source = new URL('../../src/workflow/worktrees.mjs', import.meta.url);
-const { bindWorkflowPlanSetId, createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees } = await import(existsSync(installed) && !sourceCheckout ? installed.href : source.href);
+const installed = new URL('../../.harness/src/workflow/worktrees.mjs', import.meta.url);
+const { bindWorkflowPlanSetId, createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees } = await import(installed.href);
 const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Workflow interrupted: ${name}`)));
 try {

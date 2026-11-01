@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createExternalSystemPort } from "../src/eval/recording.mjs";
-import { JsonlEventWriter } from "../src/eval/journal.mjs";
-import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
+import { createExternalSystemPort } from "../.harness/src/eval/recording.mjs";
+import { JsonlEventWriter } from "../.harness/src/eval/journal.mjs";
+import { sessionDirectory, sessionOutputPath } from "../.harness/src/workflow/session-output.mjs";
 import { relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 

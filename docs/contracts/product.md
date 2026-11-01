@@ -22,7 +22,7 @@ BR-install: install/update 종료 시 프로젝트 실행 계약과 통합 계�
 ### 수용 조건
 AC-install: 대상이 실제 Git root인 경우에만 해당 저장소 exclude를 수정하고, Git 초기화 전 하위 디렉터리 설치가 부모 저장소 ignore를 바꾸지 않는다. 새 설치에 PR 템플릿과 지원 파일을 포함하고 기본 충돌 보존/명시적 force 교체·백업/동일 상태 재실행의 결과를 검사한다. 신규 파일과 reference가 배포되고, 충돌 파일은 보존·보고되며 lock이 실제 관리 목록을 나타낸다. 설치는 VictoriaLogs helper·스킬·모든 지원 assets를 배포하고 SigNoz plugin 등록을 호출하지 않는다. setup은 Codex native UI에서 제출된 선택·확인을 받아 포트/보존 기간과 MCP/수집 profile을 준비하며 설정만 준비한 상태를 수집 완료로 보고하지 않는다. 재실행은 다른 project config와 profile을 보존하고 managed 관측성 설정·profile은 backup 후 갱신한다. 구형 host network/Fluent Bit compose·Collector 설정은 backup 후 bridge로 교체하며 기존 데이터·offset은 보존한다. 실제 컨테이너 기준 scrape_url의 Actuator host/port/path를 scrape에 반영하고 config.json과 target이 어긋나면 실행 전 차단한다. backend 시작은 명시적 harness-exec profile 호출이며 setup이 임의 실행하지 않는다. 설치된 진단 검사 profile은 Docker 없이 정상 record를 받아들이고 필수값·타입·이벤트 outcome 오류를 거부한다. 재설정은 실행 workspace의 지침을 중복하지 않고 관측성 관리 항목과 OTel 저장 필드 설명을 갱신한다. setup과 API readiness만으로 실제 로그·메트릭 수집 완료를 주장하지 않는다. 폐기 managed skill만 backup 후 제거하고 다른 자산·사용자 데이터는 보존한다.
 
-구현: [bin/harness-install.mjs](../../bin/harness-install.mjs) · [src/installer/update.mjs](../../src/installer/update.mjs) · 검증: [설치된 소비자 회귀](../../tests/worktree_record_contract.test.mjs)
+구현: [bin/harness-install.mjs](../../bin/harness-install.mjs) · [src/installer/update.mjs](../../.harness/src/installer/update.mjs) · 검증: [설치된 소비자 회귀](../../tests/worktree_record_contract.test.mjs)
 
 <a id="diagnose"></a>
 ## 설치 상태 진단
@@ -38,7 +38,7 @@ BR-diagnose: 실행 계약 누락/빈 프로필/잘못된 형식과 통합 계�
 ### 수용 조건
 AC-diagnose: 최신 관리 자산의 supporting files·tools·contracts·CI·PR을 stale로 오인하지 않는다. eval permission_profile label을 native 참조와 구분하되 실제 sandbox/network 모순·명시적 native 참조 미검증은 계속 실패한다.  doctor 결과와 종료 코드가 실제 진단 결과와 일치한다.
 
-구현: [src/doctor/doctor.mjs](../../src/doctor/doctor.mjs) · 검증: [설치 Doctor inventory 회귀](../../tests/skill_execution_schema_compatibility.test.mjs)
+구현: [src/doctor/doctor.mjs](../../.harness/src/doctor/doctor.mjs) · 검증: [설치 Doctor inventory 회귀](../../tests/skill_execution_schema_compatibility.test.mjs)
 
 <a id="workspace"></a>
 ## 작업 공간 검증
@@ -89,7 +89,7 @@ BR-delivery: 프로젝트별 구현 지침과 테스트 지침을 각각 `docs/a
 AC-delivery: 프로젝트별 구현/test 지침은 실행 workspace의 두 `docs/agents/*-guidance.md` 문서에서 관리된다. linked worktree worker는 자신의 `workspace_root`에 있는 지침을 읽고 갱신해 변경을 workflow branch와 함께 push한다. implement/implementation agent는 둘 다 읽고 test runner는 testing 지침을 읽는다. Spec/execution profile 충돌은 해결 전 구현·테스트 실행을 막는다. checkpoint의 tests.e2e_failures는 빈 배열/성공 요약/인계로 사라지지 않으며 원본 evidence_path를 교체할 수 없다. 미해결/unknown/예방 조치·재검증 근거가 불완전한 실패가 있으면 tests gate와 wrapper 완료 판정이 passed 요약도 차단한다. 기계 검사는 기록 형식/상태이며 실제 근거/예방 충분성은 독립 리뷰가 확인한다. 실행/통합 계약이 누락된 프로젝트는 구현 agent가 시작되지 않으며 준비 후 재검사에서 pass해야 한다. 최신 request/Spec/diagram·현행 용어/계약·읽은 source의 hash와 실제 fresh reviewer metadata를 검사한다. 미실행·작성자와 같은 reviewer·맥락 상속·미해결 중대 지적·변경된 입력은 spec-me 완료와 to-ticket 인계를 차단한다. Product 변경은 Architecture 리뷰도 무효화한다. 기계 검사는 기록과 입력 일치만 확인하며 실제 spawn 진위와 리뷰 의미는 원본 tool/agent 응답으로 대조한다. 정상 Spec 완료 receipt는 `spec_ready_for_planning`, 계획 발행 완료 receipt는 `plan_set_ready_for_implementation`, 최종 통합 구현 완료 receipt는 `feature_implemented`를 기록한다. `waiting`은 종료가 아니며 session/worktree를 유지한다. `handoff`·`aborted`·`failed`는 `completed`와 구별해 recovery receipt에 남긴다. E2E 여부/의미 oracle 선택은 공통 수동 정책이며 runtime 자동 판정이 아니다. E2E/full-stack/browser end-to-end 명시 요청이 없으면 저비용 검사로 입증 불가한 변경 critical cross-boundary에만 E2E를 요구한다. 일반 테스트/검증 요청이나 서비스 실행 요청은 E2E 요청이 아니다. 공개 e2e-test skill/runner 설명도 승인된 E2E 실행에 한정되어 generic test/verification 요청을 불필요하게 full-stack으로 dispatch하지 않는다. 실패/누락 증거와 신규 mirror 불일치는 agent 시작·Done·종속 plan 해제를 막는다. 독립 계획 리뷰의 누락·stale snapshot은 dispatch와 완료를 막는다. 계획 검토기는 전체 입력 hash와 선택 plan 포함 여부를 검사하며 요구사항 coverage와 구현 evidence의 의미적 완전성은 독립 reviewer와 별도 완료 gate가 담당한다. GitHub 기본 Status/Issue closure는 동기화 명령이 변경하지 않는다. journal replay가 checkpoint를 복구하고 폐기 경로가 남으면 retirement 검사가 실패한다.
 
 
-구현: [src/wrapper/dispatch.mjs](../../src/wrapper/dispatch.mjs)
+구현: [src/wrapper/dispatch.mjs](../../.harness/src/wrapper/dispatch.mjs)
 
 <a id="decisions"></a>
 ## 설계 결정과 근거 검토
@@ -107,7 +107,7 @@ BR-decisions: Learning mode 자료 사용은 material approval로 제어한다. 
 ### 수용 조건
 AC-decisions: 승인 누락·내용 변경·불충분한 decision evidence는 gate에서 검출한다.
 
-구현: [src/decision/review.mjs](../../src/decision/review.mjs) · 검증: [설치 decision gate 검사](../../tests/stage-gates.test.mjs)
+구현: [src/decision/review.mjs](../../.harness/src/decision/review.mjs) · 검증: [설치 decision gate 검사](../../tests/stage-gates.test.mjs)
 
 <a id="evidence"></a>
 ## 지식 근거의 승인과 게시
@@ -123,7 +123,7 @@ BR-evidence: raw runtime evidence와 외부 공개 summary를 분리한다. stag
 ### 수용 조건
 AC-evidence: 승인되지 않은 summary는 게시할 수 없고 history에 전이가 보존된다.
 
-구현: [src/knowledge/evidence.mjs](../../src/knowledge/evidence.mjs)
+구현: [src/knowledge/evidence.mjs](../../.harness/src/knowledge/evidence.mjs)
 
 <a id="evaluate"></a>
 ## 하네스 품질과 효율 평가
@@ -139,7 +139,7 @@ BR-evaluate: 정확성·hard gate·outcome과 token/latency를 구분한다. 동
 ### 수용 조건
 AC-evaluate: result/report/events와 실패 분류가 일치하며 미실행을 성공으로 보고하지 않는다.
 
-구현: [src/eval/runner.mjs](../../src/eval/runner.mjs)
+구현: [src/eval/runner.mjs](../../.harness/src/eval/runner.mjs)
 
 <a id="contracts-feature"></a>
 ## 통합 계약 유지와 완료 검증
@@ -155,7 +155,7 @@ BR-contracts-feature: 현행 구현과 accepted-target을 구분한다. source/�
 ### 수용 조건
 AC-contracts-feature: 최종 구현 완료에서 stale snapshot·필수 필드·소유 링크·기능 sequence·SVG provenance·base revision 오류를 차단한다. `spec-me`, `to-ticket`, 개별 plan 구현·리뷰·knowledge workflow는 계약 검사를 요구하지 않으며 계획·ticket Spec만으로 계약을 수정하지 않는다. 구현 준비는 source snapshot drift만 최종 동기화까지 명시적으로 지연하고 구조 오류·실행 준비 실패는 차단한다. 최종 구현 workflow는 공통 완료 명령과 CI의 동일 검사를 통과해야 하며 시작 SHA가 없거나 hook이 실패하면 정상 완료 receipt를 발급하지 않는다.
 
-구현: [src/contracts/contracts.mjs](../../src/contracts/contracts.mjs) · 검증: `node .codex/scripts/harness-contracts.mjs check`
+구현: [src/contracts/contracts.mjs](../../.harness/src/contracts/contracts.mjs) · 검증: `node .codex/scripts/harness-contracts.mjs check`
 
 
 <a id="execution"></a>
@@ -173,6 +173,6 @@ AC-execution: missing env/인자·오래된 설정·미준비 인프라·prepare
 
 검증: [프로젝트 준비 회귀 검사](../../tests/worktree_record_contract.test.mjs).
 
-구현: [runExecution](../../src/workflow/execution.mjs) · 흐름: [sequence](diagrams/execution.sequence.svg) · 상태: [state](diagrams/execution.state.svg).
+구현: [runExecution](../../.harness/src/workflow/execution.mjs) · 흐름: [sequence](diagrams/execution.sequence.svg) · 상태: [state](diagrams/execution.state.svg).
 
 실행 정리의 process group 보장은 POSIX 대상이다. native Windows는 직접 child만 종료하며 descendant 정리가 필요한 흐름은 WSL/POSIX에서 수행한다. 설정의 의도적 prepare 갱신 후에 hash를 잡고, 그 이후 verify/readiness 도중 변경을 차단한다.
