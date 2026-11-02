@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -262,6 +262,19 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(worktreeRecord.agent_sessions.orchestrator.session_id, record.worktree_id);
     const resultRef = 'runtime/executions/compose-1/result.json';
     assert.equal(tree.status, 'completed');
+    await writeFile(join(tree.workspace, 'user-draft.txt'), 'preserve me');
+    const failedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/missing.json'], { cwd: tree.workspace, encoding: 'utf8' });
+    assert.notEqual(failedCompletion.status, 0);
+    assert.equal(await readFile(join(tree.workspace, 'user-draft.txt'), 'utf8'), 'preserve me');
+    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
+    const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/spec-me/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();
+    await writeFile(completionPath, JSON.stringify({ ticket_id: 'calculator', tracker_sync: { ticket_refs: [] } }));
+    const blockedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' });
+    assert.notEqual(blockedCompletion.status, 0);
+    assert.equal(JSON.parse(blockedCompletion.stdout).state, 'in-progress');
+    assert.equal(await readFile(join(tree.workspace, 'user-draft.txt'), 'utf8'), 'preserve me');
+    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
+    assert.equal(execFileSync('git', ['check-ignore', '-q', '.io/runtime/spec-me/completion-state.json'], { cwd: tree.workspace }).length, 0);
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, resultRef), 'utf8')).worktree_ref, tree.worktree_ref);
     const hook = join(root, '.codex/scripts/harness-orchestrator-hook.mjs');
     const context = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' })).hookSpecificOutput.additionalContext;

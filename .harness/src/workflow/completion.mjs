@@ -45,15 +45,12 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
   finally {
     try { await writer?.close(); } catch (error) { failure ||= error; }
     const retainForPlanning = !failure && !signal?.aborted && result?.state === 'completed' && result.completion_kind === 'spec_ready_for_planning';
-    if (!retainForPlanning) {
+    if (!failure && !signal?.aborted && result?.state === 'completed' && !retainForPlanning) {
       let cleanup;
-      try { cleanup = await finishWorkflowWorktree({ workspace_root, worktree_id, outcome: signal?.aborted ? 'aborted' : !failure && result?.state === 'completed' ? 'completed' : 'failed' }); }
+      try { cleanup = await finishWorkflowWorktree({ workspace_root, worktree_id, outcome: 'completed' }); }
       catch (error) { cleanup = { state: 'failed', error: error.message, workspace_root }; }
-      if (failure) failure.worktree_cleanup = cleanup;
-      else {
-        result.worktree_cleanup = cleanup;
-        if (cleanup.state === 'failed') result.state = 'in-progress';
-      }
+      result.worktree_cleanup = cleanup;
+      if (cleanup.state === 'failed') result.state = 'in-progress';
     }
   }
   if (failure) throw failure;
