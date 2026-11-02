@@ -51,7 +51,7 @@ main에서 기존 작업을 찾는 요청이면 hook의 `worktree_candidates`와
 | `failed` | `reason=Execution interrupted after its processes exited`, `code=EXECUTION_ERROR`, 결과 없음이면 같은 `stage-id`로 `harness-prepare-input.mjs --feedback`을 호출해 기록된 부모 Codex 대화를 재개한다. 그 외에는 반환 사유와 재시도 정책에 따라 수정 작업·재실행을 결정한다. |
 | `cancelled` | 실행기와 소유 lifecycle의 종료 절차를 호출한다. |
 
-reviewer 결과를 작업 stage에 돌려줄 때는 기존 waiting 실행을 같은 Codex 대화에서 재개한다: `node .codex/scripts/harness-prepare-input.mjs --worktree-ref <canonical worktree.json> --stage-id <stage-id> --feedback '<finding 요약과 session 산출물 경로>'`. 이 경로는 저장된 `REVIEW_REQUIRED` 반환과 session을 검증하고 reviewer 결과를 feedback으로 전달한다. reviewer 질문은 사용자에게 제시한 뒤 답을 같은 native reviewer 대화에 전달하고, reviewer가 완료한 결과를 stage에 feedback으로 돌려준다. stage 자체가 `USER_DECISION_REQUIRED`를 반환한 경우에만 답을 받은 뒤 `--answer`로 해당 stage 실행을 재개한다.
+reviewer 결과를 작업 stage에 돌려줄 때는 기존 waiting 실행을 같은 Codex 대화에서 재개한다: `node .codex/scripts/harness-prepare-input.mjs --worktree-ref <canonical worktree.json> --stage-id <stage-id> --feedback '<finding 요약과 session 산출물 경로>'`. 이 경로는 저장된 `REVIEW_REQUIRED` 반환과 session을 검증하고 reviewer 결과를 feedback으로 전달한다. reviewer 질문은 사용자에게 제시한 뒤 답을 같은 native reviewer 대화에 전달하고, reviewer가 완료한 결과를 stage에 feedback으로 돌려준다. stage 자체가 `USER_DECISION_REQUIRED`를 반환한 경우에만 답을 받은 뒤 [답변 입력 계약](../../internal-skills/skill-execution/references/input.md#사용자-답변으로-재개)의 실제 `question_id`와 답변 배열을 `--answer`에 전달해 해당 stage 실행을 재개한다.
 
 workflow의 완료 단계와 필수 gate·completion receipt가 통과한 결과를 받으면 전체 완료를 보고한다. `spec-me`의 stage 반환 `completed/OK`만으로 workflow 완료를 선언하지 않는다. stage 반환 상태와 산출물 검증이 성공한 뒤 orchestrator가 준비된 canonical worktree에서 완료 gate를 호출하고, `state=completed` 및 `completion_kind=spec_ready_for_planning`을 확인한 다음에만 성공 receipt를 사용자에게 보고한다. 다음 stage가 범위에 있으면 orchestrator가 `to-ticket`을 별도 실행한다.
 
