@@ -5,7 +5,7 @@ import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validate
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
-import { assertExecutionStopped } from './execution-state.mjs';
+import { assertExecutionStopped, recordExecutionState } from './execution-state.mjs';
 
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || !['spec-me', 'to-ticket'].includes(input.skill)) return input;
@@ -49,8 +49,30 @@ async function executionThreadId({ root, session, executionId, worktreeRef }) {
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, answer = null, feedback = null, reviewAdmissionRef = null }) {
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
-  const state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
+  let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
+  const running = state.stages?.[stageId];
+  if (running?.status === 'running' && running.result_ref === null) {
+    let stopped = false;
+    try { await assertExecutionStopped(running, { root, session }); stopped = true; }
+    catch (error) { if (!/Stage already running/.test(error.message)) throw error; }
+    if (stopped) {
+      const prefix = `runtime/executions/${running.execution_id}`;
+      let envelope, log;
+      try {
+        envelope = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/return.json` });
+        log = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/exec.stderr.json` });
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (envelope && log?.exit_code === 0 && envelope.result_ref === `${prefix}/result.json`) {
+        const previousInput = await readExecutionInput({ root, execution_id: running.execution_id });
+        const result = await readSkillSessionJson({ root, session_directory: session, path: envelope.result_ref });
+        if (JSON.stringify(result) !== JSON.stringify(envelope.result)) throw new Error('Stored execution result does not match return');
+        await validateSkillReturn({ root, input: previousInput, envelope });
+        await recordExecutionState({ root, input: previousInput, binding: log.binding || { model: running.model, reasoning_effort: running.reasoning_effort }, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref });
+        state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
+      }
+    }
+  }
   const prepared = await readExecutionInput({ root, execution_id: state.stages['workflow-compose'].execution_id });
   const stage = { id: stageId, skill: stageId, scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
   const input_refs = [];
