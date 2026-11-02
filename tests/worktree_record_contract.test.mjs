@@ -235,7 +235,7 @@ test('compose rejects an unprepared project without leaving an active worktree',
     await rm(join(root, 'docs/agents/EXEC.md'));
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
-    assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, stdio: 'pipe' }), /Command failed/);
+    assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
     assert.equal(git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).length, 1);
     assert.equal(git('status', '--short'), '');
   } finally { await rm(parent, { recursive: true, force: true }); }
@@ -258,10 +258,10 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await seedSetup(root);
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('commit', '-m', 'setup baseline');
-    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
+    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, encoding: 'utf8' }));
     const prepared = { input: await readExecutionInput({ root: tree.workspace, execution_id: 'compose-1' }) };
     const worktreeRecord = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8'));
-    assert.equal(worktreeRecord.agent_sessions.orchestrator.session_id, record.worktree_id);
+    assert.equal(worktreeRecord.agent_sessions?.orchestrator, undefined);
     const resultRef = 'runtime/executions/compose-1/result.json';
     assert.equal(tree.status, 'completed');
     const composeProgress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
@@ -294,6 +294,9 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.match(git('status', '--short'), /application-change\.txt/);
     assert.equal(await readFile(join(root, 'application-change.txt'), 'utf8'), 'preserved');
     await rm(join(root, 'application-change.txt'));
+    const invalidStage = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'product'], { cwd: tree.workspace, encoding: 'utf8' });
+    assert.notEqual(invalidStage.status, 0);
+    assert.match(invalidStage.stderr, /Unregistered skill: product/);
     const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(next.input.skill, 'spec-me');
     assert.equal(next.input.context.role, undefined);
@@ -494,12 +497,12 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
-    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--codex-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
+    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1'], { cwd: root, encoding: 'utf8' }));
     const found = await findExecutionInput(tree.workspace, 'compose-1');
     assert.equal(found.workspace, tree.workspace);
     assert.equal(found.input.workspace_root, undefined);
     assert.equal(found.input.session_directory, undefined);
-    assert.equal(found.input.context.codex_session_id, record.worktree_id);
+    assert.equal(found.input.context.codex_session_id, undefined);
     assert.equal(found.input.scope, '작은 계산기 웹 앱');
     assert.equal(found.input.context.control_session_directory, undefined);
     assert.deepEqual(found.input.input_refs, []);

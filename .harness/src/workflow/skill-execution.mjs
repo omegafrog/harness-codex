@@ -189,7 +189,7 @@ export async function validateSkillInput({ root, input }) {
   if (input.skill === 'workflow-compose') {
     validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));
     requireValue(isAbsolute(input.context?.worktree_ref || '') && basename(input.context.worktree_ref) === 'worktree.json', 'Compose requires a canonical worktree reference');
-    requireValue(typeof input.context?.plan_set_id === 'string' && typeof input.context?.codex_session_id === 'string' && input.context?.stage_id === 'workflow-compose', 'Compose context is incomplete');
+    requireValue(typeof input.context?.plan_set_id === 'string' && input.context?.stage_id === 'workflow-compose', 'Compose context is incomplete');
   }
   requireValue(await realpath(input.workspace_root) === await realpath(root), 'Input workspace does not match caller root');
   if (input.context?.agent_profile || input.context?.role) {

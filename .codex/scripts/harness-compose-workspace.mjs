@@ -9,12 +9,12 @@ try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
     const k = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'plan-set-id', 'request', 'codex-session-id'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
+    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'plan-set-id', 'request'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
   if (!isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute root and execution-id are required');
   if (opts.request !== undefined) {
-    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], codex_session_id: opts['codex-session-id'] });
+    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'] });
     process.stdout.write(`${JSON.stringify(record)}\n`);
     process.exit(0);
   }

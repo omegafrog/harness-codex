@@ -17,6 +17,8 @@ try {
   }
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
   const repository = await realpath((await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim());
+  const bindings = JSON.parse(await readFile(join(repository, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
+  if (!Object.hasOwn(bindings.skills, options['stage-id'])) throw new Error(`Unregistered skill: ${options['stage-id']}; --stage-id must be the selected skill name`);
   const session = await resolveSkillSession(repository, dirname(options['worktree-ref']));
   const workflowRef = null;
   const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });

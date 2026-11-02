@@ -242,7 +242,7 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
 메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
 
-orchestrator는 `harness-execution-state.mjs`로 시작·결과·실패 상태와 진행률을 기록한다. `context.codex_session_id`, `context.stage_id`와 필요한 제어 session 경로를 입력에 지정한다.
+orchestrator는 실행 조율 명령으로 시작·결과·실패 상태와 진행률을 기록한다. 입력 준비기가 stage와 필요한 제어 session 경로를 기록한다.
 
 
 구성된 workflow의 입력과 실행 ID는 `harness-prepare-input.mjs`가 생성한다. 최초 workflow-compose의 worktree는 `harness-compose-workspace.mjs`가 준비한다.
