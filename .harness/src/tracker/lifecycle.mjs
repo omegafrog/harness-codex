@@ -69,6 +69,17 @@ function githubReference(config, ref) {
   if (!match || match[1] !== settings.repository) throw new Error('Ticket reference must match configured repository');
   return { settings, owner: match[1].split('/')[0], repo: match[1].split('/')[1], number: Number(match[2]) };
 }
+function beadsExternalRef(config, ref) {
+  if (config.mode !== 'github') return ref;
+  const { settings, number } = githubReference(config, ref);
+  return `https://github.com/${settings.repository}/issues/${number}`;
+}
+function trackerReference(config, externalRef) {
+  if (config.mode !== 'github') return externalRef;
+  const match = externalRef.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/([1-9]\d*)$/);
+  if (!match || match[1] !== config.github?.repository) throw new Error('Beads external_ref does not match the configured GitHub repository');
+  return `${match[1]}#${match[2]}`;
+}
 
 async function githubTickets(root, config, refs, run, context) {
   const { settings } = githubReference(config, refs[0]);
@@ -104,9 +115,10 @@ export async function readTrackerStatus({ workspace_root: root, ticket_ref: ref,
     return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
   } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
 }
-async function mirror(root, ref, run) {
-  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--external-ref', ref], root);
-  const bead = single(items.filter((item) => item.external_ref === ref), 'Beads external_ref');
+async function mirror(root, ref, run, config) {
+  const externalRef = beadsExternalRef(config, ref);
+  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--external-ref', externalRef], root);
+  const bead = single(items.filter((item) => item.external_ref === externalRef), 'Beads external_ref');
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(bead.id || '')) throw new Error('Invalid Beads ID');
   if (bead.metadata?.harness_tracker_version !== 1) throw new Error('Ticket is not registered for lifecycle v1');
   return bead;
@@ -119,6 +131,7 @@ function metadataValid(bead) {
 export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, run = defaultRun } = {}) {
   try {
     let refs = ticket_refs;
+    let config = null;
     let beadsDisabled = false;
     if (isAbsolute(root || '')) {
       try { beadsDisabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled === false; }
@@ -138,13 +151,15 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
           return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
         }
       }
+      config = await projectConfig(root);
       const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
       if (items.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
-      refs = items.map((item) => item.external_ref);
+      refs = items.map((item) => trackerReference(config, item.external_ref));
     }
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
     if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
-    const config = await projectConfig(root), tickets = [], context = {};
+    config ||= await projectConfig(root);
+    const tickets = [], context = {};
     const githubStatuses = config.mode === 'github' ? await githubTickets(root, config, refs, run, context) : null;
     for (const ref of refs) {
       if (beadsDisabled) {
@@ -152,7 +167,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
         tickets.push({ ref, status: tracker.status });
         continue;
       }
-      const bead = await mirror(root, ref, run);
+      const bead = await mirror(root, ref, run, config);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
@@ -169,7 +184,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
   const config = await projectConfig(root);
   const beadsEnabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled !== false;
-  const bead = beadsEnabled ? await mirror(root, ref, run) : null;
+  const bead = beadsEnabled ? await mirror(root, ref, run, config) : null;
   if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
   const context = {};
   let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;
@@ -212,7 +227,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
       await run('bd', args, root);
     }
     const verified = single(await json(run, 'bd', ['show', bead.id, '--json'], root), 'Beads verification');
-    if (verified.external_ref !== ref || verified.status !== expected || (phase && verified.metadata?.harness_phase !== phase) || (classification && verified.metadata?.harness_classification !== classification)) throw new Error('Beads write did not verify');
+    if (verified.external_ref !== beadsExternalRef(config, ref) || verified.status !== expected || (phase && verified.metadata?.harness_phase !== phase) || (classification && verified.metadata?.harness_classification !== classification)) throw new Error('Beads write did not verify');
     metadataValid(verified);
     const current = await readTracker(root, config, ref, run, context);
     if (current.status !== desired) throw new Error('Canonical state changed during mirror write; retry from the latest state');
