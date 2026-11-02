@@ -6,6 +6,7 @@ import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./loc
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
+import { LEGACY_ASSETS } from './legacy-assets.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const SOURCE_TRANSFORM = "project-local-paths-v1";
@@ -26,6 +27,12 @@ function validateRelativePath(path, label) {
 
 function hashContent(content) {
   return createHash("sha256").update(content).digest("hex");
+}
+
+async function harnessVersion(sourceRoot) {
+  const data = await readFile(resolve(sourceRoot, 'package.json'), 'utf8').catch((error) => error.code === 'ENOENT' ? '{}' : Promise.reject(error));
+  const version = JSON.parse(data).version;
+  return typeof version === 'string' ? version : null;
 }
 
 function sourceDescriptor(sourcePath, targetPath, sourceTransform = null) {
@@ -246,7 +253,7 @@ export async function buildHarnessLock({ sourceRoot, targetRoot, excludePaths = 
       ...(descriptor.source_transform ? { source_transform: descriptor.source_transform } : {}),
     };
   }
-  return validateHarnessLock({ schema_version: 1, files });
+  return validateHarnessLock({ schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files });
 }
 
 export async function writeHarnessLock({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, excludePaths = [] } = {}) {
@@ -283,12 +290,13 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     const descriptor = byTarget.get(entry.path);
     if (!descriptor) {
       if (!selected(entry.path)) continue;
-      const internalReplacement = entry.path.replace(/^\.agents\/skills\//, ".codex/internal-skills/").replace(/\/SKILL\.md$/, "/GUIDE.md");
-      const retiredFlowSchema = /^\.codex\/internal-skills\/skill-execution\/schemas\/flows\/(?!(?:common|plan-review|spec-review)\.schema\.json$)[a-z0-9-]+\.schema\.json$/.test(entry.path);
-      if (selected(entry.path) && (entry.path.startsWith('.codex/harness-runtime/src/') || retiredFlowSchema || entry.path === '.agents/skills/signoz-local-setup/SKILL.md' || entry.path === '.agents/skills/orchestrator/references/to-ticket.md' || entry.path === '.codex/internal-skills/spec-review/references/review-coordination.md' || entry.path === '.codex/internal-skills/skill-execution/GUIDE.md' || entry.path === '.codex/internal-skills/skill-execution/schemas/result.schema.json' || (entry.path === '.codex/scripts/harness-static-call.mjs' || entry.path.startsWith('.codex/internal-skills/static-caller/')) || entry.path === '.codex/scripts/harness-skill-exec.mjs' || entry.path === '.codex/scripts/harness-stage-input.mjs' || entry.path === '.harness/src/workflow/skill-dispatch.mjs' || entry.path === '.harness/src/workflow/static-caller.mjs' || (entry.path.startsWith(".agents/skills/") && byTarget.has(internalReplacement)))) {
-        const target = await readTarget(targetRoot, entry.path);
-        if (target) actions.push({ descriptor: sourceDescriptor(entry.source_path, entry.path), retired: true, backup: target.content });
+      const target = await readTarget(targetRoot, entry.path);
+      if (target && entry.current_sha256 !== entry.installed_sha256) {
+        nextFiles[entry.path] = { ...nextFiles[entry.path], retired: true };
+        skipped.push({ path: entry.path, status: 'retired_locally_modified' });
+        continue;
       }
+      if (target) actions.push({ descriptor: sourceDescriptor(entry.source_path || entry.path, entry.path), retired: true, backup: target.content });
       delete nextFiles[entry.path];
       removed_lock_entries.push(entry.path);
       continue;
@@ -309,13 +317,20 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       actions.push({ descriptor, content: source, sourceHash, backup: target?.content });
     } else skipped.push({ path: entry.path, status: sourceHash === entry.installed_sha256 ? "locally_modified" : "conflict" });
   }
+  if (scope === "all") for (const legacy of LEGACY_ASSETS.filter((item) => item.action === 'retire')) {
+    if (lock.files[legacy.path]) continue;
+    const target = await readTarget(targetRoot, legacy.path);
+    if (target && hashContent(target.content) === legacy.sha256) actions.push({ descriptor: sourceDescriptor(legacy.path, legacy.path), retired: true, backup: target.content });
+    else if (target) skipped.push({ path: legacy.path, status: 'legacy_unrecognized' });
+  }
   for (const descriptor of descriptors) {
     if (!selected(descriptor.target_path) || nextFiles[descriptor.target_path]) continue;
     const target = await readTarget(targetRoot, descriptor.target_path);
     const source = await readSource(sourceRoot, descriptor);
     if (!source) continue;
     const sourceHash = hashContent(source);
-    if (target && hashContent(target.content) !== sourceHash && !force && !isSkill(descriptor.target_path)) {
+    const knownLegacy = target && LEGACY_ASSETS.some((item) => item.action === 'replace' && item.path === descriptor.target_path && item.sha256 === hashContent(target.content));
+    if (target && hashContent(target.content) !== sourceHash && !force && !isSkill(descriptor.target_path) && !knownLegacy) {
       skipped.push({ path: descriptor.target_path, status: "unlocked" });
       continue;
     }
@@ -351,7 +366,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       ...(action.descriptor.source_transform ? { source_transform: action.descriptor.source_transform } : {}),
     };
   }
-  const nextLock = validateHarnessLock({ ...lock, schema_version: 1, files: nextFiles });
+  const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) await syncOrchestratorHook(targetRoot);
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };

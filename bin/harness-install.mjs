@@ -249,6 +249,7 @@ async function main() {
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
     const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force });
+    await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
     if (result.added.length > 0) console.log(`Added: ${result.added.join(", ")}`);

@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const installed = new URL("../../.harness/src/doctor/index.mjs", import.meta.url);
 const installedRuntime = existsSync(installed);
-const { runDoctor } = await import(installedRuntime ? installed.href : new URL("../.harness/src/doctor/index.mjs", import.meta.url).href);
 
 function usage() {
   return `Usage: harness-codex-doctor [options]
@@ -55,6 +54,16 @@ async function main() {
     return;
   }
   try {
+    let runDoctor;
+    try {
+      ({ runDoctor } = await import(installedRuntime ? installed.href : new URL("../.harness/src/doctor/index.mjs", import.meta.url).href));
+    } catch (error) {
+      const message = `Doctor runtime could not be loaded: ${error.message}`;
+      const report = { schema_version: 1, root: resolve(options.project), passed: false, summary: { errors: 1, warnings: 0, info: 0 }, diagnostics: [{ code: 'doctor_runtime_unavailable', severity: 'error', message, path: fileURLToPath(installed) }] };
+      console.log(options.json ? JSON.stringify(report, null, 2) : `Harness doctor: FAIL\nERROR doctor_runtime_unavailable: ${message}`);
+      process.exitCode = 1;
+      return;
+    }
     const report = await runDoctor({ root: options.project, sourceRoot: installedRuntime ? null : packageRoot, nativePermissionProfiles: options.nativeProfiles.length > 0 ? options.nativeProfiles : null });
     if (options.json) console.log(JSON.stringify(report, null, 2));
     else {

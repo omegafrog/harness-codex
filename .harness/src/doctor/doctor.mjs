@@ -4,8 +4,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
-import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
+import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFile } from "../installer/lock.mjs";
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
+import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
@@ -282,12 +283,24 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) diagnostics.push(diagnostic("installer_unlocked_file", "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     for (const entry of lockEntries) {
+      if (lock.files[entry.path].retired || (sourceRoot && !managedPaths.has(entry.path))) {
+        diagnostics.push(diagnostic('installer_retired_file', 'warning', `Retired Harness file remains: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
+        continue;
+      }
       if (entry.status === "conflict") diagnostics.push(diagnostic("installer_conflict", "error", `Harness file changed locally and upstream: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "locally_modified") diagnostics.push(diagnostic("installer_locally_modified", "warning", `Harness file was modified locally: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "upstream_updated") diagnostics.push(diagnostic("installer_upstream_updated", "info", `Harness file has an upstream update: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       if (entry.current_sha256 === null) diagnostics.push(diagnostic("installer_missing_file", "error", `Locked harness file is missing: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       if (entry.source_missing) diagnostics.push(diagnostic("installer_source_missing", "error", `Locked upstream source file is missing: ${entry.source_path}`, resolve(root, entry.path), { source_path: entry.source_path }));
       if (!ownedFiles.has(entry.path)) diagnostics.push(diagnostic("installer_stale_lock_entry", "warning", `Lock entry is no longer an installed harness file: ${entry.path}`, resolve(root, entry.path)));
+    }
+    for (const legacy of LEGACY_ASSETS.filter((item) => item.action === 'retire' && !lock.files[item.path])) {
+      const path = resolve(root, legacy.path);
+      const info = await lstat(path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+      if (!info) continue;
+      if (!info.isFile() || info.isSymbolicLink() || !isWithin(await realpath(root), await realpath(path))) throw new Error(`Invalid legacy asset path: ${legacy.path}`);
+      const hash = await hashFile(path);
+      if (hash === legacy.sha256) diagnostics.push(diagnostic('installer_retired_file', 'warning', `Known retired Harness file remains: ${legacy.path}`, path));
     }
   } catch (error) {
     diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Unable to classify harness lock"), path));
