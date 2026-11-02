@@ -6,9 +6,9 @@
 
 | 명령 | 입력 | stdout JSON | 파일 |
 |---|---|---|---|
-| `create` | 선택적으로 `--root <source_workspace>` (생략 시 현재 Git root), `--branch <branch>`, `--plan-set-id <id>` | 생성된 `worktree_id`, `workspace`, `source_workspace`, `return_root`, 선택된 `plan_set_id`, `branch`, `head`, `state`, `session_directory` | `<session_directory>/worktree.json` 생성 후 lifecycle 갱신 |
+| `create` | 선택적으로 `--root <source_workspace>` (생략 시 현재 Git root), `--branch <branch>`, `--plan-set-id <id>` | 생성된 `worktree_id`, `workspace`, `source_workspace`, `return_root`, 선택된 `plan_set_id`, `branch`, `head`, `state`, `session_directory` | `<session_directory>/worktree.json` 생성 후 lifecycle 갱신. 이름에서 생성할 때는 `--feature-name`을 사용하며 readable slug와 UUID를 결합한다. |
 | `register` | `--root <existing_worktree>`; 선택적으로 `--return-root <source_workspace>`, `--plan-set-id <id>` | 등록된 worktree 정보와 `state` | 해당 worktree의 `<session_directory>/worktree.json` 생성 또는 갱신 |
-| `bind-plan-set-id` | `--root <active_workspace>`, `--feature-name <name>` 또는 `--plan-set-id <id>` | 갱신된 active worktree record | ID가 없는 기존 worktree에 한 번 기록. 같은 ID 재호출은 허용하고 다른 ID로 변경은 거부 |
+| `bind-plan-set-id` | `--root <active_workspace>`, `--feature-name <name>` 또는 `--plan-set-id <id>` | 갱신된 active worktree record | ID가 없는 기존 worktree에 한 번 기록. feature name 경로는 readable slug와 해당 worktree UUID를 결합해 고유 ID를 만든다. 같은 ID 재호출은 허용하고 다른 ID로 변경은 거부 |
 | `finish` | 사용자가 명시적으로 정리하도록 요청한 경우 `--root <workspace>`; `--outcome <completed|failed|aborted|handoff>`; 선택적으로 `--worktree-id <UUID>` 교차 확인 | `state`, `return_root`, `outcome` | 명시적 정리 요청에 한해 worktree와 `.io` 제거 |
 | `list` | `--root <workspace_in_repository>` | 해당 저장소의 미종료 worktree 정보 JSON 배열 | 파일 변경 없음 |
 

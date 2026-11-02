@@ -24,6 +24,10 @@ export function planSetSlug(featureName) {
   if (!slug) throw new Error('feature_name must contain an English letter or digit so it can form a readable plan_set_id');
   return slug;
 }
+export function uniquePlanSetId(featureName, uniqueId) {
+  if (!WORKTREE_ID.test(uniqueId || '')) throw new Error('A UUID is required to generate a unique plan_set_id');
+  return `${planSetSlug(featureName)}-${uniqueId}`;
+}
 async function durableJson(path, value) {
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', 0o600);
@@ -154,7 +158,7 @@ export async function bindWorkflowPlanSetId({ workspace_root, repository_root = 
       if (plan_set_id && record.plan_set_id !== plan_set_id) throw new Error('Worktree plan_set_id is immutable once set');
       return record;
     }
-    const chosen = plan_set_id || planSetSlug(feature_name);
+    const chosen = plan_set_id || uniquePlanSetId(feature_name, record.worktree_id);
     const updated = { ...record, plan_set_id: chosen };
     await writeWorktreeRecord(place, updated);
     return updated;
@@ -192,7 +196,7 @@ export async function recordWorktreeStage({ workspace_root, repository_root, cur
 export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, feature_name, signal = null } = {}) {
   if (!isAbsolute(workspace_root || '')) throw new Error('Absolute source workspace is required');
   if (plan_set_id && feature_name) throw new Error('Provide either plan_set_id or feature_name');
-  if (feature_name) plan_set_id = planSetSlug(feature_name);
+  if (feature_name) plan_set_id = uniquePlanSetId(feature_name, randomUUID());
   validatePlanSetId(plan_set_id);
   const sourceWorkspace = await realpath(workspace_root);
   const returnRoot = await realpath(return_root || sourceWorkspace);

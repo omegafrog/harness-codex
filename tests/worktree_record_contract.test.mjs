@@ -244,7 +244,7 @@ test('compose rejects an unprepared project without leaving an active worktree',
 test('installed compose uses the setup baseline and preserves workflow transitions', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'compose-unborn-'));
   const root = join(parent, 'project');
-  let tree;
+  let tree, secondTree;
   try {
     await mkdir(root);
     const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
@@ -259,8 +259,13 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('commit', '-m', 'setup baseline');
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, encoding: 'utf8' }));
+    secondTree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-2'], { cwd: root, encoding: 'utf8' }));
     const prepared = { input: await readExecutionInput({ root: tree.workspace, execution_id: 'compose-1' }) };
     const worktreeRecord = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8'));
+    const secondWorktreeRecord = JSON.parse(await readFile(join(secondTree.session_directory, 'worktree.json'), 'utf8'));
+    assert.match(worktreeRecord.plan_set_id, /^calculator-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.notEqual(worktreeRecord.plan_set_id, secondWorktreeRecord.plan_set_id);
+    assert.match(await readFile(join(tree.workspace, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8'), /slug에 UUID를 붙여 고유한 `plan_set_id`/);
     assert.equal(worktreeRecord.agent_sessions?.orchestrator, undefined);
     const resultRef = 'runtime/executions/compose-1/result.json';
     assert.equal(tree.status, 'completed');
@@ -477,6 +482,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(status, '');
     git('check-ignore', '-v', '.codex/scripts/harness-compose-workspace.mjs');
   } finally {
+    if (secondTree) await finishWorkflowWorktree({ workspace_root: secondTree.workspace, repository_root: root });
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root });
     await rm(parent, { recursive: true, force: true });
   }

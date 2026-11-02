@@ -9,7 +9,8 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id || '')) throw new Error('Execution ID is required');
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
-  const record = await createWorkflowWorktree({ workspace_root: root, plan_set_id });
+  // Keep repeated feature requests readable without reusing tracker identity.
+  const record = await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id });
   try {
     const storedInput = {
       schema_version: 1, execution_id, skill: 'workflow-compose', scope: request, input_refs: [],
