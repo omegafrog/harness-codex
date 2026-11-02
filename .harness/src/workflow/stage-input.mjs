@@ -187,6 +187,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });
+  if (Array.isArray(answer)) await writeFile(join(taskSession, 'runtime/executions', execution_id, 'answers.json'), JSON.stringify(answer, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (interruptedAnswers) await copyFile(interruptedAnswers, join(taskSession, 'runtime/executions', execution_id, 'answers.json')).catch((error) => { if (error.code !== 'ENOENT') throw error; });
   if (feedback !== null) await writeFile(join(taskSession, 'runtime/executions', execution_id, 'feedback.json'), JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const storedInput = storedStageInput(input);

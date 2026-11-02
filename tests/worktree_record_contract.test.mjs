@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWorktreeRecord } from '../.harness/src/workflow/worktrees.mjs';
@@ -382,6 +382,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const continued = JSON.parse(execFileSync(process.execPath, [...prepare, '--answer', secondAnswer], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(continued.input.context.resume_session_id, record.worktree_id);
     assert.equal(continued.answer.length, 2);
+    assert.deepEqual(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'), 'utf8')), continued.answer);
+    assert.equal((await stat(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'))).mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'answers.json'), 'utf8')), earlierAnswers);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: `runtime/executions/${next.input.execution_id}/result.json` });

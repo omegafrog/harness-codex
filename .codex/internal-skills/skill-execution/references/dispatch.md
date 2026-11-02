@@ -8,7 +8,7 @@
 
 `REVIEW_REQUIRED` stage에 독립 reviewer 결과를 돌려줄 때도 같은 `--feedback` 경로를 사용한다. 준비기는 waiting stage의 반환 envelope, code, result reference와 canonical session을 확인하고 기존 Codex thread를 재개한다. `review_request`가 있으면 caller가 해당 context를 reviewer에게 전달하고, 없는 구현 리뷰는 stage artifact와 검증 근거를 사용한다. reviewer가 사용자 결정을 요구하면 먼저 native 대화에서 답을 받은 뒤 reviewer 결과를 전달한다.
 
-입력 준비 결과에 `answer`가 있으면 해당 실행의 `runtime/executions/<execution_id>/answers.json`에 저장한다. 실행기가 답변 파일을 읽도록 지시한다.
+입력 준비 결과에 `answer`가 있으면 준비기가 저장한 `runtime/executions/<execution_id>/answers.json`을 확인한다. 파일이 없거나 답변이 다르면 실행을 중단한다. 실행기는 해당 파일을 읽도록 지시한다.
 
 실행기는 시작 전에 자신의 프로세스 식별자를 기록하고, 자식 식별자를 기록한 뒤에만 Codex에 입력을 전달한다. 실제 thread ID는 실행기가 정본 worktree에 기록하며 종료 결과와 binding은 `runtime/executions/<execution_id>/exec.stderr.json`에 보존한다. caller는 실행 전에 별도로 `running`을 기록하지 않는다. 프로세스 정보가 누락된 기존 실행은 종료 로그가 완전하고 남은 기록된 프로세스가 종료된 경우에 재개할 수 있다. worktree 실행에서 thread ID가 누락되거나 재개 session이 다르면 실패다.
 
