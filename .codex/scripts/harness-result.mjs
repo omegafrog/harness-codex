@@ -31,6 +31,7 @@ try {
     try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
+  if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;
   if (Object.hasOwn(envelope.result, 'artifact_contents')) {
     const profile = input.context?.agent_profile || input.context?.role;
     if (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8'))) throw new Error('Inline artifacts require a read-only agent profile');

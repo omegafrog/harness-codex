@@ -316,12 +316,14 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.ok(reviewRequest.properties.agent_profile.enum.includes('default'));
     assert.ok(reviewRequest.properties.agent_profile.enum.includes(null));
     const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
-    await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionResult));
+    const { review_request: omittedReview, ...questionWithoutReview } = questionResult;
+    await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
     await writeFile(join(resultDir, 'return.json'), JSON.stringify(answerEnvelope));
     const resultCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--return', `runtime/executions/${next.input.execution_id}/return.json`];
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(validated.result.summary, '파일 정본');
+    assert.equal(validated.result.review_request, null);
     assert.equal(Object.hasOwn(validated.result, 'question'), false);
     assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);
     assert.equal(validated.result.questions.length, 1);
