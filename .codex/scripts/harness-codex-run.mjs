@@ -29,7 +29,7 @@ async function codexResumeWriteDirs(sessionId, env) {
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const base = installed;
 const { runCodexProcess } = await import(new URL('codex-process.mjs', base));
-const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
+const { resolveSkillBinding, resolveAgentSandbox, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
@@ -65,14 +65,7 @@ try {
   const location = await findExecutionInput(root, opts['execution-id']);
   const answers = join(prefix, 'answers.json');
   const feedback = join(prefix, 'feedback.json');
-  const profile = input.context?.agent_profile || input.context?.role;
-  let sandbox = 'workspace-write';
-  if (profile) {
-    const config = await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8');
-    const mode = /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(config)?.[1];
-    if (!['read-only', 'workspace-write'].includes(mode)) throw new Error('Agent profile requires a supported sandbox_mode');
-    sandbox = mode;
-  }
+  const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
   const executionBinding = { ...binding, sandbox };
   const prompt = `Read ${guide} and ${location.path}.${profile ? ` Read .codex/agents/${profile}.toml.` : ''}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const resume = input.context?.resume_session_id;

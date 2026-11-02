@@ -164,6 +164,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
     const canonicalKey = selected?.path || `${snapshot.base}/plans/${selected?.id}#canonical`;
     return { status: 'pass', reason: `plan_set_${phase}_current`, violations: [], details: {
       review_snapshot_sha256: hash(JSON.stringify(Object.keys(snapshot.inputs).sort().map((key) => [key, snapshot.inputs[key]]))),
+      review_attempt_id: review.attempt_id,
       plan_set_id: planSetId, ticket_id: snapshot.spec_paths[0].split("/")[2], spec_paths: snapshot.spec_paths, plan_ids: snapshot.plans.map((plan) => plan.id),
       plan_id: planId || null, plan_reference: selected?.path || selected?.reference || null,
       product_spec_path: snapshot.spec_paths[0], architecture_spec_path: snapshot.spec_paths[1],

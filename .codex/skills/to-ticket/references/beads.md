@@ -2,9 +2,9 @@
 
 선택된 configured tracker가 티켓 상태의 canonical source이며 Beads는 같은 parent/child 계획을 반영하는 작업 보드다. 일반 Beads task lifecycle과 v1 mirror 상태 동기화는 [공용 Beads 스킬](../../beads/SKILL.md)을 따른다.
 
-## Finalization 준비
+## Publisher stage 준비
 
-현재 plan-review gate pass 뒤 `workspace_root`에서 `bd version`, `bd where`, `bd status`를 실행해 CLI와 workspace 상태를 확인한다. 초기화가 필요한 경우 `$setup`으로 준비를 완료한 뒤 이어간다. `.codex/harness.yaml`에서 configured tracker mode를 읽어 parent/child 관계와 mirror metadata를 결정한다.
+현재 plan-review gate pass 뒤 별도 `tracker-publish` stage가 `workspace_root`에서 `bd version`, `bd where`, `bd status`를 실행해 CLI와 workspace 상태를 확인한다. 초기화가 필요한 경우 `$setup`으로 준비를 완료한 뒤 이어간다. `.codex/harness.yaml`에서 configured tracker mode를 읽어 parent/child 관계와 mirror metadata를 결정한다.
 
 ## 계획 티켓 작성
 
@@ -16,4 +16,4 @@ GitHub mode의 parent는 `epic`으로 만들고 child 생성에 `--parent <beads
 
 GitHub 발행 뒤 Beads 항목에 Issue URL 기반 `external_ref`와 `harness_tracker_version=1`, `harness_classification=committed`, `harness_phase=planning` metadata를 연결한다. 완료 state의 `tracker_sync.ticket_refs`에 parent와 모든 child `owner/repo#number`를 담아 lifecycle gate가 tracker와 Beads mirror를 대조하도록 한다. Dependency edge는 선택한 tracker와 Beads 양쪽에 기록하며 GitHub parent-child 관계는 [batch publish 절차](github-batch-publish.md)로 생성·검증한다.
 
-`to-ticket`의 finalization phase는 선택한 configured tracker에 parent/child 티켓을 발행하고 Beads 항목과 연결한다. 이후 lifecycle 상태 동기화는 공용 Beads 스킬의 v1 mirror 절차를 사용한다.
+`tracker-publish` workflow stage는 선택한 configured tracker에 parent/child 티켓을 발행하고 Beads 항목과 연결한다. 이후 lifecycle 상태 동기화는 공용 Beads 스킬의 v1 mirror 절차를 사용한다.

@@ -56,6 +56,7 @@
     "spec-review": "high_performance",
     "sync-contracts": "implementation",
     "to-ticket": "high_performance",
+    "tracker-publish": "high_performance",
     "victorialogs-local-setup": "execution",
     "workflow-compose": "low",
     "worktree-create": "execution"

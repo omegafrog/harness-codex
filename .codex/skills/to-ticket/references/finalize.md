@@ -1,12 +1,10 @@
 # Plan finalization
 
-같은 `to-ticket` executor stage가 `feedback.json`에 최신 reviewer verdict `pass`가 포함됐을 때 이 phase를 수행한다.
+같은 `to-ticket` executor stage가 `feedback.json`에 최신 reviewer verdict `pass`가 포함됐을 때 계획 작성을 마무리한다. Tracker 발행은 후속 `tracker-publish` stage의 책임이다.
 
 작업 전에 `context.worktree_ref`의 정본 `worktree.json`을 읽어 작업 worktree, session과 `plan_set_id`를 확인한다. 기록이 없거나 ID가 없으면 중단한다. 해당 worktree의 `docs/plans/<plan-set-id>/`를 사용한다.
 
 1. `node .codex/scripts/harness-plan-review.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase planning`을 실행해 현재 canonical plan·Spec snapshot의 pass를 확인한다.
-2. `.codex/harness.yaml`에서 configured tracker와 Beads 설정을 확인한다. Beads가 활성화된 경우에만 [Beads 티켓 미러 절차](beads.md)로 parent/child 항목과 dependency를 준비한다.
-3. `local-markdown` mode는 `docs/plans/<plan-set-id>/plans.md`와 각 split plan 파일을 `planned` 상태의 정본 ticket으로 사용한다. GitHub mode는 모든 canonical plan과 Issue draft를 다시 확인한 뒤 [GitHub batch publish](github-batch-publish.md)로 parent/child Issues, Project 등록, `Workflow Status: Planned`를 batch 처리한다. Tracker mutation은 현재 plan-review gate pass 뒤에 수행한다.
-4. 발행 결과를 `<session_directory>/runtime/to-ticket/publish-state.json`에 저장하고 tracker 참조를 completion state의 `tracker_sync.ticket_refs`에 기록한다. GitHub Issue ID·number·URL과 활성 Beads mirror 참조를 함께 보존한다. `plans.md`는 review가 승인한 정본 index다.
-5. blocking edge를 configured tracker에 기록하고 published parent/child 관계를 검증한다. Beads가 활성화된 경우 mirror와 lifecycle metadata도 [공용 Beads 스킬](../../beads/SKILL.md)에 따라 동기화한다.
-6. `<session_directory>/runtime/to-ticket/completion.json`에 `plan_set_id`, `completion_kind: plan_set_ready_for_implementation`, configured tracker refs, Beads refs, final review attempt ID를 기록한다. 이 파일을 `plan_set_ready_for_implementation` artifact로 반환한다. 기능 구현 완료와 통합 계약 갱신은 구현 통합 workflow가 기록한다.
+2. `.codex/harness.yaml`의 tracker mode를 확인한다. `local-markdown`이면 `docs/plans/<plan-set-id>/plans.md`와 각 split plan을 `planned` 상태의 정본 ticket으로 보존한다. GitHub mode에서는 Issue·Project mutation을 하지 않는다.
+3. 현재 review snapshot과 canonical plan index가 승인된 결과와 일치하는지 확인한다.
+4. 계획과 최종 review 기록을 보존하고 `to-ticket` stage를 완료한다. 다음 workflow stage인 `tracker-publish`가 tracker/Beads를 발행하고 `plan_set_ready_for_implementation` completion receipt를 만든다.

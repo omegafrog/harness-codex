@@ -8,7 +8,7 @@ import { writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, recordExecutionState } from './execution-state.mjs';
 
 function storedStageInput(input) {
-  if (!input.context?.worktree_ref || !['spec-me', 'to-ticket'].includes(input.skill)) return input;
+  if (!input.context?.worktree_ref || !['spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
   const { workspace_root, shared_guidance_root, session_directory, ...rest } = input;
   const { plan_set_id, ...context } = rest.context;
   return { ...rest, context };

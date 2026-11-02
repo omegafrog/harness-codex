@@ -355,7 +355,7 @@ stateDiagram-v2
 | workflow | before_dispatch | before_complete의 선언·추가 검사 | 완료 의미 |
 |---|---|---|---|
 | spec-me | session_worktree, tracker_sync | tracker_sync, spec_reviews | `spec_ready_for_planning` |
-| to-ticket | dependency, resource_conflict, workspace, permission_preflight, spec_reviews | tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_review | `plan_set_ready_for_implementation` |
+| to-ticket (stages: `to-ticket` planning, then `tracker-publish`) | dependency, resource_conflict, workspace, permission_preflight, spec_reviews | tracker_sync, required_outcome, evidence, plans_index, spec_reviews, plan_review | `plan_set_ready_for_implementation` |
 | implement-wrapper | dependency, resource_conflict, workspace, tracker_sync, project_readiness, permission_preflight | tracker_sync, contract_docs, required_outcome, tests, retirement, review, evidence, plan_review | `feature_implemented` |
 | 개별 implement | wrapper의 실제 dispatch와 implement GUIDE 적용. 별도 implement.yaml은 없음 | executeImplementPlan의 실제 검증 및 caller 경로에 의존 | completion kind 매핑에는 `plan_implemented`가 있음. CLI 사용과 manifest 존재를 별도 확인해야 함 |
 | code-review | dependency, resource_conflict, workspace, tracker_sync, permission_preflight | tracker_sync, review, evidence | 독립 리뷰 결과. feature 구현 완료 아님 |

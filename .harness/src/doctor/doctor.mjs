@@ -42,7 +42,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['output-schema', 'stage-input', 'codex-process', 'cli-session', 'worktree-stages'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['output-schema', 'stage-input', 'skill-execution', 'codex-process', 'cli-session', 'worktree-stages'].map((name) => `.harness/src/workflow/${name}.mjs`));
   }
   for (const path of paths) {
     const fullPath = join(root, path);
@@ -134,6 +134,23 @@ async function inspectWorkflows(root, diagnostics) {
     const path = join(directory, name);
     try {
       const workflow = await loadWorkflowFile(path, { root });
+      if (workflow.id === "to-ticket") {
+        const publisher = workflow.stages.find((stage) => stage.id === "tracker-publish");
+        if (!publisher || publisher.skill !== "tracker-publish" || publisher.role !== "tracker_publisher") {
+          diagnostics.push(diagnostic("tracker_publisher_stage_missing", "error", "to-ticket must declare its dedicated tracker-publish stage and role", path));
+        }
+      }
+      for (const stage of workflow.stages) {
+        const profilePath = workflow.references.roles[stage.role];
+        const profile = await readContainedRegularFile(root, profilePath, `Agent profile ${stage.role}`);
+        const mode = /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(profile)?.[1];
+        if (mode === "danger-full-access" && !(workflow.id === "to-ticket" && stage.id === "tracker-publish" && stage.skill === "tracker-publish" && stage.role === "tracker_publisher")) {
+          diagnostics.push(diagnostic("dangerous_sandbox_scope", "error", `danger-full-access is not allowed for ${workflow.id}/${stage.id}`, profilePath));
+        }
+        if (workflow.id === "to-ticket" && stage.id === "tracker-publish" && mode !== "danger-full-access") {
+          diagnostics.push(diagnostic("tracker_publisher_sandbox", "error", "tracker-publish requires its declared network and shared Beads write access", profilePath));
+        }
+      }
       if (workflow.hooks.before_complete.includes("contract_docs") && completionKindForWorkflow(workflow.id) !== "feature_implemented") {
         diagnostics.push(diagnostic("completion_gate_scope", "warning", `Workflow ${workflow.id} declares contract_docs, but this completion scope ignores that gate`, path, { completion_kind: completionKindForWorkflow(workflow.id) }));
       }

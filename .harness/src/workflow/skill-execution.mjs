@@ -98,6 +98,22 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   return { skill, model_tier: tier, model, reasoning_effort: effort };
 }
 
+export async function resolveAgentSandbox({ root, input, workflow = null, stage = null }) {
+  let profile = input.context?.agent_profile || input.context?.role || null;
+  if (workflow) {
+    const manifest = await loadNamedWorkflow(workflow, { root });
+    const selected = manifest.stages.find((item) => item.id === stage);
+    requireValue(selected?.skill === input.skill, 'Workflow stage does not match the requested skill');
+    if (profile) requireValue(profile === selected.role, 'Execution profile does not match the workflow role');
+    profile = selected.role;
+  } else requireValue(!stage, 'workflow and stage must be supplied together');
+  if (input.skill === 'tracker-publish') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'Tracker publishing is available only as the to-ticket workflow stage');
+  const mode = profile ? /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8'))?.[1] : 'workspace-write';
+  requireValue(['read-only', 'workspace-write', 'danger-full-access'].includes(mode), 'Agent profile requires a supported sandbox_mode');
+  if (mode === 'danger-full-access') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'danger-full-access is reserved for the to-ticket tracker-publish stage');
+  return { profile, sandbox: mode };
+}
+
 export async function resolveSkillSession(root, provided = null) {
   const chosen = resolve(provided || sessionDirectory(resolve(root), { create: false }));
   requireValue(isAbsolute(chosen) && basename(chosen) === '.io', 'Invalid execution session directory');
@@ -129,7 +145,7 @@ export async function readExecutionInput({ root, execution_id }) {
 }
 
 async function resolveInputWorktree(root, input) {
-  if (!['workflow-compose', 'spec-me', 'to-ticket'].includes(input.skill) || !input.context?.worktree_ref) return input;
+  if (!['workflow-compose', 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill) || !input.context?.worktree_ref) return input;
   const ref = input.context.worktree_ref;
   requireValue(isAbsolute(ref) && basename(ref) === 'worktree.json', 'Invalid canonical worktree reference');
   const directory = await resolveSkillSession(root, dirname(ref));

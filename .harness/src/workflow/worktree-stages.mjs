@@ -36,6 +36,7 @@ export const WORKTREE_STAGE = Object.freeze({
   SPEC_REVIEW: 'spec-review',
   SYNC_CONTRACTS: 'sync-contracts',
   TO_TICKET: 'to-ticket',
+  TRACKER_PUBLISH: 'tracker-publish',
   VICTORIALOGS_LOCAL_SETUP: 'victorialogs-local-setup',
   WORKFLOW_COMPOSE: 'workflow-compose',
   WORKTREE_CREATE: 'worktree-create',

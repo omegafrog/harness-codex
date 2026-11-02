@@ -61,6 +61,9 @@ test('installed stage accepts changed documents while preserving review snapshot
   try {
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
+    const managedAssets = await discoverManagedAssetPaths(sourceRoot);
+    assert.ok(managedAssets.includes('.codex/agents/tracker_publisher.toml'));
+    assert.ok(managedAssets.includes('.agents/skills/tracker-publish/SKILL.md'));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
@@ -152,11 +155,26 @@ test('installed to-ticket uses skill binding and records a fresh review against 
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
-    const { resolveSkillBinding } = await import(`${installedRuntime}/skill-execution.mjs`);
+    const { resolveSkillBinding, resolveAgentSandbox } = await import(`${installedRuntime}/skill-execution.mjs`);
     const workflow = await loadNamedWorkflow('to-ticket', { root });
-    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket']);
+    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish']);
+    assert.deepEqual(workflow.stages[1].needs, ['to-ticket']);
     assert.ok(workflow.stages.every((stage) => !Object.hasOwn(stage, 'model_tier')));
     assert.equal((await resolveSkillBinding({ root, skill: 'to-ticket', workflow: 'to-ticket', stage: 'to-ticket' })).model_tier, 'high_performance');
+    assert.equal((await resolveSkillBinding({ root, skill: 'tracker-publish', workflow: 'to-ticket', stage: 'tracker-publish' })).model_tier, 'high_performance');
+    const publisherProfile = await readFile(join(root, '.codex/agents/tracker_publisher.toml'), 'utf8');
+    assert.match(publisherProfile, /dedicated tracker publisher/);
+    assert.match(publisherProfile, /sandbox_mode = "danger-full-access"/);
+    assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'to-ticket' }, workflow: 'to-ticket', stage: 'to-ticket' }), { profile: 'to_ticket', sandbox: 'workspace-write' });
+    assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, workflow: 'to-ticket', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
+    await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'tracker-publish' } }), /only as the to-ticket workflow stage/);
+    const toTicketInstructions = await readFile(join(root, '.agents/skills/to-ticket/SKILL.md'), 'utf8');
+    assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
+    const publisherInstructions = await readFile(join(root, '.agents/skills/tracker-publish/SKILL.md'), 'utf8');
+    assert.match(publisherInstructions, /dedicated workflow executor stage/);
+    assert.match(publisherInstructions, /completion receipt/);
+    const publishInstructions = await readFile(join(root, '.agents/skills/to-ticket/references/github-batch-publish.md'), 'utf8');
+    assert.match(publishInstructions, /별도 `tracker-publish` workflow stage/);
     const installedReviewSchema = await readJson(join(root, '.codex/internal-skills/plan-review/review-record.schema.json'));
     assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'inputs', 'findings']);
 
@@ -189,7 +207,9 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     }));
     const recorded = JSON.parse(execFileSync(process.execPath, [cli, 'record', '--root', root, '--plan-set', 'sample', '--attempt', begin.attempt_id, '--reviews', 'runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }));
     assert.equal(recorded.status, 'pass');
-    assert.equal(JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' })).status, 'pass');
+    const currentReview = JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(currentReview.status, 'pass');
+    assert.equal(currentReview.details.review_attempt_id, begin.attempt_id);
 
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>changed</svg>\n');
     let stale;
@@ -204,6 +224,13 @@ test('installed to-ticket uses skill binding and records a fresh review against 
 
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+    assert.equal(doctor.diagnostics.some((item) => ['dangerous_sandbox_scope', 'tracker_publisher_stage_missing', 'tracker_publisher_sandbox'].includes(item.code)), false);
+    const toTicketProfilePath = join(root, '.codex/agents/to_ticket.toml');
+    const toTicketProfile = await readFile(toTicketProfilePath, 'utf8');
+    await writeFile(toTicketProfilePath, toTicketProfile.replace('sandbox_mode = "workspace-write"', 'sandbox_mode = "danger-full-access"'));
+    const unsafeDoctor = await runDoctor({ root, sourceRoot });
+    assert.ok(unsafeDoctor.diagnostics.some((item) => item.code === 'dangerous_sandbox_scope'));
+    await writeFile(toTicketProfilePath, toTicketProfile);
     await mkdir(join(root, 'docs/agents'), { recursive: true });
     await writeFile(join(root, 'docs/agents/EXEC.md'), 'consumer-owned setup\n');
     await mkdir(join(root, '.harness'), { recursive: true });
@@ -211,7 +238,9 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.match(status, /\.harness\/application-note\.md/);
-    assert.doesNotMatch(status, /\.codex\/scripts\/harness-plan-review\.mjs|\.harness\/src\/workflow\/plan-review\.mjs|\.io\/runtime\/reviews/);
+    assert.doesNotMatch(status, /\.codex\/agents\/tracker_publisher\.toml|\.agents\/skills\/(to-ticket|tracker-publish)\/|\.codex\/scripts\/harness-plan-review\.mjs|\.harness\/src\/workflow\/plan-review\.mjs|\.io\/runtime\/reviews/);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/agents/tracker_publisher.toml'], { cwd: root, encoding: 'utf8' }), /\.codex/);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.agents/skills/tracker-publish/SKILL.md'], { cwd: root, encoding: 'utf8' }), /\.agents/);
     assert.match(execFileSync('git', ['check-ignore', '-v', '.io/runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }), /\.io/);
   } finally {
     await rm(root, { recursive: true, force: true });

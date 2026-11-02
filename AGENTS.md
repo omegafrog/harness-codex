@@ -34,9 +34,9 @@ Multi-context. See `docs/agents/domain.md`.
 
 ### 작업 입력과 Workspace
 
-기본적으로 스킬과 하위 작업의 입력에 작업 위치·문서·산출물 경로를 개별적으로 전달하지 않는다. worktree가 준비된 호출에는 정본 `worktree.json`의 `worktree_ref`만 전달하고 각 스킬이 필요한 위치와 plan 식별자를 읽는다. 사용자가 특정 파일을 지정하거나 실행 도구의 필수 인자처럼 경로를 직접 전달해야 하는 경우에만 해당 경로를 전달한다. 작업 위치는 정본 기록을 기준으로 확인한다. 구현·테스트 장기 메모리는 실행 workspace 안의 추적 문서에 두고 workflow branch와 함께 갱신한다. 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
+기본적으로 스킬과 하위 작업의 입력에 작업 위치·문서·산출물 경로를 개별적으로 전달하지 않는다. worktree가 준비된 호출에는 정본 `worktree.json`의 `worktree_ref`만 전달하고 각 스킬이 필요한 위치와 plan 식별자를 읽는다. 사용자가 특정 파일을 지정하거나 실행 도구의 필수 인자처럼 경로를 직접 전달해야 하는 경우에만 해당 경로를 전달한다. 작업 위치는 정본 기록을 기준으로 확인한다. 구현·테스트 장기 메모리는 실행 workspace 안의 추적 문서에 두고 workflow branch와 함께 갱신한다. 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `tracker-publish`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.
 
-`spec-me`, `to-ticket`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 한 번 실행한다. `workflow-compose`가 worktree 생성·재사용과 생성 직후 검사를 맡고, `spec-me`는 전달받은 `worktree.json`의 작업 위치에서 진입 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`은 GitHub 조회를 계획 리뷰 완료 뒤 한 번에 수행하기 위해 `--defer-tracker-sync`를 사용하고, 정상 종료의 `tracker_sync` gate에서 전체 티켓을 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
+`spec-me`, `to-ticket`, `tracker-publish`, E2E runner는 진입 시 대상 worktree를 `cwd`로 두고 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> [--defer-tracker-sync] --json`을 한 번 실행한다. `workflow-compose`가 worktree 생성·재사용과 생성 직후 검사를 맡고, `spec-me`는 전달받은 `worktree.json`의 작업 위치에서 진입 검사를 수행한다. `valid: true`와 `cwd`, `git_root`, `worktree_registered` 일치를 확인하고, 실패하면 시작을 중단한다. `to-ticket`과 `tracker-publish`는 GitHub 조회를 계획 리뷰 이후 발행 완료 gate까지 미루기 위해 `--defer-tracker-sync`를 사용하고, `tracker-publish`가 전체 티켓을 발행한 뒤 workflow의 `tracker_sync` gate에서 batch 확인한다. `implement-wrapper`는 dispatch의 `before_dispatch` lifecycle hook이 같은 검증을 수행하며 통과 후에만 agent를 생성한다.
 
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
@@ -49,7 +49,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 ## Beads Project Board
 
-This project has a Beads workspace for durable tasks and shared handoff. `to-ticket` creates each workflow ticket in both Beads and the configured tracker; implementation status transitions are mirrored to Beads while the configured tracker remains authoritative. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
+This project has a Beads workspace for durable tasks and shared handoff. The `tracker-publish` stage creates each workflow ticket in both Beads and the configured tracker; implementation status transitions are mirrored to Beads while the configured tracker remains authoritative. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
 
 ## Canonical contracts
 

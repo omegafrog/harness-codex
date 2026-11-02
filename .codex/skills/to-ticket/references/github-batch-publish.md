@@ -1,6 +1,6 @@
 # GitHub batch publish
 
-이 절차는 canonical plan 전체가 작성되고 fresh plan reviewer와 plan-review/spec-review gate가 통과한 뒤 한 번만 시작한다. 그 전에는 GitHub Issue/Project 조회·수정 API를 호출하지 않는다. repository, Project, assignee 설정은 `.codex/harness.yaml`에서 읽는다.
+이 절차는 canonical plan 전체가 작성되고 fresh plan reviewer와 plan-review/spec-review gate가 통과한 뒤 별도 `tracker-publish` workflow stage에서 실행한다. 그 전에는 GitHub Issue/Project 조회·수정 API를 호출하지 않는다. repository, Project, assignee 설정은 `.codex/harness.yaml`에서 읽는다.
 
 ## 발행
 
@@ -17,7 +17,7 @@ GitHub Issue 생성과 parent 관계에는 공식 [REST Issues API](https://docs
 
 GitHub 호출은 하나의 원자적 transaction이 아니다. 각 성공 응답 직후 `publish-state.json`을 갱신한다. 재개할 때 이미 저장된 Issue number/ID를 재사용하며 `POST create`를 반복하지 않는다. 부모/child 생성, parent body 갱신, 관계 확인, Project add, Planned 변경, Beads ref 연결 단계별 완료 항목을 추적한다. 부분 batch 결과에 GraphQL `errors`가 있거나 응답 alias가 빠지면 성공한 항목을 기록한 뒤 실패한 항목만 재시도한다. Project mutation이 성공했는지 로컬 기록 전에 중단되어 결과가 불명확하면, 재시도 전에 모든 Issue를 한 번에 조회해 Project membership/status를 조정하고 빠진 항목만 적용한다. Issue 생성 응답이 사라져 생성 여부가 불명확하면 다시 만들지 말고 수동 복구 대상으로 멈춘다.
 
-한 query alias 묶음에는 최대 10개 Issue를 넣는다. `tracker_sync`는 configured Project item과 `Workflow Status` 값을 모두 확인하며 pagination이 남거나 항목/상태가 모호하면 통과하지 않는다. `to-ticket`에서는 개별 Issue 조회·상태 쓰기·`harness-tracker sync --ticket`을 사용하지 않는다.
+한 query alias 묶음에는 최대 10개 Issue를 넣는다. `tracker_sync`는 configured Project item과 `Workflow Status` 값을 모두 확인하며 pagination이 남거나 항목/상태가 모호하면 통과하지 않는다. `tracker-publish`에서는 개별 Issue 조회·상태 쓰기·`harness-tracker sync --ticket`을 사용하지 않는다.
 
 ## Beads 연결과 계획 index
 
