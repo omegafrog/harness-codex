@@ -88,6 +88,9 @@ test('installed stage accepts changed documents while preserving review snapshot
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/skill-execution.mjs'], { cwd: root });
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+    await rm(join(root, '.harness/src/workflow/startup-state.mjs'));
+    const missingStartup = await runDoctor({ root, sourceRoot });
+    assert.ok(missingStartup.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/startup-state.mjs')));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

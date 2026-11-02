@@ -178,7 +178,7 @@ export async function refreshWorkflowProgress(observed, event) {
   const state = workflow?.state || await readJson(session, 'runtime/orchestrator/state.json');
   if (!state) return null;
   const statuses = new Set(['pending', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled', 'skipped']);
-  const definitions = workflow?.stages || Object.keys(state.stages || {}).filter((id) => id !== WORKTREE_STAGE.WORKFLOW_COMPOSE).map((id) => ({ id }));
+  const definitions = workflow?.stages || Object.keys(state.stages || {}).map((id) => ({ id }));
   const stages = await Promise.all(definitions.map(async ({ id, needs = [] }) => {
     const entry = state.stages?.[id];
     if (entry && !statuses.has(entry.status)) throw new Error(`Invalid stage status: ${id}`);
@@ -188,9 +188,19 @@ export async function refreshWorkflowProgress(observed, event) {
   statuses.add('stopped'); statuses.add('unknown');
   const counts = Object.fromEntries([...statuses].map((status) => [status, stages.filter((stage) => stage.status === status).length]));
   const record = await readJson(session, 'worktree.json');
+  let request = null;
+  const composeId = state.stages?.[WORKTREE_STAGE.WORKFLOW_COMPOSE]?.execution_id;
+  if (record && composeId && record.workspace === dirname(session) && record.session_directory === session) {
+    parseWorktreeRecord(JSON.stringify(record));
+    const { input } = await findExecutionInput(record.workspace, composeId).catch((error) => {
+      if (error.code === 'ENOENT') return { input: null };
+      throw error;
+    });
+    if (input?.skill === WORKTREE_STAGE.WORKFLOW_COMPOSE && input.context?.worktree_ref === join(session, 'worktree.json') && typeof input.scope === 'string') request = input.scope.slice(0, 2000);
+  }
   const current = stages.find((item) => item.id === state.current_stage);
   const status = state.status === 'running' && ['stopped', 'unknown'].includes(current?.status) ? current.status : state.status;
-  const progress = { schema_version: 1, codex_session_id: record?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, workflow_id: workflow?.workflow_id || null, status, recorded_status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
+  const progress = { schema_version: 1, codex_session_id: record?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, workspace_root: record?.workspace || null, worktree_ref: record ? join(session, 'worktree.json') : null, request, workflow_id: workflow?.workflow_id || null, status, recorded_status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
   const path = 'runtime/orchestrator/progress.json';
   await assertWorkspaceTarget(session, path);
   const { randomUUID } = await import('node:crypto');

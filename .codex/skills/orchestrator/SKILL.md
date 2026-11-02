@@ -21,6 +21,8 @@ description: Select workflow skills from the request and current workflow state,
 
 기존 workflow 재개 요청은 새 작업으로 취급하지 않는다. hook의 검증된 후보와 요청을 대조해 현재 단계의 skill을 선택한다. 후보가 모호하면 사용자에게 선택을 묻고, 소유권이나 정본 기록이 유효하지 않으면 복구 필요 사유를 보고한다. `.io` 로그나 백업만으로 workflow 또는 worktree를 추정하지 않는다.
 
+`workflow-compose`가 `completed/OK`이면 worktree 준비가 끝난 상태다. `workflow_ref`가 null이고 미래 단계가 기록되지 않은 것은 정상이며, 정본 원 요청과 완료 결과를 기준으로 첫 skill을 선택한다.
+
 사용자 요청의 범위, 승인된 산출물과 완료 상태를 함께 판단한다. 요청된 종료 단계가 이미 완료됐으면 불필요한 다음 skill을 실행하지 않는다. 구현 도중 Spec 또는 계획 변경이 필요하다는 결과가 나오면 해당 산출물의 소유 skill로 돌아간다.
 
 ## 실행과 단계 전환

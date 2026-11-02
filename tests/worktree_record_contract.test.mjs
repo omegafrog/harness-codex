@@ -264,6 +264,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(worktreeRecord.agent_sessions.orchestrator.session_id, record.worktree_id);
     const resultRef = 'runtime/executions/compose-1/result.json';
     assert.equal(tree.status, 'completed');
+    const composeProgress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
+    assert.equal(composeProgress.workspace_root, tree.workspace);
+    assert.equal(composeProgress.worktree_ref, tree.worktree_ref);
+    assert.equal(composeProgress.request, '계산기');
+    assert.equal(composeProgress.stages.find((stage) => stage.id === 'workflow-compose').status, 'completed');
+    assert.equal(composeProgress.total_stages, null);
     await writeFile(join(tree.workspace, 'user-draft.txt'), 'preserve me');
     const failedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/missing.json'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(failedCompletion.status, 0);
@@ -283,7 +289,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.ok(context.includes('계산기'));
     assert.ok(context.includes(tree.worktree_ref));
     assert.ok(context.includes('worktree_candidates'));
-    assert.match(await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8'), /worktree_candidates/);
+    assert.match(await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8'), /workflow_ref.*null/);
     await writeFile(join(root, 'application-change.txt'), 'preserved');
     assert.match(git('status', '--short'), /application-change\.txt/);
     assert.equal(await readFile(join(root, 'application-change.txt'), 'utf8'), 'preserved');
