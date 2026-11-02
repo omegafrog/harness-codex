@@ -9,10 +9,10 @@
 | `create` | 선택적으로 `--root <source_workspace>` (생략 시 현재 Git root), `--branch <branch>`, `--plan-set-id <id>` | 생성된 `worktree_id`, `workspace`, `source_workspace`, `return_root`, 선택된 `plan_set_id`, `branch`, `head`, `state`, `session_directory` | `<session_directory>/worktree.json` 생성 후 lifecycle 갱신 |
 | `register` | `--root <existing_worktree>`; 선택적으로 `--return-root <source_workspace>`, `--plan-set-id <id>` | 등록된 worktree 정보와 `state` | 해당 worktree의 `<session_directory>/worktree.json` 생성 또는 갱신 |
 | `bind-plan-set-id` | `--root <active_workspace>`, `--feature-name <name>` 또는 `--plan-set-id <id>` | 갱신된 active worktree record | ID가 없는 기존 worktree에 한 번 기록. 같은 ID 재호출은 허용하고 다른 ID로 변경은 거부 |
-| `finish` | `--root <workspace>`; `--outcome <completed|failed|aborted|handoff>`; 선택적으로 `--worktree-id <UUID>` 교차 확인 | `state`, `return_root`, `outcome` | worktree와 `.io` 제거 |
+| `finish` | 사용자가 명시적으로 정리하도록 요청한 경우 `--root <workspace>`; `--outcome <completed|failed|aborted|handoff>`; 선택적으로 `--worktree-id <UUID>` 교차 확인 | `state`, `return_root`, `outcome` | 명시적 정리 요청에 한해 worktree와 `.io` 제거 |
 | `list` | `--root <workspace_in_repository>` | 해당 저장소의 미종료 worktree 정보 JSON 배열 | 파일 변경 없음 |
 
-`create`를 제외한 명령은 `--root`가 필수다. `create`의 stdout에 포함된 `session_directory`가 정본 파일의 위치다. workflow와 하위 단계는 이 JSON을 읽어 worktree 정보를 얻고, 종료 CLI는 파일에서 ID와 원본 경로를 읽는다. `finish`는 소유권과 브랜치를 확인하고 백업이나 recovery archive를 만들지 않고 worktree와 `.io`를 제거한다. workflow 요청마다 개별 필드를 복사하지 않는다.
+`create`를 제외한 명령은 `--root`가 필수다. `create`의 stdout에 포함된 `session_directory`가 정본 파일의 위치다. workflow와 하위 단계는 이 JSON을 읽어 worktree 정보를 얻는다. `finish`는 명시적 정리 요청에만 사용하며 소유권과 브랜치를 확인한 뒤 worktree와 `.io`를 제거한다. workflow 완료·실패·중단 경로는 자동으로 `finish`를 호출하지 않고 산출물과 등록을 보존한다. workflow 요청마다 개별 필드를 복사하지 않는다.
 
 `worktree.json`은 worktree 소유·위치와 현재 단계 ID를 기록한다. 실제 선택한 단계의 실행 상태는 `runtime/orchestrator/state.json`에 기록한다. 아래 필수 여부는 `parseWorktreeRecord` 검증 기준이다.
 

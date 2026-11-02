@@ -4,6 +4,7 @@ import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 async function codexResumeWriteDirs(sessionId, env) {
+  // 재개 session의 파일 위치를 찾아 Codex가 필요한 사용자 session 경로만 쓰게 허용한다.
   const home = resolve(env.CODEX_HOME || join(env.HOME || '', '.codex'));
   const sessionRoot = join(home, 'sessions');
   const dirs = new Set();
@@ -44,6 +45,7 @@ try {
   }
   if (!isAbsolute(opts['worktree-ref'] || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute worktree-ref and execution-id are required');
   const root = process.cwd();
+  // 실행 입력과 worktree 참조가 서로 일치하는지 확인한 뒤 skill/profile을 선택한다.
   const session = await cliSession(root, opts['worktree-ref']);
   const input = await readExecutionInput({ root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id'] || input.context?.worktree_ref !== opts['worktree-ref']) throw new Error('Input does not match the requested execution');
@@ -67,6 +69,7 @@ try {
   const feedback = join(prefix, 'feedback.json');
   const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
   const executionBinding = { ...binding, sandbox };
+  // 이 prompt는 실제 작업 절차를 담지 않고, 선택된 skill과 실행 입력으로 안내한다.
   const prompt = `Read ${guide} and ${location.path}.${profile ? ` Read .codex/agents/${profile}.toml.` : ''}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const resume = input.context?.resume_session_id;
   const resumeWriteDirs = resume ? await codexResumeWriteDirs(resume, process.env) : [];
@@ -75,6 +78,7 @@ try {
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
   await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });
   const record = parseWorktreeRecord(await readFile(opts['worktree-ref'], 'utf8'));
+  // 자식 시작 전에 PID를 기록하고, thread ID 수신 후 정본 worktree에 session 연결을 저장한다.
   const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');

@@ -96,3 +96,9 @@
 root preflight와 계약 revision 8 검사는 통과했고 pending 소유 receipt 목록은 비어 있었다. 기존 stale/prunable Git worktree 등록은 이번 작업이 만든 소유 증거가 없으므로 건드리지 않았다. SIGINT/SIGTERM은 CLI/AbortSignal 경로로 다루며 SIGKILL/전원 종료 시 즉시 finally 실행을 보장하지 않는다. 다음 진입에 receipt를 확인하고 중단된 writer를 확인한 후 finish를 재시도한다. archive 공간/특수 파일/Git lock 실패도 성공으로 위장하지 않는다.
 
 최종 정상 종료 확인: primary root에서 실제 spec-me 완료 명령은 tracker_sync/contract_docs pass와 completed를 반환하되 cleanup은 not-owned로 root를 보존했다. 별도 sealed fixture의 소유 linked worktree에서도 실제 completeWorkflow gate 통과 후 제거됨을 확인했다. 추가한 정상 종료 integration을 포함한 worktree 검사 14/14가 통과했다. broad 153개 결과는 이 test-only 추가 이전 실행 결과다.
+
+## 완료된 workflow worktree 보존 (2026-11-02)
+
+사용자 정정에 따라 workflow 완료 뒤 소유 linked worktree를 자동 삭제하지 않도록 바꿨다. 앞 절의 2026-10-17 동작과 검증은 당시 구현의 이력이다. `.harness/src/workflow/completion.mjs`는 이제 canonical `.io/worktree.json`의 identity를 검증하고 완료 receipt에 `worktree_retained.state=preserved`를 반환하며 `finish`를 호출하지 않는다. 정책은 AGENTS, orchestrator, session-worktree 지침과 lifecycle 문서에 반영했다.
+
+`tests/workflow_completion_retention.test.mjs`는 임시 consumer에 Harness를 설치하고 설치된 완료 CLI로 passing to-ticket gate를 실행해 worktree 등록·산출물·Git 가시성을 확인한다. 테스트는 `npm test`와 EXEC의 집중 검사 목록에 포함했다. 실제 복원한 consumer workflow에서도 to-ticket gate `completed`와 `worktree_retained.state=preserved`를 확인했고, worktree는 `/home/jiwoo/workspace/.harness-worktrees/harness-test/f62767fc-3b23-4ef3-93ac-a9c322b6ee36`에 보존했다.

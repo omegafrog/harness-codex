@@ -66,7 +66,7 @@ This project has a Beads workspace for durable tasks and shared handoff. The `tr
 
 ## Workflow worktree 종료
 
-workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 finish로 관리한다. `spec-me` 완료 뒤 `to-ticket`으로 이어질 때는 같은 worktree를 유지하고, `to-ticket` 완료나 실패·사용자 중단에서는 worktree를 제거한다. primary/비소유 workspace는 지우지 않는다. cleanup 실패는 완료 실패다.
+workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 명시적 finish로 관리한다. `spec-me` 완료 뒤 `to-ticket`으로 이어질 때는 같은 worktree를 유지하며, 정상 완료·gate 실패·사용자 중단 뒤에도 작업 worktree와 산출물을 보존한다. workflow 완료 경로에서 finish를 호출하지 않는다. 삭제는 사용자가 명시적으로 요청했을 때만 수행하며, primary/비소유 workspace는 지우지 않는다.
 
 소유 worktree의 canonical context와 lifecycle은 `<workspace>/.io/worktree.json` 하나로 관리한다. `session-worktree` CLI가 생성·갱신하고, 각 작업은 이 정본을 읽는다. 개별 worktree 필드를 작업 입력마다 복사하지 않는다.
 

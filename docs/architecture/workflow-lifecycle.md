@@ -15,12 +15,12 @@ flowchart TD
     G --> H[결정 근거 조회와 Architecture 인터뷰]
     H --> I[Architecture 문서와 필요한 다이어그램]
     I --> J[독립 Architecture Spec 리뷰]
-    J --> K[Spec 완료 gate와 소유 worktree 제거]
+    J --> K[Spec 완료 gate와 소유 worktree 보존]
     K --> L[to-ticket 시작과 계획용 worktree 준비]
     L --> M[분할 승인과 canonical plan 작성]
     M --> N[Spec·전체 plan 직접 대조와 독립 리뷰]
     N --> O[계획 발행과 tracker 및 Beads 연결]
-    O --> P[계획 완료 gate와 소유 worktree 제거]
+    O --> P[계획 완료 gate와 소유 worktree 보존]
     P --> Q[기존 구현 위치에 승인 산출물 반영]
     Q --> R[implement-wrapper 준비 검사]
     R --> S{실행 방식 선택}
@@ -122,7 +122,7 @@ flowchart TD
 | S11 | Architecture Spec 확정 | 승인 결정과 최종 Architecture Spec | Architecture Spec 및 그림 inventory | 리뷰 가능한 문서 상태로 고정. 이 단계에서는 그림을 생성하지 않음 |
 | S12 | 서로 다른 fresh Architecture reviewer → `spec-review` | 현재 request·Product·Architecture·source/ADR baseline·계약 | Architecture axis JSON과 현재 hash snapshot | DDD 분류, 규칙 owner, 비즈니스 로직 단위 테스트 명세, 근거 연결, 필수 인프라 완전성을 검토. Normal에서도 필수 |
 | S13 | `diagram_creator` → `plantuml-diagrams` | Architecture review를 통과한 최종 Product·Architecture Spec과 inventory | 적용 가능한 `diagrams/product/**`·`diagrams/architecture/**`의 PlantUML·SVG·Markdown 링크 | 두 Spec을 확정한 뒤 한 번 생성. 렌더·링크·내용 일치 gate 통과 후 완료 |
-| S14 | `spec-me` 완료 | coverage·최종 그림·Architecture review, 시작 base SHA, completion state | `spec_ready_for_planning` receipt, 보존 branch/HEAD/recovery_path/return_root 인계 | 공통 완료 gate 뒤 S archive·검증·제거. 기능 구현 완료가 아님. to-ticket을 권고하며 자동 구현하지 않음 |
+| S14 | `spec-me` 완료 | coverage·최종 그림·Architecture review, 시작 base SHA, completion state | `spec_ready_for_planning` receipt, active worktree·branch·HEAD·session 기록 보존 | 공통 완료 gate 뒤에도 S와 산출물을 보존해 to-ticket이 같은 worktree를 이어 쓴다. 기능 구현 완료가 아니며 자동 구현하지 않음 |
 
 ### Spec 조건부 작업
 
@@ -148,7 +148,7 @@ flowchart TD
 | P6 | 독립 `plan_reviewer` → `plan-review` | 요청 원문·두 Spec·결정·그림·모든 canonical plan·정확한 root | reviewer JSON, session review snapshot·findings | 작성 맥락 없는 fresh reviewer. requirement·반례·handoff·실행 위치 검토. major 수정은 새 reviewer. 계획·index·Spec current-input gate |
 | P7 | GitHub batch publish 또는 local-markdown 발행 | 전체 로컬 계획과 최신 리뷰 pass, 렌더된 초안 | GitHub parent/child Issue·관계·Project membership·Planned, 또는 local ticket planned | 이 단계 전 GitHub Issue/Project API 조회·변경 금지. GitHub 초안·응답은 `runtime/to-ticket/`에 보존 |
 | P8 | Beads mirror 연결 | 실제 parent/child Issue URL·번호·상태 | `external_ref`, `harness_tracker_version=1`, classification=committed, phase=planning | canonical content 재작성 없이 index의 실제 Issue 링크 채움. 완료 tracker_sync는 전체 plan set batch 조회 |
-| P9 | 계획 완료 | 시작 SHA, 현재 Spec reviews·계획 리뷰·index·tracker refs | `plan_set_ready_for_implementation` receipt, 계획 branch·HEAD·recovery 인계 | 정상 완료·실패·취소·handoff에서 owned P 정리. 대기는 P 유지. 계획 PR은 이 경로에서 만들지 않음 |
+| P9 | 계획 완료 | 시작 SHA, 현재 Spec reviews·계획 리뷰·index·tracker refs | `plan_set_ready_for_implementation` receipt, active worktree·Specs·계획·session 기록 보존 | 성공·실패·취소·handoff 뒤에도 owned P를 보존한다. `finish`는 사용자의 명시적 정리 요청에만 사용한다. 계획 PR은 이 경로에서 만들지 않음 |
 | P10 | 기존 구현 위치로 인계 | canonical plan의 E/branch, 보존 Spec·계획 branch/HEAD | E에 승인 산출물이 존재하는 상태 | 서로 다른 branch이면 통합이 필요함을 인계. 반영 전 dispatch 차단. 이를 위해 순차 구현 worktree를 새로 만들지 않음 |
 
 ### 계획의 실행 위치 예시
@@ -268,18 +268,17 @@ PR summary는 로컬 `eli5/SKILL.md`의 설명 단계를 사용한다. 적용되
 ```mermaid
 sequenceDiagram
     participant U as 기존 사용자 위치
-    participant S as Spec 임시 worktree
-    participant P as 계획 임시 worktree
+    participant S as Spec·계획 소유 worktree
     participant E as 기존 구현 위치
     participant W as 병렬 worker
     U->>S: spec-me 진입 전에 소유 생성 또는 재사용
     Note over S: Product와 Architecture 및 두 독립 Spec 리뷰
     S-->>U: branch 및 HEAD 및 recovery 인계
-    Note over S: top-level 완료 또는 실패 또는 중단 또는 handoff에서 제거
-    U->>P: to-ticket 진입에 보존 branch로 생성 또는 재사용
-    Note over P: 계획 작성 및 fresh review 및 발행
-    P-->>U: 계획 branch 및 HEAD 및 recovery 인계
-    Note over P: top-level 종료에서 제거
+    Note over S: 완료 또는 실패 또는 중단 뒤 보존
+    U->>S: 같은 worktree에서 to-ticket 이어서 실행
+    Note over S: 계획 작성 및 fresh review 및 발행
+    S-->>U: 계획 branch 및 HEAD 및 recovery 보존
+    Note over S: 완료 또는 실패 또는 중단 뒤 보존
     U->>E: 승인 Spec과 계획이 존재하는 기존 실행 위치 확인
     alt 순차
         Note over E: 생성 없음 및 소유 receipt 불필요
@@ -297,10 +296,10 @@ sequenceDiagram
 
 | 경우 | 생성 | 삭제·보존 |
 |---|---|---|
-| spec-me 새 실행 | create가 새 UUID `worktree_id`를 발급해 S 생성 | top-level 종료에서 S 제거, branch·recovery는 보존 |
+| spec-me 새 실행 | create가 새 UUID `worktree_id`를 발급해 S 생성 | 완료·실패·중단 뒤 S와 산출물 보존 |
 | spec-me 내부 writer·diagram·review | 별도 workflow worktree 생성 없음 | 부모 S 삭제 금지 |
-| spec-me → to-ticket | S가 제거됐다면 보존 branch로 P 새 경로 생성 | source branch를 재사용하며 계획용 branch를 임의로 분기하지 않음 |
-| to-ticket 정상·실패·취소·handoff | 이미 준비한 P 사용 | P 제거. 발행 완료는 기능 구현 완료가 아님 |
+| spec-me → to-ticket | 동일한 active worktree와 canonical 기록을 이어 사용 | stage 전환에서 worktree를 제거하거나 새 경로로 교체하지 않음 |
+| to-ticket 정상·실패·취소·handoff | 이미 준비한 P 사용 | P와 산출물 보존. 발행 완료는 기능 구현 완료가 아님 |
 | 사용자 답·외부 조건 대기 | 기존 소유 경로 유지 | waiting 중 finish/cleanup 호출하지 않음 |
 | 순차 구현 새 plan·재개·병합 후 | 기존 E 재사용. create/reserve/register 없음 | E·branch를 삭제·소유 등록하지 않음 |
 | 병렬 계획 dispatch | manager가 W_i·전용 branch 생성 | 해당 slot 종료 시 소유 W_i만 archive 후 제거; branch는 통합용 보존 |
@@ -313,7 +312,7 @@ sequenceDiagram
 - 소유 receipt 경로는 `session_directory/receipt.json`이다. `workspace`, 자동 생성 `worktree_id`, `branch`, `return_root`, `state`, recovery 정보를 기록한다. 호출자는 생성 전에 ID를 넣지 않는다.
 - 새 session worktree 실제 경로는 `dirname(primaryRoot)/.harness-worktrees/basename(primaryRoot)/<worktree_id>`다. 새 branch는 기본 `harness/worktree/<worktree_id>`이며 보존 branch를 지정하면 그 branch를 checkout한다.
 - 병렬 worker는 manager runtime namespace/group/plan별 session 출력 아래의 worktree 경로와 전용 branch를 사용한다. generic session create 경로와 동일하다고 가정하지 않는다.
-- `completeWorkflow`는 gate pass뿐 아니라 오류·실패에서도 outer finally의 `finishWorkflowWorktree`를 호출한다. waiting 상태에서 이 명령을 호출하면 안 된다.
+- `completeWorkflow`는 소유 worktree의 완료·실패 경로에서 `finishWorkflowWorktree`를 호출하지 않고 canonical worktree와 산출물을 보존한다. 명시적 정리 요청만 `finish`를 호출한다.
 - receipt가 없으면 finish는 `not-owned`를 반환하고 위치를 보존한다. 순차 구현에 receipt를 새로 요구할 필요가 없다.
 - cleanup은 전달된 workspace의 receipt와 Git worktree identity·branch를 대조한다. `worktree_id`는 생성 실행의 식별값이며 호출자가 알고 있어야 생성·정리할 수 있는 값은 아니다. `harness-workflow-complete.mjs --workflow`는 YAML 처리 절차를 고르는 별도 값이며 소유권 판단에 사용하지 않는다.
 - 제거 전에 tracked/untracked/ignored 파일·staged index·HEAD/tree를 검증해 recovery에 보존한다. branch와 recovery ref는 삭제하지 않는다.

@@ -88,6 +88,7 @@ export async function dispatchImplementPlan({
   implementationProfile = null,
   trackerPort = null,
 } = {}) {
+  // 승인 계획의 의존성·자원·workspace gate를 확인한 뒤 구현 실행을 배정한다.
   required(plan?.id, "plan.id");
   required(planSetId, "planSetId");
   required(repository, "repository");
@@ -101,6 +102,7 @@ export async function dispatchImplementPlan({
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
   if (!profile.model) throw new TypeError("implementation model is unresolved; run setup before dispatch");
   const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
+  // schedule은 완료된 plan, 의존성, resource conflict와 병렬 고정 base를 반영한다.
   const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || null, schedulingWave });
   if (!schedule.ready_plans.includes(plan.id)) {
     const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
@@ -128,6 +130,7 @@ export async function dispatchImplementPlan({
       throw error;
     }
   }
+  // 순차 작업은 활성 workspace를, 병렬 작업은 manager가 만든 격리 worktree를 사용한다.
   let dispatchWorkspace = workspace;
   let workspaceAllocated = false;
   const verifyWorkspace = workspaceVerifier || (typeof worktreeManager?.verify === "function"
@@ -292,6 +295,7 @@ export async function runIndependentReviewers({
   planReviewRefs = null,
   trackerPort = null,
 } = {}) {
+  // 같은 fixed point의 구현 diff를 서로 다른 fresh context 두 개에서 독립 검토한다.
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
   required(fixedPoint, "fixedPoint");
@@ -333,6 +337,7 @@ export async function runIndependentReviewers({
   const reviewerModel = resolveReviewerProfile({ config, profile: reviewerProfile });
   if (!reviewerModel.model || !reviewerModel.reasoning_effort) throw new TypeError("reviewer model or reasoning effort is unresolved; configure both before review");
   const contextPolicy = resolveContextPolicy({ config, profile: reviewerProfile });
+  // 리뷰 실패도 역할별 결과로 보존해 한 reviewer의 오류가 다른 결과를 가리지 않게 한다.
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
     let report;
     try {
@@ -395,16 +400,19 @@ export async function executeImplementPlan({
   captureReviewInput = null,
   ...dispatchOptions
 } = {}) {
+  // dispatch → 구현 대기 → 독립 리뷰/수정 → completion gate 순서로 plan 하나를 실행한다.
   if (typeof captureFixedPoint !== "function") throw new TypeError("captureFixedPoint is required");
   if (typeof waitForImplementation !== "function") throw new TypeError("waitForImplementation is required");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer is required");
   const checkpoint = await dispatchOptions.checkpointStore.read();
+  // 재개 시에는 최초 저장한 review 기준점을 유지하고, 없을 때만 현재 기준점을 캡처한다.
   const fixedPoint = checkpoint?.review_fixed_point || checkpoint?.lifecycle_evidence?.fixed_point || await captureFixedPoint();
   if (!fixedPoint) throw new TypeError("captureFixedPoint must return a fixed point");
   const dispatched = await dispatchImplementPlan({ ...dispatchOptions, fixedPoint, spawnImplement: dispatchOptions.spawnImplement });
   if (!dispatched.dispatched) return { fixed_point: fixedPoint, dispatch: dispatched, state: dispatched.state };
   let implementation;
   let workspaceCleanupPromise = null;
+  // 이미 할당한 worker worktree만 정리하며, 중복 종료 경로에서도 cleanup은 한 번만 수행한다.
   const cleanupWorkspace = async (evidencePersisted) => {
     if (!dispatched.workspace_allocated || !dispatched.worktree_manager) return null;
     workspaceCleanupPromise ||= Promise.resolve().then(async () => {
@@ -418,6 +426,7 @@ export async function executeImplementPlan({
     });
     return workspaceCleanupPromise;
   };
+  // 구현 결과가 실제 배정 workspace/branch에서 나왔는지 검증한 뒤 리뷰 단계로 넘긴다.
   try {
     const completedImplementation = await waitForImplementation(dispatched.child, dispatched);
     if (typeof completedImplementation?.workspace_root !== "string"
@@ -448,6 +457,7 @@ export async function executeImplementPlan({
   let reviewCommitList = implementation.commit_list || dispatchOptions.implementationCommitList || null;
   let reviews;
   let reviewRepair;
+  // 구현 결과를 독립 리뷰하고, 허용된 수정 라운드가 있으면 수정 후 다시 리뷰한다.
   try {
     if ((reviewDiff === null || !Array.isArray(reviewCommitList) || reviewCommitList.length === 0) && typeof captureReviewInput === "function") {
       const captured = await captureReviewInput({ fixed_point: fixedPoint, implementation_commit_sha: implementation.commit_sha, implementation });
@@ -498,6 +508,7 @@ export async function executeImplementPlan({
     if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
     throw error;
   }
+  // 완료 판단에 필요한 tracker·plan review·테스트·Spec·구현 근거를 다시 읽는다.
   try {
   const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
   let originalWorkspaceCheck = null;

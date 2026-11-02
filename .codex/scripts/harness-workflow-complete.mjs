@@ -25,6 +25,6 @@ try {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.state !== 'completed') process.exitCode = 1;
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ state: 'failed', error: error.message, worktree_cleanup: null })}\n`);
+  process.stderr.write(`${JSON.stringify({ state: 'failed', error: error.message })}\n`);
   process.exitCode = 1;
 }

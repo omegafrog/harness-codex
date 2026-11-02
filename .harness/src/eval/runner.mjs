@@ -165,6 +165,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
 }
 
 export async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null, attempt = 1 }) {
+  // 격리 workspace에서 한 case를 실행하고, event·trajectory·artifact를 모아 최종 판정한다.
   const outputRoot = sessionDirectory(resolve(root));
   if (!isWithin(outputRoot, resolve(runDir))) throw new ManifestValidationError("Case output must remain inside the session directory");
   const relativeCase = relative(outputRoot, attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt)));
@@ -174,6 +175,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
   const trajectoryPath = join(caseDir, "trajectory.jsonl");
   const eventStreamId = attempt === 1 ? `case-${caseSpec.id}` : `case-${caseSpec.id}-attempt-${attempt}`;
   const trajectoryStreamId = attempt === 1 ? `trajectory-${caseSpec.id}` : `trajectory-${caseSpec.id}-attempt-${attempt}`;
+  // 이전 시도의 journal을 복구 가능한 상태로 연 뒤 새 기록을 같은 stream에 이어 쓴다.
   const existingEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
   const existingTrajectory = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
   let eventRecovery = existingEvents.corruption;
@@ -186,14 +188,17 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
   await events.init();
   await trajectory.init();
   const startedAt = Date.now();
+  // workspaceHandle과 external은 case가 소유하며 모든 종료 경로에서 정리한다.
   let workspaceHandle = null;
   let external = null;
+  // 종료 경로가 여러 개여도 외부 port는 실제로 한 번만 닫는다.
   let externalClosePromise = null;
   const closeExternal = async () => {
     if (!external) return;
     externalClosePromise ||= Promise.resolve(external.close?.());
     await externalClosePromise;
   };
+  // execution은 프로세스 결과, outcome/quality/efficiency는 서로 다른 채점 축을 보관한다.
   let execution = { exitCode: null, processError: null, inconclusiveReason: null, timedOut: false, durationMs: 0, command: null };
   let hardGates = null;
   let outcome = { passed: false, results: {}, missing: caseSpec.required_outcome };
@@ -229,7 +234,9 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
     const seenViolations = new Set();
     let liveHardCapExceeded = null;
     let externalInconclusiveReason = null;
+    // 이벤트 처리 중 누적해 hard cap을 넘으면 case를 즉시 중단한다.
     const liveEfficiency = { turns: 0, tool_calls: 0, tokens: 0 };
+    // 외부 작업 실패를 정책 위반(즉시 중단)과 판정 불가(기록 후 진행)로 구분한다.
     const classifyExternalError = async (error, request, control) => {
       if (error instanceof EvalPolicyViolationError) {
         await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast", action: request.operation, target: request.target, request }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
@@ -243,6 +250,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
         await events.append("external_port_error", { reason: "external_provider_error", request, message: error.message }, { critical: true, extra: { reason: "external_provider_error" } });
       }
     };
+    // 각 실행 기록을 한곳에서 안전성 gate, 외부 요청 처리, token/호출량 집계에 반영한다.
     const onRecord = async (record, control) => {
       if (record.kind === "tool_call") liveEfficiency.tool_calls += 1;
       if (record.kind === "message" && record.actor === "codex") liveEfficiency.turns += 1;
@@ -313,6 +321,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
     const workflowEntrypoint = caseSpec.dispatch_workflow === false ? null : `$${caseSpec.workflow}`;
     const prompt = buildCasePrompt(caseSpec);
     if (workflowEntrypoint) await events.append("workflow_dispatch_requested", { workflow: caseSpec.workflow, entrypoint: workflowEntrypoint }, { critical: true });
+    // Codex 실행이 끝난 뒤 외부 기록과 trajectory를 다시 읽어 판정 입력을 고정한다.
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,
@@ -420,6 +429,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
     await events.append("case_error", { reason: execution.inconclusiveReason, message: error.message }, { critical: true });
     efficiency = collectEfficiency({ trajectory: [], execution, startedAt, finishedAt: Date.now() });
   }
+  // 정리 전에 필요한 산출물 근거를 확보하고, journal flush 여부도 최종 판정에 반영한다.
   let evidenceError = null;
   try {
     await trajectory.close();
@@ -490,9 +500,12 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
 }
 
 async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
+  // suite 설정과 case 목록을 고정하고 각 case를 순서대로 실행해 하나의 run report를 만든다.
   if (!suiteId) throw new ManifestValidationError("suite id is required");
+  // 재시도는 새 run directory를 사용해 이전 실행의 결과·기록을 덮어쓰지 않는다.
   const effectiveRunId = requestedRunId || runId();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(effectiveRunId)) throw new ManifestValidationError("Unsafe run id");
+  // 설정/출력 위치를 확보하지 못하면 case 실행 전에 preflight 결과를 기록한다.
   let config;
   let runtimeRoot;
   let runDir;
@@ -514,6 +527,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     await persistReport(fallbackRunDir, report);
     return report;
   }
+  // suite manifest 오류도 run report로 남겨 case 결과와 구분한다.
   let suite;
   try {
     suite = await loadSuite(root, suiteId, config);
@@ -531,6 +545,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     environment_profiles: config.eval.environment_profiles,
     quality_grader: config.eval.quality_grader,
   });
+  // 개별 결과는 모두 보존하고 마지막에 suite 수준의 집계를 계산한다.
   const caseResults = [];
   for (const caseSpec of suite.cases) {
     caseResults.push(await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt }));
@@ -544,10 +559,12 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
 }
 
 export async function runSuite(options = {}) {
+  // 운영 호출은 설정된 Codex CLI만 허용하고 내부 suite 실행기로 넘긴다.
   if (options.commandOverride) throw new ManifestValidationError("commandOverride is test-only; use the configured Codex CLI");
   return runSuiteInternal(options);
 }
 
 export async function runSuiteForTest(options = {}) {
+  // 테스트에서만 command override를 허용하는 동일 suite 실행 경로다.
   return runSuiteInternal(options);
 }

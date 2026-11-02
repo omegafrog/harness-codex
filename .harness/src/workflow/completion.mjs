@@ -1,10 +1,11 @@
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { readFile, realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadNamedWorkflow } from './loader.mjs';
 import { LifecycleGateRegistry, runLifecycleHook } from '../gates/lifecycle.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
-import { finishWorkflowWorktree } from './worktrees.mjs';
+import { parseWorktreeRecord } from './worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 const execFileAsync = promisify(execFile);
@@ -27,6 +28,18 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     if (!/^[a-f0-9]{40}$/.test(base_ref || '')) throw new Error('Starting commit SHA is required');
     const workspace = await inspectWorkspace({ workspaceRoot: workspace_root, cwd: process.cwd() });
     if (!workspace.valid) throw new Error(`Workspace preflight failed: ${workspace.reason}`);
+    let worktreeRecord = null;
+    try { worktreeRecord = parseWorktreeRecord(await readFile(join(workspace_root, '.io/worktree.json'), 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (worktreeRecord || worktree_id) {
+      if (!worktreeRecord || !workspace.is_linked_worktree || worktreeRecord.workspace !== workspace.workspace_root || worktreeRecord.state !== 'active' || worktreeRecord.worktree_id !== worktree_id) throw new Error('Canonical worktree ownership mismatch');
+      const [common, gitDir, branch] = await Promise.all([
+        execFileAsync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: workspace_root, encoding: 'utf8' }),
+        execFileAsync('git', ['rev-parse', '--absolute-git-dir'], { cwd: workspace_root, encoding: 'utf8' }),
+        execFileAsync('git', ['branch', '--show-current'], { cwd: workspace_root, encoding: 'utf8' }),
+      ]);
+      if (await realpath(common.stdout.trim()) !== worktreeRecord.common || (worktreeRecord.git_dir && await realpath(gitDir.stdout.trim()) !== worktreeRecord.git_dir) || branch.stdout.trim() !== worktreeRecord.branch) throw new Error('Canonical worktree identity mismatch');
+    }
     const workflow = await loadNamedWorkflow(workflow_id, { root: workspace_root });
     const completion_kind = completionKindForWorkflow(workflow.id);
     const finalImplementation = completion_kind === 'feature_implemented';
@@ -39,19 +52,11 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry: new LifecycleGateRegistry({ hooks }), eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();
-    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path };
+    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
     await writer.append('workflow_completion', result, { critical: true });
   } catch (error) { failure = error; }
   finally {
     try { await writer?.close(); } catch (error) { failure ||= error; }
-    const retainForPlanning = !failure && !signal?.aborted && result?.state === 'completed' && result.completion_kind === 'spec_ready_for_planning';
-    if (!failure && !signal?.aborted && result?.state === 'completed' && !retainForPlanning) {
-      let cleanup;
-      try { cleanup = await finishWorkflowWorktree({ workspace_root, worktree_id, outcome: 'completed' }); }
-      catch (error) { cleanup = { state: 'failed', error: error.message, workspace_root }; }
-      result.worktree_cleanup = cleanup;
-      if (cleanup.state === 'failed') result.state = 'in-progress';
-    }
   }
   if (failure) throw failure;
   return result;

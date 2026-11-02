@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process';
 
 export async function runCodexProcess({ root, args, env, prompt, onStart, onThread }) {
+  // Codex를 시작하고 thread 이벤트를 저장한 뒤 종료 코드·오류·session ID를 반환한다.
+  // buffer는 아직 줄바꿈이 오지 않은 JSON 조각, threadId는 재개에 쓰는 실제 Codex session이다.
   let stderr = '', buffer = '', threadId = null, sessionSave = Promise.resolve();
   const errors = [];
+  // JSONL 출력에서 실행 상태와 재개에 필요한 thread ID만 추출한다.
   const consume = (line) => {
     try {
       const event = JSON.parse(line);
@@ -13,6 +16,7 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
       }
     } catch {}
   };
+  // onStart가 프로세스 소유권을 기록할 때까지 입력을 보내지 않도록 시작 신호로 잠근다.
   const child = spawn('sh', ['-c', 'IFS= read -r ready && [ "$ready" = HARNESS_START ] && exec "$@"', 'harness-launch', 'codex', ...args], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const stop = () => child.kill('SIGTERM');
   process.once('SIGTERM', stop);

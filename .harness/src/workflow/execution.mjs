@@ -30,6 +30,7 @@ function validate(profile) {
 }
 
 export async function readExecutionManifest(root) {
+  // 프로젝트가 선언한 실행 profile 전체를 읽고, 실행 전에 계약 오류를 걸러낸다.
   const path = 'docs/agents/execution.json';
   await assertWorkspaceTarget(root, path);
   const text = await readFile(join(root, path), 'utf8');
@@ -60,6 +61,7 @@ async function fingerprint(root, files) {
   return JSON.stringify(hashes);
 }
 async function execute(argv, { root, env, path, timeout, signal }) {
+  // 한 명령을 로그에 연결해 실행하고, timeout·취소 때는 프로세스 그룹을 종료한다.
   signal?.throwIfAborted();
   const log = await open(path, 'a', 0o600);
   try {
@@ -86,12 +88,14 @@ async function execute(argv, { root, env, path, timeout, signal }) {
 }
 
 export async function runExecution({ workspace_root, profile_id, environment = process.env, signal } = {}) {
+  // 명시된 E2E profile을 준비·검증·readiness 확인 후 실행하고 재현 가능한 receipt를 남긴다.
   requireValue(isAbsolute(workspace_root || '') && ID.test(profile_id || ''), 'Absolute workspace_root and profile_id are required');
   const root = await realpath(workspace_root);
   const workspace = await inspectWorkspace({ workspaceRoot: root, cwd: process.cwd() });
   requireValue(workspace.valid, `Workspace preflight failed: ${workspace.reason}`);
   const directory = sessionOutputPath(root, `runtime/execution/${profile_id}-${randomUUID()}`);
   await mkdir(directory, { mode: 0o700 });
+  // receipt는 단계별 진행·로그와 최종 상태를 보관해 마지막에 영속화한다.
   const receipt = { profile_id, status: 'blocked', phase: 'load', steps: [], config_hashes: null };
   try {
     const manifestPath = 'docs/agents/execution.json';
@@ -108,6 +112,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     const verify = profile.verify_config.map((argv) => expand(argv, env));
     const dependencies = profile.dependencies.map((item) => ({ id: item.id, argv: expand(item.check, env) }));
     const main = expand(profile.command, env);
+    // 실행 중 바뀌면 안 되는 계약·설정 파일을 준비 전후에 같은 snapshot으로 비교한다.
     const inputs = [...new Set([manifestPath, ...profile.config_inputs])];
     for (const file of inputs) {
       requireValue(typeof file === 'string' && file && !isAbsolute(file) && !file.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'config_inputs must be workspace-relative files');
@@ -120,6 +125,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
       receipt.steps.push({ phase, exit_code: code, log: path });
       return code;
     };
+    // 준비가 끝난 뒤 설정 검증과 의존 서비스 readiness를 통과해야 본 명령에 도달한다.
     for (const argv of prepare) requireValue(await step('prepare', argv) === 0, 'Configuration preparation failed');
     requireValue(await readFile(join(root, manifestPath), 'utf8') === manifestText, 'Execution contract changed during preparation; rerun');
     const snapshot = await fingerprint(root, inputs);
