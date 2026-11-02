@@ -155,7 +155,19 @@ test('installed to-ticket uses skill binding and records a fresh review against 
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
-    const { resolveSkillBinding, resolveAgentSandbox } = await import(`${installedRuntime}/skill-execution.mjs`);
+    const { resolveSkillBinding, resolveAgentSandbox, validateSkillInput } = await import(`${installedRuntime}/skill-execution.mjs`);
+    const session = join(root, '.io');
+    await mkdir(session, { recursive: true });
+    const publishInput = { schema_version: 1, execution_id: 'publish-1', skill: 'tracker-publish', scope: 'publish', input_refs: [], workspace_root: root, session_directory: session, context: {} };
+    await assert.rejects(validateSkillInput({ root, input: publishInput }), /User publication approval is required/);
+    await assert.rejects(validateSkillInput({ root, input: { ...publishInput, context: { publication_approved: false } } }), /User publication approval is required/);
+    await validateSkillInput({ root, input: { ...publishInput, context: { publication_approved: true } } });
+    const { prepareStageInput } = await import(`${installedRuntime}/stage-input.mjs`);
+    await mkdir(join(session, 'runtime/orchestrator'), { recursive: true });
+    const statePath = join(session, 'runtime/orchestrator/state.json');
+    await writeFile(statePath, JSON.stringify({ schema_version: 1, stages: { 'workflow-compose': { status: 'completed' }, 'to-ticket': { status: 'running' } } }));
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish' }), /user publication approval are required/);
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /Completed to-ticket/);
     const workflow = await loadNamedWorkflow('to-ticket', { root });
     assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish']);
     assert.deepEqual(workflow.stages[1].needs, ['to-ticket']);

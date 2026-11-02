@@ -5,7 +5,7 @@ description: Publish a passing to-ticket plan set to the configured tracker and 
 
 # tracker-publish
 
-This is a dedicated workflow executor stage. The orchestrator dispatches it after `to-ticket` completes its fresh independent planning review. Do not run this work inside the to-ticket author, a nested subagent, or the orchestrator main session.
+This is a dedicated workflow executor stage. The orchestrator dispatches it after `to-ticket` completes its fresh independent planning review and the user approves publication. Require `context.publication_approved === true` before any tracker or Beads mutation. Do not run this work inside the to-ticket author, a nested subagent, or the orchestrator main session.
 
 1. Read the canonical `context.worktree_ref` record and verify it names this active workspace, session, and `plan_set_id`.
 2. Run `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --defer-tracker-sync --json`. Require `valid: true` and matching `cwd`, `git_root`, and registered worktree. Stop on any mismatch.

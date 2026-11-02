@@ -8,7 +8,7 @@ const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -34,7 +34,8 @@ try {
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);
   const codexSessionId = record.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null;
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null });
+  if (options['publication-approved'] !== undefined && options['publication-approved'] !== 'true') throw new Error('publication-approved must be true');
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true' });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

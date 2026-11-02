@@ -167,6 +167,7 @@ async function resolveInputWorktree(root, input) {
 export async function validateSkillInput({ root, input }) {
   input = await resolveInputWorktree(root, input);
   validate(input, await json(join(root, CONTRACT, 'schemas/input.schema.json')));
+  if (input.skill === 'tracker-publish') requireValue(input.context?.publication_approved === true, 'User publication approval is required');
   if (input.skill === 'workflow-compose') {
     validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));
     requireValue(isAbsolute(input.context?.worktree_ref || '') && basename(input.context.worktree_ref) === 'worktree.json', 'Compose requires a canonical worktree reference');
