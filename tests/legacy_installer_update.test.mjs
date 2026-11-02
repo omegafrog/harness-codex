@@ -18,6 +18,10 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await mkdir(resolve(root, 'docs/agents'), { recursive: true });
     const legacy = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/harness-doctor.mjs'));
     await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), legacy);
+    await mkdir(resolve(root, '.harness/src/workflow'), { recursive: true });
+    for (const [fixture, path] of [['project-readiness.mjs', '.harness/src/workflow/project-readiness.mjs'], ['harness-codex-run.mjs', '.codex/scripts/harness-codex-run.mjs']]) {
+      await writeFile(resolve(root, path), await readFile(resolve(sourceRoot, `tests/fixtures/legacy/${fixture}`)));
+    }
     await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files: {} }));
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
     const schemaPath = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_finalize.schema.json';
@@ -35,6 +39,9 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     const result = await updateProject({ sourceRoot, targetRoot: root });
     await protectLocalInstallArtifacts(root, sourceRoot);
     assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-doctor.mjs')), legacy);
+    assert.ok(result.updated.includes('.harness/src/workflow/project-readiness.mjs'));
+    assert.ok(result.updated.includes('.codex/scripts/harness-codex-run.mjs'));
+    assert.match(await readFile(resolve(root, '.harness/src/workflow/project-readiness.mjs'), 'utf8'), /export async function inspectSetupConfiguration/);
     assert.deepEqual(await readFile(resolve(result.backup_directory, schemaPath)), schema);
     await assert.rejects(readFile(resolve(root, schemaPath)), { code: 'ENOENT' });
     assert.equal(await readFile(resolve(result.backup_directory, retiredPath), 'utf8'), 'old managed');
@@ -59,6 +66,15 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     const second = await updateProject({ sourceRoot, targetRoot: root });
     assert.equal(await readFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'utf8'), 'custom doctor');
     assert.ok(second.skipped.some((item) => item.path === '.codex/scripts/harness-doctor.mjs' && item.status === 'unlocked'));
+    await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), await readFile(resolve(sourceRoot, 'bin/harness-doctor.mjs')));
+    const runtime = '.harness/src/workflow/skill-execution.mjs';
+    const secondLock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
+    delete secondLock.files[runtime];
+    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify(secondLock));
+    let report;
+    try { report = execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
+    catch (error) { report = error.stdout; }
+    assert.ok(JSON.parse(report).diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.severity === 'error' && item.path === resolve(root, runtime)));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

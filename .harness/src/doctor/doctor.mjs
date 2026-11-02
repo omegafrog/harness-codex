@@ -281,7 +281,10 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
       && !preservedAgentProfile(file)));
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
-    for (const path of ownedFiles) if (!lockedFiles.has(path)) diagnostics.push(diagnostic("installer_unlocked_file", "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
+    for (const path of ownedFiles) if (!lockedFiles.has(path)) {
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path);
+      diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
+    }
     for (const entry of lockEntries) {
       if (lock.files[entry.path].retired || (sourceRoot && !managedPaths.has(entry.path))) {
         diagnostics.push(diagnostic('installer_retired_file', 'warning', `Retired Harness file remains: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
