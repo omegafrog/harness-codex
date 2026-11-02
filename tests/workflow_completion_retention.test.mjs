@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -56,8 +56,21 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     const specReview = { axis: 'architecture', ticket_id: 'calculator', reviewer_id: 'spec-reviewer', author_ids: ['spec-author'], fork_turns: 'none', verdict: 'pass', inputs: specInputs, findings: [] };
     await updateReviewAttempt({ root: tree.workspace, scope: 'spec-calculator-architecture', action: 'record', inputs: specInputs, attemptId: specAttempt.attempt_id, review: specReview });
 
-    const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
-    await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+    const { recordExecutionState } = await import(new URL(`file://${join(tree.workspace, '.harness/src/workflow/execution-state.mjs')}`));
+    const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
+    for (const skill of ['workflow-compose', 'spec-me', 'to-ticket', 'tracker-publish']) {
+      const input = { skill, execution_id: skill, session_directory: tree.session_directory, context: { worktree_ref: join(tree.session_directory, 'worktree.json') } };
+      const binding = { model: 'example', reasoning_effort: 'low' };
+      await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
+      if (skill === 'to-ticket') {
+        await recordExecutionState({ root: tree.workspace, input, binding, status: 'action_required', code: 'REVIEW_REQUIRED' });
+        const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
+        await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+        await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
+      }
+      await recordExecutionState({ root: tree.workspace, input, binding, status: 'completed', code: 'OK' });
+    }
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
 
     const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();
     await writeFile(completionPath, JSON.stringify({
@@ -71,13 +84,32 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       required_outcome: { passed: true },
       evidence: { complete: true },
     }));
-    const completed = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const args = [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];
+    const intermediate = JSON.parse(execFileSync(process.execPath, args, { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(intermediate.state, 'completed');
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
+    const evidence = JSON.parse(await readFile(completionPath, 'utf8'));
+    await writeFile(completionPath, JSON.stringify({ ...evidence, required_outcome: { passed: false } }));
+    assert.notEqual(spawnSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace }).status, 0);
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
+    await writeFile(completionPath, JSON.stringify(evidence));
+    const completed = JSON.parse(execFileSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace, encoding: 'utf8' }));
 
     assert.equal(completed.state, 'completed', JSON.stringify(completed.verdict));
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'completed');
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).current_stage, 'tracker-publish');
+    const progress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
+    assert.equal(progress.status, 'completed');
+    assert.equal(progress.counts.completed, 4);
+    execFileSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace });
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'completed');
     assert.deepEqual(completed.worktree_retained, { state: 'preserved', workspace_root: tree.workspace });
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
     assert.ok(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' }).includes(tree.workspace));
-    assert.match(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: tree.workspace, encoding: 'utf8' }), /docs\/(plans|specs)\//);
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: tree.workspace, encoding: 'utf8' });
+    assert.match(status, /docs\/(plans|specs)\//);
+    assert.doesNotMatch(status, /\.io\/|\.harness\/src\//);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.io/runtime/orchestrator/state.json'], { cwd: tree.workspace, encoding: 'utf8' }), /\.io/);
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }), '');
     assert.match(await readFile(join(tree.workspace, ticket), 'utf8'), /# Calculator/);
   } finally {

@@ -31,6 +31,8 @@ description: Select workflow skills from the request and current workflow state,
 
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다.
 
+요청 범위의 마지막 stage가 완료되면 해당 완료 gate를 `harness-workflow-complete.mjs`의 `--final-workflow`와 함께 실행한다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 이 옵션을 사용하지 않는다.
+
 반환 상태에 따라 workflow를 전환한다.
 
 | 반환 | 처리 |

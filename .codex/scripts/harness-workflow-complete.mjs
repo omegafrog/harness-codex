@@ -12,6 +12,7 @@ try {
   const flags = { '--root': 'workspace_root', '--workflow': 'workflow_id', '--worktree-id': 'worktree_id', '--base-ref': 'base_ref', '--state': 'state_file' };
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--final-workflow') { options.final_workflow = true; continue; }
     if (!flags[args[i]] || !args[i + 1]) throw new Error(`Unknown/missing argument: ${args[i]}`);
     options[flags[args[i]]] = args[++i];
   }

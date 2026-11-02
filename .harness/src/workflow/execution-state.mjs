@@ -38,6 +38,29 @@ export async function assertExecutionStopped(entry, { root, session } = {}) {
   }
 }
 
+export async function completeExecutionState({ root, session_directory }) {
+  const session = await resolveSkillSession(root, session_directory);
+  const directory = 'runtime/orchestrator';
+  await assertWorkspaceTarget(session, `${directory}/state.json`);
+  const lock = join(session, directory, '.state.lock');
+  await mkdir(lock);
+  try {
+    let workflow;
+    try { workflow = await readSkillSessionJson({ root, session_directory: session, path: `${directory}/workflow.json` }); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const state = workflow?.state || await readSkillSessionJson({ root, session_directory: session, path: `${directory}/state.json` });
+    if (state.schema_version !== 1 || !state.current_stage || state.stages?.[state.current_stage]?.status !== 'completed') throw new Error('Current workflow stage is not completed');
+    state.status = 'completed';
+    state.updated_at = new Date().toISOString();
+    const temporary = join(session, directory, `.workflow-${randomUUID()}.json`);
+    try {
+      await writeFile(temporary, JSON.stringify(workflow?.state ? workflow : state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+      await rename(temporary, join(session, directory, workflow?.state ? 'workflow.json' : 'state.json'));
+    } finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [] }, 'WorkflowCompletion');
+  } finally { await rm(lock, { recursive: true }); }
+}
+
 export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;

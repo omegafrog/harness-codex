@@ -8,6 +8,7 @@ import { JsonlEventWriter } from '../eval/journal.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
+import { completeExecutionState } from './execution-state.mjs';
 const execFileAsync = promisify(execFile);
 
 export function completionKindForWorkflow(workflowId) {
@@ -20,7 +21,7 @@ export function completionKindForWorkflow(workflowId) {
   })[workflowId] || 'workflow_completed';
 }
 
-export async function completeWorkflow({ workflow_id, worktree_id = null, workspace_root, base_ref, state = {}, signal = null } = {}) {
+export async function completeWorkflow({ workflow_id, worktree_id = null, workspace_root, base_ref, state = {}, final_workflow = false, signal = null } = {}) {
   let writer, result, failure;
   try {
     signal?.throwIfAborted();
@@ -54,6 +55,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();
     result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
     await writer.append('workflow_completion', result, { critical: true });
+    if (final_workflow && verdict.status === 'pass') await completeExecutionState({ root: workspace_root, session_directory: result.session_directory });
   } catch (error) { failure = error; }
   finally {
     try { await writer?.close(); } catch (error) { failure ||= error; }
