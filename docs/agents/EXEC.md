@@ -223,6 +223,8 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 lock을 만들고 linked worktree를 생성한다. 이 테스트의 **상위 `codex exec`는 쓰기 제한이 없는 환경에서** `--sandbox danger-full-access`로 실행한다. 바깥 sandbox가 Git 공통 디렉터리 쓰기를 막으면 이 옵션만으로 해제되지 않으므로 실행 전 쓰기 가능 여부를 확인하고, 막혀 있으면 재시도나 상태 수정 없이 사유를 보고한다. stage 실행은 각 스킬의 기존 실행 계약을 따른다.
 
+이 테스트에서는 `.codex/hooks.json`의 Harness hook이 신뢰되지 않으면 `codex exec`의 JSON `thread.started`에 ID가 있어도 orchestrator 대화에 startup hook의 `codex_session_id`가 전달되지 않을 수 있다. 2026-11-02 Codex CLI 0.166.0에서 일반 실행은 hook 관측값이 없었고, 같은 진단에 `--dangerously-bypass-hook-trust`를 추가하면 hook 관측의 ID가 `thread.started.thread_id`와 일치했다. 테스트 전에 hook 명령과 내용을 검토하고 Codex의 `/hooks`에서 신뢰를 승인한다. 명시적으로 검토한 자동화에서 신뢰 설정을 사용할 수 없다면 상위 `codex exec`에만 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 이 옵션은 활성 hook 전체의 신뢰 확인을 우회하므로 검토하지 않은 hook이 있으면 사용하지 않는다. 로그의 `thread.started`만으로 hook이 실행됐다고 판단하거나 ID를 임의 주입하지 않는다.
+
 Luna medium을 지정한 계산기 테스트는 다음 순서로 실행한다. 첫 명령의 최종 응답에서 생성된 worktree 위치를 확인해 두 번째 명령의 `<생성된-worktree-절대경로>`에 넣는다. `$orchestrator`가 shell 변수로 확장되지 않도록 프롬프트는 작은따옴표로 감싼다.
 
 ```bash
