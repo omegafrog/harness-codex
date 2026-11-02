@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, readFile, realpath, readdir } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -96,6 +96,24 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
   }
   return { skill, model_tier: tier, model, reasoning_effort: effort };
+}
+
+export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {
+  requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
+  if (workflow) {
+    requireValue(!input.context?.stage_id || input.context.stage_id === stage, 'Workflow stage does not match the execution input');
+    return { workflow, stage };
+  }
+  if (!input.context?.stage_id) return { workflow: null, stage: null };
+  const files = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
+  const matches = [];
+  for (const file of files) {
+    if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
+    const manifest = await loadNamedWorkflow(file.name, { root });
+    if (manifest.stages.some((candidate) => candidate.id === input.context.stage_id && candidate.skill === input.skill)) matches.push(manifest.id);
+  }
+  requireValue(matches.length <= 1, 'Workflow stage is ambiguous; pass --workflow and --stage');
+  return matches.length ? { workflow: matches[0], stage: input.context.stage_id } : { workflow: null, stage: null };
 }
 
 export async function resolveAgentSandbox({ root, input, workflow = null, stage = null }) {

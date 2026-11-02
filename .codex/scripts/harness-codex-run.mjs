@@ -30,7 +30,7 @@ async function codexResumeWriteDirs(sessionId, env) {
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const base = installed;
 const { runCodexProcess } = await import(new URL('codex-process.mjs', base));
-const { resolveSkillBinding, resolveAgentSandbox, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
+const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
@@ -52,7 +52,8 @@ try {
   if (input.context?.parent_execution_id) throw new Error('Internal tasks must run as subagents of their parent stage');
   if (input.skill === 'workflow-compose') throw new Error('Workflow composition is performed by harness-compose-workspace.mjs');
   await validateSkillInput({ root, input });
-  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow: opts.workflow || null, stage: opts.stage || null });
+  const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
+  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage });
   const prefix = join(session, 'runtime/executions', opts['execution-id']);
   const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'return.json');
   if (!existsSync(schema)) await writeOutputSchema({ root, input, prefix: `runtime/executions/${opts['execution-id']}`, path: schema });
@@ -67,7 +68,7 @@ try {
   const location = await findExecutionInput(root, opts['execution-id']);
   const answers = join(prefix, 'answers.json');
   const feedback = join(prefix, 'feedback.json');
-  const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
+  const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow, stage });
   const executionBinding = { ...binding, sandbox };
   // 이 prompt는 실제 작업 절차를 담지 않고, 선택된 skill과 실행 입력으로 안내한다.
   const prompt = `Read ${guide} and ${location.path}.${profile ? ` Read .codex/agents/${profile}.toml.` : ''}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;

@@ -155,7 +155,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
-    const { resolveSkillBinding, resolveAgentSandbox, validateSkillInput } = await import(`${installedRuntime}/skill-execution.mjs`);
+    const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, validateSkillInput } = await import(`${installedRuntime}/skill-execution.mjs`);
     const session = join(root, '.io');
     await mkdir(session, { recursive: true });
     const publishInput = { schema_version: 1, execution_id: 'publish-1', skill: 'tracker-publish', scope: 'publish', input_refs: [], workspace_root: root, session_directory: session, context: {} };
@@ -179,7 +179,18 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     assert.match(publisherProfile, /sandbox_mode = "danger-full-access"/);
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'to-ticket' }, workflow: 'to-ticket', stage: 'to-ticket' }), { profile: 'to_ticket', sandbox: 'workspace-write' });
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, workflow: 'to-ticket', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
-    await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'tracker-publish' } }), /only as the to-ticket workflow stage/);
+    const inferredStage = await resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } });
+    assert.deepEqual(inferredStage, { workflow: 'to-ticket', stage: 'tracker-publish' });
+    await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'to-ticket' } }, workflow: 'to-ticket', stage: 'tracker-publish' }), /does not match the execution input/);
+    assert.equal((await resolveSkillBinding({ root, skill: 'tracker-publish', ...inferredStage })).model_tier, 'high_performance');
+    assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, ...inferredStage }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
+    await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'missing-stage' } } }).then((stage) => resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, ...stage })), /only as the to-ticket workflow stage/);
+    const workflowDir = join(root, '.codex/workflows');
+    const duplicateWorkflow = join(workflowDir, 'to-ticket-copy.yaml');
+    const toTicketManifest = await readFile(join(workflowDir, 'to-ticket.yaml'), 'utf8');
+    await writeFile(duplicateWorkflow, toTicketManifest.replace('id: to-ticket\n', 'id: to-ticket-copy\n'));
+    await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } }), /Workflow stage is ambiguous/);
+    await rm(duplicateWorkflow);
     const toTicketInstructions = await readFile(join(root, '.agents/skills/to-ticket/SKILL.md'), 'utf8');
     assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
     const publisherInstructions = await readFile(join(root, '.agents/skills/tracker-publish/SKILL.md'), 'utf8');

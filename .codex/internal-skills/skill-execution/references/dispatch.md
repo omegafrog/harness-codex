@@ -1,6 +1,6 @@
 # Codex 실행과 결과
 
-준비된 worktree에서 `node .codex/scripts/harness-codex-run.mjs --worktree-ref <worktree_ref> --execution-id <execution_id>`를 실행한다. runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 생성한 뒤 `codex exec --output-schema`를 시작한다. 스키마 생성은 runner의 책임이며 별도 CLI를 호출하지 않는다. workflow stage binding이 필요한 경우 `--workflow <workflow-id> --stage <stage-id>`를 함께 전달한다.
+준비된 worktree에서 `node .codex/scripts/harness-codex-run.mjs --worktree-ref <worktree_ref> --execution-id <execution_id>`를 실행한다. runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 생성한 뒤 `codex exec --output-schema`를 시작한다. 스키마 생성은 runner의 책임이며 별도 CLI를 호출하지 않는다. runner는 입력의 `context.stage_id`와 skill을 workflow manifest에 대조해 일치하는 stage가 하나면 workflow binding을 자동 선택한다. 일치 항목이 여러 개면 자동 선택하지 않고 `--workflow <workflow-id> --stage <stage-id>`를 명시해야 한다. 명시한 값은 입력과 manifest 검증을 거친다.
 
 부모 stage 실행이 끊겨 `running`으로 남았고 결과가 없으면, 먼저 같은 `stage-id`로 `harness-prepare-input.mjs --feedback <재개 지시>`를 호출한다. 준비 단계는 기록된 owner/child process identity가 모두 종료됐는지 확인하고, 이전 execution 입력과 정본 `worktree.json`의 execution 매칭 session ID를 검증해 `context.resume_session_id`로 전달한다. 프로세스가 살아 있거나 identity·session ID가 모호하면 재개를 차단한다. 결과가 남지 않은 중단 stage는 완료로 간주하지 않으며, 새 입력 생성 후 기존 execution-state 시작 검증을 통과한 경우에만 실행한다.
 
