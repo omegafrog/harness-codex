@@ -535,7 +535,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await mkdir(bin);
     await writeFile(join(bin, 'package.json'), '{"type":"commonjs"}');
     const fakeCodex = join(bin, 'codex');
-    await writeFile(fakeCodex, '#!/usr/bin/env node\nconst fs=require("fs");const a=process.argv;const schema=a[a.indexOf("--output-schema")+1];if(!fs.existsSync(schema)||JSON.parse(fs.readFileSync(schema,"utf8")).properties.execution_id.const!==process.env.TEST_CODEX_EXECUTION_ID)process.exit(41);let p="";process.stdin.on("data",x=>p+=x);process.stdin.on("end",()=>{fs.writeFileSync(a[a.indexOf("--output-last-message")+1],process.env.TEST_CODEX_RETURN);fs.writeFileSync(process.env.TEST_CODEX_PROMPT,p);fs.writeFileSync(process.env.TEST_CODEX_ARGS,JSON.stringify(a));console.log(JSON.stringify({type:"thread.started",thread_id:process.env.TEST_CODEX_THREAD}));});\n');
+    await writeFile(fakeCodex, '#!/usr/bin/env node\nconst fs=require("fs");const a=process.argv;const schema=a[a.indexOf("--output-schema")+1];if(!fs.existsSync(schema)||JSON.parse(fs.readFileSync(schema,"utf8")).properties.execution_id.const!==process.env.TEST_CODEX_EXECUTION_ID)process.exit(41);let p="";process.stdin.on("data",x=>p+=x);process.stdin.on("end",()=>{console.log(JSON.stringify({type:"thread.started",thread_id:process.env.TEST_CODEX_THREAD}));console.log(JSON.stringify({type:"item.started",item:{type:"command_execution"}}));console.error("fake Codex diagnostic");const done=()=>{fs.writeFileSync(a[a.indexOf("--output-last-message")+1],process.env.TEST_CODEX_RETURN);fs.writeFileSync(process.env.TEST_CODEX_PROMPT,p);fs.writeFileSync(process.env.TEST_CODEX_ARGS,JSON.stringify(a));};if(process.env.TEST_CODEX_GATE){const t=setInterval(()=>{if(fs.existsSync(process.env.TEST_CODEX_GATE)){clearInterval(t);done();}},20);}else done();});\n');
     await chmod(fakeCodex, 0o755);
     const promptPath = join(tree.session_directory, 'runtime/executions', runId, 'test-prompt');
     const codexHome = join(parent, 'codex-home');
@@ -544,7 +544,31 @@ test('compose creates input only in the worktree and leaves main without .io', a
     for (const path of ['thread-writer-locks', 'shell_snapshots', 'tmp/arg0', 'tmp/arg0-linux']) await mkdir(join(codexHome, path), { recursive: true });
     await writeFile(join(codexSessionDir, `rollout-test-${record.worktree_id}.jsonl`), '');
     const environment = { ...process.env, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH}`, TEST_CODEX_RETURN: JSON.stringify(envelope), TEST_CODEX_PROMPT: promptPath, TEST_CODEX_ARGS: join(tree.session_directory, 'runtime/executions', runId, 'test-args'), TEST_CODEX_THREAD: record.worktree_id, TEST_CODEX_EXECUTION_ID: runId };
-    const execution = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const prefix = join(tree.session_directory, 'runtime/executions', runId);
+    const gate = join(parent, 'release-codex');
+    environment.TEST_CODEX_GATE = gate;
+    const launch = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--background', 'true'], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    assert.equal(launch.status, 'started');
+    const waitFor = async (path, predicate = () => true) => {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        try { const value = await readFile(path, 'utf8'); if (predicate(value)) return value; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`Timed out waiting for ${path}`);
+    };
+    const eventsPath = join(prefix, 'process-events.jsonl');
+    const liveEvents = await waitFor(eventsPath, (value) => value.includes('item.started'));
+    assert.match(liveEvents, /runner_started/);
+    assert.match(await waitFor(join(prefix, 'codex.stderr.log'), (value) => value.includes('fake Codex diagnostic')), /fake Codex diagnostic/);
+    assert.doesNotMatch(liveEvents, /child_exited/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--background', 'true'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
+    await writeFile(gate, 'release');
+    const terminal = JSON.parse(await waitFor(join(prefix, 'exec.stderr.json')));
+    await waitFor(eventsPath, (value) => value.includes('runner_completed'));
+    const execution = JSON.parse(await waitFor(join(prefix, 'runner.stdout.log'), (value) => value.includes('threadId')));
+    delete environment.TEST_CODEX_GATE;
+    assert.equal(terminal.exit_signal, null);
     assert.equal(execution.code, 0);
     assert.equal(execution.threadId, record.worktree_id);
     assert.equal(execution.binding.model, 'example');

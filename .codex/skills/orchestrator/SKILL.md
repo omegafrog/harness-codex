@@ -44,7 +44,7 @@ description: Select workflow skills from the request and current workflow state,
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | 실행 중복을 만들지 않는다. 실행 조율 절차로 실제 프로세스와 기존 세션을 확인한다. |
+| `running` | 실행 중복을 만들지 않는다. 실행 조율 절차로 실제 프로세스와 기존 세션을 확인하고 종료 결과가 나올 때까지 기다린다. 출력이 없거나 오래 걸린다는 이유로 현재 턴을 끝내지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, skill의 재시도·중단 계약에 따라 라우팅한다. |
 
 질문, 리뷰, 단계 산출물, completion receipt의 세부 형식은 이 문서에 복사하지 않는다. 실행 skill과 공통 실행 조율 계약을 따른다.

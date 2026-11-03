@@ -34,7 +34,7 @@ export async function assertExecutionStopped(entry, { root, session } = {}) {
   if (identities.some((identity) => !identity)) {
     if (!root || !session || !entry?.execution_id) throw new Error('Stage already running or process identity unavailable; inspection required');
     const log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${entry.execution_id}/exec.stderr.json` });
-    if (!Number.isInteger(log.exit_code) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
+    if ((!Number.isInteger(log.exit_code) && !/^SIG[A-Z0-9]+$/.test(log.exit_signal || '')) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
   }
 }
 

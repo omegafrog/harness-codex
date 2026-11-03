@@ -241,6 +241,8 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
 
 메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
+장기 stage는 `harness-codex-run.mjs --background true`로 독립 runner를 시작하고, stage 결과·질문·실패가 나올 때까지 orchestrator가 기다린다. `runtime/executions/<execution_id>/process-events.jsonl`은 시작·heartbeat·Codex 이벤트 종류·수신 signal·종료 코드/신호를, `codex.stderr.log`와 `codex.errors.jsonl`은 하위 Codex stderr와 오류 이벤트를 실시간으로 기록한다. `runner.stdout.log`, `runner.stderr.log`, 완료 시 `exec.stderr.json`과 함께 확인한다. 종료 이벤트 없이 PID가 사라지면 원인 미상이며 SIGKILL이나 timeout이라고 추정하지 않는다. 상위 `codex exec`의 stderr는 별도 session 파일로 보존한다. 로그에는 오류 상세가 포함될 수 있으므로 session 내부에만 둔다.
+
 
 orchestrator는 실행 조율 명령으로 시작·결과·실패 상태와 진행률을 기록한다. 입력 준비기가 stage와 필요한 제어 session 경로를 기록한다.
 

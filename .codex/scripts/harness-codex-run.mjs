@@ -2,6 +2,10 @@
 import { existsSync } from 'node:fs';
 import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { appendFileSync, closeSync, openSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 async function codexResumeWriteDirs(sessionId, env) {
   // 재개 session의 파일 위치를 찾아 Codex가 필요한 사용자 session 경로만 쓰게 허용한다.
@@ -36,14 +40,17 @@ const { findExecutionInput } = await import(new URL('execution-input.mjs', base)
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
 const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
 const { parseWorktreeRecord, recordWorkflowSession } = await import(new URL('worktrees.mjs', base));
+const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', base));
+let recordEvent = () => {};
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
     const k = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['worktree-ref', 'execution-id', 'workflow', 'stage'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
+    if (!args[i]?.startsWith('--') || !['worktree-ref', 'execution-id', 'workflow', 'stage', 'background'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
   if (!isAbsolute(opts['worktree-ref'] || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute worktree-ref and execution-id are required');
+  if (opts.background && opts.background !== 'true') throw new Error('background must be true');
   const root = process.cwd();
   // 실행 입력과 worktree 참조가 서로 일치하는지 확인한 뒤 skill/profile을 선택한다.
   const session = await cliSession(root, opts['worktree-ref']);
@@ -61,6 +68,21 @@ try {
   if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
   const outputSchema = JSON.parse(await readFile(schema, 'utf8'));
   if (outputSchema.properties?.execution_id?.const !== opts['execution-id'] || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
+  if (opts.background === 'true') {
+    await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stdout.log`);
+    await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stderr.log`);
+    const out = openSync(join(prefix, 'runner.stdout.log'), 'wx', 0o600);
+    let err;
+    try {
+      err = openSync(join(prefix, 'runner.stderr.log'), 'wx', 0o600);
+      const workerArgs = args.filter((value, index) => value !== '--background' && args[index - 1] !== '--background');
+      const worker = spawn(process.execPath, [fileURLToPath(import.meta.url), ...workerArgs], { cwd: root, env: { ...process.env, HARNESS_RUNNER_BACKGROUND: '1', HARNESS_RUNNER_LAUNCHER_PID: String(process.pid), HARNESS_RUNNER_CALLER_PID: String(process.ppid) }, detached: true, stdio: ['ignore', out, err] });
+      await once(worker, 'spawn');
+      worker.unref();
+      process.stdout.write(`${JSON.stringify({ status: 'started', execution_id: input.execution_id, runner_pid: worker.pid, log_directory: prefix })}\n`);
+    } finally { closeSync(out); if (err !== undefined) closeSync(err); }
+    process.exit(0);
+  }
   const internal = `.codex/internal-skills/${input.skill}/GUIDE.md`;
   const publicSkill = `.agents/skills/${input.skill}/SKILL.md`;
   const guide = [internal, publicSkill, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
@@ -77,10 +99,21 @@ try {
   const command = ['exec', '--sandbox', sandbox, ...resumeWriteDirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model, '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', schema, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
   const owner = await processIdentity(process.pid);
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
+  await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/process-events.jsonl`);
+  await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex.stderr.log`);
+  await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex.errors.jsonl`);
+  const eventsFd = openSync(join(prefix, 'process-events.jsonl'), 'wx', 0o600);
+  const stderrFd = openSync(join(prefix, 'codex.stderr.log'), 'wx', 0o600);
+  const errorsFd = openSync(join(prefix, 'codex.errors.jsonl'), 'wx', 0o600);
+  recordEvent = (event) => appendFileSync(eventsFd, JSON.stringify({ timestamp: new Date().toISOString(), execution_id: input.execution_id, ...event }) + '\n');
+  recordEvent({ event: 'runner_started', pid: process.pid, ppid: process.ppid, launcher_pid: Number(process.env.HARNESS_RUNNER_LAUNCHER_PID) || null, caller_pid: Number(process.env.HARNESS_RUNNER_CALLER_PID) || null, background: process.env.HARNESS_RUNNER_BACKGROUND === '1', timeout_ms: null });
   await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });
   const record = parseWorktreeRecord(await readFile(opts['worktree-ref'], 'utf8'));
   // 자식 시작 전에 PID를 기록하고, thread ID 수신 후 정본 worktree에 session 연결을 저장한다.
-  const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => {
+  const heartbeat = setInterval(() => { recordEvent({ event: 'heartbeat' }); process.stderr.write(`${JSON.stringify({ event: 'heartbeat', execution_id: input.execution_id })}\n`); }, 30000);
+  heartbeat.unref();
+  let result;
+  try { result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });
@@ -89,9 +122,11 @@ try {
     if (resume && threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
     await recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: input.context.stage_id, session_id: threadId, execution_id: input.execution_id });
     process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`);
-  } });
-  await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ exit_code: result.code, stderr: result.stderr, codex_errors: result.errors, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  } }); } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); }
+  await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
   process.stdout.write(`${JSON.stringify({ ...result, binding: executionBinding })}\n`);
+  recordEvent({ event: 'runner_completed', exit_code: result.code, exit_signal: result.signal });
+  closeSync(eventsFd);
   if (result.code !== 0) process.exitCode = 1;
-} catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }
+} catch (error) { recordEvent({ event: 'runner_failed', message: error.message }); process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }
