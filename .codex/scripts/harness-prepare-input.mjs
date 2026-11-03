@@ -35,9 +35,11 @@ try {
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);
-  const codexSessionId = record.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null;
+  const recordedOrchestrator = record.agent_sessions?.orchestrator;
+  const orchestrator = recordedOrchestrator ? { ...recordedOrchestrator, provider: recordedOrchestrator.provider || 'codex' } : state.orchestrator_session_id ? { session_id: state.orchestrator_session_id, provider: state.orchestrator_provider || 'codex' } : state.codex_session_id ? { session_id: state.codex_session_id, provider: 'codex' } : null;
+  const codexSessionId = orchestrator?.provider === 'codex' ? orchestrator.session_id : null;
   if (options['publication-approved'] !== undefined && options['publication-approved'] !== 'true') throw new Error('publication-approved must be true');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true' });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true' });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

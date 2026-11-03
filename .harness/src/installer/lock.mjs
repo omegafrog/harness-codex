@@ -3,9 +3,10 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
+import { transformSourceContent as transformSource } from './transforms.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
-const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1"]);
+const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1"]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
@@ -121,8 +122,7 @@ export async function hashFile(path) {
 }
 
 function transformSourceContent(content, transform) {
-  if (transform === "project-local-paths-v1") return content.toString("utf8").replaceAll(".codex/skills/", ".agents/skills/");
-  return content;
+  return transformSource(content, transform);
 }
 
 async function transformedHash(root, relativePath, transform) {
@@ -175,6 +175,8 @@ export async function discoverHarnessOwnedFiles(root) {
   const patterns = [
     [".codex/internal-skills", () => true],
     [".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml")],
+    [".claude/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")],
+    [".claude/skills", () => true],
     [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],

@@ -9,6 +9,7 @@ import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
+import { inspectClaudeOrchestratorHook } from '../installer/claude-orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { isWithin } from "../eval/util.mjs";
@@ -20,6 +21,7 @@ const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const execFileAsync = promisify(execFile);
 
 async function inspectExecutionAssets(root, diagnostics) {
+  const config = await loadHarnessConfig(root).catch(() => ({}));
   const bindingsPath = join(root, '.codex/internal-skills/skill-execution/bindings.json');
   let bindings;
   try { bindings = JSON.parse(await readFile(bindingsPath, 'utf8')); }
@@ -37,12 +39,18 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'codex-run', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-run', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['output-schema', 'stage-input', 'skill-execution', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['output-schema', 'stage-input', 'skill-execution', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+  }
+  if (config.agents?.provider === 'claude-code') {
+    paths.push('.claude/skills/orchestrator/SKILL.md');
+    for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
+      if (profile.isFile() && profile.name.endsWith('.toml')) paths.push(`.claude/agents/${profile.name.replace(/\.toml$/, '.md')}`);
+    }
   }
   for (const path of paths) {
     const fullPath = join(root, path);
@@ -299,7 +307,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path);
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-agent-run.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {
@@ -400,6 +408,14 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       if (!hook.valid) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {
       diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
+    }
+  }
+  if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'claude-code', () => false)) {
+    try {
+      const hook = await inspectClaudeOrchestratorHook(repositoryRoot);
+      if (!hook.valid) diagnostics.push(diagnostic('claude_orchestrator_hook_missing', 'error', hook.reason, hook.path));
+    } catch (error) {
+      diagnostics.push(diagnostic('claude_orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid Claude Code orchestrator hook'), join(repositoryRoot, '.claude/settings.local.json')));
     }
   }
   const budgetPath = join(repositoryRoot, '.codex/context-budget.json');

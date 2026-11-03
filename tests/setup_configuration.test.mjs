@@ -66,6 +66,9 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await chmod(join(fakeBin, 'codex'), 0o755);
     const runWithModels = () => JSON.parse(execFileSync(process.execPath, [setup, '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure' } }));
+    const provider = runWithModels();
+    assert.equal(provider.pending.id, '실행 provider 선택#1');
+    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure', [provider.pending.id]: 'codex' } }));
     const reconfigure = runWithModels();
     assert.equal(reconfigure.pending.id, '복잡한 설계·최종 검토 모델 모델 선택#1');
     assert.equal(reconfigure.pending.current, 'example');

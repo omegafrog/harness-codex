@@ -44,7 +44,7 @@ export function parseWorktreeRecord(text) {
   if (record.agent_sessions !== undefined) {
     if (!record.agent_sessions || typeof record.agent_sessions !== 'object' || Array.isArray(record.agent_sessions)) throw new Error('Invalid worktree agent_sessions');
     for (const [key, entry] of Object.entries(record.agent_sessions)) {
-      if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(key) || !entry || typeof entry !== 'object' || !WORKTREE_ID.test(entry.session_id || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(entry.execution_id || '')) throw new Error('Invalid worktree agent session');
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(key) || !entry || typeof entry !== 'object' || !WORKTREE_ID.test(entry.session_id || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(entry.execution_id || '') || (entry.provider !== undefined && !['codex', 'claude-code'].includes(entry.provider))) throw new Error('Invalid worktree agent session');
     }
   }
   return { ...record, source_workspace: record.source_workspace || record.return_root };
@@ -165,8 +165,8 @@ export async function bindWorkflowPlanSetId({ workspace_root, repository_root = 
   });
 }
 
-export async function recordWorkflowSession({ workspace_root, repository_root = workspace_root, key, session_id, execution_id } = {}) {
-  if (typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(key) || !WORKTREE_ID.test(session_id || '') || typeof execution_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id)) throw new Error('Invalid workflow session entry');
+export async function recordWorkflowSession({ workspace_root, repository_root = workspace_root, key, session_id, execution_id, provider = 'codex' } = {}) {
+  if (typeof key !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(key) || !WORKTREE_ID.test(session_id || '') || typeof execution_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id) || !['codex', 'claude-code'].includes(provider)) throw new Error('Invalid workflow session entry');
   const place = await location(workspace_root, repository_root);
   return withWorktreeLock(place, async () => {
     const record = await readWorktreeRecord(place);
@@ -174,7 +174,7 @@ export async function recordWorkflowSession({ workspace_root, repository_root = 
     if (record.workspace !== place.workspace || record.common !== place.common || record.session_directory !== place.session_directory) throw new Error('Worktree ownership mismatch while recording an agent session');
     const current = await describe(place.workspace);
     if (current.common !== record.common || current.branch !== record.branch || current.git_dir !== record.git_dir) throw new Error('Worktree changed while recording an agent session');
-    const entry = { session_id, execution_id, updated_at: new Date().toISOString() };
+    const entry = { provider, session_id, execution_id, updated_at: new Date().toISOString() };
     const updated = { ...record, agent_sessions: { ...(record.agent_sessions || {}), [key]: entry } };
     await writeWorktreeRecord(place, updated);
     return entry;

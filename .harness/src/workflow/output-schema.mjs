@@ -1,7 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { loadProvider } from './providers/index.mjs';
 
-export async function writeOutputSchema({ root, input, prefix, path }) {
+export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {
   const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
   const schema = JSON.parse(await readFile(join(directory, 'return.schema.json'), 'utf8'));
   schema.properties.execution_id = { const: input.execution_id };
@@ -10,9 +11,6 @@ export async function writeOutputSchema({ root, input, prefix, path }) {
   const flow = input.skill;
   const resultSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
-  const codeDescription = 'completed: OK; action_required: REVIEW_REQUIRED, SPEC_REVISION_REQUIRED, PLAN_REVISION_REQUIRED, IMPLEMENTATION_REVISION_REQUIRED, USER_DECISION_REQUIRED; blocked: ENVIRONMENT_UNAVAILABLE, PERMISSION_REQUIRED, DEPENDENCY_INCOMPLETE, INPUT_MISSING, MODEL_BINDING_UNAVAILABLE; failed: EXECUTION_ERROR, INVALID_INPUT, ARTIFACT_WRITE_FAILED; cancelled: CANCELLED. Envelope and result status/code must match.';
-  schema.properties.code.description = codeDescription;
-  schema.properties.result.properties.code.description = codeDescription;
   const result = schema.properties.result.properties;
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
@@ -35,6 +33,8 @@ export async function writeOutputSchema({ root, input, prefix, path }) {
   delete schema.$schema;
   delete schema.properties.result.$schema;
   if (!schema.required.includes('result')) schema.required.push('result');
+  const adapter = await loadProvider(provider);
+  const providerSchema = adapter.prepareOutputSchema ? adapter.prepareOutputSchema(schema) : schema;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, JSON.stringify(schema, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  await writeFile(path, JSON.stringify(providerSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 }
