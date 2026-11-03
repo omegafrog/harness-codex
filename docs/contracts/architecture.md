@@ -482,6 +482,8 @@ workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state
 ### 설명
 기존 tracker 모듈 내부에서 configured tracker와 Beads의 네 lifecycle 상태를 연결하는 조립 책임. 독립 Bounded Context·Aggregate·배포 서버를 만들지 않는다. [소스](../../.harness/src/tracker/lifecycle.mjs).
 
+계획 이슈의 구조 입력 검증과 본문 렌더링은 기존 tracker 모듈이 소유한다. 하위 계획의 선택적 `verification`은 비테스트 검증을 보존하며 기존 입력은 계속 허용한다. Markdown 계획의 GitHub 발행은 [발행 지침](../../.codex/skills/to-ticket/references/github-batch-publish.md)에 따라 원본 계획과 본문을 대조한다. [설치 consumer 검사](../../tests/ticket_publishing_consumer.test.mjs)는 배포된 렌더러와 지침, 이슈 관계·검증·Git 가시성을 확인한다.
+
 ### 필요 엔티티
 설정된 tracker·exact external_ref·v1 Beads mirror·phase/classification metadata·실행 결과·local journal. 객체형 DDD entity는 별도 선언하지 않는다.
 

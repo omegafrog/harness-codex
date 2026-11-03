@@ -134,7 +134,7 @@ export function validatePlanSet(raw) {
 
 export function validateSplitPlan(raw) {
   const value = object(raw, "split_plan");
-  rejectUnknown(value, new Set(["schema_version", "kind", "plan_id", "issue", "parent_issue", "status", "purpose", "scope", "acceptance_criteria", "test_contract", "dependencies", "specs", "diagrams"]), "split_plan");
+  rejectUnknown(value, new Set(["schema_version", "kind", "plan_id", "issue", "parent_issue", "status", "purpose", "scope", "acceptance_criteria", "test_contract", "verification", "dependencies", "specs", "diagrams"]), "split_plan");
   if (value.schema_version !== 1 || value.kind !== "split-plan") throw new TrackerContractError("split_plan must use schema_version 1 and kind split-plan");
   const testContract = object(value.test_contract, "split_plan.test_contract");
   rejectUnknown(testContract, new Set(["unit_policy", "ui_entity_e2e"]), "split_plan.test_contract");
@@ -148,6 +148,7 @@ export function validateSplitPlan(raw) {
     purpose: string(value.purpose, "split_plan.purpose"),
     scope: list(value.scope, "split_plan.scope"),
     acceptance_criteria: list(value.acceptance_criteria, "split_plan.acceptance_criteria"),
+    verification: list(value.verification ?? [], "split_plan.verification", { allowEmpty: true }),
     test_contract: {
       unit_policy: string(testContract.unit_policy, "split_plan.test_contract.unit_policy"),
       ui_entity_e2e: string(testContract.ui_entity_e2e, "split_plan.test_contract.ui_entity_e2e"),

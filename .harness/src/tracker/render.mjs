@@ -18,14 +18,14 @@ export function renderPlanSetIssue(raw) {
   });
   const dependencies = plan.children.flatMap((child) => child.depends_on.map((dependency) => `${issueLink(dependency)} → ${issueLink(child.issue)}`));
   return [
+    "## 목적",
+    "",
+    plan.purpose,
+    "",
     "## Plan Set",
     "",
     `- Parent Issue: ${issueLink(plan.parent_issue)}`,
     `- Child plans: ${plan.children.map((child) => issueLink(child.issue)).join(", ")}`,
-    "",
-    "## 목적",
-    "",
-    plan.purpose,
     "",
     "## 실행 순서",
     "",
@@ -53,7 +53,17 @@ export function renderPlanSetIssue(raw) {
 
 export function renderSplitPlanIssue(raw) {
   const plan = validateSplitPlan(raw);
+  const execution = plan.scope.filter((item) => /^workspace_(root|branch):/.test(item));
+  const scope = plan.scope.filter((item) => !/^workspace_(root|branch):/.test(item));
   return [
+    "## 구현 목적",
+    "",
+    plan.purpose,
+    "",
+    "## 관련 이슈",
+    "",
+    `- 상위 이슈: ${issueLink(plan.parent_issue)}`,
+    "",
     "## 상태",
     "",
     plan.status,
@@ -62,13 +72,9 @@ export function renderSplitPlanIssue(raw) {
     "",
     plan.dependencies.length ? plan.dependencies.map((issue) => issueLink(issue)).join(", ") : "없음",
     "",
-    "## 구현 목적",
-    "",
-    plan.purpose,
-    "",
     "## 범위",
     "",
-    ...plan.scope.map((item) => `- ${item}`),
+    ...scope.map((item) => `- ${item}`),
     "",
     "## 수용 기준",
     "",
@@ -79,6 +85,7 @@ export function renderSplitPlanIssue(raw) {
     `- 단위/정책: ${plan.test_contract.unit_policy}`,
     `- \`ui ~ entity\` E2E: ${plan.test_contract.ui_entity_e2e}`,
     "",
+    ...(plan.verification.length ? ["## 필요한 비테스트 검증", "", ...plan.verification.map((item) => `- ${item}`), ""] : []),
     "## 관련 명세",
     "",
     `- Product Spec: ${plan.specs.product_spec}`,
@@ -88,6 +95,7 @@ export function renderSplitPlanIssue(raw) {
     "",
     ...diagramLines(plan.diagrams),
     "",
+    ...(execution.length ? ["<details><summary>실행 정보</summary>", "", ...execution.map((item) => `- ${item}`), "", "</details>", ""] : []),
   ].join("\n");
 }
 
