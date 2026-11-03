@@ -30,12 +30,13 @@
 
 `.codex/internal-skills/ddd-design/references/model-continuity.md`와 현재 `CONTEXT-MAP.md`, durable model, source/ADR 기준으로 변경 영향 범위만 확인한다.
 
-- Domain concept, capability, Aggregate, bounded context, code module, deployment service를 서로 다른 분류로 사용한다. Aggregate·기능 이름·기술 모듈만으로 새 bounded context를 만들지 않는다.
-- 각 capability를 기존 bounded context에 우선 배치한다. 새 bounded context는 언어, 규칙, 상태·데이터 수명, consistency, 독립 변경 또는 translation 경계가 기존 owner와 맞지 않는 근거 및 더 약한 경계가 부족한 이유가 있을 때만 승격한다.
-- Aggregate는 실제로 함께 일관성을 유지해야 하는 상태와 transaction을 기준으로 정하고, root가 invariant를 보호하는 유일한 변경 진입점인지 확인한다.
+- Domain 모델, Aggregate, application service, bounded context, 코드 모듈과 배포 서비스를 구분한다. Context 후보는 합치는 안과 분리하는 안을 언어·모델·규칙·데이터 소유권과 생명주기·일관성·변경·translation 근거로 비교하며, framework나 배포 단위만으로 결정하지 않는다.
+- 설계 대상 도메인에 Aggregate가 하나 이상 정의되고 Entity와 Value Object가 그 Aggregate에 배치되어 있는지 확인한다. 각 Aggregate의 Root Entity, 구성, 도메인 메서드, 불변 조건, 일관성 경계와 다른 Aggregate 참조가 명시되어야 한다. 단일 Root Entity도 Aggregate가 될 수 있다. 기존 구현에 없는 모델을 구현 사실로 표현하지 않는다.
+- Application service는 Aggregate 메서드·저장소·외부 효과·transaction을 조합하고 업무 판단은 도메인이 소유하는지 확인한다. 각 규칙의 소유 메서드와 우회 금지는 해당 모델·흐름에서 확인하며 중복 표를 요구하지 않는다.
 - 변경된 각 business rule/invariant는 Product ID → domain owner → enforcement method/function → 호출 경로와 금지된 우회 경로로 연결한다. Application/orchestration, persistence, UI가 domain decision을 대신 소유하거나 규칙이 중복되지 않는지 확인한다.
 - Entity, Value Object, Domain Service는 identity, value semantics, 행위와 소유 책임에 따라 분류한다. 단일 Entity/Value Object가 자연스럽게 소유하지 않는 판단만 Domain Service에 둔다.
 - Context 간 data 접근, translation, 통신, consistency, failure 책임을 설명한다. 기존 모델이 충분한데 새 owner·계층·서비스를 추가하면 그 필요와 비용을 묻는다.
+- Product Spec §4에서 정의된 모든 업무 개념·행위자/역할·상태·규칙 용어가 소비 프로젝트의 `CONTEXT.md`에 추가되거나 기존 canonical 정의를 재사용하는지 확인한다. Architecture에서 확정한 새 도메인 용어와 정의 변경도 같은 glossary 및 retired-term lifecycle에 반영돼야 한다. ticket-scoped Spec에만 남은 canonical domain vocabulary는 수정 finding이다. 일반 문구·framework/API/code 식별자는 glossary에 넣으라고 요구하지 않는다.
 
 ## 3. 비즈니스 로직 단위 테스트 명세
 

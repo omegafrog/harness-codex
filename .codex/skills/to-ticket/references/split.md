@@ -10,7 +10,7 @@
 
 ## 계획 분할
 
-각 vertical slice를 business capability와 기존 DDD owner에 맞춘다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
+각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
 
 각 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. Parent plan-set에는 모든 split plan이 구현·개별 검증·통합된 뒤 마지막에 한 번 실행할 feature-level E2E 시나리오, oracle, execution profile, timeout, attempt budget을 제안한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
 

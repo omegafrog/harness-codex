@@ -1,8 +1,8 @@
 # GitHub Issue 본문 템플릿
 
-`to-ticket`이 GitHub mode에서 생성하는 Issue는 아래 두 형식만 사용한다. 대괄호 placeholder는 실제 값으로 치환한다.
+`to-ticket`이 GitHub mode에서 만드는 Project draft item은 아래 두 형식으로 작성한다. 구현을 시작할 때 Project draft를 저장소 Issue로 변환한다. 대괄호 placeholder는 계획 단계에서 확인 가능한 실제 값으로 치환한다.
 
-제목과 목적은 사람이 작업 결과와 이유를 바로 이해할 수 있도록 쓴다. 수용 기준은 사용자 행동과 관찰 결과를 먼저 쓰고 UC/BR/AC 식별자는 문장 끝에 둔다. 실행 위치와 토큰 예산은 본문 뒤의 접이식 실행 정보에 보존한다. 원본 계획의 모든 필수 테스트와 비테스트 검증을 보존한다. 상위·선행 이슈는 실제 번호로 연결하며 미게시 명세를 접근 가능한 링크처럼 표시하지 않는다.
+제목과 목적은 사람이 작업 결과와 이유를 바로 이해할 수 있도록 쓴다. 수용 기준은 사용자 행동과 관찰 결과를 먼저 쓰고 UC/BR/AC 식별자는 문장 끝에 둔다. 실행 위치와 토큰 예산은 본문 뒤의 접이식 실행 정보에 보존한다. 원본 계획의 모든 필수 테스트와 비테스트 검증을 보존한다. 상위·선행 계획은 canonical plan ID로 연결하며 미게시 명세를 접근 가능한 링크처럼 표시하지 않는다.
 
 ## Parent Issue
 
@@ -13,12 +13,12 @@
 
 ## Plan Set
 
-- Product/Architecture Spec: [#SPEC]
-- Child plans: [#CHILD-ISSUES]
+- Parent plan: [parent plan ID]
+- Child plans: [child plan IDs]
 
 ## 실행 순서
 
-1. [#CHILD] — [요약]
+1. [child plan ID] — [요약]
 
 ## 명세와 다이어그램
 
@@ -32,18 +32,18 @@
 
 ## 의존성
 
-[child Issue 간 blocking 관계. 없으면 `없음`]
+[child plan 간 blocking 관계. 없으면 `없음`]
 
 ## 검증
 
 - Product Spec: [경로]
 - Architecture Spec: [경로]
-- 각 child Issue의 테스트 계약을 실행한다.
+- 각 child plan의 테스트 계약을 실행한다.
 
 구현·검증 완료 전에는 이 Issue를 닫지 않는다.
 ```
 
-필수: `Plan Set`, `목적`, `실행 순서`, `명세와 다이어그램`, `의존성`, `검증`, parent/child Issue 링크.
+필수: `Plan Set`, `목적`, `실행 순서`, `명세와 다이어그램`, `의존성`, `검증`, parent/child plan ID.
 
 ## Child Issue
 
@@ -54,7 +54,7 @@
 
 ## 관련 이슈
 
-- 상위 이슈: [#PARENT]
+- 상위 계획: [parent plan ID]
 
 ## 상태
 
@@ -62,7 +62,7 @@ Planned
 
 ## 의존성
 
-[blocking Issue 링크 또는 `없음`]
+[blocking plan ID 또는 `없음`]
 
 ## 범위
 
@@ -98,9 +98,11 @@ Planned
 </details>
 ```
 
-필수: `상태`, `의존성`, `구현 목적`, `범위`, `수용 기준`, `테스트 계약`, `관련 명세`, `다이어그램`.
+필수: `상태`, `의존성`, `구현 목적`, `범위`, `수용 기준`, `테스트 계약`, `관련 명세`, `다이어그램`, plan ID.
 
-## 생성 전 검증
+## 작성하면서 적용할 규칙
+
+아래 규칙은 별도 사후 검증 단계가 아니라 각 템플릿 필드를 채울 때 적용한다.
 
 - 각 canonical child plan의 `범위` 첫 두 항목에 [실행 위치 계약](execution-evidence.md#실행-위치)의 `workspace_root`, `workspace_branch`를 기록한다. Issue에는 같은 값을 실행 정보에 보존한다. structured-source는 같은 내용을 기존 `scope` 문자열에 담는다. canonical plan·index·렌더된 Issue 값의 일치와 실제 Git 등록·브랜치를 확인한다.
 
@@ -112,8 +114,9 @@ Planned
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 split plan만 표현한다.
 - 상태는 `Planned`로 고정한다. tracker 상태가 아닌 임의 상태/label을 쓰지 않는다.
-- 의존성은 실제 Issue 번호만 사용한다. 추측한 번호·경로를 만들지 않는다.
+- Project draft 상태는 `Planned`로 설정한다. 저장소 Issue 상태는 이 단계에서 만들지 않는다.
+- 의존성은 canonical plan ID를 사용한다. Issue 번호·URL을 추측하지 않는다.
 - parent의 Product/Architecture Spec 경로는 실제 존재하는 non-empty 파일이어야 한다.
 - parent에 넣는 모든 SVG는 실제 존재하는 non-empty `.svg` 파일이어야 한다.
 - 다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`을 기록한다.
-- 본문이 비어 있거나 필수 heading이 빠지거나 위 규칙을 위반하면 GitHub mutation을 중단한다.
+- 필수 필드의 실제 값이 아직 없으면 해당 본문 작성을 보류한다. 필드를 채운 뒤 본문 전체를 별도로 다시 검증하지 않는다.

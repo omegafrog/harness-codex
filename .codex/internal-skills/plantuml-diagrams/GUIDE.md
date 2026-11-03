@@ -30,7 +30,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 - Architecture: `<context>.class.puml` 및 `.svg`
 - 설계 상태: `<concept>.state.puml` 및 `.svg`
 - 각 원본은 관련 요구사항 ID 또는 유스케이스 ID를 제목·주석으로 식별한다.
-- Markdown은 원본이 아니라 생성된 SVG를 상대 경로로 링크한다. `.puml`와 `.svg` basename은 일치해야 한다.
+- Product Spec Markdown은 편집 가능한 `.puml` 원본과 생성된 SVG를 각각 상대 경로 링크로 제공한다. Architecture Spec은 기존 SVG 링크 규칙을 따른다. `.puml`와 `.svg` basename은 일치해야 한다.
 
 ## 작성·렌더 규칙
 
@@ -43,7 +43,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 - SVG 렌더가 성공하고 비어 있지 않으며, Markdown 링크가 존재하는지 확인한다.
 - 원본·SVG·Markdown 링크·Spec 내용 일치 검토가 모두 통과하기 전에는 해당 Spec 단계를 완료하지 않는다.
 - 렌더 실패, 누락된 SVG, 잘못된 링크 또는 내용 불일치는 실패 파일·행과 복구 방법을 보고하고 단계를 차단한다.
-- `diagram_creator`는 다이어그램 파일만 수정한다. SVG 링크는 결과 보고서의 diagram inventory로 전달하며, `spec_document_writer`가 Spec Markdown에 기록한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
+- `diagram_creator`는 다이어그램 파일만 수정한다. Product 원본과 SVG 경로는 결과 보고서의 diagram inventory로 전달하며, `spec_document_writer`가 Spec Markdown에 링크한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
 
 ## 완료 체크리스트
 

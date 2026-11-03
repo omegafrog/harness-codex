@@ -5,15 +5,14 @@ Use these topics as the coverage checklist for the architecture interview. The c
 1. **Design Scope and Product Mapping**
    Confirm how Product Spec use cases, business rules, invariants, state transitions, and failure cases map into architecture responsibilities.
 
-2. **Domain Flow and Hotspots**
-   Resolve commands, events, policies, read models, external interactions, and any domain-flow uncertainty that materially changes the design.
+2. **Domain Models and Flow**
+   Resolve Entities, Value Objects, identity, state, domain methods, business rules, domain services, commands, events, and external interactions. Integrate resolved questions into their models and decisions; retain only unresolved hotspots.
 
-3. **Domain Boundaries and Bounded Context Promotion**
-   Classify domain concepts and capabilities before deciding bounded contexts. Resolve which capabilities belong to an existing bounded context, which boundaries are aggregate or internal-capability boundaries only, whether any capability genuinely requires a new bounded context, and why a weaker boundary would be insufficient. Do not equate a domain concept, aggregate, feature, domain service, technical operation, or event-storming cluster with a bounded context.
+3. **Aggregates**
+   Assign the target domain's Entities and Value Objects to Aggregates. Identify each root Entity, members, methods, invariants, consistency and persistence boundaries, and references. A single Entity can be an Aggregate. Distinguish absent current implementation from an accepted target.
 
-4. **Context Map and Business Rule Ownership**
-   For the bounded contexts that remain after promotion, resolve responsibilities, ownership boundaries, upstream/downstream relationships, translations, integration contracts, aggregate boundaries, aggregate roots, invariants, consistency boundaries, and where each business rule is enforced.
-   First reconcile affected existing models and source with the durable model index. For every changed rule, name the owning method/function and forbidden mutation/bypass paths. Application orchestration and persistence must not take over domain decisions; a domain service needs a responsibility that no single entity/value object naturally owns.
+4. **Application Services and Bounded Contexts**
+   Describe how application services coordinate Aggregate methods, repositories, external effects, transactions and failures using ordered flows. Compare combined and separate Context candidates by their languages, models, rule ownership, data lifecycles, consistency, change independence and translation needs. Document selected boundaries and trade-offs separately from deployment decisions. Connect changed rules to domain methods and forbidden bypasses without a redundant ownership table.
 
 5. **Entities, Value Objects, and Domain Services**
    Resolve identities, state ownership, value semantics, validations, domain behaviors, and domain-service responsibilities when they materially affect implementation.
@@ -45,7 +44,7 @@ Use these topics as the coverage checklist for the architecture interview. The c
     Preserve requirement/rule/target/decision IDs into each slice's domain owner, business-rule unit-test intent and verification command. Unit-test intent specifies the owned rule, meaningful condition/action, and expected business result; exclude generic type/format failures and framework wiring. Trace Product persistence, query and external-capability requirements into selected/existing technology and infrastructure. For each material technology choice, link requirement/target → decision criteria → source-located evidence → options/trade-offs → selected choice → owner/path → verification. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger.
 
 14. **Alternatives, Trade-offs, Risks, and Open Questions**
-    Resolve material alternatives, expensive-to-reverse decisions, risks, and every blocking open question. Include the trade-off between the chosen boundary strength and the next weaker viable boundary for every newly introduced bounded context, module, or service.
+    Resolve material alternatives, expensive-to-reverse decisions, risks, and every blocking open question. Compare Context candidates on their domain evidence and trade-offs; separately compare viable code and deployment boundaries.
 
 ## Evidence rule
 

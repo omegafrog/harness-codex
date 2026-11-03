@@ -10,7 +10,7 @@
    Identify the users, external systems, and other participants involved in the product or workflow.
 
 4. **Ubiquitous Language and Terminology**
-   Define the domain terms that should be used consistently and clarify any terms that may have ambiguous meanings.
+   Define all agreed business concepts, actors/roles, business states, and rules needed by the product. Reuse or clarify the consumer project's current `CONTEXT.md` terms, then update that shared project glossary for every domain term defined in Product Spec section 4; terms do not belong only to the current plan set.
 
 5. **Core Use Cases**
    Describe the main user flows, including how each flow begins, progresses, and ends.

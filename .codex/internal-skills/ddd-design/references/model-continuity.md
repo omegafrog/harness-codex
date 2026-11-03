@@ -13,13 +13,13 @@ DDD 설계·구조 설계·구현·Architecture 리뷰에서 영향받는 범위
 | 호출과 통신 | 진입점 → application → domain → persistence, 경계 간 호출자와 소비자, 동기/비동기 및 실패 처리 |
 | 운영 경계 | 실제 deployment unit, 프로세스·DB 공유, 관찰된 부하와 현재 제약 |
 
-문서상의 의도와 현재 구현이 다르면 둘 다 근거를 남긴다. 확인되지 않은 Aggregate를 만들어 채우지 않는다. 구현에 Aggregate가 없으면 `확인되지 않음` 또는 `해당 없음`과 이유를 적는다. 이미 승인된 경계·설계 제약은 재사용하고, 변경되는 결정만 다룬다.
+문서상의 의도와 현재 구현이 다르면 둘 다 근거를 남긴다. 현재 구현에서 확인되지 않은 Aggregate를 구현 사실처럼 만들지 않는다. 구현에 Aggregate가 없으면 그 사실을 기록하고, 설계 대상 Entity·Value Object의 Aggregate와 Root는 승인 target으로 별도 정의한다. 이미 승인된 경계·설계 제약은 재사용하고, 변경되는 결정만 다룬다.
 
 용어는 [현행/폐기 기록](../../domain-modeling/references/language-lifecycle.md)을 먼저 대조한다. 구형 코드에 남은 이름을 새 모델의 canonical term으로 복원하지 않는다.
 
 ## 변경 설계: 재사용과 규칙 소유권
 
-- 먼저 기존 모델/함수/패키지 안에서 요구사항을 만족하는 변경을 제시한다. 새 경계가 필요하면 이 안이 깨뜨리는 구체적인 invariant, 언어 또는 의존성 제약을 설명한다. 단순 CRUD와 조회에는 억지로 rich domain model을 만들지 않는다.
+- 먼저 기존 모델/함수/패키지 안에서 요구사항을 만족하는 변경을 제시한다. 설계 대상 도메인의 Entity와 Value Object는 Aggregate에 배치하고 Root의 행위·불변 조건을 밝힌다. Aggregate는 단일 Root Entity일 수 있다. 현재 구현에 없는 구조는 target으로 명시한다.
 - business rule/invariant마다 안정적인 기존 ID를 재사용하고, 소유 Context와 Aggregate/Entity/Value Object/domain policy, 실제 enforcement method/function, 상태 변경 진입점, 검증 증거를 연결한다.
 - 객체 모델에서는 자신의 상태와 업무 규칙을 소유 객체의 의미 있는 동작으로 캡슐화한다. application service가 값을 읽어 업무 판단을 한 뒤 setter로 상태를 조합하게 하지 않는다. public setter·mutable collection·ORM hydration·직접 DB 쓰기로 invariant를 우회할 수 있는지도 본다. 함수형 코드에서는 소유 모듈의 명시적인 전이 함수와 상태 표현으로 같은 원칙을 지킨다. 클래스로 바꾸는 것이 목표가 아니다.
 - application은 트랜잭션과 작업 순서를 조율하고, infrastructure는 저장·전송을 맡는다. 외부 DTO 검증과 도메인 불변식은 책임이 다르다. 하나의 규칙을 여러 계층에 복제하지 않는다.

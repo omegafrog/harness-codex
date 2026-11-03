@@ -28,7 +28,7 @@ Run `bd prime` for workflow context. If it prints nothing, check `bd where`. Nev
 
 ## Harness ticket mirrors
 
-`to-ticket` creates Beads mirrors for the tickets in the configured tracker. The configured tracker remains authoritative; mirror these lifecycle transitions in Beads so the shared board reflects execution:
+The configured tracker remains authoritative; mirror lifecycle transitions in Beads so the shared board reflects execution. In GitHub mode, Project draft items have no Issue URL and are not Beads tracker mirrors; create mirrors when implementation start converts them into repository Issues. In local-markdown mode, `to-ticket` creates Beads mirrors with the tickets.
 
 | Configured tracker | Beads |
 |---|---|

@@ -49,7 +49,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 ## Beads Project Board
 
-This project has a Beads workspace for durable tasks and shared handoff. The `tracker-publish` stage creates each workflow ticket in both Beads and the configured tracker; implementation status transitions are mirrored to Beads while the configured tracker remains authoritative. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
+This project has a Beads workspace for durable tasks and shared handoff. In GitHub mode, `tracker-publish` creates Project draft items only; implementation start converts the plan set to repository Issues and creates their Beads mirrors. In local-markdown mode, `tracker-publish` creates the tickets in both Beads and the configured tracker. Implementation status transitions are mirrored to Beads while the configured tracker remains authoritative. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
 
 ## Canonical contracts
 
