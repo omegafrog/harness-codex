@@ -251,3 +251,15 @@ orchestrator는 실행 조율 명령으로 시작·결과·실패 상태와 진�
 workflow-compose 진입의 worktree 생성은 실행기에서 기존 lifecycle 코드로 수행한다. 원본 프로세스 권한은 이 결정적 준비 작업에 사용하고, 모델은 `workspace-write`를 유지한다. 생성된 작업 위치와 session 출력만 추가 쓰기 경로로 전달한다. agent는 `context.worktree_ref`의 정본 기록을 읽고 preflight·문서 작업을 수행한다.
 
 exec worker의 질문은 `user_question` artifact로 저장하고 `USER_DECISION_REQUIRED`로 반환한다. 사용자 답변 JSON을 session에 보존한 뒤 같은 stage 실행 명령에 `--answer <session-relative answer.json>`을 추가한다. 실행기는 질문 ID와 답변을 확인해 이전 checkpoint와 함께 다음 호출에 전달한다.
+
+## Nested Codex workflow execution
+
+On Linux, a `codex exec` session that runs Harness stages must allow the Codex helper directory to be written by the **outer** session. Harness launches a nested Codex CLI for each stage; the nested CLI creates PATH aliases under `CODEX_HOME/tmp/arg0-linux` before its own workspace sandbox starts. The stage runner's `--add-dir` cannot expand the outer session's sandbox.
+
+Add this option to the outer `codex exec` command:
+
+```sh
+--add-dir "${CODEX_HOME:-$HOME/.codex}/tmp/arg0-linux"
+```
+
+Keep the stage's own sandbox setting unchanged. This grants the outer session write access only to Codex's Linux helper directory.
