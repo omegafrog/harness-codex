@@ -4,7 +4,7 @@
 
 ## 발행
 
-1. 모든 parent/child body 초안을 로컬에서 준비하고 template heading, placeholder, SVG, status, dependency를 검사한다. 실제 Issue 번호는 생성 응답에서 채운 뒤 해당 body를 다시 검사한다. Issue body 초안과 API 응답은 `<session_directory>/runtime/to-ticket/` 아래에 보존한다. 첫 GitHub mutation 전에 plan ID별 빈 진행 상태를 `publish-state.json`에 만든다.
+1. [GitHub Issue 본문 템플릿](github-issue-template.md)의 Parent/Child 형식에 맞춰 모든 body를 작성한다. 승인된 plan 내용을 알맞은 placeholder에 넣고, 생성 응답으로 실제 Issue 번호와 URL을 얻은 뒤 상위·선행 Issue 참조를 채운다. 별도의 자유 형식 본문으로 대체하지 않는다. Issue body 초안과 API 응답은 `<session_directory>/runtime/to-ticket/` 아래에 보존한다. 첫 GitHub mutation 전에 plan ID별 빈 진행 상태를 `publish-state.json`에 만든다.
 2. Project metadata는 `gh project view`와 `gh project field-list`를 각각 한 번만 호출해 project ID, 설정된 `Workflow Status` field ID, `Planned` option ID를 확인한다. 각 Issue마다 metadata를 다시 조회하지 않는다.
 3. parent를 `POST repos/<OWNER>/<REPO>/issues`로 만들고 응답의 `id`, `node_id`, `number`, `html_url`을 저장한다. 그 `id`를 `parent_issue_id`로 넣어 dependency 위상 순서대로 child를 만든다. 생성 응답에서 모든 ID와 URL을 얻으므로 `gh issue view`로 다시 조회하지 않는다. 의존 Issue 링크는 이미 생성된 선행 child의 응답에서 채운다.
 4. child 생성 후 실제 번호를 넣어 parent body를 완성하고, parent Issue에 REST `PATCH repos/<OWNER>/<REPO>/issues/<PARENT-NUMBER>`를 한 번 수행한다. 모든 parent/child API 응답과 완료 단계를 `publish-state.json`에 즉시 기록한다.

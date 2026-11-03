@@ -16,11 +16,18 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   const guidePath = join(root, '.agents/skills/to-ticket/references/github-batch-publish.md');
+  const publisherPath = join(root, '.agents/skills/tracker-publish/SKILL.md');
+  const templatePath = join(root, '.agents/skills/to-ticket/references/github-issue-template.md');
   const freshGuide = await readFile(guidePath, 'utf8');
   assert.match(freshGuide, /필요한 비테스트 검증도 본문에 보존/);
+  assert.match(freshGuide, /GitHub Issue 본문 템플릿/);
+  assert.match(await readFile(publisherPath, 'utf8'), /github-issue-template\.md/);
+  assert.match(await readFile(templatePath, 'utf8'), /## Parent Issue[\s\S]*## Child Issue/);
   await updateProject({ sourceRoot, targetRoot: root });
   const guide = await readFile(guidePath, 'utf8');
   assert.match(guide, /필요한 비테스트 검증도 본문에 보존/);
+  assert.match(guide, /GitHub Issue 본문 템플릿/);
+  assert.match(await readFile(publisherPath, 'utf8'), /github-issue-template\.md/);
   const { renderSplitPlanIssue } = await import(pathToFileURL(join(root, '.harness/src/tracker/render.mjs')));
   const plan = { schema_version: 1, kind: 'split-plan', plan_id: 'ui', issue: 11, parent_issue: 9, status: 'Planned', purpose: '계산 결과를 표시한다.', scope: ['workspace_root: /workspace', 'workspace_branch: feature', '화면을 구현한다.'], acceptance_criteria: ['결과 14가 표시된다.'], test_contract: { unit_policy: '없음', ui_entity_e2e: '상위 이슈' }, verification: ['키보드와 오류 보존을 확인한다.'], dependencies: [10], specs: { product_spec: 'product.md', architecture_spec: 'architecture.md' } };
   const body = renderSplitPlanIssue(plan);
