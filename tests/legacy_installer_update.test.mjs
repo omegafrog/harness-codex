@@ -32,10 +32,15 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await writeFile(resolve(root, unknownSchema), 'user schema');
     const retiredPath = '.codex/scripts/old-managed.mjs';
     const modifiedPath = '.codex/scripts/old-modified.mjs';
+    const retiredClaudePath = '.claude/agents/architecture_review_lead.md';
     const oldHash = createHash('sha256').update('old managed').digest('hex');
     await writeFile(resolve(root, retiredPath), 'old managed');
     await writeFile(resolve(root, modifiedPath), 'user modified');
-    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files: Object.fromEntries([retiredPath, modifiedPath].map((path) => [path, { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: path }])) }));
+    await mkdir(resolve(root, '.claude/agents'), { recursive: true });
+    await writeFile(resolve(root, retiredClaudePath), 'old managed');
+    const files = Object.fromEntries([retiredPath, modifiedPath].map((path) => [path, { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: path }]));
+    files[retiredClaudePath] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: '.codex/agents/architecture_review_lead.toml', source_transform: 'claude-agent-v1' };
+    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files }));
     const result = await updateProject({ sourceRoot, targetRoot: root });
     await protectLocalInstallArtifacts(root, sourceRoot);
     assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-doctor.mjs')), legacy);
@@ -46,6 +51,8 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await assert.rejects(readFile(resolve(root, schemaPath)), { code: 'ENOENT' });
     assert.equal(await readFile(resolve(result.backup_directory, retiredPath), 'utf8'), 'old managed');
     await assert.rejects(readFile(resolve(root, retiredPath)), { code: 'ENOENT' });
+    assert.equal(await readFile(resolve(result.backup_directory, retiredClaudePath), 'utf8'), 'old managed');
+    await assert.rejects(readFile(resolve(root, retiredClaudePath)), { code: 'ENOENT' });
     assert.equal(await readFile(resolve(root, modifiedPath), 'utf8'), 'user modified');
     assert.equal(JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8')).files[modifiedPath].retired, true);
     assert.equal(await readFile(resolve(root, unknownSchema), 'utf8'), 'user schema');

@@ -6,6 +6,8 @@ import { isWithin } from "../eval/util.mjs";
 
 const HASH = /^[a-f0-9]{64}$/;
 const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1"]);
+// Allow only obsolete Claude projections so an update can safely retire them from consumer locks.
+const RETIRED_SOURCE_TRANSFORMS = new Map([["claude-agent-v1", ".claude/agents/"], ["claude-skills-v1", ".claude/skills/"]]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
@@ -99,7 +101,7 @@ export function validateHarnessLock(raw) {
       ...(rawEntry.source_path === undefined ? {} : { source_path: validateRelativePath(rawEntry.source_path, `${path}.source_path`) }),
       ...(rawEntry.source_transform === undefined ? {} : { source_transform: rawEntry.source_transform }),
     };
-    if (rawEntry.source_transform !== undefined && !SOURCE_TRANSFORMS.has(rawEntry.source_transform)) throw new HarnessLockError(`${path}.source_transform is unsupported: ${rawEntry.source_transform}`);
+    if (rawEntry.source_transform !== undefined && !SOURCE_TRANSFORMS.has(rawEntry.source_transform) && !path.startsWith(RETIRED_SOURCE_TRANSFORMS.get(rawEntry.source_transform) || "\0")) throw new HarnessLockError(`${path}.source_transform is unsupported: ${rawEntry.source_transform}`);
   }
   return { ...raw, schema_version: 1, files };
 }
