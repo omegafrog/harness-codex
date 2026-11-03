@@ -11,20 +11,23 @@ try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
     const k = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'return'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
+    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'return', 'source'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
-  if (!isAbsolute(opts.root || '') || !opts.return) throw new Error('Absolute root, execution-id and return are required');
+  if (!isAbsolute(opts.root || '') || Boolean(opts.return) === Boolean(opts.source)) throw new Error('Absolute root, execution-id and exactly one of return or source are required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Valid execution-id is required');
   const session = await cliSession(opts.root, opts['worktree-ref']);
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');
   if (input.session_directory !== session) throw new Error('Input session directory does not match caller session');
   await validateSkillInput({ root: opts.root, input });
-  const envelope = await readSkillSessionJson({ root: opts.root, session_directory: session, path: opts.return });
-  if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
   const prefix = `runtime/executions/${input.execution_id}`;
-  if (opts.return !== `${prefix}/return.json`) throw new Error('Return must belong to the requested execution');
+  const returnPath = `${prefix}/return.json`;
+  const sourcePath = opts.source || opts.return;
+  if (opts.source && opts.source !== `${prefix}/codex-last-message.json`) throw new Error('Source must be the raw Codex message for the requested execution');
+  if (opts.return && opts.return !== returnPath) throw new Error('Return must belong to the requested execution');
+  const envelope = await readSkillSessionJson({ root: opts.root, session_directory: session, path: sourcePath });
+  if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
   if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = `${prefix}/result.json`;
   if (envelope.result_ref) {
     if (envelope.result_ref !== `${prefix}/result.json`) throw new Error('Result must belong to the requested execution');
@@ -65,6 +68,6 @@ try {
     const path = join(session, envelope.result_ref);
     await writeFile(path, JSON.stringify(envelope.result, null, 2) + '\n', { mode: 0o600 });
   }
-  await writeFile(join(session, opts.return), JSON.stringify(envelope, null, 2) + '\n', { mode: 0o600 });
+  await writeFile(join(session, returnPath), JSON.stringify(envelope, null, 2) + '\n', { mode: 0o600 });
   process.stdout.write(`${JSON.stringify(envelope)}\n`);
 } catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }

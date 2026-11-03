@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
@@ -68,8 +69,14 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (envelope && log?.exit_code === 0 && envelope.result_ref === `${prefix}/result.json`) {
         const previousInput = await readExecutionInput({ root, execution_id: running.execution_id });
         const result = await readSkillSessionJson({ root, session_directory: session, path: envelope.result_ref });
-        if (JSON.stringify(result) !== JSON.stringify(envelope.result)) throw new Error('Stored execution result does not match return');
+        for (const key of ['schema_version', 'execution_id', 'skill', 'status', 'code']) {
+          if (result[key] !== envelope[key]) throw new Error(`Stored execution result ${key} does not match return`);
+        }
+        const withoutArtifactHashes = (value) => ({ ...value, artifacts: (value.artifacts || []).map(({ sha256, ...artifact }) => artifact) });
+        if (!isDeepStrictEqual(withoutArtifactHashes(result), withoutArtifactHashes(envelope.result))) throw new Error('Stored execution result does not match return');
+        envelope.result = result;
         await validateSkillReturn({ root, input: previousInput, envelope });
+        await writeFile(join(session, `${prefix}/return.json`), `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
         await recordExecutionState({ root, input: previousInput, binding: log.binding || { model: running.model, reasoning_effort: running.reasoning_effort }, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref });
         state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
       }

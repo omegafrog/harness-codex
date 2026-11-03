@@ -4,7 +4,7 @@ import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendFileSync, closeSync, openSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 
 async function codexResumeWriteDirs(sessionId, env) {
@@ -62,12 +62,13 @@ try {
   const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage });
   const prefix = join(session, 'runtime/executions', opts['execution-id']);
-  const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'return.json');
+  const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'codex-last-message.json');
   if (!existsSync(schema)) await writeOutputSchema({ root, input, prefix: `runtime/executions/${opts['execution-id']}`, path: schema });
   const schemaInfo = await lstat(schema);
   if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
   const outputSchema = JSON.parse(await readFile(schema, 'utf8'));
   if (outputSchema.properties?.execution_id?.const !== opts['execution-id'] || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
+  await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex-last-message.json`);
   if (opts.background === 'true') {
     await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stdout.log`);
     await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stderr.log`);
@@ -125,6 +126,9 @@ try {
   } }); } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); }
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
+  if (result.code === 0) {
+    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', `runtime/executions/${opts['execution-id']}/codex-last-message.json`], { cwd: root, stdio: 'pipe' });
+  }
   process.stdout.write(`${JSON.stringify({ ...result, binding: executionBinding })}\n`);
   recordEvent({ event: 'runner_completed', exit_code: result.code, exit_signal: result.signal });
   closeSync(eventsFd);

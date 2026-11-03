@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { updateProject } from "../.harness/src/installer/update.mjs";
+import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { evaluateWorkflowStage } from "../.harness/src/workflow/stage-gates.mjs";
 
 for (const condition of ["product_diagram_required", "architecture_diagram_required"]) {
@@ -77,6 +78,58 @@ test("installed diagram gates block missing and inconsistent artifacts", async (
     const inconsistent = runGate();
     assert.equal(inconsistent.status, "blocked");
     assert.ok(inconsistent.violations.some(({ code }) => code === "missing_diagram_link"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("installed Architecture review gate blocks Specs still marked as draft or pending", async () => {
+  const root = await mkdtemp(join(tmpdir(), "installed-spec-status-gate-"));
+  try {
+    execFileSync("git", ["init", "-q", root]);
+    const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const specRoot = join(root, "docs/specs/example");
+    await mkdir(specRoot, { recursive: true });
+    await writeFile(join(specRoot, "request.md"), "# Request\n");
+    await writeFile(join(specRoot, "product-spec.md"), "**Status:** Draft for review\n");
+    await writeFile(join(specRoot, "architecture-spec.md"), "**Status:** Architecture Spec independent review pending\n");
+    const runtime = `file://${join(root, ".harness/src/workflow")}`;
+    const { snapshotSpecReview } = await import(`${runtime}/spec-review.mjs`);
+    const inputs = await snapshotSpecReview({ root, ticketId: "example" });
+    const reviewPath = join(root, ".io/runtime/spec-review-result.json");
+    await mkdir(join(root, ".io/runtime"), { recursive: true });
+    await writeFile(reviewPath, JSON.stringify({ architecture: {
+      axis: "architecture", ticket_id: "example", reviewer_id: "reviewer", author_ids: ["author"],
+      fork_turns: "none", verdict: "pass", findings: [], inputs,
+    } }));
+    const check = () => {
+      try {
+        execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" });
+        return null;
+      } catch (error) {
+        assert.equal(error.status, 1);
+        return JSON.parse(error.stdout);
+      }
+    };
+
+    const draft = check();
+    assert.equal(draft?.status, "blocked");
+    assert.match(draft.reason, /not finalized/i);
+
+    await writeFile(join(specRoot, "product-spec.md"), "**Status:** Approved\n");
+    await writeFile(join(specRoot, "architecture-spec.md"), "**Status:** Approved\n");
+    const approvedInputs = await snapshotSpecReview({ root, ticketId: "example" });
+    const saved = JSON.parse(await readFile(reviewPath, "utf8"));
+    saved.architecture.inputs = approvedInputs;
+    await writeFile(reviewPath, JSON.stringify(saved));
+    assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
+
+    const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
+    assert.match(status, /docs\/specs\/example\/product-spec\.md/);
+    assert.doesNotMatch(status, /\.codex\/scripts\/harness-spec-review\.mjs|\.harness\/src/);
+    assert.match(execFileSync("git", ["check-ignore", "-v", ".codex/scripts/harness-spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.codex/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

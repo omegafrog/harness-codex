@@ -6,6 +6,17 @@ import { assertReviewAttempt, assertActiveReviewAdmission } from './review-attem
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
+const UNFINALIZED_STATUS = /\b(?:draft|pending|in progress|under review|for review|review required)\b/i;
+async function assertSpecFinalized(root, ticketId) {
+  for (const name of ['product-spec.md', 'architecture-spec.md']) {
+    const path = `docs/specs/${ticketId}/${name}`;
+    const markdown = await readFile(join(root, path), 'utf8');
+    const statuses = [...markdown.matchAll(/^\s*(?:\*\*Status:\*\*|Status:|status:)\s*(.*?)\s*$/gim)];
+    for (const [, status] of statuses) {
+      if (UNFINALIZED_STATUS.test(status)) throw new Error(`${path} is not finalized: ${status}`);
+    }
+  }
+}
 async function hash(root, path) {
   requireValue(typeof path === 'string' && path && !path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'Review input must be a relative file path');
   await assertWorkspaceTarget(root, path);
@@ -57,6 +68,7 @@ export async function inspectSpecReviews({ root, ticketId, reviews }) {
     requireValue(record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs), 'Reviewed input hashes are required');
     const current = await snapshotSpecReview({ root, ticketId, input_paths: Object.keys(record.inputs) });
     requireValue(Object.keys(current).length === Object.keys(record.inputs).length && Object.entries(current).every(([path, digest]) => record.inputs[path] === digest), 'Architecture review inputs changed or required inputs were omitted');
+    await assertSpecFinalized(root, ticketId);
     await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: record });
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }
