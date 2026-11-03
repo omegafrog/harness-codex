@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -93,6 +93,44 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.ok(missingStartup.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/startup-state.mjs')));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('installed result validation accepts safe directory artifacts and keeps consumer changes visible', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-directory-artifact-'));
+  let outside;
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    await mkdir(join(root, '.io'), { recursive: true });
+    await mkdir(join(root, 'docs/specs/example/architecture-decisions'), { recursive: true });
+    await writeFile(join(root, 'docs/specs/example/architecture-decisions/DEC-01.yaml'), 'decision: accepted\n');
+    outside = await mkdtemp(join(tmpdir(), 'harness-outside-artifact-'));
+    await symlink(outside, join(root, 'outside-artifacts'));
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'consumer-owned guidance\n');
+
+    const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const reference = { base: 'workspace', path: 'docs/specs/example/architecture-decisions/', kind: 'architecture-decisions', sha256: null };
+    const input = { schema_version: 1, execution_id: 'spec-1', skill: 'spec-me', workspace_root: root, session_directory: join(root, '.io'), scope: 'calculator', input_refs: [reference] };
+    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Specs ready', artifacts: [reference], questions: [], review_request: null };
+    const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/spec-1/result.json', result };
+
+    await validateSkillInput({ root, input });
+    assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, result: { ...result, artifacts: [{ ...reference, path: '../outside' }] } } }), /relative without traversal/);
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, result: { ...result, artifacts: [{ ...reference, path: 'outside-artifacts/' }] } } }), /workspace|outside|escape/i);
+
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
+    execFileSync('git', ['check-ignore', '-q', '.harness/src/workflow/skill-execution.mjs'], { cwd: root });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    if (outside) await rm(outside, { recursive: true, force: true });
   }
 });
 

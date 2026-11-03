@@ -4,6 +4,7 @@
 
 | 규칙 | 현재 enforcement | 남는 판단/한계 |
 |---|---|---|
+| workflow 입력 참조와 결과 artifact는 workspace 내부 파일 또는 디렉터리를 가리킨다 | `.harness/src/workflow/skill-execution.mjs`의 경로·workspace 경계 검사, `tests/skill_execution_schema_compatibility.test.mjs`의 설치 소비자 회귀 | 파일 내용을 실제로 읽는 참조는 regular file만 허용하며, 디렉터리 내용의 완전성은 artifact 작성 스킬과 리뷰어가 판단 |
 | 전달 workspace와 실제 Git worktree가 일치해야 한다 | `.codex/scripts/harness-workspace-preflight.mjs`, `tests/workspace_preflight.test.mjs`, dispatch의 before_dispatch hook | 작업별로 hook/명령을 실제 실행했는지 확인 필요 |
 | 승인된 decision과 review만 인계한다 | `.harness/src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | decision opt-in이 없는 legacy artifact에는 같은 gate를 강제하지 않음 |
 | tracker 구조 입력을 검증 후 렌더한다 | `.harness/src/tracker/contracts.mjs`, `.harness/src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { lstat, readFile, realpath, readdir } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
@@ -141,13 +141,20 @@ export async function resolveSkillSession(root, provided = null) {
   return chosen;
 }
 
-async function readReference(root, reference, sessionRoot, controlSessionRoot = sessionRoot) {
-  requireValue(!isAbsolute(reference.path) && !win32.isAbsolute(reference.path) && reference.path.split(/[\\/]/).every((part) => part && part !== '.' && part !== '..'), 'Artifact path must be relative without traversal');
-  let path;
-  if (reference.base === 'session') { await assertWorkspaceTarget(sessionRoot, reference.path); path = resolve(sessionRoot, reference.path); }
-  else if (reference.base === 'control_session') { await assertWorkspaceTarget(controlSessionRoot, reference.path); path = resolve(controlSessionRoot, reference.path); }
-  else { await assertWorkspaceTarget(root, reference.path); path = resolve(root, reference.path); }
-  requireValue((await lstat(path)).isFile(), `Artifact is not a regular file: ${reference.path}`);
+async function readReference(root, reference, sessionRoot, controlSessionRoot = sessionRoot, allowDirectory = false) {
+  const parts = reference.path.split(/[\\/]/);
+  if (parts.at(-1) === '') parts.pop();
+  requireValue(!isAbsolute(reference.path) && !win32.isAbsolute(reference.path) && parts.length > 0 && parts.every((part) => part && part !== '.' && part !== '..'), 'Artifact path must be relative without traversal');
+  const relativePath = parts.join(sep);
+  let base;
+  if (reference.base === 'session') base = sessionRoot;
+  else if (reference.base === 'control_session') base = controlSessionRoot;
+  else base = root;
+  await assertWorkspaceTarget(base, relativePath);
+  const path = resolve(base, relativePath);
+  const info = await lstat(path);
+  if (allowDirectory && info.isDirectory()) return null;
+  requireValue(info.isFile(), `Artifact is not a regular file: ${reference.path}`);
   const content = await readFile(path);
   return content;
 }
@@ -200,7 +207,7 @@ export async function validateSkillInput({ root, input }) {
   }
   const session = await resolveSkillSession(root, input.session_directory);
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
-  for (const reference of input.input_refs) await readReference(root, reference, session, controlSession);
+  for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
 }
 
 export async function validateSkillReturn({ root, input, envelope }) {
@@ -214,7 +221,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const key of ['execution_id', 'skill']) requireValue(input[key] === envelope[key], `Return ${key} mismatch`);
   requireValue(CODES[envelope.status]?.includes(envelope.code), 'Return status/code mismatch');
-  for (const reference of input.input_refs) await readReference(root, reference, session, controlSession);
+  for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
   if (envelope.result_ref === null) {
     requireValue(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED', 'Only artifact-write failures may omit result_ref');
     if (envelope.result) {
@@ -236,7 +243,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   }
   validate(schemaResult, resultSchema);
   for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(result[key] === envelope[key], `Result ${key} mismatch`);
-  for (const reference of result.artifacts) await readReference(root, reference, session, controlSession);
+  for (const reference of result.artifacts) await readReference(root, reference, session, controlSession, true);
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
     const request = result.review_request;
     const bindings = await json(join(root, CONTRACT, 'bindings.json'));
