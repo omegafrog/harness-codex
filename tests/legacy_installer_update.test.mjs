@@ -51,8 +51,8 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await assert.rejects(readFile(resolve(root, schemaPath)), { code: 'ENOENT' });
     assert.equal(await readFile(resolve(result.backup_directory, retiredPath), 'utf8'), 'old managed');
     await assert.rejects(readFile(resolve(root, retiredPath)), { code: 'ENOENT' });
-    assert.equal(await readFile(resolve(result.backup_directory, retiredClaudePath), 'utf8'), 'old managed');
-    await assert.rejects(readFile(resolve(root, retiredClaudePath)), { code: 'ENOENT' });
+    assert.ok(result.updated.includes(retiredClaudePath));
+    assert.match(await readFile(resolve(root, retiredClaudePath), 'utf8'), /name: architecture_review_lead/);
     assert.equal(await readFile(resolve(root, modifiedPath), 'utf8'), 'user modified');
     assert.equal(JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8')).files[modifiedPath].retired, true);
     assert.equal(await readFile(resolve(root, unknownSchema), 'utf8'), 'user schema');

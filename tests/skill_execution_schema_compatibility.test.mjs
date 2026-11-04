@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -34,6 +34,8 @@ test('generated output schemas expose questions without a singular result field'
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
+      assert.equal(Object.hasOwn(schema, 'anyOf'), false);
+      assert.equal(Object.hasOwn(schema.properties.status, 'description'), false);
       assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);
       assert.equal(schema.properties.result.required.includes('question'), false);
       assert.ok(Object.hasOwn(schema.properties.result.properties, 'questions'));
@@ -42,6 +44,21 @@ test('generated output schemas expose questions without a singular result field'
       assert.ok(item.required.includes('title'));
       assert.equal(Object.hasOwn(item.properties, 'question'), false);
     }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('provider output schemas keep Claude hints out of the Codex contract', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-provider-schema-'));
+  try {
+    const input = { execution_id: 'provider-check', skill: 'spec-me' };
+    for (const provider of ['codex', 'claude-code']) await writeOutputSchema({ root: process.cwd(), input, prefix: 'runtime/executions/provider-check', path: join(directory, `${provider}.json`), provider });
+    const codex = await readJson(join(directory, 'codex.json'));
+    const claude = await readJson(join(directory, 'claude-code.json'));
+    assert.equal(Object.hasOwn(codex.properties.status, 'description'), false);
+    assert.match(claude.properties.status.description, /Keep status and code paired/);
+    assert.equal(Object.hasOwn(claude, 'anyOf'), false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -63,12 +80,69 @@ test('installed stage accepts changed documents while preserving review snapshot
     await protectLocalInstallArtifacts(root, sourceRoot);
     const managedAssets = await discoverManagedAssetPaths(sourceRoot);
     assert.ok(managedAssets.includes('.codex/agents/tracker_publisher.toml'));
+    assert.ok(managedAssets.includes('.codex/scripts/harness-agent-run.mjs'));
+    assert.ok(managedAssets.includes('.codex/scripts/harness-output-schema.mjs'));
+    assert.ok(managedAssets.includes('.harness/src/workflow/providers/index.mjs'));
+    assert.ok(managedAssets.includes('.harness/src/workflow/providers/codex.mjs'));
+    assert.ok(managedAssets.includes('.harness/src/workflow/providers/claude-code.mjs'));
+    assert.ok(managedAssets.includes('.claude/agents/spec_reviewer.md'));
+    assert.ok(managedAssets.includes('.claude/skills/orchestrator/SKILL.md'));
     assert.ok(managedAssets.includes('.agents/skills/tracker-publish/SKILL.md'));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.harness/src/installer/claude-orchestrator-hook.mjs')}`);
+    const codex = await import(`file://${join(root, '.harness/src/workflow/providers/codex.mjs')}`);
+    const claude = await import(`file://${join(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const providers = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
+    const { writeOutputSchema: writeInstalledOutputSchema } = await import(`file://${join(root, '.harness/src/workflow/output-schema.mjs')}`);
+    assert.equal(providers.configuredProvider({ agents: { provider: 'claude-code' } }), 'claude-code');
+    assert.equal((await providers.loadProvider('claude-code')).id, 'claude-code');
+    const installedSchemaPath = join(root, '.io/runtime/executions/installed-claude/return.schema.json');
+    await writeInstalledOutputSchema({ root, input: { execution_id: 'installed-claude', skill: 'spec-me' }, prefix: 'runtime/executions/installed-claude', path: installedSchemaPath, provider: 'claude-code' });
+    assert.match((await readJson(installedSchemaPath)).properties.status.description, /Keep status and code paired/);
+    assert.equal(codex.id, 'codex');
+    assert.deepEqual(codex.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/session/schema.json', output: '/session/return.json', resume: null }), [
+      'exec', '--sandbox', 'workspace-write', '--cd', root, '--model', 'model', '-c', 'model_reasoning_effort="medium"', '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', '/session/schema.json', '--output-last-message', '/session/return.json', '-',
+    ]);
+    assert.equal(claude.id, 'claude-code');
+    const claudeAgent = await readFile(join(root, '.claude/agents/spec_reviewer.md'), 'utf8');
+    assert.match(claudeAgent, /^---\nname: spec_reviewer\n/);
+    assert.match(claudeAgent, /permissionMode: plan/);
+    assert.match(claudeAgent, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
+    assert.match(claudeAgent, /You are the spec_reviewer agent/);
+    assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
+    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
+    assert.match(claudeHook.hookSpecificOutput.additionalContext, /"provider":"claude-code"/);
+    const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'sonnet', reasoning_effort: 'medium' }, schema: { type: 'object' }, resume: null });
+    assert.ok(claudeArgs.includes('--json-schema'));
+    const settings = JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]);
+    assert.deepEqual(settings.sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
+    assert.equal(settings.hooks.SubagentStart.length, 1);
+    assert.equal(settings.hooks.SubagentStop.length, 1);
+    assert.equal(claudeArgs[claudeArgs.indexOf('--permission-mode') + 1], 'acceptEdits');
+    const fakeBin = join(root, '.io/fake-bin');
+    await mkdir(fakeBin, { recursive: true });
+    const fakeClaude = join(fakeBin, 'claude');
+    const fakeSession = '123e4567-e89b-12d3-a456-426614174000';
+    await writeFile(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '{"type":"system","subtype":"init","session_id":"${fakeSession}"}' '{"type":"result","subtype":"success","session_id":"${fakeSession}","structured_output":{"ok":true}}'\n`);
+    await chmod(fakeClaude, 0o755);
+    const claudeOutput = join(root, '.io/claude-result.json');
+    let capturedSession;
+    const claudeResult = await claude.run({ root, args: [], prompt: 'prompt', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: claudeOutput, onStart: async () => {}, onSession: async (id) => { capturedSession = id; } });
+    assert.equal(claudeResult.code, 0);
+    assert.equal(claudeResult.sessionId, fakeSession);
+    assert.equal(capturedSession, fakeSession);
+    assert.deepEqual(await readJson(claudeOutput), { ok: true });
     const session = join(root, '.io');
     await mkdir(session, { recursive: true });
+    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_SKILL_EXECUTION_ID: 'claude-stage' }, input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: fakeSession, agent_id: 'agent-review-1', agent_type: 'spec_reviewer' }) });
+    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_SKILL_EXECUTION_ID: 'claude-stage' }, input: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: fakeSession, agent_id: 'agent-review-1', agent_type: 'spec_reviewer', last_assistant_message: 'Review passed' }) });
+    const agentEvents = (await readFile(join(session, 'runtime/executions/claude-stage/subagents.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(agentEvents.map(({ event, agent_id, result }) => ({ event, agent_id, result })), [
+      { event: 'SubagentStart', agent_id: 'agent-review-1', result: undefined },
+      { event: 'SubagentStop', agent_id: 'agent-review-1', result: 'Review passed' },
+    ]);
     const path = 'product-spec.md';
     const originalHash = createHash('sha256').update('original').digest('hex');
     await writeFile(join(root, path), 'revised');
@@ -78,6 +152,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
     await validateSkillInput({ root, input });
     assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'action_required' } }), /Return status\/code mismatch/);
     await rm(join(root, path));
     await assert.rejects(validateSkillInput({ root, input }), { code: 'ENOENT' });
     await mkdir(join(root, 'docs/agents'), { recursive: true });
@@ -85,12 +160,21 @@ test('installed stage accepts changed documents while preserving review snapshot
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
+    assert.doesNotMatch(status, /\.claude\//);
+    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/agents/spec_reviewer.md'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/skills/orchestrator/SKILL.md'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/settings.local.json'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/skill-execution.mjs'], { cwd: root });
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     await rm(join(root, '.harness/src/workflow/startup-state.mjs'));
     const missingStartup = await runDoctor({ root, sourceRoot });
     assert.ok(missingStartup.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/startup-state.mjs')));
+    await rm(join(root, '.harness/src/workflow/providers/codex.mjs'));
+    const missingProvider = await runDoctor({ root, sourceRoot });
+    assert.ok(missingProvider.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/providers/codex.mjs')));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

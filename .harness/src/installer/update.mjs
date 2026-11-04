@@ -6,6 +6,8 @@ import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./loc
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
+import { syncClaudeOrchestratorHook } from './claude-orchestrator-hook.mjs';
+import { transformSourceContent } from './transforms.mjs';
 import { LEGACY_ASSETS } from './legacy-assets.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
@@ -95,6 +97,7 @@ async function discoverSourceDescriptors(sourceRoot) {
   }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath, SOURCE_TRANSFORM));
+    descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^\.codex\/agents\//, '.claude/agents/').replace(/\.toml$/, '.md'), 'claude-agent-v1'));
   }
   for (const directory of [".codex/workflows", ".codex/schemas"]) {
     for (const sourcePath of await listDirectoryFiles(sourceRoot, directory, (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
@@ -137,6 +140,7 @@ async function discoverSourceDescriptors(sourceRoot) {
       if (information.isFile() || information.isSymbolicLink()) {
         for (const path of await listDirectoryFiles(sourceRoot, `.codex/skills/${skill.name}`, () => true)) {
           descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".agents/skills/"), path.endsWith(".md") ? SOURCE_TRANSFORM : null));
+          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".claude/skills/"), path.endsWith(".md") ? 'claude-skills-v1' : null));
         }
       }
     } catch (error) {
@@ -164,7 +168,7 @@ async function readSource(root, descriptor) {
   const information = await stat(actualPath);
   if (!information.isFile()) throw new InstallerUpdateError(`Harness source is not a regular file: ${descriptor.source_path}`, { path: actualPath });
   const content = await readFile(actualPath);
-  return descriptor.source_transform === SOURCE_TRANSFORM ? Buffer.from(content.toString("utf8").replaceAll(".codex/skills/", ".agents/skills/"), "utf8") : content;
+  return descriptor.source_transform ? Buffer.from(transformSourceContent(content, descriptor.source_transform)) : content;
 }
 
 async function containedPath(root, relativePath) {
@@ -368,7 +372,10 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
-  if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) await syncOrchestratorHook(targetRoot);
+  if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+    await syncOrchestratorHook(targetRoot);
+    await syncClaudeOrchestratorHook(targetRoot);
+  }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
 }
 

@@ -43,7 +43,8 @@ function gitWorktrees(text) {
   return rows;
 }
 
-export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
+export async function inspectStartupState({ workspaceRoot, sessionId = null, provider = 'codex', codexSessionId = null }) {
+  sessionId ||= codexSessionId;
   const root = await realpath(workspaceRoot);
   const [commonText, listing] = await Promise.all([git(root, ['rev-parse', '--git-common-dir']), git(root, ['worktree', 'list', '--porcelain', '-z'])]);
   const common = await realpath(resolve(root, commonText.trim()));
@@ -90,8 +91,10 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
         issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: 'workflow_without_worktree_record' });
         continue;
       }
-      const ownerSessionId = sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id;
-      if ([currentSession, legacySession].includes(session) && ownerSessionId && codexSessionId && ownerSessionId !== codexSessionId) currentForeign = true;
+      const orchestratorSession = sessionRecord?.agent_sessions?.orchestrator;
+      const ownerSessionId = orchestratorSession?.session_id || state.orchestrator_session_id || state.codex_session_id;
+      const ownerProvider = orchestratorSession?.provider || state.orchestrator_provider || (state.codex_session_id ? 'codex' : null);
+      if ([currentSession, legacySession].includes(session) && ownerSessionId && sessionId && (ownerSessionId !== sessionId || ownerProvider && ownerProvider !== provider)) currentForeign = true;
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
       if (ref === null && (ACTIVE.has(state.status) || TERMINAL.has(state.status))) {
@@ -159,9 +162,9 @@ export async function inspectStartupState({ workspaceRoot, codexSessionId }) {
     hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
-  } else if (states.length === 1) reason = 'Matching Codex session workflow is terminal';
+  } else if (states.length === 1) reason = `Matching ${provider} session workflow is terminal`;
   return {
-    schema_version: 1, codex_session_id: codexSessionId || null, workspace_root: root,
+    schema_version: 1, provider, session_id: sessionId || null, ...(provider === 'codex' ? { codex_session_id: sessionId || null } : {}), workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
     worktree_candidates: worktreeCandidates.slice(0, 8), omitted_worktree_candidate_count: Math.max(0, worktreeCandidates.length - 8),
@@ -200,7 +203,8 @@ export async function refreshWorkflowProgress(observed, event) {
   }
   const current = stages.find((item) => item.id === state.current_stage);
   const status = state.status === 'running' && ['stopped', 'unknown'].includes(current?.status) ? current.status : state.status;
-  const progress = { schema_version: 1, codex_session_id: record?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, workspace_root: record?.workspace || null, worktree_ref: record ? join(session, 'worktree.json') : null, request, workflow_id: workflow?.workflow_id || null, status, recorded_status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
+  const orchestratorSessionId = record?.agent_sessions?.orchestrator?.session_id || state.orchestrator_session_id || state.codex_session_id || null;
+  const progress = { schema_version: 1, orchestrator_provider: record?.agent_sessions?.orchestrator?.provider || state.orchestrator_provider || (state.codex_session_id ? 'codex' : null), orchestrator_session_id: orchestratorSessionId, codex_session_id: state.codex_session_id || (state.orchestrator_provider === 'codex' ? orchestratorSessionId : null), workspace_root: record?.workspace || null, worktree_ref: record ? join(session, 'worktree.json') : null, request, workflow_id: workflow?.workflow_id || null, status, recorded_status: state.status, current_stage: state.current_stage, updated_at: new Date().toISOString(), observed_event: event, measurement: workflow ? 'completed_stages / total_stages; not effort or time' : 'recorded stages only; future stages are unknown', total_stages: workflow ? stages.length : null, counts, completion_percent: workflow && stages.length ? Math.floor(counts.completed * 100 / stages.length) : null, stages, issues: workflow && state.status === 'completed' && counts.completed + counts.skipped !== stages.length ? ['Workflow completion disagrees with stage ledger'] : [] };
   const path = 'runtime/orchestrator/progress.json';
   await assertWorkspaceTarget(session, path);
   const { randomUUID } = await import('node:crypto');

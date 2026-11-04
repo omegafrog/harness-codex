@@ -14,6 +14,8 @@ const LOCAL_GENERATED_EXCLUDES = [
   "/.codex/harness-lock.json",
   "/.codex/hooks.json",
   "/.codex/installer-backups/",
+  "/.claude/settings.local.json",
+  "/.claude/installer-backups/",
   "/.github/pull_request_template.md",
   "/.github/workflows/harness-contracts.yml",
   "/skills-lock.json",
@@ -30,7 +32,7 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const harnessSourcePath = await realpath(sourceRoot);
   const sourceCheckout = await isHarnessSourceCheckout(harnessSourcePath, targetPath);
   const managedPaths = await discoverManagedAssetPaths(sourceRoot);
-  const sourceOwnedPaths = new Set([...managedPaths.map((path) => `/${path}`), "/.codex/harness.yaml", "/.codex/context-budget.json", "/.codex/harness-lock.json", "/.codex/hooks.json"]);
+  const sourceOwnedPaths = new Set([...managedPaths.map((path) => `/${path}`), "/.codex/harness.yaml", "/.codex/context-budget.json", "/.codex/harness-lock.json", "/.codex/hooks.json", "/.claude/settings.local.json"]);
   const exclusions = [
     ...LOCAL_GENERATED_EXCLUDES.filter((entry) => !sourceCheckout || !sourceOwnedPaths.has(entry)),
     ...managedPaths.filter((path) => !sourceCheckout && path !== ".harness/contracts.mjs").map((path) => `/${path}`),

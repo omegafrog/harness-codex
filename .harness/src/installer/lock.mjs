@@ -3,11 +3,10 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
+import { transformSourceContent as transformSource } from './transforms.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
-const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1"]);
-// Allow only obsolete Claude projections so an update can safely retire them from consumer locks.
-const RETIRED_SOURCE_TRANSFORMS = new Map([["claude-agent-v1", ".claude/agents/"], ["claude-skills-v1", ".claude/skills/"]]);
+const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1"]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
@@ -101,7 +100,7 @@ export function validateHarnessLock(raw) {
       ...(rawEntry.source_path === undefined ? {} : { source_path: validateRelativePath(rawEntry.source_path, `${path}.source_path`) }),
       ...(rawEntry.source_transform === undefined ? {} : { source_transform: rawEntry.source_transform }),
     };
-    if (rawEntry.source_transform !== undefined && !SOURCE_TRANSFORMS.has(rawEntry.source_transform) && !path.startsWith(RETIRED_SOURCE_TRANSFORMS.get(rawEntry.source_transform) || "\0")) throw new HarnessLockError(`${path}.source_transform is unsupported: ${rawEntry.source_transform}`);
+    if (rawEntry.source_transform !== undefined && !SOURCE_TRANSFORMS.has(rawEntry.source_transform)) throw new HarnessLockError(`${path}.source_transform is unsupported: ${rawEntry.source_transform}`);
   }
   return { ...raw, schema_version: 1, files };
 }
@@ -123,8 +122,7 @@ export async function hashFile(path) {
 }
 
 function transformSourceContent(content, transform) {
-  if (transform === "project-local-paths-v1") return content.toString("utf8").replaceAll(".codex/skills/", ".agents/skills/");
-  return content;
+  return transformSource(content, transform);
 }
 
 async function transformedHash(root, relativePath, transform) {
@@ -177,6 +175,8 @@ export async function discoverHarnessOwnedFiles(root) {
   const patterns = [
     [".codex/internal-skills", () => true],
     [".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml")],
+    [".claude/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")],
+    [".claude/skills", () => true],
     [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],

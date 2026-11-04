@@ -8,6 +8,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
+import { configuredProvider } from './providers/index.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
@@ -45,7 +46,7 @@ export async function assessContextBudget({ root, estimatedTokens, usedTokens = 
 
 // These schemas use only this subset; reject unsupported constraints rather than silently ignoring them.
 function validate(value, schema, path = '$') {
-  const supported = ['$schema', 'type', 'const', 'enum', 'required', 'properties', 'additionalProperties', 'items', 'minLength', 'pattern', 'oneOf', 'anyOf', 'minItems', 'uniqueItems'];
+  const supported = ['$schema', 'type', 'const', 'enum', 'required', 'properties', 'additionalProperties', 'items', 'minLength', 'pattern', 'oneOf', 'anyOf', 'minItems', 'uniqueItems', 'description'];
   requireValue(Object.keys(schema).every((key) => supported.includes(key)), 'Unsupported skill schema constraint');
   if (schema.anyOf) requireValue(schema.anyOf.some((candidate) => { try { validate(value, candidate, path); return true; } catch { return false; } }), `${path}: expected a permitted shape`);
   if (schema.oneOf) {
@@ -95,7 +96,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
     requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
   }
-  return { skill, model_tier: tier, model, reasoning_effort: effort };
+  return { skill, provider: configuredProvider(config), model_tier: tier, model, reasoning_effort: effort };
 }
 
 export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {

@@ -7,6 +7,8 @@ import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, recordExecutionState } from './execution-state.mjs';
+import { parseYaml } from '../eval/yaml.mjs';
+import { configuredProvider } from './providers/index.mjs';
 
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || !['spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
@@ -29,27 +31,31 @@ async function collectAnswers(session, prefix, questions, answer) {
   return merged;
 }
 
-async function executionThreadId({ root, session, executionId, worktreeRef }) {
-  let threadId;
-  try { threadId = (await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${executionId}/exec.stderr.json` })).thread_id; }
+async function executionSession({ root, session, executionId, worktreeRef }) {
+  let log = {};
+  try { log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${executionId}/exec.stderr.json` }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const expectedThread = (await readExecutionInput({ root, execution_id: executionId })).context?.resume_session_id;
-  if (threadId && expectedThread && threadId !== expectedThread) throw new Error('Recorded Codex session ID does not match resumed session');
-  if (!threadId) threadId = expectedThread;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) {
-    if (!worktreeRef) throw new Error('Codex session ID missing from execution log');
+  const previousInput = await readExecutionInput({ root, execution_id: executionId });
+  const provider = log.provider || previousInput.context?.resume_provider || previousInput.context?.provider || 'codex';
+  let session_id = log.session_id || log.thread_id || previousInput.context?.resume_session_id;
+  if (session_id && previousInput.context?.resume_session_id && session_id !== previousInput.context.resume_session_id) throw new Error('Recorded provider session ID does not match resumed session');
+  if (session_id && previousInput.context?.resume_provider && provider !== previousInput.context.resume_provider) throw new Error('Recorded provider does not match resumed session');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session_id || '')) {
+    if (!worktreeRef) throw new Error(`${provider} session ID missing from execution log`);
     const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
     const matches = Object.values(record.agent_sessions || {}).filter((entry) => entry.execution_id === executionId);
-    if (matches.length !== 1) throw new Error('Codex session ID missing or ambiguous in canonical worktree record');
-    threadId = matches[0].session_id;
+    if (matches.length !== 1) throw new Error(`${provider} session ID missing or ambiguous in canonical worktree record`);
+    session_id = matches[0].session_id;
+    if (matches[0].provider && matches[0].provider !== provider) throw new Error('Canonical provider does not match execution log');
   }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) throw new Error('Codex session ID missing from execution');
-  return threadId;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session_id || '')) throw new Error(`${provider} session ID missing from execution`);
+  return { provider, session_id };
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false }) {
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
+  let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
@@ -181,10 +187,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || (reviewWaiting && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
-    const threadId = neverStarted ? null : await executionThreadId({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    const sessionInfo = neverStarted ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    if (sessionInfo) provider = sessionInfo.provider;
+    else if (previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
     const priorResult = previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
-    conversation = { ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(threadId ? { resume_session_id: threadId } : {}) };
+    conversation = { ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}) };
   }
   if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {
     if (answer === null) throw new Error('User answer required before resuming this stage');
@@ -196,14 +204,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
-    const log = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/exec.stderr.json` });
-    const threadId = log.thread_id || /(?:^|\n)session id:\s*([0-9a-f-]{36})(?:\n|$)/i.exec(log.stderr || '')?.[1];
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || '')) throw new Error('Codex session ID missing from stage execution');
+    const sessionInfo = await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    provider = sessionInfo.provider;
     const result = previousReturn.result || await readSkillSessionJson({ root, session_directory: previousSession, path: previous.result_ref });
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     answer = batchAnswers.answers;
-    conversation = { previous_result_ref: previous.result_ref, resume_session_id: threadId };
+    conversation = { previous_result_ref: previous.result_ref, resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider };
   }
   let plan_review_admission;
   if (stage.skill === 'plan-review') {
@@ -213,7 +220,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);

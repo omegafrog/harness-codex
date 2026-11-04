@@ -34,7 +34,7 @@ export async function assertExecutionStopped(entry, { root, session } = {}) {
   if (identities.some((identity) => !identity)) {
     if (!root || !session || !entry?.execution_id) throw new Error('Stage already running or process identity unavailable; inspection required');
     const log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${entry.execution_id}/exec.stderr.json` });
-    if ((!Number.isInteger(log.exit_code) && !/^SIG[A-Z0-9]+$/.test(log.exit_signal || '')) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
+    if ((!Number.isInteger(log.exit_code) && !/^SIG[A-Z0-9]+$/.test(log.exit_signal || '')) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.session_id || log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
   }
 }
 
@@ -64,8 +64,10 @@ export async function completeExecutionState({ root, session_directory }) {
 export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
+  const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
+  const orchestratorProvider = input.context?.orchestrator_provider || (codexSessionId ? 'codex' : null);
   const stage = input.context?.stage_id || input.skill;
-  if ((codexSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(codexSessionId)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid Codex session ID or stage ID');
+  if ((orchestratorSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestratorSessionId)) || (orchestratorProvider && !['codex', 'claude-code'].includes(orchestratorProvider)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid orchestrator session or stage ID');
   const directory = 'runtime/orchestrator';
   await assertWorkspaceTarget(session, `${directory}/workflow.json`);
   await mkdir(join(session, directory), { recursive: true });
@@ -90,6 +92,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     state ||= { schema_version: 1, workflow_ref: null, stages: {} };
     if (input.context?.worktree_ref) delete state.codex_session_id;
     else if (codexSessionId) state.codex_session_id = codexSessionId;
+    if (orchestratorSessionId) { state.orchestrator_session_id = orchestratorSessionId; state.orchestrator_provider = orchestratorProvider; }
     const previous = state.stages?.[stage];
     if (runnerClaim && previous?.status === 'running' && previous.execution_id === input.execution_id) {
       if (!previous.owner) throw new Error('Stage process identity unavailable; inspection required');

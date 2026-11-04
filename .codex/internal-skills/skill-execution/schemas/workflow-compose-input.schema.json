@@ -18,7 +18,9 @@
         },
         "stage_id": {
           "const": "workflow-compose"
-        }
+        },
+        "orchestrator_provider": { "enum": ["codex", "claude-code"] },
+        "orchestrator_session_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
       }
     }
   }

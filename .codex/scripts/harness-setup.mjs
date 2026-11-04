@@ -247,26 +247,38 @@ async function main() {
   const tiers = ['high_performance', 'implementation', 'execution', 'low_performance'];
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
-  const needsModelList = !reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !validEffort(config.agents?.[`${key}_reasoning_effort`]));
-  const models = needsModelList ? await readModelList() : [];
-  const selection = {};
+  const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
+  const provider = reuse ? currentProvider : await choose('실행 provider 선택', [
+    { value: 'codex', label: 'Codex CLI' }, { value: 'claude-code', label: 'Claude Code CLI' },
+  ], currentProvider, { agents: config.agents || {} });
+  const validProviderEffort = (value) => provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) : validEffort(value);
+  const claudeModels = [
+    { id: 'opus', description: '복잡한 설계·최종 검토' },
+    { id: 'sonnet', description: '일반 구현·실행' },
+    { id: 'haiku', description: '문서·제한된 조사' },
+  ].map((model) => ({ ...model, supportedReasoningEfforts: ['low', 'medium', 'high'] }));
+  const needsModelList = provider === 'codex' && (!reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !validProviderEffort(config.agents?.[`${key}_reasoning_effort`])));
+  const models = provider === 'codex' ? (needsModelList ? await readModelList() : []) : claudeModels;
+  const selection = { provider };
   for (const [key, title, recommendation] of [
-    ['high_performance', '복잡한 설계·최종 검토 모델', '가장 높은 추론 성능'],
-    ['implementation', '일반 구현 모델', '가벼운 모델과 high effort'],
-    ['execution', '서버·E2E 실행과 polling 모델', '균형 잡힌 모델과 medium effort'],
-    ['low_performance', '문서·제한된 조사 모델', '가장 가벼운 모델과 low effort'],
+    ['high_performance', '복잡한 설계·최종 검토 모델', provider === 'claude-code' ? 'opus' : '가장 높은 추론 성능'],
+    ['implementation', '일반 구현 모델', provider === 'claude-code' ? 'sonnet' : '가벼운 모델과 high effort'],
+    ['execution', '서버·E2E 실행과 polling 모델', provider === 'claude-code' ? 'sonnet' : '균형 잡힌 모델과 medium effort'],
+    ['low_performance', '문서·제한된 조사 모델', provider === 'claude-code' ? 'haiku' : '가장 가벼운 모델과 low effort'],
   ]) {
     console.log(`\n${title} — 권장: ${recommendation}`);
     models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
     const currentModel = config.agents?.[`${key}_model`];
     const currentEffort = config.agents?.[`${key}_reasoning_effort`];
-    const model = reuse && hasText(currentModel) ? currentModel : await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), currentModel);
+    const preferred = provider === 'claude-code' ? (key === 'high_performance' ? 'opus' : key === 'low_performance' ? 'haiku' : 'sonnet') : currentModel || '';
+    const selectedCurrentModel = reuse && hasText(currentModel) && (provider === 'codex' || models.some((item) => item.id === currentModel)) ? currentModel : '';
+    const model = selectedCurrentModel || await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), preferred);
     let effort = currentEffort;
-    if (!reuse || !validEffort(currentEffort)) {
+    if (!(reuse && selectedCurrentModel && validProviderEffort(currentEffort))) {
       const selected = models.find((item) => item.id === model);
       if (!selected) throw new Error(`Configured model is unavailable: ${model}`);
-      const efforts = selected.supportedReasoningEfforts.map((item) => ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
-      effort = await choose(`${title} 추론 강도 선택`, efforts, currentEffort);
+      const efforts = selected.supportedReasoningEfforts.map((item) => typeof item === 'string' ? ({ value: item, label: item }) : ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
+      effort = await choose(`${title} 추론 강도 선택`, efforts, currentEffort || 'medium');
     }
     selection[`${key}_model`] = model;
     selection[`${key}_reasoning_effort`] = effort;
@@ -394,6 +406,7 @@ async function main() {
     }
   }
   console.log('\n선택 요약');
+  console.log(`  provider: ${provider}`);
   for (const [key, value] of Object.entries(selection)) console.log(`  ${key}: ${value}`);
   console.log(`  tracker: ${mode}`);
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);

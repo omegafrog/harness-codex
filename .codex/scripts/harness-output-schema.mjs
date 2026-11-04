@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-import { isAbsolute } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 const runtime = new URL('../../.harness/src/workflow/', import.meta.url);
 const { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput } = await import(new URL('skill-execution.mjs', runtime));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', runtime));
+const { parseYaml } = await import(new URL('../eval/yaml.mjs', runtime));
+const { configuredProvider } = await import(new URL('providers/index.mjs', runtime));
 const { cliSession } = await import(new URL('cli-session.mjs', runtime));
 try {
   const args = process.argv.slice(2), opts = {};
@@ -18,6 +21,7 @@ try {
   await validateSkillInput({ root: opts.root, input });
   const prefix = `runtime/executions/${input.execution_id}`;
   const path = `${input.session_directory}/${prefix}/return.schema.json`;
-  await writeOutputSchema({ root: opts.root, input, prefix, path });
+  const config = parseYaml(await readFile(join(opts.root, '.codex/harness.yaml'), 'utf8'));
+  await writeOutputSchema({ root: opts.root, input, prefix, path, provider: configuredProvider(config) });
   process.stdout.write(`${JSON.stringify({ path })}\n`);
 } catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }

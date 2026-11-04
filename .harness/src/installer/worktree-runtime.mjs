@@ -5,6 +5,7 @@ import { readHarnessLock } from './lock.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { protectLocalInstallArtifacts } from './local-exclude.mjs';
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
+import { syncClaudeOrchestratorHook } from './claude-orchestrator-hook.mjs';
 
 // Linked worktrees inherit tracked application files, not ignored installed assets.
 export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
@@ -37,5 +38,8 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
   for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'docs/agents/EXEC.md', 'docs/agents/execution.json']) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  if (lock) await syncOrchestratorHook(targetRoot);
+  if (lock) {
+    await syncOrchestratorHook(targetRoot);
+    await syncClaudeOrchestratorHook(targetRoot);
+  }
 }
