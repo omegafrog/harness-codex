@@ -108,9 +108,14 @@ test('update can replace managed skills without creating backups when explicitly
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     const path = '.agents/skills/spec-me/SKILL.md';
     await writeFile(resolve(root, path), 'local content to replace');
+    await writeFile(resolve(root, '.codex/hooks.json'), '{}');
+    await writeFile(resolve(root, '.claude/settings.local.json'), '{}');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     assert.equal(result.backup_directory, null);
     assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/skills/spec-me/SKILL.md')));
     await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
+    await assert.rejects(readFile(resolve(root, '.claude/installer-backups'), 'utf8'), { code: 'ENOENT' });
+    assert.match(await readFile(resolve(root, '.codex/hooks.json'), 'utf8'), /harness-orchestrator-hook\.mjs/);
+    assert.match(await readFile(resolve(root, '.claude/settings.local.json'), 'utf8'), /harness-claude-orchestrator-hook\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -41,7 +41,7 @@ export async function inspectOrchestratorHook(root) {
   return { valid, path, reason: valid ? 'orchestrator_hook_registered' : 'orchestrator_hook_missing_or_stale' };
 }
 
-export async function syncOrchestratorHook(root) {
+export async function syncOrchestratorHook(root, { noBackup = false } = {}) {
   const directory = await lstat(join(root, '.codex'));
   if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Hook directory must be a real directory');
   const { path, text, config } = await readHooks(root);
@@ -53,7 +53,7 @@ export async function syncOrchestratorHook(root) {
     });
     config.hooks[event] = [...groups, { hooks: [orchestratorHook(root)] }];
   }
-  if (text !== null) {
+  if (text !== null && !noBackup) {
     const backup = `.codex/installer-backups/hooks-${randomUUID()}`;
     await assertWorkspaceTarget(root, `${backup}/hooks.json`);
     await mkdir(join(root, backup), { recursive: true, mode: 0o700 });

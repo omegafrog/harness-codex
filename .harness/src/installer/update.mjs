@@ -373,8 +373,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    await syncOrchestratorHook(targetRoot);
-    await syncClaudeOrchestratorHook(targetRoot);
+    await syncOrchestratorHook(targetRoot, { noBackup });
+    await syncClaudeOrchestratorHook(targetRoot, { noBackup });
   }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
 }

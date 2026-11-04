@@ -34,7 +34,7 @@ export async function inspectClaudeOrchestratorHook(root) {
   return { valid, path, reason: valid ? 'claude_orchestrator_hook_registered' : 'claude_orchestrator_hook_missing_or_stale' };
 }
 
-export async function syncClaudeOrchestratorHook(root) {
+export async function syncClaudeOrchestratorHook(root, { noBackup = false } = {}) {
   const settingsDirectory = join(root, '.claude');
   const directory = await lstat(settingsDirectory);
   if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Claude settings directory must be a real directory');
@@ -47,7 +47,7 @@ export async function syncClaudeOrchestratorHook(root) {
     });
     config.hooks[event] = [...groups, { hooks: [claudeOrchestratorHook()] }];
   }
-  if (text !== null) {
+  if (text !== null && !noBackup) {
     const backup = `.claude/installer-backups/${randomUUID()}/settings.local.json`;
     await assertWorkspaceTarget(root, backup);
     await mkdir(dirname(join(root, backup)), { recursive: true, mode: 0o700 });
