@@ -266,9 +266,9 @@ export async function writeHarnessLock({ sourceRoot, targetRoot, lockPath = DEFA
   return lock;
 }
 
-export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, force = false, initialize = false, scope = "all" } = {}) {
+export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, force = false, noBackup = false, initialize = false, scope = "all" } = {}) {
   if (!sourceRoot || !targetRoot) throw new TypeError("sourceRoot and targetRoot are required");
-  if (typeof force !== "boolean" || typeof initialize !== "boolean" || !["all", "agents", "skills"].includes(scope)) throw new TypeError("Invalid installer force/initialize/scope options");
+  if (typeof force !== "boolean" || typeof noBackup !== "boolean" || typeof initialize !== "boolean" || !["all", "agents", "skills"].includes(scope)) throw new TypeError("Invalid installer force/noBackup/initialize/scope options");
   if (await isHarnessSourceCheckout(sourceRoot, targetRoot)) {
     return { lock: null, updated: [], added: [], removed_lock_entries: [], backup_directory: null, skipped: [{ path: ".codex", status: "source_checkout" }] };
   }
@@ -348,7 +348,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   let backup_directory = null;
   const backupPrefix = `.codex/installer-backups/${randomUUID()}`;
-  for (const action of actions) {
+  for (const action of noBackup ? [] : actions) {
     if (!action.backup) continue;
     const backup = await containedPath(targetRoot, `${backupPrefix}/${action.descriptor.target_path}`);
     backup_directory ||= resolve(targetRoot, backupPrefix);

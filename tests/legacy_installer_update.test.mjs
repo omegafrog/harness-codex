@@ -98,3 +98,19 @@ test('Doctor reports a missing runtime without throwing', async () => {
     assert.equal(JSON.parse(output).diagnostics[0].code, 'doctor_runtime_unavailable');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('update can replace managed skills without creating backups when explicitly requested', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/no-backup-`);
+  try {
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const path = '.agents/skills/spec-me/SKILL.md';
+    await writeFile(resolve(root, path), 'local content to replace');
+    const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
+    assert.equal(result.backup_directory, null);
+    assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/skills/spec-me/SKILL.md')));
+    await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

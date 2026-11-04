@@ -12,7 +12,7 @@ import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checko
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install/update)\n  -h, --help        Show this help\n`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install/update)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -30,6 +30,7 @@ function parseArgs(argv) {
     installAgents: true,
     installSkills: true,
     force: false,
+    noBackup: false,
   };
 
   while (args.length > 0) {
@@ -47,6 +48,9 @@ function parseArgs(argv) {
     } else if (arg === "--force") {
       if (command === "lock") throw new Error("--force is only supported by install/update");
       options.force = true;
+    } else if (arg === "--no-backup") {
+      if (command !== "update") throw new Error("--no-backup is only supported by update");
+      options.noBackup = true;
     } else if (arg === "--help" || arg === "-h") {
       return { help: true };
     } else {
@@ -248,7 +252,7 @@ async function main() {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
-    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force });
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force, noBackup: options.noBackup });
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
