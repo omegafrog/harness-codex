@@ -38,7 +38,7 @@ try {
   const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage });
   const providerId = input.context?.provider || binding.provider;
-  if (providerId !== binding.provider || (input.context?.resume_provider && input.context.resume_provider !== providerId) || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
+  if (providerId !== binding.provider || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
   const adapter = await loadProvider(providerId);
   const prefix = join(session, 'runtime/executions', opts['execution-id']);
   const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'codex-last-message.json');
