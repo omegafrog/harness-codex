@@ -25,11 +25,8 @@ async function hash(root, path) {
 export async function snapshotSpecReview({ root, ticketId, input_paths = [] }) {
   requireValue(ID.test(ticketId || ''), 'Valid ticketId is required');
   const directory = `docs/specs/${ticketId}`;
-  const paths = new Set([`${directory}/request.md`, `${directory}/product-spec.md`, `${directory}/architecture-spec.md`, ...input_paths]);
-  const optional = ['CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/architecture/domain-model.md', `${directory}/system-targets.yaml`];
-  for (const path of optional) {
-    try { await hash(root, path); paths.add(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
+  const paths = new Set([`${directory}/product-spec.md`, `${directory}/architecture-spec.md`]);
+  requireValue(input_paths.every((path) => paths.has(path)), 'Spec review inputs are limited to Product and Architecture Specs');
   const inputs = {};
   for (const path of [...paths].sort()) inputs[path] = await hash(root, path);
   return inputs;

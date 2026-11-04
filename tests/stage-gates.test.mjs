@@ -25,10 +25,15 @@ test("installed review gate rejects missing and stale reviews and accepts the cu
     const { updateReviewAttempt } = await import(`${runtime}/review-attempts.mjs`);
     await assert.rejects(requireCurrentSpecReview({ root, ticketId: "example" }), /recorded passing Architecture review/);
     const inputs = await snapshotSpecReview({ root, ticketId: "example" });
+    assert.deepEqual(Object.keys(inputs).sort(), ["docs/specs/example/architecture-spec.md", "docs/specs/example/product-spec.md"]);
+    await assert.rejects(snapshotSpecReview({ root, ticketId: "example", input_paths: ["docs/specs/example/request.md"] }), /limited to Product and Architecture Specs/);
     const scope = "spec-example-architecture";
     const admitted = await updateReviewAttempt({ root, scope, action: "begin", inputs });
     const review = { axis: "architecture", ticket_id: "example", reviewer_id: "reviewer", author_ids: ["writer"], fork_turns: "none", verdict: "pass", inputs, findings: [] };
     await updateReviewAttempt({ root, scope, action: "record", attemptId: admitted.attempt_id, inputs, review });
+    assert.equal((await requireCurrentSpecReview({ root, ticketId: "example" })).status, "pass");
+    await writeFile(join(dir, "request.md"), "# Changed request\n");
+    await writeFile(join(root, "CONTEXT.md"), "# Changed glossary\n");
     assert.equal((await requireCurrentSpecReview({ root, ticketId: "example" })).status, "pass");
     await writeFile(join(dir, "architecture-spec.md"), "# Changed\n");
     await assert.rejects(requireCurrentSpecReview({ root, ticketId: "example" }), /inputs changed/);
