@@ -194,6 +194,12 @@ export async function validateSkillInput({ root, input }) {
   input = await resolveInputWorktree(root, input);
   validate(input, await json(join(root, CONTRACT, 'schemas/input.schema.json')));
   if (input.skill === 'tracker-publish') requireValue(input.context?.publication_approved === true, 'User publication approval is required');
+  if (input.context?.worktree_ref && ['to-ticket', 'tracker-publish'].includes(input.skill)) {
+    const { requireCurrentSpecReview } = await import('./spec-review.mjs');
+    await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
+    const { requireCurrentSpecWriters } = await import('./spec-writer.mjs');
+    await requireCurrentSpecWriters({ root, ticketId: input.context.plan_set_id });
+  }
   if (input.skill === 'workflow-compose') {
     validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));
     requireValue(isAbsolute(input.context?.worktree_ref || '') && basename(input.context.worktree_ref) === 'worktree.json', 'Compose requires a canonical worktree reference');
@@ -291,6 +297,12 @@ export async function validateSkillReturn({ root, input, envelope }) {
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id && reviewed && Object.keys(reviewed).length === Object.keys(admission.inputs).length && Object.entries(admission.inputs).every(([path, digest]) => reviewed[path] === digest), 'Plan review result must match the admitted workspace snapshot');
   }
   if (envelope.status === 'completed') {
+    if (input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
+      const { requireCurrentSpecReview } = await import('./spec-review.mjs');
+      await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
+      const { requireCurrentSpecWriters } = await import('./spec-writer.mjs');
+      await requireCurrentSpecWriters({ root, ticketId: input.context.plan_set_id });
+    }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
     }

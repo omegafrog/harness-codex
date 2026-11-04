@@ -41,7 +41,7 @@ try {
   const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage });
   const providerId = input.context?.provider || binding.provider;
-  if (providerId !== binding.provider || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
+  if (providerId !== binding.provider || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== providerId) || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
   const adapter = await loadProvider(providerId);
   const prefix = join(session, 'runtime/executions', opts['execution-id']);
   const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'codex-last-message.json');
@@ -87,8 +87,6 @@ try {
   const instructions = `The execution workspace is ${root}. Read the execution input at ${inputPath}.${profileGuide}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : `Read ${guide}. ${instructions}`;
   const resume = input.context?.resume_session_id;
-  const resumeWriteDirs = resume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(resume, process.env) : [];
-  const command = adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output, resume });
   const owner = await processIdentity(process.pid);
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/process-events.jsonl`);
@@ -107,16 +105,30 @@ try {
   const heartbeat = setInterval(() => { recordEvent({ event: 'heartbeat' }); process.stderr.write(`${JSON.stringify({ event: 'heartbeat', execution_id: input.execution_id })}\n`); }, 30000);
   heartbeat.unref();
   let result;
-  try { result = await adapter.run({ root, args: command, prompt, requiredSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
+  let parentRuns = 0;
+  const runParent = async ({ output: parentOutput, prompt: parentPrompt, resume: parentResume }) => {
+    const resumeWriteDirs = parentResume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(parentResume, process.env) : [];
+    const command = adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume });
+    return adapter.run({ root, args: command, prompt: parentPrompt, requiredSkill: parentRuns++ === 0 && !input.context?.interrupted_execution_id ? requiredSkill : null, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });
     process.stderr.write(`${JSON.stringify({ event: 'started', pid })}\n`);
-  }, output, onSession: async (threadId) => {
-    if (resume && threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
+  }, onSession: async (threadId) => {
+    if (parentResume && threadId !== parentResume) throw new Error('Resumed provider session ID mismatch');
     await recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: input.context.stage_id, session_id: threadId, execution_id: input.execution_id, provider: providerId });
     process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`);
-  } }); } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); if (stdoutFd !== null) closeSync(stdoutFd); }
+  }, output: parentOutput });
+  };
+  try {
+    const { runSpecWriterLoop } = await import(new URL('spec-writer-loop.mjs', base));
+    const { dispatchSpecWriter } = await import(new URL('spec-writer.mjs', base));
+    result = await runSpecWriterLoop({ root, session, input, output, prompt, resume, runParent, dispatchWriter: dispatchSpecWriter, onEvent: recordEvent, onWriterStart: async (pid) => {
+      const child = await processIdentity(pid);
+      if (!child?.start || !child.boot) throw new Error('Writer process identity unavailable');
+      await recordExecutionState({ root, input, binding, status: 'running', owner, child });
+    } });
+  } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); if (stdoutFd !== null) closeSync(stdoutFd); }
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ provider: providerId, exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, session_id: result.sessionId, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.sessionId !== resume) throw new Error('Resumed Codex session ID mismatch');
   if (result.code === 0) {

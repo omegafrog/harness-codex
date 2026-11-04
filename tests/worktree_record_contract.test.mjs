@@ -441,6 +441,36 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(specResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: specRef, result: specResult }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: specRef });
+    const planCommand = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'];
+    assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /recorded passing Architecture review/);
+    const ticketId = JSON.parse(await readFile(tree.worktree_ref, 'utf8')).plan_set_id;
+    const specDir = join(tree.workspace, 'docs/specs', ticketId);
+    await mkdir(specDir, { recursive: true });
+    await writeFile(join(specDir, 'request.md'), '# request\n');
+    const writerBin = join(tree.session_directory, 'runtime/test-writer-bin');
+    await mkdir(writerBin, { recursive: true });
+    await writeFile(join(writerBin, 'package.json'), '{"type":"commonjs"}');
+    const writerMarkdown = [...['문제와 맥락', '목표와 기대 효과', '사용자와 행위자', '유비쿼터스 언어와 용어', '핵심 유스케이스', '업무 규칙과 불변 조건', '상태와 상태 전이', '실패 예외 및 경계 조건', '입력과 출력', '범위와 비목표', '우선순위와 트레이드오프', '성공 조건과 수용 기준'], ...['설계 범위와 현재 모델', 'Domain', 'Aggregate', 'Application Service', 'Bounded Context', 'Technical Architecture', 'Runtime Design', 'Error Handling and Recovery', 'Security', 'Observability', 'Change Boundaries', 'Verification Requirements', 'Alternatives and Trade-offs', 'Risks and Open Questions']].map((heading) => `## ${heading}\n확정된 내용\n`).join('\n');
+    await writeFile(join(writerBin, 'codex'), `#!/usr/bin/env node\nconst fs=require("fs");const a=process.argv;process.stdin.resume();process.stdin.on("end",()=>{fs.writeFileSync(a[a.indexOf("--output-last-message")+1],JSON.stringify({status:"completed",summary:"작성 완료",content:${JSON.stringify(writerMarkdown)}}));console.log(JSON.stringify({type:"thread.started",thread_id:"a77aaa03-329c-4d59-b4c5-269746a893f2"}));});\n`);
+    await chmod(join(writerBin, 'codex'), 0o755);
+    const writerInputDir = join(tree.session_directory, 'runtime/test-writer-input');
+    await mkdir(writerInputDir, { recursive: true });
+    for (const axis of ['product', 'architecture']) {
+      const requestPath = `runtime/test-writer-input/${axis}.json`;
+      const topics = await readFile(join(tree.workspace, '.codex/internal-skills', `${axis}-spec`, 'references/topics.md'), 'utf8');
+      const coverage = [...topics.matchAll(/^\d+\.\s+\*\*(.+?)\*\*/gm)].map((match) => ({ topic: match[1], status: 'settled', reason: '사용자 요청' }));
+      await writeFile(join(tree.session_directory, requestPath), JSON.stringify({ schema_version: 1, request_id: `${axis}-test`, axis, plan_set_id: ticketId, decisions: [{ id: 'REQ-1', decision: '계산기', evidence: [`docs/specs/${ticketId}/request.md`] }], coverage, diagram_inventory: [], overwrite_authorized: true }));
+      execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-spec-writer.mjs'), '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--request', requestPath, '--axis', axis, '--provider', 'codex'], { cwd: tree.workspace, env: { ...process.env, PATH: `${writerBin}:${process.env.PATH}` }, stdio: 'pipe' });
+    }
+    const approved = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--spec-overwrite-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    for (const axis of ['product', 'architecture']) assert.equal(approved.input.context.approved_spec_overwrites[axis], createHash('sha256').update(await readFile(join(specDir, `${axis}-spec.md`))).digest('hex'));
+    const { snapshotSpecReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/spec-review.mjs')}`);
+    const { updateReviewAttempt } = await import(`file://${join(tree.workspace, '.harness/src/workflow/review-attempts.mjs')}`);
+    const inputs = await snapshotSpecReview({ root: tree.workspace, ticketId });
+    const scope = `spec-${ticketId}-architecture`;
+    const admitted = await updateReviewAttempt({ root: tree.workspace, scope, action: 'begin', inputs });
+    const architectureReview = { axis: 'architecture', ticket_id: ticketId, reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs, findings: [] };
+    await updateReviewAttempt({ root: tree.workspace, scope, action: 'record', attemptId: admitted.attempt_id, inputs, review: architectureReview });
     const plan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(plan.input.context.transition.from_stage, 'spec-me');
     assert.equal(plan.input.context.transition.result_ref, specRef);
@@ -554,9 +584,9 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await mkdir(join(tree.session_directory, 'runtime/to-ticket'), { recursive: true });
     await writeFile(join(tree.session_directory, contextPath), 'current review context\n');
     const currentContextHash = createHash('sha256').update('current review context\n').digest('hex');
-    const canonicalResult = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'completed', code: 'OK', summary: 'spec complete', artifacts: [{ base: 'session', path: contextPath, kind: 'plan_review_context', sha256: currentContextHash }], questions: [], review_request: null };
+    const canonicalResult = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', summary: 'review pending', artifacts: [{ base: 'session', path: contextPath, kind: 'plan_review_context', sha256: currentContextHash }], questions: [], review_request: null };
     const staleResult = { ...canonicalResult, artifacts: [{ ...canonicalResult.artifacts[0], sha256: '0'.repeat(64) }] };
-    const codexEnvelope = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: `runtime/executions/${runId}/result.json`, result: staleResult };
+    const codexEnvelope = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: `runtime/executions/${runId}/result.json`, result: staleResult };
     const environment = { ...process.env, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH}`, TEST_CODEX_RETURN: JSON.stringify(codexEnvelope), TEST_CODEX_STORED_RESULT: JSON.stringify(canonicalResult), TEST_CODEX_PROMPT: promptPath, TEST_CODEX_ARGS: join(tree.session_directory, 'runtime/executions', runId, 'test-args'), TEST_CODEX_THREAD: record.worktree_id, TEST_CODEX_EXECUTION_ID: runId };
     const prefix = join(tree.session_directory, 'runtime/executions', runId);
     const gate = join(parent, 'release-codex');
@@ -569,7 +599,8 @@ test('compose creates input only in the worktree and leaves main without .io', a
         try { const value = await readFile(path, 'utf8'); if (predicate(value)) return value; } catch (error) { if (error.code !== 'ENOENT') throw error; }
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      throw new Error(`Timed out waiting for ${path}`);
+      const runnerError = await readFile(join(prefix, 'runner.stderr.log'), 'utf8').catch(() => '');
+      throw new Error(`Timed out waiting for ${path}: ${runnerError}`);
     };
     const eventsPath = join(prefix, 'process-events.jsonl');
     const liveEvents = await waitFor(eventsPath, (value) => value.includes('item.started'));
@@ -711,8 +742,8 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await mkdir(join(tree.session_directory, 'runtime/to-ticket'), { recursive: true });
     await writeFile(recoveryArtifact, 'current plan review\n');
     const recoveryHash = createHash('sha256').update('current plan review\n').digest('hex');
-    const recoveredResult = { schema_version: 1, execution_id: recoveryInput.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', summary: 'Spec complete', artifacts: [{ base: 'session', path: recoveryArtifactPath, kind: 'plan_review_context', sha256: recoveryHash }], questions: [], review_request: null };
-    const staleReturn = { schema_version: 1, execution_id: recoveryInput.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: `runtime/executions/${recoveryInput.execution_id}/result.json`, result: { ...recoveredResult, artifacts: [{ ...recoveredResult.artifacts[0], sha256: '0'.repeat(64) }] } };
+    const recoveredResult = { schema_version: 1, execution_id: recoveryInput.execution_id, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', summary: 'Review pending', artifacts: [{ base: 'session', path: recoveryArtifactPath, kind: 'plan_review_context', sha256: recoveryHash }], questions: [], review_request: null };
+    const staleReturn = { schema_version: 1, execution_id: recoveryInput.execution_id, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: `runtime/executions/${recoveryInput.execution_id}/result.json`, result: { ...recoveredResult, artifacts: [{ ...recoveredResult.artifacts[0], sha256: '0'.repeat(64) }] } };
     await writeFile(join(recoveryDir, 'result.json'), JSON.stringify(recoveredResult));
     await writeFile(join(recoveryDir, 'return.json'), JSON.stringify(staleReturn));
     await writeFile(join(recoveryDir, 'exec.stderr.json'), JSON.stringify({ exit_code: 0, thread_id: record.worktree_id, binding: { model: 'example', reasoning_effort: 'low' } }));

@@ -9,6 +9,38 @@ import { updateProject } from "../.harness/src/installer/update.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { evaluateWorkflowStage } from "../.harness/src/workflow/stage-gates.mjs";
 
+test("installed review gate rejects missing and stale reviews and accepts the current admitted review", async () => {
+  const root = await mkdtemp(join(tmpdir(), "installed-current-spec-review-"));
+  try {
+    execFileSync("git", ["init", "-q", root]);
+    const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    const dir = join(root, "docs/specs/example");
+    await mkdir(dir, { recursive: true });
+    for (const name of ["request.md", "product-spec.md", "architecture-spec.md"]) await writeFile(join(dir, name), `# ${name}\n`);
+    const runtime = `file://${join(root, ".harness/src/workflow")}`;
+    const { snapshotSpecReview, requireCurrentSpecReview } = await import(`${runtime}/spec-review.mjs`);
+    const { updateReviewAttempt } = await import(`${runtime}/review-attempts.mjs`);
+    await assert.rejects(requireCurrentSpecReview({ root, ticketId: "example" }), /recorded passing Architecture review/);
+    const inputs = await snapshotSpecReview({ root, ticketId: "example" });
+    const scope = "spec-example-architecture";
+    const admitted = await updateReviewAttempt({ root, scope, action: "begin", inputs });
+    const review = { axis: "architecture", ticket_id: "example", reviewer_id: "reviewer", author_ids: ["writer"], fork_turns: "none", verdict: "pass", inputs, findings: [] };
+    await updateReviewAttempt({ root, scope, action: "record", attemptId: admitted.attempt_id, inputs, review });
+    assert.equal((await requireCurrentSpecReview({ root, ticketId: "example" })).status, "pass");
+    await writeFile(join(dir, "architecture-spec.md"), "# Changed\n");
+    await assert.rejects(requireCurrentSpecReview({ root, ticketId: "example" }), /inputs changed/);
+    const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
+    assert.match(status, /docs\/specs\/example\/architecture-spec\.md/);
+    assert.doesNotMatch(status, /\.harness\/src/);
+    assert.match(execFileSync("git", ["check-ignore", "-v", ".harness/src/workflow/spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.harness/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 for (const condition of ["product_diagram_required", "architecture_diagram_required"]) {
   const workflow = { stages: [{ id: "diagram", condition }] };
 

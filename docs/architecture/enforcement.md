@@ -54,6 +54,8 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 
 ## Fresh Spec 적대적 리뷰
 
+`spec-me` 실행기는 확정된 결정·근거·coverage 묶음을 참조한 Product/Architecture writer 요청을 가로채 각 fresh writer를 실행하고, 원본 부모 session을 이어간다. 완료 결과와 `to-ticket`·`tracker-publish` 입력 준비는 정본 worktree의 plan set에 대한 두 writer receipt와 최신 Architecture 리뷰를 다시 확인한다. 실행 기록이 없거나 Spec·입력·근거의 hash가 달라지면 다음 단계로 진행하지 않는다. 기계 검사는 실제 문서의 의미적 완전성을 보장하지 않으므로 독립 reviewer가 판단한다.
+
 spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Architecture Spec만 새 reviewer로 검토한다. reviewer는 요청 원문·Product/Architecture Spec·확정 답변과 현행 프로젝트 근거를 직접 읽으며 parent/writer 분석을 상속하지 않는다. 공통 [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md)에 따라 DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결, 요구 구현에 필요한 인프라 완전성을 평가한다. `.harness/src/workflow/spec-review.mjs`가 필수/추가 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 Architecture review 누락·self author·상속·중대 지적·stale Spec/Product/source 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
 
 ## 설치/업데이트의 반복 수동 수리 방지

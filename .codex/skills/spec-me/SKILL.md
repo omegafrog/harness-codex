@@ -17,7 +17,15 @@ description: Turn a user request into Product Spec and Architecture Spec, then c
 
 Standalone `spec-me` uses the model ID and reasoning effort resolved from `agents.high_performance_model` and `agents.high_performance_reasoning_effort`. An orchestrator-managed stage uses its supplied stage binding instead. The skill cannot change the model of an already-running invocation.
 
-`spec_document_writer` owns Spec Markdown and `diagram_creator` owns diagram files. 필요한 작성·다이어그램·리뷰 작업은 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 서브에이전트에 직접 위임한다. 독립 리뷰는 요청 원문과 산출물을 전달한 fresh context에서 수행한다.
+`spec_document_writer` owns Spec Markdown and `diagram_creator` owns diagram files. Product와 Architecture의 결정이 각각 확정되면 아래 writer 요청을 반환한다. 실행기가 별도 fresh writer를 시작하고 결과를 같은 `spec-me` 대화에 돌려준다. 다이어그램과 독립 리뷰는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 위임한다.
+
+## Writer 실행 계약
+
+Product 및 Architecture 각각에 대해 결정·근거·coverage가 확정되면, 사용자 원문과 확정 답변을 `docs/specs/<plan-set-id>/request.md`에 보존한다. session의 JSON 파일에 다음 입력을 기록한다: `schema_version: 1`, 고유 `request_id`, `axis: product|architecture`, 정본 `plan_set_id`, `decisions: [{id, decision, evidence: [workspace 상대 파일 경로]}]`, `coverage: [{topic, status: settled|not_applicable, reason}]`, `diagram_inventory: [workspace 상대 파일 경로]`, `overwrite_authorized: boolean`. 해당 축의 `references/topics.md`에 있는 모든 번호 항목을 빠짐없이 포함하고 `topic`에는 해당 제목을 원문 그대로 쓴다. 근거는 실제 파일을 가리킨다. 미확정 결정은 채워 넣지 말고 사용자 질문으로 반환한다. 기존 Spec 덮어쓰기는 사용자 승인에 한해 허용한다.
+
+Product writer가 참조하는 확정 답변은 `docs/specs/<plan-set-id>/product-decisions.md`에 보존하고 이후 Architecture 인터뷰로 수정하지 않는다. Architecture에서 추가한 답변은 `request.md`에 갱신한다. Product 결정 자체가 바뀌면 product-decisions와 Product writer를 함께 다시 수행한다. 이번 workflow의 writer receipt가 없는 기존 Spec을 교체하려면 실제 사용자 승인 뒤 `harness-prepare-input.mjs --spec-overwrite-approved true`로 승인 당시 파일 hash를 기록한다. 파일이 바뀌었으면 승인을 옮기지 않는다.
+
+각 writer 요청은 공통 envelope의 `action_required / REVIEW_REQUIRED`와 `review_request`로 반환한다. `agent_profile`은 `spec_document_writer`, `skill`은 축에 따라 `product-spec` 또는 `architecture-spec`, `context_path`는 위 JSON의 session 상대 경로다. 실행기는 이를 내부 writer 요청으로 처리해 입력 파일을 검증하고 같은 provider의 fresh writer를 직접 실행한다. 호출자는 writer 결과를 추정하거나 직접 문서를 대체하지 않는다. 실행기가 돌려준 receipt를 읽은 뒤 다음 축 또는 독립 리뷰를 진행한다. writer의 문서가 바뀌어야 하면 같은 방식으로 새 요청을 보낸다. 모든 writer receipt와 최종 Spec hash 및 독립 리뷰가 현재일 때만 `completed/OK`를 반환한다.
 
 Architecture Spec 독립 리뷰는 `spec-me` 실행 안에서 fresh `spec_adversarial_reviewer` native subagent를 직접 호출하고 결과를 수집·수정·재검토한다. 이 작업을 `review_request.skill: spec-review`로 상위 orchestrator에 반환하지 않는다. 리뷰 준비가 불가능하면 실제 실패 사유를 반환하며 리뷰를 통과한 것으로 취급하지 않는다. 별도의 Architecture 결정 리뷰가 `review_request`를 필요로 하면 `context_path`는 Spec 디렉터리가 아닌 session 상대 JSON 파일이다.
 

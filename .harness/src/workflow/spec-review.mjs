@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { assertReviewAttempt, assertActiveReviewAdmission } from './review-attempts.mjs';
+import { assertReviewAttempt, assertActiveReviewAdmission, inspectReviewHistory } from './review-attempts.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
@@ -72,4 +72,14 @@ export async function inspectSpecReviews({ root, ticketId, reviews }) {
     await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: record });
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }
+}
+
+// Planning may advance only from an admitted, current independent review.
+export async function requireCurrentSpecReview({ root, ticketId }) {
+  requireValue(ID.test(ticketId || ''), 'Valid ticketId is required for Architecture review');
+  const history = await inspectReviewHistory({ root, scope: `spec-${ticketId}-architecture` });
+  requireValue(history.recorded_state === 'pass' && history.last_review, 'A recorded passing Architecture review is required');
+  const result = await inspectSpecReviews({ root, ticketId, reviews: { architecture: history.last_review } });
+  requireValue(result.status === 'pass', `Architecture review is not current: ${result.reason}`);
+  return result;
 }

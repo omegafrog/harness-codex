@@ -84,6 +84,8 @@
         "codex_session_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
         "stage_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
         "resume_session_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+        "interrupted_execution_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+        "approved_spec_overwrites": { "type": "object", "additionalProperties": false, "properties": { "product": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "architecture": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
         "agent_profile": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
         "role": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
         "transition": {
