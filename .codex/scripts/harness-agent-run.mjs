@@ -12,7 +12,8 @@ const base = installed;
 const { loadProvider } = await import(new URL('providers/index.mjs', base));
 const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
-const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
+const { executionInputAbsolutePath } = await import(new URL('execution-input.mjs', base));
+const { inspectWorkspace } = await import(new URL('../eval/workspace-preflight.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
 const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
 const { parseWorktreeRecord, recordWorkflowSession } = await import(new URL('worktrees.mjs', base));
@@ -30,6 +31,8 @@ try {
   const root = process.cwd();
   // 실행 입력과 worktree 참조가 서로 일치하는지 확인한 뒤 skill/profile을 선택한다.
   const session = await cliSession(root, opts['worktree-ref']);
+  const workspace = await inspectWorkspace({ workspaceRoot: root, cwd: root });
+  if (!workspace.valid) throw new Error(`Execution workspace invalid: ${workspace.reason}; cwd=${workspace.cwd}; git_root=${workspace.git_root}; registered=${workspace.worktree_registered}`);
   const input = await readExecutionInput({ root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id'] || input.context?.worktree_ref !== opts['worktree-ref']) throw new Error('Input does not match the requested execution');
   if (input.context?.parent_execution_id) throw new Error('Internal tasks must run as subagents of their parent stage');
@@ -67,16 +70,21 @@ try {
   const publicSkill = `.agents/skills/${input.skill}/SKILL.md`;
   const guide = [internal, publicSkill, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
   if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);
-  const location = await findExecutionInput(root, opts['execution-id']);
+  const inputPath = await executionInputAbsolutePath(root, opts['execution-id']);
   const answers = join(prefix, 'answers.json');
   const feedback = join(prefix, 'feedback.json');
+  for (const name of ['answers.json', 'feedback.json']) if (existsSync(join(prefix, name))) {
+    await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/${name}`);
+    const info = await lstat(join(prefix, name));
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error(`Unsafe execution ${name}`);
+  }
   const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow, stage });
   const executionBinding = { ...binding, sandbox };
   // 이 prompt는 실제 작업 절차를 담지 않고, 선택된 skill과 실행 입력으로 안내한다.
   const profileGuide = profile ? providerId === 'claude-code' ? ` Read .claude/agents/${profile}.md and use the matching Claude native subagent for any required independent role.` : ` Read .codex/agents/${profile}.toml.` : '';
   const requiredSkill = providerId === 'claude-code' && guide === publicSkill ? input.skill : null;
   if (requiredSkill && !existsSync(join(root, `.claude/skills/${requiredSkill}/SKILL.md`))) throw new Error(`Claude skill instruction is missing: ${requiredSkill}`);
-  const instructions = `Read ${location.path}.${profileGuide}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
+  const instructions = `The execution workspace is ${root}. Read the execution input at ${inputPath}.${profileGuide}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : `Read ${guide}. ${instructions}`;
   const resume = input.context?.resume_session_id;
   const resumeWriteDirs = resume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(resume, process.env) : [];

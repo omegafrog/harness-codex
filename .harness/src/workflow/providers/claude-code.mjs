@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export const id = 'claude-code';
 
@@ -57,6 +57,12 @@ export async function run({ root, args, prompt, env, output, requiredSkill, onSt
         }
       }
       onEvent?.({ event: 'provider_event', provider: id, type: event.type });
+      if (event.type === 'result' && Array.isArray(event.permission_denials)) for (const denial of event.permission_denials) {
+        const requested = denial.tool_input?.file_path;
+        if (typeof requested !== 'string') continue;
+        const path = resolve(root, requested), within = relative(root, path);
+        onEvent?.({ event: 'permission_denied', provider: id, tool: denial.tool_name, path, workspace: root, within_workspace: within === '' || (!isAbsolute(within) && within !== '..' && !within.startsWith(`..${sep}`)) });
+      }
       if (event.type === 'error' || event.type === 'result' && event.subtype !== 'success') { errors.push(event); onCodexError?.(event); }
       if (event.type === 'result') result = event;
     } catch { errors.push({ message: 'Claude Code emitted invalid stream-json output' }); }

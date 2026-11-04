@@ -9,6 +9,11 @@ export function executionInputPath(planSetId, skill, executionId) {
   return `.io/${planSetId}/${skill}/${executionId}/input.json`;
 }
 
+export async function executionInputAbsolutePath(root, executionId) {
+  const location = await findExecutionInput(root, executionId);
+  return join(location.workspace, location.path);
+}
+
 export async function writeExecutionInput(root, input, planSetId) {
   const path = executionInputPath(planSetId, input.skill, input.execution_id);
   await assertWorkspaceTarget(root, path);

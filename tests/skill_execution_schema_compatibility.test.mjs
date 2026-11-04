@@ -165,6 +165,10 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal(failedClaude.sessionId, null);
     assert.match(rawStdout, /startup failure on stdout/);
     assert.ok(events.some((event) => event.event === 'session_observed' && !event.present));
+    await writeFile(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '{"type":"system","subtype":"init","session_id":"${fakeSession}"}' '{"type":"result","subtype":"success","session_id":"${fakeSession}","permission_denials":[{"tool_name":"Read","tool_input":{"file_path":"${root}/../other/input.json"}}],"structured_output":{"ok":true}}'\n`);
+    const deniedEvents = [];
+    await claude.run({ root, args: [], prompt: 'prompt', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: join(root, '.io/denial.json'), onStart: async () => {}, onEvent: (event) => deniedEvents.push(event) });
+    assert.ok(deniedEvents.some((event) => event.event === 'permission_denied' && event.within_workspace === false && event.workspace === root));
     const session = join(root, '.io');
     await mkdir(session, { recursive: true });
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_SKILL_EXECUTION_ID: 'claude-stage' }, input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: fakeSession, agent_id: 'agent-review-1', agent_type: 'spec_reviewer' }) });
@@ -214,6 +218,34 @@ test('installed stage accepts changed documents while preserving review snapshot
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('installed execution input resolves to the linked worktree, not the source checkout', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'harness-path-boundary-'));
+  const root = join(parent, 'source'), tree = join(parent, 'linked');
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    await mkdir(root);
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'initial']);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    execFileSync('git', ['-C', root, 'worktree', 'add', '-qb', 'test-path', tree]);
+    const { writeExecutionInput, executionInputAbsolutePath } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
+    const input = { execution_id: 'execution-1', skill: 'spec-me' };
+    const relativePath = await writeExecutionInput(tree, input, 'plan-1');
+    await writeExecutionInput(root, input, 'plan-1');
+    assert.equal(await executionInputAbsolutePath(tree, input.execution_id), join(tree, relativePath));
+    assert.notEqual(await executionInputAbsolutePath(tree, input.execution_id), join(root, relativePath));
+    const { inspectWorkspace } = await import(`file://${join(root, '.harness/src/eval/workspace-preflight.mjs')}`);
+    assert.equal((await inspectWorkspace({ workspaceRoot: tree, cwd: tree })).valid, true);
+    assert.equal((await inspectWorkspace({ workspaceRoot: tree, cwd: root })).reason, 'cwd_mismatch');
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'application-owned');
+    assert.match(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }), /docs\/agents\/EXEC\.md/);
+    execFileSync('git', ['check-ignore', '-q', '.harness/src/workflow/execution-input.mjs'], { cwd: root });
+  } finally { await rm(parent, { recursive: true, force: true }); }
 });
 
 test('installed result validation accepts safe directory artifacts and keeps consumer changes visible', async () => {

@@ -8,6 +8,8 @@
 
 orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행한다. 입력 검증·상태 기록·gate는 공통 runner가 소유하고 명령 실행·결과 해석·세션 재개는 `.harness/src/workflow/providers/`의 선택된 adapter가 소유한다. `agents.provider`의 기본값은 `codex`다. 같은 단계 재개는 `worktree.json`에 기록된 provider를 유지하며 단계 경계에서는 설정된 provider를 사용한다. Codex는 native subagent를, Claude Code는 `.claude/agents/<role>.md`에 설치된 동일 role의 native subagent를 사용한다. Claude subagent의 시작·종료 ID와 결과는 `runtime/executions/<execution-id>/subagents.jsonl`에 기록한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
 
+실행기는 정본 worktree와 Git 등록을 확인하고 입력·답변·피드백의 실제 절대 경로를 전달한다. 리뷰 대상은 정본 workspace와 admission snapshot을 기준으로 지정한다. 결과 artifact는 기존 `base`와 상대 경로를 사용한다. Claude의 파일 권한 거부 경로와 workspace 포함 여부는 해당 실행의 process-events에 기록한다.
+
 `to-ticket` 완료 후 orchestrator는 리뷰를 통과한 전체 계획과 발행 대상을 사용자에게 보여주고 발행 승인을 받는다. 실제 승인 또는 사용자가 명시적으로 위임한 승인만 받은 뒤 `harness-prepare-input.mjs --worktree-ref <worktree_ref> --stage-id tracker-publish --publication-approved true`로 publisher 입력을 준비한다. 승인 거부·미응답은 publisher를 호출하지 않는다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 승인받는다.
 
 Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<role>.toml` or the installed Claude equivalent `.claude/agents/<role>.md` and applies that profile's sandbox/permission mode. `danger-full-access` is permitted only for an explicitly designated workflow stage; in this repository it is reserved for `tracker-publish` in the `to-ticket` workflow and is not inherited by the plan author or other stages.
