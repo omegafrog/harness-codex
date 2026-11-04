@@ -19,6 +19,8 @@ Standalone `spec-me` uses the model ID and reasoning effort resolved from `agent
 
 `spec_document_writer` owns Spec Markdown and `diagram_creator` owns diagram files. 필요한 작성·다이어그램·리뷰 작업은 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 서브에이전트에 직접 위임한다. 독립 리뷰는 요청 원문과 산출물을 전달한 fresh context에서 수행한다.
 
+Architecture Spec 독립 리뷰는 `spec-me` 실행 안에서 fresh `spec_adversarial_reviewer` native subagent를 직접 호출하고 결과를 수집·수정·재검토한다. 이 작업을 `review_request.skill: spec-review`로 상위 orchestrator에 반환하지 않는다. 리뷰 준비가 불가능하면 실제 실패 사유를 반환하며 리뷰를 통과한 것으로 취급하지 않는다. 별도의 Architecture 결정 리뷰가 `review_request`를 필요로 하면 `context_path`는 Spec 디렉터리가 아닌 session 상대 JSON 파일이다.
+
 내부 작업에는 실행할 skill 지침, `.codex/agents/<ID>.toml` 프로필과 구체적 목적을 전달한다. 예를 들어 Product Spec 작성은 `product-spec` 지침과 `spec_document_writer` 프로필을 사용한다. 재개 시 기존 작업과 확정된 결정을 재사용한다.
 
 If the request is about broken behavior, flaky regression, or performance regression, `spec-me` is not the right on-ramp; use `diagnosing-bugs` instead.

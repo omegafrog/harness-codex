@@ -235,6 +235,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const expected = `runtime/executions/${input.execution_id}/result.json`;
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
+  requireValue(!(input.skill === 'spec-me' && result.review_request?.skill === 'spec-review'), 'spec-me must perform spec-review internally using a fresh native reviewer');
   const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
   const schemaResult = structuredClone(result);
   if (schemaResult.review_request) {
@@ -258,7 +259,9 @@ export async function validateSkillReturn({ root, input, envelope }) {
     }
   }
   if (result.review_request) {
-    const context = JSON.parse(await readReference(root, { base: 'session', path: result.review_request.context_path }, session, controlSession));
+    let context;
+    try { context = JSON.parse(await readReference(root, { base: 'session', path: result.review_request.context_path }, session, controlSession)); }
+    catch (error) { throw new Error(`Review context must be an existing session-relative JSON file: ${result.review_request.context_path}`, { cause: error }); }
     requireValue(context && typeof context === 'object' && !Array.isArray(context), 'Review context must be an object');
   }
   if (input.context?.review_checklist && ['completed', 'action_required'].includes(envelope.status)) {

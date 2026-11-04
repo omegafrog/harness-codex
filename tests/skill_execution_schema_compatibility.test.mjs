@@ -100,7 +100,12 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal((await providers.loadProvider('claude-code')).id, 'claude-code');
     const installedSchemaPath = join(root, '.io/runtime/executions/installed-claude/return.schema.json');
     await writeInstalledOutputSchema({ root, input: { execution_id: 'installed-claude', skill: 'spec-me' }, prefix: 'runtime/executions/installed-claude', path: installedSchemaPath, provider: 'claude-code' });
-    assert.match((await readJson(installedSchemaPath)).properties.status.description, /Keep status and code paired/);
+    const installedSchema = await readJson(installedSchemaPath);
+    assert.match(installedSchema.properties.status.description, /Keep status and code paired/);
+    const reviewSchema = installedSchema.properties.result.properties.review_request.anyOf.find((item) => item.type === 'object');
+    assert.ok(!reviewSchema.properties.skill.enum.includes('spec-review'));
+    assert.ok(reviewSchema.properties.skill.enum.includes('architecture-review'));
+    assert.match(reviewSchema.properties.context_path.description, /session-relative JSON/);
     assert.equal(codex.id, 'codex');
     assert.deepEqual(codex.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/session/schema.json', output: '/session/return.json', resume: null }), [
       'exec', '--sandbox', 'workspace-write', '--cd', root, '--model', 'model', '-c', 'model_reasoning_effort="medium"', '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', '/session/schema.json', '--output-last-message', '/session/return.json', '-',
@@ -160,6 +165,10 @@ test('installed stage accepts changed documents while preserving review snapshot
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
     await validateSkillInput({ root, input });
     assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
+    const premature = { ...result, status: 'action_required', code: 'REVIEW_REQUIRED', review_request: { skill: 'spec-review', agent_profile: 'spec_adversarial_reviewer', purpose: 'Review', context_path: 'docs/specs/example/' } };
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }), /spec-me must perform spec-review internally/);
+    const badContext = { ...premature, review_request: { ...premature.review_request, skill: 'architecture-review', agent_profile: 'default' } };
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: badContext.status, code: badContext.code, result: badContext } }), /Review context must be an existing session-relative JSON file/);
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'action_required' } }), /Return status\/code mismatch/);
     await rm(join(root, path));
     await assert.rejects(validateSkillInput({ root, input }), { code: 'ENOENT' });

@@ -14,10 +14,11 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const result = schema.properties.result.properties;
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
-    const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill));
+    const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill) && !(input.skill === 'spec-me' && skill === 'spec-review'));
     const profiles = (await readdir(join(root, '.codex/agents'))).filter((name) => name.endsWith('.toml')).map((name) => name.slice(0, -5));
     const item = result.review_request.anyOf.find((shape) => shape.type === 'object');
     item.properties.skill = { type: 'string', enum: skills, description: '실행할 skill ID' };
+    item.properties.context_path.description = 'Path to a session-relative JSON file containing the review context, not a workspace document or directory.';
     item.properties.agent_profile = { type: item.properties.role.type, enum: item.properties.role.type.includes('null') ? [...profiles, 'default', null] : [...profiles, 'default'], description: '.codex/agents의 agent 프로필 ID' };
     delete item.properties.role;
     item.required = item.required.map((key) => key === 'role' ? 'agent_profile' : key);
