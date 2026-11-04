@@ -134,6 +134,14 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal(claudeResult.sessionId, fakeSession);
     assert.equal(capturedSession, fakeSession);
     assert.deepEqual(await readJson(claudeOutput), { ok: true });
+    await writeFile(fakeClaude, "#!/bin/sh\nprintf 'startup failure on stdout\\n'\nexit 1\n");
+    let rawStdout = '';
+    const events = [];
+    const failedClaude = await claude.run({ root, args: [], prompt: 'prompt', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: claudeOutput, onStart: async () => {}, onStdout: (data) => { rawStdout += data; }, onEvent: (event) => events.push(event) });
+    assert.equal(failedClaude.code, 1);
+    assert.equal(failedClaude.sessionId, null);
+    assert.match(rawStdout, /startup failure on stdout/);
+    assert.ok(events.some((event) => event.event === 'session_observed' && !event.present));
     const session = join(root, '.io');
     await mkdir(session, { recursive: true });
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_SKILL_EXECUTION_ID: 'claude-stage' }, input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: fakeSession, agent_id: 'agent-review-1', agent_type: 'spec_reviewer' }) });

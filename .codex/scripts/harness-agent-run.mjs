@@ -83,9 +83,11 @@ try {
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/process-events.jsonl`);
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex.stderr.log`);
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex.errors.jsonl`);
+  if (providerId === 'claude-code') await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/claude.stdout.log`);
   const eventsFd = openSync(join(prefix, 'process-events.jsonl'), 'wx', 0o600);
   const stderrFd = openSync(join(prefix, 'codex.stderr.log'), 'wx', 0o600);
   const errorsFd = openSync(join(prefix, 'codex.errors.jsonl'), 'wx', 0o600);
+  const stdoutFd = providerId === 'claude-code' ? openSync(join(prefix, 'claude.stdout.log'), 'wx', 0o600) : null;
   recordEvent = (event) => appendFileSync(eventsFd, JSON.stringify({ timestamp: new Date().toISOString(), execution_id: input.execution_id, ...event }) + '\n');
   recordEvent({ event: 'runner_started', pid: process.pid, ppid: process.ppid, launcher_pid: Number(process.env.HARNESS_RUNNER_LAUNCHER_PID) || null, caller_pid: Number(process.env.HARNESS_RUNNER_CALLER_PID) || null, background: process.env.HARNESS_RUNNER_BACKGROUND === '1', timeout_ms: null });
   await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });
@@ -94,7 +96,7 @@ try {
   const heartbeat = setInterval(() => { recordEvent({ event: 'heartbeat' }); process.stderr.write(`${JSON.stringify({ event: 'heartbeat', execution_id: input.execution_id })}\n`); }, 30000);
   heartbeat.unref();
   let result;
-  try { result = await adapter.run({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
+  try { result = await adapter.run({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });
@@ -103,7 +105,7 @@ try {
     if (resume && threadId !== resume) throw new Error('Resumed Codex session ID mismatch');
     await recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: input.context.stage_id, session_id: threadId, execution_id: input.execution_id, provider: providerId });
     process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`);
-  } }); } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); }
+  } }); } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); if (stdoutFd !== null) closeSync(stdoutFd); }
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ provider: providerId, exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, session_id: result.sessionId, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.sessionId !== resume) throw new Error('Resumed Codex session ID mismatch');
   if (result.code === 0) {

@@ -33,7 +33,7 @@ export function buildCommand({ root, sandbox, binding, schema, resume }) {
     '--permission-mode', permissionMode, '--settings', JSON.stringify(settings), ...(resume ? ['--resume', resume] : [])];
 }
 
-export async function run({ root, args, prompt, env, output, onStart, onSession, onEvent, onStderr, onCodexError }) {
+export async function run({ root, args, prompt, env, output, onStart, onSession, onEvent, onStdout, onStderr, onCodexError }) {
   let stderr = '', buffer = '', sessionId = null, sessionSave = Promise.resolve(), result = null;
   const errors = [];
   const consume = (line) => {
@@ -53,6 +53,7 @@ export async function run({ root, args, prompt, env, output, onStart, onSession,
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
   child.stderr.on('data', (data) => { stderr += data; onStderr?.(data); });
   child.stdout.on('data', (data) => {
+    onStdout?.(data);
     buffer += data;
     const lines = buffer.split('\n'); buffer = lines.pop();
     for (const line of lines) consume(line);
@@ -61,11 +62,13 @@ export async function run({ root, args, prompt, env, output, onStart, onSession,
   const completion = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', (code, signal) => resolve({ code, signal })); });
   try {
     await onStart(child.pid);
+    onEvent?.({ event: 'child_started', provider: id, pid: child.pid });
     child.stdin.end('HARNESS_START\n');
     const { code, signal } = await completion;
     onEvent?.({ event: 'child_closed', code, signal });
     if (buffer) consume(buffer);
     await sessionSave;
+    onEvent?.({ event: 'session_observed', provider: id, present: Boolean(sessionId) });
     if (sessionId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) throw new Error('Claude Code session ID invalid');
     if (code === 0 && !sessionId) throw new Error('Claude Code session ID missing');
     if (code === 0) {
