@@ -4,6 +4,8 @@
 
 실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다.
 
+비대화식 Claude 메인 orchestrator의 시작과 재개는 대상 workspace를 cwd로 `node .codex/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .codex/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<요청>'`으로 실행한다. 이 호출은 사용자 요청 범위의 메인 Claude에 `bypassPermissions`를 명시한다. 각 stage의 권한은 아래 profile 규칙을 따른다.
+
 orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행한다. 입력 검증·상태 기록·gate는 공통 runner가 소유하고 명령 실행·결과 해석·세션 재개는 `.harness/src/workflow/providers/`의 선택된 adapter가 소유한다. `agents.provider`의 기본값은 `codex`다. 같은 단계 재개는 `worktree.json`에 기록된 provider를 유지하며 단계 경계에서는 설정된 provider를 사용한다. Codex는 native subagent를, Claude Code는 `.claude/agents/<role>.md`에 설치된 동일 role의 native subagent를 사용한다. Claude subagent의 시작·종료 ID와 결과는 `runtime/executions/<execution-id>/subagents.jsonl`에 기록한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
 
 `to-ticket` 완료 후 orchestrator는 리뷰를 통과한 전체 계획과 발행 대상을 사용자에게 보여주고 발행 승인을 받는다. 실제 승인 또는 사용자가 명시적으로 위임한 승인만 받은 뒤 `harness-prepare-input.mjs --worktree-ref <worktree_ref> --stage-id tracker-publish --publication-approved true`로 publisher 입력을 준비한다. 승인 거부·미응답은 publisher를 호출하지 않는다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 승인받는다.

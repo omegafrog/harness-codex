@@ -219,6 +219,8 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ### 소비자 테스트 저장소의 workflow 재실행
 
+Claude Code를 비대화식 메인 orchestrator로 실행하거나 기존 Claude 대화를 재개할 때는 대상 저장소 또는 worktree를 cwd로 두고 `node .codex/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .codex/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<계속할 요청>'`을 사용한다. 이 실행기는 매번 `claude -p --permission-mode bypassPermissions`를 명시한다. 메인 Claude의 승인 확인을 우회하므로 사용자가 승인한 작업에만 사용한다. 각 workflow stage의 sandbox와 permission mode는 별도 실행기·profile이 계속 결정한다.
+
 사용자가 소비자 workflow 재실행을 요청하면 `/home/jiwoo/workspace/harness-test`가 Git `main`의 clean 상태인지, 설치된 Harness 버전과 Doctor 결과가 적절한지 먼저 확인한다. 기존 linked worktree 정리는 명시적으로 요청된 경우에만 수행한다. 삭제 전 각 worktree의 tracked·untracked 변경과 `.io`를 포함한 전체 내용을 백업하고 백업을 검증한다. 다른 저장소의 worktree는 건드리지 않는다.
 
 workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 lock을 만들고 linked worktree를 생성한다. 이 테스트의 **상위 `codex exec`는 쓰기 제한이 없는 환경에서** `--sandbox danger-full-access`로 실행한다. 바깥 sandbox가 Git 공통 디렉터리 쓰기를 막으면 이 옵션만으로 해제되지 않으므로 실행 전 쓰기 가능 여부를 확인하고, 막혀 있으면 재시도나 상태 수정 없이 사유를 보고한다. stage 실행은 각 스킬의 기존 실행 계약을 따른다.

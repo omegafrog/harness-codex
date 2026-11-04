@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { updateProject, discoverManagedAssetPaths } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -81,6 +81,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     const managedAssets = await discoverManagedAssetPaths(sourceRoot);
     assert.ok(managedAssets.includes('.codex/agents/tracker_publisher.toml'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-agent-run.mjs'));
+    assert.ok(managedAssets.includes('.codex/scripts/harness-claude-orchestrator.mjs'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-output-schema.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/index.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/codex.mjs'));
@@ -131,6 +132,15 @@ test('installed stage accepts changed documents while preserving review snapshot
     await mkdir(fakeBin, { recursive: true });
     const fakeClaude = join(fakeBin, 'claude');
     const fakeSession = '123e4567-e89b-12d3-a456-426614174000';
+    await writeFile(fakeClaude, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
+    await chmod(fakeClaude, 0o755);
+    const launcher = join(root, '.codex/scripts/harness-claude-orchestrator.mjs');
+    for (const args of [['continue'], ['--resume', fakeSession, 'continue']]) {
+      const forwarded = JSON.parse(execFileSync(process.execPath, [launcher, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }));
+      assert.deepEqual(forwarded, ['-p', '--permission-mode', 'bypassPermissions', ...args]);
+    }
+    const conflictingMode = spawnSync(process.execPath, [launcher, '--permission-mode', 'acceptEdits', 'continue'], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } });
+    assert.equal(conflictingMode.status, 2);
     await writeFile(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '{"type":"system","subtype":"init","session_id":"${fakeSession}"}' '{"type":"result","subtype":"success","session_id":"${fakeSession}","structured_output":{"ok":true}}'\n`);
     await chmod(fakeClaude, 0o755);
     const claudeOutput = join(root, '.io/claude-result.json');
@@ -187,6 +197,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
     assert.doesNotMatch(status, /\.claude\//);
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-claude-orchestrator.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/agents/spec_reviewer.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/skills/orchestrator/SKILL.md'], { cwd: root });
