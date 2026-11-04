@@ -74,7 +74,10 @@ try {
   const executionBinding = { ...binding, sandbox };
   // 이 prompt는 실제 작업 절차를 담지 않고, 선택된 skill과 실행 입력으로 안내한다.
   const profileGuide = profile ? providerId === 'claude-code' ? ` Read .claude/agents/${profile}.md and use the matching Claude native subagent for any required independent role.` : ` Read .codex/agents/${profile}.toml.` : '';
-  const prompt = `Read ${guide} and ${location.path}.${profileGuide}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
+  const requiredSkill = providerId === 'claude-code' && guide === publicSkill ? input.skill : null;
+  if (requiredSkill && !existsSync(join(root, `.claude/skills/${requiredSkill}/SKILL.md`))) throw new Error(`Claude skill instruction is missing: ${requiredSkill}`);
+  const instructions = `Read ${location.path}.${profileGuide}${existsSync(answers) ? ` Read the user's answers from ${answers}.` : ''}${existsSync(feedback) ? ` Read execution feedback from ${feedback} and correct the previous request.` : ''}${sandbox === 'read-only' ? ' This execution cannot write files. Return any newly produced report as result.artifact_contents with a filename, kind and full text; the caller will save it in the session. Include existing artifacts only as references.' : ''} Perform the assigned skill and return its result in the required schema. The caller validates the return and records execution state. Follow the user's stopping conditions in the input.`;
+  const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : `Read ${guide}. ${instructions}`;
   const resume = input.context?.resume_session_id;
   const resumeWriteDirs = resume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(resume, process.env) : [];
   const command = adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output, resume });
@@ -96,7 +99,7 @@ try {
   const heartbeat = setInterval(() => { recordEvent({ event: 'heartbeat' }); process.stderr.write(`${JSON.stringify({ event: 'heartbeat', execution_id: input.execution_id })}\n`); }, 30000);
   heartbeat.unref();
   let result;
-  try { result = await adapter.run({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
+  try { result = await adapter.run({ root, args: command, prompt, requiredSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: recordEvent, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });

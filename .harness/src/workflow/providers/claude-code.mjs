@@ -4,6 +4,10 @@ import { join } from 'node:path';
 
 export const id = 'claude-code';
 
+export function skillPrompt(skill, instructions) {
+  return `Invoke the ${skill} skill using the Skill tool before doing any work. ${instructions}`;
+}
+
 export function prepareOutputSchema(schema) {
   const description = 'Keep status and code paired: completed=OK; action_required=REVIEW_REQUIRED|SPEC_REVISION_REQUIRED|PLAN_REVISION_REQUIRED|IMPLEMENTATION_REVISION_REQUIRED|USER_DECISION_REQUIRED; blocked=ENVIRONMENT_UNAVAILABLE|PERMISSION_REQUIRED|DEPENDENCY_INCOMPLETE|INPUT_MISSING|MODEL_BINDING_UNAVAILABLE; failed=EXECUTION_ERROR|INVALID_INPUT|ARTIFACT_WRITE_FAILED; cancelled=CANCELLED. Envelope and result status/code must match.';
   schema.properties.status.description = description;
@@ -33,8 +37,9 @@ export function buildCommand({ root, sandbox, binding, schema, resume }) {
     '--permission-mode', permissionMode, '--settings', JSON.stringify(settings), ...(resume ? ['--resume', resume] : [])];
 }
 
-export async function run({ root, args, prompt, env, output, onStart, onSession, onEvent, onStdout, onStderr, onCodexError }) {
+export async function run({ root, args, prompt, env, output, requiredSkill, onStart, onSession, onEvent, onStdout, onStderr, onCodexError }) {
   let stderr = '', buffer = '', sessionId = null, sessionSave = Promise.resolve(), result = null;
+  let skillCall = null, skillInvoked = false;
   const errors = [];
   const consume = (line) => {
     try {
@@ -42,6 +47,14 @@ export async function run({ root, args, prompt, env, output, onStart, onSession,
       if (event.type === 'system' && event.subtype === 'init' && event.session_id) {
         sessionId = event.session_id;
         if (onSession) sessionSave = sessionSave.then(() => onSession(sessionId));
+      }
+      if (requiredSkill && event.type === 'assistant' && !event.parent_tool_use_id) {
+        for (const item of event.message?.content || []) if (item.type === 'tool_use' && item.name === 'Skill' && item.input?.skill === requiredSkill) skillCall = item.id;
+      }
+      if (skillCall && event.type === 'user') {
+        for (const item of event.message?.content || []) if (item.type === 'tool_result' && item.tool_use_id === skillCall && !item.is_error) {
+          skillInvoked = true; onEvent?.({ event: 'skill_invoked', provider: id, skill: requiredSkill }); skillCall = null;
+        }
       }
       onEvent?.({ event: 'provider_event', provider: id, type: event.type });
       if (event.type === 'error' || event.type === 'result' && event.subtype !== 'success') { errors.push(event); onCodexError?.(event); }
@@ -72,6 +85,7 @@ export async function run({ root, args, prompt, env, output, onStart, onSession,
     if (sessionId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) throw new Error('Claude Code session ID invalid');
     if (code === 0 && !sessionId) throw new Error('Claude Code session ID missing');
     if (code === 0) {
+      if (requiredSkill && !skillInvoked) throw new Error(`Claude did not invoke the required skill: ${requiredSkill}`);
       if (result?.subtype !== 'success' || !result.structured_output) throw new Error('Claude Code did not return successful structured output');
       await writeFile(output, `${JSON.stringify(result.structured_output)}\n`, { flag: 'wx', mode: 0o600 });
     }

@@ -111,6 +111,7 @@ test('installed stage accepts changed documents while preserving review snapshot
       'exec', '--sandbox', 'workspace-write', '--cd', root, '--model', 'model', '-c', 'model_reasoning_effort="medium"', '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', '/session/schema.json', '--output-last-message', '/session/return.json', '-',
     ]);
     assert.equal(claude.id, 'claude-code');
+    assert.match(claude.skillPrompt('spec-me', 'Read input.json.'), /spec-me.*Skill tool.*Read input\.json\./);
     const claudeAgent = await readFile(join(root, '.claude/agents/spec_reviewer.md'), 'utf8');
     assert.match(claudeAgent, /^---\nname: spec_reviewer\n/);
     assert.match(claudeAgent, /permissionMode: plan/);
@@ -139,6 +140,13 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal(claudeResult.sessionId, fakeSession);
     assert.equal(capturedSession, fakeSession);
     assert.deepEqual(await readJson(claudeOutput), { ok: true });
+    await assert.rejects(claude.run({ root, args: [], prompt: 'prompt', requiredSkill: 'spec-me', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: join(root, '.io/no-skill.json'), onStart: async () => {} }), /Claude did not invoke the required skill: spec-me/);
+    await writeFile(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '{"type":"system","subtype":"init","session_id":"${fakeSession}"}' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call-1","name":"Skill","input":{"skill":"spec-me"}}]}}' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call-1"}]}}' '{"type":"result","subtype":"success","session_id":"${fakeSession}","structured_output":{"ok":true}}'\n`);
+    const skillEvents = [];
+    await claude.run({ root, args: [], prompt: 'prompt', requiredSkill: 'spec-me', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: join(root, '.io/skill.json'), onStart: async () => {}, onEvent: (event) => skillEvents.push(event) });
+    assert.ok(skillEvents.some((event) => event.event === 'skill_invoked' && event.skill === 'spec-me'));
+    await writeFile(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '{"type":"system","subtype":"init","session_id":"${fakeSession}"}' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call-1","name":"Skill","input":{"skill":"spec-me"}}]}}' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call-1","is_error":true}]}}' '{"type":"result","subtype":"success","session_id":"${fakeSession}","structured_output":{"ok":true}}'\n`);
+    await assert.rejects(claude.run({ root, args: [], prompt: 'prompt', requiredSkill: 'spec-me', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, output: join(root, '.io/failed-skill.json'), onStart: async () => {} }), /Claude did not invoke the required skill: spec-me/);
     await writeFile(fakeClaude, "#!/bin/sh\nprintf 'startup failure on stdout\\n'\nexit 1\n");
     let rawStdout = '';
     const events = [];
