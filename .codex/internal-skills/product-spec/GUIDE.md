@@ -33,7 +33,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.
 3. Use the user request, `CONTEXT.md`, `CONTEXT-MAP.md` when present, and other allowed product documents to mark topics that are already explicitly settled.
    Apply [language lifecycle](../domain-modeling/references/language-lifecycle.md) to compare affected glossary definitions with the required business meaning and lifecycle. Surface implied renames, definition corrections or splits/merges without waiting for a naming request. Resolve material meaning choices in the existing interview and update settled terms in the consumer glossary; do not inspect source or retire terms on suspicion alone.
-4. Run [grill-with-docs](../grill-with-docs/GUIDE.md) with that coverage checklist.
+4. Run [grill-with-docs](../grill-with-docs/GUIDE.md) with that coverage checklist in `spec-me` batch mode. Before the first question and after each response batch, examine every applicable topic and collect all currently answerable independent material decisions; return them together. Only defer questions whose answers depend on an unresolved prerequisite.
 5. Ask only about material gaps that remain `PARTIAL` or `UNRESOLVED`.
 6. Do not ask for descriptive facts already settled by the allowed product inputs.
 7. Do ask when desired behavior, scope, exception handling, business rules, priorities, trade-offs, or acceptance conditions remain ambiguous. Existing behavior does not settle those decisions by itself.

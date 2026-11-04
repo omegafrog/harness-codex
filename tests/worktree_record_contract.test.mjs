@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseWorktreeRecord } from '../.harness/src/workflow/worktrees.mjs';
+import { parseWorktreeRecord, specArtifactPath } from '../.harness/src/workflow/worktrees.mjs';
 import { recordExecutionState, processIdentity } from '../.harness/src/workflow/execution-state.mjs';
 import { WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
 import { findExecutionInput, writeExecutionInput } from '../.harness/src/workflow/execution-input.mjs';
@@ -26,6 +26,18 @@ const record = {
   state: 'active',
 };
 const parse = (value) => parseWorktreeRecord(JSON.stringify(value));
+
+test('spec paths use the canonical plan set and reject traversal', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'canonical-spec-path-'));
+  try {
+    await mkdir(join(root, '.io'));
+    const planSetId = 'calculator-8762a95d-55a6-43fe-81e6-5d097396041a';
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ ...record, workspace: root, session_directory: join(root, '.io'), plan_set_id: planSetId }));
+    const script = fileURLToPath(new URL('../.codex/scripts/harness-spec-path.mjs', import.meta.url));
+    assert.equal(execFileSync(process.execPath, [script, root, 'architecture-reviews/AR-CODE-STACK.yaml'], { encoding: 'utf8' }).trim(), `docs/specs/${planSetId}/architecture-reviews/AR-CODE-STACK.yaml`);
+    for (const path of ['../outside', '/absolute', 'a/../b', 'a\\b']) assert.throws(() => specArtifactPath(planSetId, path));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 async function seedSetup(root) {
   await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  low_performance_model: example\n  low_performance_reasoning_effort: medium\n  high_performance_model: example\n  high_performance_reasoning_effort: medium\n');
@@ -372,7 +384,11 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.ok(reviewRequest.properties.agent_profile.enum.includes('architecture_review_lead'));
     assert.ok(reviewRequest.properties.agent_profile.enum.includes('default'));
     assert.ok(reviewRequest.properties.agent_profile.enum.includes(null));
-    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
+    const canonicalSpecDir = `docs/specs/${tree.plan_set_id}`;
+    await mkdir(join(tree.workspace, canonicalSpecDir, 'architecture-reviews'), { recursive: true });
+    await writeFile(join(tree.workspace, canonicalSpecDir, 'architecture-reviews/review.yaml'), 'review');
+    const wrongId = tree.plan_set_id.replace(/[0-9a-f]{12}$/i, '000000000000');
+    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `docs/specs/${wrongId}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: createHash('sha256').update('review').digest('hex') }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
     const { review_request: omittedReview, ...questionWithoutReview } = questionResult;
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
@@ -380,6 +396,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const resultCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--return', `runtime/executions/${next.input.execution_id}/return.json`];
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(validated.result.summary, '파일 정본');
+    assert.equal(validated.result.artifacts[0].path, `${canonicalSpecDir}/architecture-reviews/review.yaml`);
+    questionResult.artifacts = validated.result.artifacts;
     assert.equal(validated.result.review_request, null);
     assert.equal(Object.hasOwn(validated.result, 'question'), false);
     assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);

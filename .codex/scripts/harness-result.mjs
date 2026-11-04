@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
@@ -7,6 +7,7 @@ const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateS
 const { identifyQuestions } = await import(new URL('questions.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
+const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -35,6 +36,23 @@ try {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;
+  if (input.skill === 'spec-me' && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
+    const record = parseWorktreeRecord(await readFile(input.context.worktree_ref, 'utf8'));
+    if (await realpath(opts.root) !== await realpath(record.workspace)) throw new Error('Workspace does not match worktree.json');
+    const slug = record.plan_set_id?.replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, '');
+    for (const artifact of envelope.result.artifacts) {
+      if (artifact.base !== 'workspace' || typeof artifact.path !== 'string') continue;
+      const match = /^docs\/specs\/([^/]+)\/(.+)$/.exec(artifact.path);
+      const candidateSlug = match?.[1].replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, '');
+      if (match && slug && slug !== record.plan_set_id && candidateSlug === slug) {
+        const canonical = specArtifactPath(record.plan_set_id, match[2]);
+        if (match[1] !== record.plan_set_id) {
+          const exists = await lstat(join(opts.root, artifact.path)).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+          if (!exists) artifact.path = canonical;
+        }
+      }
+    }
+  }
   if (Object.hasOwn(envelope.result, 'artifact_contents')) {
     const profile = input.context?.agent_profile || input.context?.role;
     if (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8'))) throw new Error('Inline artifacts require a read-only agent profile');

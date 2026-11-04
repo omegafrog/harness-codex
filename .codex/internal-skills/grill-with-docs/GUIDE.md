@@ -10,7 +10,7 @@
 
 ## What it does
 
-`grill-with-docs` runs a coverage-driven interview one decision at a time. It offers a recommended answer, waits for the user's response, and keeps vocabulary and durable decisions current.
+`grill-with-docs` runs a coverage-driven interview. For `spec-me`, it batches independent decisions; other callers use one decision at a time. It offers recommended answers and keeps vocabulary and durable decisions current.
 
 It incorporates the question selection and interaction contract of [grilling](../../../.agents/skills/grilling/SKILL.md) and the documentation responsibilities of `domain-modeling`. The interview loop below applies that shared question policy to documented coverage.
 
@@ -36,10 +36,9 @@ Select questions using the shared [grilling](../../../.agents/skills/grilling/SK
 
 While any stakeholder decision is `PARTIAL` or `UNRESOLVED`:
 
-1. Select the highest-impact unresolved decision.
-2. Ask exactly one focused question.
-3. Include a recommended answer and a concise reason for the recommendation.
-4. Wait for the user's response before moving to another question.
+1. For `spec-me`, inspect every applicable coverage topic and gather all currently identifiable material decisions before returning any questions. Reuse settled answers and explicit delegation. Identify dependencies between decisions; put every independently answerable decision into one `questions` array, including relevant scope, behavior, failures and acceptance conditions. Do not stop gathering at the first gap. Ask dependent follow-ups only after their prerequisite answers make them meaningful. A single question is valid when it is the only currently answerable material decision. For other callers, select the highest-impact unresolved decision and ask one focused question.
+2. Make each question focused and independently answerable; include a recommended answer and a concise reason for it.
+3. Wait for the user's responses to the batch before proceeding. Classify each response separately and reassess the full coverage checklist before the next batch.
 5. Classify the response before updating coverage. A response is not automatically a decision.
    - `ACCEPTED`: the user explicitly chooses, confirms, or clearly authorizes one answer.
    - `REJECTED`: the user clearly rejects the recommendation or the current alternatives without settling a replacement.

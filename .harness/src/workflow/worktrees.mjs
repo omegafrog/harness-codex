@@ -28,6 +28,11 @@ export function uniquePlanSetId(featureName, uniqueId) {
   if (!WORKTREE_ID.test(uniqueId || '')) throw new Error('A UUID is required to generate a unique plan_set_id');
   return `${planSetSlug(featureName)}-${uniqueId}`;
 }
+export function specArtifactPath(planSetId, path) {
+  validatePlanSetId(planSetId);
+  if (!planSetId || typeof path !== 'string' || !path || isAbsolute(path) || path.includes('\\') || path.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid spec artifact path');
+  return `docs/specs/${planSetId}/${path}`;
+}
 async function durableJson(path, value) {
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', 0o600);

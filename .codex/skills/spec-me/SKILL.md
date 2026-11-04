@@ -41,6 +41,7 @@ If the request is about broken behavior, flaky regression, or performance regres
 - Create `docs/specs/<plan-set-id>/` when missing. Product Spec은 `docs/specs/<plan-set-id>/product-spec.md`, Architecture Spec은 `docs/specs/<plan-set-id>/architecture-spec.md`에 둔다.
 - Spec artifacts use the selected `session_worktree`. Before accepting any writer/diagram result, verify every output resolves inside that directory. New Spec sessions preserve artifacts on the session branch until integration; design changes during implementation use the caller-owned workspace and return their approved artifacts to that caller.
 - Read the `plan_set_id` created during workflow composition from the canonical `worktree.json` and use it for Spec, diagram, decision, plan, review, and handoff paths. Preserve it for the same plan set; do not regenerate or rename it.
+- For a path under the current plan set's Spec directory, run `node .codex/scripts/harness-spec-path.mjs <absolute-workspace-root> <spec-relative-path>` and use the returned path for writing or referencing the artifact. The result runner also derives the current Spec directory from canonical `worktree.json` before validating returned artifact paths and hashes.
 - Preserve an existing Spec owned by another workflow unless the user approves replacing it; revise the current workflow's own Spec when its review requires changes.
 
 ## Rules
@@ -61,7 +62,7 @@ workflow 실행의 `session_directory`는 현재 작업을 위해 준비된 work
 
 ## Exec 호출의 질문 전달
 
-질문 전에 현재 workflow의 확정 답변과 `request.md`, `product-decisions.md`, 프로젝트의 승인된 결정·위임 범위를 확인한다. 같은 조건에서 이미 답했거나 명시적으로 위임된 선택은 근거와 함께 재사용한다. 남은 독립적인 필수 질문은 한 배열로 묶는다. 위임 범위를 벗어난 선택이나 승인되지 않은 추천은 사용자 답으로 기록하지 않는다.
+질문 전에 현재 workflow의 확정 답변과 `request.md`, `product-decisions.md`, 프로젝트의 승인된 결정·위임 범위를 확인한다. 같은 조건에서 이미 답했거나 명시적으로 위임된 선택은 근거와 함께 재사용한다. Product coverage 전체를 먼저 조사해 현재 답할 수 있는 독립적인 필수 질문을 모두 한 배열로 묶고, 선행 결정에 따라 달라지는 질문만 다음 묶음으로 미룬다. 하나의 미결정 사항을 발견한 즉시 반환하지 않는다. 위임 범위를 벗어난 선택이나 승인되지 않은 추천은 사용자 답으로 기록하지 않는다.
 
 질문을 반환한 execution의 `decision-answers.json`과 해당 `result.json`의 질문을 함께 확인한다. 재개 execution의 `answers.json`은 입력으로 받은 답변이며 이전 execution에 같은 이름의 파일이 있다고 추정하지 않는다. 사용자 결정은 장기 문서에도 내용과 출처를 보존하고, 참조 경로를 인용하기 전에 실제 존재를 확인한다.
 

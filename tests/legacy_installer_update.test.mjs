@@ -43,6 +43,13 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files }));
     const result = await updateProject({ sourceRoot, targetRoot: root });
     await protectLocalInstallArtifacts(root, sourceRoot);
+    for (const path of ['.codex/internal-skills/grill-with-docs/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md']) {
+      assert.equal(await readFile(resolve(root, path), 'utf8'), await readFile(resolve(sourceRoot, path), 'utf8'));
+      execFileSync('git', ['-C', root, 'check-ignore', '-q', path]);
+    }
+    const specPathScript = '.codex/scripts/harness-spec-path.mjs';
+    assert.equal(await readFile(resolve(root, specPathScript), 'utf8'), await readFile(resolve(sourceRoot, specPathScript), 'utf8'));
+    execFileSync('git', ['-C', root, 'check-ignore', '-q', specPathScript]);
     assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-doctor.mjs')), legacy);
     assert.ok(result.updated.includes('.harness/src/workflow/project-readiness.mjs'));
     assert.ok(result.updated.includes('.codex/scripts/harness-codex-run.mjs'));
