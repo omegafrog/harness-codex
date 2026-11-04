@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { updateProject } from '../.harness/src/installer/update.mjs';
+import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+
+test('installed Claude spec-me writes directly in one invocation without writer receipts', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'spec-author-runner-'));
+  const primary = join(parent, 'project'), root = join(parent, 'worktree'), bin = join(parent, 'bin');
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  try {
+    await mkdir(primary); await mkdir(bin);
+    git(primary, 'init', '-q');
+    await writeFile(join(primary, 'app.txt'), 'project-owned\n');
+    git(primary, 'add', 'app.txt'); git(primary, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'init');
+    git(primary, 'worktree', 'add', '-qb', 'spec-test', root);
+    const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  high_performance_model: parent-model\n  high_performance_reasoning_effort: low\n');
+    const session = join(root, '.io'), ref = join(session, 'worktree.json'), id = 'spec-me-runner-test';
+    await mkdir(join(session, 'runtime/executions', id), { recursive: true });
+    await writeFile(ref, JSON.stringify({ schema_version: 1, worktree_id: 'a77aaa03-329c-4d59-b4c5-269746a893f2', workspace: root, common: await realpath(join(primary, '.git')), git_dir: await realpath(git(root, 'rev-parse', '--absolute-git-dir')), return_root: primary, session_directory: session, branch: 'spec-test', state: 'active', plan_set_id: 'example' }));
+    const { writeExecutionInput } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
+    await writeExecutionInput(root, { schema_version: 1, execution_id: id, skill: 'spec-me', scope: '계산기', input_refs: [], context: { worktree_ref: ref, stage_id: 'spec-me', provider: 'claude-code' } }, 'example');
+    await writeFile(join(bin, 'package.json'), '{"type":"commonjs"}');
+    const fake = `#!/usr/bin/env node\nconst fs=require('fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.CALLS,JSON.stringify(args)+'\\n');const emit=x=>console.log(JSON.stringify(x));emit({type:'system',subtype:'init',session_id:'a77aaa03-329c-4d59-b4c5-269746a893f2'});emit({type:'assistant',message:{content:[{type:'tool_use',id:'skill-call',name:'Skill',input:{skill:'spec-me'}}]}});emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:'skill-call'}]}});fs.mkdirSync('docs/specs/example',{recursive:true});fs.writeFileSync('docs/specs/example/product-spec.md','# Product\\n');const q={question_id:'question',title:'계속할까요?',options:[{id:'yes',label:'예',consequence:'계속'},{id:'no',label:'아니요',consequence:'대기'}],recommended_option_id:'yes',rationale:'결정 필요'};const result={schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:'USER_DECISION_REQUIRED',summary:'진행 중',artifacts:[],questions:[q],review_request:null};emit({type:'result',subtype:'success',structured_output:{schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:result.code,result_ref:null,result}});`;
+    await writeFile(join(bin, 'claude'), fake); await chmod(join(bin, 'claude'), 0o755);
+    const calls = join(session, 'calls.jsonl');
+    const run = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-run.mjs'), '--worktree-ref', ref, '--execution-id', id], { cwd: root, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CALLS: calls }, encoding: 'utf8', timeout: 30000 });
+    assert.equal(run.status, 0, run.stderr);
+    const commands = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(commands.length, 1);
+    assert.ok(!commands[0].includes('--agent'));
+    const returned = JSON.parse(await readFile(join(session, 'runtime/executions', id, 'return.json'), 'utf8'));
+    assert.equal(returned.code, 'USER_DECISION_REQUIRED');
+    assert.equal(await readFile(join(root, 'docs/specs/example/product-spec.md'), 'utf8'), '# Product\n');
+    await assert.rejects(readFile(join(session, 'runtime/spec-writers/example/product.json')), { code: 'ENOENT' });
+    assert.match(git(root, 'status', '--short', '--untracked-files=all'), /docs\/specs\/example\/product-spec.md/);
+    assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'project-owned\n');
+  } finally { await rm(parent, { recursive: true, force: true }); }
+});

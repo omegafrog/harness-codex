@@ -11,6 +11,8 @@ import { parseYaml } from '../eval/yaml.mjs';
 import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 
+const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || !['spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
   const { workspace_root, shared_guidance_root, session_directory, ...rest } = input;
@@ -23,11 +25,25 @@ async function collectAnswers(session, prefix, questions, answer) {
   try { incoming = JSON.parse(answer); } catch { incoming = questions.length === 1 ? [{ question_id: questions[0].question_id, answer }] : null; }
   if (!Array.isArray(incoming) && questions.length === 1 && typeof incoming === 'string') incoming = [{ question_id: questions[0].question_id, answer: incoming }];
   const path = join(session, prefix, 'pending-answers.json');
+  await assertWorkspaceTarget(session, path);
+  const info = await lstat(path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (info && (!info.isFile() || info.isSymbolicLink() || info.nlink > 1)) throw new Error('Pending answers must be a regular unshared file');
   let previous = [];
   try { previous = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
-  if (previous.length && incoming.every((entry) => previous.some((item) => item.question_id === entry.question_id && item.answer === entry.answer))) incoming = [];
+  if (previous.length) incoming = incoming.filter((entry) => !previous.some((item) => item.question_id === entry.question_id && item.answer === entry.answer));
   const merged = mergeAnswers(questions, previous, incoming);
+  if (merged.complete) {
+    const decisionPath = join(session, prefix, 'decision-answers.json');
+    const contents = JSON.stringify(merged.answers, null, 2) + '\n';
+    await assertWorkspaceTarget(session, decisionPath);
+    try { await writeFile(decisionPath, contents, { flag: 'wx', mode: 0o600 }); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const existing = await lstat(decisionPath);
+      if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink > 1 || await readFile(decisionPath, 'utf8') !== contents) throw new Error('Recorded decision answers differ or are not a regular unshared file');
+    }
+  }
   await writeFile(path, JSON.stringify(merged.answers, null, 2) + '\n', { mode: 0o600 });
   return merged;
 }
@@ -63,10 +79,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   if (specOverwriteApproved && stageId !== 'spec-me') throw new Error('Spec overwrite approval is only valid for spec-me');
   const running = state.stages?.[stageId];
-  if (running?.status === 'running' && running.result_ref === null) {
+  if (running?.status === 'running' && !running.result_ref) {
     let stopped = false;
-    try { await assertExecutionStopped(running, { root, session }); stopped = true; }
-    catch (error) { if (!/Stage already running/.test(error.message)) throw error; }
+    await assertExecutionStopped(running, { root, session }); stopped = true;
     if (stopped) {
       const prefix = `runtime/executions/${running.execution_id}`;
       let envelope, log;
@@ -98,9 +113,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
   if (last?.code === 'SUBTASK_REQUIRED') throw new Error('Legacy SUBTASK_REQUIRED execution cannot be resumed: the pending subagent identity and result are not recorded; in-place recovery is unsupported. Preserve the session artifacts and report this limitation.');
   let transition;
-  if (last && (lastStage !== stageId || ['SPEC_REVISION_REQUIRED', 'PLAN_REVISION_REQUIRED', 'IMPLEMENTATION_REVISION_REQUIRED'].includes(last.code))) {
+  if (last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
-    const allowed = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+    const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
     if (!allowed[last.code] && last.code !== 'OK') throw new Error('Resolve the previous stage before selecting another');
     const priorInput = await readExecutionInput({ root, execution_id: last.execution_id });
@@ -170,14 +185,18 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const previous = state.stages?.[stageId];
   let conversation = {};
   let interruptedAnswers;
-  if (feedback !== null) {
-    let interrupted = previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && previous.reason === 'Execution interrupted after its processes exited' && previous.result_ref === null;
-    if (!interrupted && previous?.status === 'running' && previous.result_ref === null) {
+  const crossStageRevision = transition && lastStage !== stageId && REVISION_TARGETS[transition.code] === stageId;
+  if (feedback !== null && crossStageRevision && !previous) {
+    conversation = { previous_result_ref: transition.result_ref };
+  } else if (feedback !== null) {
+    let interrupted = previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && previous.reason === 'Execution interrupted after its processes exited' && !previous.result_ref;
+    if (!interrupted && previous?.status === 'running' && !previous.result_ref) {
       await assertExecutionStopped(previous, { root, session: taskSession });
       interrupted = true;
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
-    if (!interrupted && !(reviewWaiting || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a REVIEW_REQUIRED or blocked stage, or a confirmed interrupted stage');
+    const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
+    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
@@ -186,14 +205,14 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (previousSession !== taskSession) throw new Error('Feedback target belongs to a different worktree session');
       const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
       await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
-      if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || (reviewWaiting && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
+      if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
     const sessionInfo = neverStarted ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
     if (sessionInfo) provider = sessionInfo.provider;
     else if (previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
-    const priorResult = previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
+    const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
     conversation = { ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {

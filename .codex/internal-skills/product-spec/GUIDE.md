@@ -27,9 +27,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 
 ## Process
 
-`agent_profile: spec_document_writer`로 호출되면 전달된 확정 요구사항과 template로 Spec을 작성한다. 필요한 결정이 빠졌으면 누락 사항을 caller에게 반환한다. 아래 인터뷰·결정 절차는 상위 `spec-me`가 수행한다.
-
-The caller runs the interview and decision process. `spec_document_writer` only serializes its settled output into the template; it does not run the following process.
+`spec-me`는 아래 절차로 확정한 요구사항과 template을 사용해 Product Spec을 작성하고 리뷰 지적에 따라 수정한다.
 
 1. MUST read `references/topics.md` before starting the interview.
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.
@@ -41,7 +39,7 @@ The caller runs the interview and decision process. `spec_document_writer` only 
 7. Do ask when desired behavior, scope, exception handling, business rules, priorities, trade-offs, or acceptance conditions remain ambiguous. Existing behavior does not settle those decisions by itself.
 8. Write the Product Spec only after the `grill-with-docs` completion gate passes.
 9. Treat every business concept, actor/role, business state, and rule term defined in Product Spec section 4 as the consumer project's ubiquitous language, shared across the project rather than owned by this plan set. Add or update each entry in the active workspace's `CONTEXT.md`, preserving its existing table and language lifecycle. Reuse the current canonical term when its meaning matches; update its definition when approved behavior changes; record an approved replacement in the retired-term table. Do not leave a term defined only in the ticket-scoped Spec. Keep explanatory phrases and UI copy that do not name a domain concept in the Spec. Record bounded-context responsibilities and relationships in `CONTEXT-MAP.md`, not as glossary definitions.
-10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose. The writer records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. The spec-me workflow creates diagrams after the Architecture review gate passes; `diagram_creator` uses the finalized Specs and does not make product decisions.
+10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose. The Spec author records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. The spec-me workflow creates diagrams after the Architecture review gate passes; `diagram_creator` uses the finalized Specs and does not make product decisions.
 
 ## Coverage gate
 

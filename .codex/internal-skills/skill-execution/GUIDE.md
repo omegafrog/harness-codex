@@ -15,7 +15,6 @@ orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행�
 Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<role>.toml` or the installed Claude equivalent `.claude/agents/<role>.md` and applies that profile's sandbox/permission mode. `danger-full-access` is permitted only for an explicitly designated workflow stage; in this repository it is reserved for `tracker-publish` in the `to-ticket` workflow and is not inherited by the plan author or other stages.
 
 부모 stage 프로세스가 중단되면 [실행과 결과](references/dispatch.md)의 중단 복구 절차로 같은 provider의 부모 대화를 재개한다. 재개된 대화의 native subagent 기록과 현재 작업 context를 이어 쓰며, Harness `agent_sessions`와 provider runtime 기록에 없는 subagent ID를 만들거나 완료되지 않은 위임을 완료로 추정하지 않는다.
-`spec-me`의 Product·Architecture writer 요청은 예외다. `spec-me`가 확정된 입력 파일을 참조하는 `REVIEW_REQUIRED`와 `spec_document_writer` profile을 반환하면 실행기가 이를 가로채 독립 writer를 실행하고 receipt를 원래 부모 세션에 전달한다. writer 요청은 orchestrator에 단계 전환으로 노출하지 않는다. 다른 내부 위임은 stage가 native subagent 결과를 직접 확인하며, 다음 workflow stage는 orchestrator만 선택한다.
 
 - 입력 준비와 최초 worktree 생성: [입력 준비](references/input.md)
 - 출력 계약과 실행 상태: [스키마와 실행 상태](references/state.md)

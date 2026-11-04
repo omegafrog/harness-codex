@@ -121,13 +121,7 @@ try {
   }, output: parentOutput });
   };
   try {
-    const { runSpecWriterLoop } = await import(new URL('spec-writer-loop.mjs', base));
-    const { dispatchSpecWriter } = await import(new URL('spec-writer.mjs', base));
-    result = await runSpecWriterLoop({ root, session, input, output, prompt, resume, runParent, dispatchWriter: dispatchSpecWriter, onEvent: recordEvent, onWriterStart: async (pid) => {
-      const child = await processIdentity(pid);
-      if (!child?.start || !child.boot) throw new Error('Writer process identity unavailable');
-      await recordExecutionState({ root, input, binding, status: 'running', owner, child });
-    } });
+    result = await runParent({ output, prompt, resume });
   } finally { clearInterval(heartbeat); closeSync(stderrFd); closeSync(errorsFd); if (stdoutFd !== null) closeSync(stdoutFd); }
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ provider: providerId, exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, session_id: result.sessionId, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.sessionId !== resume) throw new Error('Resumed Codex session ID mismatch');

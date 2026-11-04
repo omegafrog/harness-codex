@@ -28,9 +28,7 @@ Architecture Spec drafting does not execute tests, services, or infrastructure a
 
 ## Process
 
-`agent_profile: spec_document_writer`로 호출되면 전달된 확정 결정·근거와 template로 Spec을 작성한다. 필요한 결정이 빠졌으면 누락 사항을 caller에게 반환한다. 아래 조사·인터뷰·결정 절차는 상위 설계 작업이 수행한다.
-
-The caller runs the research, interview, and decision process. `spec_document_writer` only serializes settled decisions into the template; it does not run the following process.
+`spec-me`는 아래 절차로 확정한 결정과 근거를 template에 반영해 Architecture Spec을 작성하고 리뷰 지적에 따라 수정한다.
 
 1. Read the Product Spec and guidance first.
 2. MUST read `references/topics.md` before starting the architecture interview; use every topic as the coverage checklist.
@@ -48,7 +46,7 @@ The caller runs the research, interview, and decision process. `spec_document_wr
    - Decision authority references use hash-valid approved Principles and human-approved durable Evidence. Existing ADRs, approved technical standards, and technical-team guidance supply applicable constraints and source evidence. Keep candidate/reviewed Principles informational. Final Architecture Spec and ADR handoff retains accepted Decision, target, Principle, Evidence, and source locators; a deprecated Principle marks citing Decisions review-required while preserving their prior approval and history.
    - ReviewRecord에 자료 사용 승인 기록이 연결되면 `material_approval.approval_id`에 승인 기록 ID만 참조한다. 자료 탐색·제시·사용 승인 workflow는 knowledge plan에서 다룬다.
    - Same-ID Knowledge edits from independent worktrees are compared against base/ours/theirs. Report divergent body or approval changes for explicit user resolution; never choose a last writer or lock an in-progress worktree.
-11. When applicable, pass the planned independent class and design-state diagram inventory to `spec_document_writer`, which records final diagram IDs and SVG link targets in the Architecture Spec Markdown. Do not dispatch diagram creation during Spec drafting or review revisions. After the final Specs are stable and the Architecture review passes, the spec-me workflow delegates the frozen design to `diagram_creator`, which shows relationships, responsibilities, state transitions, and transition conditions rather than repeating tables. Do not duplicate a Product business-state diagram when it has the same purpose.
+11. When applicable, record the planned independent class and design-state diagram inventory in the Spec, including final diagram IDs and SVG link targets in the Architecture Spec Markdown. Do not dispatch diagram creation during Spec drafting or review revisions. After the final Specs are stable and the Architecture review passes, the spec-me workflow delegates the frozen design to `diagram_creator`, which shows relationships, responsibilities, state transitions, and transition conditions rather than repeating tables. Do not duplicate a Product business-state diagram when it has the same purpose.
 12. Write the Architecture Spec only after the `grill-with-docs` completion gate passes.
    Use the template's Domain → Aggregate → Application Service → Bounded Context order. Keep Product-to-Architecture mapping in the optional trailing appendix, put resolved hotspots in their owning model or decision, and express each application flow as an ordered list. Use 기능 or 책임 for generic capabilities. Keep security, observability, runtime, and deployment decisions in their relevant supporting sections.
 13. Before declaring completion, compare every Architecture domain model, role, state, and business-rule term with the project's shared `CONTEXT.md`. Add newly settled domain vocabulary and update definitions whose meaning changed; approved replacements follow the glossary's retired-term lifecycle. Do not scope ubiquitous language to this plan set. Keep code identifiers, framework/package names, protocol labels, and temporary architecture wording in the ticket-scoped Spec unless they are independently established domain language. Record bounded-context names, responsibilities, and relationships in `CONTEXT-MAP.md`.
@@ -68,6 +66,6 @@ There is no minimum question count. Question count follows unresolved stakeholde
 - For applicable structure, declare independent `.puml` originals and matching SVG targets under `docs/specs/<plan-set-id>/diagrams/architecture/`; use the class and design-state filename/ID/link rules in `references/template.md`.
 - Include a class diagram and/or design-state diagram when applicable. If either structure does not apply, state `해당 없음` and provide the reason. Do not duplicate an equivalent Product business-state diagram.
 - The Architecture review checks the frozen Architecture Spec against the Product Spec and cited project evidence. Final spec-me diagram stages validate applicable sources, local SVG renders, Markdown SVG links, and content consistency after the Architecture review and decision gates pass; a render failure blocks workflow completion.
-- `diagram_creator`만 Architecture 다이어그램 원본·렌더 산출물을 작성한다. `spec_document_writer`만 Architecture Spec Markdown을 작성한다. `architecture-spec`는 설계 결정을 정하고 두 서브에이전트 산출물을 검토한다.
+- `diagram_creator`만 Architecture 다이어그램 원본·렌더 산출물을 작성한다. `spec-me`는 Architecture Spec Markdown을 작성·수정하고 다이어그램을 검토한다.
 
 설계가 실행 인자·설정·인프라 의존성을 바꾸면 실제 source/CI와 실행 계약을 확인하고 execution.json profile·EXEC의 갱신 책임을 codebase impact에 포함한다. 일반 검증은 프로젝트 기본 CLI로 직접 실행한다. 명시적 최종 사용자 흐름 E2E만 `purpose: "e2e"` profile의 설정 검증과 readiness를 통과해야 한다.

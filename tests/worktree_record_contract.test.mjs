@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWorktreeRecord } from '../.harness/src/workflow/worktrees.mjs';
@@ -47,6 +47,58 @@ test('startup identifies a new workspace before Git initialization', async () =>
     const result = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' }));
     assert.match(result.hookSpecificOutput.additionalContext, /setup_candidate/);
     await assert.rejects(readFile(join(root, '.git', 'HEAD')), { code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('consumer update retires writer receipt runtime and preserves project files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spec-no-writer-receipt-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
+    const oldPaths = ['.codex/scripts/harness-spec-writer.mjs', '.harness/src/workflow/spec-writer.mjs', '.harness/src/workflow/spec-writer-loop.mjs'];
+    const lockPath = join(root, '.codex/harness-lock.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    for (const path of oldPaths) {
+      const content = `old managed ${path}`;
+      const hash = createHash('sha256').update(content).digest('hex');
+      await mkdir(join(root, path, '..'), { recursive: true });
+      await writeFile(join(root, path), content);
+      lock.files[path] = { source_path: path, installed_sha256: hash, upstream_sha256: hash };
+    }
+    for (const path of ['.harness/src/workflow/stage-input.mjs', '.claude/skills/spec-me/SKILL.md']) {
+      const content = `previous managed ${path}`;
+      const hash = createHash('sha256').update(content).digest('hex');
+      await writeFile(join(root, path), content);
+      lock.files[path].installed_sha256 = hash;
+      lock.files[path].upstream_sha256 = hash;
+    }
+    await writeFile(lockPath, JSON.stringify(lock));
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned\n');
+    const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
+    for (const path of oldPaths) {
+      assert.ok(result.retired.includes(path));
+      await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
+    }
+    assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project-owned\n');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.doesNotMatch(status, /\.codex\/|\.harness\/src\//);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-run.mjs'], { cwd: root, encoding: 'utf8' }), /harness-agent-run/);
+    const runner = await readFile(join(root, '.codex/scripts/harness-agent-run.mjs'), 'utf8');
+    const stageInput = await readFile(join(root, '.harness/src/workflow/stage-input.mjs'), 'utf8');
+    const skill = await readFile(join(root, '.agents/skills/spec-me/SKILL.md'), 'utf8');
+    const claudeSkill = await readFile(join(root, '.claude/skills/spec-me/SKILL.md'), 'utf8');
+    assert.doesNotMatch(runner, /spec-writer-loop|dispatchSpecWriter/);
+    assert.match(stageInput, /decision-answers\.json/);
+    assert.match(stageInput, /revisionWaiting/);
+    assert.match(skill, /별도의 writer receipt나 writer 요청 envelope는 사용하지 않는다/);
+    assert.match(claudeSkill, /별도의 writer receipt나 writer 요청 envelope는 사용하지 않는다/);
+    const { runDoctor } = await import('../.harness/src/doctor/doctor.mjs');
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -408,6 +460,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: identity, child: stopped });
     const liveProgress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(liveProgress.status, 'running');
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me'], { cwd: tree.workspace, stdio: 'pipe' }), /Stage already running/);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: stopped, child: stopped });
     const progress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(progress.status, 'stopped');
@@ -421,13 +474,18 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...normalized.result, summary: '변조됨' }));
     assert.throws(() => execFileSync(process.execPath, [...prepare, '--answer', firstAnswer], { cwd: tree.workspace, stdio: 'pipe' }));
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(normalized.result));
+    await symlink(join(resultDir, 'result.json'), join(resultDir, 'pending-answers.json'));
+    assert.throws(() => execFileSync(process.execPath, [...prepare, '--answer', firstAnswer], { cwd: tree.workspace, stdio: 'pipe' }), /regular unshared file/);
+    await unlink(join(resultDir, 'pending-answers.json'));
     const pending = JSON.parse(execFileSync(process.execPath, [...prepare, '--answer', firstAnswer], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(pending.waiting_for_answers, true);
     assert.throws(() => execFileSync(process.execPath, [...prepare, '--answer', JSON.stringify([{ question_id: 'stale', answer: 'basic' }])], { cwd: tree.workspace, stdio: 'pipe' }));
-    const secondAnswer = JSON.stringify([{ question_id: `${next.input.execution_id}:2`, answer: 'basic' }]);
+    assert.throws(() => execFileSync(process.execPath, [...prepare, '--answer', JSON.stringify([{ question_id: `${next.input.execution_id}:1`, answer: 'changed' }])], { cwd: tree.workspace, stdio: 'pipe' }));
+    const secondAnswer = JSON.stringify([{ question_id: `${next.input.execution_id}:1`, answer: 'basic' }, { question_id: `${next.input.execution_id}:2`, answer: 'basic' }]);
     const continued = JSON.parse(execFileSync(process.execPath, [...prepare, '--answer', secondAnswer], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(continued.input.context.resume_session_id, record.worktree_id);
     assert.equal(continued.answer.length, 2);
+    assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'decision-answers.json'), 'utf8')), continued.answer);
     assert.deepEqual(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'), 'utf8')), continued.answer);
     assert.equal((await stat(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'))).mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'answers.json'), 'utf8')), earlierAnswers);
@@ -438,6 +496,13 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(state.stages['spec-me'].status, 'waiting');
     const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], questions: [], review_request: null };
     const specRef = `runtime/executions/${next.input.execution_id}/result.json`;
+    const sameStageRevision = { ...specResult, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '리뷰 지적 수정' };
+    await writeFile(join(tree.session_directory, specRef), JSON.stringify(sameStageRevision));
+    await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: sameStageRevision.status, code: sameStageRevision.code, result_ref: specRef, result: sameStageRevision }));
+    await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: specRef });
+    const revisionResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '리뷰 지적을 수정하세요'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(revisionResume.input.context.resume_session_id, record.worktree_id);
+    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', revisionResume.input.execution_id, 'feedback.json'), 'utf8')).feedback, '리뷰 지적을 수정하세요');
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(specResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: specRef, result: specResult }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: specRef });
@@ -447,21 +512,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const specDir = join(tree.workspace, 'docs/specs', ticketId);
     await mkdir(specDir, { recursive: true });
     await writeFile(join(specDir, 'request.md'), '# request\n');
-    const writerBin = join(tree.session_directory, 'runtime/test-writer-bin');
-    await mkdir(writerBin, { recursive: true });
-    await writeFile(join(writerBin, 'package.json'), '{"type":"commonjs"}');
-    const writerMarkdown = [...['문제와 맥락', '목표와 기대 효과', '사용자와 행위자', '유비쿼터스 언어와 용어', '핵심 유스케이스', '업무 규칙과 불변 조건', '상태와 상태 전이', '실패 예외 및 경계 조건', '입력과 출력', '범위와 비목표', '우선순위와 트레이드오프', '성공 조건과 수용 기준'], ...['설계 범위와 현재 모델', 'Domain', 'Aggregate', 'Application Service', 'Bounded Context', 'Technical Architecture', 'Runtime Design', 'Error Handling and Recovery', 'Security', 'Observability', 'Change Boundaries', 'Verification Requirements', 'Alternatives and Trade-offs', 'Risks and Open Questions']].map((heading) => `## ${heading}\n확정된 내용\n`).join('\n');
-    await writeFile(join(writerBin, 'codex'), `#!/usr/bin/env node\nconst fs=require("fs");const a=process.argv;process.stdin.resume();process.stdin.on("end",()=>{fs.writeFileSync(a[a.indexOf("--output-last-message")+1],JSON.stringify({status:"completed",summary:"작성 완료",content:${JSON.stringify(writerMarkdown)}}));console.log(JSON.stringify({type:"thread.started",thread_id:"a77aaa03-329c-4d59-b4c5-269746a893f2"}));});\n`);
-    await chmod(join(writerBin, 'codex'), 0o755);
-    const writerInputDir = join(tree.session_directory, 'runtime/test-writer-input');
-    await mkdir(writerInputDir, { recursive: true });
-    for (const axis of ['product', 'architecture']) {
-      const requestPath = `runtime/test-writer-input/${axis}.json`;
-      const topics = await readFile(join(tree.workspace, '.codex/internal-skills', `${axis}-spec`, 'references/topics.md'), 'utf8');
-      const coverage = [...topics.matchAll(/^\d+\.\s+\*\*(.+?)\*\*/gm)].map((match) => ({ topic: match[1], status: 'settled', reason: '사용자 요청' }));
-      await writeFile(join(tree.session_directory, requestPath), JSON.stringify({ schema_version: 1, request_id: `${axis}-test`, axis, plan_set_id: ticketId, decisions: [{ id: 'REQ-1', decision: '계산기', evidence: [`docs/specs/${ticketId}/request.md`] }], coverage, diagram_inventory: [], overwrite_authorized: true }));
-      execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-spec-writer.mjs'), '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--request', requestPath, '--axis', axis, '--provider', 'codex'], { cwd: tree.workspace, env: { ...process.env, PATH: `${writerBin}:${process.env.PATH}` }, stdio: 'pipe' });
-    }
+    await writeFile(join(specDir, 'product-spec.md'), '# Product Spec\n확정된 요구사항\n');
+    await writeFile(join(specDir, 'architecture-spec.md'), '# Architecture Spec\n확정된 설계\n');
     const approved = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--spec-overwrite-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     for (const axis of ['product', 'architecture']) assert.equal(approved.input.context.approved_spec_overwrites[axis], createHash('sha256').update(await readFile(join(specDir, `${axis}-spec.md`))).digest('hex'));
     const { snapshotSpecReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/spec-review.mjs')}`);
@@ -471,6 +523,18 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const admitted = await updateReviewAttempt({ root: tree.workspace, scope, action: 'begin', inputs });
     const architectureReview = { axis: 'architecture', ticket_id: ticketId, reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs, findings: [] };
     await updateReviewAttempt({ root: tree.workspace, scope, action: 'record', attemptId: admitted.attempt_id, inputs, review: architectureReview });
+    const { validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const specEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', result_ref: specRef, result: specResult };
+    await validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: specEnvelope });
+    const invalidRevision = { ...specResult, status: 'action_required', code: 'IMPLEMENTATION_REVISION_REQUIRED' };
+    await assert.rejects(validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: { ...specEnvelope, status: invalidRevision.status, code: invalidRevision.code, result: invalidRevision } }), /spec-me cannot request implementation revision/);
+    const architecturePath = join(specDir, 'architecture-spec.md');
+    const reviewedSpec = await readFile(architecturePath, 'utf8');
+    await writeFile(architecturePath, `${reviewedSpec}\n변경됨\n`);
+    await assert.rejects(validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: specEnvelope }), /Architecture review is not current/);
+    assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /Architecture review is not current/);
+    await writeFile(architecturePath, reviewedSpec);
+    assert.throws(() => execFileSync(process.execPath, [...planCommand, '--feedback', '허용되지 않는 전환 피드백'], { cwd: tree.workspace, stdio: 'pipe' }), /Feedback requires/);
     const plan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(plan.input.context.transition.from_stage, 'spec-me');
     assert.equal(plan.input.context.transition.result_ref, specRef);
@@ -481,9 +545,11 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, planRef), JSON.stringify(planResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${plan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef, result: planResult }));
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef });
-    const revision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const revision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'spec-me', '--feedback', '수용 조건 보완'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(revision.input.context.transition.code, 'SPEC_REVISION_REQUIRED');
     assert.equal(revision.input.context.transition.result_ref, planRef);
+    assert.equal(revision.input.context.previous_result_ref, planRef);
+    assert.equal(revision.input.context.resume_session_id, record.worktree_id);
     const revisionInput = await findExecutionInput(tree.workspace, revision.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const revisionRef = `runtime/executions/${revision.input.execution_id}/result.json`;

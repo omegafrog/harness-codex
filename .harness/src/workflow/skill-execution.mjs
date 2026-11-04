@@ -197,8 +197,6 @@ export async function validateSkillInput({ root, input }) {
   if (input.context?.worktree_ref && ['to-ticket', 'tracker-publish'].includes(input.skill)) {
     const { requireCurrentSpecReview } = await import('./spec-review.mjs');
     await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
-    const { requireCurrentSpecWriters } = await import('./spec-writer.mjs');
-    await requireCurrentSpecWriters({ root, ticketId: input.context.plan_set_id });
   }
   if (input.skill === 'workflow-compose') {
     validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));
@@ -228,6 +226,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const key of ['execution_id', 'skill']) requireValue(input[key] === envelope[key], `Return ${key} mismatch`);
   requireValue(CODES[envelope.status]?.includes(envelope.code), 'Return status/code mismatch');
+  requireValue(!(input.skill === 'spec-me' && envelope.code === 'IMPLEMENTATION_REVISION_REQUIRED'), 'spec-me cannot request implementation revision; route changed Specs through planning');
   for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
   if (envelope.result_ref === null) {
     requireValue(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED', 'Only artifact-write failures may omit result_ref');
@@ -300,8 +299,6 @@ export async function validateSkillReturn({ root, input, envelope }) {
     if (input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');
       await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
-      const { requireCurrentSpecWriters } = await import('./spec-writer.mjs');
-      await requireCurrentSpecWriters({ root, ticketId: input.context.plan_set_id });
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);

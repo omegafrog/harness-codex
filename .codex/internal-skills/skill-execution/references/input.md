@@ -14,3 +14,5 @@ node .codex/scripts/harness-prepare-input.mjs --worktree-ref <절대-worktree.js
 ```
 
 한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 반환된 새 `execution_id`의 `answers.json`을 확인하고 `harness-agent-run.mjs`로 해당 provider의 기존 대화를 재개한다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
+
+질문을 반환한 실행의 `decision-answers.json`은 그 질문에 대한 확정 답변이다. 재개 실행의 `answers.json`은 그 실행에 전달된 입력 답변이다. 두 경로를 혼동해 존재하지 않는 파일을 근거로 인용하지 않는다. 수정 반환으로 같은 stage를 재개할 때는 `--feedback`에 구체적인 수정 지적을 전달할 수 있으며, 원래 provider와 session을 유지한다.
