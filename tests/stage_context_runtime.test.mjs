@@ -82,6 +82,7 @@ test('Claude stage tools retain native delegation and only add research tools fo
   const research = allowedToolsForRole('spec_document_writer');
   assert.ok(research.includes('Agent'));
   assert.ok(research.includes('WebSearch'));
+  assert.equal(allowedToolsForRole('code_researcher').includes('Agent'), false);
   const publisher = allowedToolsForRole('tracker_publisher');
   assert.ok(publisher.includes('Agent'));
   assert.ok(!publisher.includes('WebSearch'));

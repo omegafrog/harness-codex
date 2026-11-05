@@ -108,6 +108,7 @@ try {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   const guideContent = await readFile(join(root, guide), 'utf8');
+  const workerBase = providerId === 'claude-code' ? await readFile(join(root, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8') : null;
   const profileContent = profilePath ? await readFile(join(root, profilePath), 'utf8') : null;
   const profileVersion = profileContent === null ? null : instructionVersion(profileContent);
   const instructionPaths = input.skill === 'spec-me' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : [];
@@ -141,13 +142,13 @@ try {
   const runParent = async ({ output: parentOutput, prompt: parentPrompt, resume: parentResume }) => {
     const resumeWriteDirs = parentResume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(parentResume, process.env) : [];
     const invocationSkill = parentRuns++ === 0 && !input.context?.interrupted_execution_id ? requiredSkill : null;
-    const command = await adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume, role: profile, skill: input.skill, requiredSkill: invocationSkill, env: process.env });
-    return adapter.run({ root, args: command, prompt: parentPrompt, requiredSkill: invocationSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onEvent: (event) => { recordEvent(event); if (event.event === 'runner_signal') cancelRequested = true; if (isCompactionEvent(event)) compactionObserved = true; }, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
+    const command = await adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume, role: profile, skill: input.skill, requiredSkill: invocationSkill, workerBase, env: process.env });
+    return adapter.run({ root, args: command, prompt: parentPrompt, requiredSkill: invocationSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'], HARNESS_WORKSPACE_ROOT: root, HARNESS_REVIEW_EXECUTION_ID: opts['execution-id'], HARNESS_REVIEW_TICKET_ID: input.context?.plan_set_id || '' }, onEvent: (event) => { recordEvent(event); if (event.event === 'runner_signal') cancelRequested = true; if (isCompactionEvent(event)) compactionObserved = true; }, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });
     process.stderr.write(`${JSON.stringify({ event: 'started', pid })}\n`);
-  }, onSession: async (threadId) => {
+    }, onSession: async (threadId) => {
     if (parentResume && threadId !== parentResume) throw new Error('Resumed provider session ID mismatch');
     await recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: input.context.stage_id, session_id: threadId, execution_id: input.execution_id, provider: providerId });
     process.stderr.write(`${JSON.stringify({ event: 'thread.started', thread_id: threadId })}\n`);
@@ -163,6 +164,10 @@ try {
   await writeFile(join(prefix, 'exec.stderr.json'), JSON.stringify({ provider: providerId, exit_code: result.code, exit_signal: result.signal, stderr: result.stderr, codex_errors: result.errors, session_id: result.sessionId, thread_id: result.threadId, binding: executionBinding }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (resume && result.sessionId !== resume) throw new Error('Resumed Codex session ID mismatch');
   if (result.code === 0) {
+    if (providerId === 'claude-code' && input.skill === 'spec-me' && input.context?.plan_set_id) {
+      const { assertNoUnrecordedNativeReview } = await import(new URL('review-attempts.mjs', base));
+      await assertNoUnrecordedNativeReview({ root, scope: `spec-${input.context.plan_set_id}-architecture` });
+    }
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', `runtime/executions/${opts['execution-id']}/codex-last-message.json`], { cwd: root, stdio: 'pipe' });
     const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: `runtime/executions/${opts['execution-id']}/return.json` });
     await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });

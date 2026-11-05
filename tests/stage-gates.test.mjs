@@ -231,10 +231,17 @@ test("installed Architecture review gate blocks Specs still marked as draft or p
     await writeFile(join(specRoot, "product-spec.md"), "**Status:** Approved\n");
     await writeFile(join(specRoot, "architecture-spec.md"), "**Status:** Approved\n");
     const approvedInputs = await snapshotSpecReview({ root, ticketId: "example" });
+    const { updateReviewAttempt } = await import(`${runtime}/review-attempts.mjs`);
+    const admission = await updateReviewAttempt({ root, scope: "spec-example-architecture", action: "begin", inputs: approvedInputs });
+    const recordedReview = { axis: "architecture", ticket_id: "example", reviewer_id: "reviewer", author_ids: ["author"], fork_turns: "none", verdict: "pass", findings: [] };
+    await updateReviewAttempt({ root, scope: "spec-example-architecture", action: "record", attemptId: admission.attempt_id, inputs: approvedInputs, review: recordedReview });
     const saved = JSON.parse(await readFile(reviewPath, "utf8"));
-    saved.architecture.inputs = approvedInputs;
+    delete saved.architecture.inputs;
     await writeFile(reviewPath, JSON.stringify(saved));
     assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
+    saved.architecture.findings = [{ severity: "minor", description: "fabricated finding", evidence: "not recorded" }];
+    await writeFile(reviewPath, JSON.stringify(saved));
+    assert.match(check().reason, /authoritative passing result/);
 
     const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
     assert.match(status, /docs\/specs\/example\/product-spec\.md/);

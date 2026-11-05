@@ -62,11 +62,13 @@ export async function inspectSpecReviews({ root, ticketId, reviews }) {
       requireValue(['blocker', 'major', 'minor'].includes(finding.severity) && typeof finding.evidence === 'string' && finding.evidence.trim() && typeof finding.description === 'string' && finding.description.trim(), 'Review finding needs severity and concrete evidence');
       requireValue(finding.severity === 'minor', 'Architecture review has unresolved material findings');
     }
-    requireValue(record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs), 'Reviewed input hashes are required');
-    const current = await snapshotSpecReview({ root, ticketId, input_paths: Object.keys(record.inputs) });
-    requireValue(Object.keys(current).length === Object.keys(record.inputs).length && Object.entries(current).every(([path, digest]) => record.inputs[path] === digest), 'Architecture review inputs changed or required inputs were omitted');
+    const history = await inspectReviewHistory({ root, scope: `spec-${ticketId}-architecture` });
+    const candidate = { ...record, inputs: record.inputs ?? history.last_review?.inputs };
+    requireValue(candidate.inputs && typeof candidate.inputs === 'object' && !Array.isArray(candidate.inputs), 'Recorded review input hashes are required');
+    const current = await snapshotSpecReview({ root, ticketId, input_paths: Object.keys(candidate.inputs) });
+    requireValue(Object.keys(current).length === Object.keys(candidate.inputs).length && Object.entries(current).every(([path, digest]) => candidate.inputs[path] === digest), 'Architecture review inputs changed or required inputs were omitted');
     await assertSpecFinalized(root, ticketId);
-    await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: record });
+    await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: candidate });
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }
 }

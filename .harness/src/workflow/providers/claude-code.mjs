@@ -18,18 +18,22 @@ export function prepareOutputSchema(schema) {
 }
 
 const RESEARCH_ROLES = new Set(['spec_document_writer', 'code_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer', 'knowledge_source_researcher', 'knowledge_principle_synthesizer', 'frontend_designer']);
+const LEAF_ROLES = new Set(['code_researcher', 'knowledge_source_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer']);
 
 export function allowedToolsForRole(role, skill = null, requiredSkill = null) {
   if (['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].includes(role) || skill === 'frontend-design') return null;
-  const tools = ['Read', 'Glob', 'Grep', 'Bash', 'Agent'];
+  const tools = ['Read', 'Glob', 'Grep', 'Bash'];
+  if (!LEAF_ROLES.has(role)) tools.push('Agent');
   if (!['code_researcher', 'knowledge_source_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer'].includes(role)) tools.push('Write', 'Edit');
   if (RESEARCH_ROLES.has(role) || skill === 'spec-me') tools.push('WebSearch', 'WebFetch');
   if (requiredSkill) tools.push('Skill');
   return tools;
 }
 
-export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, requiredSkill }) {
+export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, requiredSkill, workerBase }) {
   const agentEventHook = { type: 'command', command: `node "${join(root, '.codex/scripts/harness-agent-event.mjs')}"` };
+  const admissionScript = join(root, '.codex/scripts/harness-agent-admission.mjs');
+  const agentAdmissionHook = { type: 'command', command: `node "${admissionScript}" || printf '%s\\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Harness admission hook failed"}}'` };
   const settings = {
     sandbox: {
       enabled: true,
@@ -39,12 +43,14 @@ export function buildCommand({ root, sandbox, binding, schema, resume, role, ski
       ...(sandbox === 'danger-full-access' ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : {}),
     },
     hooks: {
+      PreToolUse: [{ matcher: 'Agent', hooks: [agentAdmissionHook] }],
       SubagentStart: [{ hooks: [agentEventHook] }],
       SubagentStop: [{ hooks: [agentEventHook] }],
     },
   };
   const permissionMode = sandbox === 'read-only' ? 'plan' : sandbox === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits';
   return ['-p', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(schema), '--model', binding.model, '--effort', binding.reasoning_effort,
+    ...(workerBase ? ['--system-prompt', `${workerBase}\n\nHarness execution rules: Follow the task instructions and required skill in the user prompt. Keep all logs and temporary files under the supplied session directory. Do not weaken workspace permissions or skip required independent review. Return only the requested structured result.`, '--system-prompt-snapshot', 'off'] : []),
     '--permission-mode', permissionMode, ...(!requiredSkill ? ['--disable-slash-commands'] : []), ...(allowedToolsForRole(role, skill, requiredSkill) ? ['--tools', allowedToolsForRole(role, skill, requiredSkill).join(',')] : []), '--settings', JSON.stringify(settings), ...(resume ? ['--resume', resume] : [])];
 }
 

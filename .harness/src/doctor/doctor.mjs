@@ -64,7 +64,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-run', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
@@ -333,7 +333,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-agent-run.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-agent-run.mjs', '.codex/scripts/harness-agent-admission.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {

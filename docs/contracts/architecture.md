@@ -694,7 +694,7 @@ Task session과 control session은 분리될 수 있다. runner가 결과를 검
 수정일: 2026-10-24
 
 ### 설명
-기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [소스](../../.harness/src/workflow/spec-review.mjs).
+기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. Claude Code의 `PreToolUse` Agent admission은 현재 Architecture attempt 하나에 연결된 `spec_adversarial_reviewer`만 실제 위임하도록 제한하고 identity/attempt를 prompt에 주입한다. `SubagentStart`/`SubagentStop` lifecycle hook은 native agent identity와 마지막 assistant 응답을 기록해 `record`가 이를 caller의 structured review evidence와 대조하게 한다. 다른 Agent 역할은 허용한다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [Spec 리뷰](../../.harness/src/workflow/spec-review.mjs) · [attempt 원장](../../.harness/src/workflow/review-attempts.mjs) · [Claude admission](../../.codex/scripts/harness-agent-admission.mjs) · [Claude lifecycle](../../.codex/scripts/harness-agent-event.mjs).
 
 ### 필요 엔티티
 workspace root·ticket ID·Product/Architecture Spec·실제 agent metadata·reviewer 판정과 지적.
@@ -761,7 +761,7 @@ workspace root·ticket/axis 또는 plan set scope·입력 snapshot·attempt ID·
 
 Spec CLI begin은 원장 admission 결과에 workspace_root·session_directory·ticket_id·axis·attempt_id target을 붙여 caller가 동일 대상으로 reviewer를 호출하게 한다.
 
-session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begin은 활성 슬롯·동일 입력·최초 검토와 재검토 2회 한도를 검사하고 attempt ID와 이전 지적을 반환한다. record는 독립 fresh reviewer와 시작 입력을 확인하고 pass/revise/stale 판정과 원본 응답을 보존한다. abort는 사유와 횟수를 보존하며 슬롯을 해제한다. resolve는 한도에 도달한 묶음에 대한 사용자의 명시적 범위·결정 변경 사유를 보존하고 새 묶음을 열며 사용자 발화의 진위는 호출자가 확인한다. pass 이후 변경 입력도 새 묶음으로 검토한다. 검증은 Product의 delivery 항목에 연결된 회귀 검사를 따른다.
+session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begin은 활성 슬롯·동일 입력·substantive 최초 검토 1회와 재검토 최대 2회의 한도를 검사하고 attempt ID와 이전 지적을 반환한다. record는 독립 fresh reviewer와 시작 입력을 확인하고 pass/revise/stale 판정과 원본 응답을 보존한다. reviewer dispatch 전 준비 실패 abort만 최대 3회 허용해 history에 보존하며 substantive 한도를 소비하지 않는다. dispatch 후 abort는 substantive 회차를 소비한다. resolve는 substantive 한도에 도달한 묶음의 사용자가 명시한 범위·결정 변경을 보존하고 새 묶음을 열며, 사용자 발화의 진위는 caller가 확인한다. pass 이후 변경 입력도 새 묶음으로 검토한다. history는 재개와 session 교체를 넘어 정본 저장소에 유지된다. 검증은 Product의 delivery 항목에 연결된 회귀 검사를 따른다.
 
 <a id="assert-review-attempt-method"></a>
 ## assertReviewAttempt
@@ -774,7 +774,7 @@ session runtime/reviews의 scope별 원장을 배타적으로 갱신한다. begi
 workspace root·scope·gate가 검사 중인 reviewer 응답.
 
 ### 동작
-실행 원장이 있으면 마지막 attempt의 pass 상태와 reviewer ID·입력 hash가 검사 중인 응답과 일치해야 한다. 실행 원장이 없는 기존 receipt는 기존 gate의 독립성·freshness·지적 검사를 적용한다. 원장이 active/revise/stale/aborted이면 진행을 차단한다.
+반드시 기록된 실행 원장의 마지막 attempt pass 상태와 reviewer ID·입력 hash가 검사 중인 응답과 일치해야 한다. 실행 원장이 없거나 대응 attempt가 없는 기존 receipt는 통과 근거가 아니며 차단한다. 원장이 active/revise/stale/aborted이면 진행을 차단한다.
 
 <a id="plan-review-service"></a>
 ## src/workflow/plan-review.mjs
