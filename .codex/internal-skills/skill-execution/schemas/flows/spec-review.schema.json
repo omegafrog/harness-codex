@@ -12,7 +12,6 @@
     "artifacts",
     "questions",
     "review_request",
-    "inputs",
     "findings",
     "verdict",
     "attempt_id",
@@ -199,25 +198,6 @@
           "type": "null"
         }
       ]
-    },
-    "inputs": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "path",
-          "sha256"
-        ],
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "sha256": {
-            "type": "string"
-          }
-        }
-      }
     },
     "findings": {
       "type": "array",

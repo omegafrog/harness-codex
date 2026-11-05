@@ -91,6 +91,16 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.ok(managedAssets.includes('.agents/skills/tracker-publish/SKILL.md'));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
+    for (const path of ['.codex/internal-skills/technology-selection/GUIDE.md', '.codex/internal-skills/skill-execution/references/workflow-map.md']) {
+      assert.ok((await readFile(join(root, path), 'utf8')).length > 0);
+      execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
+    }
+    for (const provider of ['.agents', '.claude']) {
+      await assert.rejects(readFile(join(root, provider, 'skills/technology-selection/SKILL.md')), { code: 'ENOENT' });
+      assert.match(await readFile(join(root, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /workflow-map\.md/);
+      assert.ok((await readFile(join(root, provider, 'skills/orchestrator/../../../.codex/internal-skills/skill-execution/references/workflow-map.md'), 'utf8')).length > 0);
+      assert.ok((await readFile(join(root, provider, 'skills/spec-me/references/../../../../.codex/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
+    }
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
     const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.harness/src/installer/claude-orchestrator-hook.mjs')}`);
     const codex = await import(`file://${join(root, '.harness/src/workflow/providers/codex.mjs')}`);
@@ -388,25 +398,25 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
     const publisherInstructions = await readFile(join(root, '.agents/skills/tracker-publish/SKILL.md'), 'utf8');
     assert.match(publisherInstructions, /dedicated workflow executor stage/);
-    assert.match(publisherInstructions, /completion receipt/);
+    assert.match(publisherInstructions, /publication journal/);
     const publishInstructions = await readFile(join(root, '.agents/skills/to-ticket/references/github-batch-publish.md'), 'utf8');
     assert.match(publishInstructions, /별도 `tracker-publish` workflow stage/);
     const installedReviewSchema = await readJson(join(root, '.codex/internal-skills/plan-review/review-record.schema.json'));
-    assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'inputs', 'findings']);
+    assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'findings']);
 
     const planRoot = join(root, 'docs/plans/sample');
     const specRoot = join(root, 'docs/specs/sample');
     await mkdir(planRoot, { recursive: true });
     await mkdir(join(specRoot, 'diagrams'), { recursive: true });
     await writeFile(join(planRoot, 'plans.md'), '- Product Spec: `docs/specs/sample/product-spec.md`\n- Architecture Spec: `docs/specs/sample/architecture-spec.md`\n- [plan](slice.md)\n');
-    await writeFile(join(planRoot, 'slice.md'), '# Slice\n');
+    await writeFile(join(planRoot, 'slice.md'), '---\nstatus: planned\n---\n# Slice\n');
     await writeFile(join(specRoot, 'product-spec.md'), '![diagram](diagrams/flow.svg)\n');
     await writeFile(join(specRoot, 'architecture-spec.md'), '# Architecture\n');
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>reviewed</svg>\n');
 
     const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
     const begin = JSON.parse(execFileSync(process.execPath, [cli, 'begin', '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8' }));
-    assert.ok(begin.inputs['docs/specs/sample/diagrams/flow.svg']);
+    assert.equal(begin.inputs['docs/specs/sample/diagrams/flow.svg'], undefined);
     const reviewsDirectory = join(root, '.io/runtime/reviews');
     await mkdir(reviewsDirectory, { recursive: true });
     const reviewPath = join(reviewsDirectory, 'result.json');
@@ -418,7 +428,6 @@ test('installed to-ticket uses skill binding and records a fresh review against 
       author_ids: ['plan-split-execution-1'],
       fork_turns: 'none',
       verdict: 'pass',
-      inputs: Object.entries(begin.inputs).map(([path, sha256]) => ({ path, sha256 })),
       findings: [],
     }));
     const recorded = JSON.parse(execFileSync(process.execPath, [cli, 'record', '--root', root, '--plan-set', 'sample', '--attempt', begin.attempt_id, '--reviews', 'runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }));
@@ -426,8 +435,30 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const currentReview = JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' }));
     assert.equal(currentReview.status, 'pass');
     assert.equal(currentReview.details.review_attempt_id, begin.attempt_id);
+    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
+    const { updatePublication, verifyDraftPublication } = await import(`${installedRuntime}/../tracker/publication.mjs`);
+    assert.equal((await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'begin' })).status, 'pending');
+    await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'record', itemId: 'parent' });
+    assert.equal((await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'begin' })).status, 'already_created');
+    await updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'begin' });
+    await assert.rejects(updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'begin' }), /ambiguous/);
+    await updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'record', itemId: 'child' });
+    const run = async (args) => {
+      if (args[1] === 'view') return JSON.stringify({ id: 'project' });
+      if (args[1] === 'field-list') return JSON.stringify({ fields: [{ id: 'field', name: 'Workflow Status', type: 'ProjectV2SingleSelectField' }] });
+      return JSON.stringify({ data: { nodes: ['parent', 'child'].map((id, index) => ({ id, project: { id: 'project' }, content: { __typename: 'DraftIssue', title: index ? 'slice' : 'sample', body: '' }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'field' } }] } })) } });
+    };
+    await verifyDraftPublication({ root, planSetId: 'sample', run });
+    await assert.rejects(verifyDraftPublication({ root, planSetId: 'sample', run: async (args) => args[0] === 'api' ? JSON.stringify({ errors: [{ message: 'missing' }] }) : run(args) }), /Incomplete draft verification/);
 
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>changed</svg>\n');
+    await writeFile(join(planRoot, 'slice.md'), '---\nstatus: in-progress\n---\n# Slice\n');
+    assert.equal(JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' })).status, 'pass');
+    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/plan-review.mjs'], { cwd: root });
+    const reviewStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(reviewStatus, /docs\/plans\/sample\/slice.md/);
+    assert.doesNotMatch(reviewStatus, /\.harness\/src\//);
+    await writeFile(join(specRoot, 'architecture-spec.md'), '# Architecture changed\n');
     let stale;
     try {
       execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' });

@@ -1,54 +1,59 @@
-schema_version: 1
+schema_version: 2
 id: architecture-decision
 type: object
-additional_properties: false
-required: [schema_version, id, status, category, problem, constraints, requirement_ids, target_ids, options, selected_option, rejected_alternatives, rationale, tradeoffs, evidence_ids, boundary, review_id]
+required: [schema_version, id, status, category, problem, constraints, requirement_ids, target_ids, options, selected_option, rationale, tradeoffs, boundary, criteria, evaluations, selection, review_mode]
 properties:
-  schema_version: { type: integer, const: 1 }
-  id: { $ref: "#/definitions/stable-id" }
+  schema_version: { type: integer, const: 2 }
+  id: { type: string }
   status: { type: string, enum: [proposed, held, accepted] }
   category: { type: string, enum: [code, infrastructure] }
-  problem: { type: string, min_length: 1 }
-  constraints: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
-  requirement_ids: { type: array, min_items: 1, unique_items: true, items: { $ref: "#/definitions/stable-id" } }
-  target_ids: { type: array, min_items: 1, unique_items: true, items: { $ref: "#/definitions/stable-id" } }
-  options:
+  problem: { type: string }
+  constraints: { type: array, items: { type: string } }
+  requirement_ids: { type: array, items: { type: string } }
+  target_ids: { type: array, items: { type: string } }
+  options: { type: array, items: { type: object, required: [id, description], properties: { id: { type: string }, description: { type: string } } } }
+  single_option_reason: { type: string }
+  selected_option: { type: string }
+  rejected_alternatives: { type: array, items: { type: object, required: [option_id, reason], properties: { option_id: { type: string }, reason: { type: string } } } }
+  rationale: { type: string }
+  tradeoffs: { type: array, items: { type: string } }
+  boundary: { type: string }
+  criteria:
     type: array
-    min_items: 2
     items:
       type: object
-      additional_properties: false
-      required: [id, description]
+      required: [id, requirement_id, condition, kind, priority]
       properties:
-        id: { $ref: "#/definitions/stable-id" }
-        description: { type: string, min_length: 1 }
-  selected_option: { $ref: "#/definitions/stable-id" }
-  rejected_alternatives:
+        id: { type: string }
+        requirement_id: { type: string }
+        condition: { type: string }
+        kind: { type: string, enum: [required, preferred] }
+        priority: { type: string }
+  evaluations:
     type: array
-    min_items: 1
     items:
       type: object
-      additional_properties: false
-      required: [option_id, reason]
+      required: [option_id, criterion_id, result, reason, evidence_kind, condition]
       properties:
-        option_id: { $ref: "#/definitions/stable-id" }
-        reason: { type: string, min_length: 1 }
-  rationale: { type: string, min_length: 1 }
-  tradeoffs: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
-  principle_ids: { type: array, min_items: 0, unique_items: true, items: { $ref: "#/definitions/stable-id" } }
-  evidence_ids: { type: array, min_items: 1, unique_items: true, items: { $ref: "#/definitions/stable-id" } }
-  boundary: { type: string, min_length: 1 }
-  review_id: { $ref: "#/definitions/stable-id" }
-  review_required: { type: boolean }
-  review_flags: { type: array, unique_items: true, items: { type: string, min_length: 1 } }
-  approval: { $ref: "#/definitions/approval" }
-definitions:
-  stable-id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
-  approval:
+        option_id: { type: string }
+        criterion_id: { type: string }
+        result: { type: string, enum: [met, unmet, unknown] }
+        reason: { type: string }
+        evidence_kind: { type: string, enum: [measured, external_measurement, documented, estimated, unknown] }
+        source: { type: string }
+        condition: { type: string }
+        checked_at: { type: string, format: date-time }
+  selection:
     type: object
-    additional_properties: false
-    required: [approver, approved_at, subject_hash]
+    required: [decision, accepted_tradeoffs, uncertainty, revisit_when, user_choice]
     properties:
-      approver: { type: string, min_length: 1 }
-      approved_at: { type: string, format: date-time }
-      subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+      decision: { type: string }
+      accepted_tradeoffs: { type: string }
+      uncertainty: { type: string }
+      revisit_when: { type: string }
+      user_choice: { type: string }
+  principle_ids: { type: array, items: { type: string } }
+  evidence_ids: { type: array, items: { type: string } }
+  review_id: { type: string }
+  review_mode: { type: string, enum: [Normal, Learning] }
+  approval: { type: object, required: [approver, approved_at, subject_hash], properties: { approver: { type: string }, approved_at: { type: string }, subject_hash: { type: string } } }

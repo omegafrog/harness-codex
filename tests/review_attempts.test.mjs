@@ -1,9 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInputs } from '../.harness/src/workflow/review-attempts.mjs';
+import { snapshotPlanSet } from '../.harness/src/workflow/plan-review.mjs';
+import { reviewDelta } from '../.harness/src/workflow/review-delta.mjs';
+
+test('plan review tracks only its documents and ignores lifecycle status changes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-scope-'));
+  try {
+    await mkdir(join(root, 'docs/plans/example'), { recursive: true });
+    await mkdir(join(root, 'docs/specs/example'), { recursive: true });
+    const write = (path, content) => writeFile(join(root, path), content);
+    await write('docs/plans/example/plans.md', '# Plans\n');
+    await write('docs/plans/example/one.md', '---\nstatus: planned\n---\n# Work\nOriginal\n');
+    await write('docs/specs/example/product-spec.md', '# Product\n[Context](../../context.md)\n');
+    await write('docs/specs/example/architecture-spec.md', '# Architecture\n');
+    await write('docs/context.md', 'first');
+    const first = await snapshotPlanSet({ root, planSetId: 'example' });
+    assert.equal(Object.keys(first.inputs).length, 4);
+    await reviewDelta({ root, inputs: first.inputs });
+    await write('docs/context.md', 'changed');
+    await write('docs/plans/example/one.md', '---\nstatus: in-progress\n---\n# Work\nOriginal\n');
+    const statusOnly = await snapshotPlanSet({ root, planSetId: 'example' });
+    assert.deepEqual(statusOnly.inputs, first.inputs);
+    assert.deepEqual((await reviewDelta({ root, inputs: statusOnly.inputs, previousInputs: first.inputs })).changed, []);
+    await write('docs/plans/example/one.md', '---\nstatus: in-progress\n---\n# Work\nChanged\n');
+    const changed = await snapshotPlanSet({ root, planSetId: 'example' });
+    assert.notEqual(changed.inputs['docs/plans/example/one.md'], first.inputs['docs/plans/example/one.md']);
+    assert.equal((await reviewDelta({ root, inputs: changed.inputs, previousInputs: first.inputs })).changed[0].path, 'docs/plans/example/one.md');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('only explicit pre-dispatch spec preparation aborts are outside the review retry budget', async () => {
   const root = await mkdtemp(join(tmpdir(), 'spec-review-attempts-'));
@@ -119,5 +147,17 @@ test('plan review abort accounting is unchanged', async () => {
     const first = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
     await updateReviewAttempt({ root, scope, action: 'abort', attemptId: first.attempt_id, reason: 'pre-dispatch preparation: reviewer setup failed' });
     assert.equal((await updateReviewAttempt({ root, scope, action: 'begin', inputs })).round, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('review admission supplies the snapshot when reviewer returns only findings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-admission-inputs-'));
+  try {
+    const scope = 'plan-example', inputs = { plan: 'original' };
+    const admission = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    const review = { verdict: 'pass', reviewer_id: 'reviewer', author_ids: ['author'], fork_turns: 'none', findings: [] };
+    const result = await updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs: { plan: 'changed' }, review });
+    assert.equal(result.reason, 'stale');
+    assert.deepEqual((await inspectReviewHistory({ root, scope })).findings, []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

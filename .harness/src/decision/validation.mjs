@@ -96,8 +96,8 @@ export function validateSystemTargets(targets) {
     const metadata = targets.decision_metadata;
     if (!isRecord(metadata) || Object.keys(metadata).some((key) => !["decision_layer_version", "decision_ids"].includes(key))) {
       issue(errors, "invalid_decision_metadata", "$.decision_metadata", "Decision metadata must contain only decision_layer_version and decision_ids.");
-    } else if (metadata.decision_layer_version !== 1) {
-      issue(errors, "invalid_decision_layer_version", "$.decision_metadata.decision_layer_version", "decision_layer_version must be 1 when decision metadata is present.");
+    } else if (metadata.decision_layer_version !== 2) {
+      issue(errors, "invalid_decision_layer_version", "$.decision_metadata.decision_layer_version", "decision_layer_version must be 2 when decision metadata is present.");
     } else if (!Array.isArray(metadata.decision_ids) || metadata.decision_ids.length === 0 || metadata.decision_ids.some((id) => typeof id !== "string" || !SAFE_ID.test(id)) || new Set(metadata.decision_ids).size !== metadata.decision_ids.length) {
       issue(errors, "invalid_decision_ids", "$.decision_metadata.decision_ids", "Decision IDs must be a non-empty list of unique safe identifiers.");
     }
@@ -105,9 +105,7 @@ export function validateSystemTargets(targets) {
   return { valid: errors.length === 0, errors };
 }
 
-const DECISION_FIELDS = new Set(["schema_version", "id", "status", "category", "problem", "constraints", "requirement_ids", "target_ids", "options", "selected_option", "rejected_alternatives", "rationale", "tradeoffs", "principle_ids", "evidence_ids", "boundary", "approval", "review_id", "history", "review_required", "review_status", "review_flags"]);
-const REVIEW_FIELDS = new Set(["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "checklist", "objections", "approval", "material_approval", "material_approvals", "material_ids", "history", "status", "review_flags"]);
-export const REVIEW_CHECKLIST_ITEMS = Object.freeze(["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
+const DECISION_FIELDS = new Set(["schema_version", "id", "status", "category", "problem", "constraints", "requirement_ids", "target_ids", "options", "selected_option", "rejected_alternatives", "rationale", "tradeoffs", "principle_ids", "evidence_ids", "boundary", "approval", "review_id", "review_mode", "history", "review_required", "review_status", "review_flags", "criteria", "evaluations", "selection", "single_option_reason"]);
 const REVIEW_OUTCOMES = new Set(["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
 
 function validateSafeIdList(value, path, errors, { required = true } = {}) {
@@ -135,14 +133,15 @@ export function validateArchitectureDecision(decision, refs = {}, { checkApprova
   for (const key of Object.keys(decision)) if (!DECISION_FIELDS.has(key)) issue(errors, "unknown_decision_field", `$.${key}`, `Unsupported decision field: ${key}`);
   if (decision.review_required !== undefined && typeof decision.review_required !== "boolean") issue(errors, "invalid_review_required", "$.review_required", "review_required must be a boolean.");
   if (decision.review_flags !== undefined && (!Array.isArray(decision.review_flags) || decision.review_flags.some((flag) => typeof flag !== "string" || !flag.trim()) || new Set(decision.review_flags).size !== decision.review_flags.length)) issue(errors, "invalid_review_flags", "$.review_flags", "review_flags must be a unique list of non-empty strings.");
-  if (decision.schema_version !== 1) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 1.");
+  if (decision.schema_version !== 2) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 2.");
   if (typeof decision.id !== "string" || !SAFE_ID.test(decision.id)) issue(errors, "invalid_decision_id", "$.id", "Decision ID must be a safe stable identifier.");
   if (!["code", "infrastructure"].includes(decision.category)) issue(errors, "invalid_decision_category", "$.category", "Decision category must be code or infrastructure.");
   for (const field of ["problem", "rationale", "boundary"]) if (typeof decision[field] !== "string" || !decision[field].trim()) issue(errors, `missing_${field}`, `$.${field}`, `${field} is required.`);
-  for (const field of ["constraints", "requirement_ids", "target_ids", "options", "rejected_alternatives", "tradeoffs", "evidence_ids"]) {
+  for (const field of ["constraints", "requirement_ids", "target_ids", "options", "tradeoffs"]) {
     if (!Array.isArray(decision[field]) || decision[field].length === 0) issue(errors, `missing_${field}`, `$.${field}`, `${field} must be a non-empty list.`);
   }
-  for (const field of ["requirement_ids", "target_ids", "evidence_ids"]) validateSafeIdList(decision[field], `$.${field}`, errors);
+  for (const field of ["requirement_ids", "target_ids"]) validateSafeIdList(decision[field], `$.${field}`, errors);
+  validateSafeIdList(decision.evidence_ids ?? [], "$.evidence_ids", errors, { required: false });
   validateSafeIdList(decision.principle_ids ?? [], "$.principle_ids", errors, { required: false });
   if (Array.isArray(decision.options)) {
     const optionIds = new Set();
@@ -162,7 +161,10 @@ export function validateArchitectureDecision(decision, refs = {}, { checkApprova
     }
     for (const id of optionIds) if (id !== decision.selected_option && !rejected.has(id)) issue(errors, "missing_rejected_alternative", "$.rejected_alternatives", `Unselected option ${id} needs a rejection reason.`);
   }
-  if (typeof decision.review_id !== "string" || !SAFE_ID.test(decision.review_id)) issue(errors, "invalid_review_ref", "$.review_id", "Decision must reference a stable ReviewRecord ID.");
+  if (decision.review_id !== undefined && (typeof decision.review_id !== "string" || !SAFE_ID.test(decision.review_id))) issue(errors, "invalid_review_ref", "$.review_id", "ReviewRecord ID must be a stable identifier.");
+  if (!["Normal", "Learning"].includes(decision.review_mode)) issue(errors, "invalid_review_mode", "$.review_mode", "Decision review mode must be Normal or Learning.");
+  if (decision.review_mode === "Learning" && !decision.review_id) issue(errors, "missing_learning_review", "$.review_id", "Learning mode requires a review record.");
+  validateComparison(decision, errors);
   knownReferences(decision.target_ids ?? [], refs.targetIds, "$.target_ids", "unknown_target_ref", errors);
   knownReferences(decision.evidence_ids ?? [], refs.evidenceIds, "$.evidence_ids", "unknown_evidence_ref", errors);
   if (!["proposed", "held", "accepted"].includes(decision.status)) issue(errors, "invalid_decision_status", "$.status", "Decision status must be proposed, held, or accepted.");
@@ -170,76 +172,40 @@ export function validateArchitectureDecision(decision, refs = {}, { checkApprova
   return { valid: errors.length === 0, errors };
 }
 
+function validateComparison(decision, errors) {
+  const criteria = Array.isArray(decision.criteria) ? decision.criteria : [];
+  const options = Array.isArray(decision.options) ? decision.options : [];
+  const evaluations = Array.isArray(decision.evaluations) ? decision.evaluations : [];
+  const ids = new Set();
+  if (!criteria.length) issue(errors, "missing_criteria", "$.criteria", "At least one decision criterion is required.");
+  for (const [index, criterion] of criteria.entries()) {
+    const path = `$.criteria[${index}]`;
+    if (!isRecord(criterion) || Object.keys(criterion).some((key) => !["id", "requirement_id", "condition", "kind", "priority"].includes(key)) || !SAFE_ID.test(criterion.id ?? "") || ids.has(criterion.id) || !Array.isArray(decision.requirement_ids) || !decision.requirement_ids.includes(criterion.requirement_id) || typeof criterion.condition !== "string" || !criterion.condition.trim() || !["required", "preferred"].includes(criterion.kind) || typeof criterion.priority !== "string" || !criterion.priority.trim()) issue(errors, "invalid_criterion", path, "Criterion needs a unique ID, requirement, condition, kind and priority.");
+    else ids.add(criterion.id);
+  }
+  if (options.length === 1 && (typeof decision.single_option_reason !== "string" || !decision.single_option_reason.trim())) issue(errors, "missing_single_option_reason", "$.single_option_reason", "Explain why no alternative is available.");
+  for (const option of options) for (const criterion of criteria) {
+    const optionId = option?.id, criterionId = criterion?.id;
+    const matches = evaluations.filter((entry) => entry?.option_id === optionId && entry?.criterion_id === criterionId);
+    if (matches.length !== 1) { issue(errors, "missing_evaluation", "$.evaluations", `Exactly one evaluation is required for ${optionId}/${criterionId}.`); continue; }
+    const entry = matches[0];
+    if (!isRecord(entry) || Object.keys(entry).some((key) => !["option_id", "criterion_id", "result", "reason", "evidence_kind", "source", "condition", "checked_at"].includes(key)) || !["met", "unmet", "unknown"].includes(entry.result) || typeof entry.reason !== "string" || !entry.reason.trim() || !["measured", "external_measurement", "documented", "estimated", "unknown"].includes(entry.evidence_kind) || typeof entry.condition !== "string" || !entry.condition.trim() || (entry.evidence_kind !== "unknown" && (typeof entry.source !== "string" || !entry.source.trim() || typeof entry.checked_at !== "string" || Number.isNaN(Date.parse(entry.checked_at))))) issue(errors, "invalid_evaluation", "$.evaluations", `Evaluation ${optionId}/${criterionId} needs a result, reason and evidence conditions.`);
+  }
+  if (evaluations.length !== options.length * criteria.length) issue(errors, "unexpected_evaluation", "$.evaluations", "Evaluations must cover exactly the declared options and criteria.");
+  const selected = decision.selection;
+  if (!isRecord(selected) || Object.keys(selected).some((key) => !["decision", "accepted_tradeoffs", "uncertainty", "revisit_when", "user_choice"].includes(key)) || ["decision", "accepted_tradeoffs", "uncertainty", "revisit_when", "user_choice"].some((key) => typeof selected[key] !== "string" || !selected[key].trim())) issue(errors, "invalid_selection", "$.selection", "Record the choice, accepted tradeoffs, uncertainty, revisit condition and user choice or delegation.");
+}
+
 export function validateReviewRecord(review, refs = {}) {
   const errors = [];
-  if (!isRecord(review)) return { valid: false, errors: [{ code: "invalid_review", path: "$", message: "Review record must be an object." }] };
-  for (const key of Object.keys(review)) if (!REVIEW_FIELDS.has(key)) issue(errors, "unknown_review_field", `$.${key}`, `Unsupported review field: ${key}`);
-  if (review.schema_version !== 1) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 1.");
-  for (const field of ["id", "decision_id"]) if (typeof review[field] !== "string" || !SAFE_ID.test(review[field])) issue(errors, `invalid_${field}`, `$.${field}`, `${field} must be a safe stable identifier.`);
-  if (typeof review.reviewer !== "string" || !review.reviewer.trim()) issue(errors, "missing_reviewer", "$.reviewer", "Reviewer identity is required.");
-  if (typeof review.assessment !== "string" || !review.assessment.trim()) issue(errors, "missing_assessment", "$.assessment", "Reviewer assessment is required.");
-  if (!REVIEW_OUTCOMES.has(review.outcome)) issue(errors, "invalid_review_outcome", "$.outcome", "Review outcome is not supported.");
-  if (!isRecord(review.checklist)) issue(errors, "invalid_review_checklist", "$.checklist", "Review checklist must be an object.");
-  else {
-    for (const item of Object.keys(review.checklist)) if (!REVIEW_CHECKLIST_ITEMS.includes(item)) issue(errors, "unknown_review_check", `$.checklist.${item}`, "Unsupported review checklist item.");
-    for (const item of REVIEW_CHECKLIST_ITEMS) if (typeof review.checklist[item] !== "boolean") issue(errors, "invalid_review_check_item", `$.checklist.${item}`, `Review checklist item ${item} must be a boolean.`);
-    if (review.outcome === "ACCEPTED") for (const item of REVIEW_CHECKLIST_ITEMS) if (review.checklist[item] !== true) issue(errors, "incomplete_review_checklist", `$.checklist.${item}`, `Accepted review checklist item ${item} must be true.`);
-  }
-  if (!Array.isArray(review.objections)) issue(errors, "invalid_objections", "$.objections", "Objections must be a list.");
-  else review.objections.forEach((objection, index) => {
-    const path = `$.objections[${index}]`;
-    if (!isRecord(objection)) { issue(errors, "invalid_objection", path, "Objection must be an object."); return; }
-    if (Object.keys(objection).some((key) => !["id", "statement", "provenance", "claim_ids", "target_ids", "principle_ids", "evidence_ids", "unavailable_refs", "status", "answer", "rationale"].includes(key))) issue(errors, "unknown_objection_field", path, "Objection contains unsupported fields.");
-    if (typeof objection.id !== "string" || !SAFE_ID.test(objection.id)) issue(errors, "invalid_objection_id", `${path}.id`, "Objection ID must be a safe identifier.");
-    for (const field of ["statement", "provenance"]) if (typeof objection[field] !== "string" || !objection[field].trim()) issue(errors, `missing_objection_${field}`, `${path}.${field}`, `Objection ${field} is required.`);
-    if (!["open", "answered", "resolved"].includes(objection.status)) issue(errors, "invalid_objection_status", `${path}.status`, "Objection status must be open, answered, or resolved.");
-    const unavailableRefs = objection.unavailable_refs;
-    if (unavailableRefs !== undefined && (!isRecord(unavailableRefs) || Object.keys(unavailableRefs).some((field) => !["claim_ids", "target_ids", "principle_ids", "evidence_ids"].includes(field)))) {
-      issue(errors, "invalid_unavailable_refs", `${path}.unavailable_refs`, "Unavailable reference reasons must name claim_ids, target_ids, principle_ids, or evidence_ids.");
-    }
-    for (const field of ["claim_ids", "target_ids", "principle_ids", "evidence_ids"]) {
-      const values = objection[field];
-      const hasReferences = Array.isArray(values) && values.length > 0;
-      const reason = unavailableRefs?.[field];
-      if (hasReferences) {
-        validateSafeIdList(values, `${path}.${field}`, errors, { required: false });
-        if (reason !== undefined) issue(errors, "conflicting_objection_trace", `${path}.unavailable_refs.${field}`, "A reference cannot be both available and marked unavailable.");
-      } else if (typeof reason !== "string" || !reason.trim()) {
-        issue(errors, "missing_objection_reference", `${path}.${field}`, `Objection must cite ${field} or state why that reference is unavailable.`);
-      }
-    }
-    if (isRecord(unavailableRefs)) for (const [field, reason] of Object.entries(unavailableRefs)) {
-      if (typeof reason !== "string" || !reason.trim()) issue(errors, "missing_unavailable_ref_reason", `${path}.unavailable_refs.${field}`, "Unavailable reference reason is required.");
-    }
-    knownReferences(objection.claim_ids ?? [], refs.claimIds, `${path}.claim_ids`, "unknown_claim_ref", errors);
-    knownReferences(objection.target_ids ?? [], refs.targetIds, `${path}.target_ids`, "unknown_target_ref", errors);
-    knownReferences(objection.principle_ids ?? [], refs.principleIds, `${path}.principle_ids`, "unknown_principle_ref", errors);
-    knownReferences(objection.evidence_ids ?? [], refs.evidenceIds, `${path}.evidence_ids`, "unknown_evidence_ref", errors);
-    if (["answered", "resolved"].includes(objection.status)) {
-      if (typeof objection.answer !== "string" || !objection.answer.trim()) issue(errors, "missing_objection_answer", `${path}.answer`, "Answered or resolved objection needs the user's response.");
-      if (typeof objection.rationale !== "string" || !objection.rationale.trim()) issue(errors, "missing_objection_rationale", `${path}.rationale`, "Answered or resolved objection needs reasoning stated by the user.");
-    }
-  });
+  if (!isRecord(review)) return { valid: false, errors: [{ code: "invalid_review", path: "$", message: "Review must be an object." }] };
+  const fields = ["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "findings"];
+  for (const key of Object.keys(review)) if (!fields.includes(key)) issue(errors, "unknown_review_field", `$.${key}`, `Unsupported review field: ${key}`);
+  if (review.schema_version !== 2) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 2.");
+  for (const field of ["id", "decision_id"]) if (typeof review[field] !== "string" || !SAFE_ID.test(review[field])) issue(errors, `invalid_${field}`, `$.${field}`, `${field} must be a stable ID.`);
+  for (const field of ["reviewer", "assessment"]) if (typeof review[field] !== "string" || !review[field].trim()) issue(errors, `missing_${field}`, `$.${field}`, `${field} is required.`);
+  if (!REVIEW_OUTCOMES.has(review.outcome)) issue(errors, "invalid_review_outcome", "$.outcome", "Unsupported review outcome.");
+  if (!Array.isArray(review.findings) || review.findings.some((finding) => !isRecord(finding) || !["blocker", "major", "minor"].includes(finding.severity) || typeof finding.description !== "string" || !finding.description.trim() || typeof finding.evidence !== "string" || !finding.evidence.trim())) issue(errors, "invalid_findings", "$.findings", "Findings require severity, description and evidence.");
   knownReferences([review.decision_id].filter((id) => typeof id === "string"), refs.decisionIds, "$.decision_id", "unknown_decision_ref", errors);
-  if (review.material_approval !== undefined) {
-    if (!isRecord(review.material_approval) || Object.keys(review.material_approval).some((key) => key !== "approval_id") || typeof review.material_approval.approval_id !== "string" || !SAFE_ID.test(review.material_approval.approval_id)) {
-      issue(errors, "invalid_material_approval_ref", "$.material_approval", "Material approval must be an object with a safe approval_id reference.");
-    }
-  }
-  if (review.material_approvals !== undefined) {
-    if (!Array.isArray(review.material_approvals)) issue(errors, "invalid_material_approval_refs", "$.material_approvals", "Material approvals must be a list.");
-    else {
-      const approvalIds = new Set();
-      review.material_approvals.forEach((reference, index) => {
-        if (!isRecord(reference) || Object.keys(reference).some((key) => key !== "approval_id") || typeof reference.approval_id !== "string" || !SAFE_ID.test(reference.approval_id)) issue(errors, "invalid_material_approval_ref", `$.material_approvals[${index}]`, "Each material approval must contain a safe approval_id reference.");
-        else if (approvalIds.has(reference.approval_id)) issue(errors, "duplicate_material_approval_ref", `$.material_approvals[${index}].approval_id`, `Material approval is repeated: ${reference.approval_id}`);
-        else approvalIds.add(reference.approval_id);
-      });
-    }
-  }
-  if (review.material_approval !== undefined && review.material_approvals !== undefined) issue(errors, "conflicting_material_approval_refs", "$", "Use either the single or list material approval reference, not both.");
-  if (review.material_ids === undefined) issue(errors, "missing_material_ids", "$.material_ids", "Review record must list every new material used, or provide an empty list.");
-  else validateSafeIdList(review.material_ids, "$.material_ids", errors, { required: false });
-  if (review.outcome === "ACCEPTED") for (const error of verifyApproval(review, review.approval).errors) issue(errors, error.code, error.path, error.message);
   return { valid: errors.length === 0, errors };
 }

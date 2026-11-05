@@ -95,7 +95,7 @@ properties:
     additional_properties: false
     required: [decision_layer_version, decision_ids]
     properties:
-      decision_layer_version: { type: integer, const: 1 }
+      decision_layer_version: { type: integer, const: 2 }
       decision_ids:
         type: array
         min_items: 1

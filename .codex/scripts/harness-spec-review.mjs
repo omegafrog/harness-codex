@@ -22,7 +22,8 @@ try {
     const reviews = options.reviews ? JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8')) : null;
     const review = reviews?.[options.axis];
     if (action === 'record' && (review?.axis !== options.axis || review?.ticket_id !== options.ticketId)) throw new Error('Review axis and ticket must match the admitted target');
-    const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotSpecReview({ ...options, input_paths: action === 'record' ? Object.keys(review?.inputs || {}) : inputs });
+    if (action === 'record' && Object.hasOwn(review, 'inputs')) throw new Error('Review inputs are owned by the admission, not the reviewer');
+    const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotSpecReview({ ...options, input_paths: action === 'record' ? [] : inputs });
     result = await updateReviewAttempt({ root: options.root, scope: `spec-${options.ticketId}-${options.axis}`, action, inputs: snapshot, attemptId: options.attempt, review, reason: options.reason });
     if (action === 'begin') {
       result.target = { workspace_root: options.root, session_directory: sessionDirectory(options.root), ticket_id: options.ticketId, axis: options.axis, attempt_id: result.attempt_id };

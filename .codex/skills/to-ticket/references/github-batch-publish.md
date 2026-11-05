@@ -4,7 +4,7 @@
 
 ## 발행
 
-1. [GitHub Issue 본문 템플릿](github-issue-template.md)을 그대로 작성 틀로 사용해 Parent/Child draft body를 직접 채운다. 별도 자유 형식 초안을 만든 뒤 옮기거나 완성된 본문을 다시 대조하는 단계를 두지 않는다. 부모·의존 관계는 Issue 번호 대신 canonical plan ID로 표현한다. 각 placeholder를 채우는 동안 해당 템플릿의 필수 내용을 적용한다. `addProjectV2DraftIssue`로 설정된 Project에 초안을 만들고 제목, 본문, plan ID, Project item ID를 `<session_directory>/runtime/to-ticket/publish-state.json`에 기록한다. 첫 GitHub mutation 전에 plan ID별 빈 진행 상태를 만든다.
+1. [GitHub Issue 본문 템플릿](github-issue-template.md)을 그대로 작성 틀로 사용해 Parent/Child draft body를 직접 채운다. 별도 자유 형식 초안을 만든 뒤 옮기거나 완성된 본문을 다시 대조하는 단계를 두지 않는다. 부모·의존 관계는 Issue 번호 대신 canonical plan ID로 표현한다. 각 placeholder를 채우는 동안 해당 템플릿의 필수 내용을 적용한다. `addProjectV2DraftIssue`로 설정된 Project에 초안을 만들고 제목, 본문, plan ID, Project item ID를 `<session_directory>/runtime/to-ticket/publish-state.json`에 기록한다. `harness-publication.mjs begin`으로 parent는 `@parent`, child는 실제 plan ID의 pending을 생성 전 기록하고 성공 직후 `record`한다. 이미 생성된 ID는 재사용하며 응답이 불명확하면 Project를 조회한다.
 2. Project metadata는 `gh project view`와 `gh project field-list`를 각각 한 번만 호출해 project ID, 설정된 `Workflow Status` field ID, `Planned` option ID를 확인한다. 각 draft마다 metadata를 다시 조회하지 않는다.
 3. `addProjectV2DraftIssue`를 한 GraphQL mutation의 alias로 묶어 전체 plan set의 parent/child 초안을 만든다. API 응답의 Project item ID와 plan ID mapping을 즉시 journal에 기록한다. Repository Issue 생성·parent 연결·Beads mirror는 이 단계에서 하지 않는다.
 4. 반환된 item ID를 사용해 초안의 `Workflow Status`를 `Planned`로 설정하고, 모든 draft item과 상태를 publication journal에 보존한다. API 오류나 누락된 응답이 있으면 성공 항목을 기록하고 실패 항목만 재개한다.
@@ -22,4 +22,4 @@ GitHub 호출은 하나의 원자적 transaction이 아니다. 각 성공 응답
 
 ## Beads 연결과 계획 index
 
-`tracker-publish`에서는 Beads에 tracker mirror를 만들지 않는다. 구현 진입 시 실제 Issue가 만들어진 뒤 Beads 항목에 Issue URL `external_ref`, v1 metadata, parent/dependency 관계를 부여한다. Project item ID와 plan mapping은 publication journal 및 completion receipt에 보존한다. `plans.md`와 canonical per-plan 문서는 review 통과 시점의 snapshot을 유지한다.
+`tracker-publish`에서는 Beads에 tracker mirror를 만들지 않는다. 구현 진입 시 실제 Issue가 만들어진 뒤 Beads 항목에 Issue URL `external_ref`, v1 metadata, parent/dependency 관계를 부여한다. Project item ID와 plan mapping은 publication journal에 보존한다. `plans.md`와 canonical per-plan 문서는 review 통과 시점의 snapshot을 유지한다.

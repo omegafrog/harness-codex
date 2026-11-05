@@ -107,6 +107,7 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         if (scope.startsWith('spec-') && reason.startsWith(SPEC_PREPARATION_ABORT)) last.pre_dispatch_preparation = true;
       } else {
         requireValue(action === 'record', 'Unknown review attempt action');
+        if (review) review = { ...review, inputs: last.inputs };
         requireValue(review && ['pass', 'revise', 'reject', 'blocked'].includes(review.verdict), 'Review verdict is required');
         requireValue(typeof review.reviewer_id === 'string' && review.reviewer_id.trim() && Array.isArray(review.author_ids) && review.author_ids.length && review.author_ids.every((id) => typeof id === 'string' && id.trim()) && !review.author_ids.includes(review.reviewer_id) && review.fork_turns === 'none', 'A fresh independent reviewer is required');
         requireValue(!history.attempts.some((item) => item.review?.reviewer_id === review.reviewer_id), 'Each retry requires a new reviewer');

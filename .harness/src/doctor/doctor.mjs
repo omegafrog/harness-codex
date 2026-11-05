@@ -35,6 +35,10 @@ async function inspectExecutionAssets(root, diagnostics) {
   }
   const paths = [
     '.codex/internal-skills/skill-execution/GUIDE.md',
+    '.codex/internal-skills/skill-execution/references/workflow-map.md',
+    '.codex/internal-skills/technology-selection/GUIDE.md',
+    '.codex/schemas/decision/architecture-decision.schema.yaml',
+    '.codex/scripts/harness-publication.mjs',
     '.codex/internal-skills/skill-execution/schemas/input.schema.json',
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
@@ -45,6 +49,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['output-schema', 'stage-input', 'skill-execution', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md');

@@ -1,6 +1,6 @@
 import { inspectSpecReviews } from './spec-review.mjs';
-import { readArchitectureDecision, readMaterialApproval, readReviewRecord, readSystemTargets, validateEvidenceReferences, validatePrincipleReferences } from "../decision/artifacts.mjs";
-import { evaluateDecisionGate, materialApprovalReferences } from "../decision/review.mjs";
+import { readArchitectureDecision, readReviewRecord, readSystemTargets, validateEvidenceReferences, validatePrincipleReferences } from "../decision/artifacts.mjs";
+import { evaluateDecisionGate } from "../decision/review.mjs";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { assertWorkspaceTarget } from "../eval/case-workspace.mjs";
@@ -21,9 +21,9 @@ export function evaluateWorkflowCondition(conditionId, input = {}) {
   }
   if (conditionId !== LEARNING_MODE_CONDITION_ID) throw new TypeError(`No workflow condition evaluator is registered for: ${conditionId}`);
   const session = input.review_session;
-  const mode = session?.mode ?? input.mode ?? "Learning";
+  const mode = session?.mode ?? input.mode ?? "Normal";
   if (mode !== "Learning" && mode !== "Normal") throw new TypeError("mode must be Learning or Normal");
-  if (mode === "Normal") {
+  if (mode === "Normal" && (session?.mode === "Normal" || input.mode === "Normal") && session?.history?.length) {
     const userSelected = (session?.history ?? []).some((event) =>
       event?.actor_role === "user" && typeof event.actor === "string" && event.actor.trim() &&
       ((event.type === "mode_selected" && event.mode === "Normal") || (event.type === "mode_changed" && event.to === "Normal")),
@@ -36,7 +36,7 @@ export function evaluateWorkflowCondition(conditionId, input = {}) {
 export function evaluateStageCondition({ workflow, stageId, input = {} } = {}) {
   const stage = workflow?.stages?.find((candidate) => candidate.id === stageId);
   if (!stage) throw new TypeError(`Unknown workflow stage: ${stageId}`);
-  if (!stage.condition) return { condition_id: null, applies: true, mode: input.mode ?? "Learning" };
+  if (!stage.condition) return { condition_id: null, applies: true, mode: input.mode ?? "Normal" };
   return evaluateWorkflowCondition(stage.condition, input);
 }
 
@@ -126,9 +126,9 @@ export const evaluateArchitectureDiagramCompletion = (input) => evaluateDiagramC
 
 async function loadDecisionContext(root, ticketId) {
   const targets = await readSystemTargets({ root, ticketId });
-  if (targets.decision_metadata?.decision_layer_version !== 1) return { targets, legacy: true };
+  if (!targets.decision_metadata) return { targets, noDecisions: true };
   const targetIds = [...targets.initial, ...targets.expected_growth, ...targets.architecture_boundary].map((target) => target.id);
-  return { targets, legacy: false, decisionIds: targets.decision_metadata.decision_ids, targetIds };
+  return { targets, noDecisions: false, decisionIds: targets.decision_metadata.decision_ids, targetIds };
 }
 
 export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), ticketId }) {
@@ -136,11 +136,12 @@ export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), t
   const evidencePath = `docs/specs/${safeTicketId}/architecture-decisions/`;
   try {
     const context = await loadDecisionContext(root, ticketId);
-    if (context.legacy) return result("pass", DECISION_EVIDENCE_GATE_ID, "Legacy ticket has no decision-layer opt-in marker.", `docs/specs/${safeTicketId}/system-targets.yaml`);
+    if (context.noDecisions) return result("pass", DECISION_EVIDENCE_GATE_ID, "No material technology decisions are declared.", `docs/specs/${safeTicketId}/system-targets.yaml`);
     for (const id of context.decisionIds) {
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
+      if (decision.schema_version !== context.targets.decision_metadata.decision_layer_version) throw new TypeError(`Decision ${id} version does not match decision metadata.`);
       if (decision.review_required === true) return result("blocked", DECISION_EVIDENCE_GATE_ID, `Decision ${id} is marked review-required after a referenced Principle changed lifecycle.`, `docs/specs/${safeTicketId}/architecture-decisions/${id}.yaml`, (decision.review_flags ?? []).map((flag) => ({ code: "decision_review_required", path: "$.review_flags", message: flag })));
-      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids });
+      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids ?? [] });
       const principleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
       const gates = evaluateDecisionGate(decision, context.targets, undefined, { evidenceIds, principleIds });
       if (gates.decision_evidence_complete.status !== "pass") return gates.decision_evidence_complete;
@@ -159,30 +160,24 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
   const evidencePath = `docs/specs/${safeTicketId}/architecture-reviews/`;
   try {
     const context = await loadDecisionContext(root, ticketId);
-    if (context.legacy) return result("pass", DECISION_REVIEW_GATE_ID, "Legacy ticket has no decision-layer opt-in marker.", `docs/specs/${safeTicketId}/system-targets.yaml`);
+    if (context.noDecisions) return result("pass", DECISION_REVIEW_GATE_ID, "No material technology decisions are declared.", `docs/specs/${safeTicketId}/system-targets.yaml`);
     for (const id of context.decisionIds) {
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
+      if (decision.schema_version !== context.targets.decision_metadata.decision_layer_version) throw new TypeError(`Decision ${id} version does not match decision metadata.`);
       if (decision.review_required === true) return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} is marked review-required after a referenced Principle changed lifecycle.`, `docs/specs/${safeTicketId}/architecture-decisions/${id}.yaml`, (decision.review_flags ?? []).map((flag) => ({ code: "decision_review_required", path: "$.review_flags", message: flag })));
+      if (!decision.review_id) {
+        const gate = evaluateDecisionGate(decision, context.targets, undefined);
+        if (gate.decision_review_complete.status !== "pass") return gate.decision_review_complete;
+        continue;
+      }
       if (typeof decision.review_id !== "string") return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} has no review record reference.`, evidencePath);
       const review = await readReviewRecord({ root, ticketId, reviewId: decision.review_id, refs: { decisionIds: context.decisionIds } });
-      const materialApprovals = {};
-      for (const approvalId of materialApprovalReferences(review)) {
-        try {
-          materialApprovals[approvalId] = await readMaterialApproval({ root, ticketId, approvalId });
-        } catch (error) {
-          if (error?.code === "ENOENT") return result("blocked", DECISION_REVIEW_GATE_ID, "Reviewer material use is waiting for explicit user approval.", `docs/specs/${safeTicketId}/architecture-reviews/material-approvals/${approvalId}.yaml`, [{ code: "missing_material_approval", path: "$.material_approval", message: "The approved material-use record is missing." }]);
-          throw error;
-        }
-      }
-      const referencedEvidence = [...decision.evidence_ids, ...(review.objections ?? []).flatMap((objection) => objection.evidence_ids ?? [])];
-      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: referencedEvidence });
-      const decisionPrincipleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
-      const objectionPrincipleIds = await validatePrincipleReferences({ root, principleIds: (review.objections ?? []).flatMap((objection) => objection.principle_ids ?? []) });
-      const principleIds = [...new Set([...decisionPrincipleIds, ...objectionPrincipleIds])];
-      const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds, principleIds, materialApprovals, claimIds });
+      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids ?? [] });
+      const principleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
+      const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds, principleIds, claimIds });
       if (gates.decision_review_complete.status !== "pass") return gates.decision_review_complete;
     }
-    return result("pass", DECISION_REVIEW_GATE_ID, "All opted-in decisions have accepted reviews with the complete checklist.", evidencePath);
+    return result("pass", DECISION_REVIEW_GATE_ID, "All decisions and requested Learning reviews are accepted.", evidencePath);
   } catch (error) {
     const missing = error?.code === "ENOENT";
     const violations = error?.validation?.errors ?? [{ code: missing ? "missing_artifact" : "invalid_artifact", path: evidencePath, message: error.message }];

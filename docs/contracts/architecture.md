@@ -293,7 +293,7 @@ Git worktree 목록의 primary checkout에 저장 위치를 고정한다. review
 ### 비즈니스 규칙
 BR-decisions: 승인·근거·review 상태의 충분성을 판단한다. 여러 artifact의 계약이어서 entity 없는 함수형 모델에서 이 모듈이 규칙을 소유한다.
 
-`spec-me`의 조회 우선 orchestration은 [내부 근거 스킬](../../.codex/skills/spec-me/references/decision-knowledge.md)이 소유한다. 기존 `src/knowledge/registry.mjs`의 `lookupPrinciples`/`readEvidence`를 읽기 전용으로 사용하고 부족분 수집·승인은 기존 knowledge-harvest workflow 역할에 위임한다. 신규 runtime gate나 공개 entrypoint는 추가하지 않는다. supporting reference는 기존 installer의 재귀 탐색으로 `.agents/skills/spec-me/references/`에 설치·갱신되며 [설치 schema·Doctor 회귀 검사](../../tests/skill_execution_schema_compatibility.test.mjs)로 내용·호출 링크·lock·비노출을 확인한다.
+`spec-me`는 중요한 선택이 남았거나 기존 결정이 유효하지 않을 때만 [기술 선택 GUIDE](../../.codex/internal-skills/technology-selection/GUIDE.md)를 읽는다. 일반 출처는 해당 주장과 적용 조건에 인용하며 공통 Knowledge 게시만 knowledge-harvest가 소유한다. Decision validator는 공통 기준·후보별 평가·사용자 선택과 Learning review 연결을 검사하고 승인 runner는 저장된 답변과 정본을 연결한다. 설치 discovery와 Doctor는 내부 GUIDE와 workflow 지도를 관리한다.
 
 <a id="decision-method"></a>
 ## evaluateDecisionGate
@@ -683,12 +683,10 @@ required_env와 모든 `${VAR}`를 prepare 전 검증한다. 재실행 가능한
 기존 control-plane 안에서 완성된 Product/Architecture Spec의 독립 적대적 리뷰 기록과 현행 입력의 일치를 검증하는 조립 책임이다. 새 Context·Aggregate·배포 서버는 추가하지 않는다. [소스](../../.harness/src/workflow/spec-review.mjs).
 
 ### 필요 엔티티
-workspace root·ticket ID·review axis·사용자 원문 request.md·Spec/diagram·현행 계약/용어/모델·검토한 추가 근거 파일·실제 agent metadata·reviewer 판정/지적. 객체형 DDD entity로 선언하지 않는다.
+workspace root·ticket ID·Product/Architecture Spec·실제 agent metadata·reviewer 판정과 지적.
 
 ### 동작
-호출자는 확정 답변·Spec·다이어그램을 함께 반영한 뒤 begin으로 검토 슬롯과 snapshot을 확보한다. Architecture begin은 현재 Product pass를 확인한다. 공통 실행 기록은 [review-attempts](../../.harness/src/workflow/review-attempts.mjs)가 관리하며 Spec·계획 CLI가 함께 사용한다. Learning의 설계 방어는 해당 Decision 검토 단계가 담당한다.
-
-spec-me의 Product 작성/diagram 후 고성능 모델의 새 reviewer를 생성하고 pass 후 설계한다. 최종 계약/용어/diagram이 안정된 뒤 stale Product를 갱신하고 다른 새 reviewer가 Architecture를 검토한다. 매 수정본은 새 agent/fork_turns:none으로 보내며 의미 변경은 기존 interview로 돌아간다. reviewer는 읽기 전용으로 JSON 판정과 근거를 반환하고 caller가 원본 응답을 session/runtime/spec-reviews/에 attempt별 보존한다. 이 흐름은 Learning mode 여부와 무관하다. stage gate 및 lifecycle spec_reviews는 기록·입력 hash·작성자 독립성·미해결 중대 지적을 검사한다. completeWorkflow는 로컬 manifest가 spec_reviews를 제거해도 spec-me/to-ticket 필수 검사를 복원한다. to-ticket은 새 worktree의 현재 파일로 검증하고 stale/missing이면 계획 전에 중단한다. 실제 spawn의 진위나 의미적 완전성은 hash만으로 증명하지 않으며 caller가 실제 tool 결과와 대조한다.
+확정된 두 Spec에 대해 fresh reviewer 한 명이 독립 검토한다. 실행기는 admission의 snapshot을 리뷰 결과에 연결하고 현재성·독립성·중대 지적을 검사한다. 다이어그램과 외부 링크 대상 변경은 이 리뷰를 무효화하지 않는다. 실제 호출과 의미적 완전성은 원본 agent 결과와 reviewer 판단으로 확인한다.
 
 ### 메서드
 [inspectReviewHistory](architecture.md#inspect-review-history-method) · [updateReviewAttempt](architecture.md#update-review-attempt-method) · [assertReviewAttempt](architecture.md#assert-review-attempt-method) · [snapshotSpecReview](architecture.md#snapshot-spec-review-method) · [inspectSpecReviews](architecture.md#inspect-spec-reviews-method)
@@ -711,13 +709,13 @@ create:false 경로 조회로 파일·session·권한을 바꾸지 않고 active
 수정일: 2026-10-17
 
 ### 설명
-각 axis의 필수 입력과 직접 읽은 추가 근거를 hash snapshot으로 만든다.
+두 Spec의 경로별 SHA-256 snapshot을 만든다. 추가 리뷰 자료는 허용하지 않는다.
 
 ### 필요 엔티티
-root·ticketId·product/architecture axis·선택 input_paths.
+workspace root·ticket ID.
 
 ### 동작
-request/Product Spec을 필수 포함하고 Architecture는 Architecture Spec도 포함한다. 존재하는 현행 용어/Context map/관련 통합 계약/모델/System Targets와 해당 ticket의 diagram 파일도 포함한다. 직접 읽은 source/ADR는 input_paths에 추가한다. workspace 밖 참조와 diagram symlink를 거부한다. before/after snapshot이 바뀌면 검토를 다시 시작한다. 반환 snapshot은 읽은 내용의 일치를 추적하며 실제 읽기 행위 자체를 증명하지 않는다.
+Product·Architecture Spec을 읽고 변경을 감지한다. hash는 실제 읽기나 의미적 판단을 증명하지 않는다.
 
 <a id="inspect-spec-reviews-method"></a>
 ## inspectSpecReviews
@@ -775,7 +773,7 @@ workspace root·scope·gate가 검사 중인 reviewer 응답.
 workspace root·plan set ID·Product/Architecture Spec·canonical split plan·review attempt metadata. 객체형 DDD entity로 선언하지 않는다.
 
 ### 동작
-`snapshotPlanSet`은 plan index, 두 Spec, split plan 파일과 존재하는 요청·결정·Context·통합 계약·실행 계약을 SHA-256 snapshot으로 만든다. `updatePlanReview`는 공통 review-attempt 기록을 갱신하고, `validatePlanReviewAdmission`은 stage 진입 시 승인 snapshot과 active attempt를 대조한다. `inspectPlanSet`은 planning·dispatch·completion에서 pass된 독립 리뷰와 현행 입력 hash를 확인하고, dispatch/completion에는 선택 plan이 reviewed set에 포함됐는지 확인한다. `inspectPlanSetImpact`는 직전 리뷰와 현재 snapshot의 변경 경로 및 영향 plan ID를 반환한다. runtime은 요구사항 coverage 원장, requirement별 구현 증거, 의미적 리뷰 정확성을 판정하지 않는다.
+`snapshotPlanSet`은 plan index, 두 Spec과 split plan 파일을 SHA-256 snapshot으로 만든다. `updatePlanReview`는 공통 review-attempt 기록을 갱신하고, `validatePlanReviewAdmission`은 stage 진입 시 승인 snapshot과 active attempt를 대조한다. `inspectPlanSet`은 planning·dispatch·completion에서 pass된 독립 리뷰와 현행 입력 hash를 확인하고, dispatch/completion에는 선택 plan이 reviewed set에 포함됐는지 확인한다. `inspectPlanSetImpact`는 직전 리뷰와 현재 snapshot의 변경 경로 및 영향 plan ID를 반환한다. runtime은 요구사항 coverage 원장, requirement별 구현 증거, 의미적 리뷰 정확성을 판정하지 않는다.
 
 ### 메서드
 [snapshotPlanSet](architecture.md#snapshot-plan-set-method) · [validatePlanReviewAdmission](architecture.md#validate-plan-review-admission-method) · [inspectPlanSet](architecture.md#inspect-plan-set-method) · [inspectPlanSetImpact](architecture.md#inspect-plan-set-impact-method) · [updatePlanReview](architecture.md#update-plan-review-method)
@@ -791,7 +789,7 @@ workspace root·plan set ID·Product/Architecture Spec·canonical split plan·re
 workspace root·plan set ID.
 
 ### 동작
-plan index에서 Product/Architecture Spec 경로를 정하고 canonical split plan 파일을 모두 수집한다. 선택 입력이 존재하면 request·system targets·CONTEXT·CONTEXT-MAP·product/architecture contracts·execution.json도 snapshot에 포함한다. 안전한 workspace-relative regular file만 읽는다.
+plan index에서 Product/Architecture Spec 경로를 정하고 canonical split plan 파일을 모두 수집한다. split plan frontmatter의 lifecycle status는 snapshot에서 제외하고 나머지 본문 변경은 감지한다. 안전한 workspace-relative regular file만 읽는다.
 
 <a id="validate-plan-review-admission-method"></a>
 ## validatePlanReviewAdmission

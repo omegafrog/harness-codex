@@ -269,36 +269,26 @@ export async function validateSkillReturn({ root, input, envelope }) {
     catch (error) { throw new Error(`Review context must be an existing session-relative JSON file: ${result.review_request.context_path}`, { cause: error }); }
     requireValue(context && typeof context === 'object' && !Array.isArray(context), 'Review context must be an object');
   }
-  if (input.context?.review_checklist && ['completed', 'action_required'].includes(envelope.status)) {
-    const ids = input.context.review_checklist.decision_ids;
-    const criteria = ['requirements', 'targets', 'alternatives', 'tradeoffs', 'evidence', 'boundary', 'answered_objections'];
-    requireValue(input.skill === 'architecture-review' && Array.isArray(ids) && ids.length > 0 && new Set(ids).size === ids.length && ids.every((id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)), 'Invalid architecture review checklist');
-    const reports = result.artifacts.filter((artifact) => artifact.kind === 'architecture_review');
-    requireValue(reports.length === 1, 'Architecture review requires one checklist report');
-    const report = (await readReference(root, reports[0], session, controlSession)).toString('utf8');
-    const entries = [...report.matchAll(/^- \[([ xX])\] ([A-Za-z0-9][A-Za-z0-9._-]*) \/ (requirements|targets|alternatives|tradeoffs|evidence|boundary|answered_objections) — (\S.*)$/gm)];
-    for (const id of ids) for (const criterion of criteria) requireValue(entries.filter((entry) => entry[2] === id && entry[3] === criterion).length === 1, `Architecture review checklist missing or duplicates ${id} / ${criterion}`);
-  }
   if (input.context?.review_admission && (envelope.status === 'completed' || envelope.status === 'action_required')) {
     const admission = input.context.review_admission;
     const { validateSpecReviewAdmission } = await import('./spec-review.mjs');
     await validateSpecReviewAdmission({ root, admission, requireActive: false });
-    const reviewed = result.inputs ? Object.fromEntries(result.inputs.map(({ path, sha256 }) => [path, sha256])) : null;
-    if (result.inputs) requireValue(Object.keys(reviewed).length === result.inputs.length, 'Duplicate reviewed input paths');
-    requireValue(result.axis === admission.target.axis && result.ticket_id === admission.target.ticket_id && reviewed && Object.keys(reviewed).length === Object.keys(admission.inputs).length && Object.entries(admission.inputs).every(([path, digest]) => reviewed[path] === digest), 'Review result must match the admitted workspace snapshot');
+    requireValue(result.axis === admission.target.axis && result.ticket_id === admission.target.ticket_id, 'Review result must match the admitted target');
   }
   if (input.context?.plan_review_admission && (envelope.status === 'completed' || envelope.status === 'action_required')) {
     const admission = input.context.plan_review_admission;
     const { validatePlanReviewAdmission } = await import('./plan-review.mjs');
     await validatePlanReviewAdmission({ root, planSetId: input.context.plan_set_id, admission, requireActive: false });
-    const reviewed = result.inputs ? Object.fromEntries(result.inputs.map(({ path, sha256 }) => [path, sha256])) : null;
-    if (result.inputs) requireValue(Object.keys(reviewed).length === result.inputs.length, 'Duplicate reviewed input paths');
-    requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id && reviewed && Object.keys(reviewed).length === Object.keys(admission.inputs).length && Object.entries(admission.inputs).every(([path, digest]) => reviewed[path] === digest), 'Plan review result must match the admitted workspace snapshot');
+    requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
   if (envelope.status === 'completed') {
     if (input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');
       await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
+    }
+    if (input.skill === 'tracker-publish') {
+      const { verifyDraftPublication } = await import('../tracker/publication.mjs');
+      await verifyDraftPublication({ root, planSetId: input.context?.plan_set_id });
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);

@@ -19,3 +19,5 @@ Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<rol
 - 입력 준비와 최초 worktree 생성: [입력 준비](references/input.md)
 - 출력 계약과 실행 상태: [스키마와 실행 상태](references/state.md)
 - 선택한 실행 호출과 결과 검증: [실행과 결과](references/dispatch.md)
+
+전체 단계와 정본·자율 라우팅 경계는 [workflow 지도](references/workflow-map.md)를 따른다.

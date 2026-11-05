@@ -81,18 +81,16 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       plan_review: { plan_set_id: 'calculator', phase: 'planning' },
       plans_index: { workspace_root: tree.workspace, plan_set_id: 'calculator' },
       tracker_sync: { ticket_refs: [ticket] },
-      required_outcome: { passed: true },
-      evidence: { complete: true },
     }));
     const args = [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];
     const intermediate = JSON.parse(execFileSync(process.execPath, args, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(intermediate.state, 'completed');
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
-    const evidence = JSON.parse(await readFile(completionPath, 'utf8'));
-    await writeFile(completionPath, JSON.stringify({ ...evidence, required_outcome: { passed: false } }));
+    const planBefore = await readFile(join(tree.workspace, ticket), 'utf8');
+    await writeFile(join(tree.workspace, ticket), `${planBefore}\nChanged requirement\n`);
     assert.notEqual(spawnSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace }).status, 0);
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
-    await writeFile(completionPath, JSON.stringify(evidence));
+    await writeFile(join(tree.workspace, ticket), planBefore);
     const completed = JSON.parse(execFileSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace, encoding: 'utf8' }));
 
     assert.equal(completed.state, 'completed', JSON.stringify(completed.verdict));

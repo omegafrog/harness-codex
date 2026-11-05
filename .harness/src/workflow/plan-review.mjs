@@ -3,13 +3,13 @@ import { lstat, readFile, readdir } from 'node:fs/promises';
 import { isAbsolute, join, posix } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
+import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 function requireValue(value, message) { if (!value) throw new Error(message); }
-const normalizePlanBody = (body) => body.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/, (frontmatter) => frontmatter.replace(/^status:\s*[^\r\n]+\r?\n/gm, ''));
 export function validateCanonicalPlanReference(reference) {
   requireValue(reference?.kind === 'file', 'Canonical plan must be a workspace file');
   requireValue(typeof reference.reference === 'string' && reference.reference, 'Canonical plan reference is required');
@@ -44,20 +44,6 @@ function specPathsFromIndex(index, base, planSetId) {
   return [found.product, found.architecture];
 }
 
-function localMarkdownTargets(sourcePath, markdown) {
-  const targets = [];
-  for (const match of markdown.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g)) {
-    let target = match[1];
-    if (/^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/|#)/.test(target)) continue;
-    target = target.split(/[?#]/, 1)[0];
-    try { target = decodeURIComponent(target); } catch { continue; }
-    const path = posix.normalize(target.startsWith('/') ? target.slice(1) : target.startsWith('docs/') ? target : posix.join(posix.dirname(sourcePath), target));
-    requireValue(!path.startsWith('../') && !isAbsolute(path), `Spec reference escapes workspace: ${target}`);
-    targets.push(path);
-  }
-  return [...new Set(targets)];
-}
-
 async function discoverPlans({ root, base }) {
   const entries = await readdir(join(root, base), { withFileTypes: true });
   const plans = [];
@@ -67,7 +53,7 @@ async function discoverPlans({ root, base }) {
     requireValue(ID.test(id), `Invalid canonical plan filename: ${entry.name}`);
     const path = `${base}/${entry.name}`;
     const file = await safeFile(root, path);
-    plans.push({ id, path, body: file.content.toString('utf8'), sha256: hash(file.content) });
+    plans.push({ id, path, body: file.content.toString('utf8'), sha256: hash(normalizeReviewContent(path, file.content)) });
   }
   if (plans.length) return plans.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -88,39 +74,13 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   requireValue(plans.length > 0, 'Plan set has no split plans');
 
   const inputs = { [`${base}/plans.md`]: indexFile.sha256 };
-  const reviewDocs = new Map([[`${base}/plans.md`, index]]);
   for (const path of specPaths) {
     const file = await safeFile(root, path);
     inputs[path] = file.sha256;
-    reviewDocs.set(path, file.content.toString('utf8'));
-  }
-  const pendingDocs = [...reviewDocs.entries()];
-  const visitedDocs = new Set();
-  while (pendingDocs.length) {
-    const [sourcePath, markdown] = pendingDocs.shift();
-    if (visitedDocs.has(sourcePath)) continue;
-    visitedDocs.add(sourcePath);
-    for (const path of localMarkdownTargets(sourcePath, markdown)) {
-      if (inputs[path]) continue;
-      try {
-        const file = await safeFile(root, path);
-        inputs[path] = file.sha256;
-        if (path.endsWith('.md')) pendingDocs.push([path, file.content.toString('utf8')]);
-      } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-  }
-  for (const path of [
-    `docs/specs/${planSetId}/request.md`, `docs/specs/${planSetId}/system-targets.yaml`,
-    `docs/specs/${planSetId}/system-targets.md`, 'CONTEXT.md', 'CONTEXT-MAP.md',
-    'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/agents/execution.json',
-  ]) {
-    try { inputs[path] = (await safeFile(root, path)).sha256; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   for (const plan of plans) {
     const key = plan.path || `${base}/plans/${plan.id}#canonical`;
     inputs[key] = plan.sha256;
-    reviewDocs.set(plan.path, plan.body);
   }
   return { plan_set_id: planSetId, base, spec_paths: specPaths, plans, inputs };
 }
@@ -168,7 +128,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
       plan_set_id: planSetId, ticket_id: snapshot.spec_paths[0].split("/")[2], spec_paths: snapshot.spec_paths, plan_ids: snapshot.plans.map((plan) => plan.id),
       plan_id: planId || null, plan_reference: selected?.path || selected?.reference || null,
       product_spec_path: snapshot.spec_paths[0], architecture_spec_path: snapshot.spec_paths[1],
-      canonical_plan: selected ? { kind: 'file', reference: selected.path, input_key: `${canonicalKey}#canonical`, hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: hash(normalizePlanBody(canonicalBody)) } : null,
+      canonical_plan: selected ? { kind: 'file', reference: selected.path, input_key: `${canonicalKey}#canonical`, hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: hash(normalizeReviewContent(selected.path, Buffer.from(canonicalBody))) } : null,
     } };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['plan_review'] }; }
 }

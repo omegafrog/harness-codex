@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 import { sessionOutputPath } from './session-output.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
+export function normalizeReviewContent(path, content) {
+  if (!/^docs\/plans\/[^/]+\/(?!plans\.md$)[^/]+\.md$/.test(path)) return content;
+  return Buffer.from(content.toString('utf8').replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/, (frontmatter) => frontmatter.replace(/^status:[ \t]*[^\r\n]*\r?\n/gm, '')));
+}
 
 function sections(text) {
   const parts = []; let current = '', fence = null;
@@ -29,7 +33,7 @@ function sections(text) {
 export async function reviewDelta({ root, inputs, previousInputs }) {
   const changed = [];
   for (const [path, hash] of Object.entries(inputs)) {
-    const content = await readFile(resolve(root, path));
+    const content = normalizeReviewContent(path, await readFile(resolve(root, path)));
     if (digest(content) !== hash) throw new Error(`Review input changed during admission: ${path}`);
     const cache = sessionOutputPath(root, `runtime/reviews/content/${hash}`);
     try { await writeFile(cache, content, { flag: 'wx', mode: 0o600 }); }

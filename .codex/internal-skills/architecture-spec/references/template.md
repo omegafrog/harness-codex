@@ -567,7 +567,7 @@ stop
 
 | Decision     | Option     | Advantages     | Disadvantages     | Result                 |
 | ------------ | ---------- | -------------- | ----------------- | ---------------------- |
-| `<decision>` | `<option>` | `<advantages>` | `<disadvantages>` | Adopt / Reject / Defer |
+| `<decision and criteria>` | `<option and evidence conditions>` | `<meets / unmet / unknown>` | `<operational responsibility and accepted trade-offs>` | Adopt / Reject / Defer and reason |
 
 ---
 

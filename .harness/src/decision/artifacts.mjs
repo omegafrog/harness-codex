@@ -5,6 +5,8 @@ import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { validateArchitectureDecision, validateReviewRecord, validateSystemTargets } from "./validation.mjs";
 import { validateMaterialApprovalRecord } from "./review.mjs";
+import { computeApprovalHash } from "./approval.mjs";
+import { sessionOutputPath } from "../workflow/session-output.mjs";
 import { readEvidence, readPrinciple } from "../knowledge/registry.mjs";
 
 const SAFE_TICKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -130,6 +132,25 @@ export async function writeArchitectureDecision(options = {}) {
   if ("path" in options) throw new TypeError("decision artifact path is not configurable");
   const path = decisionArtifactPath(root, ticketId, "architecture-decisions", decision?.id);
   return writeYamlArtifact(root, path, decision, (value) => validateObject(validateArchitectureDecision(value, refs), "Architecture Decision"));
+}
+
+export async function approveArchitectureDecision({ root = process.cwd(), ticketId, decisionId, answersPath, questionId, delegated = false }) {
+  const decision = await readArchitectureDecisionForHash({ root, ticketId, decisionId });
+  if (delegated) {
+    const state = JSON.parse(await readFile(sessionOutputPath(root, 'runtime/orchestrator/state.json', { create: false }), 'utf8'));
+    const { readExecutionInput } = await import('../workflow/skill-execution.mjs');
+    const input = await readExecutionInput({ root, execution_id: state.stages?.['workflow-compose']?.execution_id });
+    if (typeof input.scope !== 'string' || typeof decision.selection?.user_choice !== 'string' || !decision.selection.user_choice.trim() || !input.scope.includes(decision.selection.user_choice)) throw new TypeError('Delegation must be quoted from the recorded original request.');
+  } else {
+    if (!/^runtime\/executions\/[A-Za-z0-9][A-Za-z0-9_-]*\/decision-answers\.json$/.test(answersPath || "")) throw new TypeError("Decision answers must be the recorded session answer file.");
+    const answers = JSON.parse(await readFile(sessionOutputPath(root, answersPath, { create: false }), "utf8"));
+    const matches = Array.isArray(answers) ? answers.filter((answer) => answer?.question_id === questionId) : [];
+    if (matches.length !== 1 || typeof matches[0].answer !== "string" || !matches[0].answer.trim()) throw new TypeError("An actual answer to the selected question is required.");
+    if (decision.selection?.user_choice !== matches[0].answer) throw new TypeError("Decision choice must match the recorded user answer.");
+  }
+  decision.status = "accepted";
+  decision.approval = { approver: delegated ? "user-delegation" : "user", approved_at: new Date().toISOString(), subject_hash: computeApprovalHash(decision) };
+  return writeArchitectureDecision({ root, ticketId, decision });
 }
 
 export async function readReviewRecord({ root = process.cwd(), ticketId, reviewId, refs = {} }) {

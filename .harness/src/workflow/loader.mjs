@@ -14,11 +14,8 @@ const WORKFLOW_FIELDS = new Set(["schema_version", "id", "orchestrator", "roles"
 const STAGE_FIELDS = new Set(["id", "role", "skill", "model_tier", "needs", "condition", "gates"]);
 const WORKFLOW_MODEL_TIERS = new Set(["high_performance", "implementation", "execution", "low"]);
 export const WORKFLOW_STAGE_GATE_IDS = new Set([
-  "product_coverage",
   "architecture_adversarial_review",
-  "material_ambiguity_resolved",
   "product_diagram_completion",
-  "architecture_coverage",
   "architecture_diagram_completion",
   "system_targets_complete",
   "decision_evidence_complete",

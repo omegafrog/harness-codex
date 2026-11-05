@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { computeApprovalHash, verifyApproval } from "./approval.mjs";
 import { JsonlEventWriter, replayEventStream } from "../eval/journal.mjs";
 import { isWithin } from "../eval/util.mjs";
-import { REVIEW_CHECKLIST_ITEMS, validateArchitectureDecision, validateReviewRecord } from "./validation.mjs";
+import { validateArchitectureDecision, validateReviewRecord } from "./validation.mjs";
 
 const SAFE_REVIEW_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const REVIEW_MODES = new Set(["Learning", "Normal"]);
@@ -30,15 +30,14 @@ function requireMaterial(material) {
   }
 }
 
-export function createReviewSession({ session_id, mode = "Learning", actor = null, explicit = true, at = new Date().toISOString(), unresolved_gates = [] } = {}) {
+export function createReviewSession({ session_id, mode = "Normal", actor = null, explicit = false, at = new Date().toISOString(), unresolved_gates = [] } = {}) {
   requireSafeReviewId(session_id, "session_id");
   if (!REVIEW_MODES.has(mode)) throw new TypeError("mode must be Learning or Normal");
   if (!Array.isArray(unresolved_gates) || unresolved_gates.some((gateId) => typeof gateId !== "string" || !SAFE_REVIEW_ID.test(gateId))) {
     throw new TypeError("unresolved_gates must be a list of safe gate identifiers");
   }
   const history = [];
-  if (mode === "Normal") {
-    if (explicit !== true) throw new TypeError("Normal mode must be explicitly selected by the user");
+  if (mode === "Normal" && explicit === true) {
     if (!actor || actor.role !== "user" || typeof actor.id !== "string" || !actor.id.trim()) throw new TypeError("Normal mode requires an explicit user choice");
     if (typeof at !== "string" || Number.isNaN(Date.parse(at))) throw new TypeError("mode selection timestamp must be valid");
     history.push({ type: "mode_selected", mode: "Normal", actor: actor.id, actor_role: "user", at });
@@ -214,42 +213,14 @@ export function evaluateDecisionGate(decision, targets, review, refs = {}) {
   }
 
   const evidence = gate("pass", "decision_evidence_complete", "Architecture Decision and its own approval are valid.", evidencePath);
+  if (!decision.review_id) return { decision_evidence_complete: evidence, decision_review_complete: gate("pass", "decision_review_complete", "The comparison and user decision are recorded; no Learning review was requested.", evidencePath) };
   const reviewPath = decision.review_id ? `docs/specs/architecture-reviews/${decision.review_id}.yaml` : "docs/specs/architecture-reviews/";
   if (!review) return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Decision ReviewRecord is missing.", reviewPath) };
-  const approvedMaterialClaimIds = Object.values(refs.materialApprovals ?? {})
-    .filter((approval) => approval?.result === "approved")
-    .flatMap((approval) => approval.claim_ids ?? []);
-  const availableClaimIds = Array.isArray(refs.claimIds) ? refs.claimIds : Object.keys(refs.claimIds ?? {});
-  const claimIds = [...new Set([...availableClaimIds, ...approvedMaterialClaimIds])];
-  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds, ...refs, claimIds });
+  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds, ...refs });
   if (!reviewValidation.valid) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Decision ReviewRecord is invalid.", reviewPath, reviewValidation.errors) };
   if (review.id !== decision.review_id || review.decision_id !== decision.id) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "ReviewRecord does not match the decision reference.", reviewPath) };
-  const materialIds = review.material_ids;
-  const approvalIds = materialApprovalReferences(review);
-  if (materialIds.length === 0 && approvalIds.length > 0) {
-    return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval references are present without any declared used material.", reviewPath, [{ code: "material_approval_ref_mismatch", path: "$.material_ids", message: "Review material IDs must exactly match material approval records." }]) };
+  if (review.outcome !== "ACCEPTED" || review.findings.some((finding) => finding.severity !== "minor")) {
+    return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Review outcome or material findings are unresolved.", reviewPath) };
   }
-  if (materialIds.length > 0) {
-    const approvals = approvalIds.map((approvalId) => refs.materialApprovals?.[approvalId]);
-    if (approvalIds.length === 0 || approvals.some((approval) => !approval || approval.result !== "approved")) {
-      return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Reviewer material use is waiting for explicit user approval.", reviewPath, [{ code: "material_use_approval_required", path: "$.material_approval", message: "Every new material used by Reviewer needs an approved material-use record." }]) };
-    }
-    const approvedMaterialIds = approvals.map((approval) => approval.material_id);
-    if (new Set(approvedMaterialIds).size !== approvedMaterialIds.length || approvedMaterialIds.some((materialId) => !materialIds.includes(materialId))) {
-      return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval references do not match the materials used by Reviewer.", reviewPath, [{ code: "material_approval_ref_mismatch", path: "$.material_ids", message: "Review material IDs must exactly match the material approval records." }]) };
-    }
-    if (approvedMaterialIds.length !== materialIds.length) {
-      return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "At least one Reviewer material has no user approval.", reviewPath, [{ code: "uncovered_material", path: "$.material_ids", message: "Each material ID must have its own approved material-use record." }]) };
-    }
-    for (const materialApproval of approvals) {
-      const material = { id: materialApproval.material_id, source_ids: materialApproval.source_ids, claim_ids: materialApproval.claim_ids, presented_content: materialApproval.presented_content, context: materialApproval.context, provenance: materialApproval.provenance };
-      if (!canReviewerUseMaterial(material, materialApproval)) {
-        return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval does not match the exact content presented to the user.", reviewPath, [{ code: "material_approval_hash_mismatch", path: "$.material_approvals", message: "Material must be re-presented and approved after its content changes." }]) };
-      }
-    }
-  }
-  if (review.outcome !== "ACCEPTED" || REVIEW_CHECKLIST_ITEMS.some((item) => review.checklist[item] !== true) || review.objections.some((objection) => objection.status === "open")) {
-    return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Review outcome, checklist, or objection state is unresolved.", reviewPath) };
-  }
-  return { decision_evidence_complete: evidence, decision_review_complete: gate("pass", "decision_review_complete", "ReviewRecord is accepted with all seven checklist items and no open objections.", reviewPath) };
+  return { decision_evidence_complete: evidence, decision_review_complete: gate("pass", "decision_review_complete", "Learning review is accepted without material findings.", reviewPath) };
 }

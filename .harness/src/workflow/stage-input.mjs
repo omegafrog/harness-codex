@@ -6,7 +6,7 @@ import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validate
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
-import { assertExecutionStopped, recordExecutionState } from './execution-state.mjs';
+import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
 import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -75,6 +75,33 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
+  if (stageId === 'tracker-publish' && publicationApproved && state.stages?.['to-ticket']?.status === 'waiting' && state.stages['to-ticket'].code === 'REVIEW_REQUIRED' && worktreeRef) {
+    const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
+    const { inspectPlanSet } = await import('./plan-review.mjs');
+    const review = await inspectPlanSet({ root, planSetId: record.plan_set_id, phase: 'planning' });
+    if (review.status !== 'pass') throw new Error(`Current independent plan review is required: ${review.reason}`);
+    const previous = state.stages['to-ticket'];
+    const priorInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    const priorEnvelope = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${previous.execution_id}/return.json` });
+    await validateSkillReturn({ root, input: priorInput, envelope: priorEnvelope });
+    const priorResult = await readSkillSessionJson({ root, session_directory: session, path: previous.result_ref });
+    if (priorEnvelope.result && !isDeepStrictEqual(priorEnvelope.result, priorResult)) throw new Error('Stored plan result does not match its return');
+    if (priorResult.questions?.length) throw new Error('Unanswered questions prevent automatic plan finalization');
+    const executionId = `plan-finalize-${randomUUID()}`;
+    const input = { ...priorInput, execution_id: executionId };
+    const result = { ...priorResult, execution_id: executionId, status: 'completed', code: 'OK', review_request: null };
+    const prefix = `runtime/executions/${executionId}`;
+    const envelope = { schema_version: 1, execution_id: executionId, skill: 'to-ticket', status: 'completed', code: 'OK', result_ref: `${prefix}/result.json`, result };
+    await validateSkillReturn({ root, input, envelope });
+    await writeExecutionInput(root, storedStageInput(input), record.plan_set_id);
+    await mkdir(join(session, prefix), { recursive: true, mode: 0o700 });
+    await writeFile(join(session, prefix, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    await writeFile(join(session, prefix, 'return.json'), `${JSON.stringify(envelope, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    const binding = { model: previous.model, reasoning_effort: previous.reasoning_effort };
+    await recordExecutionState({ root, input, binding, status: 'running', owner: await processIdentity(process.pid) });
+    await recordExecutionState({ root, input, binding, status: 'completed', code: 'OK', result_ref: envelope.result_ref });
+    state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
+  }
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   if (specOverwriteApproved && stageId !== 'spec-me') throw new Error('Spec overwrite approval is only valid for spec-me');
@@ -84,19 +111,21 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     await assertExecutionStopped(running, { root, session }); stopped = true;
     if (stopped) {
       const prefix = `runtime/executions/${running.execution_id}`;
-      let envelope, log;
+      let envelope, log, result;
       try {
-        envelope = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/return.json` });
         log = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/exec.stderr.json` });
+        result = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/result.json` });
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { envelope = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/return.json` }); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!envelope && result && log?.exit_code === 0) envelope = { schema_version: result.schema_version, execution_id: result.execution_id, skill: result.skill, status: result.status, code: result.code, result_ref: `${prefix}/result.json`, result };
       if (envelope && log?.exit_code === 0 && envelope.result_ref === `${prefix}/result.json`) {
         const previousInput = await readExecutionInput({ root, execution_id: running.execution_id });
-        const result = await readSkillSessionJson({ root, session_directory: session, path: envelope.result_ref });
+        if (!result) throw new Error('Stored execution result is missing');
         for (const key of ['schema_version', 'execution_id', 'skill', 'status', 'code']) {
           if (result[key] !== envelope[key]) throw new Error(`Stored execution result ${key} does not match return`);
         }
-        const withoutArtifactHashes = (value) => ({ ...value, artifacts: (value.artifacts || []).map(({ sha256, ...artifact }) => artifact) });
-        if (!isDeepStrictEqual(withoutArtifactHashes(result), withoutArtifactHashes(envelope.result))) throw new Error('Stored execution result does not match return');
+        if (!isDeepStrictEqual(result, envelope.result)) throw new Error('Stored execution result does not match return');
         envelope.result = result;
         await validateSkillReturn({ root, input: previousInput, envelope });
         await writeFile(join(session, `${prefix}/return.json`), `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });

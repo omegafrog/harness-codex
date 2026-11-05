@@ -14,6 +14,6 @@ GitHub mode에서 아래 작업은 Issue conversion 뒤 수행한다. parent는 
 
 ## Tracker 연결과 lifecycle
 
-GitHub Project draft 발행 뒤 completion receipt에 Project item ID와 plan ID mapping을 기록하며 `tracker_sync.ticket_refs`는 빈 배열로 둔다. 구현 시작 시 Issue로 변환한 뒤 Beads 항목에 Issue URL 기반 `external_ref`와 `harness_tracker_version=1`, `harness_classification=committed`, `harness_phase=planning` metadata를 연결한다. 이후 `tracker_sync.ticket_refs`에 parent와 실제로 변환된 child의 `owner/repo#number`를 담는다. Dependency edge와 GitHub parent-child 관계는 Issue conversion 후 생성·검증한다.
+GitHub Project draft 발행 뒤 publication journal에 Project item ID와 plan ID mapping을 기록하며 `tracker_sync.ticket_refs`는 빈 배열로 둔다. 구현 시작 시 Issue로 변환한 뒤 Beads 항목에 Issue URL 기반 `external_ref`와 `harness_tracker_version=1`, `harness_classification=committed`, `harness_phase=planning` metadata를 연결한다. 이후 `tracker_sync.ticket_refs`에 parent와 실제로 변환된 child의 `owner/repo#number`를 담는다. Dependency edge와 GitHub parent-child 관계는 Issue conversion 후 생성·검증한다.
 
 `tracker-publish` workflow stage는 GitHub mode에서 Project draft items를 만들고, local-markdown mode에서 parent/child 티켓과 Beads 항목을 함께 만든다. GitHub lifecycle 상태 동기화는 Issue conversion 뒤 공용 Beads 스킬의 v1 mirror 절차를 사용한다.

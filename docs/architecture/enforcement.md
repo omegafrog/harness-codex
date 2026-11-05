@@ -6,7 +6,7 @@
 |---|---|---|
 | workflow 입력 참조와 결과 artifact는 workspace 내부 파일 또는 디렉터리를 가리킨다 | `.harness/src/workflow/skill-execution.mjs`의 경로·workspace 경계 검사, `tests/skill_execution_schema_compatibility.test.mjs`의 설치 소비자 회귀 | 파일 내용을 실제로 읽는 참조는 regular file만 허용하며, 디렉터리 내용의 완전성은 artifact 작성 스킬과 리뷰어가 판단 |
 | 전달 workspace와 실제 Git worktree가 일치해야 한다 | `.codex/scripts/harness-workspace-preflight.mjs`, `tests/workspace_preflight.test.mjs`, dispatch의 before_dispatch hook | 작업별로 hook/명령을 실제 실행했는지 확인 필요 |
-| 승인된 decision과 review만 인계한다 | `.harness/src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | decision opt-in이 없는 legacy artifact에는 같은 gate를 강제하지 않음 |
+| 승인된 decision과 review만 인계한다 | `.harness/src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | 선택이 없는 경우 decision metadata는 필요하지 않으며 실제 선택·근거의 의미는 작성자와 reviewer가 판단 |
 | tracker 구조 입력을 검증 후 렌더한다 | `.harness/src/tracker/contracts.mjs`, `.harness/src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |
 | 원본 workflow가 오래된 설치 스킬을 선택하지 않는다 | `.harness/src/workflow/loader.mjs`, `tests/workflow_loader.test.mjs`의 source/consumer 우선순위 검사 | consumer의 설치 사본 최신화는 installer update가 담당 |
 | 현재 저장소의 진행 중 workflow는 Codex session ID 변경과 무관하게 재개하고, 중복 stage 실행은 막는다 | `.harness/src/workflow/startup-state.mjs`, `.harness/src/workflow/stage-input.mjs`, `.harness/src/workflow/execution-state.mjs`; `tests/orchestrator_hook.test.mjs`, `tests/skill_execution.test.mjs`, installed-consumer case in `tests/installer_update.test.mjs` | 같은 저장소에 여러 활성 workflow가 있으면 orchestrator가 정확한 대상을 판단해야 함; 다른 Git common directory나 검증되지 않은 worktree는 계속 차단 |
@@ -22,7 +22,7 @@
 
 ## 통합 계약 완료 gate
 
-Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.mjs`와 리뷰 CLI의 `begin/record/abort/resolve`가 관리한다. 대상별 실행 중복, 미변경 입력 재요청, 최초 검토 후 재검토 2회 초과를 차단하고 원본 판정·지적·stale을 session에 보존한다. Spec review는 Architecture 축만 수행하며 Product Spec은 요구사항 입력으로 snapshot에 포함한다. 시작된 검토의 pass 기록은 기존 Spec·계획 gate에서 확인한다. 사용자 결정의 진위, 리뷰 전 문서 일괄 반영과 reviewer 역할 선택은 호출자의 검토 계약이다. 근거: 세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 반복 Spec·계획 리뷰 및 Learning 자료 승인 대기. 신규·업데이트 설치의 실행·Git 가시성은 `spec-review-check` profile로 확인한다. 기존 실행의 receipt는 당시 검증 형식을 유지하며 새 검토부터 실행 기록을 생성한다.
+Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.mjs`와 리뷰 CLI의 `begin/record/abort/resolve`가 관리한다. 대상별 실행 중복, 미변경 입력 재요청, 최초 검토 후 재검토 2회 초과를 차단하고 원본 판정·지적·stale을 session에 보존한다. Spec review는 Architecture 축만 수행하며 Product Spec은 요구사항 입력으로 snapshot에 포함한다. 시작된 검토의 pass 기록은 기존 Spec·계획 gate에서 확인한다. 사용자 결정의 진위, 리뷰 전 문서 일괄 반영과 reviewer 역할 선택은 호출자의 검토 계약이다. 근거: 세션 `01a1682e-92be-7642-94d2-e4ce85d070e5`의 반복 Spec·계획 리뷰 및 Learning 자료 승인 대기. 신규·업데이트 설치의 실행·Git 가시성은 `spec-review-check` profile로 확인한다.
 
 `.harness/src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
 
@@ -58,7 +58,7 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 
 `spec-me`는 구현 수정으로 직접 라우팅하지 않는다. 수정 단계의 피드백은 해당 단계의 기존 provider/session과 결과를 연결해 전달하며, 살아 있는 stage에는 새 입력을 준비하지 않는다. 질문을 낸 실행의 `decision-answers.json`은 확정 답변이고 재개 실행의 `answers.json`은 전달 입력이다. 기존 답변이나 위임이 새 질문과 실제로 같은 조건인지는 `spec-me`가 확인하며, 기계적으로 의미가 비슷하다는 이유로 승인을 추정하지 않는다. 회귀 검사는 `tests/worktree_record_contract.test.mjs`의 설치 소비자 흐름에서 수행한다.
 
-spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Architecture Spec만 새 reviewer로 검토한다. reviewer는 요청 원문·Product/Architecture Spec·확정 답변과 현행 프로젝트 근거를 직접 읽으며 parent/writer 분석을 상속하지 않는다. 공통 [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md)에 따라 DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결, 요구 구현에 필요한 인프라 완전성을 평가한다. `.harness/src/workflow/spec-review.mjs`가 필수/추가 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 Architecture review 누락·self author·상속·중대 지적·stale Spec/Product/source 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
+spec-me는 Product Spec coverage를 입력 gate로 확인하고, 완성된 Architecture Spec만 새 reviewer로 검토한다. reviewer는 Product/Architecture Spec 두 문서만 직접 읽으며 parent/writer 분석을 상속하지 않는다. 공통 [Architecture Spec 리뷰 기준](../../.codex/internal-skills/spec-review/references/review-criteria.md)에 따라 DDD 분류와 규칙 소유권, 비즈니스 로직 단위 테스트 명세, 기술 선택 근거의 연결, 요구 구현에 필요한 인프라 완전성을 평가한다. `.harness/src/workflow/spec-review.mjs`가 두 Spec의 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 Architecture review 누락·self author·상속·중대 지적·stale Spec/Product 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
 
 ## 설치/업데이트의 반복 수동 수리 방지
 

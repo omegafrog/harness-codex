@@ -23,6 +23,8 @@
 
 11. **Priorities and Trade-offs**
 
+기술 선택에 영향을 주는 필수·선호 기준, 우선순위와 수용할 비용·운영·데이터 제약을 기록한다. 수치 목표에는 단위·조건·출처를 명시하고 미확정 목표는 추정하여 채우지 않는다. 후보별 구현 세부사항은 Architecture에 둔다.
+
 12. **Success Conditions and Acceptance Criteria**
 
 ## Product 다이어그램 계약

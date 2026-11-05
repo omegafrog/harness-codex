@@ -1,6 +1,6 @@
 # 실행 환경 안내
 
-문서 기반 Architecture Decision 근거는 `documentary-evidence-check` profile로 검사한다. 문서 원문 snapshot의 SHA-256과 위치를 보존하고 실행·측정은 `not_applicable`로 기록하며, 기존 Evidence 승인·게시 검증을 적용한다. 설치된 runtime의 같은 검증과 프로젝트 문서의 Git 가시성도 함께 확인한다.
+기술 선택의 일반 출처는 주장·위치·적용 조건·확인일을 기록한다. 공통 Knowledge 게시 시에만 기존 승인 절차를 적용한다. 설치된 runtime의 같은 검증과 프로젝트 문서의 Git 가시성도 함께 확인한다.
 
 플랫폼별 설정과 실행 방법은 이 문서에 기록한다. `AGENTS.md`에는 공통 agent 규칙만 둔다.
 

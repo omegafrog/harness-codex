@@ -59,3 +59,5 @@ There is no minimum question count. Ask about unresolved business behavior and s
 - Generate `docs/specs/<plan-set-id>/product-spec.md` in the format of `references/template.md`.
 
 현재 구현 사실은 `code-research`의 입력 보고서로 전달받으며 Product 단계의 source 직접 조사 금지는 유지한다. 요구 변경은 현재 구현과 구분한다.
+
+기술 선택 전 적용 가능한 기능·구축 시간·운영·비용·데이터 제어·성능·변경 가능성 기준을 필수와 선호, 우선순위로 정한다. 기존 사용자 답변과 명시적 위임을 재사용하고 독립 질문을 묶는다.
