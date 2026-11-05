@@ -30,6 +30,9 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     await writeFile(resolve(root, schemaPath), schema);
     const unknownSchema = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_revision.schema.json';
     await writeFile(resolve(root, unknownSchema), 'user schema');
+    const releasedSchema = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_split.schema.json';
+    const releasedContent = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/to-ticket-plan-released.schema.json'));
+    await writeFile(resolve(root, releasedSchema), releasedContent);
     const retiredPath = '.codex/scripts/old-managed.mjs';
     const modifiedPath = '.codex/scripts/old-modified.mjs';
     const retiredClaudePath = '.claude/agents/architecture_review_lead.md';
@@ -56,6 +59,8 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.match(await readFile(resolve(root, '.harness/src/workflow/project-readiness.mjs'), 'utf8'), /export async function inspectSetupConfiguration/);
     assert.deepEqual(await readFile(resolve(result.backup_directory, schemaPath)), schema);
     await assert.rejects(readFile(resolve(root, schemaPath)), { code: 'ENOENT' });
+    assert.deepEqual(await readFile(resolve(result.backup_directory, releasedSchema)), releasedContent);
+    await assert.rejects(readFile(resolve(root, releasedSchema)), { code: 'ENOENT' });
     assert.equal(await readFile(resolve(result.backup_directory, retiredPath), 'utf8'), 'old managed');
     await assert.rejects(readFile(resolve(root, retiredPath)), { code: 'ENOENT' });
     assert.ok(result.updated.includes(retiredClaudePath));
@@ -72,6 +77,7 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC.md/);
     assert.match(status, /\.harness\/contracts\.mjs/);
+    assert.match(status, /to-ticket-plan_revision\.schema\.json/);
     assert.doesNotMatch(status, /\.codex\/scripts\/harness-doctor/);
     await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'custom doctor');
     const lock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));

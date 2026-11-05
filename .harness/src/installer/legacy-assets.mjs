@@ -7,4 +7,14 @@ export const LEGACY_ASSETS = [
   { release: '7b57a7fc', path: '.harness/src/workflow/project-readiness.mjs', sha256: '7fdea459525f968f0385ad9376ccc2659c2ed6bc9b899768b645665e6154d350', action: 'replace' },
   { release: '88e15b76', path: '.codex/scripts/harness-codex-run.mjs', sha256: '1c0dd264b759b3544c3706a921a3a35c9d992fed97f9d61a95ab7f3987463ca7', action: 'replace' },
   ...['finalize', 'revision', 'split'].map((name) => ({ release: '3c62babb', path: `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: '006357a60b799458061420cd226386518fd16b3ebd2c41f0f8249ca3a1857b26', action: 'retire' })),
+  ...['finalize', 'revision', 'split'].map((name) => ({ release: 'cbc0b0fe', path: `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: 'eafcdf9b43a1eb9fe5da14b9926422f4797deae5197accbb4da99f886e4efc22', action: 'retire' })),
+  ...[
+    ['.agents/skills/orchestrator/references/to-ticket.md', '72bc95a764b15086755de340a67fa7b17de74e373a4927686e0f396298f86e91'],
+    ['.agents/skills/to-ticket/references/traceability-ledger.md', '1a844df4e9c7e88e7da6300c8c5eab157c27b8febde579ad9a6e9253437638ff'],
+    ['.codex/harness-runtime/src/workflow/plan-traceability.mjs', '317dc17903d6a11c9f81a3c18e6de69a66ef10c2466722858d4a44469b6218b0'],
+    ['.codex/internal-skills/skill-execution/schemas/result.schema.json', '5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5'],
+    ['.codex/internal-skills/workflow-compose/schemas/workflow.schema.json', 'caa9ba69f17a96b24b7c5fc8ab7b28b2fda097f79848ffa810558becfc6fe815'],
+    ['.codex/scripts/harness-plan-traceability.mjs', '55ad39494ed0035603f96aee4f40af5e35819e7e575202f18464b9d62662edc6'],
+    ['.codex/scripts/harness-skill-exec.mjs', '77eac6b068dca50b48be9a7bc8e1e9b98822d5032762da2051f95c19f8da894b'],
+  ].map(([path, sha256]) => ({ release: 'historical', path, sha256, action: 'retire' })),
 ];

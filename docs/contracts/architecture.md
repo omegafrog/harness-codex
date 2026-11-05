@@ -133,7 +133,7 @@ updateProject의 실제 public entrypoint. [소스](../../.harness/src/installer
 ### 동작
 관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. workflow completion runtime을 업데이트할 때는 이전 설치본과 같은 tracked asset 경로를 사용한다.
 
-설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../.harness/src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
+설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. 폐기 자산은 lock의 설치 hash 또는 확인된 배포본 hash가 일치할 때 session backup 뒤 제거하고, 변경되었거나 출처가 확인되지 않은 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../.harness/src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
 
 <a id="setup-victorialogs-method"></a>
 ## setupVictoriaLogs

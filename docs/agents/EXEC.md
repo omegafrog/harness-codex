@@ -32,6 +32,7 @@
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 per-plan 범위와 index에 기록한다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
 - 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node --test tests/internal_skills.test.mjs tests/plan_review.test.mjs tests/wrapper_dispatch.test.mjs tests/wrapper_scheduler.test.mjs tests/tracker_contract.test.mjs tests/workflow_loader.test.mjs tests/installer_update.test.mjs tests/installer_exclude.test.mjs tests/doctor.test.mjs tests/workflow_worktrees.test.mjs tests/workflow_completion_retention.test.mjs tests/contracts.test.mjs tests/skill_execution.test.mjs tests/orchestrator_hook.test.mjs`로 실행한다. 서버·외부 인프라는 필요하지 않다.
 
+- 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
 - 원본 checkout 판별은 설치 도구와 대상이 같은 실제 경로이거나, 같은 package 이름과 Harness installer·소스·스킬 파일이 있는지를 확인한다.
 - 외부 프로젝트에는 기존 방식으로 스킬을 `.agents/skills/`에, agent profile을 `.codex/agents/`에 설치한다. workflow·schema·script와 프로젝트 설정도 `.codex/`에 둔다.

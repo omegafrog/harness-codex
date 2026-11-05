@@ -321,11 +321,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       actions.push({ descriptor, content: source, sourceHash, backup: target?.content });
     } else skipped.push({ path: entry.path, status: sourceHash === entry.installed_sha256 ? "locally_modified" : "conflict" });
   }
-  if (scope === "all") for (const legacy of LEGACY_ASSETS.filter((item) => item.action === 'retire')) {
-    if (lock.files[legacy.path]) continue;
-    const target = await readTarget(targetRoot, legacy.path);
-    if (target && hashContent(target.content) === legacy.sha256) actions.push({ descriptor: sourceDescriptor(legacy.path, legacy.path), retired: true, backup: target.content });
-    else if (target) skipped.push({ path: legacy.path, status: 'legacy_unrecognized' });
+  if (scope === "all") for (const path of new Set(LEGACY_ASSETS.filter((item) => item.action === 'retire').map((item) => item.path))) {
+    if (lock.files[path]) continue;
+    const target = await readTarget(targetRoot, path);
+    if (target && LEGACY_ASSETS.some((item) => item.action === 'retire' && item.path === path && hashContent(target.content) === item.sha256)) actions.push({ descriptor: sourceDescriptor(path, path), retired: true, backup: target.content });
+    else if (target) skipped.push({ path, status: 'legacy_unrecognized' });
   }
   for (const descriptor of descriptors) {
     if (!selected(descriptor.target_path) || nextFiles[descriptor.target_path]) continue;
