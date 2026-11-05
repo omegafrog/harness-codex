@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 const installed = new URL('../../.harness/src/workflow/worktrees.mjs', import.meta.url);
-const { bindWorkflowPlanSetId, createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees } = await import(installed.href);
+const { bindWorkflowPlanSetId, createWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree, listWorkflowWorktrees, recordWorktreeOutcome } = await import(installed.href);
 const cancellation = new AbortController();
 for (const name of ['SIGINT', 'SIGTERM']) process.once(name, () => cancellation.abort(new Error(`Workflow interrupted: ${name}`)));
 try {
@@ -19,7 +19,7 @@ try {
   if (command === 'create' && options.worktree_id) throw new Error('create generates worktree_id; do not provide one');
   for (const key of ['workspace_root', 'return_root', 'repository_root']) if (options[key]) options[key] = resolve(options[key]);
   const result = await (command === 'create' ? createWorkflowWorktree : command === 'register' ? registerWorkflowWorktree : command === 'bind-plan-set-id' ? bindWorkflowPlanSetId : command === 'list' ? listWorkflowWorktrees : finishWorkflowWorktree)({ ...options, signal: cancellation.signal });
-  if (command === 'create' && cancellation.signal.aborted && result.state === 'active') Object.assign(result, await finishWorkflowWorktree({ workspace_root: result.workspace, repository_root: result.return_root, worktree_id: result.worktree_id, outcome: 'aborted' }));
+  if (command === 'create' && cancellation.signal.aborted && result.state === 'active') Object.assign(result, await recordWorktreeOutcome({ workspace_root: result.workspace, repository_root: result.return_root, worktree_id: result.worktree_id, outcome: 'aborted' }));
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.state === 'failed' || cancellation.signal.aborted) process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

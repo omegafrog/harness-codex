@@ -530,7 +530,7 @@ status는 planned/in-progress/blocked/completed만 허용한다. backlog는 harn
 Git common directory·소유 receipt·workflow ID·branch/HEAD·return_root·작업 파일과 staged index·종료 outcome.
 
 ### 동작
-Git add 전에 경로 소유권을 예약한다. 완료/실패/사용자 중단/handoff는 writer 종료 후 session_directory/recovery/에 tracked/untracked/ignored 파일·index를 보존하고 tree/HEAD/index를 검증한 뒤 소유 linked worktree만 제거한다. branch와 HEAD/staged object recovery ref는 유지한다. 비소유/primary workspace는 제거하지 않는다. 동일 경로 reserve/register/finish는 PID lock으로 직렬화하고, 삭제 후 receipt 기록 실패도 재시도로 복구한다. archive 실패나 Git lock은 제거 실패로 보고하며 우회하지 않는다. SIGKILL/전원 종료는 다음 진입의 pending receipt 확인 후 finish로 복구한다.
+Git add 전에 경로 소유권을 예약한다. 완료·실패·사용자 중단 후에도 소유 worktree와 기록을 보존하며 실패와 중단은 canonical 기록에 outcome을 남긴다. 명시적 finish만 소유 linked worktree를 제거하며 primary 또는 비소유 workspace는 제거하지 않는다. 예약·등록·outcome·finish는 공통 lock으로 직렬화한다.
 
 ### 메서드
 [createWorkflowWorktree](architecture.md#create-workflow-worktree) · [reserveWorkflowWorktree](architecture.md#reserve-workflow-worktree) · [registerWorkflowWorktree](architecture.md#register-workflow-worktree) · [finishWorkflowWorktree](architecture.md#finish-workflow-worktree) · [listWorkflowWorktrees](architecture.md#list-workflow-worktrees)
@@ -545,7 +545,7 @@ workflow worktree lifecycle의 public 진입점.
 source workspace·workflow ID·선택 기존 branch·AbortSignal.
 
 ### 동작
-깨끗한 source에서 새 sibling worktree/branch를 만들거나 보존 branch로 새 경로를 만든다. reservation을 Git add 전에 기록하고 생성/등록 오류·abort도 finish로 정리한다.
+깨끗한 source에서 새 sibling worktree/branch를 만들거나 보존 branch로 새 경로를 만든다. reservation을 Git add 전에 기록하고 생성·등록 오류와 abort는 삭제하지 않고 outcome과 경로를 보존한다.
 
 <a id="reserve-workflow-worktree"></a>
 ## reserveWorkflowWorktree

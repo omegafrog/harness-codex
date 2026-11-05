@@ -284,7 +284,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('compose rejects an unprepared project without leaving an active worktree', async () => {
+test('compose preserves a failed worktree when project preparation is incomplete', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'compose-unprepared-'));
   const root = join(parent, 'project');
   try {
@@ -300,8 +300,13 @@ test('compose rejects an unprepared project without leaving an active worktree',
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
     assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
-    assert.equal(git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).length, 1);
+    const worktrees = git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
+    assert.equal(worktrees.length, 2);
+    const failed = JSON.parse(await readFile(join(worktrees[1], '.io/worktree.json'), 'utf8'));
+    assert.equal(failed.state, 'active');
+    assert.equal(failed.outcome, 'failed');
     assert.equal(git('status', '--short'), '');
+    await finishWorkflowWorktree({ workspace_root: worktrees[1], repository_root: root, worktree_id: failed.worktree_id, outcome: 'failed' });
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
 

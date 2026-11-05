@@ -198,6 +198,18 @@ export async function recordWorktreeStage({ workspace_root, repository_root, cur
   });
 }
 
+export async function recordWorktreeOutcome({ workspace_root, repository_root = workspace_root, worktree_id, outcome } = {}) {
+  if (!['failed', 'aborted'].includes(outcome)) throw new Error('A failed or aborted outcome is required');
+  const place = await location(workspace_root, repository_root);
+  return withWorktreeLock(place, async () => {
+    const record = await readWorktreeRecord(place);
+    if (record.worktree_id !== worktree_id || record.workspace !== place.workspace || record.common !== place.common || !['active', 'allocating'].includes(record.state)) throw new Error('Worktree ownership mismatch while recording outcome');
+    const updated = { ...record, outcome, updated_at: new Date().toISOString() };
+    await writeWorktreeRecord(place, updated);
+    return updated;
+  });
+}
+
 export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, feature_name, signal = null } = {}) {
   if (!isAbsolute(workspace_root || '')) throw new Error('Absolute source workspace is required');
   if (plan_set_id && feature_name) throw new Error('Provide either plan_set_id or feature_name');
@@ -222,8 +234,9 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
     await provisionWorktreeRuntime(sourceWorkspace, workspace);
     return { ...record, source_workspace: sourceWorkspace };
   } catch (error) {
-    error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, worktree_id: ownership.worktree_id, outcome: 'failed' });
-    error.message += `; allocation cleanup=${error.worktree_cleanup.state}; workspace=${workspace}`;
+    try { await recordWorktreeOutcome({ workspace_root: workspace, repository_root: returnRoot, worktree_id: ownership.worktree_id, outcome: 'failed' }); }
+    catch (recordError) { error.message += `; outcome recording failed: ${recordError.message}`; }
+    error.message += `; worktree preserved: ${workspace}`;
     throw error;
   }
 }

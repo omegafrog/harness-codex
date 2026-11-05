@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkflowWorktree, finishWorkflowWorktree, parseWorktreeRecord } from './worktrees.mjs';
+import { createWorkflowWorktree, recordWorktreeOutcome, parseWorktreeRecord } from './worktrees.mjs';
 import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
@@ -32,8 +32,9 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     await recordExecutionState({ root: record.workspace, input, binding: { model: null, reasoning_effort: null }, status: 'completed', code: 'OK', result_ref });
     return { ...record, input_path, status: 'completed', code: 'OK', worktree_ref: storedInput.context.worktree_ref, result_ref };
   } catch (error) {
-    try { await finishWorkflowWorktree({ workspace_root: record.workspace, repository_root: record.return_root, worktree_id: record.worktree_id, outcome: 'failed' }); }
-    catch (cleanupError) { error.message += `; worktree cleanup failed: ${cleanupError.message}`; }
+    try { await recordWorktreeOutcome({ workspace_root: record.workspace, repository_root: record.return_root, worktree_id: record.worktree_id, outcome: 'failed' }); }
+    catch (recordError) { error.message += `; outcome recording failed: ${recordError.message}`; }
+    error.message += `; worktree preserved: ${record.workspace}`;
     throw error;
   }
 }
