@@ -54,7 +54,7 @@ BR-workspace: expected root·cwd·Git root·등록 worktree가 일치해야 disp
 ### 수용 조건
 AC-workspace: 잘못된 루트는 valid=false로 차단되고 원래 작업 공간이 보존된다. dirty/untracked/ignored 파일과 staged index는 세션의 recovery/에 남고 journal·로그는 동일 세션 경로에 남는다. 생성/등록 실패·완료 gate 오류·SIGINT/SIGTERM도 정리 경로를 거치며, SIGKILL/전원 종료 후에는 pending receipt를 확인해 중단된 실행만 정리한다.
 
-BR-session-output: 로그·stdout/stderr 저장본·checkpoint·스크린샷·평가 결과·지식 후보·review journal·임시 파일·복구 백업은 공통 resolver가 반환한 session_directory 안에만 기록한다. Git common directory의 workspace hash별 영속 세션을 사용하고, worktree 제거 후에도 증거 경로는 변하지 않는다. 비Git fixture는 .codex/sessions/를 사용한다. 절대/상위 이탈 경로·symlink·공유 hardlink·특수 파일 출력을 거부한다. 하위 agent/process에 세션 경로와 TMPDIR/TMP/TEMP, browser output 경로를 전달한다. source·최종 계약·제품 다이어그램·승인 지식 registry와 Git/Beads 원장은 선언된 경로를 유지한다. 외부 도구 전역 cache/telemetry에 대한 OS sandbox 보장은 포함하지 않는다. 기존 데이터는 자동 이전하지 않는다.
+BR-session-output: 로그·stdout/stderr 저장본·checkpoint·스크린샷·평가 결과·지식 후보·review journal·임시 파일·복구 백업은 공통 resolver가 반환한 session_directory 안에만 기록한다. Git common directory의 workspace hash별 영속 세션을 사용하고, worktree 제거 후에도 증거 경로는 변하지 않는다. 비Git fixture는 .codex/sessions/를 사용한다. 절대/상위 이탈 경로·symlink·공유 hardlink·특수 파일 출력을 거부한다. E2E artifact cleanup은 `.io` 세션의 로그·receipt·실패 증거를 삭제하지 않는다. 하위 agent/process에 세션 경로와 TMPDIR/TMP/TEMP, browser output 경로를 전달한다. source·최종 계약·제품 다이어그램·승인 지식 registry와 Git/Beads 원장은 선언된 경로를 유지한다. 외부 도구 전역 cache/telemetry에 대한 OS sandbox 보장은 포함하지 않는다. 기존 데이터는 자동 이전하지 않는다.
 
 AC-session-output: 잘못된 출력 경로는 쓰기 전에 거부된다. installed CLI도 같은 경계를 적용하며 worktree 삭제 뒤 로그가 원래 경로에 남는다. 검증: [worktree 세션 경로 회귀](../../tests/worktree_record_contract.test.mjs).
 

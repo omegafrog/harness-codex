@@ -26,7 +26,7 @@ function parseArgs(argv) {
 
 async function listArtifacts(root) {
   const results = await Promise.all([[], ["--ignored"]].map((extra) => execFileAsync("git", ["ls-files", "--others", "--exclude-standard", ...extra, "-z"], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })));
-  return [...new Set(results.flatMap(({ stdout }) => stdout.split("\0").filter((path) => path && path !== '.harness-workflows' && !path.startsWith('.harness-workflows/'))))].sort();
+  return [...new Set(results.flatMap(({ stdout }) => stdout.split("\0").filter((path) => path && path !== '.harness-workflows' && !path.startsWith('.harness-workflows/') && path !== '.io' && !path.startsWith('.io/'))))].sort();
 }
 
 function safeTarget(root, gitPath) {

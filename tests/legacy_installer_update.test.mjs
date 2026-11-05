@@ -112,6 +112,30 @@ test('Doctor reports a missing runtime without throwing', async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('installed E2E cleanup preserves session evidence and removes new external artifacts', async () => {
+  const session = resolve(process.cwd(), '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/guard-`);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, process.cwd());
+    await updateProject({ sourceRoot: process.cwd(), targetRoot: root, initialize: true });
+    const dir = resolve(root, '.io/runtime/e2e/run');
+    await mkdir(dir, { recursive: true });
+    const manifest = resolve(dir, 'artifacts.json');
+    const guard = resolve(root, '.agents/skills/e2e-test/scripts/artifact-guard.mjs');
+    await writeFile(resolve(root, 'existing.txt'), 'existing');
+    execFileSync('node', [guard, 'snapshot', '--root', root, '--manifest', manifest]);
+    await writeFile(resolve(dir, 'receipt.json'), 'evidence');
+    await writeFile(resolve(root, 'temporary.txt'), 'temporary');
+    const result = JSON.parse(execFileSync('node', [guard, 'cleanup', '--root', root, '--manifest', manifest], { encoding: 'utf8' }));
+    assert.equal(result.status, 'passed');
+    assert.equal(await readFile(resolve(dir, 'receipt.json'), 'utf8'), 'evidence');
+    assert.equal(await readFile(resolve(root, 'existing.txt'), 'utf8'), 'existing');
+    await assert.rejects(readFile(resolve(root, 'temporary.txt')), { code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('update can replace managed skills without creating backups when explicitly requested', async () => {
   const sourceRoot = process.cwd();
   const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');

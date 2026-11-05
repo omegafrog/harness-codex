@@ -33,7 +33,7 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
    node "$ARTIFACT_GUARD" cleanup --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json
    ```
 
-6. cleanup hook 결과를 확인한다. 실행 전부터 있던 untracked/ignored 경로는 보존되어야 하고, 실행 후 새로 생긴 경로는 제거되어야 한다. cleanup이 실패하거나 새 산출물이 남으면 결과를 `inconclusive`로 보고하고 남은 경로를 명시한다.
+6. cleanup hook 결과를 확인한다. 실행 전부터 있던 untracked/ignored 경로와 `.io` 세션의 로그·receipt·실패 증거는 보존되어야 하고, 세션 밖에 실행 후 새로 생긴 임시 산출물은 제거되어야 한다. cleanup이 실패하거나 새 산출물이 남으면 결과를 `inconclusive`로 보고하고 남은 경로를 명시한다.
 7. Git 변경사항을 기록해 테스트 산출물이 tracked/staged 상태가 아닌지 확인한다. 테스트 runner는 `git add`, `git commit`, `git push`, merge를 실행하지 않는다.
 
 ## 결과 보고
