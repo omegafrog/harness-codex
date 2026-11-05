@@ -687,6 +687,20 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const status = git('status', '--short');
     assert.equal(status, '');
     git('check-ignore', '-v', '.codex/scripts/harness-compose-workspace.mjs');
+    const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
+    const failedState = JSON.parse(await readFile(statePath, 'utf8'));
+    failedState.current_stage = 'spec-me';
+    failedState.status = 'failed';
+    failedState.stages['spec-me'] = { status: 'failed', execution_id: next.input.execution_id, skill: 'spec-me', code: 'EXECUTION_ERROR', result_ref: null, reason: 'Result execution_id mismatch' };
+    await writeFile(statePath, JSON.stringify(failedState));
+    const failedPrefix = join(tree.session_directory, 'runtime/executions', next.input.execution_id);
+    const invalidResult = { schema_version: 1, execution_id: 'spec-me-invalid-id', skill: 'spec-me', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', summary: '재생성 필요', artifacts: [], questions: [], review_request: null };
+    const invalidEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', result_ref: null, result: invalidResult };
+    await writeFile(join(failedPrefix, 'codex-last-message.json'), JSON.stringify(invalidEnvelope));
+    await writeFile(join(failedPrefix, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 0, session_id: record.worktree_id, thread_id: record.worktree_id }));
+    const repair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(repair.input.context.resume_session_id, record.worktree_id);
+    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', repair.input.execution_id, 'feedback.json'), 'utf8')).feedback, '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.');
   } finally {
     if (secondTree) await finishWorkflowWorktree({ workspace_root: secondTree.workspace, repository_root: root });
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root });
