@@ -678,6 +678,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(planDir, 'slice.md'), '---\nstatus: planned\n---\n# Slice\n');
     const { updatePlanReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/plan-review.mjs')}`);
     const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'begin' });
+    await readFile(join(tree.session_directory, 'runtime/reviews', `plan-${ticketId}.json`));
+    await assert.rejects(readFile(join(root, '.io/runtime/reviews', `plan-${ticketId}.json`)), { code: 'ENOENT' });
     await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', findings: [] } });
     const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(publisher.input.context.transition.from_stage, 'to-ticket');

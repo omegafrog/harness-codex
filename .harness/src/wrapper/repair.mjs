@@ -132,8 +132,7 @@ export async function assertPlanningReviewSnapshot({ root, planId, reviewInput, 
 }
 
 export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null }) {
-  const primaryRoot = await implementationReviewRoot(root);
-  const scope = { root: primaryRoot, scope: `implementation-${planId}` };
+  const scope = { root, scope: `implementation-${planId}` };
   if (resolution !== undefined) {
     const prior = await inspectReviewHistory(scope);
     if (!prior.plan_set_id || !prior.planning_snapshot_sha256) throw new Error('Repair budget reset requires a reviewed plan-set snapshot; a general continue instruction cannot reset it');

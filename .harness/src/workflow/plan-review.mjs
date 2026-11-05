@@ -85,19 +85,12 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   return { plan_set_id: planSetId, base, spec_paths: specPaths, plans, inputs };
 }
 
-async function reviewHistoryRoot(root) {
-  try {
-    const record = parseWorktreeRecord(await readFile(join(sessionDirectory(root, { create: false }), 'worktree.json'), 'utf8'));
-    return record.return_root;
-  } catch (error) { if (error.code !== 'ENOENT') throw error; return root; }
-}
-
 export async function validatePlanReviewAdmission({ root, planSetId, admission, requireActive = true }) {
   requireValue(ID.test(planSetId || '') && admission?.status === 'pass' && typeof admission.attempt_id === 'string', 'Invalid plan review admission target');
   const snapshot = await snapshotPlanSet({ root, planSetId });
   const inputs = admission.inputs;
   requireValue(inputs && Object.keys(snapshot.inputs).length === Object.keys(inputs).length && Object.entries(snapshot.inputs).every(([path, value]) => inputs[path] === value), 'Plan review admission snapshot is stale');
-  const historyRoot = await reviewHistoryRoot(root);
+  const historyRoot = root;
   await assertActiveReviewAdmission({ root: historyRoot, scope: `plan-${planSetId}`, attemptId: admission.attempt_id, inputs, requireActive });
   if (admission.review_delta) {
     const { reviewAdmissionPreviousInputs } = await import('./review-attempts.mjs');
@@ -114,7 +107,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
   try {
     requireValue(['planning', 'dispatch', 'completion'].includes(phase), 'Valid plan-set phase is required');
     const snapshot = await snapshotPlanSet({ root, planSetId });
-    const history = await inspectReviewHistory({ root: await reviewHistoryRoot(root), scope: `plan-${planSetId}` });
+    const history = await inspectReviewHistory({ root, scope: `plan-${planSetId}` });
     const review = history.last_review;
     requireValue(history.recorded_state === 'pass' && review?.verdict === 'pass', 'Fresh independent plan review is missing or not passing');
     requireValue(Object.keys(snapshot.inputs).length === Object.keys(review.inputs || {}).length && Object.entries(snapshot.inputs).every(([path, digest]) => review.inputs[path] === digest), 'Plan review is stale; review changed sections and affected relationships with a fresh reviewer');
@@ -137,7 +130,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
 export async function inspectPlanSetImpact({ root, planSetId } = {}) {
   try {
     const snapshot = await snapshotPlanSet({ root, planSetId });
-    const history = await inspectReviewHistory({ root: await reviewHistoryRoot(root), scope: `plan-${planSetId}` });
+    const history = await inspectReviewHistory({ root, scope: `plan-${planSetId}` });
     const prior = history.last_review?.inputs || {};
     const changed_paths = [...new Set([...Object.keys(prior), ...Object.keys(snapshot.inputs)])].filter((path) => prior[path] !== snapshot.inputs[path]).sort();
     const changedPlans = snapshot.plans.filter((plan) => changed_paths.includes(plan.path)).map((plan) => plan.id);
@@ -149,5 +142,5 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
-  return updateReviewAttempt({ root: await reviewHistoryRoot(root), scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
+  return updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
 }

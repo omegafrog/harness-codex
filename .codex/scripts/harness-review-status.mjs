@@ -20,7 +20,7 @@ try {
   const scopes = [];
   if (options['--ticket']) scopes.push({ root: specRoot, scope: `spec-${options['--ticket']}-architecture` });
   if (options['--plan-set']) scopes.push({ root, scope: `plan-${options['--plan-set']}` });
-  if (options['--plan']) scopes.push({ root: primary, scope: `implementation-${options['--plan']}` });
+  if (options['--plan']) scopes.push({ root, scope: `implementation-${options['--plan']}` });
   const records = await Promise.all(scopes.map(async (scope) => {
     try { return await inspectReviewHistory(scope); }
     catch (error) { return { ...scope, recorded_state: 'unreadable', error: error.message }; }
