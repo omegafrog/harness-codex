@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,6 +25,19 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   const diagramGuidePath = join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
   const architectureTemplatePath = join(root, '.codex/internal-skills/architecture-spec/references/template.md');
   const dddGuidePath = join(root, '.codex/internal-skills/ddd-design/GUIDE.md');
+  const plannerProfiles = ['.codex/agents/to_ticket.toml', '.claude/agents/to_ticket.md'];
+  const checkPlanningGuidance = async () => {
+    for (const path of plannerProfiles) {
+      const profile = await readFile(join(root, path), 'utf8');
+      assert.match(profile, /internal-skills\/to-ticket\/GUIDE\.md/);
+      assert.doesNotMatch(profile, /\.(?:codex|agents|claude)\/skills\/to-ticket\/SKILL\.md/);
+      assert.match(profile, /Missing or empty project guidance is not a planning dependency/);
+      assert.match(profile, /must not block plan authoring or trigger setup/);
+    }
+    const guide = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
+    assert.match(guide, /their absence or empty content is not a plan-authoring prerequisite/);
+    assert.match(guide, /Preserve the actual workspace identity, approved Spec\/review/);
+  };
   const checkArchitectureGuidance = async () => {
     const template = await readFile(architectureTemplatePath, 'utf8');
     const headings = ['# 2. Domain', '# 3. Aggregate', '# 4. Application Service', '# 5. Bounded Context'];
@@ -51,8 +65,26 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.match(await readFile(productTemplatePath, 'utf8'), /`\.puml` 원본과 생성된 `\.svg`를 각각 상대 경로 Markdown 링크/);
   assert.match(await readFile(diagramGuidePath, 'utf8'), /Product Spec Markdown은 편집 가능한 `\.puml` 원본과 생성된 SVG를 각각 상대 경로 링크/);
   await checkArchitectureGuidance();
+  await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
+  await checkPlanningGuidance();
+  await mkdir(join(root, 'docs/agents'), { recursive: true });
+  await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+  // A previous managed release must update both native profiles without force.
+  const lockPath = join(root, '.codex/harness-lock.json');
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+  for (const path of plannerProfiles) {
+    const native = path.startsWith('.claude/') ? '.claude' : '.agents';
+    const old = (await readFile(join(root, path), 'utf8')).replaceAll('.codex/internal-skills/to-ticket/GUIDE.md', `${native}/skills/to-ticket/SKILL.md`);
+    await writeFile(join(root, path), old);
+    lock.files[path].installed_sha256 = createHash('sha256').update(old).digest('hex');
+    lock.files[path].upstream_sha256 = lock.files[path].installed_sha256;
+  }
+  await writeFile(lockPath, JSON.stringify(lock));
   await writeFile(join(root, 'CONTEXT.md'), 'project-owned glossary');
   await updateProject({ sourceRoot, targetRoot: root });
+  await checkPlanningGuidance();
+  await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
+  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), '');
   const guide = await readFile(guidePath, 'utf8');
   assert.match(guide, /필요한 비테스트 검증을 템플릿의 해당 위치에 옮겨 적는다/);
   assert.match(guide, /GitHub Issue 본문 템플릿/);
@@ -79,13 +111,16 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await mkdir(join(root, 'docs/agents'), { recursive: true });
   await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned');
   await writeFile(join(root, 'app.js'), 'application change');
+  await writeFile(join(root, 'AGENTS.md'), 'project-owned instructions');
   const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
   assert.match(status, /docs\/agents\/EXEC\.md/);
   assert.match(status, /CONTEXT\.md/);
   assert.match(status, /app\.js/);
+  assert.match(status, /AGENTS\.md/);
+  assert.equal(await readFile(join(root, 'AGENTS.md'), 'utf8'), 'project-owned instructions');
   assert.equal(await readFile(join(root, 'app.js'), 'utf8'), 'application change');
   assert.doesNotMatch(status, /\.harness\/src\/|\.agents\/skills\//);
-  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.codex/internal-skills/to-ticket/references/github-batch-publish.md'], { cwd: root });
+  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.codex/internal-skills/to-ticket/references/github-batch-publish.md', ...plannerProfiles], { cwd: root });
   const doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
 });

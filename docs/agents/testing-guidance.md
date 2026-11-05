@@ -4,6 +4,14 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
+### planning-guidance-is-optional
+- Status: active
+- Applies to: to-ticket의 계획 작성 진입
+- Guidance: 내부 진입점은 `.codex/internal-skills/to-ticket/GUIDE.md`다. 폐기된 공개 `skills/to-ticket/SKILL.md`를 필수로 요구하지 않는다. AGENTS.md·EXEC.md는 있을 때 적용하는 프로젝트 지침이며 누락·빈 내용만으로 계획 작성을 차단하거나 setup·임시 문서 작성을 요구하지 않는다. 승인 Spec/리뷰·정본 workspace·계획 gate는 유지하고 실제 서버/E2E 실행 준비는 해당 실행 단계에서 검증한다.
+- Rationale: 실행 준비 문서 확인을 계획의 선행조건으로 확대 해석한 실제 E2E 중단을 방지한다.
+- Source: 2026-11-05 사용자의 to-ticket 차단 조건 수정 요청, 실행 to-ticket-696b62b9-d1d6-402b-b802-29ec2bb3c155
+- Updated: 2026-11-05
+
 ### harness-black-box-calculator-workflow
 - Status: active
 - Applies to: 사용자가 요청하는 Harness workflow E2E 실행
