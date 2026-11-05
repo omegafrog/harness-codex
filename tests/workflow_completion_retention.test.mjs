@@ -65,8 +65,15 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
       if (skill === 'to-ticket') {
         await recordExecutionState({ root: tree.workspace, input, binding, status: 'action_required', code: 'REVIEW_REQUIRED' });
-        const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
-        await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+        const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_SKILL_EXECUTION_ID'].map((key) => [key, process.env[key]]));
+        try {
+          process.env.HARNESS_WORKSPACE_ROOT = tree.workspace;
+          process.env.HARNESS_SKILL_EXECUTION_ID = input.execution_id;
+          const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
+          await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+        } finally {
+          for (const [key, value] of Object.entries(savedEnvironment)) value === undefined ? delete process.env[key] : process.env[key] = value;
+        }
         await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
       }
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'completed', code: 'OK' });
@@ -142,6 +149,21 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     assert.match(execFileSync('git', ['check-ignore', '-v', `runtime/restarts/${archives[0]}/plans/plans.md`], { cwd: tree.session_directory, encoding: 'utf8' }), /\.io/);
     const recovered = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(recovered.input.execution_id, restart.input.execution_id);
+
+    await mkdir(join(tree.workspace, 'docs/plans/calculator'), { recursive: true });
+    for (const [path, content] of Object.entries({
+      'docs/plans/calculator/plans.md': '# Replacement plans\nProduct Spec: `docs/specs/calculator/product-spec.md`\nArchitecture Spec: `docs/specs/calculator/architecture-spec.md`\n',
+      'docs/plans/calculator/replacement.md': '# Replacement plan\n',
+    })) await writeFile(join(tree.workspace, path), content);
+    restartState.stages['to-ticket'] = { ...restartState.stages['to-ticket'], status: 'failed', execution_id: 'failed-to-ticket', code: 'EXECUTION_ERROR', result_ref: undefined };
+    await writeFile(statePath, JSON.stringify(restartState, null, 2));
+    await mkdir(join(tree.session_directory, 'runtime/executions/failed-to-ticket'), { recursive: true });
+    await writeFile(join(tree.session_directory, 'runtime/executions/failed-to-ticket/exec.stderr.json'), JSON.stringify({ exit_code: 1, session_id: tree.worktree_id }));
+    const failedRestart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.notEqual(failedRestart.input.execution_id, restart.input.execution_id);
+    assert.deepEqual(failedRestart.input.input_refs, []);
+    assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/product-spec.md'), 'utf8'), specBeforeRestart.toString());
+    assert.equal((await readdir(join(tree.session_directory, 'runtime/restarts'))).length, 2);
   } finally {
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root, worktree_id: tree.worktree_id, outcome: 'aborted' });
     await rm(root, { recursive: true, force: true });

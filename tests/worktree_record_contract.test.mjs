@@ -672,17 +672,25 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(planDir, 'plans.md'), '# Plans\n');
     await writeFile(join(planDir, 'slice.md'), '---\nstatus: planned\n---\n# Slice\n');
     const { updatePlanReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/plan-review.mjs')}`);
-    const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'begin' });
-    await readFile(join(tree.session_directory, 'runtime/reviews', `plan-${ticketId}.json`));
-    await assert.rejects(readFile(join(root, '.io/runtime/reviews', `plan-${ticketId}.json`)), { code: 'ENOENT' });
-    const reviewRef = `runtime/executions/${authorInput.execution_id}/result.json`;
-    const reviewedResult = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', summary: '계획 작성 및 독립 리뷰 완료', artifacts: [], questions: [], review_request: null };
-    const reviewedEnvelope = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', result_ref: reviewRef, result: reviewedResult };
-    const { validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
-    await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
-    const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
-    await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff } }), /complete its independent plan-review loop internally/i);
-    await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+    const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_SKILL_EXECUTION_ID'].map((key) => [key, process.env[key]]));
+    let reviewedResult, reviewedEnvelope, reviewRef, validateReviewedPlanReturn;
+    try {
+      process.env.HARNESS_WORKSPACE_ROOT = tree.workspace;
+      process.env.HARNESS_SKILL_EXECUTION_ID = authorInput.execution_id;
+      const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'begin' });
+      await readFile(join(tree.session_directory, 'runtime/reviews', `plan-${ticketId}.json`));
+      await assert.rejects(readFile(join(root, '.io/runtime/reviews', `plan-${ticketId}.json`)), { code: 'ENOENT' });
+      reviewRef = `runtime/executions/${authorInput.execution_id}/result.json`;
+      reviewedResult = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', summary: '계획 작성 및 독립 리뷰 완료', artifacts: [], questions: [], review_request: null };
+      reviewedEnvelope = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', result_ref: reviewRef, result: reviewedResult };
+      ({ validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`));
+      await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
+      const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
+      await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff } }), /complete its independent plan-review loop internally/i);
+      await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
+    } finally {
+      for (const [key, value] of Object.entries(savedEnvironment)) value === undefined ? delete process.env[key] : process.env[key] = value;
+    }
     await writeFile(join(tree.session_directory, reviewRef), JSON.stringify(reviewedResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${authorInput.execution_id}/return.json`), JSON.stringify(reviewedEnvelope));
     assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);

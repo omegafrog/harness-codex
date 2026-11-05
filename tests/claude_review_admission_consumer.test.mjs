@@ -93,26 +93,46 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     process.env.HARNESS_WORKSPACE_ROOT = root;
     process.env.HARNESS_SKILL_EXECUTION_ID = 'review-stage';
     const unclaimedAttempt = await updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' });
-    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: unclaimedAttempt.attempt_id, review: { reviewer_id: 'invented-reviewer', author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] } }), /stopped native reviewer bound to this execution/);
+    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: unclaimedAttempt.attempt_id, review: { reviewer_id: 'invented-reviewer', author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] } }), /stopped native reviewer bound to this admission/);
     await updatePlanReview({ root, planSetId: 'ticket-one', action: 'abort', attemptId: unclaimedAttempt.attempt_id, reason: 'pre-dispatch preparation: no native reviewer was dispatched' });
+    const workspaceRoot = process.env.HARNESS_WORKSPACE_ROOT;
+    delete process.env.HARNESS_WORKSPACE_ROOT;
+    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' }), /runner workspace and execution identity/);
+    process.env.HARNESS_WORKSPACE_ROOT = workspaceRoot;
+    assert.equal(JSON.parse(await readFile(join(root, '.io/runtime/reviews/plan-ticket-one.json'), 'utf8')).attempts.at(-1).status, 'aborted');
     const planAttempt = await updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' });
+    assert.equal(planAttempt.reviewer_input_ref, `runtime/executions/review-stage/plan-review-admission-${planAttempt.attempt_id}.json`);
+    const reviewerSnapshot = JSON.parse(await readFile(join(root, '.io', planAttempt.reviewer_input_ref), 'utf8'));
+    assert.equal(reviewerSnapshot.attempt_id, planAttempt.attempt_id);
+    assert.ok(reviewerSnapshot.files.some((file) => file.path === 'docs/plans/ticket-one/slice.md' && file.content.includes('# Slice')));
     const planInput = { ...input, tool_use_id: 'dispatch-plan', tool_input: { ...input.tool_input, subagent_type: 'plan_reviewer', prompt: 'Review the plans.' } };
+    const admissionPath = join(root, '.io', planAttempt.reviewer_input_ref);
+    const admissionContents = await readFile(admissionPath, 'utf8');
+    reviewerSnapshot.files[0].content += '\nTampered after admission.\n';
+    await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
+    assert.equal(callAdmission(root, 'ticket-one', planInput).hookSpecificOutput.permissionDecision, 'deny');
+    await writeFile(admissionPath, admissionContents);
     const planAllowed = callAdmission(root, 'ticket-one', planInput);
     assert.equal(planAllowed.hookSpecificOutput.permissionDecision, 'allow');
     assert.match(planAllowed.hookSpecificOutput.updatedInput.prompt, /plan_set_id=ticket-one/);
+    assert.ok(planAllowed.hookSpecificOutput.updatedInput.prompt.includes(`reviewer_input_ref=${planAttempt.reviewer_input_ref}`));
     assert.equal(callAdmission(root, 'ticket-one', input).hookSpecificOutput.permissionDecision, 'deny');
     callEvent(root, { hook_event_name: 'SubagentStart', session_id: 'claude-session', agent_id: 'native-plan-agent', agent_type: 'plan_reviewer' });
     const planNativeResult = JSON.stringify({ verdict: 'pass', findings: [] });
     callEvent(root, { hook_event_name: 'SubagentStop', session_id: 'claude-session', agent_id: 'native-plan-agent', agent_type: 'plan_reviewer', last_assistant_message: planNativeResult });
     planHistory = await inspectReviewHistory({ root, scope: planScope });
     const planReview = { reviewer_id: `claude-review-stage-${planAttempt.attempt_id}`, author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] };
+    process.env.HARNESS_SKILL_EXECUTION_ID = 'resumed-author';
+    await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
+    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission contents/);
+    await writeFile(admissionPath, admissionContents);
     await updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview });
+    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' }), /unchanged/i);
     } finally {
       for (const [key, value] of Object.entries(runtimeEnv)) value === undefined ? delete process.env[key] : process.env[key] = value;
     }
     assert.equal(planHistory.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: planScope });
-    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' }), /unchanged/i);
     assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'spec_paths', 'plans', 'inputs']);
 
     await mkdir(join(root, 'docs/specs/budget-ticket'), { recursive: true });

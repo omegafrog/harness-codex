@@ -31,6 +31,7 @@ function validateHistory(history) {
   requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && Number.isSafeInteger(item.limit) && item.limit >= item.round && item.limit <= 2 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
   requireValue(!history.repair_resolution || Number.isSafeInteger(history.repair_resolution.after) && history.repair_resolution.after > 0 && history.repair_resolution.after <= repairs.length && repairs[history.repair_resolution.after - 1].round === repairs[history.repair_resolution.after - 1].limit && typeof history.repair_resolution.reason === 'string' && history.repair_resolution.reason.trim() && ((!history.repair_resolution.previous_snapshot_sha256 && !history.repair_resolution.current_snapshot_sha256) || (/^[a-f0-9]{64}$/.test(history.repair_resolution.previous_snapshot_sha256 || '') && /^[a-f0-9]{64}$/.test(history.repair_resolution.current_snapshot_sha256 || '') && history.repair_resolution.previous_snapshot_sha256 !== history.repair_resolution.current_snapshot_sha256)), 'Invalid repair resolution');
   requireValue(history.attempts.every((item) => item && ['active', 'pass', 'revise', 'stale', 'aborted'].includes(item.status) && Number.isSafeInteger(item.round) && item.round >= 1 && item.round <= 3 && (!item.review || Array.isArray(item.review.findings))), 'Invalid recorded review');
+  requireValue(history.attempts.every((item) => !item.admission_ref && !item.admission_execution_id || /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(item.admission_execution_id || '') && item.admission_ref === `runtime/executions/${item.admission_execution_id}/plan-review-admission-${item.id}.json`), 'Invalid plan review admission reference');
   requireValue(history.attempts.every((item) => !item.native_review || typeof item.native_review.reviewer_id === 'string' && item.native_review.reviewer_id && typeof item.native_review.dispatch_token === 'string' && item.native_review.dispatch_token && typeof item.native_review.parent_session_id === 'string' && item.native_review.parent_session_id && typeof item.native_review.execution_id === 'string' && item.native_review.execution_id && (!item.native_review.agent_id || typeof item.native_review.agent_id === 'string' && typeof item.native_review.stopped === 'boolean' && (!item.native_review.stopped || typeof item.native_review.result === 'string' && item.native_review.result.trim() && ['pass', 'revise', 'reject', 'blocked'].includes(item.native_review.review?.verdict) && Array.isArray(item.native_review.review.findings)))), 'Invalid native review claim');
   requireValue(repairs.every((item, index) => !index ? item.round === 1 : item.round === 1 ? repairs[index - 1].round === repairs[index - 1].limit : item.round === repairs[index - 1].round + 1 && item.limit === repairs[index - 1].limit), 'Invalid historical repair cycle');
   const cycle = repairs.slice(history.repair_resolution?.after || 0);
@@ -43,7 +44,7 @@ async function readHistory(path) {
 }
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
-export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId }) {
+export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
     if (error.code === 'EEXIST') throw new Error('Review history is being updated; retry after the current command finishes');
@@ -96,6 +97,11 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
       requireValue(typeof reviewerId === 'string' && reviewerId.trim() && typeof nativeAgentId === 'string' && nativeAgentId.trim() && typeof parentSessionId === 'string' && parentSessionId.trim() && typeof executionId === 'string' && executionId.trim(), 'Reviewer identity, native dispatch token, parent session, and execution are required');
       last.native_review = { reviewer_id: reviewerId, dispatch_token: nativeAgentId, parent_session_id: parentSessionId, execution_id: executionId };
       result = { status: 'pass', attempt_id: last.id, reviewer_id: reviewerId, dispatch_token: nativeAgentId };
+    } else if (action === 'bind-admission') {
+      requireValue(last?.status === 'active' && last.id === attemptId && !last.admission_ref && typeof executionId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId) && admissionRef === `runtime/executions/${executionId}/plan-review-admission-${attemptId}.json`, 'Plan review admission reference does not match its active attempt');
+      last.admission_ref = admissionRef;
+      last.admission_execution_id = executionId;
+      result = { status: 'pass', attempt_id: last.id, admission_ref: admissionRef };
     } else if (action === 'bind-native') {
       requireValue(last?.status === 'active' && last.id === attemptId, 'No active review matches this attempt ID');
       requireValue(last.native_review && last.native_review.parent_session_id === parentSessionId && !last.native_review.agent_id && typeof nativeAgentId === 'string' && nativeAgentId.trim(), 'Native reviewer start does not match its claim');
@@ -174,7 +180,7 @@ export async function inspectActiveReviewAttempt({ root, scope }) {
   const history = await readHistory(historyPath(root, scope, { create: false }));
   const last = history.attempts.at(-1);
   requireValue(last?.status === 'active', 'No active review attempt');
-  return { attempt_id: last.id, inputs: last.inputs, native_review: last.native_review || null };
+  return { attempt_id: last.id, inputs: last.inputs, native_review: last.native_review || null, admission_ref: last.admission_ref || null, admission_execution_id: last.admission_execution_id || null };
 }
 
 export async function assertNoUnrecordedNativeReview({ root, scope }) {

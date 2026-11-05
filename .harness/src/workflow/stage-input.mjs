@@ -223,7 +223,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       }
       if (matching.length >= 2) throw new Error('Revision repeated without changed evidence; inspect and report before retrying');
     }
-    input_refs.push(...priorResult.artifacts);
+    const planSetId = priorInput.context?.plan_set_id;
+    input_refs.push(...priorResult.artifacts.filter((artifact) => !(stageId === 'to-ticket' && planSetId && artifact.base === 'workspace' && artifact.path?.startsWith(`docs/plans/${planSetId}/`))));
     producer_result_refs[lastStage] = { base: 'session', path: last.result_ref };
     transition = { from_stage: lastStage, code: last.code, result_ref: last.result_ref, summary: priorResult.summary };
   }
@@ -253,7 +254,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
   }
   if (restart) {
-    if (!worktree_ref || state.current_stage !== 'to-ticket' || state.stages?.['to-ticket']?.status !== 'waiting' || !state.stages?.['to-ticket']?.result_ref) throw new Error('Restart requires a waiting to-ticket stage in its active worktree');
+    if (!worktree_ref || state.current_stage !== 'to-ticket' || !['waiting', 'failed'].includes(state.stages?.['to-ticket']?.status)) throw new Error('Restart requires a waiting or failed to-ticket stage in its active worktree');
     if (state.stages?.['spec-me']?.status !== 'completed' || state.stages?.['spec-me']?.code !== 'OK') throw new Error('Restart requires a completed spec-me stage');
     await assertExecutionStopped(state.stages['to-ticket'], { root, session: taskSession });
     if (state.stages?.['tracker-publish']?.execution_id) throw new Error('Cannot restart after tracker-publish has started');

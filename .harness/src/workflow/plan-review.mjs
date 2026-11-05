@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, posix } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
 import { normalizeReviewContent } from './review-delta.mjs';
-import { sessionDirectory } from './session-output.mjs';
+import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -142,12 +142,54 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
+  let reviewer_input_ref;
+  let reviewerFiles;
+  if (action === 'begin') {
+    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
+    reviewerFiles = [];
+    for (const path of Object.keys(snapshot.inputs)) {
+      const file = await safeFile(root, path);
+      const plan = snapshot.plans.find((item) => item.path === path);
+      const capturedHash = plan ? hash(normalizeReviewContent(path, file.content)) : hash(file.content);
+      requireValue(capturedHash === snapshot.inputs[path], `Plan review input changed while preparing its admission: ${path}`);
+      reviewerFiles.push({ path, sha256: capturedHash, normalization: plan ? 'frontmatter-status-excluded-v1' : 'raw-v1', content: file.content.toString('utf8') });
+    }
+  }
   if (action === 'record' && process.env.HARNESS_PROVIDER_ID === 'claude-code') {
     const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
     requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Claude plan review requires its runtime workspace and execution identity');
     const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
     const native = active.native_review;
-    requireValue(active.attempt_id === attemptId && native?.execution_id === executionId && native.agent_id && native.stopped, 'Claude plan review record requires a stopped native reviewer bound to this execution');
+    requireValue(active.attempt_id === attemptId && native?.execution_id === active.admission_execution_id && native.agent_id && native.stopped, 'Claude plan review record requires a stopped native reviewer bound to this admission');
   }
-  return updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
+  if (action === 'record') {
+    const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
+    requireValue(active.admission_ref && active.attempt_id === attemptId, 'Plan review attempt has no runner-owned admission file');
+    const admitted = JSON.parse(await readFile(sessionOutputPath(root, active.admission_ref, { create: false }), 'utf8'));
+    requireValue(admitted.attempt_id === attemptId && admitted.plan_set_id === planSetId && admitted.execution_id === active.admission_execution_id && JSON.stringify(admitted.inputs) === JSON.stringify(active.inputs), 'Recorded plan review does not match its runner-owned admission');
+    requireValue(Array.isArray(admitted.files) && admitted.files.length === Object.keys(active.inputs).length && new Set(admitted.files.map((file) => file.path)).size === admitted.files.length && admitted.files.every((file) => {
+      if (active.inputs[file.path] !== file.sha256 || typeof file.content !== 'string' || !['raw-v1', 'frontmatter-status-excluded-v1'].includes(file.normalization)) return false;
+      const content = Buffer.from(file.content);
+      return hash(file.normalization === 'frontmatter-status-excluded-v1' ? normalizeReviewContent(file.path, content) : content) === file.sha256;
+    }), 'Plan review admission contents do not match its snapshot');
+  }
+  const result = await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
+  if (action === 'begin') {
+    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+    if (executionId) {
+      const ref = `runtime/executions/${executionId}/plan-review-admission-${result.attempt_id}.json`;
+      try {
+        const { directory } = stageExecutionPaths(root, executionId);
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await writeFile(join(directory, `plan-review-admission-${result.attempt_id}.json`), `${JSON.stringify({ schema_version: 1, execution_id: executionId, attempt_id: result.attempt_id, plan_set_id: planSetId, inputs: snapshot.inputs, files: reviewerFiles, previous_inputs: result.previous_inputs, previous_findings: result.previous_findings }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+        await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action: 'bind-admission', attemptId: result.attempt_id, executionId, admissionRef: ref });
+      } catch (error) {
+        await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action: 'abort', attemptId: result.attempt_id, reason: `pre-dispatch preparation: could not persist reviewer admission: ${error.message}` });
+        throw error;
+      }
+      reviewer_input_ref = ref;
+    }
+  }
+  return { ...result, ...(reviewer_input_ref ? { reviewer_input_ref } : {}) };
 }
