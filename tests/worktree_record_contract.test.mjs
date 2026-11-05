@@ -741,6 +741,11 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(next.input.context.provider, workflowBinding.provider);
     assert.deepEqual(next.input.context.workflow_binding, workflowBinding);
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'spec-me', workflowBinding: next.input.context.workflow_binding }), { skill: 'spec-me', provider: 'codex', model_tier: 'high_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
+    assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'plantuml-diagrams' }), { skill: 'plantuml-diagrams', provider: 'codex', model_tier: 'low', model: 'gpt-6-luna', reasoning_effort: 'medium' });
+    const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(roleBinding.provider, 'codex');
+    assert.equal(roleBinding.model, 'gpt-6-luna');
+    assert.equal(roleBinding.reasoning_effort, 'medium');
     assert.equal(next.input.context.orchestrator_session_id, record.worktree_id);
     assert.equal(next.input.shared_guidance_root, undefined);
     const runId = next.input.execution_id;

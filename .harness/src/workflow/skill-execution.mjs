@@ -9,6 +9,7 @@ import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { parseWorktreeRecord } from './worktrees.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
@@ -93,7 +94,27 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   requireValue(keys, `Unknown model tier: ${tier}`);
   const get = (key) => key.split('.').reduce((value, part) => value?.[part], config);
   const model = get(keys.model_key), effort = get(keys.reasoning_effort_key);
-  const override = workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  let recordedBinding = null;
+  let session;
+  try { session = sessionDirectory(root, { create: false }); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (session) {
+    let info;
+    try { info = await lstat(join(session, 'worktree.json')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (info) {
+      requireValue(info.isFile() && !info.isSymbolicLink() && info.nlink === 1, 'Canonical worktree record must be a regular unshared file');
+      const record = parseWorktreeRecord(await readFile(join(session, 'worktree.json'), 'utf8'));
+      requireValue(await realpath(record.workspace) === await realpath(root) && record.session_directory === session, 'Canonical worktree record does not match binding workspace');
+      requireValue(record.state === 'active', 'Workflow binding requires an active worktree');
+      recordedBinding = record.workflow_binding || null;
+    }
+  }
+  const override = recordedBinding ? parseWorkflowBinding(recordedBinding) : workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  if (recordedBinding && workflowBinding) {
+    const supplied = parseWorkflowBinding(workflowBinding);
+    requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');
+  }
   if (!override) for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
     requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
   }
