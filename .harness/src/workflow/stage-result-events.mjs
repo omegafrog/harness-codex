@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn } from './skill-execution.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
+import { stageExecutionPaths } from './session-output.mjs';
 
 const execFileAsync = promisify(execFile);
 const directory = 'runtime/orchestrator/stage-results';
@@ -175,21 +176,22 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
       if (!allowedFailure && !allowedCancellation) throw new Error('Result-less event does not match a terminal failed or cancelled stage');
       return locked(controlSession, execution_id, () => deliverPending(controlSession, input, event));
     }
-    if (event.result_ref !== `runtime/executions/${execution_id}/result.json`) throw new Error('Invalid stage result reference');
+    if (event.result_ref !== stageExecutionPaths(root, execution_id, { create: false }).refs.result) throw new Error('Invalid stage result reference');
     const result = await readSkillSessionJson({ root, session_directory: taskSession, path: event.result_ref });
     const envelope = { schema_version: 1, execution_id, skill: input.skill, status: event.status, code: event.code, result_ref: event.result_ref, result };
     await validateSkillReturn({ root, input, envelope });
     await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
     return envelope;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const resultPath = `runtime/executions/${execution_id}/result.json`;
+  const paths = stageExecutionPaths(root, execution_id, { create: false });
+  const resultPath = paths.refs.result;
   let envelope;
   try {
     const result = await readSkillSessionJson({ root, session_directory: taskSession, path: resultPath });
     envelope = { schema_version: 1, execution_id, skill: input.skill, status: result.status, code: result.code, result_ref: resultPath, result };
   } catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
-    try { envelope = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${execution_id}/return.json` }); }
+    try { envelope = await readSkillSessionJson({ root, session_directory: taskSession, path: paths.refs.returned }); }
     catch (returnError) {
       if (returnError.code !== 'ENOENT' && !(returnError instanceof SyntaxError)) throw returnError;
       if (!stage.owner && !stage.child) throw Object.assign(new Error('Stage has not reported terminal evidence'), { code: 'ENOENT' });

@@ -8,6 +8,7 @@ const { identifyQuestions } = await import(new URL('questions.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
+const { stageExecutionPaths } = await import(new URL('session-output.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -22,16 +23,19 @@ try {
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');
   if (input.session_directory !== session) throw new Error('Input session directory does not match caller session');
   await validateSkillInput({ root: opts.root, input });
+  const paths = stageExecutionPaths(opts.root, input.execution_id);
+  if (paths.session !== session) throw new Error('Execution session does not match workspace');
   const prefix = `runtime/executions/${input.execution_id}`;
-  const returnPath = `${prefix}/return.json`;
+  const returnPath = paths.refs.returned;
   const sourcePath = opts.source || opts.return;
-  if (opts.source && opts.source !== `${prefix}/codex-last-message.json`) throw new Error('Source must be the raw Codex message for the requested execution');
+  if (opts.source && opts.source !== paths.refs.raw) throw new Error('Source must be the raw Codex message for the requested execution');
   if (opts.return && opts.return !== returnPath) throw new Error('Return must belong to the requested execution');
   const envelope = await readSkillSessionJson({ root: opts.root, session_directory: session, path: sourcePath });
   if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
-  if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = `${prefix}/result.json`;
+  if (opts.source) envelope.result_ref = envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED' ? null : paths.refs.result;
+  if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = paths.refs.result;
   if (envelope.result_ref) {
-    if (envelope.result_ref !== `${prefix}/result.json`) throw new Error('Result must belong to the requested execution');
+    if (envelope.result_ref !== paths.refs.result) throw new Error('Result must belong to the requested execution');
     try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }

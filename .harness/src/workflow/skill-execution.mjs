@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:p
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
-import { sessionDirectory } from './session-output.mjs';
+import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
@@ -260,7 +260,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
     }
     return { valid: true, usable_result: false, ...envelope };
   }
-  const expected = `runtime/executions/${input.execution_id}/result.json`;
+  const expected = stageExecutionPaths(root, input.execution_id, { create: false }).refs.result;
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
   requireValue(!(input.skill === 'spec-me' && result.review_request?.skill === 'spec-review'), 'spec-me must perform spec-review internally using a fresh native reviewer');

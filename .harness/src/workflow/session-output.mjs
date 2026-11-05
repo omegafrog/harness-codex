@@ -28,3 +28,15 @@ export function sessionOutputPath(workspaceRoot, output, options = {}) {
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   return target;
 }
+
+export function stageExecutionPaths(workspaceRoot, executionId, options = {}) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Invalid execution ID');
+  const relativeDirectory = `runtime/executions/${executionId}`;
+  const refs = Object.fromEntries(Object.entries({ result: 'result.json', returned: 'return.json', raw: 'codex-last-message.json', schema: 'return.schema.json', answers: 'answers.json', feedback: 'feedback.json' }).map(([key, name]) => [key, `${relativeDirectory}/${name}`]));
+  return { workspace: resolve(workspaceRoot), session: sessionDirectory(workspaceRoot, options), directory: sessionOutputPath(workspaceRoot, relativeDirectory, options), refs, files: Object.fromEntries(Object.entries(refs).map(([key, path]) => [key, sessionOutputPath(workspaceRoot, path, options)])) };
+}
+
+export function stageArtifactDirectories(workspaceRoot, planSetId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) throw new Error('Invalid plan set ID');
+  return { specs: join(workspaceRoot, 'docs/specs', planSetId), plans: join(workspaceRoot, 'docs/plans', planSetId) };
+}

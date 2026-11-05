@@ -20,6 +20,6 @@ runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 �
 
 실행기는 시작 전에 자신의 프로세스 식별자를 기록하고, 자식 식별자를 기록한 뒤에만 Codex에 입력을 전달한다. 실제 thread ID는 실행기가 정본 worktree에 기록하며 종료 결과와 binding은 `runtime/executions/<execution_id>/exec.stderr.json`에 보존한다. caller는 실행 전에 별도로 `running`을 기록하지 않는다. 프로세스 정보가 누락된 기존 실행은 종료 로그가 완전하고 남은 기록된 프로세스가 종료된 경우에 재개할 수 있다. worktree 실행에서 thread ID가 누락되거나 재개 session이 다르면 실패다.
 
-Codex의 `--output-last-message`는 `codex-last-message.json`에 저장한다. runner는 프로세스 성공 뒤 이 원문을 `harness-result.mjs --source runtime/executions/<execution_id>/codex-last-message.json`으로 검증·정규화해 task session의 `result.json`과 `return.json`을 기록한 뒤 control session에 terminal 상태와 결과 이벤트를 저장한다. 실패·취소도 성공으로 추정하지 않고 명시적인 terminal event로 기록한다. 복구 시에도 `result.json`을 정본으로 검증하며, 반환 복구는 실행 메타데이터와 결과 필드가 모두 일치하고 artifact의 `sha256` 값만 다를 때만 허용한다.
+Codex의 `--output-last-message`는 실행기가 정한 `codex-last-message.json`에 저장한다. Claude도 같은 원문 위치를 사용한다. 모델은 `result_ref`를 반환하지 않으며 runner가 실행 ID에서 결과 위치를 계산해 채운다. runner는 프로세스 성공 뒤 이 원문을 `harness-result.mjs`로 검증·정규화해 task session의 `result.json`과 `return.json`을 기록한 뒤 control session에 terminal 상태와 결과 이벤트를 저장한다. 실패·취소도 성공으로 추정하지 않고 명시적인 terminal event로 기록한다. 복구 시에도 `result.json`을 정본으로 검증하며, 반환 복구는 실행 메타데이터와 결과 필드가 모두 일치하고 artifact의 `sha256` 값만 다를 때만 허용한다.
 
 실행자가 `result.json`을 작성했다면 그 파일이 결과 정본이다. 검증기는 파일의 실행 ID·skill·status·code와 응답 envelope의 일치, 결과 schema와 참조를 확인하고 정본 결과를 응답에 반영한다. 파일이 없으면 inline 결과를 검증해 정본 파일을 만든다. 서로 다른 결과를 문구만 보고 합치거나 검증 실패를 성공으로 바꾸지 않는다.

@@ -10,6 +10,7 @@ import { assertExecutionStopped, processIdentity, recordExecutionState } from '.
 import { parseYaml } from '../eval/yaml.mjs';
 import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { stageExecutionPaths } from './session-output.mjs';
 
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 
@@ -317,10 +318,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
-  await mkdir(join(taskSession, 'runtime/executions', execution_id), { recursive: true });
-  if (Array.isArray(answer)) await writeFile(join(taskSession, 'runtime/executions', execution_id, 'answers.json'), JSON.stringify(answer, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  if (interruptedAnswers) await copyFile(interruptedAnswers, join(taskSession, 'runtime/executions', execution_id, 'answers.json')).catch((error) => { if (error.code !== 'ENOENT') throw error; });
-  if (feedback !== null) await writeFile(join(taskSession, 'runtime/executions', execution_id, 'feedback.json'), JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  const paths = stageExecutionPaths(root, execution_id);
+  if (paths.session !== taskSession) throw new Error('Execution session does not match workspace');
+  await mkdir(paths.directory, { recursive: true });
+  if (Array.isArray(answer)) await writeFile(paths.files.answers, JSON.stringify(answer, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  if (interruptedAnswers) await copyFile(interruptedAnswers, paths.files.answers).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  if (feedback !== null) await writeFile(paths.files.feedback, JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const storedInput = storedStageInput(input);
-  return { input: storedInput, path, session_directory: taskSession, ...(answer !== null ? { answer } : {}) };
+  return { input: storedInput, path, session_directory: taskSession, execution_directory: paths.directory, ...(answer !== null ? { answer } : {}) };
 }

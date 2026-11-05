@@ -14,6 +14,7 @@ const { loadProvider } = await import(new URL('providers/index.mjs', base));
 const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, readExecutionInput, readSkillSessionJson, resolveSkillSession, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { executionInputAbsolutePath } = await import(new URL('execution-input.mjs', base));
+const { stageExecutionPaths, stageArtifactDirectories } = await import(new URL('session-output.mjs', base));
 const { inspectWorkspace } = await import(new URL('../eval/workspace-preflight.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
 const { recordExecutionState, processIdentity } = await import(new URL('execution-state.mjs', base));
@@ -50,8 +51,10 @@ try {
   const providerId = input.context?.provider || binding.provider;
   if (providerId !== binding.provider || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== providerId) || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
   const adapter = await loadProvider(providerId);
-  const prefix = join(session, 'runtime/executions', opts['execution-id']);
-  const schema = join(prefix, 'return.schema.json'), output = join(prefix, 'codex-last-message.json');
+  const paths = stageExecutionPaths(root, input.execution_id);
+  if (paths.session !== session) throw new Error('Execution session does not match workspace');
+  const prefix = paths.directory;
+  const schema = paths.files.schema, output = paths.files.raw;
   if (!existsSync(schema)) await writeOutputSchema({ root, input, prefix: `runtime/executions/${opts['execution-id']}`, path: schema, provider: providerId });
   const schemaInfo = await lstat(schema);
   if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
@@ -78,8 +81,8 @@ try {
   const guide = [internal, publicSkill, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
   if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);
   const inputPath = await executionInputAbsolutePath(root, opts['execution-id']);
-  const answers = join(prefix, 'answers.json');
-  const feedback = join(prefix, 'feedback.json');
+  const answers = paths.files.answers;
+  const feedback = paths.files.feedback;
   for (const name of ['answers.json', 'feedback.json']) if (existsSync(join(prefix, name))) {
     await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/${name}`);
     const info = await lstat(join(prefix, name));
@@ -116,7 +119,8 @@ try {
   const activeInstructionPaths = input.skill === 'spec-me' ? ['.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/product-spec/references/topics.md'] : [];
   const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = await readFile(join(root, path), 'utf8'); return { path, content, version: instructionVersion(content) }; }));
   const previousDelivery = priorStage?.instruction_delivery ? { ...priorStage.instruction_delivery, compaction_observed: priorCompaction } : null;
-  const { prompt: instructions, delivery } = buildStagePrompt({ guide, guideContent, guideVersion: instructionVersion(guideContent), profile: profilePath, profileContent, profileVersion, instructionVersions, instructionContents, resumeSession: resume, previousDelivery, answersPath: existsSync(answers) ? answers : null, feedbackPath: existsSync(feedback) ? feedback : null, sandbox, root, inputPath, workflowPhase: input.context?.phase || null });
+  const artifactDirectories = input.context?.plan_set_id ? stageArtifactDirectories(root, input.context.plan_set_id) : null;
+  const { prompt: instructions, delivery } = buildStagePrompt({ guide, guideContent, guideVersion: instructionVersion(guideContent), profile: profilePath, profileContent, profileVersion, instructionVersions, instructionContents, resumeSession: resume, previousDelivery, answersPath: existsSync(answers) ? answers : null, feedbackPath: existsSync(feedback) ? feedback : null, sandbox, root, inputPath, executionDirectory: paths.directory, artifactDirectories, workflowPhase: input.context?.phase || null });
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : instructions;
   const owner = await processIdentity(process.pid);
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
@@ -168,8 +172,8 @@ try {
       const { assertNoUnrecordedNativeReview } = await import(new URL('review-attempts.mjs', base));
       await assertNoUnrecordedNativeReview({ root, scope: `spec-${input.context.plan_set_id}-architecture` });
     }
-    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', `runtime/executions/${opts['execution-id']}/codex-last-message.json`], { cwd: root, stdio: 'pipe' });
-    const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: `runtime/executions/${opts['execution-id']}/return.json` });
+    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' });
+    const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: paths.refs.returned });
     await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
     stageEventPublished = true;
   } else {

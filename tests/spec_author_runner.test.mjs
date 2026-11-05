@@ -28,7 +28,7 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     const { writeExecutionInput } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
     await writeExecutionInput(root, { schema_version: 1, execution_id: id, skill: 'spec-me', scope: '계산기', input_refs: [], context: { worktree_ref: ref, stage_id: 'spec-me', provider: 'claude-code' } }, 'example');
     await writeFile(join(bin, 'package.json'), '{"type":"commonjs"}');
-    const fake = `#!/usr/bin/env node\nconst fs=require('fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.CALLS,JSON.stringify(args)+'\\n');const emit=x=>console.log(JSON.stringify(x));emit({type:'system',subtype:'init',session_id:'a77aaa03-329c-4d59-b4c5-269746a893f2'});emit({type:'assistant',message:{content:[{type:'tool_use',id:'skill-call',name:'Skill',input:{skill:'spec-me'}}]}});emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:'skill-call'}]}});fs.mkdirSync('docs/specs/example',{recursive:true});fs.writeFileSync('docs/specs/example/product-spec.md','# Product\\n');const q={question_id:'question',title:'계속할까요?',options:[{id:'yes',label:'예',consequence:'계속'},{id:'no',label:'아니요',consequence:'대기'}],recommended_option_id:'yes',rationale:'결정 필요'};const result={schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:'USER_DECISION_REQUIRED',summary:'진행 중',artifacts:[],questions:[q],review_request:null};emit({type:'result',subtype:'success',structured_output:{schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:result.code,result_ref:null,result}});`;
+    const fake = `#!/usr/bin/env node\nconst fs=require('fs');const args=process.argv.slice(2);fs.appendFileSync(process.env.CALLS,JSON.stringify(args)+'\\n');const emit=x=>console.log(JSON.stringify(x));emit({type:'system',subtype:'init',session_id:'a77aaa03-329c-4d59-b4c5-269746a893f2'});emit({type:'assistant',message:{content:[{type:'tool_use',id:'skill-call',name:'Skill',input:{skill:'spec-me'}}]}});emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:'skill-call'}]}});fs.mkdirSync('docs/specs/example',{recursive:true});fs.writeFileSync('docs/specs/example/product-spec.md','# Product\\n');const q={question_id:'question',title:'계속할까요?',options:[{id:'yes',label:'예',consequence:'계속'},{id:'no',label:'아니요',consequence:'대기'}],recommended_option_id:'yes',rationale:'결정 필요'};const result={schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:'USER_DECISION_REQUIRED',summary:'진행 중',artifacts:[],questions:[q],review_request:null};emit({type:'result',subtype:'success',structured_output:{schema_version:1,execution_id:'${id}',skill:'spec-me',status:'action_required',code:result.code,result}});`;
     await writeFile(join(bin, 'claude'), fake); await chmod(join(bin, 'claude'), 0o755);
     const calls = join(session, 'calls.jsonl');
     const run = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-run.mjs'), '--worktree-ref', ref, '--execution-id', id], { cwd: root, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CALLS: calls }, encoding: 'utf8', timeout: 30000 });
@@ -36,8 +36,15 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     const commands = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(commands.length, 1);
     assert.ok(!commands[0].includes('--agent'));
+    assert.ok(commands[0].at(-1).includes(join(session, 'runtime/executions', id)));
+    assert.ok(commands[0].at(-1).includes(join(root, 'docs/specs/example')));
+    assert.ok(commands[0].at(-1).includes(join(root, 'docs/plans/example')));
     const returned = JSON.parse(await readFile(join(session, 'runtime/executions', id, 'return.json'), 'utf8'));
     assert.equal(returned.code, 'USER_DECISION_REQUIRED');
+    assert.equal(returned.result_ref, `runtime/executions/${id}/result.json`);
+    const schema = JSON.parse(await readFile(join(session, 'runtime/executions', id, 'return.schema.json'), 'utf8'));
+    assert.equal(Object.hasOwn(schema.properties, 'result_ref'), false);
+    await assert.rejects(readFile(join(primary, '.io/runtime/executions', id, 'return.json')), { code: 'ENOENT' });
     assert.equal(await readFile(join(root, 'docs/specs/example/product-spec.md'), 'utf8'), '# Product\n');
     await assert.rejects(readFile(join(session, 'runtime/spec-writers/example/product.json')), { code: 'ENOENT' });
     assert.match(git(root, 'status', '--short', '--untracked-files=all'), /docs\/specs\/example\/product-spec.md/);

@@ -7,7 +7,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const schema = JSON.parse(await readFile(join(directory, 'return.schema.json'), 'utf8'));
   schema.properties.execution_id = { const: input.execution_id };
   schema.properties.skill = { const: input.skill };
-  schema.properties.result_ref = { enum: [`${prefix}/result.json`, null] };
+  delete schema.properties.result_ref;
+  schema.required = schema.required.filter((key) => key !== 'result_ref');
   const flow = input.skill;
   const resultSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
