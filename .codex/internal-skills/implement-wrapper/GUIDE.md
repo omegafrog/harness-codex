@@ -5,6 +5,8 @@
 
 orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 
+전체 plan set의 순차 배정·통합 리뷰·최종 E2E는 기존 [구현 workflow 조율](../../../.codex/skills/orchestrator/references/implementation.md)이 소유한다. 이 wrapper를 새 executor로 대체하지 않는다. 한 번에 split plan 하나를 구현하며, 그 plan의 단위 테스트·독립 리뷰·canonical tracker 완료 확인 뒤 다음 plan으로 진행한다. 모든 구현 후 전체 Spec과 누적 diff의 통합 리뷰를 수행하고, 에이전트가 작성한 최종 E2E 시나리오에 대한 실제 사용자 승인을 받은 뒤 runner를 호출한다. E2E 실패는 자동 수정·재실행하지 않고 사용자에게 확인한다.
+
 ## 실행 계약
 
 기본 `model_tier`는 `implementation`이다. 모델과 effort는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)이 setup 설정에서 해석한다.

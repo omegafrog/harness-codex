@@ -35,6 +35,8 @@ workflow 외의 직접 요청은 [기능 라우팅](references/capability-routin
 
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다.
 
+구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 split plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 최종 E2E 시나리오를 작성해 사용자 승인을 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다.
+
 요청 범위의 마지막 stage가 완료되면 해당 완료 gate를 `harness-workflow-complete.mjs`의 `--final-workflow`와 함께 실행한다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 이 옵션을 사용하지 않는다.
 
 반환 상태에 따라 workflow를 전환한다.

@@ -4,6 +4,7 @@
 
 | 규칙 | 현재 enforcement | 남는 판단/한계 |
 |---|---|---|
+| 기존 implement-wrapper는 split plan을 하나씩 구현하고 통합 Spec 리뷰 뒤 최종 E2E 시나리오의 사용자 승인을 받으며 실패 시 자동 수정·재실행을 멈춘다 | orchestrator의 implementation reference·implement-wrapper·e2e-test·runner 지침; `tests/implement_wrapper_consumer.test.mjs`의 신규/갱신 consumer 배포·링크·Doctor·Git 가시성 검사 | 순서·실제 승인·실패 후 조치는 agent가 준수하는 의미적 계약이며 범용 runtime 자동 gate는 아니다. 설치 검사는 실제 모델 실행의 준수 여부를 증명하지 않음 |
 | workflow 입력 참조와 결과 artifact는 workspace 내부 파일 또는 디렉터리를 가리킨다 | `.harness/src/workflow/skill-execution.mjs`의 경로·workspace 경계 검사, `tests/skill_execution_schema_compatibility.test.mjs`의 설치 소비자 회귀 | 파일 내용을 실제로 읽는 참조는 regular file만 허용하며, 디렉터리 내용의 완전성은 artifact 작성 스킬과 리뷰어가 판단 |
 | 전달 workspace와 실제 Git worktree가 일치해야 한다 | `.codex/scripts/harness-workspace-preflight.mjs`, `tests/workspace_preflight.test.mjs`, dispatch의 before_dispatch hook | 작업별로 hook/명령을 실제 실행했는지 확인 필요 |
 | 승인된 decision과 review만 인계한다 | `.harness/src/workflow/stage-gates.mjs`, `tests/decision_gate_cli.test.mjs`, `tests/workflow_system_targets.test.mjs` | 선택이 없는 경우 decision metadata는 필요하지 않으며 실제 선택·근거의 의미는 작성자와 reviewer가 판단 |

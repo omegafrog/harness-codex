@@ -54,6 +54,10 @@ async function inspectExecutionAssets(root, diagnostics) {
     return;
   }
   const paths = [
+    '.codex/internal-skills/implement-wrapper/GUIDE.md',
+    '.codex/internal-skills/e2e-test/GUIDE.md',
+    '.codex/internal-skills/e2e-test/references/verification-policy.md',
+    '.codex/internal-skills/e2e-test/references/failure-learning.md',
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/internal-skills/skill-execution/worker-base.md',

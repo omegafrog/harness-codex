@@ -80,7 +80,7 @@ workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/regis
 
 ## 테스트·서비스 실행
 
-Harness 소비자 workflow 테스트 저장소: `/home/jiwoo/workspace/.harness-worktrees/harness/aa279184-e3bc-4a1e-bf58-27b1835724db` (private GitHub: `git@github.com:omegafrog/harness-specme-e2e-20261028.git`). 다른 세션에서도 이 저장소를 사용하며, 경로가 없으면 원격 주소로 찾거나 다시 clone한다. 테스트 전 저장소 상태와 설치된 Harness 버전을 확인한다.
+Harness 소비자 workflow E2E의 정본 테스트 저장소: `/home/jiwoo/workspace/harness-test` (private GitHub: `git@github.com:omegafrog/harness-test.git`). `docs/agents/EXEC.md`의 계산기·인증·커뮤니티 black-box 시나리오와 두 `codex exec` 원문을 사용하고 implement 완료 후 산출물을 검증한다. 중단·실패·질문에 관찰자가 임의로 개입하거나 자동 재실행하지 않는다. 다른 세션에서도 이 저장소를 사용하며, 경로가 없으면 원격 주소로 찾거나 다시 clone한다. 테스트 전 저장소 상태와 설치된 Harness 버전을 확인한다.
 
 일반 단위·회귀 검증은 `docs/agents/EXEC.md`의 명령을 언어별 기본 CLI로 실행한다. `harness-exec.mjs`와 `execution.json` profile은 명시적 사용자 흐름 E2E에만 사용한다. E2E 실행 전 실제 인자·환경·설정·인프라 readiness를 확인하고, 실행 전제가 바뀌면 관련 E2E profile과 EXEC를 갱신한다.
 

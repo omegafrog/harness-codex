@@ -4,6 +4,22 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
+### harness-black-box-calculator-workflow
+- Status: active
+- Applies to: 사용자가 요청하는 Harness workflow E2E 실행
+- Guidance: `docs/agents/EXEC.md`의 정본 시나리오를 그대로 사용한다. 테스트 저장소는 `/home/jiwoo/workspace/harness-test`다. 승인된 소스 commit/push → consumer 갱신 → 명시적으로 요청한 기존 worktree 백업/삭제 → main/clean 확인 뒤 `codex exec`로 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`를 실행한다. 실제 응답의 worktree에서 별도 `codex exec`로 `$orchestrator 계속 진행해`를 실행해 spec-me 진입부터 implement 완료까지 관찰하고 멈춘 뒤 산출물을 검증한다. 중단·실패·질문·승인 대기에 임의로 개입하거나 답변·위임·상태 수정·자동 재실행을 하지 않는다. 다른 작은 기능·fixture·eval replay·단위 테스트를 이 E2E의 대체로 보고하지 않는다.
+- Rationale: 실제 사용자의 두 orchestrator 호출 경로를 반복 가능한 방식으로 검증한다.
+- Source: 2026-11-05 사용자의 저장소·원문 명령·실행 순서·개입 금지 직접 지시
+- Updated: 2026-11-05
+
+### final-e2e-explicit-approval
+- Status: active
+- Applies to: implement-wrapper의 최종 E2E
+- Guidance: 기존 implement-wrapper로 tracker의 split plan을 하나씩 구현·검증·리뷰한다. 전체 구현 후 Spec 기반 통합 코드 리뷰를 통과해야 최종 E2E를 준비한다. 에이전트가 시나리오·기대 결과·실제 실행 조건을 작성하고 사용자에게 최종 실행 승인을 받은 뒤 실행한다. 실패·timeout·환경 차단·cleanup 실패 시 증거와 소유 자원 정리만 수행하고 사용자 확인 전 코드·테스트·실행 설정 수정이나 재실행을 하지 않는다. 재시도 budget과 과거 계획 승인은 이 확인을 대신하지 않는다.
+- Rationale: 통합 검증의 범위와 실패 후 조치를 사용자가 결정한다.
+- Source: 2026-11-05 사용자 요청 및 기존 implement-wrapper 재사용 지시
+- Updated: 2026-11-05
+
 ### planning-and-implementation-unit-tests-only
 - Status: superseded
 - Applies to: 계획·구현 단계의 테스트 계획·작성·갱신

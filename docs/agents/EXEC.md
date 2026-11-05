@@ -49,6 +49,7 @@ E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 �
 
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `npm test`. 사용자 경로 live 검증과 별개다.
+- implement-wrapper의 순차 실행·통합 리뷰·최종 E2E 승인/실패 중단 지침 배포 검사는 `node --test tests/implement_wrapper_consumer.test.mjs`로 실행한다. 임시 consumer의 신규 설치·구버전 관리 자산 갱신·native 링크·Doctor 누락 진단·프로젝트 파일 Git 가시성을 확인한다. 서버·인프라나 실제 E2E를 실행하지 않는다.
 - Harness eval 계약의 집중 검사는 `node --test '--test-name-pattern=loads versioned suite|reports measured and unmeasured|pilot suite loads|artifact outcome|pilot reports quality' tests/eval_contract.test.mjs`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.
 - 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 설치기는 Ponytail plugin 준비를 위해 Codex/network를 사용할 수 있으므로 실제 실행 권한과 의존성을 먼저 확인한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
 - 진단: 원본 루트를 cwd로 `node bin/harness-doctor.mjs --project <consumer 경로> --json`. `passed`, diagnostics와 exit code를 함께 확인한다.
@@ -228,19 +229,29 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
 
 이 테스트에서는 `.codex/hooks.json`의 Harness hook이 신뢰되지 않으면 `codex exec`의 JSON `thread.started`에 ID가 있어도 orchestrator 대화에 startup hook의 `codex_session_id`가 전달되지 않을 수 있다. 2026-11-02 Codex CLI 0.166.0에서 일반 실행은 hook 관측값이 없었고, 같은 진단에 `--dangerously-bypass-hook-trust`를 추가하면 hook 관측의 ID가 `thread.started.thread_id`와 일치했다. 테스트 전에 hook 명령과 내용을 검토하고 Codex의 `/hooks`에서 신뢰를 승인한다. 명시적으로 검토한 자동화에서 신뢰 설정을 사용할 수 없다면 상위 `codex exec`에만 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 이 옵션은 활성 hook 전체의 신뢰 확인을 우회하므로 검토하지 않은 hook이 있으면 사용하지 않는다. 로그의 `thread.started`만으로 hook이 실행됐다고 판단하거나 ID를 임의 주입하지 않는다.
 
-Luna medium을 지정한 계산기 테스트는 다음 순서로 실행한다. 첫 명령의 최종 응답에서 생성된 worktree 위치를 확인해 두 번째 명령의 `<생성된-worktree-절대경로>`에 넣는다. `$orchestrator`가 shell 변수로 확장되지 않도록 프롬프트는 작은따옴표로 감싼다.
+## Harness workflow E2E 정본 시나리오
+
+2026-11-05 사용자 지시: Harness를 테스트하라고 요청받으면 아래 black-box E2E를 기본 실행한다. 단위 테스트·설치 fixture·eval replay로 대체하지 않는다. 테스트 대상·원문 프롬프트·시작/종료 단계를 임의로 줄이거나 다른 작은 기능으로 바꾸지 않는다.
+
+1. Harness 소스의 승인된 변경을 커밋하고 configured upstream에 push한다. 원격 branch에서 해당 commit이 조회되는지 확인한 뒤 `/home/jiwoo/workspace/harness-test`의 Harness를 갱신하고 Doctor를 확인한다.
+2. 사용자가 기존 worktree 삭제를 요청한 경우 테스트 저장소에 등록된 linked worktree 전부를 조사한다. 각 경로의 HEAD·branch·Git status·전체 tracked/untracked/ignored 내용과 `.io`를 source session에 백업하고 hash를 검증한 뒤 제거한다. primary checkout과 다른 저장소는 삭제하지 않는다. 새 테스트가 만든 worktree는 종료 뒤 산출물 검증을 위해 보존한다.
+3. `/home/jiwoo/workspace/harness-test`가 `main`이고 `git status --short`가 빈 상태인지 확인한다. 시작 HEAD, 설치 버전/lock hash, 실행 설정과 hook 내용을 기록한다. 설정이 다른 provider여도 아래 명시적인 Codex workflow binding으로 전체 테스트를 고정하고 consumer 설정을 임의로 바꾸지 않는다.
+4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 실제 최종 응답으로 반환된 생성 worktree 경로와 canonical `worktree.json`, Git 등록을 대조한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
+5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. `spec-me`로 진행하는지 확인하고 정상 workflow의 계획·구현 경로를 관찰한다. implement 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
+6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
+7. 첫 실행의 workflow 생성과 응답 위치, 두 번째 실행의 spec-me 진입, Product/Architecture Specs·독립 리뷰, tracker의 전체 split plan·상태, plan별 commit/단위 테스트/코드 리뷰와 통합 리뷰, implement 완료 receipt와 남은 gate를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
 
 ```bash
 HARNESS_WORKFLOW_BINDING='{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}' codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
-  -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어'
+  -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해'
 
 codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
-  -C '<생성된-worktree-절대경로>' '$orchestrator 계속 진행해'
+  -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해'
 ```
 
-첫 실행의 `HARNESS_WORKFLOW_BINDING`은 canonical `worktree.json`에 저장되므로 재개 명령에는 반복해서 지정할 필요가 없다.
+첫 실행의 `HARNESS_WORKFLOW_BINDING`은 canonical `worktree.json`에 저장되므로 재개 명령에는 반복해서 지정할 필요가 없다. 두 명령의 원문 요청에 임의 요구나 자동 승인 문구를 덧붙이지 않는다. 위 사용자 지정 black-box 검증은 전용 `e2e_test_runner`가 실제 `codex exec`를 직접 실행한다. 일반 앱 E2E profile로 대체하거나, observer가 Harness 내부 stage CLI를 직접 호출해 경로를 조립하지 않는다. 검토한 hook에 대해서만 위의 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 실행 환경의 session TMPDIR/TMP/TEMP와 중첩 Codex helper 쓰기 전제도 함께 적용한다.
 
-로그와 마지막 응답은 각 실행의 `.io` 아래에 보존한다. 사용자가 중단 시 개입하지 말라고 한 테스트에서는 오류·중단 후 실행 상태나 산출물을 수정하거나 재시도하지 않고 실제 결과를 보고한다. 정상적으로 질문이 반환되면 기존에 승인되거나 위임된 선택을 사용한다. `spec-me` 완료 receipt와 Spec·리뷰 산출물을 확인하고 요청한 단계에서 멈춘다.
+로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
 
 ### Orchestrator 작업 실행
 

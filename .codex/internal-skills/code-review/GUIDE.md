@@ -44,7 +44,7 @@ Also check whether settled design changes made an existing glossary definition/n
 
 Read the plan's [execution evidence contract](../to-ticket/references/execution-evidence.md). Check requirement-to-code-to-verification coverage, baseline/current commits, relevant measurement comparability, and that durable model/diagram/verification-map changes reflect actual code rather than only the target Spec. Missing proof is unverified, not passed; unrelated performance checks are not required. Both reviewers receive the scoped plan and evidence summary; Standards owns observable acceptance, Spec owns domain/architecture fidelity.
 
-If there is no spec artifact, the Spec axis skips and reports that no spec is available.
+For implement-wrapper reviews, missing or stale Product/Architecture Specs block completion; do not skip either axis. For standalone reviews without a spec artifact, the Spec axis skips and reports that no spec is available.
 
 ## Inputs
 

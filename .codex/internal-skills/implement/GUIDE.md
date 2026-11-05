@@ -108,4 +108,4 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 
 ## E2E 실패 재발 방지
 
-E2E 전·후에는 [공통 실패 학습 절차](../../../.codex/internal-skills/e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 현재 필수 테스트의 실패·미실행과 실제 미해결 blocker는 완료를 막는다. 과거 실패의 학습 분류·지침 갱신·예방 조치 검증 상태는 별도 pending으로 인계하며 테스트 결과나 완료 판정을 바꾸지 않는다. runner는 증거 수집만 맡고 caller가 승인 범위 안에서 EXEC/profile·제품/검사 수정과 검증된 lesson 반영을 맡는다.
+E2E 전·후에는 [공통 실패 학습 절차](../../../.codex/internal-skills/e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 현재 필수 테스트의 실패·미실행과 실제 미해결 blocker는 완료를 막는다. 과거 실패의 학습 분류·지침 갱신·예방 조치 검증 상태는 별도 pending으로 인계하며 테스트 결과나 완료 판정을 바꾸지 않는다. runner는 증거 수집과 소유 자원 정리만 맡는다. 최종 E2E 실패 후 caller는 자동 수정·재실행하지 않고 `USER_DECISION_REQUIRED`로 실패 근거와 제안 조치를 사용자에게 확인받는다. 실제 승인 뒤에만 허용된 EXEC/profile·제품/검사 수정과 재검증·lesson 반영을 수행한다.

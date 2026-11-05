@@ -9,13 +9,15 @@
 
 먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. implement-wrapper가 split plan set의 최종 검증으로 호출하면 모든 split plan 구현·개별 검증·통합이 끝난 뒤 feature-level E2E를 한 번 실행한다. 개별 plan 구현 중에는 실행하지 않는다. 승인된 시나리오와 oracle을 사용하며, plan/test contract에 정의된 시나리오와 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다. 그 밖의 독립 작업에서는 명시된 E2E 요청 또는 저비용 검사로 판정할 수 없는 승인된 critical cross-boundary 위험에 대해서만 실행한다.
 
+implement-wrapper의 최종 E2E는 전체 통합 코드 리뷰 pass 뒤 caller가 작성·제시한 시나리오의 명시적 사용자 실행 승인을 요구한다. runner는 승인된 시나리오·대상 commit·실행 조건과 실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버/인프라를 시작하지 않고 `USER_DECISION_REQUIRED`를 반환한다. 이전 계획 승인이나 구현 진행 지시는 실행 승인을 대신하지 않는다. 실패·timeout·환경 차단·cleanup 실패 뒤에는 증거 수집과 소유 자원 정리만 수행하고 중단한다. caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고 사용자에게 결과와 제안 조치의 승인을 요청한다.
+
 `context.role="e2e_test_runner"`로 실행 중이면 아래 실행 절차를 직접 수행하고 다른 runner를 호출하지 않는다. 호출자는 실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 이 절차를 사용한다. 활성 worktree의 절대 `workspace_root`를 확정하고 `<workspace_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 입력·출력 스키마 명령을 사용하고 `context.role="e2e_test_runner"`인 독립 `e2e-test` 실행을 호출한다. `workspace_root`와 `cwd`에 동일한 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달한다. model/reasoning은 호출기가 setup 설정에서 읽는다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
 
 프로젝트의 검증 기능 지도(있으면 `docs/verification/features.md`)에서 관련 시나리오·requirement/rule ID·진입점·성공 결과를 읽는다. 기능 변경으로 지도가 달라지면 검증한 항목만 갱신한다. 지도의 생성·전체 정합성 점검은 `maintain-verification`을 사용하며, 여기서는 요청된 범위의 실제 실행만 맡는다. 성능 목표가 있으면 plan의 workload·baseline·지표와 measurement 증거 계약을 따른다.
 
 ## 실패 학습과 다음 실행
 
-Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인한다. 실패 후 caller는 runner의 증거를 바탕으로 원인과 재사용 가능성을 분류하고, 원인에 맞는 설정·lesson·활성 workspace testing guidance를 갱신한 뒤 필요한 검증을 수행한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 과거 실패 이력은 다음 성공 뒤에도 보존한다. 현재 테스트 결과와 학습 상태는 별개이며 지침 갱신·학습 분류 누락으로 테스트 통과나 workflow 완료를 차단하지 않는다.
+Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 읽는다. 실행 전 프로젝트의 현행 `docs/verification/e2e-lessons.md`와 예방 검사를 확인한다. 실패 후 caller는 runner의 증거를 바탕으로 원인과 재사용 가능성을 분류한다. implement-wrapper의 최종 E2E에서는 사용자 결정 전 설정 수정이나 재검증을 시작하지 않으며, 승인된 조치 뒤 검증된 lesson·활성 workspace testing guidance를 갱신한다. runner는 시도별 증거와 `tests.e2e_failures` 입력을 반환하며 수정/학습 완료를 추정하지 않는다. 과거 실패 이력은 다음 성공 뒤에도 보존한다. 현재 테스트 결과와 학습 상태는 별개이며 지침 갱신·학습 분류 누락으로 테스트 통과나 workflow 완료를 차단하지 않는다.
 
 ## 실행 절차
 

@@ -1,5 +1,7 @@
 # E2E 실패의 재발 방지
 
+implement-wrapper의 최종 E2E에는 전체 구현·통합 코드 리뷰 pass와 에이전트가 작성한 시나리오에 대한 명시적 사용자 실행 승인이 필요하다. 승인 전 서버/인프라를 시작하지 않는다. 실패·timeout·환경 차단·cleanup 실패 뒤에는 증거 보존과 소유 자원 정리만 수행하고 사용자 결정을 기다린다. caller/runner의 자동 수정·자동 재실행은 금지한다. 아래 재시도 budget과 수정 절차는 사용자 승인 뒤의 상한과 절차이며 실행 권한을 뜻하지 않는다. 시나리오·대상 코드·실행 조건 변경은 재승인이 필요하다.
+
 실행 여부와 retry는 [공통 검증 정책](verification-policy.md)을 따른다. Current attempt와 remaining budget을 handoff의 기존 test evidence 요약으로 넘기며 새 schema를 만들지 않는다.
 
 ## 실행 전
