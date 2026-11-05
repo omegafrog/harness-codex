@@ -41,7 +41,15 @@ async function collectAnswers(session, prefix, questions, answer) {
     catch (error) {
       if (error.code !== 'EEXIST') throw error;
       const existing = await lstat(decisionPath);
-      if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink > 1 || await readFile(decisionPath, 'utf8') !== contents) throw new Error('Recorded decision answers differ or are not a regular unshared file');
+      if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink > 1) throw new Error('Recorded decision answers differ or are not a regular unshared file');
+      const recorded = await readFile(decisionPath, 'utf8');
+      if (recorded !== contents) {
+        let inputAnswers = null;
+        try { inputAnswers = JSON.parse(await readFile(join(session, prefix, 'answers.json'), 'utf8')); }
+        catch (readError) { if (readError.code !== 'ENOENT' && !(readError instanceof SyntaxError)) throw readError; }
+        if (!Array.isArray(inputAnswers) || !isDeepStrictEqual(JSON.parse(recorded), inputAnswers)) throw new Error('Recorded decision answers differ or are not a regular unshared file');
+        await writeFile(decisionPath, contents, { mode: 0o600 });
+      }
     }
   }
   await writeFile(path, JSON.stringify(merged.answers, null, 2) + '\n', { mode: 0o600 });

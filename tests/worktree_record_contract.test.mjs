@@ -562,6 +562,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const prepare = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me'];
     const earlierAnswers = [{ question_id: 'earlier:1', answer: 'prior' }];
     await writeFile(join(resultDir, 'answers.json'), JSON.stringify(earlierAnswers));
+    await writeFile(join(resultDir, 'decision-answers.json'), JSON.stringify(earlierAnswers, null, 2) + '\n');
     const firstAnswer = JSON.stringify([{ question_id: `${next.input.execution_id}:1`, answer: 'basic' }]);
     await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...normalized.result, summary: '변조됨' }));
     assert.throws(() => execFileSync(process.execPath, [...prepare, '--answer', firstAnswer], { cwd: tree.workspace, stdio: 'pipe' }));
