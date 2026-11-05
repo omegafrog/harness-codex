@@ -2,56 +2,49 @@
 
 **Codex 개발을 요구사항 → 설계 → 계획 → 구현 → 검증 → PR 흐름으로 구조화하는 project-local workflow harness.**
 
-주요 기능:
+공개 Harness skill은 `$setup`, `$orchestrator`, `$eli5` 세 개다. 자연어 유지보수·복구, 버그 분석·수정, 지식·평가, 프런트엔드, 리뷰·PR, 검증 요청은 orchestrator가 관련 내부 GUIDE로 라우팅한다.
+
+주요 workflow 단계:
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
-- `$spec-me` — 질문을 통해 Product / Architecture Spec을 확정
-- `$to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
-- `$implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
-- `$implement` + `$code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
-- `$diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
-- `$frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
-- `$evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
-- `$gh-open-pr` — 전체 Plan Set을 하나의 integration PR로 정리
+- `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
+- `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
+- `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
+- `implement` + `code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
+- `diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
+- `frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
+- `evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
+- `gh-open-pr` — 전체 Plan Set을 하나의 integration PR로 정리
 
 ```text
 $setup
   ↓
-$spec-me → Product Spec → Architecture Spec
+spec-me → Product Spec → Architecture Spec
   ↓
-$to-ticket → Plan Set
+to-ticket → Plan Set
   ↓
-$implement-wrapper → $implement × N → $code-review
+implement-wrapper → implement × N → code-review
   ↓
-$gh-open-pr → 사용자 Merge
+gh-open-pr → 사용자 Merge
 ```
 
-버그처럼 원인을 먼저 찾아야 하는 작업은 `$spec-me` 대신 `$diagnosing-bugs`에서 시작한다.
+버그처럼 원인을 먼저 찾아야 하는 작업은 `spec-me` 대신 `diagnosing-bugs`에서 시작한다.
 
 ---
 
 ## 주요 명령
 
-Codex에서는 skill을 `$skill-name`으로 호출한다.
+Codex에서 직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrator`다. 요청을 `$orchestrator`에 자연어로 전달하면 내부 절차를 선택해 실행한다.
 
 | 명령 | 용도 |
 | --- | --- |
 | `$setup` | context, model tier, tracker 초기 설정 |
-| `$orchestrator <요청>` | workflow 최상위에서 skill 실행·리뷰·회귀·사용자 결정을 조율 |
-| `$spec-me <요청>` | 새 기능이나 구조 변경의 Product / Architecture Spec 작성 |
-| `$to-ticket` | 승인된 Spec을 vertical plan과 dependency로 분할 |
-| `$implement-wrapper` | 선택된 Plan의 구현·단위 테스트·결과 반환 |
-| `$implement` | 승인된 Plan 하나를 test-first로 구현 |
-| `$diagnosing-bugs <문제>` | 장애·regression 원인 분석과 수정 |
-| `$frontend-design <요청>` | 프런트엔드 전용 reference-first 설계·구현·시각 검증 |
-| `$code-research <범위>` | 코드베이스 구조와 영향 범위 조사 |
-| `$code-review` | 구현 diff를 Product / Architecture 기준으로 독립 리뷰 |
-| `$evaluate-harness [suite]` | Harness 변경을 eval suite baseline과 비교해 품질·효율 회귀 평가 |
-| `$gh-open-pr` | Plan Set 단위 PR 생성·갱신 |
+| `$orchestrator <요청>` | 요청을 workflow에 연결하고 실행·리뷰·사용자 결정을 조율 |
 | `$eli5 <주제>` | 복잡한 내용을 visual-first 방식으로 간단히 설명 |
 
-하위 skill도 직접 호출할 수 있지만 일반적으로 상위 workflow가 필요한 시점에 조합한다.
+
+내부 절차는 직접 호출하지 않는다. 필요한 단계는 orchestrator가 현재 workflow 상태와 요청 범위에 따라 선택한다.
 
 ---
 
@@ -66,7 +59,7 @@ Codex에서는 skill을 `$skill-name`으로 호출한다.
 - GitHub 또는 local-markdown tracker 설정
 - `.codex/harness.yaml` 관리
 
-### 2. `$spec-me`
+### 2. `spec-me`
 
 바로 코드를 작성하지 않고 요구사항과 설계를 먼저 확정한다.
 
@@ -100,7 +93,7 @@ docs/specs/<ticket-id>/
 └─ diagrams/
 ```
 
-### 3. `$to-ticket`
+### 3. `to-ticket`
 
 완성된 Spec을 구현 가능한 **vertical slice**로 나눈다.
 
@@ -123,7 +116,7 @@ Parent Issue
 └─ Child Plan C
 ```
 
-### 4. `$implement-wrapper`
+### 4. `implement-wrapper`
 
 orchestrator가 Plan의 dependency와 shared resource로 실행 순서를 정하고, 각 worker는 선택된 Plan 하나를 구현한다.
 
@@ -135,7 +128,7 @@ dependency     → 선행 Plan 완료까지 대기
 
 Plan마다 새로운 `implementation_agent`를 사용한다. setup에서 확인한 `.codex/context-budget.json`의 수치로 to-ticket은 계획을 분할하고 orchestrator는 실행 중 인계 여부를 판단한다.
 
-### 5. `$implement`
+### 5. `implement`
 
 한 번에 정확히 하나의 승인된 Plan만 실행한다.
 
@@ -153,7 +146,7 @@ Independent Review
 
 실제 server/E2E 실행이 필요하면 `execution_runner`가 별도로 실행과 log 수집을 담당한다.
 
-### 6. `$code-review`
+### 6. `code-review`
 
 같은 diff를 두 개의 독립 reviewer가 검증한다.
 
@@ -165,13 +158,13 @@ Implementation Diff
 
 둘 중 하나라도 unresolved이면 Plan을 완료 처리하지 않는다.
 
-### 7. `$gh-open-pr`
+### 7. `gh-open-pr`
 
 Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하나**를 사용한다.
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
-### 8. `$frontend-design`
+### 8. `frontend-design`
 
 기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다.
 
@@ -193,7 +186,7 @@ Visual acceptance
 
 기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
 
-### 9. `$evaluate-harness`
+### 9. `evaluate-harness`
 
 Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
 
@@ -219,7 +212,7 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 
 ## Skill Catalog
 
-사용자가 직접 시작하는 스킬은 `.codex/skills/`에 둔다.
+사용자가 직접 시작하는 스킬은 `.codex/skills/`에 두며, 내부 절차는 `.codex/internal-skills/`에 둔다.
 
 ### Workflow / entrypoint
 
@@ -227,13 +220,6 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | --- | --- |
 | [`setup`](.codex/skills/setup/SKILL.md) | repository 초기 설정 |
 | [`orchestrator`](.codex/skills/orchestrator/SKILL.md) | subagent skill 실행과 파일 기반 결과·상태 전이 조율 |
-| [`spec-me`](.codex/skills/spec-me/SKILL.md) | Product + Architecture Spec orchestration |
-| [`to-ticket`](.codex/skills/to-ticket/SKILL.md) | Spec → vertical plan |
-| [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | 승인된 단일 plan 구현과 실행 증거 반환 |
-| [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
-| [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
-| [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |
-| [`frontend-design`](.codex/skills/frontend-design/SKILL.md) | 독립 frontend design/build/visual-review orchestration |
 
 내부 작성·모델링·리뷰·구현 절차는 `.codex/internal-skills/*/GUIDE.md`에 있으며 상위 workflow/agent가 읽는다. 사용자 공개 스킬 목록에는 등록하지 않는다.
 
@@ -241,9 +227,6 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 
 | Skill | 역할 |
 | --- | --- |
-| [`grilling`](.codex/skills/grilling/SKILL.md) | 설계 가정과 trade-off 질문 |
-| [`code-review`](.codex/skills/code-review/SKILL.md) | Product / Architecture 독립 리뷰 |
-| [`e2e-test`](.codex/skills/e2e-test/SKILL.md) | 실제 server/browser 기반 end-to-end 검증 |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
 
 ---
@@ -303,7 +286,7 @@ PR            → 모든 Plan terminal + verification
 
 ## 터미널 CLI
 
-Codex의 `$skill-name` 호출과 repository 관리 CLI는 별개다.
+Codex의 공개 Harness skill 호출과 repository 관리 CLI는 별개다.
 
 ```text
 harness-codex install [options]
@@ -353,7 +336,7 @@ npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 
 설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 반환하는 다음 질문을 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
 
-로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/skills/victorialogs-local-setup/assets/README.md)를 따른다.
+로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/internal-skills/victorialogs-local-setup/assets/README.md)를 따른다.
 
 Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데이터나 원격 데이터가 있으면 새 데이터베이스를 만들지 않고 기존 보드를 보존한다. 같은 저장소의 linked worktree는 Beads 데이터베이스를 자동으로 공유하므로 worktree마다 초기화할 필요가 없다. 기존 원격 데이터가 있으면 `$setup`이 `bd bootstrap`으로 채택하고, 원격 migration은 한 clone만 수행해야 한다.
 
@@ -384,7 +367,7 @@ npx --yes github:omegafrog/harness-codex update --project /path/to/your-project
 
 이 버전으로 새로 설치하거나 한 번 업데이트한 프로젝트에서는 Codex에게 `하네스 업데이트해` 또는 `Harness 업그레이드해`라고 요청해도 된다. 함께 설치되는 `harness-maintenance` skill이 현재 Git worktree의 lock 파일을 확인한 뒤, 위 업데이트와 진단을 수행한다. 아직 이 skill이 없는 기존 설치본은 이 명령을 한 번 직접 실행해 업데이트해야 한다. 아직 설치 기준선이 없는 checkout에서는 설치를 임의로 대신 실행하지 않고 이를 알린다.
 
-설치·ticket 동기화·workflow 재개·worktree 문제로 Harness를 실행할 수 없으면 `$harness-recover`를 사용한다. 먼저 읽기 전용으로 진단하고, 파일·ticket·상태·worktree 변경은 구체적인 복구안을 제시해 사용자 확인을 받은 뒤 수행한다. 새 설치와 업데이트에 함께 배포된다.
+설치·ticket 동기화·workflow 재개·worktree 문제로 Harness를 실행할 수 없으면 자연어로 `$orchestrator`에 복구를 요청한다. 내부 `harness-recover` 절차가 먼저 읽기 전용 진단을 수행한다. 먼저 읽기 전용으로 진단하고, 파일·ticket·상태·worktree 변경은 구체적인 복구안을 제시해 사용자 확인을 받은 뒤 수행한다. 새 설치와 업데이트에 함께 배포된다.
 
 업데이트는 `.codex/harness-lock.json`의 설치 기준선을 사용한다.
 
@@ -425,4 +408,4 @@ git rm --cached .codex/agents/<managed-profile>.toml
 
 설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. 기본 업데이트의 충돌은 보존하고 명시적인 `update --force`로 일괄 교체할 수 있다. upstream에서 사라진 자산의 lock 항목은 정리하되 기존 파일은 보존한다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 
-설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 `$setup`의 준비 복구와 `$sync-contracts`로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.
+설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 setup의 준비 복구와 내부 `sync-contracts` 절차로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.

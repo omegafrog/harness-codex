@@ -17,7 +17,18 @@ export function prepareOutputSchema(schema) {
   return schema;
 }
 
-export function buildCommand({ root, sandbox, binding, schema, resume }) {
+const RESEARCH_ROLES = new Set(['spec_document_writer', 'code_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer', 'knowledge_source_researcher', 'knowledge_principle_synthesizer', 'frontend_designer']);
+
+export function allowedToolsForRole(role, skill = null, requiredSkill = null) {
+  if (['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].includes(role) || skill === 'frontend-design') return null;
+  const tools = ['Read', 'Glob', 'Grep', 'Bash', 'Agent'];
+  if (!['code_researcher', 'knowledge_source_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer'].includes(role)) tools.push('Write', 'Edit');
+  if (RESEARCH_ROLES.has(role) || skill === 'spec-me') tools.push('WebSearch', 'WebFetch');
+  if (requiredSkill) tools.push('Skill');
+  return tools;
+}
+
+export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, requiredSkill }) {
   const agentEventHook = { type: 'command', command: `node "${join(root, '.codex/scripts/harness-agent-event.mjs')}"` };
   const settings = {
     sandbox: {
@@ -34,7 +45,7 @@ export function buildCommand({ root, sandbox, binding, schema, resume }) {
   };
   const permissionMode = sandbox === 'read-only' ? 'plan' : sandbox === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits';
   return ['-p', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(schema), '--model', binding.model, '--effort', binding.reasoning_effort,
-    '--permission-mode', permissionMode, '--settings', JSON.stringify(settings), ...(resume ? ['--resume', resume] : [])];
+    '--permission-mode', permissionMode, ...(!requiredSkill ? ['--disable-slash-commands'] : []), ...(allowedToolsForRole(role, skill, requiredSkill) ? ['--tools', allowedToolsForRole(role, skill, requiredSkill).join(',')] : []), '--settings', JSON.stringify(settings), ...(resume ? ['--resume', resume] : [])];
 }
 
 export async function run({ root, args, prompt, env, output, requiredSkill, onStart, onSession, onEvent, onStdout, onStderr, onCodexError }) {
@@ -56,7 +67,7 @@ export async function run({ root, args, prompt, env, output, requiredSkill, onSt
           skillInvoked = true; onEvent?.({ event: 'skill_invoked', provider: id, skill: requiredSkill }); skillCall = null;
         }
       }
-      onEvent?.({ event: 'provider_event', provider: id, type: event.type });
+      onEvent?.({ event: 'provider_event', provider: id, type: event.type, ...(event.subtype ? { subtype: event.subtype } : {}) });
       if (event.type === 'result' && Array.isArray(event.permission_denials)) for (const denial of event.permission_denials) {
         const requested = denial.tool_input?.file_path;
         if (typeof requested !== 'string') continue;
@@ -68,8 +79,9 @@ export async function run({ root, args, prompt, env, output, requiredSkill, onSt
     } catch { errors.push({ message: 'Claude Code emitted invalid stream-json output' }); }
   };
   const child = spawn('sh', ['-c', 'IFS= read -r ready && [ "$ready" = HARNESS_START ] && exec "$@"', 'harness-launch', 'claude', ...args, prompt], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
-  const stop = () => child.kill('SIGTERM');
-  process.once('SIGTERM', stop); process.once('SIGINT', stop);
+  const stop = (signal) => { onEvent?.({ event: 'runner_signal', signal }); child.kill('SIGTERM'); };
+  const stopTerm = () => stop('SIGTERM'), stopInt = () => stop('SIGINT');
+  process.once('SIGTERM', stopTerm); process.once('SIGINT', stopInt);
   child.stderr.on('data', (data) => { stderr += data; onStderr?.(data); });
   child.stdout.on('data', (data) => {
     onStdout?.(data);
@@ -99,6 +111,6 @@ export async function run({ root, args, prompt, env, output, requiredSkill, onSt
   } catch (error) {
     child.kill('SIGTERM'); await completion.catch(() => {}); throw error;
   } finally {
-    process.removeListener('SIGTERM', stop); process.removeListener('SIGINT', stop);
+    process.removeListener('SIGTERM', stopTerm); process.removeListener('SIGINT', stopInt);
   }
 }

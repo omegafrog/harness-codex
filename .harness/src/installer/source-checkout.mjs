@@ -8,7 +8,7 @@ export async function isHarnessSourceCheckout(sourceRoot, targetRoot) {
     const sourcePackage = JSON.parse(await readFile(join(sourceRoot, "package.json"), "utf8"));
     const targetPackage = JSON.parse(await readFile(join(targetRoot, "package.json"), "utf8"));
     if (!sourcePackage.name || sourcePackage.name !== targetPackage.name) return false;
-    for (const path of ["bin/harness-install.mjs", ".harness/src/installer/update.mjs", ".codex/skills/spec-me/SKILL.md"]) {
+    for (const path of ["bin/harness-install.mjs", ".harness/src/installer/update.mjs", ".codex/internal-skills/spec-me/GUIDE.md"]) {
       if (!(await stat(join(targetRoot, path))).isFile()) return false;
     }
     return true;

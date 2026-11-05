@@ -100,7 +100,7 @@ function scrapeConfig(config) {
   })) };
 }
 function assetSource(name) {
-  const source = [join(root, '.agents/skills/victorialogs-local-setup/assets', name), join(sourceRoot, '.codex/skills/victorialogs-local-setup/assets', name)].find(existsSync);
+  const source = [join(root, '.agents/skills/victorialogs-local-setup/assets', name), join(sourceRoot, '.codex/internal-skills/victorialogs-local-setup/assets', name)].find(existsSync);
   if (!source) throw new Error(`Missing VictoriaLogs asset: ${name}`);
   return source;
 }

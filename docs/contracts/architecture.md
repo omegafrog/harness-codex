@@ -20,7 +20,7 @@ Harness의 단일 Bounded Context. workflow·review·evidence·실행 상태를 
 ### 배포
 현재 package.json의 CLI가 같은 package로 배포된다. 측정된 독립 release·장애 격리·성능 요구가 현재 경계로 충족되지 않을 때 별도 배포를 검토한다. broker나 모듈별 서버를 선제 도입하지 않는다.
 
-내부 workflow 절차는 `.codex/internal-skills/<id>/GUIDE.md`와 supporting files를 원본·소비자에 같은 경로로 배포한다. 공개 진입점은 원본 `.codex/skills/<id>/SKILL.md`, 소비자 `.agents/skills/<id>/SKILL.md`다. 기존 workflow loader가 내부 GUIDE를 먼저 해석하고 skill ID는 유지한다. installer discovery·lock·skills-only 경로가 내부 자산도 관리하며, 내부 대체 파일이 있는 구형 관리 공개 파일은 백업 후 제거한다. Markdown과 agent profile의 공개 스킬 경로는 기존 project-local transform으로 치환한다. [설치 consumer 회귀](../../tests/worktree_record_contract.test.mjs)는 실제 소비자 트리의 비노출·workflow 해석·상호 링크·구형 사본 백업/제거를 검증한다.
+공개 Harness 진입점은 `orchestrator`, `eli5`, `setup` 세 개뿐이며 원본 `.codex/skills/{orchestrator,eli5,setup}/SKILL.md`에서 Codex·Claude 사용자 디렉터리로 배포한다. 나머지 절차와 supporting files는 `.codex/internal-skills/<id>/GUIDE.md`에 두고 소비자에도 같은 경로로 설치한다. Workflow loader와 agent runner는 내부 GUIDE를 먼저 해석하고 skill ID는 유지한다. Installer discovery·lock·skills-only 경로가 두 자산 유형을 관리한다. 업데이트는 lock으로 Harness 소유가 확인된 이전 공개 skill을 백업한 뒤 제거하며, project-owned skill은 보존한다. Doctor는 공개 내부 Harness skill을 진단하고 이름이 겹치는 사용자 skill은 lock 소유 근거가 없으면 그대로 둔다. [설치 consumer 회귀](../../tests/worktree_record_contract.test.mjs)는 Codex·Claude 구형 사본의 백업·제거, 사용자 skill 보존, Doctor, workflow 해석, Git 비노출을 검증한다.
 
 <a id="codex-external"></a>
 ## Codex CLI
@@ -118,7 +118,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 ### 동작
 관리 자산 발견→hash 비교→백업/교체→lock 반영. `src/**/*.mjs`는 installed runtime 경로로 자동 배포되어 workflow completion 정책도 fresh install/update에 전달된다. exclude 변경은 실제 Git root가 설치 대상 root와 일치할 때만 수행해 초기화 전 하위 디렉터리 설치가 부모 저장소에 영향을 주지 않는다. install/update는 원본 checkout에서 설치를 건너뛰기 전 낡은 로컬 .codex exclude를 정리한다. 설치에는 VictoriaLogs helper·스킬·assets를 포함하고 소비 프로젝트 setup에서 선택할 때 설정을 생성한다. backend는 별도 harness-exec foreground profile로 시작한다. 관리 lock으로 식별한 폐기 signoz-local-setup 스킬은 session backup 후 제거한다. 이전 사용자 데이터·서버·전역 plugin/MCP는 임의 제거하지 않는다.
 
-`harness-recover`의 [스킬 지침](../../.codex/skills/harness-recover/SKILL.md)은 기존 doctor·preflight·tracker·worktree CLI를 증상별로 조회하고 사용자 승인 후 해당 소유 절차를 호출한다. 별도 runtime 상태나 복구 실행기를 추가하지 않는다. installer의 재귀 skill discovery와 경로 변환으로 소비 프로젝트에 설치·갱신하고, Doctor의 lock inventory 검사와 기존 ignore 경로를 적용한다. [설치 consumer 회귀 검사](../../tests/worktree_record_contract.test.mjs)는 최초 배포·누락 진단·업데이트 복원·lock·Git 비노출과 준비 문서 보존을 확인한다.
+`harness-recover`의 [스킬 지침](../../.codex/internal-skills/harness-recover/GUIDE.md)은 기존 doctor·preflight·tracker·worktree CLI를 증상별로 조회하고 사용자 승인 후 해당 소유 절차를 호출한다. 별도 runtime 상태나 복구 실행기를 추가하지 않는다. installer의 재귀 skill discovery와 경로 변환으로 소비 프로젝트에 설치·갱신하고, Doctor의 lock inventory 검사와 기존 ignore 경로를 적용한다. [설치 consumer 회귀 검사](../../tests/worktree_record_contract.test.mjs)는 최초 배포·누락 진단·업데이트 복원·lock·Git 비노출과 준비 문서 보존을 확인한다.
 
 <a id="update-method"></a>
 ## updateProject
@@ -153,7 +153,7 @@ setup CLI가 선택한 로컬 VictoriaLogs 구성을 프로젝트 자산과 실�
 수정일: 2026-10-22
 
 ### 설명
-[사용자 진단 v1 계약](../../.codex/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md)의 typed LogRecord를 검사하는 순수 함수다. [소스](../../.harness/src/observability/diagnostic-logs.mjs).
+[사용자 진단 v1 계약](../../.codex/internal-skills/victorialogs-local-setup/assets/diagnostic-log-schema.md)의 typed LogRecord를 검사하는 순수 함수다. [소스](../../.harness/src/observability/diagnostic-logs.mjs).
 
 ### 필요 엔티티
 정규화된 원본 JSON record와 배포 v1 JSON Schema. 새로운 BC/Aggregate 없이 기존 Harness 설치·검증 지원 경계에 둔다.
@@ -260,7 +260,7 @@ dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 pr
 
 구현·계획·Standards 리뷰는 testing-guidance GUIDE의 비즈니스 로직 단위 테스트 기준을 공유한다. 구현 agent의 test-first 권고를 제거하고 승인 Spec 기반 구현과 소유 업무 규칙의 실행 가능한 요구사항 사례를 적용한다. 설치기는 기존 agent profile 및 내부 GUIDE/공개 skill 재귀 배포·경로 변환을 사용하며 Doctor inventory와 관리 자산 ignore 소유권을 유지한다.
 
-구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eLearningComplete](../../.harness/src/eval/contracts.mjs)는 학습 상태만 별도로 보고한다. lifecycle tests gate와 wrapper testsPassed는 현재 필수 테스트의 실제 결과로 판정한다. 학습 분류·대상 파일·lesson·예방 조치가 미완료이면 e2e_learning을 pending으로 남기되 테스트 통과와 workflow 완료를 막지 않는다. 재사용할 교훈이 없으면 not_reusable과 판단 근거만 기록하고 파일 갱신을 요구하지 않는다. 실패 이력은 다음 성공 뒤에도 보존한다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
+구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eLearningComplete](../../.harness/src/eval/contracts.mjs)는 학습 상태만 별도로 보고한다. lifecycle tests gate와 wrapper testsPassed는 현재 필수 테스트의 실제 결과로 판정한다. 학습 분류·대상 파일·lesson·예방 조치가 미완료이면 e2e_learning을 pending으로 남기되 테스트 통과와 workflow 완료를 막지 않는다. 재사용할 교훈이 없으면 not_reusable과 판단 근거만 기록하고 파일 갱신을 요구하지 않는다. 실패 이력은 다음 성공 뒤에도 보존한다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다. E2E 선택도 `.codex/internal-skills/e2e-test/references/verification-policy.md`의 의미적 수동 정책으로 관리하며 자동 runtime schema/판정기가 아니다. 기본은 focused unit/integration/contract 검사다. E2E는 E2E/full-stack/browser end-to-end 명시 요청 또는 저비용 검사로 확인할 수 없는 변경 critical cross-boundary에 한하며, 일반 테스트/검증이나 서비스 실행 요청만으로 E2E를 추정하지 않는다. agent 서비스는 trace/correlation ID 기반 goal/state/tool contract/permission/persistence/side effect를 확인하고 dynamic prose를 exact match하지 않는다. 첫 실행 전 oracle을 고정하고 scenario별 총 2회(최초+진단 재실행 1회)로 제한한다.
 
 <a id="reserve-implementation-repair-method"></a>
 ## reserveImplementationRepair
@@ -482,7 +482,7 @@ workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state
 ### 설명
 기존 tracker 모듈 내부에서 configured tracker와 Beads의 네 lifecycle 상태를 연결하는 조립 책임. 독립 Bounded Context·Aggregate·배포 서버를 만들지 않는다. [소스](../../.harness/src/tracker/lifecycle.mjs).
 
-계획 이슈의 구조 입력 검증과 본문 렌더링은 기존 tracker 모듈이 소유한다. 하위 계획의 선택적 `verification`은 비테스트 검증을 보존하며 기존 입력은 계속 허용한다. Markdown 계획의 GitHub 발행은 [발행 지침](../../.codex/skills/to-ticket/references/github-batch-publish.md)에 따라 원본 계획과 본문을 대조한다. [설치 consumer 검사](../../tests/ticket_publishing_consumer.test.mjs)는 배포된 렌더러와 지침, 이슈 관계·검증·Git 가시성을 확인한다.
+계획 이슈의 구조 입력 검증과 본문 렌더링은 기존 tracker 모듈이 소유한다. 하위 계획의 선택적 `verification`은 비테스트 검증을 보존하며 기존 입력은 계속 허용한다. Markdown 계획의 GitHub 발행은 [발행 지침](../../.codex/internal-skills/to-ticket/references/github-batch-publish.md)에 따라 원본 계획과 본문을 대조한다. [설치 consumer 검사](../../tests/ticket_publishing_consumer.test.mjs)는 배포된 렌더러와 지침, 이슈 관계·검증·Git 가시성을 확인한다.
 
 ### 필요 엔티티
 설정된 tracker·exact external_ref·v1 Beads mirror·phase/classification metadata·실행 결과·local journal. 객체형 DDD entity는 별도 선언하지 않는다.
@@ -674,6 +674,20 @@ workspace preflight, 전체 argv 사전 확정, 설정 prepare/verify, 의존성
 required_env와 모든 `${VAR}`를 prepare 전 검증한다. 재실행 가능한 prepare 다음 verify_config와 모든 dependency.check를 실행하고, prepare 완료 후 검증/readiness 중 설정 변경을 감지하면 blocked receipt를 반환한다. main exit 0만 passed, nonzero/timeout은 failed, 취소는 interrupted다. 필수값이나 준비가 실패하면 command를 spawn하지 않는다. 명령 인자·secret 값은 receipt에 복사하지 않고 단계·exit_code·local log 경로·config hash를 보존한다.
 
 실행 정리의 process group 보장은 POSIX 대상이다. native Windows는 직접 child만 종료하며 descendant 정리가 필요한 흐름은 WSL/POSIX에서 수행한다. 설정의 의도적 prepare 갱신 후에 hash를 잡고, 그 이후 verify/readiness 도중 변경을 차단한다.
+
+### Stage instruction delivery and result events
+수정일: 2026-11-05
+
+### 설명
+기존 workflow control-plane이 stage별 지침 전달과 결과 전달을 조립한다. 새 서버나 별도 상태 저장소는 추가하지 않는다. [실행 context](../../.harness/src/workflow/execution-context.mjs) · [결과 이벤트](../../.harness/src/workflow/stage-result-events.mjs) · [listener](../../.codex/scripts/harness-stage-listen.mjs).
+
+### 동작
+첫 stage 실행은 해당 내부 GUIDE, role profile, 현재 phase instructions를 전달하고 instruction hash를 `instruction_delivery`에 기록한다. 같은 native task session 재개 시 변경되지 않은 입력은 생략하고 바뀐 참조만 재주입한다. compaction이 감지되면 최신 지침을 다시 읽고 참조 자료에서 핵심 규칙을 복원하도록 안내한다. 이는 같은 대화의 판단을 이어가는 최적화이며 내용을 보존한다고 증명하지 않는다. 역할별 지원 capability는 Codex config에서 명시적으로 필터링하고 compact `worker-base.md`를 공통 지침으로 전달한다. Model/sandbox/resume 의미는 보존한다.
+
+Task session과 control session은 분리될 수 있다. runner가 결과를 검증한 뒤 control session의 `runtime/orchestrator/stage-results/<execution>.json`에 schema·worktree·execution identity를 가진 event를 기록한다. listener는 canonical worktree, 활성 execution/stage 및 task/control identity를 검증하고 task session의 상세 반환을 읽는다. 큰 반환은 요약과 result_ref로 축약하고 질문 생략 여부를 명시한다. exact-session host delivery는 요청이 있고 현재 agent session identity가 일치할 때만 queued send를 시도하며 request ID 중복은 idempotent다. 지원되지 않거나 실패한 전송은 event에 pending/error로 남고 listener가 재시도할 수 있다. event 저장/검증은 사용자 전달 성공을 뜻하지 않는다.
+
+### 검증 범위
+`tests/stage_context_runtime.test.mjs`, `tests/stage_result_events.test.mjs`, `tests/skill_execution_schema_compatibility.test.mjs`는 runtime·설치 자산을 검사한다. 한 native startup probe는 15,006→8,076 input tokens(-46.18%), 15→0 catalog entries를 기록했으나 전체 workflow 품질·latency 증거가 아니다.
 
 <a id="spec-review-service"></a>
 ## src/workflow/spec-review.mjs

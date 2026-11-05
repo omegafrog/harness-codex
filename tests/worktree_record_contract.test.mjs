@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile, chmod, symlink, unlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod, symlink, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWorktreeRecord, specArtifactPath } from '../.harness/src/workflow/worktrees.mjs';
@@ -14,6 +14,7 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const record = {
   schema_version: 1,
@@ -26,6 +27,73 @@ const record = {
   state: 'active',
 };
 const parse = (value) => parseWorktreeRecord(JSON.stringify(value));
+
+test('skill exposure migration retires old public copies for Codex and Claude safely', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skill-exposure-migration-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    assert.deepEqual((await readdir(join(root, '.agents/skills'))).sort(), ['eli5', 'orchestrator', 'setup']);
+    assert.deepEqual((await readdir(join(root, '.claude/skills'))).sort(), ['eli5', 'orchestrator', 'setup']);
+    const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
+    for (const path of ['.harness/src/workflow/stage-result-events.mjs', '.codex/scripts/harness-stage-listen.mjs', '.codex/internal-skills/skill-execution/worker-base.md']) {
+      assert.ok(lock.files[path], `installer lock includes ${path}`);
+      assert.ok((await readFile(join(root, path), 'utf8')).length > 0);
+      execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
+    }
+    const lockPath = join(root, '.codex/harness-lock.json');
+    const retired = [
+      ['.agents/skills/e2e-test/SKILL.md', 'old e2e public guide'],
+      ['.claude/skills/e2e-test/SKILL.md', 'old claude e2e public guide'],
+      ['.agents/skills/spec-me/SKILL.md', 'modified local public guide'],
+    ];
+    for (const [path, content] of retired) {
+      await mkdir(join(root, path, '..'), { recursive: true });
+      await writeFile(join(root, path), content);
+      const hash = createHash('sha256').update(content).digest('hex');
+      lock.files[path] = { source_path: `.codex/skills/${path.split('/')[2]}/SKILL.md`, installed_sha256: hash, upstream_sha256: hash };
+    }
+    const localPath = '.agents/skills/spec-me/SKILL.md';
+    lock.files[localPath].installed_sha256 = createHash('sha256').update('old public guide').digest('hex');
+    lock.files[localPath].upstream_sha256 = lock.files[localPath].installed_sha256;
+    await writeFile(lockPath, JSON.stringify(lock));
+    await mkdir(join(root, '.agents/skills/custom'), { recursive: true });
+    await writeFile(join(root, '.agents/skills/custom/SKILL.md'), 'project-owned skill');
+    await mkdir(join(root, '.agents/skills/code-review'), { recursive: true });
+    await writeFile(join(root, '.agents/skills/code-review/SKILL.md'), 'project-owned Codex review skill');
+    await mkdir(join(root, '.claude/skills/code-review'), { recursive: true });
+    await writeFile(join(root, '.claude/skills/code-review/SKILL.md'), 'project-owned Claude review skill');
+
+    const result = await updateProject({ sourceRoot, targetRoot: root });
+    assert.ok(result.retired.includes('.agents/skills/e2e-test/SKILL.md'));
+    assert.ok(result.retired.includes('.claude/skills/e2e-test/SKILL.md'));
+    assert.ok(result.retired.includes(localPath));
+    await assert.rejects(readFile(join(root, '.agents/skills/e2e-test/SKILL.md')), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(root, '.claude/skills/e2e-test/SKILL.md')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(result.backup_directory, '.agents/skills/e2e-test/SKILL.md'), 'utf8'), 'old e2e public guide');
+    assert.equal(await readFile(join(result.backup_directory, '.claude/skills/e2e-test/SKILL.md'), 'utf8'), 'old claude e2e public guide');
+    await assert.rejects(readFile(join(root, localPath)), { code: 'ENOENT' });
+    assert.equal(await readFile(join(result.backup_directory, localPath), 'utf8'), 'modified local public guide');
+    assert.equal(await readFile(join(root, '.agents/skills/custom/SKILL.md'), 'utf8'), 'project-owned skill');
+    assert.equal(await readFile(join(root, '.agents/skills/code-review/SKILL.md'), 'utf8'), 'project-owned Codex review skill');
+    assert.equal(await readFile(join(root, '.claude/skills/code-review/SKILL.md'), 'utf8'), 'project-owned Claude review skill');
+
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && /stage-listen|stage-result-events|worker-base/.test(item.path)), false);
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/spec-me/SKILL.md')), false);
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/custom/SKILL.md')), false);
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/code-review/SKILL.md')), false);
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution guide');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.agents\/skills\/custom\/SKILL\.md/);
+    assert.doesNotMatch(status, /\.codex\/internal-skills\/|\.codex\/scripts\/harness-stage-listen|\.harness\/src\/workflow\/stage-result-events|\.claude\/skills\/orchestrator\/|\.io\/installer-backups/);
+    execFileSync('git', ['check-ignore', '-v', '.codex/internal-skills/e2e-test/GUIDE.md'], { cwd: root });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('spec paths use the canonical plan set and reject traversal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'canonical-spec-path-'));
@@ -79,7 +147,7 @@ test('consumer update retires writer receipt runtime and preserves project files
       await writeFile(join(root, path), content);
       lock.files[path] = { source_path: path, installed_sha256: hash, upstream_sha256: hash };
     }
-    for (const path of ['.harness/src/workflow/stage-input.mjs', '.claude/skills/spec-me/SKILL.md']) {
+    for (const path of ['.harness/src/workflow/stage-input.mjs', '.codex/internal-skills/spec-me/GUIDE.md']) {
       const content = `previous managed ${path}`;
       const hash = createHash('sha256').update(content).digest('hex');
       await writeFile(join(root, path), content);
@@ -101,8 +169,8 @@ test('consumer update retires writer receipt runtime and preserves project files
     assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-run.mjs'], { cwd: root, encoding: 'utf8' }), /harness-agent-run/);
     const runner = await readFile(join(root, '.codex/scripts/harness-agent-run.mjs'), 'utf8');
     const stageInput = await readFile(join(root, '.harness/src/workflow/stage-input.mjs'), 'utf8');
-    const skill = await readFile(join(root, '.agents/skills/spec-me/SKILL.md'), 'utf8');
-    const claudeSkill = await readFile(join(root, '.claude/skills/spec-me/SKILL.md'), 'utf8');
+    const skill = await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8');
+    const claudeSkill = await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8');
     assert.doesNotMatch(runner, /spec-writer-loop|dispatchSpecWriter/);
     assert.match(stageInput, /decision-answers\.json/);
     assert.match(stageInput, /revisionWaiting/);
@@ -137,7 +205,7 @@ test('installed readiness checks required files without validating their content
     assert.equal(await readFile(join(runtimeMigration.backup_directory, legacyRuntimePath), 'utf8'), legacyRuntimeText);
     const { checkRetirement } = await import('../.harness/src/gates/lifecycle.mjs');
     assert.equal((await checkRetirement({ retirement: { workspace_root: root, removed_paths: ['src', '.codex/harness-runtime/src'] } })).status, 'pass');
-    const installedSpecMe = await readFile(join(root, '.agents/skills/spec-me/SKILL.md'), 'utf8');
+    const installedSpecMe = await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8');
     assert.doesNotMatch(installedSpecMe, /Resolve the source tracker ticket before writing the Specs/);
     assert.match(installedSpecMe, /explicitly states a reusable implementation-only or test-running preference/);
     assert.match(installedSpecMe, /inside the active `workspace_root`/);
@@ -145,7 +213,7 @@ test('installed readiness checks required files without validating their content
     const installedGuidance = await readFile(join(root, '.codex/internal-skills/implementation-guidance/GUIDE.md'), 'utf8');
     assert.match(installedGuidance, /<workspace_root>\/docs\/agents\/implementation-guidance\.md/);
     assert.match(installedGuidance, /workflow branch when committed and pushed/);
-    const installedSpecReview = await readFile(join(root, '.agents/skills/spec-me/references/adversarial-spec-review.md'), 'utf8');
+    const installedSpecReview = await readFile(join(root, '.codex/internal-skills/spec-me/references/adversarial-spec-review.md'), 'utf8');
     assert.match(installedSpecReview, /pre-dispatch preparation/);
     assert.match(installedSpecReview, /substantive attempt/);
     assert.match(installedSpecReview, /REVIEW_REQUIRED/);
@@ -758,7 +826,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeExecutionInput(tree.workspace, nested, tree.plan_set_id);
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'nested-child'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', runId, 'exec.stderr.json'), 'utf8')).thread_id, record.worktree_id);
-    assert.match(await readFile(promptPath, 'utf8'), /spec-me\/SKILL.md/);
+    assert.match(await readFile(promptPath, 'utf8'), /spec-me\/GUIDE.md/);
     const reviewer = { ...next.input, execution_id: 'spec-reviewer', context: { ...next.input.context, agent_profile: 'spec_adversarial_reviewer' } };
     await writeExecutionInput(tree.workspace, reviewer, tree.plan_set_id);
     environment.TEST_CODEX_EXECUTION_ID = 'spec-reviewer';

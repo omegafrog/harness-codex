@@ -31,7 +31,7 @@ Figwright의 실제 MCP tool catalog가 source of truth다. 연결된 client에 
 
 ### Upstream Figwright skills
 
-Figwright의 upstream `figma-build` / `figma-codegen` skill이 현재 agent 환경에 설치되어 있으면 상세 tool choreography는 해당 skill을 우선 읽고 따른다.
+Figwright의 upstream `figma-build` / `figma-codegen` guide가 사용자 전역 `~/.agents/internal-skills/<name>/GUIDE.md`에 설치되어 있으면 해당 파일을 직접 읽고 상세 tool choreography를 따른다. public skill 등록을 가정하지 않는다.
 
 - Mode A → `figma-build`
 - Mode B → `figma-codegen`

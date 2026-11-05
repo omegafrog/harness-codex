@@ -4,61 +4,61 @@
     ".agents/skills/attention-span/SKILL.md": {
       "installed_sha256": "1e93693a6718a7f7818f291b90a6f511810c3f4a590eae23654e5c2f20053f04",
       "upstream_sha256": "1e93693a6718a7f7818f291b90a6f511810c3f4a590eae23654e5c2f20053f04",
-      "source_path": ".codex/skills/attention-span/SKILL.md",
+      "source_path": ".codex/internal-skills/attention-span/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/beads/SKILL.md": {
       "installed_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
       "upstream_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
-      "source_path": ".codex/skills/beads/SKILL.md",
+      "source_path": ".codex/internal-skills/beads/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/code-review/SKILL.md": {
       "installed_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
       "upstream_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
-      "source_path": ".codex/skills/code-review/SKILL.md",
+      "source_path": ".codex/internal-skills/code-review/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/code-review/references/default-rules.md": {
       "installed_sha256": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
       "upstream_sha256": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
-      "source_path": ".codex/skills/code-review/references/default-rules.md",
+      "source_path": ".codex/internal-skills/code-review/references/default-rules.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/correct/SKILL.md": {
       "installed_sha256": "ded7fd34383020edbb39cb08b393c461c5ef8ee9f8648be801ff6ed603900898",
       "upstream_sha256": "ded7fd34383020edbb39cb08b393c461c5ef8ee9f8648be801ff6ed603900898",
-      "source_path": ".codex/skills/correct/SKILL.md",
+      "source_path": ".codex/internal-skills/correct/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/diagnosing-bugs/SKILL.md": {
       "installed_sha256": "1c7f0fbd41f367ca0c17098eaf061070d574731d9e1ecdd3b6a3c6800c3ba497",
       "upstream_sha256": "1c7f0fbd41f367ca0c17098eaf061070d574731d9e1ecdd3b6a3c6800c3ba497",
-      "source_path": ".codex/skills/diagnosing-bugs/SKILL.md",
+      "source_path": ".codex/internal-skills/diagnosing-bugs/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/e2e-test/SKILL.md": {
       "installed_sha256": "f12acffdfc602fe3f7631bb9eaed7b5f9256712da781752972fef85f1c15ca69",
       "upstream_sha256": "f12acffdfc602fe3f7631bb9eaed7b5f9256712da781752972fef85f1c15ca69",
-      "source_path": ".codex/skills/e2e-test/SKILL.md",
+      "source_path": ".codex/internal-skills/e2e-test/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/e2e-test/references/failure-learning.md": {
       "installed_sha256": "ae621b655497ab80e1596d6932a33d18d2d0ab2b115d0a64116bb333c5ae8d8b",
       "upstream_sha256": "ae621b655497ab80e1596d6932a33d18d2d0ab2b115d0a64116bb333c5ae8d8b",
-      "source_path": ".codex/skills/e2e-test/references/failure-learning.md",
+      "source_path": ".codex/internal-skills/e2e-test/references/failure-learning.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/e2e-test/references/verification-policy.md": {
       "installed_sha256": "8be7532caacb44baaa79e65841c1831af026176f6ec45526b99c95591f8ba17f",
       "upstream_sha256": "8be7532caacb44baaa79e65841c1831af026176f6ec45526b99c95591f8ba17f",
-      "source_path": ".codex/skills/e2e-test/references/verification-policy.md",
+      "source_path": ".codex/internal-skills/e2e-test/references/verification-policy.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/e2e-test/scripts/artifact-guard.mjs": {
       "installed_sha256": "e1cad3c250d9615131b816d00d55a13bd0a1eb2a8e2f407c841331bbbe2e973c",
       "upstream_sha256": "e1cad3c250d9615131b816d00d55a13bd0a1eb2a8e2f407c841331bbbe2e973c",
-      "source_path": ".codex/skills/e2e-test/scripts/artifact-guard.mjs"
+      "source_path": ".codex/internal-skills/e2e-test/scripts/artifact-guard.mjs"
     },
     ".agents/skills/eli5/SKILL.md": {
       "installed_sha256": "1b700762a10544e460da06ee1c699ad5aea50604c1de119b1bf7e4525430399a",
@@ -69,89 +69,89 @@
     ".agents/skills/evaluate-harness/SKILL.md": {
       "installed_sha256": "a42f8f0d418dadd87f6cf3d2ca4103d67d9d73c18831b888a6e4e133e48c2d03",
       "upstream_sha256": "a42f8f0d418dadd87f6cf3d2ca4103d67d9d73c18831b888a6e4e133e48c2d03",
-      "source_path": ".codex/skills/evaluate-harness/SKILL.md",
+      "source_path": ".codex/internal-skills/evaluate-harness/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/evaluate-harness/references/blinded-comparison.md": {
       "installed_sha256": "a8f65b6a7d06e7f6b241e7eb444ae8322983540331ef721029ba51daf306e868",
       "upstream_sha256": "a8f65b6a7d06e7f6b241e7eb444ae8322983540331ef721029ba51daf306e868",
-      "source_path": ".codex/skills/evaluate-harness/references/blinded-comparison.md",
+      "source_path": ".codex/internal-skills/evaluate-harness/references/blinded-comparison.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/evaluate-harness/references/measurement.md": {
       "installed_sha256": "7eda5a5eb81079a83be76373fb224cef1679e4a00c1ae971b13f12ded5ac2ef5",
       "upstream_sha256": "7eda5a5eb81079a83be76373fb224cef1679e4a00c1ae971b13f12ded5ac2ef5",
-      "source_path": ".codex/skills/evaluate-harness/references/measurement.md",
+      "source_path": ".codex/internal-skills/evaluate-harness/references/measurement.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/frontend-design/SKILL.md": {
       "installed_sha256": "b99cee6e2901f4ff1536a5492a3c4796c1e25f6592470c877f258defce83028e",
       "upstream_sha256": "b99cee6e2901f4ff1536a5492a3c4796c1e25f6592470c877f258defce83028e",
-      "source_path": ".codex/skills/frontend-design/SKILL.md",
+      "source_path": ".codex/internal-skills/frontend-design/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/gh-open-pr/SKILL.md": {
       "installed_sha256": "4104fa47485a547ab4c19fe5303c0957b6d1cd52ee8d97f15c1d6af38383742f",
       "upstream_sha256": "4104fa47485a547ab4c19fe5303c0957b6d1cd52ee8d97f15c1d6af38383742f",
-      "source_path": ".codex/skills/gh-open-pr/SKILL.md",
+      "source_path": ".codex/internal-skills/gh-open-pr/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/gh-open-pr/agents/openai.yaml": {
       "installed_sha256": "49df0a5dde41bddc0002569c01aa3e6ec110f3a11b5eff4ebdf273a5094175f0",
       "upstream_sha256": "49df0a5dde41bddc0002569c01aa3e6ec110f3a11b5eff4ebdf273a5094175f0",
-      "source_path": ".codex/skills/gh-open-pr/agents/openai.yaml"
+      "source_path": ".codex/internal-skills/gh-open-pr/agents/openai.yaml"
     },
     ".agents/skills/grilling/SKILL.md": {
       "installed_sha256": "0ec38415c1194844af8c58707815a8fe36b32755d2e7a81981efd6d5e0caf955",
       "upstream_sha256": "0ec38415c1194844af8c58707815a8fe36b32755d2e7a81981efd6d5e0caf955",
-      "source_path": ".codex/skills/grilling/SKILL.md",
+      "source_path": ".codex/internal-skills/grilling/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/harness-maintenance/SKILL.md": {
       "installed_sha256": "567d063e613aea525aacf8ebc5ddf852c23cd46cb0ec4bdc87537a493488dadf",
       "upstream_sha256": "567d063e613aea525aacf8ebc5ddf852c23cd46cb0ec4bdc87537a493488dadf",
-      "source_path": ".codex/skills/harness-maintenance/SKILL.md",
+      "source_path": ".codex/internal-skills/harness-maintenance/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/harness-maintenance/agents/openai.yaml": {
       "installed_sha256": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
       "upstream_sha256": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
-      "source_path": ".codex/skills/harness-maintenance/agents/openai.yaml"
+      "source_path": ".codex/internal-skills/harness-maintenance/agents/openai.yaml"
     },
     ".agents/skills/harness-recover/SKILL.md": {
       "installed_sha256": "404831334d619d8d0abf90b5c38fba1d1e3d70afd083cf821837c246ba0174ad",
       "upstream_sha256": "404831334d619d8d0abf90b5c38fba1d1e3d70afd083cf821837c246ba0174ad",
-      "source_path": ".codex/skills/harness-recover/SKILL.md",
+      "source_path": ".codex/internal-skills/harness-recover/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/implement-wrapper/SKILL.md": {
       "installed_sha256": "4b379ac39c141411866bdc4fcdff8e3700dcc92c2e8ac113662130c20c5df3a8",
       "upstream_sha256": "4b379ac39c141411866bdc4fcdff8e3700dcc92c2e8ac113662130c20c5df3a8",
-      "source_path": ".codex/skills/implement-wrapper/SKILL.md",
+      "source_path": ".codex/internal-skills/implement-wrapper/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/implement-wrapper/references/tracker/github.md": {
       "installed_sha256": "25e6f57097dce73e5c5999cca078b9b0bdc82db6e30397a7a0f27e7018279743",
       "upstream_sha256": "25e6f57097dce73e5c5999cca078b9b0bdc82db6e30397a7a0f27e7018279743",
-      "source_path": ".codex/skills/implement-wrapper/references/tracker/github.md",
+      "source_path": ".codex/internal-skills/implement-wrapper/references/tracker/github.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/implement-wrapper/references/tracker/local-markdown.md": {
       "installed_sha256": "194e35485e9e1da75128df42b57c418ef30c87b56153669011cd80be930aadbb",
       "upstream_sha256": "194e35485e9e1da75128df42b57c418ef30c87b56153669011cd80be930aadbb",
-      "source_path": ".codex/skills/implement-wrapper/references/tracker/local-markdown.md",
+      "source_path": ".codex/internal-skills/implement-wrapper/references/tracker/local-markdown.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/knowledge-harvest/SKILL.md": {
       "installed_sha256": "1c40542f6d252ad75e37fbc47cad40354053b8466be7940d7624d7032d74d311",
       "upstream_sha256": "1c40542f6d252ad75e37fbc47cad40354053b8466be7940d7624d7032d74d311",
-      "source_path": ".codex/skills/knowledge-harvest/SKILL.md",
+      "source_path": ".codex/internal-skills/knowledge-harvest/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/maintain-verification/SKILL.md": {
       "installed_sha256": "511b1892808ecb0e519e65ea9241a3d96889da5ee5874b255a6ea4ae43c48f89",
       "upstream_sha256": "511b1892808ecb0e519e65ea9241a3d96889da5ee5874b255a6ea4ae43c48f89",
-      "source_path": ".codex/skills/maintain-verification/SKILL.md",
+      "source_path": ".codex/internal-skills/maintain-verification/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/orchestrator/SKILL.md": {
@@ -209,128 +209,128 @@
     ".agents/skills/spec-me/SKILL.md": {
       "installed_sha256": "282f953dba240376c313b1e09c201896194b71bb6102775ae4b45bed91591e90",
       "upstream_sha256": "282f953dba240376c313b1e09c201896194b71bb6102775ae4b45bed91591e90",
-      "source_path": ".codex/skills/spec-me/SKILL.md",
+      "source_path": ".codex/internal-skills/spec-me/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/spec-me/references/adversarial-spec-review.md": {
       "installed_sha256": "43eaaaf7241e716bf6f91e54392362e4e823027aa3b6ecbb03d73e67479f9588",
       "upstream_sha256": "43eaaaf7241e716bf6f91e54392362e4e823027aa3b6ecbb03d73e67479f9588",
-      "source_path": ".codex/skills/spec-me/references/adversarial-spec-review.md",
+      "source_path": ".codex/internal-skills/spec-me/references/adversarial-spec-review.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/spec-me/references/architecture-decision.md": {
       "installed_sha256": "9124115e30263a302fee7aca1f6f47436bd239d07717628aeb48df9b13c6539b",
       "upstream_sha256": "9124115e30263a302fee7aca1f6f47436bd239d07717628aeb48df9b13c6539b",
-      "source_path": ".codex/skills/spec-me/references/architecture-decision.md",
+      "source_path": ".codex/internal-skills/spec-me/references/architecture-decision.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/spec-me/references/decision-knowledge.md": {
       "installed_sha256": "282e7cb99a65f169a4993a755bde31248aef6cdfbb450747ef9517addd1d70f6",
       "upstream_sha256": "282e7cb99a65f169a4993a755bde31248aef6cdfbb450747ef9517addd1d70f6",
-      "source_path": ".codex/skills/spec-me/references/decision-knowledge.md",
+      "source_path": ".codex/internal-skills/spec-me/references/decision-knowledge.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/SKILL.md": {
       "installed_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
       "upstream_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
-      "source_path": ".codex/skills/to-ticket/SKILL.md",
+      "source_path": ".codex/internal-skills/to-ticket/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/beads.md": {
       "installed_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
       "upstream_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
-      "source_path": ".codex/skills/to-ticket/references/beads.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/beads.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/execution-evidence.md": {
       "installed_sha256": "3e0869ff9c340532ae7b16324a01b857dc4a24beddd87714ff2058d786e5b2c4",
       "upstream_sha256": "3e0869ff9c340532ae7b16324a01b857dc4a24beddd87714ff2058d786e5b2c4",
-      "source_path": ".codex/skills/to-ticket/references/execution-evidence.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/execution-evidence.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/finalize.md": {
       "installed_sha256": "6074bdffe03c4652bb369d3a2fe982970fafdace7cd200ec44ea31bb47f57c2c",
       "upstream_sha256": "6074bdffe03c4652bb369d3a2fe982970fafdace7cd200ec44ea31bb47f57c2c",
-      "source_path": ".codex/skills/to-ticket/references/finalize.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/finalize.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/github-batch-publish.md": {
       "installed_sha256": "4660765013e4fccf67ccad031035e5b035a4d7ea6c6266bb7da3fbef7bde3e31",
       "upstream_sha256": "4660765013e4fccf67ccad031035e5b035a4d7ea6c6266bb7da3fbef7bde3e31",
-      "source_path": ".codex/skills/to-ticket/references/github-batch-publish.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/github-batch-publish.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/github-issue-template.md": {
       "installed_sha256": "ee906ce0becd4f42f12da4e53ce0b1d36c853a9af9d4369bb751b3a74510489b",
       "upstream_sha256": "ee906ce0becd4f42f12da4e53ce0b1d36c853a9af9d4369bb751b3a74510489b",
-      "source_path": ".codex/skills/to-ticket/references/github-issue-template.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/github-issue-template.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/revision.md": {
       "installed_sha256": "f83cca1e43b9bd969cbf40cc2aa9d43dcf68e7941a7ae0b47f0369afcc93d4ae",
       "upstream_sha256": "f83cca1e43b9bd969cbf40cc2aa9d43dcf68e7941a7ae0b47f0369afcc93d4ae",
-      "source_path": ".codex/skills/to-ticket/references/revision.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/revision.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/split.md": {
       "installed_sha256": "b949628616b48a454b6db90d71a143343d4db465d79caf5bb0eb9d0c27989190",
       "upstream_sha256": "b949628616b48a454b6db90d71a143343d4db465d79caf5bb0eb9d0c27989190",
-      "source_path": ".codex/skills/to-ticket/references/split.md",
+      "source_path": ".codex/internal-skills/to-ticket/references/split.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/victorialogs-local-setup/SKILL.md": {
       "installed_sha256": "43ce8cbff430ee06f56cac7225eca8e82364d4b99f8f3194db6c01adacfb92d8",
       "upstream_sha256": "43ce8cbff430ee06f56cac7225eca8e82364d4b99f8f3194db6c01adacfb92d8",
-      "source_path": ".codex/skills/victorialogs-local-setup/SKILL.md",
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/victorialogs-local-setup/assets/README.md": {
       "installed_sha256": "eeb9da139c3f16e390432bbc27f949f0e93974293ac15af41d1e3dc8aa5b97fe",
       "upstream_sha256": "eeb9da139c3f16e390432bbc27f949f0e93974293ac15af41d1e3dc8aa5b97fe",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/README.md",
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/README.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/victorialogs-local-setup/assets/compose.yaml": {
       "installed_sha256": "f6c802ed86ad29dbdbceee677563f1fcc86cdf7c878386d84e6c3151c1874c4d",
       "upstream_sha256": "f6c802ed86ad29dbdbceee677563f1fcc86cdf7c878386d84e6c3151c1874c4d",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/compose.yaml"
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/compose.yaml"
     },
     ".agents/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md": {
       "installed_sha256": "2bd220baa639ad6c0024f1bcc8c7a71a6837b505f14dc1f5fc5e1a5608703021",
       "upstream_sha256": "2bd220baa639ad6c0024f1bcc8c7a71a6837b505f14dc1f5fc5e1a5608703021",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log-schema.md",
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/diagnostic-log-schema.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/victorialogs-local-setup/assets/diagnostic-log.example.json": {
       "installed_sha256": "aa72110bcafadd0e9e4b22de37ba57124af835784fc8944b7d46d4c8718866f7",
       "upstream_sha256": "aa72110bcafadd0e9e4b22de37ba57124af835784fc8944b7d46d4c8718866f7",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.example.json"
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/diagnostic-log.example.json"
     },
     ".agents/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json": {
       "installed_sha256": "161cf1aa9372c0c2ef8a33284554aaf8f32da274b24fe300f22b02cee4a20281",
       "upstream_sha256": "161cf1aa9372c0c2ef8a33284554aaf8f32da274b24fe300f22b02cee4a20281",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/diagnostic-log.schema.json"
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/diagnostic-log.schema.json"
     },
     ".agents/skills/victorialogs-local-setup/assets/implementation-guidance.md": {
       "installed_sha256": "1b72fcc76c96094add19023233ba372f094cc0d962aac2618c1b3b61a5cd0e88",
       "upstream_sha256": "1b72fcc76c96094add19023233ba372f094cc0d962aac2618c1b3b61a5cd0e88",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/implementation-guidance.md",
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/implementation-guidance.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/victorialogs-local-setup/assets/otel-collector.yaml": {
       "installed_sha256": "32e14f4bd8019fe482438e5abfc0f9a9d696c320e85a22588abc98687833aec2",
       "upstream_sha256": "32e14f4bd8019fe482438e5abfc0f9a9d696c320e85a22588abc98687833aec2",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/otel-collector.yaml"
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/otel-collector.yaml"
     },
     ".agents/skills/victorialogs-local-setup/assets/spring-local.properties": {
       "installed_sha256": "13c30ba4a6c18b69d70322694403480177809c2f60d530d0b0035037ade5bef4",
       "upstream_sha256": "13c30ba4a6c18b69d70322694403480177809c2f60d530d0b0035037ade5bef4",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/spring-local.properties"
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/spring-local.properties"
     },
     ".agents/skills/victorialogs-local-setup/assets/testing-guidance.md": {
       "installed_sha256": "cce5cb1ee0b62a86d8d904369ebff4f54355db6d05983b0ccfc24467c5918382",
       "upstream_sha256": "cce5cb1ee0b62a86d8d904369ebff4f54355db6d05983b0ccfc24467c5918382",
-      "source_path": ".codex/skills/victorialogs-local-setup/assets/testing-guidance.md",
+      "source_path": ".codex/internal-skills/victorialogs-local-setup/assets/testing-guidance.md",
       "source_transform": "project-local-paths-v1"
     },
     ".codex/agents/code_researcher.toml": {

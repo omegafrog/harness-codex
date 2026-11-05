@@ -19,6 +19,26 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const execFileAsync = promisify(execFile);
+const PUBLIC_HARNESS_SKILLS = new Set(['orchestrator', 'eli5', 'setup']);
+
+async function inspectPublicSkills(root, diagnostics) {
+  const lock = await readHarnessLock(join(root, DEFAULT_LOCK_PATH)).catch(() => null);
+  for (const directory of ['.agents/skills', '.claude/skills']) {
+    const path = join(root, directory);
+    const entries = await readdir(path, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
+    for (const entry of entries) {
+      if (!entry.isDirectory() || PUBLIC_HARNESS_SKILLS.has(entry.name)) continue;
+      const guide = join(path, entry.name, 'SKILL.md');
+      const relative = `${directory}/${entry.name}/SKILL.md`;
+      const sourcePath = lock?.files?.[relative]?.source_path;
+      if ([`.codex/internal-skills/${entry.name}/GUIDE.md`, `.codex/skills/${entry.name}/SKILL.md`].includes(sourcePath)) {
+        if (await lstat(guide).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) {
+        diagnostics.push(diagnostic('harness_skill_exposed', 'warning', `Internal Harness skill is exposed as a public skill: ${entry.name}`, guide));
+        }
+      }
+    }
+  }
+}
 
 async function inspectExecutionAssets(root, diagnostics) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
@@ -36,6 +56,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   const paths = [
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
+    '.codex/internal-skills/skill-execution/worker-base.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
@@ -43,12 +64,12 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-run', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-run', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['output-schema', 'stage-input', 'skill-execution', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['output-schema', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
@@ -395,6 +416,7 @@ async function inspectAuthoring(root, diagnostics) {
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
+  await inspectPublicSkills(repositoryRoot, diagnostics);
   const git = async (args) => {
     try { return { status: 0, ...(await execFileAsync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' })) }; }
     catch (error) { return { status: typeof error.code === 'number' ? error.code : null, stdout: error.stdout || '' }; }

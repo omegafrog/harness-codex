@@ -1,0 +1,203 @@
+
+내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [architecture-spec](../../../.codex/internal-skills/architecture-spec/GUIDE.md) · [product-spec](../../../.codex/internal-skills/product-spec/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
+
+# gh-open-pr
+
+## 실행 모델과 반환
+
+기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
+
+## Purpose
+
+Create or update a GitHub pull request after the caller has prepared the complete change or plan set.
+Use a draft PR for a plan-set handoff. Use a ready PR only when the caller explicitly requests it
+or the implementation workflow has completed its verification gates.
+
+## Preconditions
+
+- Confirm the repository and caller-captured current session base branch from Git, not from memory.
+- Confirm the head branch is pushed and the PR source is the intended branch.
+- Confirm the caller-supplied fixed base ref is an ancestor of the head branch.
+- Pass the caller-captured current session base branch unchanged to `gh pr create --base`. Do not infer or substitute the repository default branch.
+- For a plan PR, confirm every split plan has been created and linked to the parent Issue.
+- For a plan PR, confirm every child Issue has the configured `Planned` status.
+- For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
+- The workflow creates exactly one PR per plan set. Both plan PR and implementation PR cover the parent Issue and every child Issue; never create one PR per split plan or a child-scoped implementation PR.
+- Before creating or updating the implementation PR, confirm every split plan in the plan set has completed its verification gates and has terminal tracker status (`Done` in GitHub mode; `completed` in local-markdown mode). Do not create or update an implementation PR after an individual split plan finishes.
+- When implementation follows an existing plan PR on the same head branch, update that draft with `gh pr edit`; do not open a second PR for the implementation.
+- Before creating the draft plan PR, confirm its body includes the exact Product Spec and Architecture Spec paths plus every available non-empty ticket-scoped SVG diagram link. Record `해당 없음 — <reason>` for absent diagrams.
+- For every implementation PR, resolve the intended Issue number(s) from the selected plan before composing the body. A bare `#123` mention, title reference, or Project item does not establish a linked Issue.
+- Do not create a PR in `local-markdown` tracker mode.
+- If the head branch has no commits beyond the base branch, report that GitHub cannot create the PR yet.
+- In `github` tracker mode, read `tracker.github.project_owner` and `tracker.github.project_number` from `.codex/harness.yaml`; every created or updated PR must be present as an item in that configured GitHub Project.
+- The caller must identify whether this is a `plan PR` or `implementation PR` and whether implementation verification is complete. A plan PR remains draft. A completed implementation PR must be ready for review: create it without `--draft`, or run `gh pr ready <PR-NUMBER>` after updating an existing draft.
+
+## Core Rules
+
+- Use `gh pr create` for a new PR and `gh pr edit` for an existing PR.
+- Never merge or close a PR. The user owns the final merge or close decision.
+- Prefer `--draft` for a plan-set PR.
+- Use `--body-file` for multi-section bodies; do not place long Markdown in shell quoting.
+- When automatic closing is required, state it on one line at the bottom of the PR body.
+- Recommended phrases: `Closes #123`, `Fixes #123`, `Resolves #123`
+- Use `#123` for issues in the same repository.
+- Put one closing trigger on each line when closing multiple issues.
+- Never add a closing trigger to a plan PR: planning does not complete implementation Issues.
+- For the single plan-set implementation PR, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
+- 단일 plan-set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
+- After creating or updating an implementation PR, verify that GitHub registered every intended Issue in `closingIssuesReferences`. If any Issue is missing, repair the body with the correct closing line, run `gh pr edit`, and verify again; stop if the link is still missing.
+- Do not add a closing trigger when the issue must remain open.
+- Do not rely on the title; include the trigger in the body.
+- Never close or change Issue or Project status as a side effect of PR creation.
+- After creating or updating a PR, resolve its URL and add it to the configured Project with `gh project item-add <project-number> --owner <project-owner> --url <pr-url>` when it is not already present. Do not infer another Project or store the association only in the PR body.
+- When an implementation PR is complete and an existing PR is draft, remove draft state with `gh pr ready <PR-NUMBER>`. Do not use unsupported `gh pr edit --draft=false` syntax. Do not remove draft state from a plan PR or an implementation PR whose verification is incomplete.
+- Preserve caller-captured session branch lineage. `gh-open-pr` validates the base; it does not independently replace it.
+
+## Plan PR Body
+
+For diagram links in a draft plan PR, include only available, non-empty ticket-scoped SVG artifacts. Use a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true`; do not use an unresolved local-relative link. A missing or explicitly `해당 없음` Product/Architecture diagram is valid: record or omit that optional link and continue the plan PR without blocking it.
+
+다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`으로 계획 PR 검증 결과에 기록한다. 이는 계획 PR 생성을 차단하지 않는다.
+
+For a plan-set PR, use this order:
+
+1. State that the PR contains the approved implementation plan set.
+2. Link the parent Issue and every child Issue.
+3. Summarize dependencies and execution order.
+4. Link the Product Spec and Architecture Spec, including class and state diagrams.
+5. Record the planning validation performed.
+6. State that implementation and completion gates remain pending.
+7. State the captured session base branch.
+
+```md
+## Plan Set
+- Parent: #123
+- Child plans: #124, #125
+
+## Execution Order
+1. #124 — prerequisite
+2. #125 — depends on #124
+
+## Specifications
+- Product Spec: `docs/specs/<plan-set-id>/product-spec.md`
+- Architecture Spec: `docs/specs/<plan-set-id>/architecture-spec.md`
+- Class diagram: `<link or heading>`
+- State diagram: `<link or heading>`
+
+## Planning Validation
+- All split plans approved and created.
+- Dependencies and tracker statuses verified.
+
+## Remaining Work
+- Implementation, verification, and completion remain pending.
+- Base branch: `<captured session branch>`
+```
+
+Do not add `Closes`, `Fixes`, or `Resolves` to this body.
+
+## Implementation PR Body
+
+1. Confirm the linked Issue number and repository scope.
+2. Write a title that makes the implementation intent clear.
+3. Add the problem, change flow, and test or verification results.
+4. Read and use the repo-local `.codex/skills/eli5/SKILL.md` as the explanation pass. Put its output first under the canonical `## Summary`: 한 문장, 최대 세 단계의 `Before → After` 흐름 (one sentence and at most three steps). `## Summary` is the structured authoring heading; do not introduce a second `## 한눈에 보기` section.
+5. Put changed PlantUML diagram entries under the canonical `## Plan Set` → `Diagrams` list. Each entry must include the requirement or use-case ID·이름·유형 and a head-branch-qualified rendered SVG URL. `<details>` blocks may wrap long diagram context, but do not create a second canonical diagram section.
+6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
+7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
+8. Put one closing line at the bottom for the parent Issue and every child Issue. These Issues close only after the implementation PR merges.
+9. Confirm that each closing phrase targets the intended Issue and that the single PR scope matches the complete plan set.
+
+## Body Example
+
+~~~md
+## Summary
+로그인한 사용자가 댓글을 남길 수 있게 됩니다.
+1. Before: 비로그인 요청 → After: 로그인 요청만 통과
+2. Before: 댓글 생성 불가 → After: `loginService` 검증 후 `TokenProvider`가 발급한 토큰으로 생성
+
+## Plan Set
+- Diagrams:
+  - UC-001 · 댓글 제출 · Activity: ![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/product/UC-001.activity.svg?raw=true)
+
+## 검증
+- `Postman`으로 로그인 후 댓글 생성을 확인했습니다.
+~~~
+
+Closes #123
+Closes #124
+Closes #125
+
+## Commands
+
+Use the configured repository and current branch:
+
+```bash
+gh pr create --draft --base <base-branch> --head <head-branch> \
+  --title "<title>" --body-file <body-file>
+```
+
+For a completed implementation PR, omit `--draft`:
+
+```bash
+gh pr create --base <base-branch> --head <head-branch> \
+  --title "<title>" --body-file <body-file>
+```
+
+If a PR already exists for the head branch:
+
+```bash
+gh pr edit <number> --title "<title>" --body-file <body-file>
+```
+
+For an implementation PR, verify linked Issues after either command. Every expected Issue number must appear in `closingIssuesReferences`; a body mention alone is insufficient:
+
+```bash
+gh pr view <PR-NUMBER> --json closingIssuesReferences \
+  --jq '.closingIssuesReferences[].number'
+```
+
+If an expected number is absent, add its `Closes #<ISSUE-NUMBER>` line to the body, rerun `gh pr edit`, then repeat verification. Do not report PR creation complete while verification fails.
+
+After either command, associate the PR with the configured Project. Resolve the PR URL first; skip `gh project item-add` only when the Project already contains that exact PR URL:
+
+```bash
+PR_URL=$(gh pr view <PR-NUMBER> --json url -q .url)
+PROJECT_ITEM_ID=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
+  --format json --limit 100 --jq ".items[] | select(.content.url == \"$PR_URL\") | .id")
+if [ -z "$PROJECT_ITEM_ID" ]; then
+  gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$PR_URL"
+fi
+```
+
+When the caller reports that implementation verification is complete and the existing PR is draft:
+
+```bash
+gh pr ready <PR-NUMBER>
+```
+
+## User-Owned Finalization
+
+This skill stops after creating or updating the PR and associating it with the configured Project. For a completed implementation PR, draft removal is part of this skill's update operation. The user decides whether to:
+
+- merge the PR
+- close the PR without merging
+
+Do not run `gh pr merge`, `gh pr close`, or an equivalent API operation.
+
+## Post-Merge Reconciliation
+
+After the user merges the plan-set integration PR, verify intended parent/child Issue closure only. Split-plan child Issues may already have configured Project `Workflow Status` `Done` before this merge; do not roll them back or wait for merge to mark them `Done`. If Project automation did not close the intended Issues, report the reconciliation blocker; do not copy status to local Markdown.
+
+## Notes
+
+- Automatic closing occurs when the PR merges into the repository default branch and auto-close is enabled.
+- Use the correct repository qualifier for issues in another repository.
+- Do not leave a closing trigger on a plan PR or an Issue that should remain open.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+## 소유 worktree 종료
+
+구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.

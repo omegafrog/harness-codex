@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { lstat, realpath, stat } from "node:fs/promises";
+import { lstat, realpath, readdir, readFile, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,18 +141,28 @@ function ensureBeadsCli() {
 
 async function verify(projectRoot, options) {
   if (options.installSkills) {
-    await stat(join(projectRoot, ".agents", "skills", "spec-me", "SKILL.md"));
+    for (const name of ["orchestrator", "eli5", "setup"]) {
+      await stat(join(projectRoot, ".agents", "skills", name, "SKILL.md"));
+      await stat(join(projectRoot, ".claude", "skills", name, "SKILL.md"));
+    }
+    const internalSkills = new Set(await readdir(join(projectRoot, ".codex", "internal-skills")));
+    const lock = JSON.parse(await readFile(join(projectRoot, ".codex", "harness-lock.json"), "utf8"));
+    for (const directory of [".agents/skills", ".claude/skills"]) {
+      const exposed = await readdir(join(projectRoot, directory));
+      const unexpected = exposed.find((name) => internalSkills.has(name) && !["orchestrator", "eli5", "setup"].includes(name)
+        && lock.files?.[`${directory}/${name}/SKILL.md`]
+        && [`.codex/internal-skills/${name}/GUIDE.md`, `.codex/skills/${name}/SKILL.md`].includes(lock.files[`${directory}/${name}/SKILL.md`].source_path));
+      if (unexpected) throw new Error(`Internal Harness skill is publicly exposed: ${directory}/${unexpected}`);
+    }
     await stat(join(projectRoot, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "architecture-spec", "GUIDE.md"));
-    await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
-    await stat(join(projectRoot, ".agents", "skills", "frontend-design", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "code-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-figma", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-implement", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-visual-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "harness-maintenance", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "architecture-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".agents", "skills", "beads", "SKILL.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
   }
   if (options.installAgents) {

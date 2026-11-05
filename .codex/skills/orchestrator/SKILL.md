@@ -9,6 +9,8 @@ description: Select workflow skills from the request and current workflow state,
 
 전체 단계와 정본·판단 경계는 [workflow 지도](../../../.codex/internal-skills/skill-execution/references/workflow-map.md)를 읽는다. 현재 목표·요청 종료 단계·산출물·미해결 gate·사용자 선택 및 provider/session 실행 상태를 정본에서 확인하고 다음 단계를 선택한다. 불충분하면 관련 stage result 또는 산출물을 읽는다. 이미 완료된 절차를 반복하지 않으며 실제 승인·독립 리뷰·실행 전제는 생략하지 않는다.
 
+workflow 외의 직접 요청은 [기능 라우팅](references/capability-routing.md)에서 담당 GUIDE를 찾아 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
+
 ## Skill 선택
 
 | 조건 | 선택 |
@@ -46,7 +48,9 @@ description: Select workflow skills from the request and current workflow state,
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | 실행 중복을 만들지 않는다. 실행 조율 절차로 실제 프로세스와 기존 세션을 확인하고 종료 결과가 나올 때까지 기다린다. 출력이 없거나 오래 걸린다는 이유로 현재 턴을 끝내지 않는다. |
+| `running` | 실행 중복이나 model-based log polling을 만들지 않는다. 실행 조율이 제공하는 `harness-stage-listen.mjs`로 해당 execution의 검증된 결과 이벤트를 기다린다. 이벤트가 없으면 완료로 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, skill의 재시도·중단 계약에 따라 라우팅한다. |
+
+Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if both host delivery and the listener report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
 
 질문, 리뷰, 단계 산출물, completion receipt의 세부 형식은 이 문서에 복사하지 않는다. 실행 skill과 공통 실행 조율 계약을 따른다.

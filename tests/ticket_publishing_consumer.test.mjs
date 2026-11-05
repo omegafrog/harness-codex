@@ -15,11 +15,11 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   execFileSync('git', ['init', '-q', root]);
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  const guidePath = join(root, '.agents/skills/to-ticket/references/github-batch-publish.md');
-  const publisherPath = join(root, '.agents/skills/tracker-publish/SKILL.md');
-  const templatePath = join(root, '.agents/skills/to-ticket/references/github-issue-template.md');
-  const implementationPath = join(root, '.agents/skills/implement-wrapper/references/tracker/github.md');
-  const implementationSkillPath = join(root, '.agents/skills/implement-wrapper/SKILL.md');
+  const guidePath = join(root, '.codex/internal-skills/to-ticket/references/github-batch-publish.md');
+  const publisherPath = join(root, '.codex/internal-skills/tracker-publish/GUIDE.md');
+  const templatePath = join(root, '.codex/internal-skills/to-ticket/references/github-issue-template.md');
+  const implementationPath = join(root, '.codex/internal-skills/implement-wrapper/references/tracker/github.md');
+  const implementationSkillPath = join(root, '.codex/internal-skills/implement-wrapper/GUIDE.md');
   const productTemplatePath = join(root, '.codex/internal-skills/product-spec/references/template.md');
   const diagramGuidePath = join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
   const architectureTemplatePath = join(root, '.codex/internal-skills/architecture-spec/references/template.md');
@@ -85,7 +85,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.match(status, /app\.js/);
   assert.equal(await readFile(join(root, 'app.js'), 'utf8'), 'application change');
   assert.doesNotMatch(status, /\.harness\/src\/|\.agents\/skills\//);
-  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.agents/skills/to-ticket/references/github-batch-publish.md'], { cwd: root });
+  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.codex/internal-skills/to-ticket/references/github-batch-publish.md'], { cwd: root });
   const doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
 });

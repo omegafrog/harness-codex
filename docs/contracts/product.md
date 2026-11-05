@@ -1,10 +1,22 @@
 # Harness 전체 Product 계약
 
-공개 스킬은 사용자가 직접 시작하는 workflow와 독립 도구만 포함한다. Spec 작성·모델링·하위 리뷰·개별 구현·다이어그램·guidance·계약 동기화·worktree 관리의 내부 절차는 `.codex/internal-skills/*/GUIDE.md`로 배포하며 상위 workflow/agent가 읽어 호출한다. 사용자 스킬 목록에 노출하지 않고 기존 ID와 승인·검증 규칙은 유지한다. 설치·갱신은 관리되는 구형 공개 사본을 session backup 후 제거한다.
+공개 Harness 스킬은 `$orchestrator`, `$eli5`, `$setup` 세 개다. Spec 작성·모델링·하위 리뷰·개별 구현·다이어그램·guidance·계약 동기화·worktree 관리 등 내부 절차는 `.codex/internal-skills/*/GUIDE.md`로 배포하며 orchestrator/agent가 직접 읽는다. 자연어 유지보수·복구, debugging/correction, knowledge/evaluation, frontend, review/PR, verification 요청을 관련 내부 GUIDE로 라우팅한다. 기존 ID와 승인·검증 규칙은 유지한다. 설치·갱신은 관리되는 구형 공개 사본을 session backup 후 제거한다.
 
 이 문서는 현재 제공하는 업무 동작의 통합 기준이다. ticket별 Spec은 변경 제안과 역사 근거로 보존한다. 코드를 실제로 대조한 범위의 계약이며 live end-to-end 성공을 의미하지 않는다. 용어 기준은 [CONTEXT.md](../../CONTEXT.md), 구조는 [DDD Architecture](architecture.md), 실행 상태는 [검증 지도](../verification/features.md)를 본다.
 
-성능 수치는 미측정이다. 변경 시 영향받는 목표에만 workload·단위·환경·오류율·baseline·측정 증거를 연결한다. 임의의 개선율을 계약에 쓰지 않는다.
+일반 workflow workload 기준 성능은 미측정이다. 한 paired native gpt-6-luna medium startup probe에서 같은 작은 prompt/schema/fixture의 입력 token이 15,006에서 8,076(-46.18%), base instruction이 17,793자에서 471자, catalog가 15에서 0으로 줄었다. 추가 tool JSON은 39,762자에서 33,135자로 줄었다. 이는 시작 입력량 비교이며 전체 workflow 품질·지연 개선의 증거가 아니다. 원시 측정은 로컬 `.io/runtime/skill-exposure/context-probe/measurements.json`에 있다. 변경 시 영향받는 목표에 workload·단위·환경·오류율·baseline·측정 증거를 연결한다.
+
+### Stage instructions and result delivery
+수정일: 2026-11-05
+상태: implemented
+
+### 비즈니스 규칙
+각 stage는 필요한 내부 GUIDE와 role/phase 지침을 읽는다. 같은 native task session 재개에서는 변경되지 않은 지침을 재전달하지 않고 delta만 전달한다. compaction이 관측되면 현재 지침을 다시 확인해 필요한 규칙을 복구한다. 지원되는 capability만 역할별로 제공하며 공통 base 지침은 간결하게 유지한다. task 결과는 execution/worktree identity를 확인한 event로 control session에 전달하고 listener가 상세 반환을 회수한다. 선택적 host 알림은 정확히 일치한 agent session에만 queue하며 반복 요청은 동일 request ID로 중복 처리를 막는다. 저장된 event와 알림 요청은 사용자가 결과를 받았다는 보장이 아니다.
+
+### 수용 조건
+Codex/Claude 설치 소비자는 내부 GUIDE를 직접 읽고 task/control session을 분리할 수 있다. 동일 지침 resume은 delta 전송, 변경 지침과 compaction은 재전달/복구 안내를 기록한다. 결과 event와 listener는 현재 worktree·execution·stage를 확인하고 상세 result_ref를 검증한다. exact-session host queue 및 duplicate request를 검사하고 미지원/실패 전송은 pending 상태로 남긴다.
+
+구현: [실행 context](../../.harness/src/workflow/execution-context.mjs) · [결과 이벤트](../../.harness/src/workflow/stage-result-events.mjs) · 검증: [stage context](../../tests/stage_context_runtime.test.mjs) · [result event](../../tests/stage_result_events.test.mjs)
 
 <a id="install"></a>
 ## 프로젝트 설치와 갱신

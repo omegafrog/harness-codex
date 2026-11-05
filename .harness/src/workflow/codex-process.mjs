@@ -10,7 +10,7 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
     let event;
     try { event = JSON.parse(line); } catch { return; }
     if (event && typeof event === 'object') {
-      if (typeof event.type === 'string') onEvent({ event: 'codex_event', type: event.type, ...(typeof event.item?.type === 'string' ? { item_type: event.item.type } : {}), ...(event.type === 'thread.started' && /^[0-9a-f-]{36}$/i.test(event.thread_id || '') ? { thread_id: event.thread_id } : {}) });
+      if (typeof event.type === 'string') onEvent({ event: 'codex_event', type: event.type, ...(typeof event.item?.type === 'string' ? { item_type: event.item.type } : {}), ...(typeof event.subtype === 'string' ? { subtype: event.subtype } : {}), ...(event.type === 'thread.started' && /^[0-9a-f-]{36}$/i.test(event.thread_id || '') ? { thread_id: event.thread_id } : {}) });
       if (event.type === 'error' || event.type === 'turn.failed') { errors.push(event); onCodexError(event); }
       if (event.type === 'thread.started') {
         threadId = event.thread_id;

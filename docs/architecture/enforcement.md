@@ -10,6 +10,7 @@
 | tracker 구조 입력을 검증 후 렌더한다 | `.harness/src/tracker/contracts.mjs`, `.harness/src/tracker/render.mjs`, `tests/tracker_contract.test.mjs` | acceptance/test-contract 문자열의 의미적 요구사항 완전성은 reviewer 판단 |
 | 원본 workflow가 오래된 설치 스킬을 선택하지 않는다 | `.harness/src/workflow/loader.mjs`, `tests/workflow_loader.test.mjs`의 source/consumer 우선순위 검사 | consumer의 설치 사본 최신화는 installer update가 담당 |
 | 현재 저장소의 진행 중 workflow는 Codex session ID 변경과 무관하게 재개하고, 중복 stage 실행은 막는다 | `.harness/src/workflow/startup-state.mjs`, `.harness/src/workflow/stage-input.mjs`, `.harness/src/workflow/execution-state.mjs`; `tests/orchestrator_hook.test.mjs`, `tests/skill_execution.test.mjs`, installed-consumer case in `tests/installer_update.test.mjs` | 같은 저장소에 여러 활성 workflow가 있으면 orchestrator가 정확한 대상을 판단해야 함; 다른 Git common directory나 검증되지 않은 worktree는 계속 차단 |
+| stage 지침은 first-run/delta-resume/compaction을 기록하고 terminal 결과를 분리된 task/control session 사이에서 검증해 전달한다 | `.harness/src/workflow/execution-context.mjs`, `.harness/src/workflow/stage-result-events.mjs`, `.codex/scripts/harness-stage-listen.mjs`; `tests/stage_context_runtime.test.mjs`, `tests/stage_result_events.test.mjs`, installed consumer in `tests/skill_execution_schema_compatibility.test.mjs` | hash와 event schema는 검사하지만 instruction 내용의 의미적 충분성·사용자가 queued host 알림을 실제 확인했는지는 자동 증명하지 않음; host delivery는 선택적 exact-session 경로 |
 | workflow completion은 소유 linked worktree를 제거하지 않고 완료 산출물과 등록을 보존한다 | `.harness/src/workflow/completion.mjs`의 canonical worktree identity 검사와 `worktree_retained` receipt; `tests/workflow_completion_retention.test.mjs`의 installed consumer gate·worktree 등록·Git 가시성 검사 | `finish`에 의한 명시적 삭제는 사용자의 별도 요청이며 이 완료 gate의 일부가 아님 |
 | 스킬의 supporting reference도 갱신된다 | `.harness/src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
 | checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `.harness/src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
@@ -17,7 +18,7 @@
 | 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
-| E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
+| E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/internal-skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
 | Harness 갱신 후 정리는 설치 산출물과 프로젝트 변경을 구분하고 미커밋 준비 문서를 보존한다 | `AGENTS.md`, `setup/SKILL.md`, `implement/GUIDE.md`의 정리 절차; 설치형 Harness 경로는 `git check-ignore -v`로 확인 | `.gitignore`/`.git/info/exclude`는 tracked modifications를 보호하지 않으므로 변경·미추적 파일 백업과 소유권 분류는 정리 주체가 확인한다 |
 
 ## 통합 계약 완료 gate

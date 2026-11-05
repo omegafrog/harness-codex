@@ -133,7 +133,7 @@ async function discoverSourceDescriptors(sourceRoot) {
     else if (error instanceof InstallerUpdateError) throw error;
     else throw new InstallerUpdateError("Unable to inspect harness source skills", { cause: error });
   }
-  for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink()).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+  for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && ['orchestrator', 'eli5', 'setup'].includes(entry.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
     const sourcePath = `.codex/skills/${skill.name}/SKILL.md`;
     try {
       const information = await lstat(resolve(sourceRoot, sourcePath));
@@ -282,9 +282,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   if (!existingLock && !initialize) throw new InstallerUpdateError(`Harness lock is missing: ${lockPath}`, { path: lockFile });
   const lock = existingLock || { schema_version: 1, files: {} };
   const descriptors = await discoverSourceDescriptors(sourceRoot);
+  const internalSkillNames = new Set((await readdir(resolve(sourceRoot, '.codex/internal-skills'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error)))
+    .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
   const entries = await classifyLockEntries({ root: targetRoot, lock, sourceRoot });
-  const isSkill = (path) => path.startsWith(".agents/skills/") || path.startsWith(".codex/internal-skills/");
+  const isSkill = (path) => path.startsWith(".agents/skills/") || path.startsWith(".claude/skills/") || path.startsWith(".codex/internal-skills/");
   const selected = (path) => scope === "all" || (scope === "agents" ? path.startsWith(".codex/agents/") : isSkill(path));
   const actions = [];
   const skipped = [];
@@ -296,6 +298,13 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       if (!selected(entry.path)) continue;
       const target = await readTarget(targetRoot, entry.path);
       if (target && entry.current_sha256 !== entry.installed_sha256) {
+        const internalizedPublicSkill = /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(entry.path)?.[1];
+        if (internalizedPublicSkill && internalSkillNames.has(internalizedPublicSkill)) {
+          actions.push({ descriptor: sourceDescriptor(entry.source_path || entry.path, entry.path), retired: true, backup: target.content });
+          delete nextFiles[entry.path];
+          removed_lock_entries.push(entry.path);
+          continue;
+        }
         nextFiles[entry.path] = { ...nextFiles[entry.path], retired: true };
         skipped.push({ path: entry.path, status: 'retired_locally_modified' });
         continue;

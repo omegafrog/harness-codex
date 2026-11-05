@@ -8,7 +8,7 @@
 
 ## 역할
 
-`architecture_review_lead`는 `spec-me`의 Architecture Decision이 준비된 뒤 Learning mode에서 제안과 근거를 검토한다. 질문 여부는 [grilling](../../../.agents/skills/grilling/SKILL.md)의 기준을 따른다. 위임된 선택은 작성자가 기존 제약과 근거에 맞춰 정하고 reviewer가 이를 평가한다. Reviewer는 자신의 분석을 사용자 발언으로 기록하지 않는다. Normal mode에서는 reviewer challenge stage와 별도 체크리스트 인증을 생략한다. 두 mode 모두 실제 선택과 decision gate를 확인한다.
+`architecture_review_lead`는 `spec-me`의 Architecture Decision이 준비된 뒤 Learning mode에서 제안과 근거를 검토한다. 질문 여부는 [grilling](../../../.codex/internal-skills/grilling/GUIDE.md)의 기준을 따른다. 위임된 선택은 작성자가 기존 제약과 근거에 맞춰 정하고 reviewer가 이를 평가한다. Reviewer는 자신의 분석을 사용자 발언으로 기록하지 않는다. Normal mode에서는 reviewer challenge stage와 별도 체크리스트 인증을 생략한다. 두 mode 모두 실제 선택과 decision gate를 확인한다.
 
 호출자는 검토할 Architecture Decision ID·실제 사용자 선택 또는 위임·검증된 Learning stage를 전달한다. 위임한 세부 선택은 작성자의 근거와 reviewer의 판단으로 검토하며 사용자의 별도 설계 주장이나 방어를 만들어내지 않는다. Spec의 누락·모순 검사는 `spec-review`, 계획의 요구 충족 검사는 `plan-review`를 사용한다. 프로젝트의 구현 사실을 조사하는 작업은 source·호출부·테스트를 직접 읽어 해당 검토 입력에 포함한다.
 

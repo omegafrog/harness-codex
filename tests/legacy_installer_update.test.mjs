@@ -123,7 +123,7 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     const dir = resolve(root, '.io/runtime/e2e/run');
     await mkdir(dir, { recursive: true });
     const manifest = resolve(dir, 'artifacts.json');
-    const guard = resolve(root, '.agents/skills/e2e-test/scripts/artifact-guard.mjs');
+    const guard = resolve(root, '.codex/internal-skills/e2e-test/scripts/artifact-guard.mjs');
     await writeFile(resolve(root, 'existing.txt'), 'existing');
     execFileSync('node', [guard, 'snapshot', '--root', root, '--manifest', manifest]);
     await writeFile(resolve(dir, 'receipt.json'), 'evidence');
@@ -143,13 +143,13 @@ test('update can replace managed skills without creating backups when explicitly
   const root = await mkdtemp(`${session}/no-backup-`);
   try {
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const path = '.agents/skills/spec-me/SKILL.md';
+    const path = '.codex/internal-skills/spec-me/GUIDE.md';
     await writeFile(resolve(root, path), 'local content to replace');
     await writeFile(resolve(root, '.codex/hooks.json'), '{}');
     await writeFile(resolve(root, '.claude/settings.local.json'), '{}');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     assert.equal(result.backup_directory, null);
-    assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/skills/spec-me/SKILL.md')));
+    assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/internal-skills/spec-me/GUIDE.md')));
     await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
     await assert.rejects(readFile(resolve(root, '.claude/installer-backups'), 'utf8'), { code: 'ENOENT' });
     assert.match(await readFile(resolve(root, '.codex/hooks.json'), 'utf8'), /harness-orchestrator-hook\.mjs/);

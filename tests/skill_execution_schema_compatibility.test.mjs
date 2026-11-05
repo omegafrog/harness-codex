@@ -88,7 +88,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/claude-code.mjs'));
     assert.ok(managedAssets.includes('.claude/agents/spec_reviewer.md'));
     assert.ok(managedAssets.includes('.claude/skills/orchestrator/SKILL.md'));
-    assert.ok(managedAssets.includes('.agents/skills/tracker-publish/SKILL.md'));
+    assert.ok(managedAssets.includes('.codex/internal-skills/tracker-publish/GUIDE.md'));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     for (const path of ['.codex/internal-skills/technology-selection/GUIDE.md', '.codex/internal-skills/skill-execution/references/workflow-map.md']) {
@@ -118,9 +118,22 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.ok(reviewSchema.properties.skill.enum.includes('architecture-review'));
     assert.match(reviewSchema.properties.context_path.description, /session-relative JSON/);
     assert.equal(codex.id, 'codex');
-    assert.deepEqual(codex.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/session/schema.json', output: '/session/return.json', resume: null }), [
-      'exec', '--sandbox', 'workspace-write', '--cd', root, '--model', 'model', '-c', 'model_reasoning_effort="medium"', '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json', '--output-schema', '/session/schema.json', '--output-last-message', '/session/return.json', '-',
-    ]);
+    const codexHome = join(root, '.io/codex-home');
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, 'config.toml'), '[mcp_servers.victorialogs]\ncommand = "victorialogs-mcp"\n\n[mcp_servers.figwright]\ncommand = "figwright"\n');
+    const resumeWriteDir = join(root, '.io/resume-write');
+    const codexArgs = await codex.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [resumeWriteDir], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/session/schema.json', output: '/session/return.json', resume: 'resume-session', role: 'frontend_designer', skill: 'frontend-design', env: { HOME: root, CODEX_HOME: codexHome } });
+    const hasPair = (flag, value) => codexArgs.some((arg, index) => arg === flag && codexArgs[index + 1] === value);
+    for (const [flag, value] of [['--sandbox', 'workspace-write'], ['--add-dir', resumeWriteDir], ['--cd', root], ['--model', 'model'], ['-c', 'model_reasoning_effort="medium"'], ['-c', 'approval_policy="never"'], ['-c', 'features.image_generation=true'], ['-c', 'features.view_image=true'], ['-c', 'web_search="live"'], ['--output-schema', '/session/schema.json'], ['--output-last-message', '/session/return.json'], ['resume', 'resume-session']]) {
+      assert.ok(hasPair(flag, value), `Codex args include ${flag} ${value}`);
+    }
+    const modelInstructions = codexArgs[codexArgs.indexOf('-c', codexArgs.indexOf('web_search="live"')) + 1];
+    assert.match(modelInstructions, /^model_instructions_file=/);
+    assert.ok(modelInstructions.includes('.codex/internal-skills/skill-execution/worker-base.md'));
+    const mcpConfig = codexArgs.filter((arg) => arg.startsWith('mcp_servers='));
+    assert.deepEqual(mcpConfig, ['mcp_servers={"victorialogs"={enabled=false}}']);
+    assert.ok(codexArgs.includes('multi_agent'));
+    assert.equal(codexArgs.at(-1), '-');
     assert.equal(claude.id, 'claude-code');
     assert.match(claude.skillPrompt('spec-me', 'Read input.json.'), /spec-me.*Skill tool.*Read input\.json\./);
     const claudeAgent = await readFile(join(root, '.claude/agents/spec_reviewer.md'), 'utf8');
@@ -217,8 +230,13 @@ test('installed stage accepts changed documents while preserving review snapshot
     execFileSync('git', ['check-ignore', '-v', '.claude/skills/orchestrator/SKILL.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/settings.local.json'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/skill-execution.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/execution-context.mjs'], { cwd: root });
+    assert.equal((await readFile(join(root, '.harness/src/workflow/execution-context.mjs'), 'utf8')).includes('buildStagePrompt'), true);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+    await rm(join(root, '.harness/src/workflow/execution-context.mjs'));
+    const missingExecutionContext = await runDoctor({ root, sourceRoot });
+    assert.ok(missingExecutionContext.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/execution-context.mjs')));
     await rm(join(root, '.harness/src/workflow/startup-state.mjs'));
     const missingStartup = await runDoctor({ root, sourceRoot });
     assert.ok(missingStartup.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/startup-state.mjs')));
@@ -329,7 +347,7 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
       assert.ok(schema.required.includes('questions'));
     }
     for (const skill of ['grilling', 'spec-me']) {
-      const instructions = await readFile(join(root, '.agents/skills', skill, 'SKILL.md'), 'utf8');
+      const instructions = await readFile(join(root, '.codex/internal-skills', skill, 'GUIDE.md'), 'utf8');
       assert.match(instructions, /결과의 `questions` 배열/);
       assert.doesNotMatch(instructions, /결과의 `question`에/);
     }
@@ -394,12 +412,12 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await writeFile(duplicateWorkflow, toTicketManifest.replace('id: to-ticket\n', 'id: to-ticket-copy\n'));
     await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } }), /Workflow stage is ambiguous/);
     await rm(duplicateWorkflow);
-    const toTicketInstructions = await readFile(join(root, '.agents/skills/to-ticket/SKILL.md'), 'utf8');
+    const toTicketInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
     assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
-    const publisherInstructions = await readFile(join(root, '.agents/skills/tracker-publish/SKILL.md'), 'utf8');
+    const publisherInstructions = await readFile(join(root, '.codex/internal-skills/tracker-publish/GUIDE.md'), 'utf8');
     assert.match(publisherInstructions, /dedicated workflow executor stage/);
     assert.match(publisherInstructions, /publication journal/);
-    const publishInstructions = await readFile(join(root, '.agents/skills/to-ticket/references/github-batch-publish.md'), 'utf8');
+    const publishInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/references/github-batch-publish.md'), 'utf8');
     assert.match(publishInstructions, /별도 `tracker-publish` workflow stage/);
     const installedReviewSchema = await readJson(join(root, '.codex/internal-skills/plan-review/review-record.schema.json'));
     assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'findings']);
@@ -485,9 +503,9 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.match(status, /\.harness\/application-note\.md/);
-    assert.doesNotMatch(status, /\.codex\/agents\/tracker_publisher\.toml|\.agents\/skills\/(to-ticket|tracker-publish)\/|\.codex\/scripts\/harness-plan-review\.mjs|\.harness\/src\/workflow\/plan-review\.mjs|\.io\/runtime\/reviews/);
+    assert.doesNotMatch(status, /\.codex\/agents\/tracker_publisher\.toml|\.codex\/internal-skills\/(to-ticket|tracker-publish)\/|\.codex\/scripts\/harness-plan-review\.mjs|\.harness\/src\/workflow\/plan-review\.mjs|\.io\/runtime\/reviews/);
     assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/agents/tracker_publisher.toml'], { cwd: root, encoding: 'utf8' }), /\.codex/);
-    assert.match(execFileSync('git', ['check-ignore', '-v', '.agents/skills/tracker-publish/SKILL.md'], { cwd: root, encoding: 'utf8' }), /\.agents/);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/internal-skills/tracker-publish/GUIDE.md'], { cwd: root, encoding: 'utf8' }), /\.codex\/internal-skills/);
     assert.match(execFileSync('git', ['check-ignore', '-v', '.io/runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }), /\.io/);
   } finally {
     await rm(root, { recursive: true, force: true });

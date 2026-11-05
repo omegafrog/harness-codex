@@ -27,6 +27,8 @@ Turn the user request into product problems, requirements, use cases, and busine
 
 ## Process
 
+This is a phase-local guide. Read it when the Product phase begins; do not preload Architecture, review, or diagram instructions while interviewing.
+
 `spec-me`는 아래 절차로 확정한 요구사항과 template을 사용해 Product Spec을 작성하고 리뷰 지적에 따라 수정한다.
 
 1. MUST read `references/topics.md` before starting the interview.

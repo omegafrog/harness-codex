@@ -26,7 +26,7 @@
 
 ## Harness 원본 저장소의 설치 동작
 
-- 사용자 진입점만 `.codex/skills/*/SKILL.md`(소비자는 `.agents/skills/`)로 공개한다. workflow 전용 하위 절차와 supporting files는 원본·소비자 모두 `.codex/internal-skills/*/GUIDE.md`에 둔다. workflow loader는 내부 GUIDE를 먼저 해석한다. 관리 lock에 있는 구형 공개 사본은 설치·갱신 시 session backup 후 제거하며 사용자 소유 비관리 파일은 임의 제거하지 않는다.
+- 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - Spec의 session-worktree 분기·준비 참조 검사는 `python3 -B -m unittest discover -s tests -p test_spec_diagram_workflow.py -k test_spec_me_prepares_the_session_worktree_before_spawning_agents`로 실행한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. `spec-me`는 진입 시 `worktree-create` skill을 실행한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 per-plan 범위와 index에 기록한다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
@@ -35,9 +35,9 @@
 - 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
 - 원본 checkout 판별은 설치 도구와 대상이 같은 실제 경로이거나, 같은 package 이름과 Harness installer·소스·스킬 파일이 있는지를 확인한다.
-- 외부 프로젝트에는 기존 방식으로 스킬을 `.agents/skills/`에, agent profile을 `.codex/agents/`에 설치한다. workflow·schema·script와 프로젝트 설정도 `.codex/`에 둔다.
-- update는 스킬의 SKILL.md와 supporting reference/assets/scripts도 lock으로 관리한다. 관리 스킬 파일은 로컬 수정·충돌·untracked 경로 충돌 시 기존 내용을 session/runtime/installer-backups/<id>/에 먼저 백업하고 기본 교체한다. 그 밖의 관리 자산은 기존 충돌 보존 규칙을 따른다.
-- workflow의 스킬 탐색은 외부 consumer에서 `.agents/skills/`를 먼저 확인한다. Harness 원본 checkout/worktree는 `.codex/skills/`를 우선해 오래된 설치 사본이 원본 변경을 가리지 않도록 한다. 원본 저장소에는 중복 스킬 사본이 필요하지 않다.
+- 외부 프로젝트에는 공개 세 skill만 `.agents/skills/`와 `.claude/skills/`에 설치하고 내부 GUIDE·agent profile·workflow/runtime은 `.codex/`에 둔다.
+- update는 공개 SKILL.md, 내부 GUIDE 및 supporting reference/assets/scripts를 lock으로 관리한다. 관리 자산 교체 전 기존 파일을 session/runtime/installer-backups/<id>/에 백업하며 사용자 소유 비관리 파일은 보존한다.
+- workflow skill 탐색은 `.codex/internal-skills/<id>/GUIDE.md`를 우선한다. 공개 세 skill은 native 사용자 목록 진입에만 사용한다. 원본 checkout도 internal GUIDE를 직접 읽고 중복 `.agents/skills` mirror를 두지 않는다.
 
 ## E2E 실패 학습 계약
 
@@ -174,7 +174,7 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 
 ## E2E 실패의 재발 방지
 
-E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 따른다. raw 증거는 세션 `runtime/e2e/<run_id>/`에 시도별로 보존하고, 확인된 재발 방지 지식은 소비 프로젝트의 `docs/verification/e2e-lessons.md`와 실제 EXEC/execution.json·회귀 검사에 반영한다. 다음 실행 전에 관련 현행 lesson과 예방 검사를 읽는다. checkpoint의 `tests.e2e_failures`는 실패 ID별로 유지하고, 원본 증거는 교체하지 않으며 예방 조치/재검증이 없는 항목은 테스트 요약이 passed여도 완료하지 않는다.
+E2E caller/runner는 `.codex/internal-skills/e2e-test/references/failure-learning.md`를 따른다. raw 증거는 세션 `runtime/e2e/<run_id>/`에 시도별로 보존하고, 확인된 재발 방지 지식은 소비 프로젝트의 `docs/verification/e2e-lessons.md`와 실제 EXEC/execution.json·회귀 검사에 반영한다. 다음 실행 전에 관련 현행 lesson과 예방 검사를 읽는다. checkpoint의 `tests.e2e_failures`는 실패 ID별로 유지하고, 원본 증거는 교체하지 않으며 예방 조치/재검증이 없는 항목은 테스트 요약이 passed여도 완료하지 않는다.
 
 `e2e-learning-check`는 Node 내장 fixture 테스트로 실패 이력 보존, 테스트 성공/학습 pending의 분리와 현재 테스트 실패의 lifecycle/wrapper 완료 차단을 검증한다. 실제 앱·서버·DB를 시작하지 않으므로 dependencies/prepare가 없으며 임시 fixture와 로그는 세션 내부에 둔다.
 
@@ -244,10 +244,10 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
 
 메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
-장기 stage는 `harness-codex-run.mjs --background true`로 독립 runner를 시작하고, stage 결과·질문·실패가 나올 때까지 orchestrator가 기다린다. `runtime/executions/<execution_id>/process-events.jsonl`은 시작·heartbeat·Codex 이벤트 종류·수신 signal·종료 코드/신호를, `codex.stderr.log`와 `codex.errors.jsonl`은 하위 Codex stderr와 오류 이벤트를 실시간으로 기록한다. `runner.stdout.log`, `runner.stderr.log`, 완료 시 `exec.stderr.json`과 함께 확인한다. 종료 이벤트 없이 PID가 사라지면 원인 미상이며 SIGKILL이나 timeout이라고 추정하지 않는다. 상위 `codex exec`의 stderr는 별도 session 파일로 보존한다. 로그에는 오류 상세가 포함될 수 있으므로 session 내부에만 둔다.
+장기 stage는 `harness-agent-run.mjs --background true`로 독립 runner를 시작한다. `harness-prepare-input.mjs`가 guide/profile/phase instruction hash를 기록하며 same-session 재개는 unchanged instruction을 생략하고 delta만 전달한다. Compaction 감지 시 최신 instruction을 다시 읽어 필요한 규칙을 복구한다. task session은 결과 상세를, control session은 terminal 상태와 stage result event를 보유한다. `harness-stage-listen.mjs`가 두 session을 대조한다. 결과 이벤트 알림은 선택 기능이며 정확한 host agent session 일치 시 queued delivery를 시도한다. `runtime/executions/<execution_id>/process-events.jsonl`은 시작·heartbeat·Codex 이벤트 종류·수신 signal·종료 코드/신호를, `codex.stderr.log`와 `codex.errors.jsonl`은 하위 Codex stderr와 오류 이벤트를 실시간으로 기록한다. `runner.stdout.log`, `runner.stderr.log`, 완료 시 `exec.stderr.json`과 함께 확인한다. 종료 이벤트 없이 PID가 사라지면 원인 미상이며 SIGKILL이나 timeout이라고 추정하지 않는다. 상위 `codex exec`의 stderr는 별도 session 파일로 보존한다. 로그에는 오류 상세가 포함될 수 있으므로 session 내부에만 둔다.
 
 
-orchestrator는 실행 조율 명령으로 시작·결과·실패 상태와 진행률을 기록한다. 입력 준비기가 stage와 필요한 제어 session 경로를 기록한다.
+runner는 task session의 결과 검증·정규화와 control session의 terminal stage 상태·결과 이벤트 기록을 소유한다. Orchestrator는 실행 상태 CLI를 중복 호출하지 않고 `harness-stage-listen.mjs --root <workspace> --worktree-ref <worktree_ref> --execution-id <execution_id>`로 task/control session 결과를 대조해 기다린다. Listener는 execution·stage·worktree identity를 검증하며 실패/누락을 완료로 추정하지 않는다. 선택적 host queue 알림은 정확히 일치한 현재 agent session에서만 요청하며 listener 연결 대기도 지원한다. 입력 준비기는 stage와 제어 session 경로를 기록한다.
 
 
 구성된 workflow의 입력과 실행 ID는 `harness-prepare-input.mjs`가 생성한다. 최초 workflow-compose의 worktree는 `harness-compose-workspace.mjs`가 준비한다.

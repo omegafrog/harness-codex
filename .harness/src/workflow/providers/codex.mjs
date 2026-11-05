@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
-import { realpath, readdir } from 'node:fs/promises';
+import { realpath, readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { runCodexProcess } from '../codex-process.mjs';
 
 export const id = 'codex';
@@ -27,10 +28,31 @@ export async function resumeWriteDirs(sessionId, env) {
   return [...dirs];
 }
 
-export function buildCommand({ root, sandbox, resumeWriteDirs: dirs, binding, schemaPath, output, resume }) {
+export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, binding, schemaPath, output, resume, role, skill, env = process.env }) {
   return ['exec', '--sandbox', sandbox, ...dirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model,
-    '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
+    ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
     '--output-schema', schemaPath, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
+}
+
+function mcpServerName(line) {
+  const section = /^\[mcp_servers\.(.+?)\](?:\s*#.*)?$/.exec(line.trim())?.[1];
+  if (!section) return null;
+  if (section[0] === '"' || section[0] === "'") return section.slice(1, section.indexOf(section[0], 1));
+  return section.split('.')[0];
+}
+
+export async function stageConfigArgs(env = process.env, configPaths = [], role = null, skill = null) {
+  const paths = [resolve(env.CODEX_HOME || join(env.HOME || '', '.codex'), 'config.toml'), ...configPaths];
+  const configs = await Promise.all(paths.map((path) => readFile(path, 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; })));
+  const servers = [...new Set(configs.flatMap((config) => config.split('\n').map(mcpServerName).filter(Boolean)))];
+  const frontend = ['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].includes(role);
+  const research = skill === 'spec-me' || ['spec_document_writer', 'code_researcher', 'architecture_review_lead', 'spec_adversarial_reviewer', 'knowledge_source_researcher', 'knowledge_principle_synthesizer', 'frontend_designer'].includes(role);
+  const visual = frontend || role === 'diagram_creator' || role === 'spec_adversarial_reviewer' || skill === 'spec-me';
+  const imageGeneration = frontend || skill === 'frontend-design';
+  const retained = frontend ? new Set(['figwright', 'iconify', 'awwwards']) : new Set();
+  const disabledServers = servers.filter((server) => !retained.has(server));
+  return ['-c', 'skills.include_instructions=false', '-c', 'features.plugins=false', '-c', 'features.apps=false', '-c', 'features.goals=false', '-c', `features.image_generation=${imageGeneration ? 'true' : 'false'}`, '-c', `features.view_image=${visual ? 'true' : 'false'}`, '-c', `web_search=${JSON.stringify(research ? 'live' : 'disabled')}`, '-c', `model_instructions_file=${JSON.stringify(resolve(fileURLToPath(new URL('../../../..', import.meta.url)), '.codex/internal-skills/skill-execution/worker-base.md'))}`,
+    ...(disabledServers.length ? ['-c', `mcp_servers={${disabledServers.map((server) => `${JSON.stringify(server)}={enabled=false}`).join(',')}}`] : [])];
 }
 
 export async function run({ root, args, prompt, env, onStart, onSession, onEvent, onStderr, onCodexError }) {
