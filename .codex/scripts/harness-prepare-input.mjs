@@ -8,7 +8,7 @@ const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -40,7 +40,8 @@ try {
   const codexSessionId = orchestrator?.provider === 'codex' ? orchestrator.session_id : null;
   if (options['publication-approved'] !== undefined && options['publication-approved'] !== 'true') throw new Error('publication-approved must be true');
   if (options['spec-overwrite-approved'] !== undefined && options['spec-overwrite-approved'] !== 'true') throw new Error('spec-overwrite-approved must be true');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', specOverwriteApproved: options['spec-overwrite-approved'] === 'true' });
+  if (options.restart !== undefined && options.restart !== 'true') throw new Error('restart must be true');
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', specOverwriteApproved: options['spec-overwrite-approved'] === 'true', restart: options.restart === 'true' });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

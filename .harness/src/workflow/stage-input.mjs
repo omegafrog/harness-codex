@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { mergeAnswers } from './questions.mjs';
-import { writeExecutionInput } from './execution-input.mjs';
+import { findExecutionInput, writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
 import { configuredProvider } from './providers/index.mjs';
@@ -13,6 +13,84 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+
+async function archiveToTicket({ root, session, planSetId, previousExecutionId, restartExecutionId }) {
+  const restartRoot = join(session, 'runtime/restarts');
+  await mkdir(restartRoot, { recursive: true });
+  const lock = join(restartRoot, `${planSetId}.lock`);
+  await mkdir(lock).catch((error) => { if (error.code === 'EEXIST') throw new Error('A to-ticket restart is already being prepared'); throw error; });
+  try {
+    const prefix = `${planSetId}-${previousExecutionId}-`;
+    const names = await readdir(restartRoot);
+    const pendingNames = names.filter((name) => name.startsWith(prefix) && name.endsWith('.pending'));
+    for (const name of pendingNames) {
+      const pending = join(restartRoot, name);
+      const pendingInfo = await lstat(pending);
+      if (!pendingInfo.isDirectory() || pendingInfo.isSymbolicLink()) throw new Error(`Invalid interrupted restart archive: ${pending}`);
+      const destinations = { plans: join(root, 'docs/plans', planSetId), 'plan-review.json': join(session, 'runtime/reviews', `plan-${planSetId}.json`), 'to-ticket': join(session, 'runtime/to-ticket') };
+      for (const item of await readdir(pending)) {
+        if (item === 'restart.json') { await rm(join(pending, item), { force: true }); continue; }
+        if (!destinations[item]) throw new Error(`Unknown interrupted restart archive item: ${item}`);
+        const itemPath = join(pending, item), itemInfo = await lstat(itemPath);
+        if ((!itemInfo.isDirectory() && !itemInfo.isFile()) || itemInfo.isSymbolicLink()) throw new Error(`Invalid interrupted restart item: ${itemPath}`);
+        const target = destinations[item];
+        if (await lstat(target).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) throw new Error(`Cannot recover interrupted restart; original path exists: ${target}`);
+        await mkdir(join(target, '..'), { recursive: true });
+        await rename(join(pending, item), target);
+      }
+      await rm(pending, { recursive: true, force: true });
+    }
+    if (names.some((name) => name.startsWith(prefix) && !name.endsWith('.pending'))) throw new Error('This waiting to-ticket execution has already been restarted');
+    const archive = join(restartRoot, `${prefix}${randomUUID()}`);
+    const sources = [
+      { path: join(root, 'docs/plans', planSetId), name: 'plans' },
+      { path: join(session, 'runtime/reviews', `plan-${planSetId}.json`), name: 'plan-review.json' },
+      { path: join(session, 'runtime/to-ticket'), name: 'to-ticket' },
+    ];
+    const moving = [];
+    for (const source of sources) {
+      const info = await lstat(source.path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+      if (info?.isSymbolicLink() || (info && !info.isDirectory() && !info.isFile())) throw new Error(`Cannot archive invalid restart input: ${source.path}`);
+      if (info) moving.push(source);
+    }
+    const pending = `${archive}.pending`;
+    await mkdir(pending);
+    try {
+      for (const item of moving) {
+        await mkdir(join(pending, item.name, '..'), { recursive: true });
+        await rename(item.path, join(pending, item.name));
+      }
+      await writeFile(join(pending, 'restart.json'), `${JSON.stringify({ previous_execution_id: previousExecutionId, restart_execution_id: restartExecutionId }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      await rename(pending, archive);
+    } catch (error) {
+      await rm(join(pending, 'restart.json'), { force: true });
+      for (const item of moving.toReversed()) {
+        const from = join(pending, item.name);
+        if (await lstat(from).catch((readError) => readError.code === 'ENOENT' ? null : Promise.reject(readError))) await rename(from, item.path);
+      }
+      await rm(pending, { recursive: true, force: true });
+      throw error;
+    }
+    return archive;
+  } finally { await rm(lock, { recursive: true, force: true }); }
+}
+
+async function existingRestartInput({ root, session, planSetId, previousExecutionId, worktreeRef }) {
+  const restartRoot = join(session, 'runtime/restarts');
+  const prefix = `${planSetId}-${previousExecutionId}-`;
+  const matches = (await readdir(restartRoot).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))).filter((name) => name.startsWith(prefix) && !name.endsWith('.pending'));
+  if (!matches.length) return null;
+  if (matches.length !== 1) throw new Error('Multiple restart archives match the waiting to-ticket execution');
+  const marker = JSON.parse(await readFile(join(restartRoot, matches[0], 'restart.json'), 'utf8'));
+  if (marker.previous_execution_id !== previousExecutionId || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(marker.restart_execution_id || '')) throw new Error('Restart archive identity is invalid');
+  const found = await findExecutionInput(root, marker.restart_execution_id);
+  const input = await readExecutionInput({ root, execution_id: marker.restart_execution_id });
+  if (input.skill !== 'to-ticket' || input.context?.stage_id !== 'to-ticket' || input.context?.plan_set_id !== planSetId || input.context?.worktree_ref !== worktreeRef) throw new Error('Archived restart input does not match this worktree stage');
+  await validateSkillInput({ root, input });
+  const paths = stageExecutionPaths(root, marker.restart_execution_id);
+  if (paths.session !== session) throw new Error('Restart input session does not match active worktree');
+  return { input, path: found.path, session_directory: session, execution_directory: paths.directory };
+}
 
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || !['spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
@@ -78,7 +156,7 @@ async function executionSession({ root, session, executionId, worktreeRef }) {
   return { provider, session_id };
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false }) {
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
   let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
@@ -88,6 +166,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   if (specOverwriteApproved && stageId !== 'spec-me') throw new Error('Spec overwrite approval is only valid for spec-me');
+  if (restart && (stageId !== 'to-ticket' || answer !== null || feedback !== null)) throw new Error('Restart applies only to to-ticket without an answer or feedback');
   const running = state.stages?.[stageId];
   if (running?.status === 'running' && !running.result_ref) {
     let stopped = false;
@@ -173,6 +252,21 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
   }
+  if (restart) {
+    if (!worktree_ref || state.current_stage !== 'to-ticket' || state.stages?.['to-ticket']?.status !== 'waiting' || !state.stages?.['to-ticket']?.result_ref) throw new Error('Restart requires a waiting to-ticket stage in its active worktree');
+    if (state.stages?.['spec-me']?.status !== 'completed' || state.stages?.['spec-me']?.code !== 'OK') throw new Error('Restart requires a completed spec-me stage');
+    await assertExecutionStopped(state.stages['to-ticket'], { root, session: taskSession });
+    if (state.stages?.['tracker-publish']?.execution_id) throw new Error('Cannot restart after tracker-publish has started');
+    const publication = join(taskSession, 'runtime/to-ticket/publish-state.json');
+    if (await lstat(publication).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) throw new Error('Cannot restart after tracker publication has begun');
+    const historyPath = join(taskSession, `runtime/reviews/plan-${plan_set_id}.json`);
+    try {
+      const history = JSON.parse(await readFile(historyPath, 'utf8'));
+      if (history.attempts?.at(-1)?.status === 'active') throw new Error('Cannot restart while a plan review is active');
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const recovered = await existingRestartInput({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, worktreeRef });
+    if (recovered) return recovered;
+  }
   let review_admission;
   if (stage.skill === 'spec-review') {
     if (!reviewAdmissionRef) throw new Error('Spec review requires an admitted snapshot');
@@ -199,7 +293,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (matches[0].base === 'session' && producerSession !== taskSession) throw new Error('Producer session artifact differs from the current worktree session');
     input_refs.push(matches[0]);
   }
-  const previous = state.stages?.[stageId];
+  const previous = restart ? null : state.stages?.[stageId];
   let conversation = {};
   let interruptedAnswers;
   const crossStageRevision = transition && lastStage !== stageId && REVISION_TARGETS[transition.code] === stageId;
@@ -291,6 +385,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
+  if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });
   const paths = stageExecutionPaths(root, execution_id);
   if (paths.session !== taskSession) throw new Error('Execution session does not match workspace');
   await mkdir(paths.directory, { recursive: true });
