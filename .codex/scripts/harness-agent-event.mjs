@@ -27,19 +27,19 @@ try {
     ...(event.hook_event_name === 'SubagentStop' && typeof event.last_assistant_message === 'string' ? { result: event.last_assistant_message } : {}),
     recorded_at: new Date().toISOString(),
   };
-  if (event.agent_type === 'spec_adversarial_reviewer') {
+  if (['spec_adversarial_reviewer', 'plan_reviewer'].includes(event.agent_type)) {
     const ticketId = process.env.HARNESS_REVIEW_TICKET_ID;
     const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticketId || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Canonical review ticket or execution is unavailable');
-    const scope = `spec-${ticketId}-architecture`;
+    const scope = event.agent_type === 'spec_adversarial_reviewer' ? `spec-${ticketId}-architecture` : `plan-${ticketId}`;
     const attempt = await inspectActiveReviewAttempt({ root: process.cwd(), scope });
-    if (attempt.native_review?.parent_session_id !== event.session_id || attempt.native_review?.execution_id !== executionId) throw new Error('Native Architecture reviewer session or execution does not match the admitted caller');
-    if (event.hook_event_name === 'SubagentStart' ? !attempt.native_review || attempt.native_review.agent_id : attempt.native_review?.agent_id !== event.agent_id) throw new Error('Native Architecture reviewer event does not match the active admission');
+    if (attempt.native_review?.parent_session_id !== event.session_id || attempt.native_review?.execution_id !== executionId) throw new Error('Native reviewer session or execution does not match the admitted caller');
+    if (event.hook_event_name === 'SubagentStart' ? !attempt.native_review || attempt.native_review.agent_id : attempt.native_review?.agent_id !== event.agent_id) throw new Error('Native reviewer event does not match the active admission');
     if (event.hook_event_name === 'SubagentStart') {
       await updateReviewAttempt({ root: process.cwd(), scope, action: 'bind-native', attemptId: attempt.attempt_id, nativeAgentId: event.agent_id, parentSessionId: event.session_id });
     } else {
       const nativeReview = JSON.parse(event.last_assistant_message || 'null');
-      if (!nativeReview || Object.keys(nativeReview).sort().join(',') !== 'findings,verdict' || !['pass', 'revise', 'reject', 'blocked'].includes(nativeReview.verdict) || !Array.isArray(nativeReview.findings)) throw new Error('Native Architecture reviewer must stop with JSON verdict/findings');
+      if (!nativeReview || Object.keys(nativeReview).sort().join(',') !== 'findings,verdict' || !['pass', 'revise', 'reject', 'blocked'].includes(nativeReview.verdict) || !Array.isArray(nativeReview.findings)) throw new Error('Native reviewer must stop with JSON verdict/findings');
       await updateReviewAttempt({ root: process.cwd(), scope, action: 'stop-native', attemptId: attempt.attempt_id, nativeAgentId: event.agent_id, parentSessionId: event.session_id, nativeResult: event.last_assistant_message, nativeReview });
     }
     record.review_attempt_id = attempt.attempt_id;

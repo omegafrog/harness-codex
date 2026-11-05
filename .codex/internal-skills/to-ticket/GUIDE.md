@@ -9,12 +9,12 @@
 
 ## Plan authoring stage
 
-`to-ticket` is one executor stage. Use [split](references/split.md) on the initial invocation, [revision](references/revision.md) when resumed with a recorded `revise` review, and returns control after requesting an independent review. The reviewer is never an executor stage: after the author returns `REVIEW_REQUIRED`, the main orchestrator calls a fresh native `plan_reviewer` subagent, records the result. It resumes the same author session with feedback only for revisions; after pass the runner finalizes the stage from the current review.
+`to-ticket` owns plan authoring and its independent review loop. Use [split](references/split.md) on the initial invocation and [revision](references/revision.md) to address findings. It calls a fresh native `plan_reviewer` subagent itself, records the attempt through `harness-plan-review.mjs`, revises plans when needed, and repeats with a different fresh reviewer. It returns `completed/OK` only after `check --phase planning` confirms the canonical review is current and passing. Plan review is never handed to the main orchestrator as `REVIEW_REQUIRED`; actual user decisions use `USER_DECISION_REQUIRED`.
 
-- No review feedback: write canonical plans from the approved Specs, then return `REVIEW_REQUIRED` with a `review_request` and a session context artifact. Ask the user only when a necessary decision cannot be resolved from the approved Specs.
-- Review feedback with `verdict=revise`: read the exact record path, repair only the plan set in scope, then return `REVIEW_REQUIRED` for a new review attempt.
-- Review `pass`: the runner verifies the record and current snapshot and completes plan authoring without resuming the author. The orchestrator requests final user approval of the reviewed plan set before dispatching the separate `tracker-publish` workflow stage. This skill never publishes to the tracker or Beads.
+- Write canonical plans from the approved Specs, then execute the review loop in this stage. Ask the user only when a necessary decision cannot be resolved from the approved Specs.
+- A `revise` verdict causes a scoped plan revision and a new attempt with a new reviewer. Preserve the configured three substantive-attempt limit; after it is reached, return the concrete unresolved decision to the user. User answers do not count as a review pass.
+- A `pass` verdict completes plan authoring only after the current snapshot check. The orchestrator requests final user approval of the reviewed plan set before dispatching the separate `tracker-publish` workflow stage. This skill never publishes to the tracker or Beads.
 
 The following publisher is a separate workflow stage, not a nested subagent or an action performed by the orchestrator main session. It owns tracker/Beads publication and returns the final receipt.
 
-The orchestrator presents real user questions and preserves actual answers. A user answer resolves only the asked decision; it does not make a review pass. Standalone use follows the same split → orchestrator review → revision when needed and completion gate.
+The orchestrator presents real user questions and preserves actual answers. A user answer resolves only the asked decision; it does not make a review pass. Standalone use follows the same split → internal independent review → revision when needed and completion gate.

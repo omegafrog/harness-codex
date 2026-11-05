@@ -6,7 +6,7 @@ skills: [orchestrator, worktree-create, to-ticket, plan-review, tracker-publish]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight, spec_reviews]
   before_handoff: [checkpoint_completeness]
-  before_complete: [tracker_sync, plans_index, spec_reviews, plan_review]
+  before_complete: [tracker_sync, plans_index, plan_review]
   after_merge: []
 stages:
   - id: to-ticket

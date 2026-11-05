@@ -1,6 +1,6 @@
 # Plan finalization
 
-최신 reviewer verdict가 `pass`이면 실행기가 현재 review와 계획을 검사해 `to-ticket` 작성을 마무리한다. 작성자를 재개하지 않는다. Tracker 발행은 후속 `tracker-publish` stage의 책임이다.
+`to-ticket`은 자체 독립 reviewer loop 안에서 계획 작성을 마무리한다. runner는 canonical review 기록과 현재 계획 snapshot을 확인하며, tracker 발행은 후속 `tracker-publish` stage의 책임이다.
 
 작업 전에 `context.worktree_ref`의 정본 `worktree.json`을 읽어 작업 worktree, session과 `plan_set_id`를 확인한다. 기록이 없거나 ID가 없으면 중단한다. 해당 worktree의 `docs/plans/<plan-set-id>/`를 사용한다.
 

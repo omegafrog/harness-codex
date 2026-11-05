@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { isAbsolute, join, posix } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { assertActiveReviewAdmission, updateReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
+import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
 import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
@@ -142,5 +142,12 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
+  if (action === 'record' && process.env.HARNESS_PROVIDER_ID === 'claude-code') {
+    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Claude plan review requires its runtime workspace and execution identity');
+    const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
+    const native = active.native_review;
+    requireValue(active.attempt_id === attemptId && native?.execution_id === executionId && native.agent_id && native.stopped, 'Claude plan review record requires a stopped native reviewer bound to this execution');
+  }
   return updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
 }

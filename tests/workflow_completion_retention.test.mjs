@@ -77,9 +77,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       workspace_root: tree.workspace,
       ticket_id: 'calculator',
       plan_set_id: 'calculator',
-      spec_reviews: { architecture: specReview },
       plan_review: { plan_set_id: 'calculator', phase: 'planning' },
-      plans_index: { workspace_root: tree.workspace, plan_set_id: 'calculator' },
       tracker_sync: { ticket_refs: [ticket] },
     }));
     const args = [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];

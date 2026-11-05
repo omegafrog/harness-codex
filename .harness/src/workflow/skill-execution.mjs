@@ -264,6 +264,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
   requireValue(!(input.skill === 'spec-me' && result.review_request?.skill === 'spec-review'), 'spec-me must perform spec-review internally using a fresh native reviewer');
+  requireValue(!(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');
   const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
   const schemaResult = structuredClone(result);
   if (schemaResult.review_request) {
@@ -312,6 +313,11 @@ export async function validateSkillReturn({ root, input, envelope }) {
     if (input.skill === 'tracker-publish') {
       const { verifyDraftPublication } = await import('../tracker/publication.mjs');
       await verifyDraftPublication({ root, planSetId: input.context?.plan_set_id });
+    }
+    if (input.skill === 'to-ticket') {
+      const { inspectPlanSet } = await import('./plan-review.mjs');
+      const review = await inspectPlanSet({ root, planSetId: input.context?.plan_set_id, phase: 'planning' });
+      requireValue(review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
