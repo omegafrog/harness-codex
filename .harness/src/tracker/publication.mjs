@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
@@ -10,11 +10,49 @@ import { inspectPlanSet, snapshotPlanSet } from '../workflow/plan-review.mjs';
 const exec = promisify(execFile);
 const defaultRun = async (args, cwd) => (await exec('gh', args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
 
+function publicationBodyPath(planId) {
+  return `runtime/to-ticket/publication-bodies/${planId === '@parent' ? 'parent' : planId}.md`;
+}
+
+function executionBlock(workspace) {
+  return `<details><summary>실행 정보</summary>\n\n- workspace_root: \`${workspace.workspace_root}\`\n- workspace_branch: \`${workspace.workspace_branch}\`\n\n</details>`;
+}
+
+export async function preparePublicationDrafts({ root, planSetId }) {
+  const snapshot = await snapshotPlanSet({ root, planSetId });
+  const review = await inspectPlanSet({ root, planSetId, phase: 'planning' });
+  if (review.status !== 'pass' || !snapshot.execution_workspace) throw new Error('Publication bodies require a reviewed plan set and canonical execution workspace');
+  const drafts = [];
+  for (const planId of ['@parent', ...snapshot.plans.map((plan) => plan.id)]) {
+    const source = sessionOutputPath(root, `runtime/to-ticket/drafts/${planId === '@parent' ? 'parent' : planId}.md`, { create: false });
+    let body = await readFile(source, 'utf8');
+    if (!body.trim()) throw new Error(`Publication draft body is empty: ${planId}`);
+    // Legacy plan locations are display text, never runtime authority.
+    const legacy = [...snapshot.plans.map((plan) => plan.body), body].join('\n');
+    for (const match of legacy.matchAll(/^\s*-?\s*workspace_(root|branch):\s*`([^`]+)`/gm)) {
+      if (match[1] === 'root') body = body.replaceAll(`\`${match[2]}\``, `\`${snapshot.execution_workspace.workspace_root}\``);
+      else body = body.replaceAll(`branch \`${match[2]}\``, `branch \`${snapshot.execution_workspace.workspace_branch}\``);
+    }
+    body = body.replace(/<details><summary>실행 정보<\/summary>[\s\S]*?<\/details>\s*/g, '')
+      .replace(/^\s*-?\s*workspace_(?:root|branch):[^\n]*(?:\n|$)/gm, '').trimEnd();
+    body += `\n\n${executionBlock(snapshot.execution_workspace)}\n`;
+    const path = publicationBodyPath(planId);
+    const target = sessionOutputPath(root, path);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try { await writeFile(temporary, body, { flag: 'wx', mode: 0o600 }); await rename(temporary, target); }
+    finally { await rm(temporary, { force: true }); }
+    drafts.push({ plan_id: planId, body_path: path, body_sha256: createHash('sha256').update(body).digest('hex') });
+  }
+  return drafts;
+}
+
 export async function updatePublication({ root, planSetId, planId, action, itemId }) {
   if (!(planId === '@parent' || /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId || '')) || !['begin', 'record'].includes(action)) throw new Error('Valid publication action and plan ID are required');
   const snapshot = await snapshotPlanSet({ root, planSetId });
   const review = await inspectPlanSet({ root, planSetId, phase: 'planning' });
   if (review.status !== 'pass' || !['@parent', ...snapshot.plans.map((plan) => plan.id)].includes(planId)) throw new Error('Current passing review and a plan in its set are required');
+  const draft = action === 'begin' && snapshot.execution_workspace
+    ? (await preparePublicationDrafts({ root, planSetId })).find((item) => item.plan_id === planId) : null;
   const path = sessionOutputPath(root, 'runtime/to-ticket/publish-state.json');
   const lock = `${path}.lock`;
   await mkdir(lock);
@@ -26,7 +64,7 @@ export async function updatePublication({ root, planSetId, planId, action, itemI
     if (journal.plan_set_id !== planSetId || journal.review_attempt_id !== review.details.review_attempt_id || !Array.isArray(journal.items) || !Array.isArray(journal.pending) || journal.items.some((item) => !item || !allowed.includes(item.plan_id) || typeof item.item_id !== 'string' || !item.item_id.trim()) || journal.pending.some((id) => !allowed.includes(id)) || new Set(journal.items.map((item) => item.plan_id)).size !== journal.items.length || new Set(journal.items.map((item) => item.item_id)).size !== journal.items.length || new Set(journal.pending).size !== journal.pending.length || journal.items.some((item) => journal.pending.includes(item.plan_id))) throw new Error('Publication journal does not match the current review');
     const existing = journal.items.find((item) => item.plan_id === planId);
     if (action === 'begin') {
-      if (existing) return { status: 'already_created', item_id: existing.item_id };
+      if (existing) return { status: 'already_created', item_id: existing.item_id, ...(draft || {}) };
       if (journal.pending.includes(planId)) throw new Error('Creation result is ambiguous; inspect the Project and record the existing item before retrying');
       journal.pending.push(planId);
     } else {
@@ -37,7 +75,7 @@ export async function updatePublication({ root, planSetId, planId, action, itemI
     const temporary = `${path}.${randomUUID()}.tmp`;
     try { await writeFile(temporary, `${JSON.stringify(journal, null, 2)}\n`, { flag: 'wx', mode: 0o600 }); await rename(temporary, path); }
     finally { await rm(temporary, { force: true }); }
-    return { status: action === 'begin' ? 'pending' : 'recorded', ...(itemId ? { item_id: itemId } : {}) };
+    return { status: action === 'begin' ? 'pending' : 'recorded', ...(itemId ? { item_id: itemId } : {}), ...(draft || {}) };
   } finally { await rm(lock, { recursive: true }); }
 }
 
@@ -67,6 +105,10 @@ export async function verifyDraftPublication({ root, planSetId, run = defaultRun
       const values = node?.fieldValues;
       const status = values?.nodes?.filter((entry) => entry.field?.id === matching[0].id);
       const contentId = items[index].plan_id === '@parent' ? planSetId : items[index].plan_id;
+      if (snapshot.execution_workspace) {
+        const expectedBody = await readFile(sessionOutputPath(root, publicationBodyPath(items[index].plan_id), { create: false }), 'utf8');
+        if (!expectedBody.endsWith(`${executionBlock(snapshot.execution_workspace)}\n`) || node?.content?.body !== expectedBody) throw new Error(`Draft body differs from runner-generated publication body: ${items[index].plan_id}`);
+      }
       if (node?.id !== items[index].item_id || node.project?.id !== project.id || node.content?.__typename !== 'DraftIssue' || !`${node.content?.title || ''}\n${node.content?.body || ''}`.includes(contentId) || values?.pageInfo?.hasNextPage !== false || status?.length !== 1 || status[0].name !== 'Planned') throw new Error(`Draft publication is missing or not Planned: ${items[index].plan_id}`);
     }
   }

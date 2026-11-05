@@ -29,7 +29,7 @@
 - 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - Spec의 session-worktree 분기·준비 참조 검사는 `python3 -B -m unittest discover -s tests -p test_spec_diagram_workflow.py -k test_spec_me_prepares_the_session_worktree_before_spawning_agents`로 실행한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. `spec-me`는 진입 시 `worktree-create` skill을 실행한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
-- 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 per-plan 범위와 index에 기록한다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
+- 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
 - 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node --test tests/internal_skills.test.mjs tests/plan_review.test.mjs tests/wrapper_dispatch.test.mjs tests/wrapper_scheduler.test.mjs tests/tracker_contract.test.mjs tests/workflow_loader.test.mjs tests/installer_update.test.mjs tests/installer_exclude.test.mjs tests/doctor.test.mjs tests/workflow_worktrees.test.mjs tests/workflow_completion_retention.test.mjs tests/contracts.test.mjs tests/skill_execution.test.mjs tests/orchestrator_hook.test.mjs`로 실행한다. 서버·외부 인프라는 필요하지 않다.
 
 - 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
@@ -281,3 +281,7 @@ Add this option to the outer `codex exec` command:
 ```
 
 Keep the stage's own sandbox setting unchanged. This grants the outer session write access only to Codex's Linux helper directory.
+
+Harness black-box 관찰자는 내부 stage 실패나 모델 자체 복구를 이유로 outer Codex·timeout wrapper·stage runner·listener에 종료 신호를 보내지 않는다. 그 동작을 관찰·기록하며, 관찰자의 종료는 사용자의 명시적 취소 지시가 있을 때만 허용한다. 앱·인프라 cleanup 권한은 테스트 대상 workflow를 종료할 권한이 아니다.
+
+정적 실행 위치·발행 본문 생성의 설치 소비자 회귀는 `node --test tests/execution_workspace.test.mjs`로 실행한다. 일반 회귀이며 실제 workflow E2E의 대체가 아니다.

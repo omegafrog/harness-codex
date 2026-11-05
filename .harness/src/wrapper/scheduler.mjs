@@ -182,6 +182,13 @@ export function buildImplementPrompt({
 } = {}) {
   if (!repository || !planSetId || !planId) throw new TypeError("repository, planSetId, and planId are required");
   if (!["sequential", "parallel"].includes(workspaceMode)) throw new TypeError("workspaceMode must be sequential or parallel");
+  if (planReviewRefs?.execution_workspace) {
+    const location = planReviewRefs.execution_workspace;
+    if (workspaceRoot && resolve(workspaceRoot) !== location.workspace_root) throw new TypeError('Implementation workspace conflicts with runner-resolved worktree');
+    if (workspaceBranch && workspaceBranch !== location.workspace_branch) throw new TypeError('Implementation branch conflicts with runner-resolved worktree');
+    workspaceRoot = location.workspace_root;
+    workspaceBranch = location.workspace_branch;
+  }
   const planSetPath = `docs/plans/${planSetId}/plans.md`;
   const ticketId = planReviewRefs?.ticket_id || planSetId;
   const expectedProductSpecPath = `docs/specs/${ticketId}/product-spec.md`;

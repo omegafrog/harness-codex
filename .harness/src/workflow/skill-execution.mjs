@@ -9,7 +9,7 @@ import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
@@ -193,9 +193,9 @@ export async function readExecutionInput({ root, execution_id }) {
 }
 
 async function resolveInputWorktree(root, input) {
-  if (!['workflow-compose', 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill) || !input.context?.worktree_ref) return input;
+  if (!input.context?.worktree_ref) return input;
   const ref = input.context.worktree_ref;
-  requireValue(isAbsolute(ref) && basename(ref) === 'worktree.json', 'Invalid canonical worktree reference');
+  requireValue(ref === join(sessionDirectory(root, { create: false }), 'worktree.json'), 'Invalid canonical worktree reference');
   const directory = await resolveSkillSession(root, dirname(ref));
   requireValue(ref === join(directory, 'worktree.json'), 'Invalid canonical worktree reference');
   const info = await lstat(ref);
@@ -210,7 +210,7 @@ async function resolveInputWorktree(root, input) {
     requireValue(input[key] === undefined || input[key] === value, `Input ${key} conflicts with worktree record`);
   }
   const { shared_guidance_root: _legacyGuidanceRoot, ...stageInput } = input;
-  return { ...stageInput, workspace_root: record.workspace, session_directory: record.session_directory, context: { ...input.context, ...(record.plan_set_id ? { plan_set_id: record.plan_set_id } : {}) } };
+  return { ...stageInput, workspace_root: record.workspace, session_directory: record.session_directory, context: { ...input.context, execution_workspace: await resolveExecutionWorkspace(root, record.plan_set_id || null), ...(record.plan_set_id ? { plan_set_id: record.plan_set_id } : {}) } };
 }
 
 export async function validateSkillInput({ root, input }) {
@@ -220,6 +220,12 @@ export async function validateSkillInput({ root, input }) {
   if (input.context?.worktree_ref && ['to-ticket', 'tracker-publish'].includes(input.skill)) {
     const { requireCurrentSpecReview } = await import('./spec-review.mjs');
     await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
+  }
+  if (input.skill === 'tracker-publish' && input.context?.worktree_ref) {
+    const { preparePublicationDrafts } = await import('../tracker/publication.mjs');
+    const expected = await preparePublicationDrafts({ root, planSetId: input.context.plan_set_id });
+    const supplied = input.context.publication_drafts;
+    requireValue(Array.isArray(supplied) && supplied.length === expected.length && expected.every((item) => supplied.some((candidate) => candidate.plan_id === item.plan_id && candidate.body_path === item.body_path && candidate.body_sha256 === item.body_sha256)), 'Publication body references must match static runner output');
   }
   if (input.skill === 'workflow-compose') {
     validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));

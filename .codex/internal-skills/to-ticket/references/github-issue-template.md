@@ -92,8 +92,7 @@ Planned
 
 <details><summary>실행 정보</summary>
 
-- workspace_root: `[실제 기존 구현 worktree 절대 경로]`
-- workspace_branch: `[그 worktree의 실제 브랜치명]`
+[실행기가 발행용 본문에 생성하는 실행 정보. agent는 경로·브랜치를 작성하지 않는다.]
 
 </details>
 ```
@@ -104,7 +103,7 @@ Planned
 
 아래 규칙은 별도 사후 검증 단계가 아니라 각 템플릿 필드를 채울 때 적용한다.
 
-- 각 canonical child plan의 `범위` 첫 두 항목에 [실행 위치 계약](execution-evidence.md#실행-위치)의 `workspace_root`, `workspace_branch`를 기록한다. Issue에는 같은 값을 실행 정보에 보존한다. structured-source는 같은 내용을 기존 `scope` 문자열에 담는다. canonical plan·index·렌더된 Issue 값의 일치와 실제 Git 등록·브랜치를 확인한다.
+- 실행 위치는 [실행 위치 계약](execution-evidence.md#실행-위치)에 따라 정적 실행기가 생성한다. canonical plan·index·structured-source에 agent가 경로를 복사하지 않는다. publisher는 정적 준비기의 `publication_drafts` 본문 파일을 그대로 사용한다.
 
 - `수용 기준`에는 관련 UC/BR/INV ID, 소유 모델과 enforcement operation, 관찰 가능한 결과를 보존한다.
 - Child `테스트 계약`에는 소유 UC/BR/AC의 업무 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 테스트 파일과 실행 프로필은 계획 자체의 테스트 계약에 기록한다. 발행 전 해당 계약이 canonical plan과 같은지 확인한다. 비즈니스 로직 변경이 없으면 경로는 `none`으로 하고 테스트를 추가하지 않는다. Parent의 `ui ~ entity E2E`에는 plan-set 전체 통합 후 마지막에 한 번 실행할 feature-level 시나리오와 oracle/profile/timeout/budget을 기록하고 child는 이를 참조한다. 성능 측정은 테스트와 별도 검증 evidence로 관련 System Target, workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 연결한다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.

@@ -4,6 +4,14 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
+### runner-owned-execution-paths
+- Status: active
+- Applies to: workflow 실행 위치·발행 본문과 black-box 관찰
+- Guidance: 경로·브랜치는 worktree.json과 Git을 검증한 정적 실행기가 생성한다. 계획/초안에 agent가 쓴 경로를 실행 기준으로 삼지 않는다. canonical plan·리뷰는 보존하고 발행용 session 본문에 실행기가 현행 실행 정보를 생성한다. black-box 관찰자는 내부 stage 실패·모델 자체 복구를 이유로 outer Codex·timeout·stage·listener에 종료 신호를 보내지 않는다. 사용자의 명시적 취소만 observer 종료를 허용하며 앱 cleanup과 구분한다.
+- Rationale: main/worktree 오판과 관찰자의 무단 SIGTERM이 실제 테스트를 막았다.
+- Source: 2026-11-05 사용자 정적 실행기 경로 생성 지시 및 실행 resume-publication-approved-20261105
+- Updated: 2026-11-05
+
 ### planning-guidance-is-optional
 - Status: active
 - Applies to: to-ticket의 계획 작성 진입

@@ -207,6 +207,7 @@ export async function dispatchImplementPlan({
       error.plan_review = planReviewGate;
       throw error;
     }
+    const executionBranch = planReviewGate.details.execution_workspace?.workspace_branch || dispatchWorkspace?.branch || null;
     const originalWorkspaceFingerprint = workspaceRoot === resolvePath(repository)
       ? null
       : await captureWorkspaceFingerprint(repository);
@@ -223,7 +224,7 @@ export async function dispatchImplementPlan({
     const prompt = buildImplementPrompt({
       repository,
       workspaceRoot,
-      workspaceBranch: parallelGroup ? null : dispatchWorkspace?.branch || null,
+      workspaceBranch: executionBranch,
       workspaceMode: parallelGroup ? "parallel" : "sequential",
       planSetId,
       planId: plan.id,
@@ -258,10 +259,10 @@ export async function dispatchImplementPlan({
       session_directory: session,
       env: { HARNESS_SESSION_DIR: session, TMPDIR: temporaryDirectory, TMP: temporaryDirectory, TEMP: temporaryDirectory },
       workspace_root: workspaceRoot,
-      ...(parallelGroup ? {} : { workspace_branch: dispatchWorkspace?.branch || null, workspace: dispatchWorkspace }),
+      ...(parallelGroup ? {} : { workspace_branch: executionBranch, workspace: dispatchWorkspace }),
     });
     if (child?.context_id) slot.context_id = child.context_id;
-    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, plan_review: { ...planReviewGate.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: dispatchWorkspace?.branch || null, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
+    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, plan_review: { ...planReviewGate.details, repository_root: workspaceRoot }, workspace_root: workspaceRoot, workspace_branch: executionBranch, original_workspace_fingerprint: originalWorkspaceFingerprint, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
   } catch (error) {
     let evidencePersisted = false;
     try {

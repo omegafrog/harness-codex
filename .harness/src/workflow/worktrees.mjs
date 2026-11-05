@@ -56,6 +56,26 @@ export function parseWorktreeRecord(text) {
   }
   return { ...record, source_workspace: record.source_workspace || record.return_root };
 }
+export async function resolveExecutionWorkspace(root, planSetId = null) {
+  const ref = join(sessionDirectory(root, { create: false }), 'worktree.json');
+  const info = await lstat(ref);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Canonical worktree record must be a regular file');
+  const record = parseWorktreeRecord(await readFile(ref, 'utf8'));
+  const workspace = await realpath(root);
+  const [top, common, branch, listing] = await Promise.all([
+    git(root, ['rev-parse', '--show-toplevel']),
+    git(root, ['rev-parse', '--git-common-dir']),
+    git(root, ['branch', '--show-current']),
+    git(root, ['worktree', 'list', '--porcelain', '-z']),
+  ]);
+  if (record.state !== 'active' || await realpath(record.workspace) !== workspace
+    || await realpath(top) !== workspace || await realpath(resolve(root, common)) !== await realpath(record.common)
+    || record.session_directory !== dirname(ref) || !branch || branch !== record.branch
+    || !listing.split('\0').includes(`worktree ${workspace}`)
+    || (planSetId !== null && record.plan_set_id !== planSetId)) throw new Error('Canonical execution workspace does not match registered Git worktree');
+  return { workspace_root: workspace, workspace_branch: branch };
+}
+
 async function storage(repository) {
   const common = await realpath(resolve(repository, await git(repository, ['rev-parse', '--git-common-dir'])));
   const directory = join(common, 'harness-reservations');

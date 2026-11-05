@@ -695,8 +695,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, `runtime/executions/${authorInput.execution_id}/return.json`), JSON.stringify(reviewedEnvelope));
     assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);
     await recordExecutionState({ root: tree.workspace, input: authorInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: reviewRef });
+    await mkdir(join(tree.session_directory, 'runtime/to-ticket/drafts'), { recursive: true });
+    for (const name of ['parent', 'slice']) await writeFile(join(tree.session_directory, `runtime/to-ticket/drafts/${name}.md`), `# ${name}\n`);
     const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(publisher.input.context.transition.from_stage, 'to-ticket');
+    assert.deepEqual(publisher.input.context.execution_workspace, { workspace_root: tree.workspace, workspace_branch: worktreeRecord.branch });
+    assert.equal(publisher.input.context.publication_drafts.length, 2);
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8')).stages['to-ticket'].status, 'completed');
     await assert.rejects(readFile(join(tree.session_directory, 'runtime/orchestrator/workflow.json')), { code: 'ENOENT' });
     assert.match(git('ls-tree', '-r', '--name-only', 'HEAD'), /CONTEXT.md/);

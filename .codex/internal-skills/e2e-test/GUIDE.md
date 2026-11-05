@@ -49,3 +49,5 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 ## 테스트·서비스 실행 전제
 
 테스트·서버·인프라 명령은 `docs/agents/EXEC.md`와 해당 프로젝트의 `docs/agents/execution.json`을 먼저 대조한 뒤 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`로만 실행한다. 필수 인자·환경값·설정 prepare/verify·인프라와 선행 서버 readiness가 실제 entrypoint와 일치해야 한다. 프로필 누락/실패 시 직접 명령으로 우회하지 않는다. caller가 프로필을 보완하고 runner는 설정을 추정·수정하지 않는다. 설정/의존성/시작 인자가 바뀐 구현은 프로필·EXEC도 함께 갱신한다. 결과에는 실행 profile·receipt·실제 준비/검증 실패를 포함한다.
+
+Harness black-box 관찰자는 내부 stage 실패나 모델 자체 복구를 이유로 outer Codex·timeout wrapper·stage runner·listener에 종료 신호를 보내지 않는다. 그 동작을 관찰·기록하며, 관찰자의 종료는 사용자의 명시적 취소 지시가 있을 때만 허용한다. 앱·인프라 cleanup 권한은 테스트 대상 workflow를 종료할 권한이 아니다.

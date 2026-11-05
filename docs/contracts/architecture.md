@@ -530,6 +530,8 @@ status는 planned/in-progress/blocked/completed만 허용한다. backlog는 harn
 Git common directory·소유 receipt·workflow ID·branch/HEAD·return_root·작업 파일과 staged index·종료 outcome.
 
 ### 동작
+`resolveExecutionWorkspace`는 canonical worktree.json의 active 상태·workspace·session·common directory·branch와 실제 Git root/등록을 대조해 `workspace_root`와 `workspace_branch`를 반환한다. 입력 준비와 hydration, plan-review가 이 함수를 호출하며 모델이 쓴 위치나 return_root로 대체하지 않는다. 발행 준비기는 이 위치로 session 본문의 실행 정보를 생성하고 최종 검증은 실제 Project body를 생성 파일과 대조한다. 기존 owner의 함수 호출 책임을 확장하며 새로운 Context·배포·DDD 노드 관계는 추가하지 않는다. [설치 소비자 검증](../../tests/execution_workspace.test.mjs)은 변조·branch 불일치·구형 plan 경로와 본문·Git 가시성을 검사한다.
+
 Git add 전에 경로 소유권을 예약한다. 완료·실패·사용자 중단 후에도 소유 worktree와 기록을 보존하며 실패와 중단은 canonical 기록에 outcome을 남긴다. 명시적 finish만 소유 linked worktree를 제거하며 primary 또는 비소유 workspace는 제거하지 않는다. 예약·등록·outcome·finish는 공통 lock으로 직렬화한다.
 
 ### 메서드

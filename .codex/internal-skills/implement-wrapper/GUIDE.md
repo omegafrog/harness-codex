@@ -13,7 +13,7 @@ orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [
 
 세션 입력의 `input_refs`에서 승인된 plan·Spec 산출물을 읽고 `context.producer_result_refs`와 `context.previous_result_ref`가 지정한 파일에서 이전 실행 결과를 확인한다. plan 경로는 runtime plan-review gate가 반환한 정확한 `plan_reference`를 사용한다. ID나 디렉터리명으로 경로를 다시 만들지 않는다.
 
-`workspace_root`를 모든 명령의 cwd로 사용한다. 소유 worktree의 branch·복구·등록 정보가 필요하면 전달된 `session_directory/worktree.json`을 읽는다. 작업 위치 배정과 worktree lifecycle은 orchestrator가 관리한다.
+정적 실행기가 생성한 `context.execution_workspace`의 workspace_root·workspace_branch를 사용한다. 계획 문서에서 실행 위치를 고르거나 복사하지 않는다. `workspace_root`를 모든 명령의 cwd로 사용한다. 소유 worktree의 branch·복구·등록 정보가 필요하면 전달된 `session_directory/worktree.json`을 읽는다. 작업 위치 배정과 worktree lifecycle은 orchestrator가 관리한다.
 
 ## 구현
 

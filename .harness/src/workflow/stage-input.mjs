@@ -3,7 +3,8 @@ import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeF
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
+import { preparePublicationDrafts } from '../tracker/publication.mjs';
 import { mergeAnswers } from './questions.mjs';
 import { findExecutionInput, writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
@@ -237,6 +238,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   if (worktreeRef && worktree_ref !== worktreeRef) throw new Error('Worktree reference does not match workflow');
   let taskSession = session;
+  let executionWorkspace;
+  let publicationDrafts;
   let plan_set_id;
   if (worktree_ref) {
     if (!worktree_ref.endsWith('/worktree.json')) throw new Error('Invalid canonical worktree reference');
@@ -246,6 +249,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (await realpath(record.workspace) !== await realpath(root)) throw new Error('Stage workspace must be the prepared worktree');
     taskSession = await resolveSkillSession(root, record.session_directory);
     plan_set_id = record.plan_set_id;
+    executionWorkspace = await resolveExecutionWorkspace(root, plan_set_id || null);
     workflowBinding = record.workflow_binding || null;
     if (workflowBinding) {
       if (orchestratorSession && workflowBinding.provider !== orchestratorSession.provider) throw new Error('Workflow binding provider must match the orchestrator provider');
@@ -381,7 +385,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
   }
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (approvedSpecOverwrites) input.context.approved_spec_overwrites = approvedSpecOverwrites;
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });

@@ -4,23 +4,13 @@
 
 ## 실행 위치
 
-모든 canonical per-plan 문서는 `## 범위`의 첫 두 항목에 아래 실행 위치를 실제 값으로 기록한다. GitHub structured-source도 기존 `scope` 배열의 첫 두 문자열에 같은 값을 넣어 renderer가 Issue 본문에 보존하게 한다. 새로운 structured-source key나 리뷰 session.json으로 대체하지 않는다.
+실행 경로와 브랜치는 정적 실행기가 정본 `worktree.json`과 실제 Git root·common directory·등록·branch를 대조해 생성한다. 입력의 `context.execution_workspace`와 plan-review 결과의 `details.execution_workspace`는 같은 코드에서 생성되며 agent가 직접 입력하거나 추측하지 않는다. `return_root`나 계획 문서의 문자열로 실행 위치를 선택하지 않는다.
 
-```markdown
-## 범위
+계획 작성자는 canonical plan·index·GitHub 초안에 `workspace_root`·`workspace_branch`를 쓰거나 복사하지 않는다. 계획에는 업무 범위·요구·의존성·테스트만 작성한다. 정적 입력 준비기가 발행 본문의 실행 정보와 그 파일 경로를 생성해 publisher에 전달한다. Publisher는 제공된 파일을 그대로 사용하고 worker는 정적 입력의 workspace에서 실행한다.
 
-- workspace_root: `/absolute/existing/project-worktree`
-- workspace_branch: `existing-implementation-branch`
-- 구현할 vertical slice 범위
-```
+기존 승인 계획의 경로 문자열은 과거 표시 정보로만 보존한다. 실제 소비자인 보존 workflow의 승인 snapshot을 임의로 덮어쓰지 않으며 runtime은 그 값을 읽어 실행하지 않는다. 다음 계획 재작성 때 이 구형 필드를 제거한다. 발행용 session 사본은 정적 실행기가 현행 실행 정보로 생성하며 canonical 업무 계획·리뷰 hash를 변경하지 않는다.
 
-`workspace_root`는 구현 대상인 기존 Git worktree의 절대 경로, `workspace_branch`는 그 위치에서 검증한 브랜치명이다. branch는 파일 경로가 아니며 detached HEAD를 허용하지 않는다. 계획 작성용 임시 `session_worktree`가 종료 시 제거되면 그 경로를 구현 위치로 기록하지 않는다. 사용자가 지정한 기존 구현 위치를 우선하고, 없으면 원래 작업 위치 `return_root`를 확인한다. 실제 대상의 `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list --porcelain`을 대조해 경로·브랜치·등록을 확인한다. 대상이나 브랜치가 불명확하면 계획 리뷰·발행 전에 확인하며 경로를 추측하거나 이를 채우려고 worktree를 생성하지 않는다.
-
-Child plan의 테스트 계약은 비즈니스 로직 단위 테스트만 정의한다. UC/BR/AC의 조건·행위·기대 결과를 기준으로 소유 업무 규칙을 검증하고, 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. Parent plan-set 계약에는 전체 split plan 구현·검증·통합 뒤 마지막에 실행할 단일 feature-level E2E 시나리오와 oracle을 기록한다. 개별 child에 통합·계약·E2E 테스트를 배정하지 않는다. 그 밖의 기존 필수 검증 명령과 완료 gate는 별도 검증 절차로 기록할 수 있다.
-
-`docs/plans/<plan-set-id>/plans.md`의 `## 실행 위치`에도 같은 두 항목을 기록한다. 각 plan과 index의 값은 일치해야 한다. 병렬 계획에서도 이 값은 최종 통합 대상인 기존 `execution_line`을 뜻한다. 실제 병렬 worker의 임시 경로·브랜치는 dispatch 후 checkpoint에 기록하며 canonical plan의 통합 대상을 덮어쓰지 않는다.
-
-계획 종료 뒤에도 기록한 기존 위치를 유지한다. Spec·계획이 다른 계획 branch에 남아 있다면 해당 branch/HEAD와 필요한 통합을 인계하고, 실행 대상에 승인 산출물이 반영되기 전에는 구현 dispatch를 하지 않는다. 제거된 planning worktree를 복원한다는 이유로 구현용 worktree를 새로 만들지 않는다. 실행 위치 변경은 plan과 index를 함께 고치고 fresh review를 갱신한 뒤 허용한다.
+Child plan의 테스트 계약은 비즈니스 로직 단위 테스트만 정의한다. Parent에는 모든 split plan 구현·개별 검증 뒤 최종 feature-level E2E의 시나리오·oracle·실행 조건을 기록한다. 실제 실행 준비와 필수 gate는 각 실행 단계에서 확인한다.
 
 ## 계획 시
 

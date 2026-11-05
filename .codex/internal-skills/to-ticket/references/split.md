@@ -20,7 +20,7 @@
 
 `worktree.json`에서 받은 `plan_set_id`를 그대로 사용해 각 child plan은 `docs/plans/<plan-set-id>/<plan-id>.md`, index는 `docs/plans/<plan-set-id>/plans.md`에 작성한다. 이 단계에서 `plan_set_id`를 만들거나 바꾸지 않는다. 각 slice의 안정된 `plan_id`는 계속 정하며 tracker Issue 번호와 독립적으로 유지한다.
 
-각 plan에 한국어 구현 목적·범위·수용 기준·의존성·plan handoff·업무 규칙 단위 테스트 계약·필요한 비테스트 검증·실행 위치를 작성한다. [실행 위치 계약](execution-evidence.md#실행-위치) 및 [검증 근거 계약](execution-evidence.md)을 적용한다. Index에는 canonical plan 링크, 요약, 실행 위치, 의존성을 기록한다.
+각 plan에 한국어 구현 목적·범위·수용 기준·의존성·plan handoff·업무 규칙 단위 테스트 계약·필요한 비테스트 검증을 작성한다. 실행 위치·브랜치는 agent가 작성하지 않고 정적 실행기가 생성한다. [실행 위치 계약](execution-evidence.md#실행-위치) 및 [검증 근거 계약](execution-evidence.md)을 적용한다. Index에는 canonical plan 링크, 요약, 의존성을 기록한다.
 
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 Product/Architecture Spec 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 split plan을 표현한다.
 

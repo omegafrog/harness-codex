@@ -13,6 +13,8 @@
 ### 비즈니스 규칙
 각 stage는 필요한 내부 GUIDE와 role/phase 지침을 읽는다. 같은 native task session 재개에서는 변경되지 않은 지침을 재전달하지 않고 delta만 전달한다. compaction이 관측되면 현재 지침을 다시 확인해 필요한 규칙을 복구한다. 지원되는 capability만 역할별로 제공하며 공통 base 지침은 간결하게 유지한다. task 결과는 execution/worktree identity를 확인한 event로 control session에 전달하고 listener가 상세 반환을 회수한다. 선택적 host 알림은 정확히 일치한 agent session에만 queue하며 반복 요청은 동일 request ID로 중복 처리를 막는다. 저장된 event와 알림 요청은 사용자가 결과를 받았다는 보장이 아니다.
 
+정적 실행기는 정본 `worktree.json`과 Git root/common directory/등록/branch를 검증해 단계 입력과 계획 검증 결과에 실행 위치를 생성한다. agent가 계획에 적은 경로와 `return_root`는 실행 위치의 기준이 아니다. 발행 입력 준비기가 실행 정보를 포함한 본문 파일을 만들고, publisher는 그 파일을 그대로 발행하며 최종 검증은 실제 Project body와 생성 파일을 대조한다. 기존 승인된 업무 계획과 리뷰 snapshot은 경로 표시를 갱신하려고 덮어쓰지 않는다.
+
 ### 수용 조건
 Codex/Claude 설치 소비자는 내부 GUIDE를 직접 읽고 task/control session을 분리할 수 있다. 동일 지침 resume은 delta 전송, 변경 지침과 compaction은 재전달/복구 안내를 기록한다. 결과 event와 listener는 현재 worktree·execution·stage를 확인하고 상세 result_ref를 검증한다. exact-session host queue 및 duplicate request를 검사하고 미지원/실패 전송은 pending 상태로 남긴다.
 

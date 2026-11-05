@@ -5,7 +5,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
 import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -62,10 +62,15 @@ async function discoverPlans({ root, base }) {
 
 export async function snapshotPlanSet({ root, planSetId } = {}) {
   requireValue(ID.test(planSetId || ''), 'Valid plan-set ID is required');
-  try {
-    const record = parseWorktreeRecord(await readFile(join(sessionDirectory(root, { create: false }), 'worktree.json'), 'utf8'));
+  let executionWorkspace = null;
+  let worktreeText;
+  try { worktreeText = await readFile(join(sessionDirectory(root, { create: false }), 'worktree.json'), 'utf8'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (worktreeText !== undefined) {
+    const record = parseWorktreeRecord(worktreeText);
     requireValue(record.plan_set_id === planSetId, `plan_set_id mismatch: worktree.json has ${record.plan_set_id || '(unset)'}, requested ${planSetId}`);
-  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    executionWorkspace = await resolveExecutionWorkspace(root, planSetId);
+  }
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
   const index = indexFile.content.toString('utf8');
@@ -82,7 +87,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
     const key = plan.path || `${base}/plans/${plan.id}#canonical`;
     inputs[key] = plan.sha256;
   }
-  return { plan_set_id: planSetId, base, spec_paths: specPaths, plans, inputs };
+  return { plan_set_id: planSetId, base, spec_paths: specPaths, plans, inputs, execution_workspace: executionWorkspace };
 }
 
 export async function validatePlanReviewAdmission({ root, planSetId, admission, requireActive = true }) {
@@ -118,6 +123,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
     return { status: 'pass', reason: `plan_set_${phase}_current`, violations: [], details: {
       review_snapshot_sha256: hash(JSON.stringify(Object.keys(snapshot.inputs).sort().map((key) => [key, snapshot.inputs[key]]))),
       review_attempt_id: review.attempt_id,
+      execution_workspace: snapshot.execution_workspace,
       plan_set_id: planSetId, ticket_id: snapshot.spec_paths[0].split("/")[2], spec_paths: snapshot.spec_paths, plan_ids: snapshot.plans.map((plan) => plan.id),
       plan_id: planId || null, plan_reference: selected?.path || selected?.reference || null,
       product_spec_path: snapshot.spec_paths[0], architecture_spec_path: snapshot.spec_paths[1],
