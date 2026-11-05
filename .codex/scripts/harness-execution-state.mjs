@@ -18,7 +18,7 @@ try {
   const input = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });
   if (input.execution_id !== opts['execution-id']) throw new Error('Input execution ID mismatch');
   await validateSkillInput({ root: opts.root, input });
-  const binding = await resolveSkillBinding({ root: opts.root, skill: input.skill, workflow: opts.workflow || null, stage: opts.stage || null });
+  const binding = await resolveSkillBinding({ root: opts.root, skill: input.skill, workflow: opts.workflow || null, stage: opts.stage || null, workflowBinding: input.context?.workflow_binding || null });
   const owner = opts['owner-pid'] ? await processIdentity(Number(opts['owner-pid'])) : null;
   const child = opts['child-pid'] ? await processIdentity(Number(opts['child-pid'])) : null;
   const result = await recordExecutionState({ root: opts.root, input, binding, status: opts.status, code: opts.code ?? null, result_ref: opts['result-ref'] ?? null, reason: opts.reason ?? null, owner, child });

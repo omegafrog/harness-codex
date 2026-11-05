@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', installed));
 const { createComposerWorkspace, prepareComposerWorkspace } = await import(new URL('composer-workspace.mjs', installed));
+const { parseWorkflowBinding } = await import(new URL('providers/index.mjs', installed));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 try {
@@ -14,7 +15,7 @@ try {
   }
   if (!isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute root and execution-id are required');
   if (opts.request !== undefined) {
-    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], orchestrator_session_id: opts['orchestrator-session-id'] || null, orchestrator_provider: opts['orchestrator-provider'] || null });
+    const record = await createComposerWorkspace({ root: opts.root, plan_set_id: opts['plan-set-id'], request: opts.request, execution_id: opts['execution-id'], orchestrator_session_id: opts['orchestrator-session-id'] || null, orchestrator_provider: opts['orchestrator-provider'] || null, workflow_binding: parseWorkflowBinding(process.env.HARNESS_WORKFLOW_BINDING) });
     process.stdout.write(`${JSON.stringify(record)}\n`);
     process.exit(0);
   }

@@ -29,6 +29,7 @@
 | `current_stage` | 아니요 | `WORKTREE_STAGE` enum에 정의된 skill 값이다. 새 worktree는 `workflow-compose`로 시작하고 구성 완료 후 첫 workflow 단계의 skill을 기록한다. 하위 작업 중에는 부모 단계의 skill을 기록한다. enum에 없는 값은 거부한다. 기존 기록에는 없을 수 있다. |
 | `source_workspace` | 아니요 | 원본 workspace 경로. 없거나 빈 값이면 읽을 때 `return_root`를 사용한다. |
 | `plan_set_id` | 아니요 | 영문자 또는 숫자로 시작하고 이후 영문자·숫자·`.`·`_`·`-`를 쓰는 계획 집합 ID. 한 번 설정하면 다른 ID로 바꿀 수 없다. |
+| `workflow_binding` | 아니요 | `HARNESS_WORKFLOW_BINDING`으로 선택한 전체 workflow의 provider·model·reasoning effort. compose 시 기록되며 모든 stage와 재개에서 사용한다. |
 | `git_dir` | 아니요 | 등록 시 기록하는 linked worktree Git directory 경로. 종료 시 존재하면 실제 경로와 대조한다. |
 | `head` | 아니요 | 등록 시 Git에서 읽은 HEAD commit ID |
 | `registered_at` | 아니요 | 직접 등록 시 기록하는 ISO 8601 시각 |

@@ -15,6 +15,7 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+import { parseWorkflowBinding } from '../.harness/src/workflow/providers/index.mjs';
 
 const record = {
   schema_version: 1,
@@ -707,9 +708,12 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  low_performance_model: haiku\n  low_performance_reasoning_effort: medium\n  high_performance_model: haiku\n  high_performance_reasoning_effort: medium\n');
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
-    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8' }));
+    const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
+    assert.deepEqual(tree.workflow_binding, workflowBinding);
     const found = await findExecutionInput(tree.workspace, 'compose-1');
     assert.equal(found.workspace, tree.workspace);
     assert.equal(found.input.workspace_root, undefined);
@@ -720,7 +724,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(found.input.scope, '작은 계산기 웹 앱');
     assert.equal(found.input.context.control_session_directory, undefined);
     assert.deepEqual(found.input.input_refs, []);
-    const { resolveSkillSession, validateSkillInput, validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveSkillSession, validateSkillInput, validateSkillReturn, resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
     await validateSkillInput({ root: tree.workspace, input: found.input });
     await assert.rejects(validateSkillInput({ root: tree.workspace, input: { ...found.input, context: { worktree_ref: found.input.context.worktree_ref } } }), /required/);
     const foreign = join(parent, 'foreign');
@@ -733,6 +737,9 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal((await validateSkillReturn({ root: tree.workspace, input: found.input, envelope })).valid, true);
     const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(next.input.context.orchestrator_provider, 'codex');
+    assert.equal(next.input.context.provider, workflowBinding.provider);
+    assert.deepEqual(next.input.context.workflow_binding, workflowBinding);
+    assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'spec-me', workflowBinding: next.input.context.workflow_binding }), { skill: 'spec-me', provider: 'codex', model_tier: 'high_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
     assert.equal(next.input.context.orchestrator_session_id, record.worktree_id);
     assert.equal(next.input.shared_guidance_root, undefined);
     const runId = next.input.execution_id;
@@ -790,11 +797,14 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(terminal.exit_signal, null);
     assert.equal(execution.code, 0);
     assert.equal(execution.threadId, record.worktree_id);
-    assert.equal(execution.binding.model, 'example');
+    assert.equal(execution.binding.model, 'gpt-6-luna');
+    assert.equal(execution.binding.reasoning_effort, 'medium');
     const finalizedReturn = JSON.parse(await readFile(join(prefix, 'return.json'), 'utf8'));
     assert.equal(finalizedReturn.result.artifacts[0].sha256, currentContextHash);
     assert.deepEqual(JSON.parse(await readFile(join(prefix, 'result.json'), 'utf8')), finalizedReturn.result);
     const stageArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
+    assert.equal(stageArgs[stageArgs.indexOf('--model') + 1], 'gpt-6-luna');
+    assert.ok(stageArgs.some((value, index) => value === '-c' && stageArgs[index + 1] === 'model_reasoning_effort="medium"'));
     assert.match(stageArgs[stageArgs.indexOf('--output-last-message') + 1], /codex-last-message\.json$/);
     assert.notEqual(stageArgs[stageArgs.indexOf('--output-last-message') + 1], join(prefix, 'return.json'));
     const recordedRun = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8')).stages['spec-me'];
@@ -961,6 +971,15 @@ test('worktree record validates agent session identifiers', () => {
   const agent_sessions = { 'stage:spec': { session_id: record.worktree_id, execution_id: 'spec-1' } };
   assert.deepEqual(parse({ ...record, agent_sessions }).agent_sessions, agent_sessions);
   assert.throws(() => parse({ ...record, agent_sessions: { 'stage:spec': { session_id: 'bad', execution_id: 'spec-1' } } }), /Invalid worktree agent session/);
+});
+
+test('workflow binding is validated and retained on canonical worktree records', () => {
+  const workflow_binding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+  assert.deepEqual(parse({ ...record, workflow_binding }).workflow_binding, workflow_binding);
+  assert.deepEqual(parseWorkflowBinding(JSON.stringify(workflow_binding)), workflow_binding);
+  assert.throws(() => parse({ ...record, workflow_binding: { ...workflow_binding, provider: 'unknown' } }), /Invalid HARNESS_WORKFLOW_BINDING/);
+  assert.throws(() => parseWorkflowBinding(JSON.stringify({ ...workflow_binding, model: 'haiku with spaces' })), /Invalid HARNESS_WORKFLOW_BINDING/);
+  assert.throws(() => parseWorkflowBinding(JSON.stringify({ ...workflow_binding, extra: true })), /Invalid HARNESS_WORKFLOW_BINDING/);
 });
 
 test('workspace preparation records completion without selecting a workflow stage', async () => {

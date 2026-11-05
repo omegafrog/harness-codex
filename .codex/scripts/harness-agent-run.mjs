@@ -45,7 +45,7 @@ try {
   if (input.skill === 'workflow-compose') throw new Error('Workflow composition is performed by harness-compose-workspace.mjs');
   await validateSkillInput({ root, input });
   const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
-  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage });
+  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null });
   activeBinding = binding;
   const providerId = input.context?.provider || binding.provider;
   if (providerId !== binding.provider || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== providerId) || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');

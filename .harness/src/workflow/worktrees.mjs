@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, open, unlink, chmod } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, basename } from 'node:path';
+import { parseWorkflowBinding } from './providers/index.mjs';
 
 const exec = promisify(execFile);
 const git = async (root, args) => (await exec('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })).stdout.trim();
@@ -45,6 +46,7 @@ export function parseWorktreeRecord(text) {
     || !['workspace', 'common', 'return_root', 'session_directory'].every((key) => isAbsolute(record[key] || ''))
     || typeof record.branch !== 'string' || !record.branch) throw new Error('Invalid worktree.json');
   validatePlanSetId(record.plan_set_id);
+  if (record.workflow_binding !== undefined) parseWorkflowBinding(record.workflow_binding);
   if (record.current_stage !== undefined && !Object.values(WORKTREE_STAGE).includes(record.current_stage)) throw new Error('Invalid worktree current_stage');
   if (record.agent_sessions !== undefined) {
     if (!record.agent_sessions || typeof record.agent_sessions !== 'object' || Array.isArray(record.agent_sessions)) throw new Error('Invalid worktree agent_sessions');
@@ -100,7 +102,7 @@ async function describe(root) {
   return { workspace, common, git_dir, branch: await git(root, ['branch', '--show-current']), head: await git(root, ['rev-parse', 'HEAD']) };
 }
 
-export async function reserveWorkflowWorktree({ workspace_root, repository_root, branch, plan_set_id } = {}) {
+export async function reserveWorkflowWorktree({ workspace_root, repository_root, branch, plan_set_id, workflow_binding = null } = {}) {
   if (!branch) throw new Error('Expected branch is required');
   validatePlanSetId(plan_set_id);
   const place = await location(workspace_root, repository_root);
@@ -108,7 +110,7 @@ export async function reserveWorkflowWorktree({ workspace_root, repository_root,
   try { await lstat(place.workspace); throw new Error('Allocation path already exists'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { const old = await readWorktreeRecord(place); if (old.state !== 'removed') throw new Error('Allocation already has a pending owner'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const source_workspace = await realpath(repository_root);
-  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), state: 'allocating', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, session_directory: place.session_directory };
+  const record = { schema_version: 1, worktree_id: randomUUID(), workspace: place.workspace, common: place.common, source_workspace, return_root: source_workspace, branch, ...(plan_set_id ? { plan_set_id } : {}), ...(workflow_binding ? { workflow_binding } : {}), state: 'allocating', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, session_directory: place.session_directory };
   await writeWorktreeRecord(place, record);
   return record;
   });
@@ -210,7 +212,7 @@ export async function recordWorktreeOutcome({ workspace_root, repository_root = 
   });
 }
 
-export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, feature_name, signal = null } = {}) {
+export async function createWorkflowWorktree({ workspace_root, return_root = null, branch = null, plan_set_id, feature_name, workflow_binding = null, signal = null } = {}) {
   if (!isAbsolute(workspace_root || '')) throw new Error('Absolute source workspace is required');
   if (plan_set_id && feature_name) throw new Error('Provide either plan_set_id or feature_name');
   if (feature_name) plan_set_id = uniquePlanSetId(feature_name, randomUUID());
@@ -225,7 +227,7 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   await git(workspace_root, ['check-ref-format', '--branch', sessionBranch]);
   if (!branch && await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch');
   await mkdir(dirname(workspace), { recursive: true });
-  const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, branch: sessionBranch, plan_set_id });
+  const ownership = await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: returnRoot, branch: sessionBranch, plan_set_id, workflow_binding });
   try {
     if (branch) await git(workspace_root, ['worktree', 'add', '--', workspace, branch]);
     else await git(workspace_root, ['worktree', 'add', '-b', sessionBranch, '--', workspace, 'main']);

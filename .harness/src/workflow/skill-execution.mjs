@@ -8,7 +8,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
-import { configuredProvider } from './providers/index.mjs';
+import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
@@ -76,7 +76,7 @@ function validate(value, schema, path = '$') {
   }
 }
 
-export async function resolveSkillBinding({ root, skill, workflow = null, stage = null }) {
+export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null }) {
   const bindings = await json(join(root, CONTRACT, 'bindings.json'));
   requireValue(!bindings.main_session_skills?.includes(skill), `${skill} runs in the main session and cannot be bound as a subagent`);
   let tier = bindings.skills[skill];
@@ -93,10 +93,11 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   requireValue(keys, `Unknown model tier: ${tier}`);
   const get = (key) => key.split('.').reduce((value, part) => value?.[part], config);
   const model = get(keys.model_key), effort = get(keys.reasoning_effort_key);
-  for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
+  const override = workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  if (!override) for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
     requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
   }
-  return { skill, provider: configuredProvider(config), model_tier: tier, model, reasoning_effort: effort };
+  return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
 }
 
 export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {
@@ -181,6 +182,7 @@ async function resolveInputWorktree(root, input) {
   const { parseWorktreeRecord } = await import('./worktrees.mjs');
   const record = parseWorktreeRecord(await readFile(ref, 'utf8'));
   requireValue(record.state === 'active' && record.session_directory === directory && await realpath(record.workspace) === await realpath(root), 'Worktree does not match execution workspace');
+  if (input.skill !== 'workflow-compose') requireValue(JSON.stringify(input.context?.workflow_binding ?? null) === JSON.stringify(record.workflow_binding ?? null), 'Input workflow_binding conflicts with canonical worktree record');
   await validateSameRepository(root, record.return_root);
   requireValue(!input.context.plan_set_id || input.context.plan_set_id === record.plan_set_id, 'Input plan_set_id conflicts with worktree record');
   for (const [key, value] of Object.entries({ workspace_root: record.workspace, session_directory: record.session_directory })) {

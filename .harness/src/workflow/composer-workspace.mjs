@@ -5,13 +5,13 @@ import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSk
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
 
-export async function createComposerWorkspace({ root, plan_set_id, request, execution_id, orchestrator_session_id = null, orchestrator_provider = null }) {
+export async function createComposerWorkspace({ root, plan_set_id, request, execution_id, orchestrator_session_id = null, orchestrator_provider = null, workflow_binding = null }) {
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id || '')) throw new Error('Execution ID is required');
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
   if ((orchestrator_session_id !== null && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestrator_session_id)) || (orchestrator_provider !== null && !['codex', 'claude-code'].includes(orchestrator_provider)) || Boolean(orchestrator_session_id) !== Boolean(orchestrator_provider)) throw new Error('Invalid orchestrator provider session');
   // Keep repeated feature requests readable without reusing tracker identity.
-  const record = await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id });
+  const record = await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id, workflow_binding });
   try {
     const storedInput = {
       schema_version: 1, execution_id, skill: 'workflow-compose', scope: request, input_refs: [],

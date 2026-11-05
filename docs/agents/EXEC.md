@@ -231,12 +231,14 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
 Luna medium을 지정한 계산기 테스트는 다음 순서로 실행한다. 첫 명령의 최종 응답에서 생성된 worktree 위치를 확인해 두 번째 명령의 `<생성된-worktree-절대경로>`에 넣는다. `$orchestrator`가 shell 변수로 확장되지 않도록 프롬프트는 작은따옴표로 감싼다.
 
 ```bash
-codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+HARNESS_WORKFLOW_BINDING='{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}' codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
   -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어'
 
 codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
   -C '<생성된-worktree-절대경로>' '$orchestrator 계속 진행해'
 ```
+
+첫 실행의 `HARNESS_WORKFLOW_BINDING`은 canonical `worktree.json`에 저장되므로 재개 명령에는 반복해서 지정할 필요가 없다.
 
 로그와 마지막 응답은 각 실행의 `.io` 아래에 보존한다. 사용자가 중단 시 개입하지 말라고 한 테스트에서는 오류·중단 후 실행 상태나 산출물을 수정하거나 재시도하지 않고 실제 결과를 보고한다. 정상적으로 질문이 반환되면 기존에 승인되거나 위임된 선택을 사용한다. `spec-me` 완료 receipt와 Spec·리뷰 산출물을 확인하고 요청한 단계에서 멈춘다.
 
