@@ -1,6 +1,8 @@
 import { dirname, join, resolve } from 'node:path';
 import { realpath, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { runCodexProcess } from '../codex-process.mjs';
 import { parseYaml } from '../../eval/yaml.mjs';
 
@@ -30,7 +32,17 @@ export async function resumeWriteDirs(sessionId, env) {
 }
 
 export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, binding, schemaPath, output, resume, role, skill, env = process.env }) {
-  const githubTracker = skill === 'implement-wrapper' && parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker?.mode === 'github';
+  const config = ['implement-wrapper', 'implement'].includes(skill) ? parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')) : {};
+  const githubTracker = skill === 'implement-wrapper' && config.tracker?.mode === 'github';
+  if (sandbox === 'workspace-write' && config.beads?.enabled === true) {
+    let beads = join(root, '.beads');
+    try { beads = await realpath(beads); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      const { stdout } = await promisify(execFile)('git', ['rev-parse', '--git-common-dir'], { cwd: root });
+      beads = await realpath(resolve(dirname(resolve(root, stdout.trim())), '.beads')).catch((error) => { if (error.code !== 'ENOENT') throw error; return null; });
+    }
+    if (beads) dirs = [...new Set([...dirs, beads])];
+  }
   return ['exec', '--sandbox', sandbox, ...dirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model,
     ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), ...(githubTracker && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : []), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
     '--output-schema', schemaPath, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
