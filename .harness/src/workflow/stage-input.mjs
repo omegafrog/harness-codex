@@ -340,7 +340,19 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         rejectedResultRepair = true;
       }
     }
-    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref) || rejectedResultRepair)) throw new Error('Feedback requires a review, matching revision or blocked stage, a recoverable result ID mismatch, or a confirmed interrupted stage');
+    if (previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && !previous.result_ref && previous.reason?.includes('Return status/code mismatch')) {
+      await assertExecutionStopped(previous, { root, session: taskSession });
+      const candidate = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/codex-last-message.json` });
+      const log = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/exec.stderr.json` });
+      if (log.exit_code === 0 && candidate.execution_id === previous.execution_id && candidate.result?.execution_id === previous.execution_id && candidate.status === 'blocked' && candidate.result?.status === candidate.status && candidate.result?.code === candidate.code && REVISION_TARGETS[candidate.code]) {
+        const normalized = structuredClone(candidate);
+        normalized.status = normalized.result.status = 'action_required';
+        normalized.result_ref ??= `${prefix}/result.json`;
+        await validateSkillReturn({ root, input: previousInput, envelope: normalized });
+        rejectedResultRepair = true;
+      }
+    }
+    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref) || rejectedResultRepair)) throw new Error('Feedback requires a review, matching revision or blocked stage, a recoverable rejected result, or a confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
     if (!interrupted && !rejectedResultRepair) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);

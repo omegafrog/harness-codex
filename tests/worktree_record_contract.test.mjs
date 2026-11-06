@@ -739,6 +739,22 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const repair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(repair.input.context.resume_session_id, record.worktree_id);
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', repair.input.execution_id, 'feedback.json'), 'utf8')).feedback, '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.');
+    failedState.stages['spec-me'].reason = 'Return status/code mismatch';
+    await writeFile(statePath, JSON.stringify(failedState));
+    const rejectedRevision = { ...invalidResult, execution_id: next.input.execution_id, status: 'blocked', code: 'SPEC_REVISION_REQUIRED' };
+    const rawRevision = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: rejectedRevision.status, code: rejectedRevision.code, result: rejectedRevision };
+    const rawPath = join(failedPrefix, 'codex-last-message.json');
+    await writeFile(rawPath, JSON.stringify(rawRevision));
+    const revisionRepair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '상태와 코드를 계약에 맞게 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(revisionRepair.input.context.resume_session_id, record.worktree_id);
+    assert.deepEqual(JSON.parse(await readFile(rawPath, 'utf8')), rawRevision);
+    failedState.stages['spec-me'].owner = await processIdentity(process.pid);
+    await writeFile(statePath, JSON.stringify(failedState));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
+    delete failedState.stages['spec-me'].owner;
+    await writeFile(statePath, JSON.stringify(failedState));
+    await writeFile(rawPath, JSON.stringify({ ...rawRevision, result: { ...rejectedRevision, execution_id: 'other' } }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
   } finally {
     if (secondTree) await finishWorkflowWorktree({ workspace_root: secondTree.workspace, repository_root: root });
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root });
