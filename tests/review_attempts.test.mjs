@@ -7,6 +7,21 @@ import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInput
 import { snapshotPlanSet } from '../.harness/src/workflow/plan-review.mjs';
 import { reviewDelta } from '../.harness/src/workflow/review-delta.mjs';
 
+test('a fresh plan reviewer can review unchanged inputs after revise without discarding findings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-retry-'));
+  try {
+    const scope = 'plan-example', inputs = { plan: 'v1' };
+    const first = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    const finding = { severity: 'blocker', description: 'admission guidance mismatch', evidence: 'review input' };
+    await updateReviewAttempt({ root, scope, action: 'record', attemptId: first.attempt_id, inputs, review: { verdict: 'revise', reviewer_id: 'reviewer-a', author_ids: ['author'], fork_turns: 'none', findings: [finding] } });
+    const retry = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    assert.equal(retry.round, 2);
+    assert.deepEqual(retry.previous_findings, [finding]);
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'record', attemptId: retry.attempt_id, inputs, review: { verdict: 'pass', reviewer_id: 'reviewer-a', author_ids: ['author'], fork_turns: 'none', findings: [] } }), /new reviewer/i);
+    assert.equal((await updateReviewAttempt({ root, scope, action: 'record', attemptId: retry.attempt_id, inputs, review: { verdict: 'pass', reviewer_id: 'reviewer-b', author_ids: ['author'], fork_turns: 'none', findings: [] } })).status, 'pass');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('plan review tracks only its documents and ignores lifecycle status changes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'plan-review-scope-'));
   try {

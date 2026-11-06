@@ -81,7 +81,7 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
     } else if (action === 'begin') {
       requireValue(inputs && Object.keys(inputs).length > 0, 'Review inputs are required');
       requireValue(last?.status !== 'active', 'A review is already active; record its result or abort it before dispatch');
-      requireValue(!last || last.status === 'aborted' || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
+      requireValue(!last || last.status === 'aborted' || (scope.startsWith('plan-') && last.status === 'revise') || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
       const trailingPreparationAborts = trailingPreparationAbortCount(history);
       if (scope.startsWith('spec-')) requireValue(trailingPreparationAborts < MAX_PREPARATION_ABORTS, 'Spec review preparation retry limit exhausted; record preparation recovery before retrying');
       const substantive = lastSubstantiveAttempt(history);

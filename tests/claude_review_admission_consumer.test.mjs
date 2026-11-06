@@ -38,8 +38,16 @@ test('installed Claude review admission guards native reviewer dispatch and keep
       const instructions = await readFile(join(root, path), 'utf8');
       assert.match(instructions, /Do not require workspace_root, session_directory or review_delta fields/);
       assert.match(instructions, /changed files in full/);
+      assert.match(instructions, /unchanged, review the full snapshot/);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
+    const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
+    const retryInputs = { plan: 'snapshot' };
+    const rejected = await installedReviewAttempt({ root, scope: 'plan-retry', action: 'begin', inputs: retryInputs });
+    const finding = { severity: 'blocker', description: 'review admission unavailable', evidence: 'review input' };
+    await installedReviewAttempt({ root, scope: 'plan-retry', action: 'record', attemptId: rejected.attempt_id, inputs: retryInputs, review: { verdict: 'revise', reviewer_id: 'reviewer-one', author_ids: ['author'], fork_turns: 'none', findings: [finding] } });
+    const retry = await installedReviewAttempt({ root, scope: 'plan-retry', action: 'begin', inputs: retryInputs });
+    assert.deepEqual(retry.previous_findings, [finding]);
     await mkdir(join(root, 'docs/specs/ticket-one'), { recursive: true });
     await writeFile(join(root, 'docs/specs/ticket-one/product-spec.md'), 'Status: approved\nProduct requirements.\n');
     await writeFile(join(root, 'docs/specs/ticket-one/architecture-spec.md'), 'Status: approved\nArchitecture.\n');
