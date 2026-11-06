@@ -15,6 +15,8 @@
 
 정적 실행기는 정본 `worktree.json`과 Git root/common directory/등록/branch를 검증해 단계 입력과 계획 검증 결과에 실행 위치를 생성한다. agent가 계획에 적은 경로와 `return_root`는 실행 위치의 기준이 아니다. 발행 입력 준비기가 실행 정보를 포함한 본문 파일을 만들고, publisher는 그 파일을 그대로 발행하며 최종 검증은 실제 Project body와 생성 파일을 대조한다. 기존 승인된 업무 계획과 리뷰 snapshot은 경로 표시를 갱신하려고 덮어쓰지 않는다.
 
+발행 완료 후 implement-wrapper 입력은 검증된 to-ticket·spec-me 결과의 계획·Spec 참조를 유지한다. 개별 구현 worker의 plan-review gate는 선택된 plan dispatch 시 실행한다. GitHub tracker에 접근하는 implement-wrapper는 workspace 쓰기 범위를 유지하면서 GitHub 네트워크 접근을 사용한다.
+
 ### 수용 조건
 Codex/Claude 설치 소비자는 내부 GUIDE를 직접 읽고 task/control session을 분리할 수 있다. 동일 지침 resume은 delta 전송, 변경 지침과 compaction은 재전달/복구 안내를 기록한다. 결과 event와 listener는 현재 worktree·execution·stage를 확인하고 상세 result_ref를 검증한다. exact-session host queue 및 duplicate request를 검사하고 미지원/실패 전송은 pending 상태로 남긴다.
 

@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { parseYaml } from '../../eval/yaml.mjs';
 
 export const id = 'claude-code';
 
@@ -31,6 +33,7 @@ export function allowedToolsForRole(role, skill = null, requiredSkill = null) {
 }
 
 export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, requiredSkill, workerBase }) {
+  const githubTracker = skill === 'implement-wrapper' && parseYaml(readFileSync(join(root, '.codex/harness.yaml'), 'utf8')).tracker?.mode === 'github';
   const agentEventHook = { type: 'command', command: `node "${join(root, '.codex/scripts/harness-agent-event.mjs')}"` };
   const admissionScript = join(root, '.codex/scripts/harness-agent-admission.mjs');
   const agentAdmissionHook = { type: 'command', command: `node "${admissionScript}" || printf '%s\\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Harness admission hook failed"}}'` };
@@ -40,7 +43,7 @@ export function buildCommand({ root, sandbox, binding, schema, resume, role, ski
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       ...(sandbox === 'read-only' ? { filesystem: { denyWrite: [root] } } : {}),
-      ...(sandbox === 'danger-full-access' ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : {}),
+      ...(sandbox === 'danger-full-access' || githubTracker ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : {}),
     },
     hooks: {
       PreToolUse: [{ matcher: 'Agent', hooks: [agentAdmissionHook] }],

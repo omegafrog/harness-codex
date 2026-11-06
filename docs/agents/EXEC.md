@@ -294,6 +294,8 @@ Add this option to the outer `codex exec` command:
 
 Keep the stage's own sandbox setting unchanged. This grants the outer session write access only to Codex's Linux helper directory.
 
+GitHub tracker를 쓰는 `implement-wrapper`는 workspace 쓰기 sandbox를 유지하고 네트워크를 허용한다. Codex는 `sandbox_workspace_write.network_access=true`를 사용하고 Claude는 GitHub 도메인을 허용한다. 연결 실패를 토큰 무효로 단정하기 전에 같은 sandbox의 네트워크 접근을 확인한다. local-markdown mode에는 이 설정을 추가하지 않는다.
+
 Harness black-box 관찰자는 내부 stage 실패나 모델 자체 복구를 이유로 outer Codex·timeout wrapper·stage runner·listener에 종료 신호를 보내지 않는다. 그 동작을 관찰·기록하며, 관찰자의 종료는 사용자의 명시적 취소 지시가 있을 때만 허용한다. 앱·인프라 cleanup 권한은 테스트 대상 workflow를 종료할 권한이 아니다.
 
 정적 실행 위치·발행 본문 생성의 설치 소비자 회귀는 `node --test tests/execution_workspace.test.mjs`로 실행한다. 일반 회귀이며 실제 workflow E2E의 대체가 아니다.

@@ -277,6 +277,22 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     review_admission = await validateSpecReviewAdmission({ root, admission: await readSkillSessionJson({ root, session_directory: session, path: reviewAdmissionRef }) });
   } else if (stage.skill !== 'plan-review' && reviewAdmissionRef) throw new Error('Review admission applies only to Spec or plan review');
   for (const dependency of stage.needs) if (!['completed', 'skipped'].includes(state.stages?.[dependency]?.status)) throw new Error(`Dependency incomplete: ${dependency}`);
+  if (stageId === 'implement-wrapper') {
+    for (const producerStage of ['to-ticket', 'spec-me']) {
+      const producer = state.stages?.[producerStage];
+      if (producerStage === 'spec-me' && producer?.status !== 'completed') continue;
+      if (producer?.status !== 'completed' || !producer.result_ref) throw new Error(`Completed ${producerStage} result is required for implementation`);
+      const producerSession = await resolveSkillSession(root, producer.result_session_directory || session);
+      const producerInput = await readExecutionInput({ root, execution_id: producer.execution_id });
+      if (producerInput.workspace_root !== root) throw new Error('Planning workspace differs from implementation workspace');
+      const envelope = await readSkillSessionJson({ root, session_directory: producerSession, path: `runtime/executions/${producer.execution_id}/return.json` });
+      await validateSkillReturn({ root, input: producerInput, envelope });
+      const result = envelope.result || await readSkillSessionJson({ root, session_directory: producerSession, path: producer.result_ref });
+      if (producerSession !== taskSession && result.artifacts.some((artifact) => artifact.base === 'session')) throw new Error('Producer session artifact differs from the current worktree session');
+      input_refs.push(...result.artifacts);
+      producer_result_refs[producerStage] = { base: producerSession === taskSession ? 'session' : 'control_session', path: producer.result_ref };
+    }
+  }
   for (const reference of stage.inputs) {
     if (!reference.from_stage) {
       input_refs.push(reference.base === 'session' ? { ...reference, base: 'control_session' } : reference);

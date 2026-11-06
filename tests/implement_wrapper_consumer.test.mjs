@@ -35,6 +35,23 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     const wrapper = await read('.codex/internal-skills/implement-wrapper/GUIDE.md');
     assert.match(wrapper, /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
     assert.match(wrapper, /최종 E2E 시나리오에 대한 실제 사용자 승인/);
+    const provider = await import(`file://${resolve(root, '.harness/src/workflow/providers/codex.mjs')}`);
+    const harnessConfig = await read('.codex/harness.yaml').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    const args = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
+    assert.ok(args.includes('sandbox_workspace_write.network_access=true'));
+    const claude = await import(`file://${resolve(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
+    assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
+    const otherArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'to-ticket' });
+    assert.ok(!otherArgs.includes('sandbox_workspace_write.network_access=true'));
+    await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
+    const localArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
+    assert.ok(!localArgs.includes('sandbox_workspace_write.network_access=true'));
+    const localClaude = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
+    assert.equal(JSON.parse(localClaude[localClaude.indexOf('--settings') + 1]).sandbox.network, undefined);
+    if (harnessConfig === null) await unlink(resolve(root, '.codex/harness.yaml'));
+    else await writeFile(resolve(root, '.codex/harness.yaml'), harnessConfig);
     for (const match of wrapper.matchAll(/\]\(([^)]+\.md)\)/g)) {
       await readFile(resolve(root, '.codex/internal-skills/implement-wrapper', match[1]));
     }
