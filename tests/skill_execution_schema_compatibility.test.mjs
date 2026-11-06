@@ -111,11 +111,12 @@ test('installed stage accepts changed documents while preserving review snapshot
     await mkdir(join(root, '.io'), { recursive: true });
     execFileSync('git', ['worktree', 'add', '-qb', 'linked', linked], { cwd: root });
     await mkdir(join(root, '.beads'), { recursive: true });
+    await mkdir(join(linked, '.beads'), { recursive: true });
     await mkdir(join(linked, '.codex'), { recursive: true });
     await writeFile(join(linked, '.codex/harness.yaml'), 'beads:\n  enabled: true\ntracker:\n  mode: github\n');
     const stageOptions = { root: linked, resumeWriteDirs: [], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/schema', output: '/output', skill: 'implement-wrapper', env: { HOME: root } };
     const writableArgs = await codex.buildCommand({ ...stageOptions, sandbox: 'workspace-write' });
-    assert.ok(writableArgs.some((arg, index) => arg === '--add-dir' && writableArgs[index + 1] === join(root, '.beads')));
+    assert.ok(writableArgs.some((arg, index) => arg === '--add-dir' && writableArgs[index + 1] === root));
     const readonlyArgs = await codex.buildCommand({ ...stageOptions, sandbox: 'read-only' });
     assert.ok(!readonlyArgs.includes('--add-dir'));
     await writeFile(join(linked, 'app.txt'), 'application change');

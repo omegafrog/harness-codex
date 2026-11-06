@@ -284,7 +284,7 @@ exec worker의 질문은 `user_question` artifact로 저장하고 `USER_DECISION
 
 ## Nested Codex workflow execution
 
-연결된 worktree의 Codex `implement-wrapper`와 `implement`가 `workspace-write`로 실행되고 Beads가 활성화되어 있으면 실행기가 공유 `.beads` 경로를 찾아 `--add-dir`로 전달한다. 읽기 전용 실행에는 쓰기 권한을 추가하지 않는다.
+연결된 worktree의 Codex `implement-wrapper`와 `implement`가 `workspace-write`로 실행되고 Beads가 활성화되어 있으면 실행기가 공유 DB와 `.beads.gate.lock`을 사용할 수 있도록 Git common directory의 상위 저장소 전체를 `--add-dir`로 전달한다. 이 권한은 해당 저장소의 다른 파일에도 쓰기를 허용한다. 읽기 전용 실행에는 쓰기 권한을 추가하지 않는다.
 
 On Linux, a `codex exec` session that runs Harness stages must allow the Codex helper directory to be written by the **outer** session. Harness launches a nested Codex CLI for each stage; the nested CLI creates PATH aliases under `CODEX_HOME/tmp/arg0-linux` before its own workspace sandbox starts. The stage runner's `--add-dir` cannot expand the outer session's sandbox.
 
