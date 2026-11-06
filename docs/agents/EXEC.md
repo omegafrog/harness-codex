@@ -251,6 +251,18 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
 
 첫 실행의 `HARNESS_WORKFLOW_BINDING`은 canonical `worktree.json`에 저장되므로 재개 명령에는 반복해서 지정할 필요가 없다. 두 명령의 원문 요청에 임의 요구나 자동 승인 문구를 덧붙이지 않는다. 위 사용자 지정 black-box 검증은 전용 `e2e_test_runner`가 실제 `codex exec`를 직접 실행한다. 일반 앱 E2E profile로 대체하거나, observer가 Harness 내부 stage CLI를 직접 호출해 경로를 조립하지 않는다. 검토한 hook에 대해서만 위의 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 실행 환경의 session TMPDIR/TMP/TEMP와 중첩 Codex helper 쓰기 전제도 함께 적용한다.
 
+같은 E2E의 승인·질문·대기 후속 입력은 `codex exec resume`으로 기존 orchestrator thread를 재개한다. `codex exec resume`은 `--sandbox`, `--add-dir`, `-C`를 받지 않으므로, sandbox는 `-c 'sandbox_mode="danger-full-access"'`로 지정하고 대상 worktree를 cwd로 둔다. 아래 명령에서 thread ID와 prompt는 실제 정본 기록과 사용자 답변으로 바꾼다. `--dangerously-bypass-hook-trust`는 위에서 검토한 hook에만 사용한다.
+
+```bash
+codex exec resume --json --model gpt-6-luna \
+  -c 'model_reasoning_effort="medium"' \
+  -c 'approval_policy="never"' \
+  -c 'sandbox_mode="danger-full-access"' \
+  --dangerously-bypass-hook-trust '<orchestrator-thread-id>' '<사용자가 승인한 실제 후속 요청>'
+```
+
+실제 resume 인자, cwd, prompt, 반환 코드와 연결된 stage 실행 인자는 해당 E2E의 `resume-<stage>-invocation.json`에 기록한다. stage의 실제 provider/model/sandbox는 `.io/runtime/executions/<execution_id>/exec.stderr.json`을 함께 보존해 대조한다.
+
 로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
 
 ### Orchestrator 작업 실행
@@ -285,3 +297,5 @@ Keep the stage's own sandbox setting unchanged. This grants the outer session wr
 Harness black-box 관찰자는 내부 stage 실패나 모델 자체 복구를 이유로 outer Codex·timeout wrapper·stage runner·listener에 종료 신호를 보내지 않는다. 그 동작을 관찰·기록하며, 관찰자의 종료는 사용자의 명시적 취소 지시가 있을 때만 허용한다. 앱·인프라 cleanup 권한은 테스트 대상 workflow를 종료할 권한이 아니다.
 
 정적 실행 위치·발행 본문 생성의 설치 소비자 회귀는 `node --test tests/execution_workspace.test.mjs`로 실행한다. 일반 회귀이며 실제 workflow E2E의 대체가 아니다.
+
+발행 상태 회귀는 `node --test tests/execution_workspace.test.mjs`로 검사한다. configured Project를 유일한 발행 상태로 조회하며 기존 publish-state.json 변조·본문 끝 개행·중복 항목·본문 변조와 설치/업데이트 Git 가시성을 확인한다.

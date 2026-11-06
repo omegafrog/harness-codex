@@ -118,7 +118,9 @@ AC-delivery: 프로젝트별 구현/test 지침은 실행 workspace의 두 `docs
 ### 비즈니스 규칙
 BR-decisions: 중요한 기술 선택은 요구와 System Targets에서 필수·선호 기준을 정하고 같은 운영 책임의 후보를 비교한다. 후보별 기준 충족 상태와 출처·적용 조건, 실제 사용자 선택 또는 명시적 위임, 수용한 단점과 불확실성을 Decision에 기록한다. 일반 출처는 인용하며 공통 Knowledge 게시에만 별도 승인 절차를 적용한다. 유효한 기존 결정은 재사용하고 중요한 선택이 남을 때만 공개 등록되지 않은 내부 GUIDE를 읽는다. Normal은 기본이며 Learning은 사용자가 요청할 때 별도 검토하고 Decision의 review_mode와 review_id로 gate에 연결한다.
 
-GitHub draft 발행은 항목별 생성 전에 pending을 journal에 남기며 이미 생성된 항목은 재사용한다. 응답이 불명확하면 재생성하지 않고 Project를 조회한다. 완료 전 현재 계획 리뷰와 실제 Project draft 및 Planned 상태를 대조한다.
+GitHub draft 발행 상태의 정본은 configured Project 하나다. 정적 publication CLI가 Project 전체 페이지에서 plan identity로 기존 항목을 조회하고 중복을 차단하며 누락 항목만 생성한다. 별도 발행 상태 파일은 만들거나 읽지 않는다. 응답이 불명확하면 자동 재생성하지 않고 중단한다. 완료 전 현재 계획 리뷰와 실제 Project draft·본문·Planned 상태를 대조하며 본문 끝 개행만 정규화한다.
+
+같은 plan set을 참조하는 식별 불가능한 기존 Project 항목이 있으면 발행을 중단한다. Issue로 변환된 항목은 발행 재실행으로 Planned 상태로 되돌리지 않는다.
 
 ### 수용 조건
 AC-decisions: 기준별 평가·선택 또는 승인 누락, 승인 후 내용 변경과 미해결 Learning 중대 지적을 gate가 차단한다. 실행기는 기록된 사용자 답변을 정본 Decision에 연결한다. 사실의 진위와 선택의 타당성은 작성자와 reviewer가 판단한다.

@@ -72,16 +72,32 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
 
   await writeFile(join(root, '.codex/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const nodes = [];
+  const run = async (args) => JSON.stringify(args[0] === 'api'
+    ? { data: { node: { items: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } }
+    : args[1] === 'view' ? { id: 'project' }
+    : { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: [{ id: 'planned', name: 'Planned' }] }] });
+  await writeFile(join(root, '.io/runtime/to-ticket/publish-state.json'), '{"items":[{"plan_id":"@parent","item_id":"fabricated"}]}');
   for (const [index, item] of prepared.entries()) {
-    const begun = await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin' });
+    const begun = await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin', run });
+    assert.equal(begun.status, 'pending');
     assert.equal(begun.body_path, item.body_path);
-    await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'record', itemId: `item-${index}` });
-    nodes.push({ id: `item-${index}`, project: { id: 'project' }, content: { __typename: 'DraftIssue', title: item.plan_id, body: await readFile(join(root, '.io', item.body_path), 'utf8') }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'status' } }] } });
+    nodes.push({ id: `item-${index}`, content: { __typename: 'DraftIssue', title: item.plan_id, body: (await readFile(join(root, '.io', item.body_path), 'utf8')).replace(/\n+$/, '') }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'status' } }] } });
+    await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'record', itemId: `item-${index}`, run });
+    assert.equal((await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin', run })).status, 'already_created');
   }
-  const run = async (args) => JSON.stringify(args[0] === 'api' ? { data: { nodes } } : args[1] === 'view' ? { id: 'project' } : { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField' }] });
   await verifyDraftPublication({ root, planSetId: 'example', run });
+  assert.equal(JSON.parse(await readFile(join(root, '.io/runtime/to-ticket/publish-state.json'), 'utf8')).items[0].item_id, 'fabricated');
+  nodes.push({ ...nodes[0], id: 'duplicate' });
+  await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /Duplicate Project/);
+  nodes.pop();
+  nodes.push({ id: 'legacy-changed', content: { __typename: 'DraftIssue', body: 'Plan: `example` with changed content' } });
+  await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /Unidentified Project item/);
+  nodes.pop();
+  nodes[0].content.__typename = 'Issue';
+  await assert.rejects(updatePublication({ root, planSetId: 'example', planId: '@parent', action: 'publish', run }), /already converted/);
+  nodes[0].content.__typename = 'DraftIssue';
   nodes[0].content.body = nodes[0].content.body.replace(root, primary);
-  await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /runner-generated/);
+  await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /missing, changed/);
 
   await writeFile(join(root, 'app.js'), 'application owned');
   await updateProject({ sourceRoot, targetRoot: root });

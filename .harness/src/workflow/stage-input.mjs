@@ -262,8 +262,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (state.stages?.['spec-me']?.status !== 'completed' || state.stages?.['spec-me']?.code !== 'OK') throw new Error('Restart requires a completed spec-me stage');
     await assertExecutionStopped(state.stages['to-ticket'], { root, session: taskSession });
     if (state.stages?.['tracker-publish']?.execution_id) throw new Error('Cannot restart after tracker-publish has started');
-    const publication = join(taskSession, 'runtime/to-ticket/publish-state.json');
-    if (await lstat(publication).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) throw new Error('Cannot restart after tracker publication has begun');
     const historyPath = join(taskSession, `runtime/reviews/plan-${plan_set_id}.json`);
     try {
       const history = JSON.parse(await readFile(historyPath, 'utf8'));

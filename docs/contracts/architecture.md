@@ -482,7 +482,7 @@ workflow_id·절대 workspace_root·base_ref(SHA)·outcome/test/review 등 state
 ### 설명
 기존 tracker 모듈 내부에서 configured tracker와 Beads의 네 lifecycle 상태를 연결하는 조립 책임. 독립 Bounded Context·Aggregate·배포 서버를 만들지 않는다. [소스](../../.harness/src/tracker/lifecycle.mjs).
 
-계획 이슈의 구조 입력 검증과 본문 렌더링은 기존 tracker 모듈이 소유한다. 하위 계획의 선택적 `verification`은 비테스트 검증을 보존하며 기존 입력은 계속 허용한다. Markdown 계획의 GitHub 발행은 [발행 지침](../../.codex/internal-skills/to-ticket/references/github-batch-publish.md)에 따라 원본 계획과 본문을 대조한다. [설치 consumer 검사](../../tests/ticket_publishing_consumer.test.mjs)는 배포된 렌더러와 지침, 이슈 관계·검증·Git 가시성을 확인한다.
+계획 이슈의 구조 입력 검증과 본문 렌더링은 기존 tracker 모듈이 소유한다. publication 모듈은 configured Project의 모든 페이지를 조회해 안정된 plan identity와 실제 항목·상태를 읽는다. 정적 publish가 transient lock 아래 조회·생성·Planned 갱신·재검증을 수행한다. 별도 publish-state.json은 발행·재개·완료·Issue conversion의 입력이 아니며 기존 파일은 증거로 보존한다. 본문 비교는 CRLF와 끝 개행만 정규화하고 의미 변경과 중복 항목은 차단한다. 하위 계획의 선택적 `verification`은 비테스트 검증을 보존하며 기존 입력은 계속 허용한다. Markdown 계획의 GitHub 발행은 [발행 지침](../../.codex/internal-skills/to-ticket/references/github-batch-publish.md)에 따라 원본 계획과 본문을 대조한다. [설치 consumer 검사](../../tests/ticket_publishing_consumer.test.mjs)는 배포된 렌더러와 지침, 이슈 관계·검증·Git 가시성을 확인한다.
 
 ### 필요 엔티티
 설정된 tracker·exact external_ref·v1 Beads mirror·phase/classification metadata·실행 결과·local journal. 객체형 DDD entity는 별도 선언하지 않는다.
