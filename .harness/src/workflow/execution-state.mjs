@@ -61,7 +61,7 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null, recoverFromExecutionId = null }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
   const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
@@ -102,6 +102,15 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running' && previous?.status === 'running' && previous.execution_id !== input.execution_id) {
       await assertExecutionStopped(previous, { root, session });
       previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its processes exited'; previous.finished_at = new Date().toISOString();
+    }
+    if (recoverFromExecutionId) {
+      if (status === 'running' || previous?.status !== 'failed' || previous.execution_id === input.execution_id || !previous.attempts?.some((attempt) => attempt.execution_id === input.execution_id)) throw new Error('Recovery target is not a preserved execution of the failed current stage');
+      const failedAttempt = Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'));
+      const attempts = previous.attempts.filter((attempt) => attempt.execution_id !== input.execution_id);
+      const target = previous.attempts.find((attempt) => attempt.execution_id === input.execution_id);
+      Object.assign(previous, target);
+      previous.attempts = [...attempts, failedAttempt];
+      previous.recovered_at = new Date().toISOString();
     }
     if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
     const now = new Date().toISOString();
