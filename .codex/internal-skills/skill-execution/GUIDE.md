@@ -1,5 +1,7 @@
 # 실행 조율
 
+모든 stage의 공통 상태·코드 조합과 반환 방법은 [Stage 반환 계약](references/stage-return.md)을 따른다. 실행기가 이 본문을 각 stage에 전달한다.
+
 모든 skill 실행 결과는 질문이 하나여도 `questions` 배열만 사용한다. 질문이 없으면 빈 배열을 반환하며 결과 최상위에 `question` 필드를 사용하지 않는다. 배열 항목의 `title`은 질문 문장이다. 질문 도구에는 `title`과 문자열 options만 전달하고 결과 객체를 그대로 전달하지 않는다.
 
 실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다.

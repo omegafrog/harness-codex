@@ -62,6 +62,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/internal-skills/skill-execution/worker-base.md',
+    '.codex/internal-skills/skill-execution/references/stage-return.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',

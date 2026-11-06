@@ -83,6 +83,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.ok(managedAssets.includes('.codex/scripts/harness-agent-run.mjs'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-claude-orchestrator.mjs'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-output-schema.mjs'));
+    assert.ok(managedAssets.includes('.codex/internal-skills/skill-execution/references/stage-return.md'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/index.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/codex.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/claude-code.mjs'));
@@ -230,6 +231,9 @@ test('installed stage accepts changed documents while preserving review snapshot
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
     await validateSkillInput({ root, input });
     assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
+    const revision = { ...result, status: 'action_required', code: 'SPEC_REVISION_REQUIRED' };
+    assert.equal((await validateSkillReturn({ root, input, envelope: { ...envelope, status: revision.status, code: revision.code, result: revision } })).valid, true);
+    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'blocked', code: revision.code, result: { ...revision, status: 'blocked' } } }), /Return status\/code mismatch/);
     const premature = { ...result, status: 'action_required', code: 'REVIEW_REQUIRED', review_request: { skill: 'spec-review', agent_profile: 'spec_adversarial_reviewer', purpose: 'Review', context_path: 'docs/specs/example/' } };
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }), /spec-me must perform spec-review internally/);
     const badContext = { ...premature, review_request: { ...premature.review_request, skill: 'architecture-review', agent_profile: 'default' } };
@@ -254,6 +258,14 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal((await readFile(join(root, '.harness/src/workflow/execution-context.mjs'), 'utf8')).includes('buildStagePrompt'), true);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+    const returnContractPath = join(root, '.codex/internal-skills/skill-execution/references/stage-return.md');
+    const returnContract = await readFile(returnContractPath, 'utf8');
+    assert.match(returnContract, /`action_required` \/ `SPEC_REVISION_REQUIRED`/);
+    execFileSync('git', ['check-ignore', '-v', returnContractPath], { cwd: root });
+    await rm(returnContractPath);
+    const missingReturnContract = await runDoctor({ root, sourceRoot });
+    assert.ok(missingReturnContract.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/stage-return.md')));
+    await writeFile(returnContractPath, returnContract);
     await rm(join(root, '.harness/src/workflow/execution-context.mjs'));
     const missingExecutionContext = await runDoctor({ root, sourceRoot });
     assert.ok(missingExecutionContext.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/execution-context.mjs')));

@@ -895,6 +895,8 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'nested-child'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', runId, 'exec.stderr.json'), 'utf8')).thread_id, record.worktree_id);
     assert.match(await readFile(promptPath, 'utf8'), /spec-me\/GUIDE.md/);
+    assert.match(await readFile(promptPath, 'utf8'), /`action_required` \/ `SPEC_REVISION_REQUIRED`/);
+    assert.ok(recordedRun.instruction_delivery.instruction_versions.some(([path]) => path.endsWith('/stage-return.md')));
     const reviewer = { ...next.input, execution_id: 'spec-reviewer', context: { ...next.input.context, agent_profile: 'spec_adversarial_reviewer' } };
     await writeExecutionInput(tree.workspace, reviewer, tree.plan_set_id);
     environment.TEST_CODEX_EXECUTION_ID = 'spec-reviewer';
@@ -903,6 +905,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(args[args.indexOf('--sandbox') + 1], 'read-only');
     assert.equal(args.includes('--add-dir'), false);
     assert.match(await readFile(promptPath, 'utf8'), /artifact_contents/);
+    assert.match(await readFile(promptPath, 'utf8'), /`action_required` \/ `SPEC_REVISION_REQUIRED`/);
     const reviewResult = { schema_version: 1, execution_id: 'spec-reviewer', skill: 'spec-me', status: 'completed', code: 'OK', summary: '검토 완료', artifacts: [], questions: [], review_request: null, artifact_contents: [{ name: 'review.md', kind: 'architecture_review', content: '검토 내용' }] };
     await writeFile(join(tree.session_directory, 'runtime/executions/spec-reviewer/result.json'), JSON.stringify(reviewResult));
     await writeFile(join(tree.session_directory, 'runtime/executions/spec-reviewer/return.json'), JSON.stringify({ schema_version: 1, execution_id: 'spec-reviewer', skill: 'spec-me', status: 'completed', code: 'OK', result_ref: 'runtime/executions/spec-reviewer/result.json', result: reviewResult }));
@@ -925,6 +928,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.ok(addDirs.includes(await realpath(join(codexHome, 'tmp/arg0'))));
     assert.ok(!addDirs.includes(codexHome));
     assert.match(await readFile(promptPath, 'utf8'), /answers\.json/);
+    assert.doesNotMatch(await readFile(promptPath, 'utf8'), /# Stage 반환 계약/);
     const interruptedInput = { ...next.input, execution_id: 'interrupted-parent' };
     await writeExecutionInput(tree.workspace, interruptedInput, tree.plan_set_id);
     const interruptedStoredInput = await readExecutionInput({ root: tree.workspace, execution_id: interruptedInput.execution_id });
