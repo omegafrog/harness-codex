@@ -33,6 +33,13 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    for (const path of ['.codex/agents/plan_reviewer.toml', '.claude/agents/plan_reviewer.md']) {
+      const instructions = await readFile(join(root, path), 'utf8');
+      assert.match(instructions, /Do not require workspace_root, session_directory or review_delta fields/);
+      assert.match(instructions, /changed files in full/);
+      execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
+    }
     await mkdir(join(root, 'docs/specs/ticket-one'), { recursive: true });
     await writeFile(join(root, 'docs/specs/ticket-one/product-spec.md'), 'Status: approved\nProduct requirements.\n');
     await writeFile(join(root, 'docs/specs/ticket-one/architecture-spec.md'), 'Status: approved\nArchitecture.\n');
@@ -104,6 +111,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.equal(planAttempt.reviewer_input_ref, `runtime/executions/review-stage/plan-review-admission-${planAttempt.attempt_id}.json`);
     const reviewerSnapshot = JSON.parse(await readFile(join(root, '.io', planAttempt.reviewer_input_ref), 'utf8'));
     assert.equal(reviewerSnapshot.attempt_id, planAttempt.attempt_id);
+    for (const key of ['execution_id', 'attempt_id', 'plan_set_id', 'inputs', 'files', 'previous_inputs', 'previous_findings']) assert.ok(Object.hasOwn(reviewerSnapshot, key), key);
+    for (const key of ['workspace_root', 'session_directory', 'review_delta']) assert.ok(!Object.hasOwn(reviewerSnapshot, key), key);
     assert.ok(reviewerSnapshot.files.some((file) => file.path === 'docs/plans/ticket-one/slice.md' && file.content.includes('# Slice')));
     const planInput = { ...input, tool_use_id: 'dispatch-plan', tool_input: { ...input.tool_input, subagent_type: 'plan_reviewer', prompt: 'Review the plans.' } };
     const admissionPath = join(root, '.io', planAttempt.reviewer_input_ref);
@@ -133,7 +142,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     }
     assert.equal(planHistory.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: planScope });
-    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'spec_paths', 'plans', 'inputs']);
+    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'spec_paths', 'plans', 'inputs', 'execution_workspace']);
 
     await mkdir(join(root, 'docs/specs/budget-ticket'), { recursive: true });
     const budgetSpec = join(root, 'docs/specs/budget-ticket/architecture-spec.md');
