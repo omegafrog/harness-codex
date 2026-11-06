@@ -10,7 +10,7 @@ runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 �
 
 부모 stage 실행이 끊겨 `running`으로 남았고 결과가 없으면, 먼저 같은 `stage-id`로 `harness-prepare-input.mjs --feedback <재개 지시>`를 호출한다. 준비 단계는 기록된 owner/child process identity가 모두 종료됐는지 확인하고, 이전 execution 입력과 정본 `worktree.json`의 execution 매칭 session ID를 검증해 `context.resume_session_id`로 전달한다. 프로세스가 살아 있거나 identity·session ID가 모호하면 재개를 차단한다. 결과가 남지 않은 중단 stage는 완료로 간주하지 않으며, 새 입력 생성 후 기존 execution-state 시작 검증을 통과한 경우에만 실행한다.
 
-검증기가 `Return status/code mismatch`로 거부한 반환이 `blocked`와 revision code의 잘못된 조합이면 같은 stage에 `--feedback`으로 올바른 반환을 요청한다. 준비기는 원본 반환·실행 입력·정상 종료·동일 session과 나머지 계약을 검증하고 같은 대화를 재개한다. 기존 반환이나 상태를 고쳐 쓰거나 검증되지 않은 반환으로 다음 stage를 시작하지 않는다.
+실패한 stage는 실패 사유와 관계없이 같은 stage에 `--feedback`을 전달해 재개한다. 준비기는 기존 프로세스 종료와 입력·worktree·session 일치를 확인한다. 기존 반환이나 상태를 고쳐 쓰거나 검증되지 않은 반환으로 다음 stage를 시작하지 않는다.
 
 프로세스가 종료되고 검증된 반환과 결과가 이미 남아 있으면 준비기가 결과를 검증해 실제 상태를 반영한다. 진행률은 저장된 상태와 별도로 프로세스가 `stopped` 또는 `unknown`인 경우를 표시한다. 프로세스 종료만으로 작업의 성공이나 답변 대기를 추정하지 않는다.
 

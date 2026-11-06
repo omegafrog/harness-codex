@@ -752,8 +752,15 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(statePath, JSON.stringify(failedState));
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
     delete failedState.stages['spec-me'].owner;
+    failedState.stages['spec-me'].reason = 'Stage provider exited with code 1';
     await writeFile(statePath, JSON.stringify(failedState));
-    await writeFile(rawPath, JSON.stringify({ ...rawRevision, result: { ...rejectedRevision, execution_id: 'other' } }));
+    await writeFile(join(failedPrefix, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 1, session_id: record.worktree_id, thread_id: record.worktree_id }));
+    const failedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '재개'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(failedResume.input.context.resume_session_id, record.worktree_id);
+    await writeFile(join(failedPrefix, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 1, session_id: 'invalid', thread_id: 'invalid' }));
+    const missingSessionRecord = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
+    delete missingSessionRecord.agent_sessions;
+    await writeFile(tree.worktree_ref, JSON.stringify(missingSessionRecord));
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
   } finally {
     if (secondTree) await finishWorkflowWorktree({ workspace_root: secondTree.workspace, repository_root: root });

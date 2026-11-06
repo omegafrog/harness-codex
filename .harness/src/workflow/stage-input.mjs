@@ -322,39 +322,17 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
-    let interrupted = previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && previous.reason === 'Execution interrupted after its processes exited' && !previous.result_ref;
+    let interrupted = previous?.status === 'failed';
+    if (interrupted) await assertExecutionStopped(previous, { root, session: taskSession });
     if (!interrupted && previous?.status === 'running' && !previous.result_ref) {
       await assertExecutionStopped(previous, { root, session: taskSession });
       interrupted = true;
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
-    let rejectedResultRepair = false;
-    if (previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && !previous.result_ref && previous.reason?.includes('Result execution_id mismatch')) {
-      const candidate = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${previous.execution_id}/codex-last-message.json` });
-      const log = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${previous.execution_id}/exec.stderr.json` });
-      if (log.exit_code === 0 && candidate.execution_id === previous.execution_id && candidate.result?.execution_id !== previous.execution_id) {
-        const normalized = structuredClone(candidate);
-        normalized.result.execution_id = normalized.execution_id;
-        await validateSkillReturn({ root, input: previousInput, envelope: normalized });
-        rejectedResultRepair = true;
-      }
-    }
-    if (previous?.status === 'failed' && previous.code === 'EXECUTION_ERROR' && !previous.result_ref && previous.reason?.includes('Return status/code mismatch')) {
-      await assertExecutionStopped(previous, { root, session: taskSession });
-      const candidate = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/codex-last-message.json` });
-      const log = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/exec.stderr.json` });
-      if (log.exit_code === 0 && candidate.execution_id === previous.execution_id && candidate.result?.execution_id === previous.execution_id && candidate.status === 'blocked' && candidate.result?.status === candidate.status && candidate.result?.code === candidate.code && REVISION_TARGETS[candidate.code]) {
-        const normalized = structuredClone(candidate);
-        normalized.status = normalized.result.status = 'action_required';
-        normalized.result_ref ??= `${prefix}/result.json`;
-        await validateSkillReturn({ root, input: previousInput, envelope: normalized });
-        rejectedResultRepair = true;
-      }
-    }
-    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref) || rejectedResultRepair)) throw new Error('Feedback requires a review, matching revision or blocked stage, a recoverable rejected result, or a confirmed interrupted stage');
+    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, review, matching revision, blocked, or confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
-    if (!interrupted && !rejectedResultRepair) {
+    if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
       if (previousSession !== taskSession) throw new Error('Feedback target belongs to a different worktree session');
       const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
@@ -366,7 +344,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (sessionInfo) provider = sessionInfo.provider;
     else if (previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
-    const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted || rejectedResultRepair ? previousInput.context?.previous_result_ref : null);
+    const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
     conversation = { ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {
