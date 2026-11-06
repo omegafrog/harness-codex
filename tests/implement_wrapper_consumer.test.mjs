@@ -35,6 +35,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     const wrapper = await read('.codex/internal-skills/implement-wrapper/GUIDE.md');
     assert.match(wrapper, /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
     assert.match(wrapper, /최종 E2E 시나리오에 대한 실제 사용자 승인/);
+    assert.match(wrapper, /미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required\/SPEC_REVISION_REQUIRED`로 orchestrator에 반환/);
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /구현 단계에서 직접 사용자에게 결정 질문을 하거나 임의로 정하지 않는다/);
     const provider = await import(`file://${resolve(root, '.harness/src/workflow/providers/codex.mjs')}`);
     const harnessConfig = await read('.codex/harness.yaml').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');

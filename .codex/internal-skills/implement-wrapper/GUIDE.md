@@ -38,3 +38,5 @@ runtime의 `plan_review` gate가 승인된 입력의 현재성을 검사한다. 
 구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조를 남긴다. orchestrator가 독립 구현 리뷰와 plan 완료를 관리한다.
 
 Spec 변경은 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`, 사용자 결정은 `USER_DECISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
+
+구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator가 `spec-me`로 돌려보내 결정과 독립 리뷰를 진행하고 영향 계획을 재검토한 뒤 구현을 재개한다. 실행 환경·E2E 승인 등 Spec 결정이 아닌 사용자 질문은 기존 `USER_DECISION_REQUIRED` 경로를 유지한다.
