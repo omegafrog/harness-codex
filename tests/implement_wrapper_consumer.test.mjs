@@ -66,7 +66,16 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       assert.match(runner, /neither caller nor runner may automatically fix/);
       assert.match(runner, /internal-skills\/e2e-test\/GUIDE\.md/);
       assert.doesNotMatch(runner, /skills\/e2e-test\/SKILL\.md/);
+      assert.match(runner, /follow explicit user instructions for reruns/i);
+      assert.doesNotMatch(runner, /at most two total attempts/i);
     }
+    const verificationPolicy = await read('.codex/internal-skills/e2e-test/references/verification-policy.md');
+    assert.match(verificationPolicy, /사용자가 재실행을 지시한 경우 횟수만을 이유로 거부하지 않는다/);
+    assert.doesNotMatch(verificationPolicy, /시나리오별 시도 budget은 최초 1회/);
+    assert.match(await read('.codex/internal-skills/e2e-test/references/failure-learning.md'), /사용자가 재실행을 지시하면 시도 횟수와 관계없이 따른다/);
+    assert.doesNotMatch(await read('.codex/internal-skills/to-ticket/references/execution-evidence.md'), /총 시도 budget/);
+    assert.doesNotMatch(await read('.codex/internal-skills/to-ticket/references/github-issue-template.md'), /총 시도 budget/);
+    assert.doesNotMatch(await read('.codex/internal-skills/to-ticket/references/split.md'), /총 시도 budget/);
     // Scope control must reach installed runtimes and every provider's agent profile.
     const repair = await import(`file://${resolve(root, '.harness/src/wrapper/repair.mjs')}?scope=${Date.now()}`);
     const blocked = repair.planRepairRound({ reviews: [{ role: 'standards', state: 'failed', report: { findings: [{ id: 'SPEC-4', kind: 'implementation_defect', severity: 'major', summary: 'NFC', evidence: 'domain.ts:29' }] } }] });

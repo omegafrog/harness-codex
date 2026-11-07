@@ -14,7 +14,7 @@ Child plan의 테스트 계약은 비즈니스 로직 단위 테스트만 정의
 
 ## 계획 시
 
-각 slice의 기존 `수용 기준`에는 소유 UC/BR/INV 또는 기존 requirement ID와 사용자가 확인할 기대 결과를 적는다. 별도 대응표, ledger, requirement-to-code/test chain은 만들지 않는다. `테스트 계약`에는 소유 업무 규칙의 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. plan-set parent의 `ui ~ entity E2E` 필드에는 모든 split plan 통합 후 마지막에 실행할 feature-level 사용자 시나리오, oracle, profile, timeout, attempt budget을 기록하며 개별 slice에는 E2E를 배정하지 않는다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.
+각 slice의 기존 `수용 기준`에는 소유 UC/BR/INV 또는 기존 requirement ID와 사용자가 확인할 기대 결과를 적는다. 별도 대응표, ledger, requirement-to-code/test chain은 만들지 않는다. `테스트 계약`에는 소유 업무 규칙의 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. plan-set parent의 `ui ~ entity E2E` 필드에는 모든 split plan 통합 후 마지막에 실행할 feature-level 사용자 시나리오, oracle, profile, timeout을 기록하며 개별 slice에는 E2E를 배정하지 않는다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 문자열에 포함해 canonical renderer가 보존하게 한다.
 
 plan-set parent의 E2E 필드에는 feature-level 시나리오를 기록한다. 각 child slice는 “plan-set 최종 통합 E2E에서 확인”으로 parent 시나리오를 참조하고, 중복 E2E를 만들지 않는다. 기존 필수 실행·완료 gate는 테스트 생성과 분리해 검증 명령으로 보존한다.
 

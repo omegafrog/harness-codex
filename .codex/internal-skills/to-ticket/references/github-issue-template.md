@@ -75,7 +75,7 @@ Planned
 ## 테스트 계약
 
 - 단위/정책: [업무 규칙 검증 대상; verification_files: 경로 또는 none; verification_command: 기본 CLI 명령. Parent E2E만 execution_profile을 기록]
-- `ui ~ entity` E2E: [parent에는 plan-set 전체 통합 후 실행할 사용자 시나리오·oracle·profile·timeout·attempt budget; child에는 parent의 최종 E2E 참조]
+- `ui ~ entity` E2E: [parent에는 plan-set 전체 통합 후 실행할 사용자 시나리오·oracle·profile·timeout; child에는 parent의 최종 E2E 참조]
 
 ## 필요한 비테스트 검증
 
