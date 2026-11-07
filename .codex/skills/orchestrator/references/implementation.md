@@ -25,7 +25,7 @@ runtime dispatch가 `plan_review`를 검사해 확인한 canonical plan·Spec �
 
 ## 리뷰·통합·완료
 
-첫 plan dispatch 전 통합 리뷰 기준 HEAD를 기존 session/checkpoint에 보존하며 재개 시 재설정하지 않는다. 각 plan 구현과 단위 테스트 뒤 독립 구현 리뷰를 실행한다. 수정은 새 worker에 맡기고 원래 fixed point·review budget·checkpoint를 유지한다. Spec·계획 변경은 각각 해당 작성·리뷰 단계에 인계한다. 충돌 시 관련 실행을 멈추고 우선순위를 결정하며 활성 worker의 branch를 병합하지 않는다.
+첫 plan dispatch 전 통합 리뷰 기준 HEAD를 기존 session/checkpoint에 보존하며 재개 시 재설정하지 않는다. 각 plan 구현과 단위 테스트 뒤 독립 구현 리뷰를 실행한다. 수정은 새 worker에 맡기고 원래 fixed point·review budget·checkpoint를 유지한다. Spec·계획 변경은 각각 해당 작성·리뷰 단계에 인계한다. 구현자가 신고했거나 리뷰가 찾은 Spec 밖 동작은 수정이나 계획 변경으로 보내기 전에 사용자에게 유지/제거를 묻는다. 결함처럼 표현해 승인을 구하지 않고, 승인 Spec에 없는 동작이라는 점과 얻는 것·비용을 그대로 전달한다. plan만 고쳐 새 규칙을 넣지 않는다. 충돌 시 관련 실행을 멈추고 우선순위를 결정하며 활성 worker의 branch를 병합하지 않는다.
 
 각 plan의 검증·리뷰·commit이 끝나면 순차 workspace에서 통합하고 canonical tracker 완료 상태를 재조회한 뒤 의존성을 재평가한다. tracker 조회 실패나 mirror 불일치는 완료로 간주하지 않는다.
 

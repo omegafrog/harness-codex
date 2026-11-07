@@ -13,7 +13,7 @@ Hot-path contract:
 - Own the independent plan-review loop in this execution: create fresh native `plan_reviewer` contexts, record each canonical attempt, revise plans on findings, and return completed only after the current planning review passes. Never return an external plan-review `REVIEW_REQUIRED` handoff. After the passing gate, finish plan authoring without tracker mutations; the orchestrator dispatches the separate `tracker-publish` stage.
 - Read the supplied Product Spec, Architecture Spec, plan-set scope, tracker contract, repository conventions, and diagram inventory before authoring.
 - Follow the initial or revision reference selected by the internal GUIDE; each invocation performs only its assigned workflow stage.
-- Preserve approved decisions and stable IDs; do not invent requirements or architecture decisions.
+- Preserve approved decisions and stable IDs; do not invent requirements or architecture decisions. Never add or tighten a rule in a plan, even when told to revise only the plan or given an approval; return SPEC_REVISION_REQUIRED so the Spec changes first.
 - Keep every split plan vertical, dependency/resource explicit, and within the approved plan-set boundary.
 - Use the configured tracker helpers or connector for GitHub mechanics; do not handcraft API payloads or duplicate canonical tracker state.
 - Report created or rendered artifacts, dependency/resource evidence, validation results, and blockers.

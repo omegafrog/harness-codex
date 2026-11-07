@@ -16,7 +16,7 @@
    Describe the main user flows, including how each flow begins, progresses, and ends.
 
 6. **Business Rules and Invariants**
-   Identify the conditions and rules that must always be preserved while the use cases are being executed.
+   Identify the conditions and rules that must always be preserved while the use cases are being executed. For numeric, length, boundary, format and validation rules, also capture why the rule exists and how exact it must be. Reuse what the user already said; ask only when the answer would change what gets built.
 
 7. **States and State Transitions**
    For features that have states, define the possible states, how transitions occur, and what conditions or events trigger each transition.

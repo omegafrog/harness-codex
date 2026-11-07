@@ -67,6 +67,19 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       assert.match(runner, /internal-skills\/e2e-test\/GUIDE\.md/);
       assert.doesNotMatch(runner, /skills\/e2e-test\/SKILL\.md/);
     }
+    // Scope control must reach installed runtimes and every provider's agent profile.
+    const repair = await import(`file://${resolve(root, '.harness/src/wrapper/repair.mjs')}?scope=${Date.now()}`);
+    const blocked = repair.planRepairRound({ reviews: [{ role: 'standards', state: 'failed', report: { findings: [{ id: 'SPEC-4', kind: 'implementation_defect', severity: 'major', summary: 'NFC', evidence: 'domain.ts:29' }] } }] });
+    assert.equal(blocked.reason, 'unbacked_requirement');
+    assert.equal(blocked.next_action, 'user-decision');
+    assert.match(await read('.codex/scripts/harness-code-review.mjs'), /scope_decisions/);
+    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /unplanned_additions/);
+    for (const agent of ['standards_reviewer', 'spec_reviewer']) {
+      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /unrequested_behavior/);
+    }
+    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
+    assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 엄밀도:/);
+    assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /근거 없는 엄밀함/);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   };
