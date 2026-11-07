@@ -4,6 +4,14 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ## Active guidance
 
+### persist-harness-e2e-environment
+- Status: active
+- Applies to: Harness 소비자 workflow E2E의 최초 실행과 모든 resume
+- Guidance: `docs/agents/harness-e2e-env.sh`를 run별 session의 `environment.sh`로 보존하고 실제 session 경로와 TMPDIR/TMP/TEMP를 함께 기록한다. 각 독립 프로세스 실행 전에 source해 binding과 경로를 확인한다. 특히 worktree 생성 전 질문에 대한 resume에서도 같은 환경을 전달한다. 비밀정보는 저장하지 않는다.
+- Rationale: 최초 호출에만 binding을 지정하면 생성 전 질문 이후 resume에서 설정이 빠져 의도와 다른 provider/model로 worktree가 생성된다.
+- Source: 2026-11-07 사용자 요청: 테스트할 때 환경변수를 저장하라.
+- Updated: 2026-11-07
+
 ### runner-owned-execution-paths
 - Status: active
 - Applies to: workflow 실행 위치·발행 본문과 black-box 관찰
