@@ -49,6 +49,7 @@ E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 �
 
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `npm test`. 사용자 경로 live 검증과 별개다.
+- 완료된 Spec·계획의 사용자 수정 재개 경로는 `tests/worktree_record_contract.test.mjs`에서 함께 검사한다.
 - Spec 밖 동작의 사용자 결정 분기와 `basis` 인용 대조 검사는 `node --test tests/review_scope_guard.test.mjs`로 실행한다.
 - implement-wrapper의 순차 실행·통합 리뷰·최종 E2E 승인/실패 중단 지침 배포 검사는 `node --test tests/implement_wrapper_consumer.test.mjs`로 실행한다. 임시 consumer의 신규 설치·구버전 관리 자산 갱신·native 링크·Doctor 누락 진단·프로젝트 파일 Git 가시성을 확인한다. 서버·인프라나 실제 E2E를 실행하지 않는다.
 - Harness eval 계약의 집중 검사는 `node --test '--test-name-pattern=loads versioned suite|reports measured and unmeasured|pilot suite loads|artifact outcome|pilot reports quality' tests/eval_contract.test.mjs`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.

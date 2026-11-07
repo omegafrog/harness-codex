@@ -497,6 +497,10 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', result_ref: resultRefForQuestion });
     await writeFile(join(resultDir, 'exec.stderr.json'), JSON.stringify({ thread_id: record.worktree_id }));
+    const userRevision = { root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, codexSessionId: record.worktree_id, userRevision: true };
+    await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me', feedback: '고쳐' }), /requires a completed stage/);
+    await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'implement-wrapper', feedback: '고쳐' }), /spec-me or to-ticket/);
+    await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me' }), /requires feedback/);
     const unblocked = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '누락된 자료를 준비했습니다'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(unblocked.input.context.resume_session_id, record.worktree_id);
     assert.equal(unblocked.input.context.previous_result_ref, resultRefForQuestion);

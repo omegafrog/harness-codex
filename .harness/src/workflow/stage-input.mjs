@@ -13,6 +13,8 @@ import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 
+// 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
+const USER_REVISION_STAGES = new Set(['spec-me', 'to-ticket']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 
 async function archiveToTicket({ root, session, planSetId, previousExecutionId, restartExecutionId }) {
@@ -157,7 +159,8 @@ async function executionSession({ root, session, executionId, worktreeRef }) {
   return { provider, session_id };
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false }) {
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for spec-me or to-ticket');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
   let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
@@ -313,6 +316,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     input_refs.push(matches[0]);
   }
   const previous = restart ? null : state.stages?.[stageId];
+  const userRevisionWaiting = userRevision && previous?.status === 'completed' && previous.code === 'OK' && previous.result_ref;
+  if (userRevision && !userRevisionWaiting) throw new Error('User revision requires a completed stage');
+  if (userRevision && Object.values(state.stages).some((item) => item?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
   let conversation = {};
   let interruptedAnswers;
   const crossStageRevision = transition && lastStage !== stageId && REVISION_TARGETS[transition.code] === stageId;
@@ -330,7 +336,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
-    if (!interrupted && !(reviewWaiting || revisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, review, matching revision, blocked, or confirmed interrupted stage');
+    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, review, matching revision, blocked, or confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
     if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
@@ -345,7 +351,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     else if (previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
-    conversation = { ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {
     if (answer === null) throw new Error('User answer required before resuming this stage');

@@ -86,6 +86,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     const specReview = await import(`file://${resolve(root, '.harness/src/workflow/spec-review.mjs')}?scope=${Date.now()}`);
     assert.deepEqual(specReview.rulesMissingIntent('- BR-1: 최대 10자다.'), ['BR-1']);
     assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
+    assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
+    assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /--user-revision true/);
     assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /위임은 사용자가 그 선택을 맡긴다고 답한 경우에만 성립한다/);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
