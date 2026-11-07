@@ -342,6 +342,17 @@ test('installed local tracker progresses split plans without Beads', async () =>
     await updateProject({ sourceRoot, targetRoot: root });
     const answerGuide = await readFile(join(root, '.codex/internal-skills/skill-execution/references/input.md'), 'utf8');
     assert.match(answerGuide, /\{"question_id":"<현재-질문-ID>","answer":/);
+    assert.match(answerGuide, /“모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다/);
+    const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
+    assert.match(installedOrchestrator, /사용자가 질문 묶음에 대해 “모두 추천”이라고 답하면 그 답은 보여준 해당 묶음에만 적용한다/);
+    await writeFile(join(root, 'consumer-change.txt'), 'visible application change');
+    const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.match(consumerStatus, /consumer-change\.txt/);
+    assert.doesNotMatch(consumerStatus, /\.codex\/internal-skills\/|\.agents\/skills\/|\.harness\/src\/|\.io\//);
+    for (const path of ['.codex/internal-skills/skill-execution/references/input.md', '.agents/skills/orchestrator/SKILL.md']) {
+      execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
+    }
+    assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');
     await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
     await mkdir(join(root, 'docs/plans/calculator'), { recursive: true });
     await writeFile(join(root, 'docs/plans/calculator/calculator.md'), '---\nstatus: planned\n---\n# 계산기\n');

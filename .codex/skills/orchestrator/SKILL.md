@@ -61,4 +61,6 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if both host delivery and the listener report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
 
+사용자가 질문 묶음에 대해 “모두 추천”이라고 답하면 그 답은 보여준 해당 묶음에만 적용한다. 이후 새 질문이 반환되면 이전 답변을 새 질문 ID에 복사하거나 직접 답을 만들지 말고, 사용자가 앞으로의 질문까지 명시적으로 위임한 경우가 아니면 새 질문을 사용자에게 전달하고 기다린다.
+
 질문, 리뷰, 단계 산출물, completion receipt의 세부 형식은 이 문서에 복사하지 않는다. 실행 skill과 공통 실행 조율 계약을 따른다.
