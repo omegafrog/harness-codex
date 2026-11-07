@@ -118,6 +118,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     const stageOptions = { root: linked, resumeWriteDirs: [], binding: { model: 'model', reasoning_effort: 'medium' }, schemaPath: '/schema', output: '/output', skill: 'implement-wrapper', env: { HOME: root } };
     const writableArgs = await codex.buildCommand({ ...stageOptions, sandbox: 'workspace-write' });
     assert.ok(writableArgs.some((arg, index) => arg === '--add-dir' && writableArgs[index + 1] === root));
+    const commonGitDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: linked, encoding: 'utf8' }).trim();
+    assert.ok(writableArgs.some((arg, index) => arg === '--add-dir' && writableArgs[index + 1] === commonGitDir));
     const readonlyArgs = await codex.buildCommand({ ...stageOptions, sandbox: 'read-only' });
     assert.ok(!readonlyArgs.includes('--add-dir'));
     await writeFile(join(linked, 'app.txt'), 'application change');
