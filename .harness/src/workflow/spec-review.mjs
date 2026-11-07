@@ -17,6 +17,62 @@ async function assertSpecFinalized(root, ticketId) {
     }
   }
 }
+const SCOPED_RULE = /\d|최대|최소|이상|이하|초과|미만|길이|형식|검증|삭제.*(?:모든|함께|동반)|(?:모든|함께|동반).*삭제/;
+const RULE_LINE = /^\s*(?:[-*]\s*)?(?:\*\*)?(BR-\d+)\b/;
+
+const INTENT_LINE = /^\s*(?:[-*]\s*)?(?:\*\*)?(INT-[A-Z0-9-]+)\b/;
+const blockAfter = (lines, index) => {
+  const block = [];
+  for (const next of lines.slice(index + 1)) {
+    if (RULE_LINE.test(next) || INTENT_LINE.test(next) || /^#{1,6}\s|^\d+\.\s/.test(next)) break;
+    block.push(next);
+  }
+  return block.join('\n');
+};
+const fieldIssue = (id, block, fields) => {
+  if (fields.some((field) => !new RegExp(`${field}\\s*:`).test(block))) return `${id}: ${fields.join(', ')} 필요`;
+  return /출처\s*:\s*.*추정/.test(block) ? `${id}: 추정 출처는 사용자 승인 필요` : null;
+};
+
+// 의도가 있어야 구현과 리뷰가 "없으면 무엇이 깨지는가"로 판정하고 규칙을 임의로 강화하지 않는다.
+export function intentIssues(markdown) {
+  const lines = markdown.split('\n');
+  const issues = [];
+  let hasRule = false, hasIntent = false;
+  lines.forEach((line, index) => {
+    const intent = line.match(INTENT_LINE)?.[1];
+    if (intent) {
+      hasIntent = true;
+      const issue = fieldIssue(intent, blockAfter(lines, index), ['목적', '충분한 수준', '출처']);
+      if (issue) issues.push(issue);
+      return;
+    }
+    const id = line.match(RULE_LINE)?.[1];
+    if (!id) return;
+    hasRule = true;
+    if (!SCOPED_RULE.test(line.replace(/\b[A-Z]+-\d+\b/g, ''))) return;
+    const issue = fieldIssue(id, blockAfter(lines, index), ['의도', '충분한 수준', '출처']);
+    if (issue) issues.push(issue);
+  });
+  if (hasRule && !hasIntent) issues.unshift('제품 의도 INT-* 필요');
+  return issues;
+}
+
+// 위임은 라우팅 표현이 아니라 사용자가 실제로 답한 기록이 있어야 한다.
+export function decisionsWithoutDelegation(markdown) {
+  return markdown.split('\n')
+    .filter((line) => line.trim().startsWith('|') && line.includes('위임') && !line.includes('위임 없음') && !line.includes('answers.json'))
+    .map((line) => line.split('|')[1]?.trim() || line.trim());
+}
+
+async function assertSpecDiscipline(root, ticketId) {
+  const issues = intentIssues(await readFile(join(root, `docs/specs/${ticketId}/product-spec.md`), 'utf8'));
+  requireValue(!issues.length, `Product Spec intent is incomplete (use 미확인 when the user has not said): ${issues.join('; ')}`);
+  const decisions = await readFile(join(root, `docs/specs/${ticketId}/product-decisions.md`), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+  const unbacked = decisionsWithoutDelegation(decisions);
+  requireValue(!unbacked.length, `Delegated product decisions need a recorded answers.json source; ask the user instead: ${unbacked.join(', ')}`);
+}
+
 async function hash(root, path) {
   requireValue(typeof path === 'string' && path && !path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'Review input must be a relative file path');
   await assertWorkspaceTarget(root, path);
@@ -68,6 +124,7 @@ export async function inspectSpecReviews({ root, ticketId, reviews }) {
     const current = await snapshotSpecReview({ root, ticketId, input_paths: Object.keys(candidate.inputs) });
     requireValue(Object.keys(current).length === Object.keys(candidate.inputs).length && Object.entries(current).every(([path, digest]) => candidate.inputs[path] === digest), 'Architecture review inputs changed or required inputs were omitted');
     await assertSpecFinalized(root, ticketId);
+    await assertSpecDiscipline(root, ticketId);
     await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: candidate });
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }

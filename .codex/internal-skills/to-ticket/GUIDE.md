@@ -17,7 +17,7 @@ The static runner supplies `context.execution_workspace`. Do not author workspac
 
 When the user explicitly asks to restart a waiting or failed `to-ticket` stage from its completed `spec-me`, prepare a fresh stage input with `node .codex/scripts/harness-prepare-input.mjs --worktree-ref <canonical-worktree.json> --stage-id to-ticket --restart true`. The runner accepts this only in the active matching worktree, while `spec-me` is completed and tracker-publish has never started. It archives the prior plan set, review history, and `runtime/to-ticket` artifacts under `.io/runtime/restarts/`; execution history and Specs remain in place. Never use restart to bypass a running stage or reviewer.
 
-- Write canonical plans from the approved Specs, then execute the review loop in this stage. Ask the user only when a necessary decision cannot be resolved from the approved Specs.
+- Write canonical plans from the approved Specs, then execute the review loop in this stage. A plan carries a rule at the Spec's stated precision and never adds or tightens one. Ask the user only when a necessary decision cannot be resolved from the approved Specs.
 - A `revise` verdict causes a scoped plan revision and a new attempt with a new reviewer. Preserve the configured three substantive-attempt limit; after it is reached, return the concrete unresolved decision to the user. User answers do not count as a review pass.
 - A `pass` verdict completes plan authoring only after the current snapshot check. The orchestrator requests final user approval of the reviewed plan set before dispatching the separate `tracker-publish` workflow stage. This skill never publishes to the tracker or Beads.
 

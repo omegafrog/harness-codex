@@ -67,6 +67,33 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       assert.match(runner, /internal-skills\/e2e-test\/GUIDE\.md/);
       assert.doesNotMatch(runner, /skills\/e2e-test\/SKILL\.md/);
     }
+    // Scope control must reach installed runtimes and every provider's agent profile.
+    const repair = await import(`file://${resolve(root, '.harness/src/wrapper/repair.mjs')}?scope=${Date.now()}`);
+    const blocked = repair.planRepairRound({ reviews: [{ role: 'standards', state: 'failed', report: { findings: [{ id: 'SPEC-4', kind: 'implementation_defect', severity: 'major', summary: 'NFC', evidence: 'domain.ts:29' }] } }] });
+    assert.equal(blocked.reason, 'unbacked_requirement');
+    assert.equal(blocked.next_action, 'user-decision');
+    assert.match(await read('.codex/scripts/harness-code-review.mjs'), /scope_decisions/);
+    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /unplanned_additions/);
+    for (const agent of ['standards_reviewer', 'spec_reviewer']) {
+      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /unrequested_behavior/);
+    }
+    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
+    assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
+    assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);
+    assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 충분한 수준:/);
+    assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /근거 없는 엄밀함/);
+    const specReview = await import(`file://${resolve(root, '.harness/src/workflow/spec-review.mjs')}?scope=${Date.now()}`);
+    assert.deepEqual(specReview.intentIssues('INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n- BR-1: 최대 10자다.').length, 1);
+    await readFile(resolve(root, '.harness/src/workflow/stage-commit.mjs'));
+    await readFile(resolve(root, '.codex/internal-skills/code-review/references/baseline.md'));
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /commit_request/);
+    assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
+    assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
+    assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);
+    assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting\)/);
+    assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /--user-revision true/);
+    assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /위임은 사용자가 그 선택을 맡긴다고 답한 경우에만 성립한다/);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   };

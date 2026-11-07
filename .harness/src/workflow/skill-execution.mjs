@@ -244,7 +244,8 @@ export async function validateSkillInput({ root, input }) {
   for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
 }
 
-export async function validateSkillReturn({ root, input, envelope }) {
+// reopening: 사용자 수정으로 다시 열 완료 stage는 고칠 대상 Spec의 현재 리뷰를 요구하지 않는다.
+export async function validateSkillReturn({ root, input, envelope, reopening = false }) {
   input = await resolveInputWorktree(root, input);
   const schemas = await Promise.all(['input', 'return'].map((name) => json(join(root, CONTRACT, 'schemas', `${name}.schema.json`))));
   const flow = input.skill;
@@ -312,7 +313,7 @@ export async function validateSkillReturn({ root, input, envelope }) {
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
   if (envelope.status === 'completed') {
-    if (input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
+    if (!reopening && input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');
       await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
     }

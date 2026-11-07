@@ -34,6 +34,8 @@ export {
 export {
   BLOCKER_KINDS,
   REPAIRABLE_KINDS,
+  SCOPE_DECISION_KINDS,
+  buildScopeDecisionQuestions,
   classifyReviewFindings,
   planRepairRound,
   runBoundedReviewRepair,

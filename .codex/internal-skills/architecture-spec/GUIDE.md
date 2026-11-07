@@ -30,7 +30,7 @@ Architecture Spec drafting does not execute tests, services, or infrastructure a
 
 `spec-me`는 아래 절차로 확정한 결정과 근거를 template에 반영해 Architecture Spec을 작성하고 리뷰 지적에 따라 수정한다.
 
-1. Read the Product Spec and guidance first.
+1. Read the Product Spec and guidance first. Keep each rule's `의도` and `충분한 수준`. Every constraint cites the Product intent or rule ID it serves, and a constraint with no such ID is a Product decision to ask for, not an Architecture choice. The same applies to tightening a rule, such as adding normalization or a stricter counting unit.
 2. MUST read `references/topics.md` before starting the architecture interview; use every topic as the coverage checklist.
 3. MUST read [Architecture Spec review criteria](../spec-review/references/review-criteria.md), [DDD model continuity](../ddd-design/references/model-continuity.md), and [testing guidance](../testing-guidance/GUIDE.md) before writing. Use the criteria to connect Product behavior, DDD ownership, business-rule unit-test cases, technology choices, evidence, and required infrastructure before handing off the frozen Spec.
 4. Run [code-research](../code-research/GUIDE.md) to summarize the current structure and the gap from the target design. Reuse the current `domain-baseline` stage result if it covers the same workspace/commit and affected scope; refresh only changed or missing facts. Before proposing a new owner, show how the existing context/aggregate could own the change and why that is sufficient or insufficient.

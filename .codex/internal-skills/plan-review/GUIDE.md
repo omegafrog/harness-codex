@@ -6,6 +6,8 @@
 
 최초 독립 리뷰는 review snapshot이 지정한 Product Spec·Architecture Spec, 계획 index와 모든 canonical plan을 직접 읽고 대조한다. Spec 경로가 별도로 지정되지 않은 기본 위치는 `docs/specs/<plan-set-id>/product-spec.md`, `docs/specs/<plan-set-id>/architecture-spec.md`다. 재리뷰는 아래 변경 범위 규칙을 따른다. Spec의 동작·제약·DDD 경계, 각 slice의 `max_plan_tokens`, plan 간 의존·인계, 업무 규칙 단위 테스트와 통합 후 단일 feature E2E 계약을 검토한다.
 
+양방향으로 대조한다. Spec이 plan에 모두 반영됐는지와 함께, plan의 모든 규칙·제한·동작·테스트 기대값이 승인 Spec에 근거가 있는지 확인한다. 사용자 승인 기록이 있어도 Spec에 없는 규칙을 더하거나 Spec 규칙을 더 엄격하게 만든 plan은 major로 지적한다. 그 변경은 `SPEC_REVISION_REQUIRED`로 Spec에 먼저 반영한다.
+
 자동 검사는 전체 입력 snapshot과 이전 hash·지적을 보존한다. 최초 리뷰는 전체를 읽고, 재리뷰는 admission의 `inputs`와 `previous_inputs`를 비교해 변경된 파일 전체, `previous_findings`와 직접 영향을 받는 Spec·plan 관계를 새 reviewer가 확인한다. 이전에 통과한 무관한 항목은 유지한다. 이전 기준이 없거나 모호하거나 동일하면 전체 snapshot과 이전 지적을 독립적으로 검토한다. 리뷰 지침이나 환경 문제로 리뷰가 성립하지 않았으면 계획을 임의로 바꾸지 않고 현재 snapshot을 새 reviewer가 다시 검토한다. 기존 리뷰 이력과 실제 지적, 재시도 한도는 유지한다. 변경 영향 판단은 reviewer가 수행하며 전체 snapshot gate는 계속 현재성을 확인한다.
 
 ## 실행 모델과 반환

@@ -27,6 +27,7 @@ function validateHistory(history) {
   requireValue(Array.isArray(history.attempts) && (history.repairs === undefined || Array.isArray(history.repairs)), 'Invalid review history');
   requireValue(!history.resolution || Number.isSafeInteger(history.resolution.after) && history.resolution.after > 0 && history.resolution.after <= history.attempts.length && history.attempts[history.resolution.after - 1].round === 3 && !['active', 'pass'].includes(history.attempts[history.resolution.after - 1].status) && typeof history.resolution.reason === 'string' && history.resolution.reason.trim(), 'Invalid review resolution');
   requireValue(!history.preparation_resolution || Number.isSafeInteger(history.preparation_resolution.after) && history.preparation_resolution.after > 0 && history.preparation_resolution.after <= history.attempts.length && history.attempts.slice(0, history.preparation_resolution.after).at(-1)?.pre_dispatch_preparation && typeof history.preparation_resolution.reason === 'string' && history.preparation_resolution.reason.startsWith('preparation recovery: ') && history.preparation_resolution.reason.trim().length > 'preparation recovery: '.length, 'Invalid preparation recovery');
+  requireValue(history.scope_removals === undefined || Array.isArray(history.scope_removals) && history.scope_removals.every((item) => typeof item?.inputs?.implementation_commit_sha === 'string' && Array.isArray(item.findings) && item.findings.length > 0), 'Invalid scope removal history');
   const repairs = history.repairs || [];
   requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && Number.isSafeInteger(item.limit) && item.limit >= item.round && item.limit <= 2 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
   requireValue(!history.repair_resolution || Number.isSafeInteger(history.repair_resolution.after) && history.repair_resolution.after > 0 && history.repair_resolution.after <= repairs.length && repairs[history.repair_resolution.after - 1].round === repairs[history.repair_resolution.after - 1].limit && typeof history.repair_resolution.reason === 'string' && history.repair_resolution.reason.trim() && ((!history.repair_resolution.previous_snapshot_sha256 && !history.repair_resolution.current_snapshot_sha256) || (/^[a-f0-9]{64}$/.test(history.repair_resolution.previous_snapshot_sha256 || '') && /^[a-f0-9]{64}$/.test(history.repair_resolution.current_snapshot_sha256 || '') && history.repair_resolution.previous_snapshot_sha256 !== history.repair_resolution.current_snapshot_sha256)), 'Invalid repair resolution');
@@ -44,6 +45,9 @@ async function readHistory(path) {
 }
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
+// 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
+export const MAX_REPAIR_CYCLES = 3;
+
 export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
@@ -60,6 +64,8 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         requireValue(history.repairs.length > 0 && typeof resolution?.reason === 'string' && resolution.reason.trim(), 'Explicit user scope/decision resolution is required');
         const cycle = history.repairs.slice(history.repair_resolution?.after || 0);
         requireValue(cycle.length && cycle.length >= cycle[0].limit, 'Resolve requires an exhausted implementation repair cycle');
+        const cycles = history.repairs.filter((item) => item.round === 1).length;
+        if (cycles >= MAX_REPAIR_CYCLES && !resolution.user_cycle_approval) throw Object.assign(new Error(`This plan already used ${cycles} repair cycles; ask the user to continue, accept the current state, or stop`), { code: 'repair_cycle_limit', cycles });
         requireValue(typeof cycle[0].inputs.plan_set_id === 'string' && /^[a-f0-9]{64}$/.test(cycle[0].inputs.planning_snapshot_sha256 || ''), 'Repair budget reset requires a reviewed planning snapshot');
         requireValue(resolution.previous_snapshot_sha256 === cycle[0].inputs.planning_snapshot_sha256 && /^[a-f0-9]{64}$/.test(resolution.current_snapshot_sha256 || '') && resolution.current_snapshot_sha256 !== resolution.previous_snapshot_sha256, 'Repair budget reset requires a different passing planning snapshot');
         history.repair_resolution = { after: history.repairs.length, reason: resolution.reason, previous_snapshot_sha256: resolution.previous_snapshot_sha256, current_snapshot_sha256: resolution.current_snapshot_sha256 };
@@ -78,6 +84,19 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         history.repairs.push(reservation);
         result = { status: 'pass', ...reservation };
       }
+    } else if (action === 'scope-removal') {
+      // 사용자가 제거를 결정한 Spec 밖 동작은 예산과 별도로 기록하되 커밋·reviewer 재사용은 똑같이 막는다.
+      requireValue(scope.startsWith('implementation-'), 'Implementation repair scope is required');
+      requireValue(inputs?.fixed_point && inputs?.implementation_commit_sha, 'Fixed point and implementation commit are required');
+      requireValue(Array.isArray(findings) && findings.length > 0 && findings.every((item) => item?.repair_directive === 'remove_unrequested_behavior' && item.scope_decision?.choice === 'reject'), 'Scope removal requires findings with a recorded user rejection');
+      history.scope_removals ||= [];
+      const cycle = (history.repairs || []).slice(history.repair_resolution?.after || 0);
+      const reserved = [...cycle, ...history.scope_removals];
+      requireValue(!cycle.length || cycle[0].inputs.fixed_point === inputs.fixed_point, 'Keep the original review fixed point across repair and resume');
+      requireValue(!reserved.some((item) => item.inputs.implementation_commit_sha === inputs.implementation_commit_sha), 'This commit already has a reserved repair; resume that correction before requesting another');
+      requireValue(!reserved.some((item) => item.inputs.reviewer_ids?.some((id) => inputs.reviewer_ids?.includes(id))), 'Each implementation repair review requires fresh reviewer contexts');
+      history.scope_removals.push({ inputs, findings });
+      result = { status: 'pass', scope_removal: true, round: cycle.length, findings };
     } else if (action === 'begin') {
       requireValue(inputs && Object.keys(inputs).length > 0, 'Review inputs are required');
       requireValue(last?.status !== 'active', 'A review is already active; record its result or abort it before dispatch');

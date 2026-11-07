@@ -49,6 +49,30 @@ test('generated output schemas expose questions without a singular result field'
   }
 });
 
+test('implementation stages must declare unplanned additions in their structured result', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-unplanned-schema-'));
+  try {
+    const generate = async (skill) => {
+      const path = join(directory, `${skill}.schema.json`);
+      await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
+      return (await readJson(path)).properties.result;
+    };
+    for (const skill of ['implement', 'implement-wrapper']) {
+      const result = await generate(skill);
+      assert.ok(result.required.includes('unplanned_additions'), skill);
+      assert.deepEqual(result.properties.unplanned_additions.items.required, ['id', 'summary', 'evidence', 'benefit', 'cost', 'rule_impact', 'plain_explanation']);
+      assert.ok(result.required.includes('commit_request'), skill);
+      assert.equal(Object.hasOwn(result.properties, 'commit_sha'), false);
+    }
+    const other = await generate('to-ticket');
+    assert.equal(Object.hasOwn(other.properties, 'unplanned_additions'), false);
+    assert.equal(other.required.includes('unplanned_additions'), false);
+    assert.equal(Object.hasOwn(other.properties, 'commit_request'), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('provider output schemas keep Claude hints out of the Codex contract', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-provider-schema-'));
   try {
