@@ -353,6 +353,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
     await mkdir(join(root, 'docs/plans/calculator'), { recursive: true });
     await writeFile(join(root, 'docs/plans/calculator/calculator.md'), '---\nstatus: planned\n---\n# 계산기\n');
