@@ -16,8 +16,9 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const resultSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
   const result = schema.properties.result.properties;
-  if (IMPLEMENTATION_FLOWS.has(flow)) schema.properties.result.required.push('unplanned_additions');
-  else delete result.unplanned_additions;
+  delete result.commit_sha;
+  if (IMPLEMENTATION_FLOWS.has(flow)) schema.properties.result.required.push('unplanned_additions', 'commit_request');
+  else { delete result.unplanned_additions; delete result.commit_request; }
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
     const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill) && !(input.skill === 'spec-me' && skill === 'spec-review'));

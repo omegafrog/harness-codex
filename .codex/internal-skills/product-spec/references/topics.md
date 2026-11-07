@@ -4,7 +4,7 @@
    Identify the circumstances in which the problem occurs, how it manifests, and what impact it currently has.
 
 2. **Goals and Desired Outcomes**
-   Focus on the outcome the product should produce rather than only describing what should be built.
+   Focus on the outcome the product should produce rather than only describing what should be built. Capture one product intent per feature: its purpose and what level is sufficient. Do not ask the user to list what is out of bounds.
 
 3. **Users and Actors**
    Identify the users, external systems, and other participants involved in the product or workflow.
@@ -16,7 +16,7 @@
    Describe the main user flows, including how each flow begins, progresses, and ends.
 
 6. **Business Rules and Invariants**
-   Identify the conditions and rules that must always be preserved while the use cases are being executed. For numeric, length, boundary, format and validation rules, also capture why the rule exists and how exact it must be. Reuse what the user already said; ask only when the answer would change what gets built.
+   Identify the conditions and rules that must always be preserved while the use cases are being executed. For numeric, length, boundary, format, validation and delete-propagation rules, also capture why the rule exists and what level is sufficient. Derive these from the product intent and confirm them together in one batch; ask rule by rule only when the answer would change what gets built.
 
 7. **States and State Transitions**
    For features that have states, define the possible states, how transitions occur, and what conditions or events trigger each transition.

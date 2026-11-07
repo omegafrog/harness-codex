@@ -45,6 +45,9 @@ async function readHistory(path) {
 }
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
+// 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
+export const MAX_REPAIR_CYCLES = 3;
+
 export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
@@ -61,6 +64,8 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         requireValue(history.repairs.length > 0 && typeof resolution?.reason === 'string' && resolution.reason.trim(), 'Explicit user scope/decision resolution is required');
         const cycle = history.repairs.slice(history.repair_resolution?.after || 0);
         requireValue(cycle.length && cycle.length >= cycle[0].limit, 'Resolve requires an exhausted implementation repair cycle');
+        const cycles = history.repairs.filter((item) => item.round === 1).length;
+        if (cycles >= MAX_REPAIR_CYCLES && !resolution.user_cycle_approval) throw Object.assign(new Error(`This plan already used ${cycles} repair cycles; ask the user to continue, accept the current state, or stop`), { code: 'repair_cycle_limit', cycles });
         requireValue(typeof cycle[0].inputs.plan_set_id === 'string' && /^[a-f0-9]{64}$/.test(cycle[0].inputs.planning_snapshot_sha256 || ''), 'Repair budget reset requires a reviewed planning snapshot');
         requireValue(resolution.previous_snapshot_sha256 === cycle[0].inputs.planning_snapshot_sha256 && /^[a-f0-9]{64}$/.test(resolution.current_snapshot_sha256 || '') && resolution.current_snapshot_sha256 !== resolution.previous_snapshot_sha256, 'Repair budget reset requires a different passing planning snapshot');
         history.repair_resolution = { after: history.repairs.length, reason: resolution.reason, previous_snapshot_sha256: resolution.previous_snapshot_sha256, current_snapshot_sha256: resolution.current_snapshot_sha256 };

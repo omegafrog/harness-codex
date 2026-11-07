@@ -5,11 +5,11 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { planRepairRound, reserveImplementationRepair, runBoundedReviewRepair } from '../.harness/src/wrapper/repair.mjs';
 import { sessionDirectory } from '../.harness/src/workflow/session-output.mjs';
-import { decisionsWithoutDelegation, rulesMissingIntent } from '../.harness/src/workflow/spec-review.mjs';
+import { decisionsWithoutDelegation, intentIssues } from '../.harness/src/workflow/spec-review.mjs';
 
 const PRODUCT_RULE = '게시글 본문은 최대 5,000자다.';
 const basis = { source: 'product_spec', quote: PRODUCT_RULE };
-const defect = { id: 'STD-1', kind: 'implementation_defect', severity: 'major', summary: '초과 입력을 저장한다', evidence: 'domain.ts:3', basis };
+const defect = { id: 'STD-1', kind: 'implementation_defect', severity: 'major', summary: '초과 입력을 저장한다', evidence: 'domain.ts:3', basis, intent_ref: 'BR-12', failure_scenario: '회원이 긴 글을 붙여 넣으면 제한 없이 저장된다' };
 
 function evidence({ findings = [], additions = [], commit = 'c1', spec = [], ids = ['std-1', 'spec-1'] } = {}) {
   const reviewInput = {
@@ -127,27 +127,27 @@ test('accepted findings let the review gate pass without repair', async () => {
   assert.equal(result.reviews[0].resolved_by_user[0].id, 'U-1');
 });
 
-test('scoped rules need intent and precision while plain rules do not', () => {
+test('scoped rules need intent, sufficient level and source while plain rules do not', () => {
   const spec = [
+    'INT-COMMUNITY', '- 목적: 소규모 게시판', '- 충분한 수준: 일반 흐름', '- 출처: 사용자 답변',
     '- BR-12: 게시글 본문은 최대 5,000자다.',
-    '- BR-13: 게시글이 삭제되면 모든 댓글도 함께 삭제된다.',
+    '- BR-13: 게시글이 삭제되면 그 게시글의 모든 댓글도 같은 작업에서 삭제 상태가 된다.',
     '- BR-14: 계산기 홈 화면은 커뮤니티로 이동하는 링크를 제공한다.',
-    '- BR-15: 공개 별명은 1–32자다.',
-    '  - 의도: 표시 깨짐 방지',
-    '  - 엄밀도: 플랫폼 기본 동작',
+    '- BR-15: 공개 별명은 1–32자다.', '  - 의도: 표시 깨짐 방지', '  - 충분한 수준: 플랫폼 기본 동작', '  - 출처: 사용자 답변',
     '- BR-16: 이메일은 공개하지 않는다.',
   ].join('\n');
-  assert.deepEqual(rulesMissingIntent(spec), ['BR-12', 'BR-13']);
+  const issues = intentIssues(spec);
+  assert.equal(issues.length, 2);
+  assert.match(issues[0], /^BR-12/);
+  assert.match(issues[1], /^BR-13/);
+  assert.deepEqual(intentIssues('- BR-3: 숨김·삭제된 콘텐츠는 일반 열람 결과에 포함하지 않는다.'), ['제품 의도 INT-* 필요']);
 });
 
-test('a real delete propagation rule is recognized', () => {
-  const rule = '- BR-13: 게시글이 삭제되면 그 게시글의 모든 댓글도 같은 작업에서 삭제 상태가 되어 공개 열람에서 제외되며 본문은 보존되지 않는다.';
-  assert.deepEqual(rulesMissingIntent(rule), ['BR-13']);
-  assert.deepEqual(rulesMissingIntent('- BR-3: 숨김·삭제된 콘텐츠는 일반 열람 결과에 포함하지 않는다.'), []);
-});
-
-test('an unrecorded value may be marked unknown instead of invented', () => {
-  assert.deepEqual(rulesMissingIntent('BR-1: 최대 10건이다.\n- 의도: 미확인\n- 엄밀도: 플랫폼 기본 동작\n'), []);
+test('an unrecorded value may be unknown but an inferred source needs approval', () => {
+  const intent = 'INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n';
+  assert.deepEqual(intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 미확인\n- 충분한 수준: 플랫폼 기본 동작\n- 출처: 사용자 답변\n`), []);
+  const inferred = intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 남용 억제\n- 충분한 수준: 대략적 상한\n- 출처: 추정\n`);
+  assert.match(inferred[0], /추정/);
 });
 
 test('a delegated decision needs a recorded user answer', () => {
@@ -165,7 +165,7 @@ test('the Spec gate blocks completion on a missing rule intent', async () => {
   const { inspectSpecReviews } = await import('../.harness/src/workflow/spec-review.mjs');
   const { snapshotSpecReview } = await import('../.harness/src/workflow/spec-review.mjs');
   await mkdir(resolve(root, 'docs/specs/t'), { recursive: true });
-  await writeFile(resolve(root, 'docs/specs/t/product-spec.md'), '- BR-1: 본문은 최대 10자다.\n');
+  await writeFile(resolve(root, 'docs/specs/t/product-spec.md'), 'INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n- BR-1: 본문은 최대 10자다.\n');
   await writeFile(resolve(root, 'docs/specs/t/architecture-spec.md'), '# A\n');
   const inputs = await snapshotSpecReview({ root, ticketId: 't' });
   const reviews = { architecture: { axis: 'architecture', ticket_id: 't', reviewer_id: 'r', author_ids: ['w'], fork_turns: 'none', verdict: 'pass', findings: [], inputs } };
@@ -183,6 +183,91 @@ async function consumer() {
   await writeFile(resolve(root, 'docs/specs/p/architecture-spec.md'), '# Architecture\n');
   return root;
 }
+
+const incident = (id, fields) => ({ id, kind: 'implementation_defect', severity: 'major', summary: id, evidence: 'x.ts:1', basis, ...fields });
+
+test('incident findings are judged against intent, not against how strict they sound', () => {
+  const judge = (finding) => planRepairRound({ reviews: evidence({ findings: [finding] }).reviews });
+  const nfc = judge(incident('NFC', { intent_ref: 'BR-12' }));
+  assert.equal(nfc.reason, 'unbacked_requirement');
+  const hiddenRetry = judge(incident('HIDDEN-RETRY', { failure_scenario: '글이 숨겨진 뒤 재시도하면 이전 결과를 못 받는다' }));
+  assert.equal(hiddenRetry.reason, 'unbacked_requirement');
+  const emoji = judge({ id: 'EMOJI', kind: 'advisory', severity: 'minor', summary: '이모지 5,000개 입력 불가', evidence: 'x.ts:1' });
+  assert.equal(emoji.action, 'complete');
+  const reports = judge(incident('REPORTS', { intent_ref: 'BASELINE-1', failure_scenario: '관리자가 원자적 경로를 우회해 신고 결과를 직접 고친다', basis: { source: 'repository_standard', path: '.codex/internal-skills/code-review/references/baseline.md', quote: '권한 우회 또는 다른 사용자 데이터 노출' } }));
+  assert.equal(reports.action, 'repair');
+});
+
+test('a design decision reaches spec-me only after the user adopts it', () => {
+  for (const kind of ['requirement_ambiguity', 'architecture_decision', 'scope_expansion', 'spec_conflict']) {
+    const { reviews } = evidence({ findings: [{ id: 'D-1', kind, severity: 'major', summary: '숨김 뒤 재시도 결과 저장', evidence: 'x.ts:1', failure_scenario: '드문 경우', plain_explanation: '영수증 테이블이 필요하다' }] });
+    const asked = planRepairRound({ reviews });
+    assert.equal(asked.next_action, 'user-decision', kind);
+    const question = asked.user_questions[0].question;
+    assert.deepEqual(question.options.map((item) => item.label), ['지원 안 함', 'Spec에 추가']);
+    assert.equal(question.recommended_option_id, 'reject');
+    assert.match(question.rationale, /영수증 테이블이 필요하다/);
+    assert.equal(planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'D-1', choice: 'reject' }] }).action, 'complete');
+    assert.equal(planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'D-1', choice: 'adopt' }] }).next_action, 'spec-me');
+  }
+});
+
+test('an exhausted budget asks about remaining findings instead of escalating them', () => {
+  const { reviews } = evidence({ findings: [defect] });
+  const blocked = planRepairRound({ reviews, round: 1, maxRounds: 1 });
+  assert.equal(blocked.reason, 'max_repair_rounds_exceeded');
+  assert.equal(blocked.next_action, 'user-decision');
+  assert.deepEqual(blocked.user_questions[0].question.options.map((item) => item.label), ['지원 안 함', '수정 계속']);
+  assert.equal(planRepairRound({ reviews, round: 1, maxRounds: 1, scopeDecisions: [{ finding_id: 'STD-1', choice: 'reject' }] }).action, 'complete');
+});
+
+test('the repair cycle limit needs a recorded answer to continue', async () => {
+  const { updateReviewAttempt, MAX_REPAIR_CYCLES } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const root = await consumer();
+  const scope = { root, scope: 'implementation-cycle' };
+  const snapshot = (n) => String(n).repeat(64);
+  const reserve = (n) => updateReviewAttempt({ ...scope, action: 'repair', maxRounds: 1, findings: [], inputs: { fixed_point: 'base', implementation_commit_sha: `c${n}`, reviewer_ids: [`r${n}`], plan_set_id: 'p', planning_snapshot_sha256: snapshot(n) } });
+  const resolveCycle = (n, extra = {}) => updateReviewAttempt({ ...scope, action: 'resolve-repair', resolution: { reason: 'scope changed', previous_snapshot_sha256: snapshot(n), current_snapshot_sha256: snapshot(n + 1), ...extra } });
+  for (let n = 1; n < MAX_REPAIR_CYCLES; n += 1) { await reserve(n); await resolveCycle(n); }
+  await reserve(MAX_REPAIR_CYCLES);
+  await assert.rejects(resolveCycle(MAX_REPAIR_CYCLES), { code: 'repair_cycle_limit' });
+  assert.equal((await resolveCycle(MAX_REPAIR_CYCLES, { user_cycle_approval: { choice: 'adopt' } })).status, 'pass');
+});
+
+test('the runner commits only requested paths in a linked worktree', async () => {
+  const { commitStageRequest } = await import('../.harness/src/workflow/stage-commit.mjs');
+  await mkdir('.io/runtime', { recursive: true });
+  const base = await mkdtemp(resolve('.io/runtime/stage-commit-'));
+  const main = resolve(base, 'main'), root = resolve(base, 'wt');
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', main]);
+  git(main, 'config', 'user.email', 't@example.com'); git(main, 'config', 'user.name', 't');
+  await writeFile(resolve(main, 'a.txt'), 'a'); git(main, 'add', 'a.txt'); git(main, 'commit', '-qm', 'init');
+  git(main, 'worktree', 'add', '-q', root, '-b', 'work');
+  await mkdir(resolve(root, 'src'));
+  await writeFile(resolve(root, 'src/app.ts'), 'x');
+  await writeFile(resolve(root, 'notes.md'), 'project owned');
+  const rawPath = resolve(base, 'raw.json');
+  const write = (result) => writeFile(rawPath, JSON.stringify({ result }));
+
+  await write({ commit_request: null });
+  assert.equal(await commitStageRequest({ root, rawPath }), null);
+  for (const paths of [['../a.txt'], ['.git/config'], ['.io/x'], ['/etc/passwd'], ['.']]) {
+    await write({ commit_request: { message: 'm', paths } });
+    await assert.rejects(commitStageRequest({ root, rawPath }), /workspace-relative/);
+  }
+  await write({ commit_request: { message: 'feat: app', paths: ['src/app.ts'] } });
+  const sha = await commitStageRequest({ root, rawPath });
+  assert.equal(git(root, 'rev-parse', 'HEAD'), sha);
+  assert.equal(JSON.parse(await readFile(rawPath, 'utf8')).result.commit_sha, sha);
+  assert.equal(git(root, 'show', '--name-only', '--format=', 'HEAD'), 'src/app.ts');
+  assert.match(git(root, 'status', '--short'), /notes\.md/);
+
+  await writeFile(resolve(root, 'other.txt'), 'staged by someone else'); git(root, 'add', 'other.txt');
+  await writeFile(resolve(root, 'src/app.ts'), 'y');
+  await write({ commit_request: { message: 'm', paths: ['src/app.ts'] } });
+  await assert.rejects(commitStageRequest({ root, rawPath }), /outside the commit request/);
+});
 
 test('a quote absent from the approved Spec is treated as an invented requirement', async () => {
   const root = await consumer();

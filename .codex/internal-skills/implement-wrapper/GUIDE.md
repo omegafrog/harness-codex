@@ -41,4 +41,6 @@ Spec 변경은 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISIO
 
 구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator가 `spec-me`로 돌려보내 결정과 독립 리뷰를 진행하고 영향 계획을 재검토한 뒤 구현을 재개한다. 실행 환경·E2E 승인 등 Spec 결정이 아닌 사용자 질문은 기존 `USER_DECISION_REQUIRED` 경로를 유지한다.
 
+구현자는 직접 commit하지 않고 `commit_request`를 반환하며 실행기가 지정된 파일만 commit한다. 메인 세션이나 관찰자가 대신 commit하지 않는다.
+
 이미 구현된 Spec 밖 동작을 유지할지 제거할지는 Spec 수정을 시작하기 전에 사용자가 정한다. 구현자의 `unplanned_additions`와 리뷰의 `unrequested_behavior`·`unbacked_requirement`는 `code-review`의 [판정과 수정 절차](../../../.codex/internal-skills/code-review/GUIDE.md#판정과-수정-절차)에 따라 `USER_DECISION_REQUIRED`로 반환한다. wrapper가 임의로 유지하거나 일관성을 맞추려고 확대하지 않는다. 유지가 선택된 경우에만 위의 `SPEC_REVISION_REQUIRED` 경로로 간다.

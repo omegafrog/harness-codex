@@ -202,7 +202,8 @@
           "evidence",
           "benefit",
           "cost",
-          "rule_impact"
+          "rule_impact",
+          "plain_explanation"
         ],
         "properties": {
           "id": {
@@ -231,9 +232,44 @@
               "business_rule"
             ],
             "description": "none only when the change adds no business rule, limit, validation, state or data behavior."
+          },
+          "plain_explanation": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One plain sentence a non-specialist can use to decide."
           }
         }
       }
+    },
+    "commit_request": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "paths"
+      ],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "description": "Do not run git commit. The runner commits exactly these paths after the stage ends. Null when nothing should be committed."
+    },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
     }
   }
 }

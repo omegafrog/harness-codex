@@ -81,10 +81,13 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
     assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);
-    assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 엄밀도:/);
+    assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 충분한 수준:/);
     assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /근거 없는 엄밀함/);
     const specReview = await import(`file://${resolve(root, '.harness/src/workflow/spec-review.mjs')}?scope=${Date.now()}`);
-    assert.deepEqual(specReview.rulesMissingIntent('- BR-1: 최대 10자다.'), ['BR-1']);
+    assert.deepEqual(specReview.intentIssues('INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n- BR-1: 최대 10자다.').length, 1);
+    await readFile(resolve(root, '.harness/src/workflow/stage-commit.mjs'));
+    await readFile(resolve(root, '.codex/internal-skills/code-review/references/baseline.md'));
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /commit_request/);
     assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
     assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
     assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);

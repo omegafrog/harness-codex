@@ -60,11 +60,14 @@ test('implementation stages must declare unplanned additions in their structured
     for (const skill of ['implement', 'implement-wrapper']) {
       const result = await generate(skill);
       assert.ok(result.required.includes('unplanned_additions'), skill);
-      assert.deepEqual(result.properties.unplanned_additions.items.required, ['id', 'summary', 'evidence', 'benefit', 'cost', 'rule_impact']);
+      assert.deepEqual(result.properties.unplanned_additions.items.required, ['id', 'summary', 'evidence', 'benefit', 'cost', 'rule_impact', 'plain_explanation']);
+      assert.ok(result.required.includes('commit_request'), skill);
+      assert.equal(Object.hasOwn(result.properties, 'commit_sha'), false);
     }
     const other = await generate('to-ticket');
     assert.equal(Object.hasOwn(other.properties, 'unplanned_additions'), false);
     assert.equal(other.required.includes('unplanned_additions'), false);
+    assert.equal(Object.hasOwn(other.properties, 'commit_request'), false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
