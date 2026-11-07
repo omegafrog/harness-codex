@@ -72,10 +72,14 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
 
   await writeFile(join(root, '.codex/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const nodes = [];
-  const run = async (args) => JSON.stringify(args[0] === 'api'
+  let projectMutations = 0;
+  const run = async (args) => {
+    if (args[0] === 'api' && args[3]?.startsWith('query=mutation')) projectMutations++;
+    return JSON.stringify(args[0] === 'api'
     ? { data: { node: { items: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } }
     : args[1] === 'view' ? { id: 'project' }
-    : { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: [{ id: 'planned', name: 'Planned' }] }] });
+    : { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: [{ id: 'planned', name: 'Planned' }, { id: 'in-progress', name: 'In Progress' }, { id: 'blocked', name: 'Blocked' }, { id: 'done', name: 'Done' }] }] });
+  };
   await writeFile(join(root, '.io/runtime/to-ticket/publish-state.json'), '{"items":[{"plan_id":"@parent","item_id":"fabricated"}]}');
   for (const [index, item] of prepared.entries()) {
     const begun = await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin', run });
@@ -93,8 +97,29 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   nodes.push({ id: 'legacy-changed', content: { __typename: 'DraftIssue', body: 'Plan: `example` with changed content' } });
   await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /Unidentified Project item/);
   nodes.pop();
+
   nodes[0].content.__typename = 'Issue';
-  await assert.rejects(updatePublication({ root, planSetId: 'example', planId: '@parent', action: 'publish', run }), /already converted/);
+  nodes[0].fieldValues.nodes[0].name = 'In Progress';
+  const writesBeforeExistingIssue = projectMutations;
+  const existingIssue = await updatePublication({ root, planSetId: 'example', planId: '@parent', action: 'publish', run });
+  assert.equal(existingIssue.status, 'already_published');
+  assert.equal(nodes[0].fieldValues.nodes[0].name, 'In Progress');
+  assert.equal(projectMutations, writesBeforeExistingIssue);
+  nodes[1].content.__typename = 'Issue';
+  nodes[1].content.body = 'Current approved plan with a longer explanation\n<!-- harness-plan {"plan_set_id":"example","plan_id":"slice"} -->';
+  nodes[1].fieldValues.nodes[0].name = 'Done';
+  const writesBeforeMarkedIssue = projectMutations;
+  const markedIssue = await updatePublication({ root, planSetId: 'example', planId: 'slice', action: 'publish', run });
+  assert.equal(markedIssue.status, 'already_published');
+  assert.equal(nodes[1].fieldValues.nodes[0].name, 'Done');
+  assert.equal(projectMutations, writesBeforeMarkedIssue);
+  await verifyDraftPublication({ root, planSetId: 'example', run });
+  nodes[1].content.body = 'Plan: `example` with changed content';
+  await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /Unidentified Project item/);
+  nodes[1].content.body = `${(await readFile(join(root, '.io', prepared[1].body_path), 'utf8')).replace(/\n+$/, '')}`;
+  nodes[1].fieldValues.nodes[0].name = 'Planned';
+  nodes[1].content.__typename = 'DraftIssue';
+  await verifyDraftPublication({ root, planSetId: 'example', run });
   nodes[0].content.__typename = 'DraftIssue';
   nodes[0].content.body = nodes[0].content.body.replace(root, primary);
   await assert.rejects(verifyDraftPublication({ root, planSetId: 'example', run }), /missing, changed/);

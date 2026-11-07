@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { inspectPlanSet, snapshotPlanSet } from '../workflow/plan-review.mjs';
+import { TRACKER_STATES } from './lifecycle.mjs';
 
 const exec = promisify(execFile);
 const defaultRun = async (args, cwd) => (await exec('gh', args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
@@ -84,7 +85,7 @@ export async function inspectPublication({ root, planSetId, run = defaultRun }) 
     if (node) {
       if (node.fieldValues?.pageInfo?.hasNextPage !== false) throw new Error('Incomplete Project item status');
       const statuses = node.fieldValues.nodes.filter((v) => v.field?.id === field[0].id);
-      items.push({ ...draft, item_id: node.id, content: node.content, status: statuses.length === 1 ? statuses[0].name : null, body_matches: normalizeBody(node.content.body || '') === normalizeBody(body) });
+      items.push({ ...draft, item_id: node.id, content: node.content, status: statuses.length === 1 ? statuses[0].name : null, identity_matches: node.content.body?.includes(identity) || false, body_matches: normalizeBody(node.content.body || '') === normalizeBody(body) });
     } else items.push({ ...draft, item_id: null });
   }
   if (new Set(items.filter((i) => i.item_id).map((i) => i.item_id)).size !== items.filter((i) => i.item_id).length) throw new Error('One Project item matches multiple plans');
@@ -107,6 +108,10 @@ export async function updatePublication({ root, planSetId, planId, action, itemI
       return { status: 'verified', ...item };
     }
     if (action === 'begin') return { ...item, status: item.item_id ? 'already_created' : 'pending' };
+    if (item.item_id && item.content.__typename === 'Issue') {
+      if (item.identity_matches || item.body_matches) return { ...item, status: 'already_published' };
+      throw new Error(`Converted Issue identity does not match the reviewed publication body: ${planId}`);
+    }
     if (!state.planned_option_id) throw new Error('Planned Project status option is unavailable');
     if (item.item_id && item.content.__typename !== 'DraftIssue') throw new Error('Project item is already converted to an Issue');
     if (item.item_id && !item.body_matches) throw new Error(`Project body differs from reviewed publication body: ${planId}`);
@@ -132,6 +137,11 @@ export async function verifyDraftPublication({ root, planSetId, run = defaultRun
   const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker;
   if (config?.mode !== 'github') return;
   const state = await inspectPublication({ root, planSetId, run });
-  for (const item of state.items) if (!item.item_id || !item.body_matches || item.content.__typename !== 'DraftIssue' || item.status !== 'Planned') throw new Error(`Draft publication is missing, changed or not Planned: ${item.plan_id}`);
+  const issueStatuses = new Set(Object.values(TRACKER_STATES).map(([label]) => label));
+  for (const item of state.items) {
+    if (item.content?.__typename === 'Issue') {
+      if (!item.item_id || !(item.identity_matches || item.body_matches) || !issueStatuses.has(item.status)) throw new Error(`Converted Project Issue identity or status is unresolved: ${item.plan_id}`);
+    } else if (!item.item_id || !item.body_matches || item.content?.__typename !== 'DraftIssue' || item.status !== 'Planned') throw new Error(`Draft publication is missing, changed or not Planned: ${item.plan_id}`);
+  }
   return state;
 }

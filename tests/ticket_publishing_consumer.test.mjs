@@ -56,6 +56,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.match(await readFile(publisherPath, 'utf8'), /github-issue-template\.md/);
   assert.match(await readFile(publisherPath, 'utf8'), /Do not run a separate post-authoring body validation pass/);
   assert.match(await readFile(publisherPath, 'utf8'), /never create repository Issues in this stage/i);
+  assert.match(await readFile(publisherPath, 'utf8'), /converted `Issue` is already published when its stable plan marker or exact approved body matches/);
   assert.match(await readFile(implementationPath, 'utf8'), /convertProjectV2DraftIssueItemToIssue/);
   assert.match(await readFile(implementationSkillPath, 'utf8'), /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
   assert.match(await readFile(templatePath, 'utf8'), /## Parent Issue[\s\S]*## Child Issue/);
@@ -91,6 +92,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.match(await readFile(publisherPath, 'utf8'), /github-issue-template\.md/);
   assert.match(await readFile(publisherPath, 'utf8'), /Do not run a separate post-authoring body validation pass/);
   assert.match(await readFile(publisherPath, 'utf8'), /never create repository Issues in this stage/i);
+  assert.match(await readFile(publisherPath, 'utf8'), /Do not reset an existing Issue to Planned/);
   assert.match(await readFile(implementationPath, 'utf8'), /convertProjectV2DraftIssueItemToIssue/);
   assert.match(await readFile(implementationSkillPath, 'utf8'), /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
   assert.match(await readFile(guidePath, 'utf8'), /완성된 본문을 다시 대조하는 단계를 두지 않는다/);
