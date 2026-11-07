@@ -27,6 +27,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       assert.match(guide, /전체 누적 diff/);
       assert.match(guide, /실제 답변 참조/);
       assert.match(guide, /자동 수정하지 않고 재실행하지 않는다/);
+      assert.match(guide, /사용자가 허용한 조치만 수행하며 수정 승인과 재실행 승인을 구분한다/);
+      assert.doesNotMatch(guide, /시도 budget|기존 재시도 budget/);
       // Follow the installed links, including transformed native skill paths.
       for (const match of guide.matchAll(/\]\(([^)]+\.md)\)/g)) {
         await readFile(resolve(root, dirname(path), match[1]));
