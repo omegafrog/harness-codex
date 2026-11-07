@@ -120,6 +120,7 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, process.cwd());
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
     const dir = resolve(root, '.io/runtime/e2e/run');
     await mkdir(dir, { recursive: true });
     const manifest = resolve(dir, 'artifacts.json');
@@ -127,12 +128,28 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     await writeFile(resolve(root, 'existing.txt'), 'existing');
     execFileSync('node', [guard, 'snapshot', '--root', root, '--manifest', manifest]);
     await writeFile(resolve(dir, 'receipt.json'), 'evidence');
+    const generatedDoc = 'docs/agents/generated-workflow-spec.md';
+    await mkdir(resolve(root, 'docs/agents'), { recursive: true });
+    await writeFile(resolve(root, generatedDoc), 'project workflow output');
     await writeFile(resolve(root, 'temporary.txt'), 'temporary');
+    await writeFile(resolve(root, 'owned.tmp'), 'owned');
     const result = JSON.parse(execFileSync('node', [guard, 'cleanup', '--root', root, '--manifest', manifest], { encoding: 'utf8' }));
     assert.equal(result.status, 'passed');
     assert.equal(await readFile(resolve(dir, 'receipt.json'), 'utf8'), 'evidence');
     assert.equal(await readFile(resolve(root, 'existing.txt'), 'utf8'), 'existing');
-    await assert.rejects(readFile(resolve(root, 'temporary.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(resolve(root, generatedDoc), 'utf8'), 'project workflow output');
+    assert.equal(await readFile(resolve(root, 'temporary.txt'), 'utf8'), 'temporary');
+    assert.ok(result.preserved.includes(generatedDoc));
+    const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
+    assert.match(status, /docs\/agents\/generated-workflow-spec\.md/);
+    const cleanup = (path) => execFileSync('node', [guard, 'cleanup', '--root', root, '--manifest', manifest, '--owned', path], { encoding: 'utf8' });
+    const removed = JSON.parse(cleanup('owned.tmp'));
+    assert.deepEqual(removed.removed, ['owned.tmp']);
+    await assert.rejects(readFile(resolve(root, 'owned.tmp')), { code: 'ENOENT' });
+    assert.throws(() => cleanup('existing.txt'), /newly created untracked path/);
+    assert.throws(() => cleanup('../outside.txt'), /outside worktree/);
+    assert.equal(await readFile(resolve(root, 'existing.txt'), 'utf8'), 'existing');
+    assert.equal(await readFile(resolve(root, generatedDoc), 'utf8'), 'project workflow output');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

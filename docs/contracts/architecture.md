@@ -613,7 +613,7 @@ allocating/active/archived/cleanup-failed receipt를 조회한다. 이전 실행
 절대 workspace_root·살아 있는 repositoryRoot·Git common directory·상대 출력 경로.
 
 ### 동작
-worktree별 영속 세션 디렉터리를 결정하고 task 소유 로그·임시 파일·실행 증거·복구 백업의 경로를 검증한다. journal/completion/tracker, plan checkpoint/workspace, eval, knowledge staging, decision review, E2E manifest가 공통 경계를 호출한다. E2E cleanup은 untracked와 ignored 경로를 함께 snapshot하여 초기 파일을 보존하고 해당 실행에서 생긴 파일만 정리한다. resolver CLI와 agent prompt는 같은 session_directory를 전달한다. approved source·최종 문서·registry와 Git/Beads metadata는 별도 관리 경로를 유지한다. 도구 전역 cache/telemetry를 통제하는 OS sandbox는 아니다.
+worktree별 영속 세션 디렉터리를 결정하고 task 소유 로그·임시 파일·실행 증거·복구 백업의 경로를 검증한다. journal/completion/tracker, plan checkpoint/workspace, eval, knowledge staging, decision review, E2E manifest가 공통 경계를 호출한다. E2E cleanup은 untracked와 ignored 경로를 함께 snapshot하여 초기 파일을 보존하고, 새 경로 중 실행 소유 임시 파일로 개별 지정된 파일만 삭제한다. 새 Spec·계획·제품 코드와 소유권이 불명확한 경로는 보존해 보고한다. resolver CLI와 agent prompt는 같은 session_directory를 전달한다. approved source·최종 문서·registry와 Git/Beads metadata는 별도 관리 경로를 유지한다. 도구 전역 cache/telemetry를 통제하는 OS sandbox는 아니다.
 
 ### 메서드
 [sessionDirectory](architecture.md#session-directory-method) · [sessionOutputPath](architecture.md#session-output-path-method)

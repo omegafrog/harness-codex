@@ -13,15 +13,17 @@ function assertSessionManifest(root, manifest) {
 
 function parseArgs(argv) {
   const [action, ...rest] = argv;
-  const options = {};
+  const options = { owned: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const key = rest[index];
-    if (!["--root", "--manifest"].includes(key) || !rest[index + 1]) throw new Error(`Invalid argument: ${key}`);
-    options[key.slice(2)] = rest[++index];
+    if (!["--root", "--manifest", "--owned"].includes(key) || !rest[index + 1]) throw new Error(`Invalid argument: ${key}`);
+    if (key === "--owned") options.owned.push(rest[++index]);
+    else options[key.slice(2)] = rest[++index];
   }
   if (!['snapshot', 'cleanup'].includes(action)) throw new Error("Usage: artifact-guard.mjs <snapshot|cleanup> --root <worktree> --manifest <session-manifest-file>");
   if (!options.root || !options.manifest) throw new Error("Both --root and --manifest are required");
-  return { action, root: resolve(options.root), manifest: resolve(options.manifest) };
+  if (action === 'snapshot' && options.owned.length) throw new Error('--owned applies only to cleanup');
+  return { action, root: resolve(options.root), manifest: resolve(options.manifest), owned: options.owned };
 }
 
 async function listArtifacts(root) {
@@ -52,7 +54,7 @@ async function snapshot(root, manifest) {
   return { action: "snapshot", root, manifest, path_count: paths.length };
 }
 
-async function cleanup(root, manifest) {
+async function cleanup(root, manifest, owned) {
   await validateRoot(root);
   assertSessionManifest(root, manifest);
   const state = JSON.parse(await readFile(manifest, "utf8"));
@@ -60,18 +62,25 @@ async function cleanup(root, manifest) {
   const initial = new Set(state.paths);
   const current = await listArtifacts(root);
   const created = current.filter((path) => !initial.has(path));
+  const requested = [...new Set(owned)];
+  for (const path of requested) {
+    safeTarget(root, path);
+    if (!created.includes(path)) throw new Error(`Owned artifact is not a newly created untracked path: ${path}`);
+  }
   const removed = [];
-  for (const path of created) {
-    await rm(safeTarget(root, path), { recursive: true, force: true });
+  for (const path of requested) {
+    await rm(safeTarget(root, path), { force: true });
     removed.push(path);
   }
-  const remaining = (await listArtifacts(root)).filter((path) => !initial.has(path));
-  return { action: "cleanup", root, removed, remaining, status: remaining.length === 0 ? "passed" : "failed" };
+  const after = await listArtifacts(root);
+  const remaining = requested.filter((path) => after.includes(path));
+  const preserved = after.filter((path) => !initial.has(path) && !requested.includes(path));
+  return { action: "cleanup", root, removed, remaining, preserved, status: remaining.length === 0 ? "passed" : "failed" };
 }
 
 try {
   const args = parseArgs(process.argv.slice(2));
-  const result = args.action === "snapshot" ? await snapshot(args.root, args.manifest) : await cleanup(args.root, args.manifest);
+  const result = args.action === "snapshot" ? await snapshot(args.root, args.manifest) : await cleanup(args.root, args.manifest, args.owned);
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (result.status === "failed") process.exitCode = 1;
 } catch (error) {
