@@ -17,7 +17,7 @@ try {
   let result;
   if (action === 'repair') {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
-    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']) });
+    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']) });
   } else if (action === 'resolve') result = await reserveImplementationRepair({ root: options.root, planId: options.plan, resolution: options.reason });
   else throw new Error('Usage: harness-code-review.mjs repair|resolve --root DIR --plan ID [--reviews SESSION-RELATIVE-JSON] [--max-rounds N] [--reason USER-RESOLUTION]');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

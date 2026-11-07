@@ -201,7 +201,8 @@
           "summary",
           "evidence",
           "benefit",
-          "cost"
+          "cost",
+          "rule_impact"
         ],
         "properties": {
           "id": {
@@ -223,6 +224,13 @@
           "cost": {
             "type": "string",
             "minLength": 1
+          },
+          "rule_impact": {
+            "enum": [
+              "none",
+              "business_rule"
+            ],
+            "description": "none only when the change adds no business rule, limit, validation, state or data behavior."
           }
         }
       }

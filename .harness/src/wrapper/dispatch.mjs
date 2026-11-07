@@ -491,6 +491,7 @@ export async function executeImplementPlan({
       reviewInput,
       maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
       scopeDecisions: repairConfig.scope_decisions || [],
+      scopeGroups: repairConfig.scope_groups || [],
       dispatchRepair: repairConfig.dispatch || null,
       runReviewers: repairConfig.review || null,
       reserveRepair: (input) => reserveImplementationRepair({ root: dispatched.workspace_root, planId: dispatchOptions.plan.id, trackerPort: dispatchOptions.trackerPort, ...input }),

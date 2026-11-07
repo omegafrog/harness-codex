@@ -38,7 +38,7 @@ const REPOSITORY_STANDARD_PATHS = [
   "docs/contracts/",
 ];
 const SCOPE_OPTION_LABELS = {
-  unrequested_behavior: { reject: "제거", adopt: "Spec에 추가" },
+  unrequested_behavior: { reject: "제거", accept: "유지", adopt: "Spec에 추가" },
   unbacked_requirement: { reject: "지적 기각", adopt: "Spec에 추가" },
 };
 
@@ -86,9 +86,24 @@ function scopeFindingId(finding) {
   return finding.id || `${finding.reviewer_role || "review"}:${finding.finding_index ?? 0}`;
 }
 
-function routeScopeFinding(finding, decisions, routes) {
-  const decision = decisions.get(scopeFindingId(finding));
-  if (!decision) routes.blockers.push(finding);
+function scopeGroupIndex(scopeGroups) {
+  const groups = new Map();
+  for (const group of scopeGroups) for (const member of group.finding_ids) groups.set(member, group.id);
+  return groups;
+}
+
+// 업무 규칙에 영향이 없다고 표시된 동작만 Spec 승인 없이 유지할 수 있다.
+function canAcceptWithoutSpec(finding) {
+  return finding.kind === "unrequested_behavior" && finding.rule_impact === "none";
+}
+
+function routeScopeFinding(finding, decisions, routes, groups) {
+  const id = scopeFindingId(finding);
+  const groupId = groups.get(id);
+  const decision = decisions.get(id) || (groupId && decisions.get(groupId));
+  if (!decision) routes.blockers.push(groupId ? { ...finding, scope_group: groupId } : finding);
+  else if (decision.choice === "accept" && canAcceptWithoutSpec(finding)) routes.accepted.push({ ...finding, scope_decision: decision });
+  else if (decision.choice === "accept") routes.blockers.push({ ...finding, kind: "scope_expansion", original_kind: finding.kind, scope_decision: decision });
   else if (decision.choice === "adopt") routes.blockers.push({ ...finding, kind: "scope_expansion", original_kind: finding.kind, scope_decision: decision });
   else if (finding.kind === "unbacked_requirement") routes.dismissed.push({ ...finding, scope_decision: decision });
   else routes.repairable.push({ ...finding, repair_directive: REMOVE_DIRECTIVE, scope_decision: decision });
@@ -112,24 +127,32 @@ function declaredAdditions(reviews) {
 }
 
 export function buildScopeDecisionQuestions(findings = []) {
-  return findings.filter((finding) => SCOPE_DECISION_KINDS.has(finding.kind)).map((finding) => {
-    const id = scopeFindingId(finding);
+  const items = new Map();
+  for (const finding of findings.filter((item) => SCOPE_DECISION_KINDS.has(item.kind))) {
+    const key = finding.scope_group || scopeFindingId(finding);
+    items.set(key, [...(items.get(key) || []), finding]);
+  }
+  return [...items].map(([id, members]) => {
+    const finding = members[0];
     const unrequested = finding.kind === "unrequested_behavior";
     const labels = SCOPE_OPTION_LABELS[finding.kind];
+    const related = members.length > 1 ? ` 같은 항목: ${members.map(scopeFindingId).join(", ")}.` : "";
     const tradeoff = [finding.benefit && `얻는 것: ${finding.benefit}`, finding.cost && `비용: ${finding.cost}`].filter(Boolean).join(" ");
     // question_id는 실행기가 부여하므로 stage 질문 본문과 대상 finding을 분리해 전달한다.
     return {
       finding_id: id,
+      finding_ids: members.map(scopeFindingId),
       question: {
         title: unrequested
           ? `구현에 승인된 Spec에 없는 동작이 있습니다. 유지할까요? ${finding.summary || id}`
           : `리뷰가 승인된 Spec 근거 없이 수정을 요구했습니다. 반영할까요? ${finding.summary || id}`,
         options: [
           { id: "reject", label: labels.reject, consequence: unrequested ? "승인된 Spec대로 되돌립니다. Spec과 plan은 바뀌지 않고 수정 예산도 쓰지 않습니다." : "이 지적을 기각합니다. 코드와 Spec은 바뀌지 않습니다." },
+          ...(members.every(canAcceptWithoutSpec) ? [{ id: "accept", label: labels.accept, consequence: "업무 규칙에 영향이 없는 변경이므로 Spec 수정 없이 그대로 둡니다. 결정은 리뷰 기록에 남습니다." }] : []),
           { id: "adopt", label: labels.adopt, consequence: "새 요구사항으로 다루어 spec-me에서 승인받고 영향 계획을 다시 리뷰합니다. 그동안 구현은 멈춥니다." },
         ],
         recommended_option_id: "reject",
-        rationale: `요청하지 않은 동작은 기본적으로 넣지 않습니다.${tradeoff ? ` ${tradeoff}` : ""} 근거: ${finding.evidence || "제공되지 않음"}`,
+        rationale: `요청하지 않은 동작은 기본적으로 넣지 않습니다.${tradeoff ? ` ${tradeoff}` : ""}${related} 근거: ${finding.evidence || "제공되지 않음"}`,
       },
     };
   });
@@ -172,19 +195,21 @@ export function validReviewProvenance(reviews, implementationCommitSha = null, e
     && (!expectedReviewInput || validReviewInput(review.review_input, implementationCommitSha, expectedReviewInput)));
 }
 
-export function classifyReviewFindings(reviews = [], { scopeDecisions = [], unverifiedBasis = new Set() } = {}) {
+export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
   if (!Array.isArray(reviews)) throw new TypeError("reviews must be an array");
   const repairable = [];
   const blockers = [];
   const deferred = [];
   const advisory = [];
   const dismissed = [];
-  const routes = { repairable, blockers, dismissed };
+  const accepted = [];
+  const routes = { repairable, blockers, dismissed, accepted };
+  const groups = scopeGroupIndex(scopeGroups);
   const decisions = new Map(scopeDecisions.map((decision) => [decision.finding_id, decision]));
   if (!validReviewProvenance(reviews)) blockers.push({ kind: "reviewer_isolation_violation", summary: "both reviewers must provide independent fresh-context provenance for one implementation commit" });
   const declared = declaredAdditions(reviews);
   if (declared.missing) blockers.push({ kind: "unplanned_additions_missing", summary: "review_input must carry the implementer's unplanned_additions declaration; use an empty array when there are none" });
-  for (const addition of declared.additions) routeScopeFinding(addition, decisions, routes);
+  for (const addition of declared.additions) routeScopeFinding(addition, decisions, routes, groups);
   for (const review of reviews) {
     const findings = findingList(review);
     if (review?.state === "error" || review?.state === "unknown") {
@@ -199,18 +224,18 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], unve
       const finding = normalizeFinding(rawFinding, review, index);
       const hasEvidence = typeof finding.evidence === 'string' && finding.evidence.trim();
       if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
-      else if (finding.kind === 'advisory' && finding.severity === 'minor' && finding.blocking === false && hasEvidence) advisory.push(finding);
-      else if (SCOPE_DECISION_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes);
+      else if (finding.kind === 'advisory' && (finding.severity === undefined || finding.severity === 'minor') && finding.blocking !== true && hasEvidence) advisory.push(finding);
+      else if (SCOPE_DECISION_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
       else if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) {
         if (hasSpecBasis(finding) && !unverifiedBasis.has(`${review?.role}:${index}`)) repairable.push(finding);
-        else routeScopeFinding({ ...finding, kind: "unbacked_requirement", original_kind: finding.kind }, decisions, routes);
+        else routeScopeFinding({ ...finding, kind: "unbacked_requirement", original_kind: finding.kind }, decisions, routes, groups);
       }
       else if (finding.kind === "in_scope_spec_mismatch" && finding.in_scope !== true) blockers.push({ ...finding, kind: "in_scope_required" });
       else if (BLOCKER_KINDS.has(finding.kind) || finding.kind === "unclassified_review_finding" || finding.repairable === false || finding.in_scope === false) blockers.push(finding);
       else blockers.push({ ...finding, kind: "unclassified_review_finding", original_kind: finding.kind });
     });
   }
-  return { repairable, blockers, deferred, advisory, dismissed, has_findings: repairable.length > 0 || blockers.length > 0 };
+  return { repairable, blockers, deferred, advisory, dismissed, accepted, has_findings: repairable.length > 0 || blockers.length > 0 };
 }
 
 export async function implementationReviewRoot(root) {
@@ -225,13 +250,26 @@ export async function assertPlanningReviewSnapshot({ root, planId, reviewInput, 
   if (current.status !== 'pass' || current.details.review_snapshot_sha256 !== reviewInput.planning_snapshot_sha256) throw Object.assign(new Error('Review planning snapshot changed; collect all findings, reconcile the affected documents and admit a fresh review'), { code: 'review_snapshot_changed' });
 }
 
+function validScopeGroups(scopeGroups) {
+  if (!Array.isArray(scopeGroups)) throw new TypeError("scope_groups must be an array");
+  const members = new Set();
+  for (const group of scopeGroups) {
+    if (typeof group?.id !== "string" || !group.id || !Array.isArray(group.finding_ids) || group.finding_ids.length < 2) throw new TypeError("Each scope group needs an id and at least two finding_ids");
+    for (const member of group.finding_ids) {
+      if (typeof member !== "string" || !member || members.has(member)) throw new TypeError("A finding may belong to one scope group only");
+      members.add(member);
+    }
+  }
+  return scopeGroups;
+}
+
 async function verifiedScopeDecisions(root, scopeDecisions) {
   if (!Array.isArray(scopeDecisions)) throw new TypeError("scope_decisions must be an array");
   for (const decision of scopeDecisions) {
-    if (typeof decision?.finding_id !== "string" || !decision.finding_id || !["reject", "adopt"].includes(decision.choice) || typeof decision.question_id !== "string" || !decision.question_id || typeof decision.answers_ref !== "string" || !decision.answers_ref) throw new TypeError("Each scope decision needs finding_id, choice, question_id and answers_ref");
+    if (typeof decision?.finding_id !== "string" || !decision.finding_id || !["reject", "accept", "adopt"].includes(decision.choice) || typeof decision.question_id !== "string" || !decision.question_id || typeof decision.answers_ref !== "string" || !decision.answers_ref) throw new TypeError("Each scope decision needs finding_id, choice, question_id and answers_ref");
     const answers = JSON.parse(await readFile(sessionOutputPath(root, decision.answers_ref, { create: false }), "utf8"));
     const answer = Array.isArray(answers) ? answers.find((item) => item?.question_id === decision.question_id)?.answer : undefined;
-    const labels = [decision.choice, SCOPE_OPTION_LABELS.unrequested_behavior[decision.choice], SCOPE_OPTION_LABELS.unbacked_requirement[decision.choice]];
+    const labels = [decision.choice, SCOPE_OPTION_LABELS.unrequested_behavior[decision.choice], SCOPE_OPTION_LABELS.unbacked_requirement[decision.choice]].filter(Boolean);
     if (typeof answer !== "string" || !labels.some((label) => answer === label || answer.includes(label))) throw Object.assign(new Error(`Scope decision ${decision.finding_id} has no matching recorded user answer`), { code: "scope_decision_unverified" });
   }
   return scopeDecisions;
@@ -263,7 +301,7 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
   return unverified;
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null, scopeDecisions = [] }) {
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, trackerPort = null, scopeDecisions = [], scopeGroups = [] }) {
   const scope = { root, scope: `implementation-${planId}` };
   if (resolution !== undefined) {
     const prior = await inspectReviewHistory(scope);
@@ -278,7 +316,7 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decisions = await verifiedScopeDecisions(root, scopeDecisions);
   const unverifiedBasis = await unverifiedFindingBasis(root, reviewInput, reviews);
-  const decision = planRepairRound({ reviews, maxRounds, scopeDecisions: decisions, unverifiedBasis });
+  const decision = planRepairRound({ reviews, maxRounds, scopeDecisions: decisions, scopeGroups: validScopeGroups(scopeGroups), unverifiedBasis });
   if (decision.action !== 'repair') return decision;
   await assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort });
   const inputs = { ...reviewInput, reviewer_ids: reviews.map((item) => item.context_id) };
@@ -294,10 +332,10 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   }
 }
 
-export function planRepairRound({ reviews = [], round = 0, maxRounds = 1, scopeDecisions = [], unverifiedBasis = new Set() } = {}) {
+export function planRepairRound({ reviews = [], round = 0, maxRounds = 1, scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
   if (!Number.isInteger(round) || round < 0) throw new TypeError("round must be a non-negative integer");
   if (!Number.isInteger(maxRounds) || maxRounds < 0) throw new TypeError("maxRounds must be a non-negative integer");
-  const classification = classifyReviewFindings(reviews, { scopeDecisions, unverifiedBasis });
+  const classification = classifyReviewFindings(reviews, { scopeDecisions, scopeGroups, unverifiedBasis });
   if (!classification.has_findings) return { action: "complete", state: "passed", round, classification };
   if (classification.blockers.length > 0) {
     const pendingScope = classification.blockers.filter((finding) => SCOPE_DECISION_KINDS.has(finding.kind));
@@ -343,15 +381,16 @@ export function planRepairRound({ reviews = [], round = 0, maxRounds = 1, scopeD
 
 // 사용자가 기각한 지적만 남은 리뷰는 재검토 대상이 아니므로 완료 gate에 통과로 전달한다.
 function reviewsAfterDismissal(reviews, classification) {
-  if (!classification.dismissed.length) return reviews;
+  const resolved = [...classification.dismissed, ...classification.accepted];
+  if (!resolved.length) return reviews;
   return reviews.map((review) => {
     const remaining = findingList(review).filter((rawFinding, index) => {
       const finding = normalizeFinding(rawFinding, review, index);
-      return !classification.dismissed.some((item) => item.reviewer_role === review.role && item.finding_index === index)
+      return !resolved.some((item) => item.reviewer_role === review.role && item.finding_index === index)
         && finding.kind !== "advisory" && finding.kind !== "contract_sync";
     });
     return review.state === "failed" && remaining.length === 0
-      ? { ...review, state: "passed", original_state: review.state, dismissed_by_user: classification.dismissed.filter((item) => item.reviewer_role === review.role) }
+      ? { ...review, state: "passed", original_state: review.state, resolved_by_user: resolved.filter((item) => item.reviewer_role === review.role) }
       : review;
   });
 }
@@ -383,7 +422,7 @@ function validFreshReviews(reviews, implementation, expectedReviewInput = null) 
     && (!expectedReviewInput || validReviewProvenance(reviews, implementation.commit_sha, expectedReviewInput));
 }
 
-export async function runBoundedReviewRepair({ plan = null, scopeDecisions = [], initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null, reserveRepair = null } = {}) {
+export async function runBoundedReviewRepair({ plan = null, scopeDecisions = [], scopeGroups = [], initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null, reserveRepair = null } = {}) {
   if (!initialImplementation?.commit_sha) throw new TypeError("initialImplementation.commit_sha is required");
   const expectedReviewInput = reviewInput || initialReviews.find((review) => review?.review_input)?.review_input || null;
   if (!expectedReviewInput || !validReviewInput(expectedReviewInput, initialImplementation.commit_sha)) return {
@@ -410,7 +449,7 @@ export async function runBoundedReviewRepair({ plan = null, scopeDecisions = [],
   let round = 0;
   const history = [];
   while (true) {
-    const decision = planRepairRound({ reviews, round, maxRounds, scopeDecisions });
+    const decision = planRepairRound({ reviews, round, maxRounds, scopeDecisions, scopeGroups });
     history.push(decision);
     if (decision.action === "complete") return { state: "passed", reason: null, rounds: round, implementation, reviews: reviewsAfterDismissal(reviews, decision.classification), history };
     const blockedDecision = (blocked) => ({ state: "blocked", reason: blocked.reason, rounds: round, implementation, reviews, history, blocker: blocked.classification.blockers[0] || null, ...(blocked.next_action ? { next_action: blocked.next_action, resume_condition: blocked.resume_condition } : {}), ...(blocked.user_questions ? { user_questions: blocked.user_questions } : {}) });
@@ -427,7 +466,7 @@ export async function runBoundedReviewRepair({ plan = null, scopeDecisions = [],
     let repaired;
     if (reserveRepair) {
       try {
-        const reservation = await reserveRepair({ reviewInput: reviews[0].review_input, reviews, maxRounds, scopeDecisions });
+        const reservation = await reserveRepair({ reviewInput: reviews[0].review_input, reviews, maxRounds, scopeDecisions, scopeGroups });
         if (reservation.action === 'block') return blockedDecision(reservation);
         if (reservation.status !== 'pass') throw new Error(reservation.reason || 'Repair reservation failed');
         decision.round = reservation.round;

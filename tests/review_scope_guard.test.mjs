@@ -79,6 +79,53 @@ test('a dismissed unbacked finding completes without repair and passes the revie
   assert.equal(result.reviews[0].original_state, 'failed');
 });
 
+test('an advisory without an explicit blocking flag does not block', () => {
+  const { reviews } = evidence({ findings: [{ id: 'A-1', kind: 'advisory', severity: 'minor', summary: '이름 개선', evidence: 'a.ts:1' }] });
+  const decision = planRepairRound({ reviews });
+  assert.equal(decision.action, 'complete');
+  assert.deepEqual(decision.classification.advisory.map((item) => item.id), ['A-1']);
+  const forced = evidence({ findings: [{ id: 'A-2', kind: 'advisory', severity: 'minor', blocking: true, summary: 'x', evidence: 'a.ts:1' }] });
+  assert.equal(planRepairRound({ reviews: forced.reviews }).action, 'block');
+});
+
+test('scope groups ask once for findings that share one item', () => {
+  const link = { summary: '홈 링크', evidence: 'page.tsx:1', rule_impact: 'none' };
+  const { reviews } = evidence({
+    additions: [{ id: 'ADD-1', ...link }],
+    findings: [{ id: 'STD-U1', kind: 'unrequested_behavior', severity: 'major', ...link }],
+    spec: [{ id: 'SPEC-U1', kind: 'unrequested_behavior', severity: 'major', ...link }],
+  });
+  const scopeGroups = [{ id: 'home-link', finding_ids: ['ADD-1', 'STD-U1', 'SPEC-U1'] }];
+  const blocked = planRepairRound({ reviews, scopeGroups });
+  assert.equal(blocked.user_questions.length, 1);
+  assert.equal(blocked.user_questions[0].finding_id, 'home-link');
+  assert.deepEqual(blocked.user_questions[0].finding_ids, ['ADD-1', 'STD-U1', 'SPEC-U1']);
+  const decided = planRepairRound({ reviews, scopeGroups, scopeDecisions: [{ finding_id: 'home-link', choice: 'accept' }] });
+  assert.equal(decided.action, 'complete');
+  assert.equal(decided.classification.accepted.length, 3);
+});
+
+test('keeping a change without Spec work is offered only without rule impact', () => {
+  const minor = evidence({ findings: [{ id: 'U-1', kind: 'unrequested_behavior', severity: 'major', summary: '링크', evidence: 'p.tsx:1', rule_impact: 'none' }] });
+  const options = (run) => planRepairRound({ reviews: run.reviews }).user_questions[0].question.options.map((item) => item.id);
+  assert.deepEqual(options(minor), ['reject', 'accept', 'adopt']);
+  const rule = evidence({ findings: [{ id: 'U-2', kind: 'unrequested_behavior', severity: 'major', summary: '50건 상한', evidence: 'q.ts:1', rule_impact: 'business_rule' }] });
+  assert.deepEqual(options(rule), ['reject', 'adopt']);
+  const unmarked = evidence({ findings: [{ id: 'U-3', kind: 'unrequested_behavior', severity: 'major', summary: '표시 없음', evidence: 'q.ts:2' }] });
+  assert.deepEqual(options(unmarked), ['reject', 'adopt']);
+  const escalated = planRepairRound({ reviews: rule.reviews, scopeDecisions: [{ finding_id: 'U-2', choice: 'accept' }] });
+  assert.equal(escalated.reason, 'scope_expansion');
+  assert.equal(escalated.next_action, 'spec-me');
+});
+
+test('accepted findings let the review gate pass without repair', async () => {
+  const { reviews, reviewInput } = evidence({ findings: [{ id: 'U-1', kind: 'unrequested_behavior', severity: 'major', summary: '링크', evidence: 'p.tsx:1', rule_impact: 'none' }] });
+  const result = await runBoundedReviewRepair({ initialImplementation: { commit_sha: 'c1' }, initialReviews: reviews, reviewInput, scopeDecisions: [{ finding_id: 'U-1', choice: 'accept' }] });
+  assert.equal(result.state, 'passed');
+  assert.equal(result.reviews[0].state, 'passed');
+  assert.equal(result.reviews[0].resolved_by_user[0].id, 'U-1');
+});
+
 async function consumer() {
   await mkdir('.io/runtime', { recursive: true });
   const root = await mkdtemp(resolve('.io/runtime/scope-guard-'));
@@ -107,6 +154,16 @@ test('a verified quote reserves the ordinary repair budget', async () => {
   const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
   assert.equal(result.status, 'pass');
   assert.equal(result.round, 1);
+});
+
+test('malformed scope groups are rejected before any reservation', async () => {
+  const root = await consumer();
+  const { reviews, reviewInput } = evidence({ findings: [defect] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  const shared = [{ id: 'a', finding_ids: ['X', 'Y'] }, { id: 'b', finding_ids: ['Y', 'Z'] }];
+  await assert.rejects(reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local, scopeGroups: shared }), /one scope group only/);
+  await assert.rejects(reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local, scopeGroups: [{ id: 'a', finding_ids: ['X'] }] }), /at least two/);
 });
 
 test('a recorded user answer lets removal pass an exhausted budget, an absent answer does not', async () => {

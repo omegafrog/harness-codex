@@ -31,7 +31,7 @@ try {
       const evidence = JSON.parse(await readFile(sessionOutputPath(root, options['--reviews'], { create: false }), 'utf8'));
       if (resolve(evidence.review_input?.repository || '') !== root) throw new Error('Review evidence belongs to another workspace');
       if (!validReviewProvenance(evidence.reviews, evidence.review_input.implementation_commit_sha, evidence.review_input)) throw new Error('Both reviewers must match the same complete fixed-point input');
-      result.implementation_findings = { implementation_commit_sha: evidence.review_input?.implementation_commit_sha, ...classifyReviewFindings(evidence.reviews, { scopeDecisions: evidence.scope_decisions ?? [] }) };
+      result.implementation_findings = { implementation_commit_sha: evidence.review_input?.implementation_commit_sha, ...classifyReviewFindings(evidence.reviews, { scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [] }) };
     } catch (error) { result.status = 'blocked'; result.implementation_findings = { error: error.message }; }
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
