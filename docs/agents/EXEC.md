@@ -247,7 +247,7 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
    node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKFLOW_BINDING); if(b.provider!=="codex" || b.model!=="gpt-6-luna" || b.reasoning_effort!=="medium" || !p.isAbsolute(e.HARNESS_SESSION_DIR) || [e.TMPDIR,e.TMP,e.TEMP].some(x=>x!==p.join(e.HARNESS_SESSION_DIR,"tmp"))) process.exit(1)' || exit 1
    mkdir -p "$TMPDIR" || exit 1
    ```
-4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 실제 최종 응답으로 반환된 생성 worktree 경로와 canonical `worktree.json`, Git 등록을 대조한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
+4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 같은 기능의 기존 worktree가 있으면 이어가기와 새 workflow 선택 질문을 기대하며 관찰자가 답을 만들지 않는다. 실제 사용자가 새 시작을 선택하면 이번 생성 명령의 execution ID와 worktree 참조를 생성 전 Git 목록·canonical `worktree.json`·요청 binding과 대조한다. 관련 후보가 없으면 새 workflow가 준비되는지 확인한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
 5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. `spec-me`로 진행하는지 확인하고 정상 workflow의 계획·구현 경로를 관찰한다. implement 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
 6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
 7. 첫 실행의 workflow 생성과 응답 위치, 두 번째 실행의 spec-me 진입, Product/Architecture Specs·독립 리뷰, tracker의 전체 split plan·상태, plan별 commit/단위 테스트/코드 리뷰와 통합 리뷰, implement 완료 receipt와 남은 gate를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.

@@ -30,7 +30,7 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     await writeFile(join(directory, 'result.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     await writeFile(join(directory, 'return.json'), JSON.stringify(envelope, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     await recordExecutionState({ root: record.workspace, input, binding: { model: null, reasoning_effort: null }, status: 'completed', code: 'OK', result_ref });
-    return { ...record, input_path, status: 'completed', code: 'OK', worktree_ref: storedInput.context.worktree_ref, result_ref };
+    return { ...record, execution_id, input_path, status: 'completed', code: 'OK', worktree_ref: storedInput.context.worktree_ref, result_ref };
   } catch (error) {
     try { await recordWorktreeOutcome({ workspace_root: record.workspace, repository_root: record.return_root, worktree_id: record.worktree_id, outcome: 'failed' }); }
     catch (recordError) { error.message += `; outcome recording failed: ${recordError.message}`; }

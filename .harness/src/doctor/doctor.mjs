@@ -55,12 +55,14 @@ async function inspectExecutionAssets(root, diagnostics) {
   }
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
+    '.codex/internal-skills/workflow-compose/GUIDE.md',
     '.codex/internal-skills/e2e-test/GUIDE.md',
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
     '.codex/internal-skills/e2e-test/references/failure-learning.md',
     '.codex/agents/tracker_publisher.toml',
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
+    '.codex/internal-skills/skill-execution/references/input.md',
     '.codex/internal-skills/skill-execution/worker-base.md',
     '.codex/internal-skills/skill-execution/references/stage-return.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
@@ -70,12 +72,12 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'orchestrator-hook', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
