@@ -208,7 +208,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
   if (last?.code === 'SUBTASK_REQUIRED') throw new Error('Legacy SUBTASK_REQUIRED execution cannot be resumed: the pending subagent identity and result are not recorded; in-place recovery is unsupported. Preserve the session artifacts and report this limitation.');
   let transition;
-  if (last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  // 사용자 수정은 뒤 stage의 현재성을 요구하지 않는다. 그 stage가 고칠 Spec에 의존하므로 재검증하면 교착된다.
+  const reopensCompletedWork = userRevision && last?.status === 'completed' && last.code === 'OK';
+  if (!reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -342,7 +344,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
       if (previousSession !== taskSession) throw new Error('Feedback target belongs to a different worktree session');
       const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
-      await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
+      await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: Boolean(userRevisionWaiting) });
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
