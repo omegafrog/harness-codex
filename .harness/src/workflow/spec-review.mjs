@@ -17,6 +17,41 @@ async function assertSpecFinalized(root, ticketId) {
     }
   }
 }
+const SCOPED_RULE = /\d|최대|최소|이상|이하|초과|미만|길이|형식|검증|삭제.*(?:모든|함께|동반)|(?:모든|함께|동반).*삭제/;
+const RULE_LINE = /^\s*(?:[-*]\s*)?(?:\*\*)?(BR-\d+)\b/;
+
+// 구현 폭이 넓은 규칙은 의도와 엄밀도를 남겨야 구현과 리뷰가 임의로 강화하지 않는다.
+export function rulesMissingIntent(markdown) {
+  const lines = markdown.split('\n');
+  const missing = [];
+  lines.forEach((line, index) => {
+    const id = line.match(RULE_LINE)?.[1];
+    if (!id || !SCOPED_RULE.test(line.replace(/\b[A-Z]+-\d+\b/g, ''))) return;
+    const block = [];
+    for (const next of lines.slice(index + 1)) {
+      if (RULE_LINE.test(next) || /^#{1,6}\s|^\d+\.\s/.test(next)) break;
+      block.push(next);
+    }
+    if (!/의도\s*:/.test(block.join('\n')) || !/엄밀도\s*:/.test(block.join('\n'))) missing.push(id);
+  });
+  return missing;
+}
+
+// 위임은 라우팅 표현이 아니라 사용자가 실제로 답한 기록이 있어야 한다.
+export function decisionsWithoutDelegation(markdown) {
+  return markdown.split('\n')
+    .filter((line) => line.trim().startsWith('|') && line.includes('위임') && !line.includes('위임 없음') && !line.includes('answers.json'))
+    .map((line) => line.split('|')[1]?.trim() || line.trim());
+}
+
+async function assertSpecDiscipline(root, ticketId) {
+  const missing = rulesMissingIntent(await readFile(join(root, `docs/specs/${ticketId}/product-spec.md`), 'utf8'));
+  requireValue(!missing.length, `Product Spec rules need 의도 and 엄밀도 lines (use 미확인 when the user has not said): ${missing.join(', ')}`);
+  const decisions = await readFile(join(root, `docs/specs/${ticketId}/product-decisions.md`), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+  const unbacked = decisionsWithoutDelegation(decisions);
+  requireValue(!unbacked.length, `Delegated product decisions need a recorded answers.json source; ask the user instead: ${unbacked.join(', ')}`);
+}
+
 async function hash(root, path) {
   requireValue(typeof path === 'string' && path && !path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'Review input must be a relative file path');
   await assertWorkspaceTarget(root, path);
@@ -68,6 +103,7 @@ export async function inspectSpecReviews({ root, ticketId, reviews }) {
     const current = await snapshotSpecReview({ root, ticketId, input_paths: Object.keys(candidate.inputs) });
     requireValue(Object.keys(current).length === Object.keys(candidate.inputs).length && Object.entries(current).every(([path, digest]) => candidate.inputs[path] === digest), 'Architecture review inputs changed or required inputs were omitted');
     await assertSpecFinalized(root, ticketId);
+    await assertSpecDiscipline(root, ticketId);
     await assertReviewAttempt({ root, scope: `spec-${ticketId}-architecture`, review: candidate });
     return { status: 'pass', reason: 'fresh_spec_reviews_current', violations: [] };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['spec_reviews'] }; }

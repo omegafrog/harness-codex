@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { planRepairRound, reserveImplementationRepair, runBoundedReviewRepair } from '../.harness/src/wrapper/repair.mjs';
 import { sessionDirectory } from '../.harness/src/workflow/session-output.mjs';
+import { decisionsWithoutDelegation, rulesMissingIntent } from '../.harness/src/workflow/spec-review.mjs';
 
 const PRODUCT_RULE = '게시글 본문은 최대 5,000자다.';
 const basis = { source: 'product_spec', quote: PRODUCT_RULE };
@@ -124,6 +125,53 @@ test('accepted findings let the review gate pass without repair', async () => {
   assert.equal(result.state, 'passed');
   assert.equal(result.reviews[0].state, 'passed');
   assert.equal(result.reviews[0].resolved_by_user[0].id, 'U-1');
+});
+
+test('scoped rules need intent and precision while plain rules do not', () => {
+  const spec = [
+    '- BR-12: 게시글 본문은 최대 5,000자다.',
+    '- BR-13: 게시글이 삭제되면 모든 댓글도 함께 삭제된다.',
+    '- BR-14: 계산기 홈 화면은 커뮤니티로 이동하는 링크를 제공한다.',
+    '- BR-15: 공개 별명은 1–32자다.',
+    '  - 의도: 표시 깨짐 방지',
+    '  - 엄밀도: 플랫폼 기본 동작',
+    '- BR-16: 이메일은 공개하지 않는다.',
+  ].join('\n');
+  assert.deepEqual(rulesMissingIntent(spec), ['BR-12', 'BR-13']);
+});
+
+test('a real delete propagation rule is recognized', () => {
+  const rule = '- BR-13: 게시글이 삭제되면 그 게시글의 모든 댓글도 같은 작업에서 삭제 상태가 되어 공개 열람에서 제외되며 본문은 보존되지 않는다.';
+  assert.deepEqual(rulesMissingIntent(rule), ['BR-13']);
+  assert.deepEqual(rulesMissingIntent('- BR-3: 숨김·삭제된 콘텐츠는 일반 열람 결과에 포함하지 않는다.'), []);
+});
+
+test('an unrecorded value may be marked unknown instead of invented', () => {
+  assert.deepEqual(rulesMissingIntent('BR-1: 최대 10건이다.\n- 의도: 미확인\n- 엄밀도: 플랫폼 기본 동작\n'), []);
+});
+
+test('a delegated decision needs a recorded user answer', () => {
+  const decisions = [
+    '| PD-1 | 5,000자 | 사용자 승인 (`spec-me-1/answers.json`) |',
+    '| PD-2 | 댓글 삭제 | 사용자가 위임 (`spec-me-2/answers.json`) |',
+    '| PD-13 | 댓글 동반 삭제 | 사용자가 Spec 결정에 위임 (feedback 항목 3) |',
+    '| PD-14 | 알림 | 위임 없음, 사용자 승인 |',
+  ].join('\n');
+  assert.deepEqual(decisionsWithoutDelegation(decisions), ['PD-13']);
+});
+
+test('the Spec gate blocks completion on a missing rule intent', async () => {
+  const root = await consumer();
+  const { inspectSpecReviews } = await import('../.harness/src/workflow/spec-review.mjs');
+  const { snapshotSpecReview } = await import('../.harness/src/workflow/spec-review.mjs');
+  await mkdir(resolve(root, 'docs/specs/t'), { recursive: true });
+  await writeFile(resolve(root, 'docs/specs/t/product-spec.md'), '- BR-1: 본문은 최대 10자다.\n');
+  await writeFile(resolve(root, 'docs/specs/t/architecture-spec.md'), '# A\n');
+  const inputs = await snapshotSpecReview({ root, ticketId: 't' });
+  const reviews = { architecture: { axis: 'architecture', ticket_id: 't', reviewer_id: 'r', author_ids: ['w'], fork_turns: 'none', verdict: 'pass', findings: [], inputs } };
+  const blocked = await inspectSpecReviews({ root, ticketId: 't', reviews });
+  assert.equal(blocked.status, 'blocked');
+  assert.match(blocked.reason, /BR-1/);
 });
 
 async function consumer() {
