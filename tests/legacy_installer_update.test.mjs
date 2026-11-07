@@ -120,7 +120,19 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, process.cwd());
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root, initialize: true });
+    await mkdir(resolve(root, 'docs/agents'), { recursive: true });
+    await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
+    for (const [path, pattern] of [
+      ['.codex/internal-skills/spec-me/GUIDE.md', /필수이면서 기존 근거와 합리적인 기본 동작으로 해결할 수 없는 결정만 질문한다/],
+      ['.codex/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
+      ['.codex/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
+    ]) {
+      assert.match(await readFile(resolve(root, path), 'utf8'), pattern);
+      execFileSync('git', ['-C', root, 'check-ignore', '-q', path]);
+    }
+    assert.equal(await readFile(resolve(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned');
+    assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /docs\/agents\/EXEC\.md/);
     const dir = resolve(root, '.io/runtime/e2e/run');
     await mkdir(dir, { recursive: true });
     const manifest = resolve(dir, 'artifacts.json');

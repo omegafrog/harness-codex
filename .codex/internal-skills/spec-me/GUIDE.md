@@ -13,7 +13,7 @@
 
 Standalone `spec-me` uses the model ID and reasoning effort resolved from `agents.high_performance_model` and `agents.high_performance_reasoning_effort`. An orchestrator-managed stage uses its supplied stage binding instead. The skill cannot change the model of an already-running invocation.
 
-`spec-me`가 Product·Architecture Spec Markdown을 작성하고 수정한다. `diagram_creator`는 다이어그램 파일을 작성한다. 확정된 결정과 근거를 반영해 각 Spec template과 topics의 모든 항목을 작성하고, 미확정 결정은 사용자에게 질문한다. 작성 과정과 실행 내역은 일반 실행 로그에 남긴다.
+`spec-me`가 Product·Architecture Spec Markdown을 작성하고 수정한다. `diagram_creator`는 다이어그램 파일을 작성한다. 확정된 결정과 근거를 반영해 각 Spec template과 topics의 적용 항목을 작성한다. 사용자 요청의 핵심 기능을 완성하는 데 필수이면서 기존 근거와 합리적인 기본 동작으로 해결할 수 없는 결정만 질문한다. 작성 과정과 실행 내역은 일반 실행 로그에 남긴다.
 
 ## Spec 작성과 수정
 
@@ -57,6 +57,8 @@ workflow 실행의 `session_directory`는 현재 작업을 위해 준비된 work
 
 
 ## Exec 호출의 질문 전달
+
+질문과 결정을 사용자 요청의 기능에 한정한다. 요청하지 않은 부가 기능이나 정책을 만들기 위해 질문하거나 요구사항을 추가하지 않는다. 핵심 기능에 필요하지 않은 주제는 해당 없음으로 기록하고, 핵심 기능의 일상적인 세부는 기존 동작이나 플랫폼 기본을 사용한다. 실제 사용자 의도에 따라 결과가 크게 달라지고 합리적으로 정할 수 없는 경우에만 묻는다. 사용자가 불필요한 질문을 건너뛰라고 하면 해당 범위에서 이 기준을 적용해 계속한다. 이를 근거 없는 사용자 승인이나 향후 질문 전체에 대한 위임으로 기록하지 않는다.
 
 질문 전에 현재 workflow의 확정 답변과 `request.md`, `product-decisions.md`, 프로젝트의 승인된 결정·위임 범위를 확인한다. 같은 조건에서 이미 답했거나 명시적으로 위임된 선택은 근거와 함께 재사용한다. Product coverage 전체를 먼저 조사해 현재 답할 수 있는 독립적인 필수 질문을 모두 한 배열로 묶고, 선행 결정에 따라 달라지는 질문만 다음 묶음으로 미룬다. 하나의 미결정 사항을 발견한 즉시 반환하지 않는다. 위임은 사용자가 그 선택을 맡긴다고 답한 경우에만 성립한다. "Spec에서 결정"처럼 결정이 일어날 단계를 가리키는 표현이나 orchestrator feedback의 요약은 위임이 아니므로 질문한다. `product-decisions.md`에서 위임을 근거로 쓰는 행은 해당 답변의 `answers.json`을 출처로 적으며, 없으면 Spec review 완료가 차단된다. 질문 문장과 선택지에 사용자가 말하지 않은 단위·인코딩·정규화·정밀도를 전제로 넣지 않는다. 이를테면 길이 제한의 수치를 물으면서 코드 포인트를 단위로 끼워 넣으면 수치 답변이 그 정밀도까지 승인한 것으로 기록된다. 그런 세부가 실제로 결과를 바꿀 때만 별도 질문으로 분리한다. 위임 범위를 벗어난 선택이나 승인되지 않은 추천은 사용자 답으로 기록하지 않는다.
 

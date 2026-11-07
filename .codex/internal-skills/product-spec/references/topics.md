@@ -16,7 +16,7 @@
    Describe the main user flows, including how each flow begins, progresses, and ends.
 
 6. **Business Rules and Invariants**
-   Identify the conditions and rules that must always be preserved while the use cases are being executed. For numeric, length, boundary, format, validation and delete-propagation rules, also capture why the rule exists and what level is sufficient. Derive these from the product intent and confirm them together in one batch; ask rule by rule only when the answer would change what gets built.
+   Identify conditions and rules necessary for the requested use cases. For a required numeric, length, boundary, format, validation or delete-propagation rule, capture its purpose and sufficient level. Reuse existing evidence or a reasonable platform default where possible; ask only when the required outcome materially depends on an otherwise unresolved decision. Do not add optional rules just to fill this topic.
 
 7. **States and State Transitions**
    For features that have states, define the possible states, how transitions occur, and what conditions or events trigger each transition.

@@ -22,19 +22,19 @@ Before asking the first question:
 2. MUST receive or derive a coverage checklist from the calling skill.
 3. MUST respect the calling skill's evidence and inspection boundaries. This skill does not grant access to sources that the caller prohibits.
 4. Classify every coverage topic as one of:
-   - `SETTLED`: explicitly settled by authoritative input or evidence.
+   - `SETTLED`: settled by authoritative input, evidence, or a documented reasonable default within the requested core scope.
    - `PARTIAL`: some required information is known, but a material gap remains.
    - `UNRESOLVED`: a material decision or required behavior is not settled.
    - `NOT_APPLICABLE`: the topic does not apply, with a concrete reason.
 5. Distinguish descriptive facts from stakeholder decisions.
 
-Within the evidence allowed by the calling skill, repository evidence, existing code, tests, specs, ADRs, and project documents may settle descriptive facts and ordinary implementation details. They MUST NOT by themselves settle product intent, desired future behavior, scope, business invariants, user-visible failure behavior, or an important technology, architecture, or data-transfer protocol choice. Honor the user's explicit delegation of such a choice; record the basis as delegated and do not claim the user supplied a rationale they did not give.
+Within the evidence allowed by the calling skill, repository evidence, existing code, tests, specs, ADRs, and project documents may settle descriptive facts and routine details. Do not infer new product intent or optional scope from them. For a required outcome with materially different plausible interpretations that cannot be reasonably resolved, ask or honor explicit delegation; identify defaults and delegated choices accurately instead of presenting them as user-supplied decisions.
 
 ## Interview loop
 
 Select questions using the shared [grilling](../../../.codex/internal-skills/grilling/GUIDE.md) criteria. Use repository evidence and settled decisions to resolve implementation details, and record engineering rationale without presenting it as a user's decision.
 
-While any stakeholder decision is `PARTIAL` or `UNRESOLVED`:
+While a decision necessary for the requested core behavior is materially `PARTIAL` or `UNRESOLVED` and cannot be resolved from existing evidence or a reasonable default:
 
 1. For `spec-me`, inspect every applicable coverage topic and gather all currently identifiable material decisions before returning any questions. Reuse settled answers and explicit delegation. Identify dependencies between decisions; put every independently answerable decision into one `questions` array, including relevant scope, behavior, failures and acceptance conditions. Do not stop gathering at the first gap. Ask dependent follow-ups only after their prerequisite answers make them meaningful. A single question is valid when it is the only currently answerable material decision. For other callers, select the highest-impact unresolved decision and ask one focused question.
 2. Make each question focused and independently answerable; include a recommended answer and a concise reason for it.
@@ -70,7 +70,7 @@ Example:
 >
 > Agent: That would make the limit apply to regular users only, with an administrator exception. The pending decision is whether the limit is universal or bypassable by administrators. Should I record the administrator exception?
 
-If an ambiguity changes a material stakeholder decision and cannot be resolved from the user's existing instructions, ask a clarification. Resolve nonmaterial implementation details using project evidence and reasonable judgment. Do not treat silence as consent.
+Ask only when an unresolved decision is necessary for the requested core behavior, materially changes its outcome, and cannot be resolved using existing evidence or a reasonable platform default. Do not invent optional features or policies to create questions. Resolve routine details using project evidence and reasonable judgment; do not represent defaults as user-approved decisions.
 
 Do not ask questions merely to increase question count. Prefer questions that expose assumptions, boundaries, counterexamples, failures, conflicts, and trade-offs.
 
