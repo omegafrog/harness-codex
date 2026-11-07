@@ -238,25 +238,21 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
 1. Harness 소스의 승인된 변경을 커밋하고 configured upstream에 push한다. 원격 branch에서 해당 commit이 조회되는지 확인한 뒤 `/home/jiwoo/workspace/harness-test`의 Harness를 갱신하고 Doctor를 확인한다.
 2. 사용자가 기존 worktree 삭제를 요청한 경우 테스트 저장소에 등록된 linked worktree 전부를 조사한다. 각 경로의 HEAD·branch·Git status·전체 tracked/untracked/ignored 내용과 `.io`를 source session에 백업하고 hash를 검증한 뒤 제거한다. primary checkout과 다른 저장소는 삭제하지 않는다. 새 테스트가 만든 worktree는 종료 뒤 산출물 검증을 위해 보존한다.
 3. `/home/jiwoo/workspace/harness-test`가 `main`이고 `git status --short`가 빈 상태인지 확인한다. 시작 HEAD, 설치 버전/lock hash, 실행 설정과 hook 내용을 기록한다. 설정이 다른 provider여도 아래 명시적인 Codex workflow binding으로 전체 테스트를 고정하고 consumer 설정을 임의로 바꾸지 않는다.
-   테스트 시작 시 `docs/agents/harness-e2e-env.sh`를 해당 run의 `<session_directory>/runtime/e2e/<run_id>/environment.sh`로 복사하고 권한을 `600`으로 설정한다. 같은 파일에 실제 session 경로와 임시 디렉터리를 기록한다. 아래 변수는 session resolver로 확인한 절대 경로다.
+   실행 환경은 이 문서의 아래 값을 정본으로 사용한다. 최초 실행과 두 번째 실행뿐 아니라 질문 후 `codex exec resume`을 포함한 **각 독립 shell**에서 매번 아래 환경을 export하고, 실제 session 경로와 binding이 일치하는지 확인한 뒤 실행한다. workflow 생성 전 질문에서 중단된 경우에도 resume에 binding이 필요하다. 별도 환경 파일은 만들지 않는다.
 
    ```bash
-   set -eu
-   mkdir -p "$HARNESS_E2E_RUN_DIRECTORY" "$HARNESS_E2E_SESSION_DIRECTORY/tmp"
-   test ! -e "$HARNESS_E2E_RUN_DIRECTORY/environment.sh"
-   install -m 600 /home/jiwoo/workspace/harness/docs/agents/harness-e2e-env.sh "$HARNESS_E2E_RUN_DIRECTORY/environment.sh"
-   printf 'export HARNESS_SESSION_DIR=%q\n' "$HARNESS_E2E_SESSION_DIRECTORY" >> "$HARNESS_E2E_RUN_DIRECTORY/environment.sh"
-   printf '%s\n' 'export TMPDIR="$HARNESS_SESSION_DIR/tmp"' 'export TMP="$TMPDIR"' 'export TEMP="$TMPDIR"' >> "$HARNESS_E2E_RUN_DIRECTORY/environment.sh"
+   export HARNESS_WORKFLOW_BINDING='{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}'
+   export HARNESS_SESSION_DIR='<session resolver로 확인한 절대 session_directory>'
+   export TMPDIR="$HARNESS_SESSION_DIR/tmp" TMP="$HARNESS_SESSION_DIR/tmp" TEMP="$HARNESS_SESSION_DIR/tmp"
+   node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKFLOW_BINDING); if(b.provider!=="codex" || b.model!=="gpt-6-luna" || b.reasoning_effort!=="medium" || !p.isAbsolute(e.HARNESS_SESSION_DIR) || [e.TMPDIR,e.TMP,e.TEMP].some(x=>x!==p.join(e.HARNESS_SESSION_DIR,"tmp"))) process.exit(1)' || exit 1
+   mkdir -p "$TMPDIR" || exit 1
    ```
-
-   이 파일을 실행별 정본으로 보존하며 각 독립 shell의 최초 `codex exec`, workflow 생성 전 질문에 대한 `codex exec resume`, 생성 후 두 번째 `codex exec`와 이후 모든 resume 직전에 절대 경로로 source한다. 각 프로세스 시작 전에 `HARNESS_WORKFLOW_BINDING`이 `codex / gpt-6-luna / medium`인지 JSON 파싱으로 확인하고 누락·불일치면 실행하지 않는다. session의 tmp 디렉터리를 준비하고 session 경로와 TMPDIR/TMP/TEMP도 일치하는지 확인한다. 이 파일에는 비밀정보를 저장하지 않는다.
 4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 실제 최종 응답으로 반환된 생성 worktree 경로와 canonical `worktree.json`, Git 등록을 대조한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
 5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. `spec-me`로 진행하는지 확인하고 정상 workflow의 계획·구현 경로를 관찰한다. implement 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
 6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
 7. 첫 실행의 workflow 생성과 응답 위치, 두 번째 실행의 spec-me 진입, Product/Architecture Specs·독립 리뷰, tracker의 전체 split plan·상태, plan별 commit/단위 테스트/코드 리뷰와 통합 리뷰, implement 완료 receipt와 남은 gate를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
 
 ```bash
-. '<해당 실행의 session_directory>/runtime/e2e/<run_id>/environment.sh'
 codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
   -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해'
 
@@ -264,12 +260,16 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
   -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해'
 ```
 
-workflow 생성 전 질문에서 중단됐다면 아직 canonical binding이 없으므로 후속 resume에도 저장된 환경을 반드시 전달한다. 생성 후에는 `worktree.json`의 binding과 저장된 환경이 일치하는지도 확인한다. 두 명령의 원문 요청에 임의 요구나 자동 승인 문구를 덧붙이지 않는다. 위 사용자 지정 black-box 검증은 전용 `e2e_test_runner`가 실제 `codex exec`를 직접 실행한다. 일반 앱 E2E profile로 대체하거나, observer가 Harness 내부 stage CLI를 직접 호출해 경로를 조립하지 않는다. 검토한 hook에 대해서만 위의 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 실행 환경의 session TMPDIR/TMP/TEMP와 중첩 Codex helper 쓰기 전제도 함께 적용한다.
+workflow 생성 전 질문에서 중단됐다면 아직 canonical binding이 없으므로 후속 resume에도 위 환경을 반드시 전달한다. 생성 후에는 `worktree.json`의 binding과 위 환경이 일치하는지도 확인한다. 두 명령의 원문 요청에 임의 요구나 자동 승인 문구를 덧붙이지 않는다. 위 사용자 지정 black-box 검증은 전용 `e2e_test_runner`가 실제 `codex exec`를 직접 실행한다. 일반 앱 E2E profile로 대체하거나, observer가 Harness 내부 stage CLI를 직접 호출해 경로를 조립하지 않는다. 검토한 hook에 대해서만 위의 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 실행 환경의 session TMPDIR/TMP/TEMP와 중첩 Codex helper 쓰기 전제도 함께 적용한다.
 
 같은 E2E의 승인·질문·대기 후속 입력은 `codex exec resume`으로 기존 orchestrator thread를 재개한다. `codex exec resume`은 `--sandbox`, `--add-dir`, `-C`를 받지 않으므로, sandbox는 `-c 'sandbox_mode="danger-full-access"'`로 지정하고 대상 worktree를 cwd로 둔다. 아래 명령에서 thread ID와 prompt는 실제 정본 기록과 사용자 답변으로 바꾼다. `--dangerously-bypass-hook-trust`는 위에서 검토한 hook에만 사용한다.
 
 ```bash
-. '<해당 실행의 session_directory>/runtime/e2e/<run_id>/environment.sh'
+export HARNESS_WORKFLOW_BINDING='{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}'
+export HARNESS_SESSION_DIR='<session resolver로 확인한 절대 session_directory>'
+export TMPDIR="$HARNESS_SESSION_DIR/tmp" TMP="$HARNESS_SESSION_DIR/tmp" TEMP="$HARNESS_SESSION_DIR/tmp"
+node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKFLOW_BINDING); if(b.provider!=="codex" || b.model!=="gpt-6-luna" || b.reasoning_effort!=="medium" || !p.isAbsolute(e.HARNESS_SESSION_DIR) || [e.TMPDIR,e.TMP,e.TEMP].some(x=>x!==p.join(e.HARNESS_SESSION_DIR,"tmp"))) process.exit(1)' || exit 1
+mkdir -p "$TMPDIR" || exit 1
 codex exec resume --json --model gpt-6-luna \
   -c 'model_reasoning_effort="medium"' \
   -c 'approval_policy="never"' \
