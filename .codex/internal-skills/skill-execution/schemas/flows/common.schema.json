@@ -189,6 +189,43 @@
           "type": "null"
         }
       ]
+    },
+    "unplanned_additions": {
+      "type": "array",
+      "description": "Behavior in this implementation that does not trace to an approved requirement ID. Use an empty array when there is none.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "summary",
+          "evidence",
+          "benefit",
+          "cost"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "benefit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cost": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }

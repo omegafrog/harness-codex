@@ -2,6 +2,9 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { loadProvider } from './providers/index.mjs';
 
+// 구현 stage만 Spec 밖 동작을 구조화해 신고한다. 과거 결과 호환을 위해 저장 스키마에서는 선택으로 둔다.
+const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
+
 export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {
   const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
   const schema = JSON.parse(await readFile(join(directory, 'return.schema.json'), 'utf8'));
@@ -13,6 +16,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const resultSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
   const result = schema.properties.result.properties;
+  if (IMPLEMENTATION_FLOWS.has(flow)) schema.properties.result.required.push('unplanned_additions');
+  else delete result.unplanned_additions;
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
     const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill) && !(input.skill === 'spec-me' && skill === 'spec-review'));

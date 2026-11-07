@@ -78,6 +78,9 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /unrequested_behavior/);
     }
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
+    assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
+    assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);
     assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 엄밀도:/);
     assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /근거 없는 엄밀함/);
     const doctor = await runDoctor({ root, sourceRoot });
