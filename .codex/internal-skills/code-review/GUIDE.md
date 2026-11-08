@@ -43,8 +43,8 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 
 두 축 모두 누락·오동작뿐 아니라 diff가 승인 근거 없이 더한 동작을 찾는다. plan 수용 기준과 테스트를 통과해도 Spec에 근거가 없으면 승인된 것이 아니다. 구현자가 신고한 `review_input.unplanned_additions`도 대조한다.
 
-- 승인 근거 없는 제품 동작은 `unrequested_behavior`로 보고하고 `summary`·`evidence`와 사용자가 판단할 `benefit`·`cost`, `rule_impact`를 쓴다. `rule_impact`는 업무 규칙·제한·검증·상태·데이터 동작을 더하지 않을 때만 `none`이고 그 외에는 `business_rule`이다.
-- 지적 하나에 동작 하나만 담는다. 이미 `unplanned_additions`에 있는 항목은 다시 보고하지 않는다. 실행 안내(`EXEC.md`)·테스트 fixture 같은 비제품 파일은 대상이 아니다.
+- 승인 근거 없는 제품 동작은 `unrequested_behavior`로 보고하고 `summary`·`evidence`와 사용자가 판단할 `benefit`·`cost`, 비전문가가 결정할 수 있는 한 문장 `plain_explanation`, `rule_impact`를 쓴다. `rule_impact`는 업무 규칙·제한·검증·상태·데이터 동작을 더하지 않을 때만 `none`이고 그 외에는 `business_rule`이다. 신고된 `rule_impact`가 축소됐으면 별도 지적으로 보고한다.
+- 지적 하나에 동작 하나만 담는다. 이미 `unplanned_additions`에 있는 항목이나 `product-decisions.md`에서 사용자가 거절한 항목은 다시 보고하지 않는다. 실행 안내(`EXEC.md`)·테스트 fixture 같은 비제품 파일은 대상이 아니다.
 - 수정 지적은 의도에 대해 판정한다. `intent_ref`(INT-*, BR-*, BASELINE-*)와 `failure_scenario`(누가, 어떤 일반적인 행동으로, 어떤 피해를 보는지)를 쓴다. 쓰지 못하면 결함이 아니라 advisory다. 일반 사용자가 겪지 않는 드문 경계 사례도 advisory다. 공통 기본선은 [baseline.md](references/baseline.md)이며 의도에 없어도 항상 결함이다.
 - 지적이 요구하는 수정은 승인 문서가 그 수정 자체를 요구해야 한다. 같은 주제의 문장을 인용하는 것으로는 부족하다. 충분한 수준보다 높은 수준을 요구하지 않고, 기록이 없으면 가장 단순한 플랫폼 기본 동작을 기준으로 한다.
 - 두 구현이 어긋나고 그중 하나가 승인되지 않은 동작이면 그 동작을 지적한다. 일관성을 맞추려고 다른 층으로 확대하지 않는다. 수정은 확대가 아니라 제거다.
