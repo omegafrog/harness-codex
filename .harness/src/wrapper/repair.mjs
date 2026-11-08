@@ -608,4 +608,4 @@ export async function runBoundedReviewRepair({ plan = null, scopeDecisions = [],
   }
 }
 
-export { BLOCKER_KINDS, REPAIRABLE_KINDS, SCOPE_DECISION_KINDS };
+export { BLOCKER_KINDS, REPAIRABLE_KINDS, SCOPE_DECISION_KINDS, SCOPE_OPTION_LABELS };

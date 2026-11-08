@@ -82,6 +82,27 @@ export async function readHookRecordedReviewer({ root, role, agentId }) {
   return { contextId: agentId, raw: stop.result };
 }
 
+// The main orchestrator is not a stage, so the repair questions it relays have no stage-assigned question IDs.
+// This records the user's own words under a deterministic ID and links them to the finding, so `repair` can
+// verify the decision against that answer exactly as it does for stage questions.
+export async function recordScopeDecision({ root, planId, findingId, choice, answer, labels }) {
+  if (!findingId || !['reject', 'accept', 'adopt'].includes(choice)) throw new Error('A finding ID and a choice of reject, accept or adopt are required');
+  if (typeof answer !== 'string' || !answer.trim()) throw new Error('The user\'s answer text is required');
+  const accepted = [choice, ...Object.values(labels).map((item) => item[choice])].filter(Boolean);
+  if (!accepted.some((label) => answer.includes(label))) throw new Error(`The answer must contain the chosen option label (${[...new Set(accepted)].join(' / ')}); record the user's actual words`);
+  const evidencePath = `runtime/reviews/implementation-${planId}.json`;
+  const answersRef = `runtime/reviews/implementation-${planId}-answers.json`;
+  const evidence = JSON.parse(await readFile(sessionOutputPath(root, evidencePath, { create: false }), 'utf8'));
+  const questionId = `scope-${planId}:${findingId}`;
+  let answers = [];
+  try { answers = JSON.parse(await readFile(sessionOutputPath(root, answersRef, { create: false }), 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  answers = [...answers.filter((item) => item.question_id !== questionId), { question_id: questionId, answer }];
+  evidence.scope_decisions = [...(evidence.scope_decisions || []).filter((item) => item.finding_id !== findingId), { finding_id: findingId, choice, question_id: questionId, answers_ref: answersRef }];
+  await writeFile(sessionOutputPath(root, answersRef), JSON.stringify(answers, null, 2) + '\n', { mode: 0o600 });
+  await writeFile(sessionOutputPath(root, evidencePath), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
+  return { question_id: questionId, answers_ref: answersRef, reviews: evidencePath };
+}
+
 export async function writeReviewEvidence({ root, planId, evidence }) {
   const path = sessionOutputPath(root, `runtime/reviews/implementation-${planId}.json`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

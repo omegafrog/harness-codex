@@ -138,3 +138,29 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('orchestrator-relayed scope decisions are recorded under a deterministic ID and checked against the answer text', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-scope-decision-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/reviews/implementation-A.json'), JSON.stringify({ review_input: {}, reviews: [] }));
+    const cli = join(root, '.codex/scripts/harness-code-review.mjs');
+    const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
+    const wrong = run('--finding', 'F-1', '--choice', 'adopt', '--answer', '지적 기각');
+    assert.notEqual(wrong.status, 0);
+    assert.match(wrong.stderr, /must contain the chosen option label/);
+    const ok = run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가');
+    assert.equal(ok.status, 0, ok.stderr);
+    const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A.json'), 'utf8'));
+    assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: 'scope-A:F-1', answers_ref: 'runtime/reviews/implementation-A-answers.json' }]);
+    assert.deepEqual(JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A-answers.json'), 'utf8')), [{ question_id: 'scope-A:F-1', answer: 'Spec에 추가' }]);
+    assert.equal(run('--finding', 'F-2', '--choice', 'reject', '--answer', '지적 기각').status, 0);
+    assert.equal(JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A.json'), 'utf8')).scope_decisions.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
