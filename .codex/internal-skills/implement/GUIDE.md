@@ -4,7 +4,7 @@
 
 이 실행은 split plan 하나를 구현하고 `action_required/REVIEW_REQUIRED`로 반환한다. 구현 리뷰는 구현 context를 공유하지 않는 fresh reviewer stage(`standards_reviewer`·`spec_reviewer`)가 수행하며, 구현자는 자기 diff를 리뷰하거나 reviewer를 직접 호출하지 않는다.
 
-구현 전 workspace 확인은 workflow runtime dispatch의 `before_dispatch` workspace gate가 수행한다. skill 절차와 구현 agent는 `harness-workspace-preflight.mjs`를 별도로 실행하지 않는다. gate 실패는 spawn을 막고 정확한 결과를 caller에게 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
+runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fixed point·코드 수정 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`을 실행해 workspace·tracker sync·project readiness의 실제 pass를 확인하고, 실패하면 편집하지 않고 그 결과를 `blocked`로 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
 
 ## 작업 위치
 
@@ -22,7 +22,7 @@
 2. 승인되어 실행 가능한 split plan 하나를 정하고 [Tracker 상태](#tracker-상태)에 따라 `in-progress`로 전환한다.
    - GitHub Issues: parent plan-set Issue의 child Issue를 고르고 Issue 본문을 plan으로 사용한다.
    - local-markdown: `docs/plans/<plan-set-id>/<plan-id>.md`를 ticket으로 읽고 `docs/plans/<plan-set-id>/plans.md`가 링크하는지 확인한다.
-3. 통과한 plan-review gate가 선택한 정확한 canonical plan과 ticket-scoped Product·Architecture Spec을 읽는다. 다른 `plan_path`로 바꾸거나 `ticket_id`가 plan-set ID와 같다고 가정하지 않는다. plan의 test contract가 비즈니스 로직 단위 테스트와 검증을 정하며 다른 test suite를 추정하지 않는다. 누락·stale planning review는 dispatch를 막는다. ticket 존재, canonical tracker 상태, planning-review 승인을 구분한다. 상태 조회 실패나 dirty/uncommitted Spec은 ticket이나 승인 plan이 없다는 증거가 아니다. 누락·stale 입력은 정확히 인용하고 별도 cleanliness 규칙은 그 증거와 함께 보고한다.
+3. `implement-wrapper`의 plan-review `check`가 반환한 정확한 canonical plan과 ticket-scoped Product·Architecture Spec을 읽는다. 다른 `plan_path`로 바꾸거나 `ticket_id`가 plan-set ID와 같다고 가정하지 않는다. plan의 test contract가 비즈니스 로직 단위 테스트와 검증을 정하며 다른 test suite를 추정하지 않는다. 누락·stale planning review는 dispatch를 막는다. ticket 존재, canonical tracker 상태, planning-review 승인을 구분한다. 상태 조회 실패나 dirty/uncommitted Spec은 ticket이나 승인 plan이 없다는 증거가 아니다. 누락·stale 입력은 정확히 인용하고 별도 cleanliness 규칙은 그 증거와 함께 보고한다.
 4. 구현 직전 `HEAD`를 `review_fixed_point`로 캡처한다. 기존 model/owner와 요구 ID를 확인하고 관련 변경 전 baseline을 기록하며 현행 public domain operation을 사용한다. 승인된 경계 근거 없는 새 module/scaffolding은 만들지 않는다.
 5. 승인된 Product Spec의 UC/BR/AC와 Architecture Spec의 규칙 owner를 확인해 변경할 비즈니스 로직을 정한다.
 6. 승인 Spec을 만족하는 최소 구현을 진행한다. 규칙이 세부를 정하지 않았으면 충분한 수준 안에서 가장 단순한 플랫폼 기본 동작을 쓴다. 없을 때 의도가 깨지는 구체적인 상황을 말할 수 없는 동작은 넣지 않는다. 정규화·인코딩 기준 계산·locale 처리·추가 검증·재시도·새 옵션은 구현 세부가 아니라 동작이다. 요구 ID로 연결되지 않는 동작은 커밋 전에 제거하고, 남겨야 한다고 판단하면 완료 결과의 `unplanned_additions`에 `{id, summary, evidence, benefit, cost, rule_impact, plain_explanation}`로 신고한다. `rule_impact`는 업무 규칙·제한·검증·상태·데이터 동작을 더하지 않을 때만 `none`이다. 실행 안내와 테스트 fixture는 신고 대상이 아니다. 없으면 빈 배열을 반환한다. 신고한 항목은 사용자가 유지 또는 제거를 정하기 전까지 완료를 막는다.

@@ -76,6 +76,12 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     }
     // The runner profile points at the GUIDE, which owns approval, no-auto-fix and rerun rules.
     const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
+    // Final E2E always runs in a fresh runner, and dispatch checks call real CLIs.
+    assert.match(e2eGuide, /E2E는 항상 호출자와 대화를 공유하지 않는 fresh `e2e_test_runner` 하위 agent가 실행한다/);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /fresh `e2e_test_runner` 하위 agent를 새로 띄워/);
+    assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);
+    assert.match(await read('.claude/skills/orchestrator/SKILL.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);
     assert.match(e2eGuide, /실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
     assert.match(e2eGuide, /caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고/);
     assert.match(await read('.codex/internal-skills/e2e-test/references/failure-learning.md'), /사용자가 재실행을 지시하면 시도 횟수와 관계없이 따른다/);

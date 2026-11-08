@@ -31,7 +31,7 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 |---|---|
 | 작업 입력·`worktree_ref`·stage 실행·질문 반환 | `.codex/internal-skills/skill-execution/GUIDE.md` |
 | worktree 생성·유지·종료와 `worktree.json` | `.codex/internal-skills/session-worktree/GUIDE.md`, `.codex/internal-skills/workflow-compose/GUIDE.md` |
-| 진입 workspace preflight | 각 stage GUIDE와 workflow `before_dispatch` gate |
+| 진입 workspace preflight | 각 stage GUIDE의 `harness-workspace-preflight.mjs` 단계 (runner는 workspace 등록만 확인) |
 | 실행 중 로그·임시 파일·스크린샷 위치 | `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` |
 | tracker lifecycle·Beads mirror | `.codex/internal-skills/beads/GUIDE.md` |
 | 통합 계약 갱신·seal·completion receipt | `.codex/internal-skills/sync-contracts/GUIDE.md` |

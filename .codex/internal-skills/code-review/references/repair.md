@@ -1,10 +1,10 @@
 # code-review 호출과 수정 절차
 
-리뷰를 실행하고 그 결과로 다음 행동을 정하는 쪽(orchestrator, implement-wrapper runtime)이 읽는다. reviewer의 판정 기준과 결과 형식은 [code-review GUIDE](../GUIDE.md)에 있다.
+리뷰를 실행하고 그 결과로 다음 행동을 정하는 메인 orchestrator가 읽는다. reviewer의 판정 기준과 결과 형식은 [code-review GUIDE](../GUIDE.md)에 있다.
 
 ## 실행
 
-The caller runs the two reviewers as independent executions. Workflow stages and the implement-wrapper runtime (`runIndependentReviewers`) both follow these steps:
+The main orchestrator spawns the two reviewers as fresh native subagents (`standards_reviewer`, `spec_reviewer`); each reads the [code-review GUIDE](../GUIDE.md) from its profile pointer:
 
 1. Confirm the fixed point. If the reviewer model binding is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys; do not invoke setup.
 2. Dispatch a fresh `standards_reviewer` with the diff, commit list, Product Spec, scoped plan/evidence and standards sources; allow targeted source/test reads to verify acceptance claims.
@@ -14,7 +14,7 @@ The caller runs the two reviewers as independent executions. Workflow stages and
 5. Wait for both to finish (a running reviewer is pending, not failed). Preserve their actual return files, execution and thread IDs; never invent reviewer IDs.
 6. Aggregate without merging, reranking or letting one axis mask the other, then route the next action with the repair decision below. Do not auto-fix, auto-rerun or auto-close issues.
 
-수정이나 사용자 결정 요청 전에 호출한 구현 workflow가 [공통 리뷰 조정](../../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 plan-review check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
+수정이나 사용자 결정 요청 전에 orchestrator가 [공통 리뷰 조정](../../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 plan-review check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
 
 ## 판정과 수정 절차
 

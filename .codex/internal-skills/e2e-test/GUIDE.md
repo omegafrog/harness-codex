@@ -4,7 +4,7 @@
 
 implement-wrapper의 최종 E2E는 전체 통합 코드 리뷰 pass 뒤 caller가 작성·제시한 시나리오의 명시적 사용자 실행 승인을 요구한다. runner는 승인된 시나리오·대상 commit·실행 조건과 실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버/인프라를 시작하지 않고 `USER_DECISION_REQUIRED`를 반환한다. 이전 계획 승인이나 구현 진행 지시는 실행 승인을 대신하지 않는다. 실패·timeout·환경 차단·cleanup 실패 뒤에는 증거 수집과 소유 자원 정리만 수행하고 중단한다. caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고 사용자에게 결과와 제안 조치의 승인을 요청한다.
 
-`context.role="e2e_test_runner"`로 실행 중이면 아래 실행 절차를 직접 수행하고 다른 runner를 호출하지 않는다. 호출자는 실제 애플리케이션과 필요한 인프라를 띄우고 사용자 관점으로 검증해야 할 때 이 절차를 사용한다. 활성 worktree의 절대 `workspace_root`를 확정하고 `<workspace_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 입력·출력 스키마 명령을 사용하고 `context.role="e2e_test_runner"`인 독립 `e2e-test` 실행을 호출한다. `workspace_root`와 `cwd`에 동일한 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달한다. model/reasoning은 호출기가 setup 설정에서 읽는다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
+E2E는 항상 호출자와 대화를 공유하지 않는 fresh `e2e_test_runner` 하위 agent가 실행한다. `e2e_test_runner`로 실행 중이면 아래 실행 절차를 직접 수행하고 다른 runner를 호출하지 않는다. 호출자는 runner를 새로 띄워 승인 근거만 넘기고 직접 E2E를 실행하지 않는다. 활성 worktree의 절대 `workspace_root`를 확정하고 `<workspace_root>/docs/agents/testing-guidance.md`를 먼저 읽는다. 호출자는 runner에 `workspace_root`와 `cwd`에 동일한 경로, 승인된 실행 근거, scenario/oracle, profile, timeout, 현재 시도 및 남은 budget을 전달한다. model/reasoning은 호출기가 setup 설정에서 읽는다. 값이 없거나 실행기가 활성 worktree 경로에서 명령을 실행할 수 없으면 테스트하지 않고 blocker로 보고한다.
 
 프로젝트의 검증 기능 지도(있으면 `docs/verification/features.md`)에서 관련 시나리오·requirement/rule ID·진입점·성공 결과를 읽는다. 기능 변경으로 지도가 달라지면 검증한 항목만 갱신한다. 지도의 생성·전체 정합성 점검은 `maintain-verification`을 사용하며, 여기서는 요청된 범위의 실제 실행만 맡는다. 성능 목표가 있으면 plan의 workload·baseline·지표와 measurement 증거 계약을 따른다.
 

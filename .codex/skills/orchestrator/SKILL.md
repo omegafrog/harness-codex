@@ -43,7 +43,7 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 split plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 최종 E2E 시나리오를 작성해 사용자 승인을 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다.
 
-요청 범위의 마지막 stage가 완료되면 해당 완료 gate를 `harness-workflow-complete.mjs`의 `--final-workflow`와 함께 실행한다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 이 옵션을 사용하지 않는다.
+요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow [--state <session-relative completion evidence.json>]`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
 반환 상태에 따라 workflow를 전환한다.
 

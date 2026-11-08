@@ -15,6 +15,8 @@ const BANNED = [
   [/기본 `model_tier`는/, 'model tier is resolved by bindings.json and workflow stages'],
   [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'worker-base.md states the internal GUIDE rule once'],
   [/`docs\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'use skill-execution/references/runtime-artifact-paths.md'],
+  // These name runtime steps that no runner executes; GUIDEs must call the real CLIs instead.
+  [/workspace gate가 수행|`before_dispatch` workspace gate|runtime plan-review gate|runtime의 `plan_review` gate|기존 scheduler의 `ready_plans`|runIndependentReviewers/, 'before_dispatch gates and the wrapper scheduler are not run; use harness-workspace-preflight.mjs and harness-plan-review.mjs check'],
 ];
 
 async function walk(root, dir) {

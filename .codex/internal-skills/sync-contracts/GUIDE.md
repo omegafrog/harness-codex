@@ -15,9 +15,9 @@
 7. `sync-contracts`는 전체 feature 구현이 완료되고 변경 branch에 모든 plan이 통합된 최종 workflow에서만 실행한다. `spec-me`, `to-ticket`, 개별 plan 구현·리뷰, knowledge 작업은 공통 계약을 수정하거나 seal하지 않는다. 최종 구현 workflow는 독립 code review·검증·계약 영향 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 실제 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
 8. 최종 구현 workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존하고, 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. `contract_docs`는 최종 `implement-wrapper` 또는 완결된 단일 구현 workflow에만 적용한다. `spec-me`와 `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함하되 `contract_docs`를 요구하지 않는다. 계약 seal이 독립 리뷰나 다른 완료 gate를 대체하지 않는다.
 
-   `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --base-ref <시작 commit SHA> [--state <session-relative completion evidence.json>]`
+   `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> [--state <session-relative completion evidence.json>]`
 
-   소유 worktree의 ID와 원본 경로는 `<session_directory>/worktree.json`에서 자동으로 읽는다. `--worktree-id`는 별도 교차 확인이 필요한 경우에만 지정한다.
+   worktree 안에서 실행할 때는 `--worktree-id`에 `<session_directory>/worktree.json`의 `worktree_id`를 반드시 넘긴다. 값이 없거나 다르면 완료 gate가 `Canonical worktree ownership mismatch`로 실패한다.
 
    pass 전에는 완료 선언·tracker Done·종속 plan 해제를 하지 않는다. `state=completed`는 `completion_kind`가 말하는 산출물만 완료한다: Spec 검토 완료는 `spec_ready_for_planning`, 계획 발행 완료는 `plan_set_ready_for_implementation`, 개별 plan 완료는 `plan_implemented`, 모든 구현을 통합한 완료는 `feature_implemented`다. 기능 계약 갱신은 마지막 종류에서만 수행한다. 실패는 변경 파일/원인과 복구 행동을 남긴다. 완료 조건에 계약 반영과 독립 의미 검토를 포함한다. 사용자 결정/외부 조건 대기는 `waiting`으로 세션을 유지하며, handoff·취소·실패는 각각 `handoff`·`aborted`·`failed`로 기록한다. 이들은 정상 완료가 아니다.
 

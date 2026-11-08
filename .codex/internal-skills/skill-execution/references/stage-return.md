@@ -12,6 +12,6 @@
 
 Spec 수정이 필요하면 반드시 `action_required` / `SPEC_REVISION_REQUIRED`를 함께 반환한다. 작업이 실제로 막혔다는 이유로 `blocked`와 이 코드를 조합하지 않는다. tracker의 Blocked 상태와 stage 반환 `status`는 별개다. 계획 수정과 사용자 결정도 각각 `action_required` / `PLAN_REVISION_REQUIRED`, `action_required` / `USER_DECISION_REQUIRED`를 쓴다. 임의의 코드나 조합을 만들지 않는다.
 
-사용자 결정이 필요하면 `result.questions`에 [질문 스키마](../schemas/question.schema.json)의 질문을 넣고 `action_required` / `USER_DECISION_REQUIRED`로 반환한다. 질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다. 질문이 없으면 빈 배열로 둔다. stage 안에서 사용자 질문 도구를 직접 호출하지 않는다. orchestrator가 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어가며, checkpoint와 이미 확정된 답변을 결과 파일에 보존한다. 리뷰 요청이나 산출물은 해당 stage의 계약과 제공된 schema에 맞게 기록한다. 읽기 전용 reviewer의 새 보고서는 schema가 요구하는 `result.artifact_contents`로 반환한다.
+사용자 결정이 필요하면 `result.questions`에 [질문 스키마](../schemas/question.schema.json)의 질문을 넣고 `action_required` / `USER_DECISION_REQUIRED`로 반환한다. 질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다. 질문이 없으면 빈 배열로 두고, 결과 최상위에 단수 `question` 필드는 쓰지 않는다. stage 안에서 사용자 질문 도구를 직접 호출하지 않는다. orchestrator가 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어가며, checkpoint와 이미 확정된 답변을 결과 파일에 보존한다. 리뷰 요청이나 산출물은 해당 stage의 계약과 제공된 schema에 맞게 기록한다. 읽기 전용 reviewer의 새 보고서는 schema가 요구하는 `result.artifact_contents`로 반환한다.
 
 모델은 `result_ref`를 만들지 않는다. runner가 마지막 응답을 검증하고 결과 위치를 정해 `result.json`과 `return.json`을 기록한다. 실행 상태나 결과 파일을 직접 고쳐 검증을 우회하지 않는다.
