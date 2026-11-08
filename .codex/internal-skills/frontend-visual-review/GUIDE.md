@@ -123,7 +123,7 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - PASS only when BLOCKER and MAJOR are zero
 - 모든 acceptance scenario와 적용 가능한 핵심 상태를 확인해야 PASS다; 미확인 항목은 따로 표시한다
 
-reviewer는 source, tests, specs, plans, tracker, configuration을 수정하지 않는다.
+reviewer는 source, tests, specs, plans, tracker, configuration을 수정하지 않는다. workspace-write 권한은 process 실행과 임시 browser artifact에만 쓴다.
 
 ## 실행 산출물 경로
 

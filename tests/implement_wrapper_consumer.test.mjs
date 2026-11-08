@@ -70,13 +70,15 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
     for (const path of ['.codex/agents/e2e_test_runner.toml', '.claude/agents/e2e_test_runner.md']) {
       const runner = await read(path);
-      assert.match(runner, /actual user approval reference before starting services/);
-      assert.match(runner, /neither caller nor runner may automatically fix/);
       assert.match(runner, /internal-skills\/e2e-test\/GUIDE\.md/);
       assert.doesNotMatch(runner, /skills\/e2e-test\/SKILL\.md/);
-      assert.match(runner, /follow explicit user instructions for reruns/i);
       assert.doesNotMatch(runner, /at most two total attempts/i);
     }
+    // The runner profile points at the GUIDE, which owns approval, no-auto-fix and rerun rules.
+    const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
+    assert.match(e2eGuide, /실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
+    assert.match(e2eGuide, /caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고/);
+    assert.match(await read('.codex/internal-skills/e2e-test/references/failure-learning.md'), /사용자가 재실행을 지시하면 시도 횟수와 관계없이 따른다/);
     const verificationPolicy = await read('.codex/internal-skills/e2e-test/references/verification-policy.md');
     assert.match(verificationPolicy, /사용자가 재실행을 지시한 경우 횟수만을 이유로 거부하지 않는다/);
     assert.doesNotMatch(verificationPolicy, /시나리오별 시도 budget은 최초 1회/);
@@ -90,10 +92,13 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.equal(blocked.reason, 'unbacked_requirement');
     assert.equal(blocked.next_action, 'user-decision');
     assert.match(await read('.codex/scripts/harness-code-review.mjs'), /scope_decisions/);
-    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /unplanned_additions/);
+    // Profiles point at the GUIDE that owns the rule; the GUIDEs carry the result fields.
+    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /internal-skills\/implement\/GUIDE\.md/);
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /unplanned_additions/);
     for (const agent of ['standards_reviewer', 'spec_reviewer']) {
-      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /unrequested_behavior/);
+      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /internal-skills\/code-review\/GUIDE\.md/);
     }
+    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /unrequested_behavior/);
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
     assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);

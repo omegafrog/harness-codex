@@ -279,3 +279,9 @@ tracker, 기존 implementation plan status, PR은 변경하지 않는다.
 ## 테스트·서비스 실행 전제
 
 일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.
+
+## `frontend_designer` 역할
+
+- 이 GUIDE의 Current UI inventory, Reference-first design, Frontend design brief와 해당할 때 Figwright/Figma authoring 단계만 수행하고 `frontend-design`을 재귀 호출하지 않는다.
+- 실제로 열람하지 않은 reference, Figma 파일, 웹페이지, screenshot을 확인했다고 쓰거나 지어내지 않는다.
+- application source·tests·Spec·plan·tracker·설정을 수정하지 않는다. Figma canvas 쓰기는 workflow가 Figma 경로를 선택했을 때만 허용한다. 완성된 design brief와 미해결 blocker를 반환한다.

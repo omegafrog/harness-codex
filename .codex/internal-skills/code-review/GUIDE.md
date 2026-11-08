@@ -59,7 +59,7 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 
 ## Process
 
-When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis using its role profile and return its findings. Do not dispatch another reviewer.
+When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis as the Standards or Spec section above defines and return its findings. Do not dispatch another reviewer, invoke `code-review` recursively, or edit code, tests, plans, Specs or review artifacts. Compare against the whole current `docs/contracts/` bundle; for `plan_implemented` reviews route snapshot-only contract reconciliation to the feature integration review as step 5 of the repair procedure defines, and flag structural contract failures and in-scope defects now. Do not infer semantic correctness from a hash pass.
 
 Otherwise the caller coordinates two independent executions:
 

@@ -38,6 +38,8 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 - Source/Claim 수집과 저장은 사용자 material-use approval 전에 제시 목적으로 할 수 있다. 이 기록은 Reviewer의 자료 사용 승인이나 Principle 승인이 아니다.
 - 후속 단계는 workflow 선언의 순서대로 수행하고 각 gate의 근거를 저장한다. countersearch 및 human approval 없이 Principle을 publish하지 않는다.
 - 원문이 없거나 위치를 확인할 수 없으면 Claim을 추측하지 않고 진단 또는 unavailable 상태를 보존한다.
+- Reviewer는 새로 발견한 Source/Claim에 의존하기 전에 그 내용·맥락·출처를 사용자에게 보여 주고 `recordMaterialApproval`/`writeMaterialApproval`로 별도 자료 사용 승인을 받는다. Principle 승인은 자료 사용 승인을 대신하지 않는다. 거절되거나 대기 중인 자료는 제외한다.
+- Human approver 단계는 후보 전체, 독립 corroboration, countersearch 범위·결과, Reviewer 평가, 예외와 미해결 사항을 제시하고 명시적 승인 또는 보류를 받는다. 침묵을 동의로 보지 않고 사용자를 대신하거나 게시하지 않는다. 승인은 `principle approve --actor <user-id> --actor-role user`로 사람 actor와 시각을 보존해 기록한다.
 
 ## 실행 산출물 경로
 

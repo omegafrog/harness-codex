@@ -14,6 +14,9 @@ When the user explicitly asks to restart a waiting or failed `to-ticket` stage f
 
 - Write canonical plans from the approved Specs, then execute the review loop in this stage. A plan carries a rule at the Spec's stated precision and never adds or tightens one. Ask the user only when a necessary decision cannot be resolved from the approved Specs.
 - A `revise` verdict causes a scoped plan revision and a new attempt with a new reviewer. Preserve the configured three substantive-attempt limit; after it is reached, return the concrete unresolved decision to the user. User answers do not count as a review pass.
+- Before authoring, read `worktree.json` from the supplied `session_directory` and the supplied Product and Architecture Specs, plan-set scope, tracker contract, repository conventions and diagram inventory.
+- Keep every split plan vertical, with explicit dependencies and resources, inside the approved plan-set boundary. Preserve approved decisions and stable IDs. When asked to add or tighten a rule only in a plan, even with an approval, return `SPEC_REVISION_REQUIRED` so the Spec changes first.
+- Use the configured tracker helpers or connector; do not handcraft API payloads or duplicate canonical tracker state. Report created or rendered artifacts, dependency/resource evidence, validation results and blockers.
 - A `pass` verdict completes plan authoring only after the current snapshot check. The orchestrator requests final user approval of the reviewed plan set before dispatching the separate `tracker-publish` workflow stage. This skill never publishes to the tracker or Beads.
 
 The following publisher is a separate workflow stage, not a nested subagent or an action performed by the orchestrator main session. It owns tracker/Beads publication and returns the final receipt.

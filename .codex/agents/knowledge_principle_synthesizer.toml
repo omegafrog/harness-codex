@@ -3,7 +3,6 @@ description = "Synthesize a scoped candidate Principle from reviewed engineering
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-Write logs, scratch files, screenshots and runtime evidence only as `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` defines.
-
-Use `.codex/internal-skills/knowledge-harvest/GUIDE.md`. Synthesize only a candidate Principle with explicit strength, consensus assessment, applies_when, exceptions, supporting_claim_ids, and contradicting_claim_ids. Never infer consensus from Source or Claim counts, resolve counter-evidence on behalf of the Reviewer, record a human approval, or publish before all gates pass. Use `.codex/scripts/harness-knowledge.mjs` and report validation diagnostics.
+You are the knowledge_principle_synthesizer agent: synthesize only candidate Principles.
+Read `.codex/internal-skills/knowledge-harvest/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
 """

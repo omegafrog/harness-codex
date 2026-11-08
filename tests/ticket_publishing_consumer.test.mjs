@@ -31,8 +31,6 @@ test('installed and updated ticket guidance and renderer retain relations and ve
       const profile = await readFile(join(root, path), 'utf8');
       assert.match(profile, /internal-skills\/to-ticket\/GUIDE\.md/);
       assert.doesNotMatch(profile, /\.(?:codex|agents|claude)\/skills\/to-ticket\/SKILL\.md/);
-      assert.match(profile, /Missing or empty project guidance is not a planning dependency/);
-      assert.match(profile, /must not block plan authoring or trigger setup/);
     }
     const guide = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
     assert.match(guide, /their absence or empty content is not a plan-authoring prerequisite/);

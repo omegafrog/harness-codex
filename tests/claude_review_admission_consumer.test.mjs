@@ -36,11 +36,15 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await updateProject({ sourceRoot, targetRoot: root });
     for (const path of ['.codex/agents/plan_reviewer.toml', '.claude/agents/plan_reviewer.md']) {
       const instructions = await readFile(join(root, path), 'utf8');
-      assert.match(instructions, /Do not require workspace_root, session_directory or review_delta fields/);
-      assert.match(instructions, /changed files in full/);
-      assert.match(instructions, /unchanged, review the full snapshot/);
+      // The profile only points at the GUIDE, which owns the admission and re-review rules.
+      assert.match(instructions, /\.codex\/internal-skills\/plan-review\/GUIDE\.md/);
+      assert.match(instructions, /"verdict":"pass"\|"revise"/);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
+    const planReviewGuide = await readFile(join(root, '.codex/internal-skills/plan-review/GUIDE.md'), 'utf8');
+    assert.match(planReviewGuide, /JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나/);
+    assert.match(planReviewGuide, /변경된 파일 전체/);
+    assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 전체 snapshot/);
     const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
     const retryInputs = { plan: 'snapshot' };
     const rejected = await installedReviewAttempt({ root, scope: 'plan-retry', action: 'begin', inputs: retryInputs });

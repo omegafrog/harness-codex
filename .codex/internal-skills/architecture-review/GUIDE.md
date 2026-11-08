@@ -25,3 +25,4 @@ Learning 검토 결과는 `docs/specs/<plan-set-id>/architecture-reviews/<review
 - 사용자의 제안을 사용자의 승인으로 간주하지 않는다.
 - Reviewer가 사용자 선택이나 답변을 만들어내지 않는다. 위임된 선택과 구현 세부사항은 작성자가 정하고 reviewer가 근거와 영향을 평가한다.
 - 새 Source/Claim을 project Knowledge registry에 게시하지 않는다.
+- source code, schema, workflow manifest와 사용자의 decision 기록을 수정하지 않는다.

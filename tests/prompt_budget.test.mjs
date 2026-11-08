@@ -75,3 +75,20 @@ test('installed skill guides and agent profiles reference files that exist', asy
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Agent profiles are pasted next to the stage GUIDE, so rules live in the GUIDE only.
+// These two roles have no single owning GUIDE and keep their own short role rules.
+const PROFILES_WITHOUT_OWNING_GUIDE = new Set(['execution_runner', 'spec_document_writer']);
+
+test('agent profiles only name their role and point at the GUIDE that owns the rules', async () => {
+  const dir = '.codex/agents';
+  for (const file of (await readdir(join(sourceRoot, dir))).filter((name) => name.endsWith('.toml'))) {
+    const text = await readFile(join(sourceRoot, dir, file), 'utf8');
+    const instructions = /developer_instructions = """\n([\s\S]*?)\n"""/.exec(text)?.[1] || '';
+    const guides = [...instructions.matchAll(/`(\.codex\/internal-skills\/[^`]+\/GUIDE\.md)`/g)].map(([, path]) => path);
+    assert.ok(guides.length > 0, `${file} must point at its owning GUIDE`);
+    for (const path of guides) assert.ok(existsSync(join(sourceRoot, path)), `${file}: ${path} is missing`);
+    const limit = PROFILES_WITHOUT_OWNING_GUIDE.has(file.replace(/\.toml$/, '')) ? 2000 : 1000;
+    assert.ok(Buffer.byteLength(instructions) <= limit, `${file}: move role rules into the GUIDE (${Buffer.byteLength(instructions)} > ${limit} bytes)`);
+  }
+});

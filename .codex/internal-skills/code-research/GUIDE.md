@@ -29,7 +29,7 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
-The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files or make design decisions, and returns a concise report with source locations and inspected commit. The caller reads the result and decides what to pass to the next skill.
+The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files, make design decisions, invoke `code-research` recursively or spawn another agent, and returns only the Output sections plus blockers, with a file path for every concrete claim and the inspected commit. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out
 
@@ -45,4 +45,4 @@ The caller delegates this bounded task to `code_researcher` using the configured
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
 
-실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조한다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.
+`docs/agents/EXEC.md`와 `execution.json`은 실행·설정·인프라 요구가 조사 범위일 때만 읽으며, 두 파일이 없다는 것만으로 조사를 막지 않는다. 실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조해 빠진 인프라, 필수 flag·환경 변수, 생성된 설정의 stale 검증, 사용자 흐름 E2E 전용인 harness-exec로 잘못 보낸 일반 검증을 보고한다. 비어 있는 dependency/prepare 목록은 추측한 기본값이 아니라 source 근거가 필요하다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.
