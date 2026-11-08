@@ -105,3 +105,16 @@ test('spec-me pastes the Product phase guide only until the Product Spec exists'
   const runner = await (await import('node:fs/promises')).readFile(new URL('../.codex/scripts/harness-agent-run.mjs', import.meta.url), 'utf8');
   assert.match(runner, /phaseInstructionPaths\(\{ skill: input\.skill, productSpecExists: Boolean\(artifactDirectories && existsSync\(join\(artifactDirectories\.specs, 'product-spec\.md'\)\)\) \}\)/);
 });
+
+test('one provider per setup: models and workflow bindings from another provider are refused', async () => {
+  const { assertSingleProvider, modelBelongsToProvider } = await import('../.harness/src/workflow/providers/index.mjs');
+  assert.equal(modelBelongsToProvider('claude-code', 'haiku'), true);
+  assert.equal(modelBelongsToProvider('claude-code', 'claude-sonnet-5-5'), true);
+  assert.equal(modelBelongsToProvider('codex', 'haiku'), false);
+  assert.equal(modelBelongsToProvider('codex', 'gpt-6-luna'), true);
+  const claude = { agents: { provider: 'claude-code', high_performance_model: 'opus', low_performance_model: 'haiku' } };
+  assert.equal(assertSingleProvider(claude), 'claude-code');
+  assert.throws(() => assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /differs from the setup provider claude-code/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'haiku' } }), /agents\.low_performance_model is haiku, which is not a codex model/);
+  assert.throws(() => assertSingleProvider(claude, { provider: 'claude-code', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /not a claude-code model/);
+});

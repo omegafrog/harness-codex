@@ -8,7 +8,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
-import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { assertSingleProvider, configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
@@ -111,6 +111,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     }
   }
   const override = recordedBinding ? parseWorkflowBinding(recordedBinding) : workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  assertSingleProvider(config, override);
   if (recordedBinding && workflowBinding) {
     const supplied = parseWorkflowBinding(workflowBinding);
     requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');

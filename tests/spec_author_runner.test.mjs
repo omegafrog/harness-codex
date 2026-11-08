@@ -21,7 +21,7 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  high_performance_model: parent-model\n  high_performance_reasoning_effort: low\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  high_performance_model: opus\n  high_performance_reasoning_effort: low\n');
     const session = join(root, '.io'), ref = join(session, 'worktree.json'), id = 'spec-me-runner-test';
     await mkdir(join(session, 'runtime/executions', id), { recursive: true });
     await writeFile(ref, JSON.stringify({ schema_version: 1, worktree_id: 'a77aaa03-329c-4d59-b4c5-269746a893f2', workspace: root, common: await realpath(join(primary, '.git')), git_dir: await realpath(git(root, 'rev-parse', '--absolute-git-dir')), return_root: primary, session_directory: session, branch: 'spec-test', state: 'active', plan_set_id: 'example' }));

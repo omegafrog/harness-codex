@@ -28,6 +28,15 @@ test("new technology decisions require comparable evaluations and a recorded cho
   assert.equal(validateArchitectureDecision(decision).valid, true);
   assert.equal(evaluateDecisionGate(decision, targets).decision_review_complete.status, "pass");
   assert.ok(validateArchitectureDecision({ ...decision, schema_version: 1 }).errors.some(({ code }) => code === "invalid_schema_version"));
+  // Gate errors name the exact field and accepted values so authors fix the YAML in one pass.
+  const broken = validateArchitectureDecision({ ...decision, criteria: [{ ...decision.criteria[0], requirement_id: "R9", kind: "must" }], evaluations: [{ ...decision.evaluations[0], evidence_kind: "guess", note: "x" }, decision.evaluations[1]], selection: { ...decision.selection, uncertainty: "" } }, {}, { checkApproval: false });
+  const message = (code) => broken.errors.find((error) => error.code === code)?.message || "";
+  assert.match(message("invalid_criterion"), /requirement_id "R9" must be one of \$\.requirement_ids \(R1\)/);
+  assert.match(message("invalid_criterion"), /kind must be required or preferred/);
+  assert.match(message("invalid_evaluation"), /unsupported field note/);
+  assert.match(message("invalid_evaluation"), /evidence_kind must be one of measured, external_measurement, documented, estimated, unknown/);
+  assert.equal(broken.errors.find((error) => error.code === "invalid_evaluation").path, "$.evaluations[0]");
+  assert.match(message("invalid_selection"), /uncertainty must be a non-empty string/);
   const learningDecision = { ...decision, review_mode: 'Learning', review_id: 'learning-review' };
   learningDecision.approval = { ...decision.approval, subject_hash: computeApprovalHash(learningDecision) };
   assert.equal(evaluateDecisionGate(learningDecision, targets).decision_review_complete.status, 'blocked');

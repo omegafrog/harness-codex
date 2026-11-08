@@ -885,10 +885,18 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  low_performance_model: haiku\n  low_performance_reasoning_effort: medium\n  high_performance_model: haiku\n  high_performance_reasoning_effort: medium\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  low_performance_model: gpt-6-luna-mini\n  low_performance_reasoning_effort: medium\n  high_performance_model: gpt-6-luna\n  high_performance_reasoning_effort: medium\n');
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+    // A binding for another provider than setup chose is refused before any worktree exists.
+    const claudeConfig = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  low_performance_model: haiku\n  low_performance_reasoning_effort: medium\n  high_performance_model: haiku\n  high_performance_reasoning_effort: medium\n');
+    const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
+    assert.notEqual(mixed.status, 0);
+    assert.match(mixed.stderr, /Workflow binding provider codex differs from the setup provider claude-code; run setup with codex first/);
+    assert.equal(execFileSync('git', ['worktree', 'list'], { cwd: root, encoding: 'utf8' }).trim().split('\n').length, 1);
+    await writeFile(join(root, '.codex/harness.yaml'), claudeConfig);
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
     assert.deepEqual(tree.workflow_binding, workflowBinding);
     const found = await findExecutionInput(tree.workspace, 'compose-1');

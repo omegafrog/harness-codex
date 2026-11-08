@@ -228,6 +228,7 @@ async function prepareProjectFiles() {
 async function main() {
   const parserUrl = new URL('../../.harness/src/eval/yaml.mjs', import.meta.url);
   const { parseYaml } = await import(parserUrl.href);
+  const { modelBelongsToProvider } = await import(new URL('../../.harness/src/workflow/providers/index.mjs', import.meta.url).href);
   const configPath = join(root, '.codex/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const budgetPath = join(root, '.codex/context-budget.json');
@@ -257,7 +258,7 @@ async function main() {
     { id: 'sonnet', description: '일반 구현·실행' },
     { id: 'haiku', description: '문서·제한된 조사' },
   ].map((model) => ({ ...model, supportedReasoningEfforts: ['low', 'medium', 'high'] }));
-  const needsModelList = provider === 'codex' && (!reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !validProviderEffort(config.agents?.[`${key}_reasoning_effort`])));
+  const needsModelList = provider === 'codex' && (!reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !modelBelongsToProvider(provider, config.agents[`${key}_model`]) || !validProviderEffort(config.agents?.[`${key}_reasoning_effort`])));
   const models = provider === 'codex' ? (needsModelList ? await readModelList() : []) : claudeModels;
   const selection = { provider };
   for (const [key, title, recommendation] of [
@@ -271,7 +272,7 @@ async function main() {
     const currentModel = config.agents?.[`${key}_model`];
     const currentEffort = config.agents?.[`${key}_reasoning_effort`];
     const preferred = provider === 'claude-code' ? (key === 'high_performance' ? 'opus' : key === 'low_performance' ? 'haiku' : 'sonnet') : currentModel || '';
-    const selectedCurrentModel = reuse && hasText(currentModel) && (provider === 'codex' || models.some((item) => item.id === currentModel)) ? currentModel : '';
+    const selectedCurrentModel = reuse && hasText(currentModel) && modelBelongsToProvider(provider, currentModel) && (provider === 'codex' || models.some((item) => item.id === currentModel)) ? currentModel : '';
     const model = selectedCurrentModel || await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), preferred);
     let effort = currentEffort;
     if (!(reuse && selectedCurrentModel && validProviderEffort(currentEffort))) {
