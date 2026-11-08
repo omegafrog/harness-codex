@@ -770,6 +770,16 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, reviewRef), JSON.stringify(reviewedResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${authorInput.execution_id}/return.json`), JSON.stringify(reviewedEnvelope));
     assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);
+    // In GitHub mode the same reviewed result cannot complete without the saved Issue drafts.
+    const yamlPath = join(tree.workspace, '.codex/harness.yaml');
+    const originalYaml = await readFile(yamlPath, 'utf8');
+    await writeFile(yamlPath, `${originalYaml}\ntracker:\n  mode: github\n`);
+    await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /must save a GitHub Issue draft.*runtime\/to-ticket\/drafts\/parent\.md/);
+    const draftsDirectory = join(tree.session_directory, 'runtime/to-ticket/drafts');
+    await mkdir(draftsDirectory, { recursive: true });
+    for (const name of ['parent', 'slice']) await writeFile(join(draftsDirectory, `${name}.md`), `# ${name}\n`);
+    assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);
+    await writeFile(yamlPath, originalYaml);
     await recordExecutionState({ root: tree.workspace, input: authorInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: reviewRef });
     await mkdir(join(tree.session_directory, 'runtime/to-ticket/drafts'), { recursive: true });
     for (const name of ['parent', 'slice']) await writeFile(join(tree.session_directory, `runtime/to-ticket/drafts/${name}.md`), `# ${name}\n`);

@@ -342,6 +342,18 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       const { inspectPlanSet } = await import('./plan-review.mjs');
       const review = await inspectPlanSet({ root, planSetId: input.context?.plan_set_id, phase: 'planning' });
       requireValue(review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
+      // GitHub publication later reads these drafts; a plan set without them can never be published.
+      const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch(() => '')).tracker;
+      if (tracker?.mode === 'github') {
+        const snapshot = await (await import('./plan-review.mjs')).snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
+        const missing = [];
+        for (const planId of ['@parent', ...snapshot.plans.map((plan) => plan.id)]) {
+          const name = planId === '@parent' ? 'parent' : planId;
+          const body = await readFile(join(session, 'runtime/to-ticket/drafts', `${name}.md`), 'utf8').catch(() => '');
+          if (!body.trim()) missing.push(`runtime/to-ticket/drafts/${name}.md`);
+        }
+        requireValue(!missing.length, `to-ticket must save a GitHub Issue draft for the plan set and every plan in the session directory before completing; missing or empty: ${missing.join(', ')}`);
+      }
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
