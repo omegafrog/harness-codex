@@ -530,7 +530,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await mkdir(join(tree.workspace, canonicalSpecDir, 'architecture-reviews'), { recursive: true });
     await writeFile(join(tree.workspace, canonicalSpecDir, 'architecture-reviews/review.yaml'), 'review');
     const wrongId = tree.plan_set_id.replace(/[0-9a-f]{12}$/i, '000000000000');
-    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `docs/specs/${wrongId}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: createHash('sha256').update('review').digest('hex') }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
+    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `docs/specs/${wrongId}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: 'a'.repeat(64) }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
     const { review_request: omittedReview, ...questionWithoutReview } = questionResult;
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
@@ -539,6 +539,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(validated.result.summary, '파일 정본');
     assert.equal(validated.result.artifacts[0].path, `${canonicalSpecDir}/architecture-reviews/review.yaml`);
+    // The runner fingerprints the returned file itself instead of trusting the model-typed hash.
+    assert.equal(validated.result.artifacts[0].sha256, createHash('sha256').update(await readFile(join(tree.workspace, validated.result.artifacts[0].path))).digest('hex'));
     questionResult.artifacts = validated.result.artifacts;
     assert.equal(validated.result.review_request, null);
     assert.equal(Object.hasOwn(validated.result, 'question'), false);
@@ -586,7 +588,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const reviewed = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(reviewed.result.questions.length, 1);
     assert.equal(reviewed.result.review_request.agent_profile, 'architecture_review_lead');
-    assert.deepEqual(reviewed.result.artifacts, [findings]);
+    // A null hash from the model is replaced by the runner's fingerprint of the session file.
+    assert.deepEqual(reviewed.result.artifacts, [{ ...findings, sha256: createHash('sha256').update(await readFile(join(tree.session_directory, findings.path))).digest('hex') }]);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: resultRefForQuestion });
     await writeFile(join(resultDir, 'exec.stderr.json'), JSON.stringify({ thread_id: record.worktree_id }));

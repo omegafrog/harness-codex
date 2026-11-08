@@ -172,6 +172,14 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   const { orchestratorResumeCommand } = await import('../.harness/src/workflow/stage-result-events.mjs');
   // The resumed orchestrator turn keeps the workflow model binding, not the user's CLI default.
   assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', binding: { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' } }).args, ['exec', 'resume', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort="medium"', 's', 'm']);
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', sandbox: 'danger-full-access' }).args, ['exec', 'resume', '-c', 'sandbox_mode="danger-full-access"', 's', 'm']);
+  // The sandbox comes from the user's last orchestrator turn; runner-driven delivery turns are ignored.
+  const { orchestratorSandbox } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const home = join(fx.primary, 'codex-home'), sessionId = '01a1ba5e-b967-7c30-8e90-97af4ffd9b02';
+  await mkdir(join(home, 'sessions/2026/11/08'), { recursive: true });
+  const turn = (mode, text) => [{ type: 'turn_context', payload: { sandbox_policy: { type: mode } } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>x' }] } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text }] } }];
+  await writeFile(join(home, `sessions/2026/11/08/rollout-2026-11-08T17-55-32-${sessionId}.jsonl`), [...turn('danger-full-access', '$orchestrator 계속 진행해'), ...turn('workspace-write', 'Harness stage result for execution spec-me-1: completed/OK.')].map((entry) => JSON.stringify(entry)).join('\n'));
+  assert.equal(await orchestratorSandbox(sessionId, { CODEX_HOME: home }), 'danger-full-access');
   assert.match(calls[0].args[3], /Harness stage result for execution host: completed\/OK/);
   assert.equal(calls[0].cwd, fx.root);
   assert.equal(calls[0].session, fx.session);

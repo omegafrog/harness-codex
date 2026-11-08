@@ -135,3 +135,34 @@ export async function inspectCodexHookTrust(env = process.env) {
   }
   return { trusted: !missing.length && !untrusted.length, missing, untrusted, hooks_path: hooksPath };
 }
+
+const DELIVERY_PREFIX = 'Harness stage result for execution';
+
+async function findRollout(directory, sessionId) {
+  const entries = await readdir(directory, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
+  for (const entry of entries.sort((a, b) => b.name.localeCompare(a.name))) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) { const found = await findRollout(path, sessionId); if (found) return found; }
+    else if (entry.isFile() && entry.name.startsWith('rollout-') && entry.name.endsWith(`-${sessionId}.jsonl`)) return path;
+  }
+  return null;
+}
+
+// A resumed `codex exec` turn uses the CLI's default sandbox, not the session's. Inside Codex's Linux
+// sandbox, background stage runners die with the turn, so the orchestrator must keep the sandbox the
+// user last ran it with. Runner-driven delivery turns are skipped so they never redefine that choice.
+export async function orchestratorSandbox(sessionId, env = process.env) {
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId || '')) return null;
+  const path = await findRollout(join(codexHome(env), 'sessions'), sessionId);
+  if (!path) return null;
+  const entries = (await readFile(path, 'utf8')).split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+  let sandbox = null;
+  for (let index = 0; index < entries.length; index++) {
+    if (entries[index].type !== 'turn_context') continue;
+    const mode = entries[index].payload?.sandbox_policy?.type;
+    const prompt = entries.slice(index + 1).find((entry) => entry.type === 'response_item' && entry.payload?.role === 'user' && !String(entry.payload.content?.[0]?.text || '').startsWith('<environment_context>'));
+    if (String(prompt?.payload?.content?.[0]?.text || '').startsWith(DELIVERY_PREFIX)) continue;
+    if (['read-only', 'workspace-write', 'danger-full-access'].includes(mode)) sandbox = mode;
+  }
+  return sandbox;
+}

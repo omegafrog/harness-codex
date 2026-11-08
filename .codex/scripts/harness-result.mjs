@@ -2,6 +2,7 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { createHash } from 'node:crypto';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('skill-execution.mjs', installed));
 const { identifyQuestions } = await import(new URL('questions.mjs', installed));
@@ -85,6 +86,16 @@ try {
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
   }
   if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');
+  // The runner, not the model, fingerprints returned artifacts; a model-typed hash can be wrong.
+  for (const artifact of Array.isArray(envelope.result.artifacts) ? envelope.result.artifacts : []) {
+    if (!artifact || typeof artifact.path !== 'string' || isAbsolute(artifact.path)) continue;
+    const base = artifact.base === 'workspace' ? opts.root : artifact.base === 'session' ? session : artifact.base === 'control_session' ? (input.context?.control_session_directory || session) : null;
+    if (!base) continue;
+    await assertWorkspaceTarget(base, artifact.path);
+    const info = await lstat(join(base, artifact.path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (info?.isFile() && !info.isSymbolicLink()) artifact.sha256 = createHash('sha256').update(await readFile(join(base, artifact.path))).digest('hex');
+    else if (info?.isDirectory()) artifact.sha256 = null;
+  }
   await validateSkillReturn({ root: opts.root, input, envelope });
   if (envelope.result_ref) {
     const path = join(session, envelope.result_ref);
