@@ -4,7 +4,7 @@
 
 모든 skill 실행 결과는 질문이 하나여도 `questions` 배열만 사용한다. 질문이 없으면 빈 배열을 반환하며 결과 최상위에 `question` 필드를 사용하지 않는다. 배열 항목의 `title`은 질문 문장이다. 질문 도구에는 `title`과 문자열 options만 전달하고 결과 객체를 그대로 전달하지 않는다.
 
-실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다.
+실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. 각 skill의 model·effort는 실행기가 `bindings.json`과 workflow stage의 `model_tier`로 정한다. skill은 사용자 결정과 workflow 단계 전환을 직접 처리하지 않고 caller에 반환한다.
 
 For assigned headless stages, the runner supplies the selected internal GUIDE and current input. Load linked procedures only when their phase begins; do not preload later-phase references. On same-session resume, continue from new answers or feedback and the current phase without rereading unchanged entry instructions. If a new session or context compaction leaves required rules unavailable, reload the current phase's guide and authoritative references before proceeding.
 

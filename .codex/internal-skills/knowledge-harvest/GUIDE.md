@@ -1,9 +1,7 @@
 
 # Knowledge Harvest
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 필요한 조사·추출·검토를 서브에이전트에 위임한다. 사용자 결정은 상위 caller에 반환한다.
+[실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 필요한 조사·추출·검토를 서브에이전트에 위임한다.
 
 ## 목적
 

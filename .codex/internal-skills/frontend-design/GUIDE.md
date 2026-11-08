@@ -3,10 +3,6 @@
 
 # frontend-design
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.
 
 새 UI와 UI/UX 재설계의 단일 시작점이다. `frontend-implement`와 `frontend-visual-review`는 이 흐름의 내부 단계이며, 독립적으로 시작하지 않는다.
@@ -24,16 +20,6 @@
 - "기능은 동작하지만 UI/UX가 좋지 않다"는 문제 개선
 
 단순 copy 변경, 눈에 보이지 않는 frontend infrastructure, backend-only 변경에는 사용하지 않는다.
-
-## Model routing
-
-`.codex/harness.yaml`에서 실제 model ID와 reasoning effort를 resolve한다.
-
-- Design direction / reference synthesis: `agents.high_performance_model`
-- Implementation / correction: `agents.implementation_model`
-- Visual / UX review: `agents.high_performance_model`
-
-literal config key를 agent에 전달하지 않는다. 필요한 값이 없으면 `setup`이 필요하다고 보고하고 시작하지 않는다.
 
 ## Workspace contract
 

@@ -3,10 +3,6 @@
 
 # Harness Maintenance
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 Use this skill for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.
 
 1. Resolve the current repository root with `git rev-parse --show-toplevel`. Do not update a parent checkout, another worktree, or the Harness source repository by assumption.

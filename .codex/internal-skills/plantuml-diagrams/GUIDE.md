@@ -4,10 +4,6 @@
 
 # plantuml-diagrams
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 `plantuml-diagrams`는 Spec에 필요한 다이어그램만 독립 `.puml` 편집 원본으로 만들고, 기존 로컬 renderer를 통해 SVG를 생성·검증한다.
 
 Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬을 실행한다. 호출자는 settled 요구사항·설계와 ticket scope를 제공하고, diagram_creator는 `docs/specs/<plan-set-id>/product-spec.md`와 `docs/specs/<plan-set-id>/architecture-spec.md`에서 확정된 diagram inventory를 읽는다. 상위 Spec 에이전트는 산출물과 내용 일치를 검토한다.

@@ -1,17 +1,11 @@
 
 # spec-me
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 필요한 내부 작업을 서브에이전트에 위임하고 결과 파일과 공통 envelope를 반환한다. 사용자 결정과 workflow 단계 전환은 orchestrator에 반환한다.
-
 ## What it does
 
 `spec-me` turns a user request into Product Spec and Architecture Spec, then completes its stage. The orchestrator selects `to-ticket` as a separate next stage when the requested workflow includes planning.
 
 요청별 workflow의 생성·단계 구성은 [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)가 맡고 메인 orchestrator의 시작 hook에서 호출한다. `spec-me`는 그 결과로 선택된 Spec 작성 범위를 수행하고 다른 workflow 단계가 필요하면 공통 상태 코드로 반환한다.
-
-Standalone `spec-me` uses the model ID and reasoning effort resolved from `agents.high_performance_model` and `agents.high_performance_reasoning_effort`. An orchestrator-managed stage uses its supplied stage binding instead. The skill cannot change the model of an already-running invocation.
 
 `spec-me`가 Product·Architecture Spec Markdown을 작성하고 수정한다. `diagram_creator`는 다이어그램 파일을 작성한다. 확정된 결정과 근거를 반영해 각 Spec template과 topics의 적용 항목을 작성한다. 사용자 요청의 핵심 기능을 완성하는 데 필수이면서 기존 근거와 합리적인 기본 동작으로 해결할 수 없는 결정만 질문한다. 작성 과정과 실행 내역은 일반 실행 로그에 남긴다.
 

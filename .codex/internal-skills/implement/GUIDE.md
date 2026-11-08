@@ -4,9 +4,7 @@
 
 # implement
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
+구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다.
 
 구현 전 workspace 확인은 workflow runtime dispatch의 `before_dispatch` workspace gate가 수행한다. skill 절차와 구현 agent는 `harness-workspace-preflight.mjs`를 별도로 실행하지 않는다. gate 실패는 spawn을 막고 정확한 결과를 caller에게 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
 

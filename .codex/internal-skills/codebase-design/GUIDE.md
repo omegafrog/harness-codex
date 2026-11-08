@@ -4,10 +4,6 @@
 
 # codebase-design
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 ## What it does
 
 `codebase-design` turns DDD decisions into an implementation contract covering packages, seams, adapters, tests, and files.

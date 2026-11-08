@@ -2,10 +2,6 @@
 
 # event-storming
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 ## What it does
 
 `event-storming` maps a use-case command into actors, commands, events, policies, and external systems for DDD.

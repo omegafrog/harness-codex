@@ -3,10 +3,6 @@
 
 # Maintain verification coverage
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 Use the existing project verification skill/map when available; otherwise seed `docs/verification/features.md` from affected user-facing commands/routes/use cases. Start with the main 3–5 journeys instead of cataloguing internals. The map is verification documentation, never a task board. For the Harness repository, the source-owned map lives at `docs/verification/features.md`; installed consumer projects discover their own surfaces rather than inheriting Harness CLI features.
 
 Each feature records stable requirement/rule IDs when available, user entrypoint, prerequisites, owning Context/model/source, canonical drive command or recipe, observable result and side effects, evidence/cleanup rules, and last verified commit/result. Read the [shared verification policy](../e2e-test/references/verification-policy.md): prefer focused lower-level checks; use E2E only when explicitly requested or justified by a changed critical cross-boundary risk that cheaper checks cannot establish. Put launch/server/infra configuration in `docs/agents/EXEC.md` and link it; do not duplicate it in the map. Mark source-only recipes `not-run` until executed.

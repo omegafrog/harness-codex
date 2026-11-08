@@ -4,10 +4,6 @@
 
 # sync-contracts
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 설치된 **대상 프로젝트**의 현행 계약은 `docs/contracts/product.md` 한 장과 `architecture.md` 한 장이다. ticket Spec은 변경 제안·승인 근거다. 다음 `spec-me`는 통합 계약·`CONTEXT.md`·`CONTEXT-MAP.md`와 실제 코드를 먼저 읽는다. manifest는 기능·구성요소·소유 관계·diagram·source_roots를 읽고, 대량 hash 비교는 CLI에 맡긴다. 하네스 자체의 모델을 대상 프로젝트에 복사하지 않는다.
 
 ## 갱신

@@ -2,10 +2,6 @@
 
 # Architecture Spec
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 필요한 하위 작업을 서브에이전트에 위임하고 결과 파일과 공통 envelope를 반환한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 독립 리뷰는 현재 부모 Codex 대화에서 지정된 native reviewer를 직접 호출한다. `review_request`는 reviewer의 `skill`, `agent_profile`, 범위와 `context_path`를 담는 입력 계약이며, `context_path`는 확인된 Decision ID, review mode, 사용자 주장과 근거를 담은 session 상대 JSON이다. native reviewer의 결과를 직접 검토해 findings를 해결하고, 필요한 사용자 선택은 부모 stage의 `USER_DECISION_REQUIRED` 경계로 반환한다. 재검토에는 이전 보고서의 변경 구간과 미해결 finding을 포함한다. reviewer 출력은 session 산출물로 보존하며 `context.review_result_ref`나 별도 child-stage dispatch를 사용하지 않는다.
 
 ## Purpose

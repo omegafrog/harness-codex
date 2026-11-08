@@ -3,10 +3,6 @@
 
 # E2E 테스트 실행
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
-
 먼저 [공통 검증 정책](references/verification-policy.md)을 적용한다. implement-wrapper가 split plan set의 최종 검증으로 호출하면 모든 split plan 구현·개별 검증·통합이 끝난 뒤 feature-level E2E를 한 번 실행한다. 개별 plan 구현 중에는 실행하지 않는다. 승인된 시나리오와 oracle을 사용하며, plan/test contract에 정의된 시나리오와 충돌하면 실행 전에 근거 있는 수정안을 제시한다. Runner는 테스트/source를 수정하지 않는다. 그 밖의 독립 작업에서는 명시된 E2E 요청 또는 저비용 검사로 판정할 수 없는 승인된 critical cross-boundary 위험에 대해서만 실행한다.
 
 implement-wrapper의 최종 E2E는 전체 통합 코드 리뷰 pass 뒤 caller가 작성·제시한 시나리오의 명시적 사용자 실행 승인을 요구한다. runner는 승인된 시나리오·대상 commit·실행 조건과 실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버/인프라를 시작하지 않고 `USER_DECISION_REQUIRED`를 반환한다. 이전 계획 승인이나 구현 진행 지시는 실행 승인을 대신하지 않는다. 실패·timeout·환경 차단·cleanup 실패 뒤에는 증거 수집과 소유 자원 정리만 수행하고 중단한다. caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고 사용자에게 결과와 제안 조치의 승인을 요청한다.
