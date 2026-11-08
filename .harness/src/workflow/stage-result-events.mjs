@@ -87,9 +87,11 @@ function deliveryMessage(event, session) {
 
 // The orchestrator ends its turn after dispatching a stage. The runner resumes that same orchestrator
 // session through its own provider CLI with the result, so the workflow continues without a host app.
-export function orchestratorResumeCommand({ provider, sessionId, root, message }) {
-  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', sessionId, message], cwd: root };
-  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.codex/scripts/harness-claude-orchestrator.mjs'), '--resume', sessionId, message], cwd: root };
+export function orchestratorResumeCommand({ provider, sessionId, root, message, binding = null }) {
+  // The resumed turn keeps the workflow's model binding instead of the user's CLI default.
+  const model = binding && binding.provider === provider ? binding : null;
+  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', ...(model ? ['--model', model.model, '-c', `model_reasoning_effort=${JSON.stringify(model.reasoning_effort)}`] : []), sessionId, message], cwd: root };
+  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.codex/scripts/harness-claude-orchestrator.mjs'), ...(model ? ['--model', model.model] : []), '--resume', sessionId, message], cwd: root };
   return null;
 }
 
@@ -101,7 +103,7 @@ function orchestratorEnvironment(session) {
 async function deliver(session, input, event) {
   const sessionId = input.context?.orchestrator_session_id;
   if (!sessionId) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
-  const command = orchestratorResumeCommand({ provider: input.context?.orchestrator_provider || 'codex', sessionId, root: input.workspace_root, message: deliveryMessage(event, session) });
+  const command = orchestratorResumeCommand({ provider: input.context?.orchestrator_provider || 'codex', sessionId, root: input.workspace_root, message: deliveryMessage(event, session), binding: input.context?.workflow_binding || null });
   if (!command) return { status: 'unsupported', reason: 'orchestrator_provider_unsupported' };
   const log = `runtime/orchestrator/deliveries/${input.execution_id}.log`;
   await assertWorkspaceTarget(session, log);

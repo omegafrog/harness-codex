@@ -169,6 +169,9 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].args.slice(0, 3), ['exec', 'resume', 'conversation-1']);
+  const { orchestratorResumeCommand } = await import('../.harness/src/workflow/stage-result-events.mjs');
+  // The resumed orchestrator turn keeps the workflow model binding, not the user's CLI default.
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', binding: { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' } }).args, ['exec', 'resume', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort="medium"', 's', 'm']);
   assert.match(calls[0].args[3], /Harness stage result for execution host: completed\/OK/);
   assert.equal(calls[0].cwd, fx.root);
   assert.equal(calls[0].session, fx.session);
