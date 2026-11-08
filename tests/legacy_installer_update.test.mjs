@@ -228,3 +228,41 @@ test('update deletes retired skill files with their empty directories and keeps 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('update to the latest release backs up and removes locally modified retired files and the legacy runtime root', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/latest-`);
+  const exists = (path) => stat(resolve(root, path)).then(() => true, () => false);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const retired = '.codex/scripts/old-modified.mjs';
+    await writeFile(resolve(root, retired), 'user modified');
+    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    const oldHash = createHash('sha256').update('old managed').digest('hex');
+    lock.files[retired] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: retired };
+    await writeFile(lockPath, JSON.stringify(lock));
+    const guide = '.codex/internal-skills/implement/GUIDE.md';
+    const installedGuide = await readFile(resolve(root, guide), 'utf8');
+    await writeFile(resolve(root, guide), 'local edit');
+    await mkdir(resolve(root, '.codex/harness-runtime/src/workflow'), { recursive: true });
+
+    const result = await updateProject({ sourceRoot, targetRoot: root, force: true });
+
+    assert.equal(await exists(retired), false);
+    assert.equal(await readFile(resolve(result.backup_directory, retired), 'utf8'), 'user modified');
+    assert.equal(JSON.parse(await readFile(lockPath, 'utf8')).files[retired], undefined);
+    assert.equal(await readFile(resolve(root, guide), 'utf8'), installedGuide);
+    assert.equal(await readFile(resolve(result.backup_directory, guide), 'utf8'), 'local edit');
+    assert.equal(await exists('.codex/harness-runtime'), false);
+    assert.ok(result.skipped.every((item) => item.status === 'legacy_unrecognized'), JSON.stringify(result.skipped));
+    const cli = await readFile(resolve(sourceRoot, 'bin/harness-install.mjs'), 'utf8');
+    assert.match(cli, /updateProject\(\{ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

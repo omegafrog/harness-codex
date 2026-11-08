@@ -12,7 +12,7 @@ import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checko
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install/update)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install; update always does)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -263,7 +263,8 @@ async function main() {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
-    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force, noBackup: options.noBackup });
+    // update always matches the latest release for Harness-owned paths; local edits are backed up first.
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup });
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);

@@ -305,6 +305,12 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
           removed_lock_entries.push(entry.path);
           continue;
         }
+        if (force) {
+          actions.push({ descriptor: sourceDescriptor(entry.source_path || entry.path, entry.path), retired: true, backup: target.content });
+          delete nextFiles[entry.path];
+          removed_lock_entries.push(entry.path);
+          continue;
+        }
         nextFiles[entry.path] = { ...nextFiles[entry.path], retired: true };
         skipped.push({ path: entry.path, status: 'retired_locally_modified' });
         continue;
@@ -414,9 +420,13 @@ async function removeEmptyDirectoriesUpTo(root, boundary, directory) {
 }
 
 // Earlier updates deleted retired files but left their directories behind. Only Harness skill
-// names are swept under the shared skill roots; `.codex/internal-skills` is Harness-owned.
+// names are swept under the shared skill roots; `.codex/internal-skills` and the legacy
+// `.codex/harness-runtime` are Harness-owned.
 async function pruneEmptySkillDirectories(root, harnessSkillNames) {
   const removed = [];
+  const legacyRuntime = resolve(root, '.codex/harness-runtime');
+  const legacyInformation = await lstat(legacyRuntime).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (legacyInformation?.isDirectory() && !legacyInformation.isSymbolicLink()) removed.push(...await removeEmptyTree(root, legacyRuntime));
   for (const skillsRoot of ['.codex/internal-skills', '.agents/skills', '.claude/skills']) {
     const boundary = resolve(root, skillsRoot);
     const information = await lstat(boundary).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
@@ -443,7 +453,7 @@ async function removeEmptyTree(root, directory) {
 
 async function removeEmptyLegacyRuntimeDirectories(root, directory) {
   const rootPath = await realpath(root);
-  const boundary = resolve(root, '.codex/harness-runtime/src');
+  const boundary = resolve(root, '.codex/harness-runtime');
   let current = resolve(directory);
   while (isWithin(boundary, current)) {
     const information = await lstat(current).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
