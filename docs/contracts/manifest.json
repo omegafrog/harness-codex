@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "revision": 92,
+  "revision": 93,
   "updated_at": "2026-11-08",
-  "change_summary": "Allow reviewed publication after premature implementation block",
+  "change_summary": "Resume plan output repair after implementation dependency block",
   "source_roots": [
     ".harness/src",
     "bin",
@@ -1205,7 +1205,7 @@
     ".harness/src/workflow/spec-review.mjs": "4fe5e8b88a845de8af00ee059f3921bd65bfafcba326432d4b1441bbd038a4d5",
     ".harness/src/workflow/stage-commit.mjs": "d47a4a218b5b4335acb13d4b2c38bac4c5f98dc1e9ca2544267a80bcda58ab3d",
     ".harness/src/workflow/stage-gates.mjs": "37f88265ae7faffff66366453876f9ae0dfef2742cc3678171196d2901829af3",
-    ".harness/src/workflow/stage-input.mjs": "fe1e9388997f58d45b381b9c7d29e62161d349ad578dbfba55826926279154c3",
+    ".harness/src/workflow/stage-input.mjs": "ff04394a7ddb65916f18d0d91b19fe6551bacad57a2518bf9cc5b215055388ed",
     ".harness/src/workflow/stage-result-events.mjs": "a46730ce13b18329d6efbaf33fe393c4fecb110073c46aaabdc5a14920cf8959",
     ".harness/src/workflow/startup-state.mjs": "7f63fa1146be486536689bce6f1e8f1cb1a8ada2e51a75ca8ef1a9164aa6aeda",
     ".harness/src/workflow/worktree-stages.mjs": "dd0b74f5331551b7ed7ff9def751e4b67808247da3d03ddd805f6f8a00d6b616",
@@ -1232,7 +1232,7 @@
     "docs/agents/execution.json": "37c08ba637bd197e3f25ed8476057385985f3860ec6f106f3dda67f1027f0be4",
     "docs/agents/implementation-guidance.md": "906243324258884382edbb7d075c711412f2b191098f56b70a4f5f82d94394b5",
     "docs/agents/testing-guidance.md": "51a7fce7574790567443ef82f8e33c29aa504c83abca07647d4bb7ff03a17c68",
-    "docs/contracts/architecture.md": "a8979059b3935ce51287864008c39310a238455c22543e17af1410cb9509aa0d",
+    "docs/contracts/architecture.md": "a5286bbdbe50eecd34092d9837a815ff3e7341a46dfcb8b7328d450c14222383",
     "docs/contracts/diagrams/checkpoint.state.puml": "c76c4a1012be957d2c58642adbdfd50deec14fe7eeb21fb72e14c764653ee757",
     "docs/contracts/diagrams/checkpoint.state.svg": "45acfccd25c5e6388918e3decd477bd19df0f5c41d40cf4a3f88b8edfbce375d",
     "docs/contracts/diagrams/contracts-feature.sequence.puml": "8d5c5da4eb2310daf132c93a203a4f39036c7468155f558792bcc34579f03ea6",

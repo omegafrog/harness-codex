@@ -207,7 +207,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let lastStage = state.current_stage;
   let last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
   // A premature implementation dispatch can only be unblocked by publishing the reviewed plan.
-  if (stageId === 'tracker-publish' && publicationApproved && lastStage === 'implement-wrapper' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && !state.stages?.['tracker-publish']) {
+  if (((stageId === 'tracker-publish' && publicationApproved) || (stageId === 'to-ticket' && userRevision)) && lastStage === 'implement-wrapper' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && !state.stages?.['tracker-publish']) {
     const blockedInput = await readExecutionInput({ root, execution_id: last.execution_id });
     const blockedReturn = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${last.execution_id}/return.json` });
     await validateSkillReturn({ root, input: blockedInput, envelope: blockedReturn });
