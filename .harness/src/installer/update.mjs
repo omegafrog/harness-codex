@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, normalize, resolve } from "node:path";
+import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 
 import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./lock.mjs";
 import { isWithin } from "../eval/util.mjs";
@@ -270,7 +270,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   if (!sourceRoot || !targetRoot) throw new TypeError("sourceRoot and targetRoot are required");
   if (typeof force !== "boolean" || typeof noBackup !== "boolean" || typeof initialize !== "boolean" || !["all", "agents", "skills"].includes(scope)) throw new TypeError("Invalid installer force/noBackup/initialize/scope options");
   if (await isHarnessSourceCheckout(sourceRoot, targetRoot)) {
-    return { lock: null, updated: [], added: [], removed_lock_entries: [], backup_directory: null, skipped: [{ path: ".codex", status: "source_checkout" }] };
+    return { lock: null, updated: [], added: [], removed_lock_entries: [], removed_directories: [], backup_directory: null, skipped: [{ path: ".codex", status: "source_checkout" }] };
   }
   const { path: lockFile } = await containedPath(targetRoot, lockPath);
   const lockInformation = await lstat(lockFile).catch((error) => {
@@ -364,11 +364,13 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     await mkdir(dirname(backup.path), { recursive: true, mode: 0o700 });
     await writeFile(backup.path, action.backup, { flag: "wx", mode: 0o600 });
   }
+  const removed_directories = [];
   for (const action of actions) {
     if (action.retired) {
       const target = await containedPath(targetRoot, action.descriptor.target_path);
       await unlink(target.path);
       if (action.descriptor.target_path.startsWith('.codex/harness-runtime/src/')) await removeEmptyLegacyRuntimeDirectories(targetRoot, dirname(target.path));
+      else removed_directories.push(...await removeEmptyManagedDirectories(targetRoot, action.descriptor.target_path));
       continue;
     }
     await installFile(targetRoot, action.descriptor.target_path, action.content);
@@ -379,13 +381,64 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       ...(action.descriptor.source_transform ? { source_transform: action.descriptor.source_transform } : {}),
     };
   }
+  if (scope !== 'agents') removed_directories.push(...await pruneEmptySkillDirectories(targetRoot, new Set([...internalSkillNames, ...descriptors.map((descriptor) => /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(descriptor.target_path)?.[1]).filter(Boolean)])));
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     await syncOrchestratorHook(targetRoot, { noBackup });
     await syncClaudeOrchestratorHook(targetRoot, { noBackup });
   }
-  return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
+  return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };
+}
+
+// Managed roots are the first two path segments (for example `.agents/skills`); the root itself is kept.
+async function removeEmptyManagedDirectories(root, targetPath) {
+  const segments = targetPath.split('/');
+  if (segments.length < 4) return [];
+  return removeEmptyDirectoriesUpTo(root, resolve(root, segments.slice(0, 2).join('/')), dirname(resolve(root, targetPath)));
+}
+
+async function removeEmptyDirectoriesUpTo(root, boundary, directory) {
+  const rootPath = await realpath(root);
+  const removed = [];
+  let current = resolve(directory);
+  while (current !== boundary && isWithin(boundary, current)) {
+    const information = await lstat(current).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (!information || information.isSymbolicLink() || !information.isDirectory()) break;
+    if (!isWithin(rootPath, await realpath(current)) || (await readdir(current)).length > 0) break;
+    await rmdir(current);
+    removed.push(relative(root, current));
+    current = dirname(current);
+  }
+  return removed;
+}
+
+// Earlier updates deleted retired files but left their directories behind. Only Harness skill
+// names are swept under the shared skill roots; `.codex/internal-skills` is Harness-owned.
+async function pruneEmptySkillDirectories(root, harnessSkillNames) {
+  const removed = [];
+  for (const skillsRoot of ['.codex/internal-skills', '.agents/skills', '.claude/skills']) {
+    const boundary = resolve(root, skillsRoot);
+    const information = await lstat(boundary).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (!information || information.isSymbolicLink() || !information.isDirectory()) continue;
+    for (const entry of await readdir(boundary, { withFileTypes: true })) {
+      if (!entry.isDirectory() || (skillsRoot !== '.codex/internal-skills' && !harnessSkillNames.has(entry.name))) continue;
+      removed.push(...await removeEmptyTree(root, resolve(boundary, entry.name)));
+    }
+  }
+  return removed;
+}
+
+async function removeEmptyTree(root, directory) {
+  const removed = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) removed.push(...await removeEmptyTree(root, resolve(directory, entry.name)));
+  }
+  if ((await readdir(directory)).length === 0) {
+    await rmdir(directory);
+    removed.push(relative(root, directory));
+  }
+  return removed;
 }
 
 async function removeEmptyLegacyRuntimeDirectories(root, directory) {

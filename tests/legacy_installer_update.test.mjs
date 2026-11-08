@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -184,4 +184,47 @@ test('update can replace managed skills without creating backups when explicitly
     assert.match(await readFile(resolve(root, '.codex/hooks.json'), 'utf8'), /harness-orchestrator-hook\.mjs/);
     assert.match(await readFile(resolve(root, '.claude/settings.local.json'), 'utf8'), /harness-claude-orchestrator-hook\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('update deletes retired skill files with their empty directories and keeps project files', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/retired-dirs-`);
+  const exists = (path) => stat(resolve(root, path)).then(() => true, () => false);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    // A retired public skill file that is still in the lock.
+    const retiredFile = '.agents/skills/code-review/references/old.md';
+    await mkdir(resolve(root, '.agents/skills/code-review/references'), { recursive: true });
+    await writeFile(resolve(root, retiredFile), 'old managed');
+    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    const oldHash = createHash('sha256').update('old managed').digest('hex');
+    lock.files[retiredFile] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: '.codex/skills/code-review/references/old.md', source_transform: 'project-local-paths-v1' };
+    await writeFile(lockPath, JSON.stringify(lock));
+    // Empty directories left by earlier updates, plus project-owned skills that must survive.
+    await mkdir(resolve(root, '.claude/skills/spec-me/references'), { recursive: true });
+    await mkdir(resolve(root, '.codex/internal-skills/static-caller'), { recursive: true });
+    await mkdir(resolve(root, '.agents/skills/my-skill'), { recursive: true });
+    await mkdir(resolve(root, '.agents/skills/my-notes'), { recursive: true });
+    await writeFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'project owned');
+    await writeFile(resolve(root, 'app.txt'), 'app');
+
+    const result = await updateProject({ sourceRoot, targetRoot: root });
+
+    assert.deepEqual(result.retired, [retiredFile]);
+    assert.equal(await readFile(resolve(result.backup_directory, retiredFile), 'utf8'), 'old managed');
+    for (const path of ['.agents/skills/code-review', '.claude/skills/spec-me', '.codex/internal-skills/static-caller']) assert.equal(await exists(path), false, path);
+    assert.ok(result.removed_directories.includes('.agents/skills/code-review'));
+    assert.equal(await exists('.agents/skills/my-skill'), true, 'unknown empty skill directories are not Harness-owned');
+    assert.equal(await readFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'utf8'), 'project owned');
+    assert.equal(await exists('.agents/skills/orchestrator/SKILL.md'), true);
+    const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall', '.agents', '.claude', '.codex', 'app.txt'], { encoding: 'utf8' });
+    assert.equal(status, '?? .agents/skills/my-notes/SKILL.md\n?? app.txt\n');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

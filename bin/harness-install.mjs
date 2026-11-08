@@ -252,6 +252,7 @@ async function main() {
     if (syncResult.retired?.length) console.log(`Retired managed assets: ${syncResult.retired.join(", ")}`);
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
+    if (syncResult.removed_directories?.length) console.log(`Removed empty directories: ${syncResult.removed_directories.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
     if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
     const beadsVersion = ensureBeadsCli();
@@ -268,7 +269,9 @@ async function main() {
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
     if (result.added.length > 0) console.log(`Added: ${result.added.join(", ")}`);
     if (result.backup_directory) console.log(`Local backups: ${result.backup_directory}`);
+    if (result.retired?.length) console.log(`Retired managed assets: ${result.retired.join(", ")}`);
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
+    if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
   }
 }
