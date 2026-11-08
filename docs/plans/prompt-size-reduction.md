@@ -56,7 +56,7 @@
 |---|---|---|
 | 1-1 | `grill-with-docs`, `domain-modeling`, `implement`, `gh-open-pr`, `maintain-verification`, `evaluate-harness`, `frontend-design` GUIDE의 `## 통합 계약 연속성` | "sync-contracts에 따라 갱신" 문장이 AGENTS.md와 `code-review/GUIDE.md:120`(중간 plan은 deferred, 최종 통합에서만 sync)과 충돌한다. 설계 단계(`grill-with-docs`, `domain-modeling`)와 plan 단위 `implement`에서는 "현행 계약을 읽고 변경안은 ticket Spec에 기록" 한 줄로 바꾼다. 최종 통합을 수행하는 스킬(`implement-wrapper` 최종 단계, `sync-contracts`)에만 갱신 지시를 남긴다. `gh-open-pr`·`maintain-verification`·`evaluate-harness`·`frontend-design`은 각 흐름이 실제로 최종 통합 경로인지 확인한 뒤 같은 기준으로 정리한다. |
 | 1-2 | `frontend-design/GUIDE.md` `## Workspace contract` 3-4단계 | `frontend-design.yaml`의 `before_dispatch: workspace` gate와 중복된다. `implement/GUIDE.md:11`처럼 "gate가 수행하며 별도 실행하지 않는다"로 바꾼다. standalone 실행에도 gate가 적용되는지 `harness-skill-execution`/dispatch 경로에서 확인하고, 적용되지 않으면 standalone 조건으로만 남긴다. |
-| 1-3 | `implement/GUIDE.md:14` | runner가 "worker base instructions"를 제공한다는 근거 코드가 없다. 문장을 삭제하거나 실제 원칙(최소 변경·검증)을 한 줄로 직접 쓴다. |
+| 1-3 | `implement/GUIDE.md:14` | runner가 주입하는 `skill-execution/worker-base.md`를 다시 가리키는 문장이다. worker-base는 모든 stage에 이미 주입되므로 문장을 삭제한다. (계획 작성 시 "근거 코드 없음"으로 잘못 적었고 구현 중 정정했다.) |
 | 1-4 | `e2e-test/GUIDE.md:26` | "원본 checkout / 설치 consumer" 분기의 두 경로가 같다. 경로 하나로 합친다. |
 | 1-5 | `to-ticket/references/github-batch-publish.md:21,27` | 동일 문장 중복을 하나로 합친다. |
 
@@ -153,3 +153,36 @@ AGENTS.md는 설치되지 않는 소스 저장소 전용 파일이지만 이 저
 1. 이 계획에 대해 사용자 확인(전체 또는 단계 선택).
 2. 단계 1 → 2 → 3 → 4 → 5 → 6 → 7 순서로 구현하고 단계별 commit.
 3. §5 전체 검증 후 결과 보고. commit push와 consumer update는 AGENTS.md 순서(소스 push 확인 → consumer update)를 따르며 사용자 지시가 있을 때 수행한다.
+
+## 8. 실행 결과 (2026-11-08)
+
+커밋: `e15c6551` 단계 1, `625a6521` 단계 2, `855da15a` 단계 3, `9c80a97f` 단계 4, `15665fba` 단계 5, `61d0da47` 단계 6, `fbff3ee6` 단계 7.
+
+| 지표 | 176b7c3e | 결과 | 목표 |
+|---|---:|---:|---|
+| 대상 전체 | 581,239 B | 523,514 B (−57.7 KB, −9.9%) | −55 KB 이상: 달성 |
+| 완전 동일 문장 중복 | 73종, 26.5 KB | 38종, 9.2 KB | — |
+| `AGENTS.md` | 13.6 KB | 7.7 KB | 7 KB: 근접 |
+| `.codex/agents` | 58.2 KB | 44.5 KB | — |
+| `implement` 본문 + 직접 링크 | 23.0 + 71.0 KB | 15.5 + 53.4 KB | 60 KB 이하: 미달(68.9 KB) |
+| `code-review` 본문 + 직접 링크 | 20.0 + 49.0 KB | 17.0 + 31.5 KB | 45 KB 이하: 미달(48.5 KB) |
+| `frontend-design` 본문 + 직접 링크 | 18.4 + 61.7 KB | 15.9 + 15.7 KB | — |
+
+계획과 다르게 처리한 항목:
+- `implement`의 `## Harness source distribution`은 `harness-maintenance`로 옮기지 않고 삭제했다. 같은 내용이 AGENTS.md에 있고, `harness-maintenance`는 consumer 업데이트 스킬이다.
+- 내부 GUIDE 링크 헤더는 본문 링크로 바꾸지 않고, 모든 stage에 주입되는 `worker-base.md`에 일반 규칙 한 문장을 두었다.
+
+구현 중 추가로 발견해 고친 문제:
+- `implementation_agent.toml`이 구현자에게 정상 완료 전 통합 계약 갱신을 지시했다(단계 1-1과 같은 충돌).
+- AGENTS.md의 Session output(작업 workspace `.io`)과 Fresh Spec review(요청 원문·근거 직접 읽기)가 현재 resolver·`spec-review` GUIDE와 달랐다.
+- fresh install은 공개 스킬을 orchestrator·eli5·setup만 설치하므로 agent 9개의 `.agents/skills/<name>/SKILL.md` entrypoint가 존재하지 않았다. 내부 GUIDE 경로로 바꿨다. `harness-recover`의 setup 링크도 설치 후 깨지는 상대 경로였다.
+
+검증:
+- `node --test tests/*.test.mjs`: 103개 중 102개 통과. 실패 1개(`installed to-ticket uses skill binding …`의 `/dedicated workflow executor stage/` 단언)는 176b7c3e에서도 같은 이유로 실패하며 `npm test` 목록 밖이다.
+- `npm test`: 45/45 통과(신규 `tests/prompt_budget.test.mjs` 포함). 신규 테스트 두 개는 176b7c3e에서 실패하고 현재 통과한다.
+- 임시 consumer의 fresh install과 176b7c3e 설치 후 update: 신규 `runtime-artifact-paths.md`가 설치되고 `.git/info/exclude`로 ignore되며 앱 변경(`M app.txt`)은 그대로 보인다. Doctor의 `permission_conflict .codex/harness.yaml`과 untracked `.harness/`는 setup 없이 설치한 176b7c3e에서도 동일하게 나타난다.
+
+남은 사항:
+- `implement` GUIDE는 구현 agent가 리뷰를 실행하고 ticket을 `completed`로 전환한다고 적지만, `implement-wrapper` GUIDE와 `implementation_agent` 프로필은 `REVIEW_REQUIRED`로 반환하고 orchestrator가 리뷰·완료를 관리한다고 적는다. 동작 소유권 결정이 필요해 이번 범위에서 바꾸지 않았다.
+- 소스 push와 consumer update는 수행하지 않았다.
+
