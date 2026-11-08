@@ -8,4 +8,4 @@ setup이 준비한 main의 기준 commit에서 `harness-compose-workspace.mjs`�
 
 `--plan-set-id`에는 사람이 읽을 feature slug를 전달한다. compose 실행기는 slug에 UUID를 붙여 고유한 `plan_set_id`를 만들고 정본 `worktree.json`에 저장한다. 이후 단계는 입력 slug를 재사용하지 않고 반환된 worktree 참조의 정본 ID만 사용한다.
 
-명령이 `completed / OK`와 유효한 `worktree_ref`를 반환하면 사용자가 해당 worktree에서 새 메인 Codex 세션을 열어 orchestrator를 재개하도록 안내한다. 후속 stage 선택은 새 세션의 orchestrator가 담당한다.
+명령이 `completed / OK`와 유효한 `worktree_ref`를 반환하면 사용자가 해당 worktree에서 새 메인 Codex 세션을 열어 orchestrator를 재개하도록 안내한다. Codex는 세션 안에서 workspace를 바꿀 수 없어서 세션을 새로 연다. 그 worktree에서 orchestrator에게 프롬프트를 보낸 세션이 Harness hook으로 `worktree.json`의 `agent_sessions.orchestrator`에 기록되고, 이후 stage 결과는 그 세션으로 전달된다. 후속 stage 선택은 새 세션의 orchestrator가 담당한다.

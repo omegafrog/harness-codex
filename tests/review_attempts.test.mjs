@@ -208,9 +208,11 @@ test('native claim admits one reviewer and records only its bound stopped identi
     await assert.rejects(updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'other-session', nativeResult, nativeReview }), /does not match its active claim/);
     await updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'claude-session', nativeResult, nativeReview });
     await assert.rejects(assertNoUnrecordedNativeReview({ root, scope }), /must be recorded/);
-    await assert.rejects(updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review }), /claimed, stopped native reviewer result/);
-    const revise = { ...review, ...nativeReview };
-    assert.equal((await updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review: revise })).reason, 'revise');
+    // Identity comes from the bound native reviewer: a stage-supplied author list is refused.
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review }), /author_ids is recorded from the native reviewer hook/);
+    assert.equal((await updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review: null, requireNative: true })).reason, 'revise');
+    const recorded = (await inspectReviewHistory({ root, scope })).last_review;
+    assert.deepEqual({ reviewer_id: recorded.reviewer_id, author_ids: recorded.author_ids, fork_turns: recorded.fork_turns, verdict: recorded.verdict }, { reviewer_id: 'reviewer', author_ids: ['claude-session'], fork_turns: 'none', verdict: 'revise' });
     await assertNoUnrecordedNativeReview({ root, scope });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

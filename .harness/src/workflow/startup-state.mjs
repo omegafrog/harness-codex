@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path';
 import { sessionDirectory } from './session-output.mjs';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { WORKTREE_STAGE } from './worktree-stages.mjs';
@@ -41,6 +41,21 @@ function gitWorktrees(text) {
     else if (token.startsWith('branch ') && rows.length) rows.at(-1).branch = token.slice(7).replace(/^refs\/heads\//, '');
   }
   return rows;
+}
+
+// Codex cannot move a session into another workspace, so after compose the user continues in a new
+// session opened inside the worktree. The session that last prompted the orchestrator there is the one
+// stage results are delivered to; record it instead of keeping the compose session.
+export async function bindOrchestratorSession({ root, provider, sessionId }) {
+  if (!sessionId || !['codex', 'claude-code'].includes(provider)) return null;
+  const path = join(root, '.io/worktree.json');
+  let record;
+  try { record = parseWorktreeRecord(await readFile(path, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  if (record.state !== 'active' || await realpath(record.workspace) !== await realpath(root)) return null;
+  const current = record.agent_sessions?.orchestrator;
+  if (current?.session_id === sessionId && current?.provider === provider) return current;
+  return recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: 'orchestrator', session_id: sessionId, execution_id: 'orchestrator-prompt', provider });
 }
 
 export async function inspectStartupState({ workspaceRoot, sessionId = null, provider = 'codex', codexSessionId = null }) {

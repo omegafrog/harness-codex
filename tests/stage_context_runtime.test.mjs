@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../.harness/src/workflow/execution-context.mjs';
@@ -117,4 +117,28 @@ test('one provider per setup: models and workflow bindings from another provider
   assert.throws(() => assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /differs from the setup provider claude-code/);
   assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'haiku' } }), /agents\.low_performance_model is haiku, which is not a codex model/);
   assert.throws(() => assertSingleProvider(claude, { provider: 'claude-code', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /not a claude-code model/);
+});
+
+test('Codex subagent hook is one user-level hook that must be trusted before stages start', async () => {
+  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const home = await mkdtemp(join(tmpdir(), 'codex-home-'));
+  try {
+    const env = { CODEX_HOME: home };
+    const existing = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'notify', timeout: 5 }] }] } };
+    await writeFile(join(home, 'hooks.json'), JSON.stringify(existing));
+    assert.deepEqual((await inspectCodexHookTrust(env)).missing, ['SubagentStart', 'SubagentStop']);
+    assert.equal((await syncCodexSubagentHook(env)).changed, true);
+    assert.equal((await syncCodexSubagentHook(env)).changed, false, 'sync is idempotent');
+    const hooks = JSON.parse(await readFile(join(home, 'hooks.json'), 'utf8')).hooks;
+    assert.deepEqual(hooks.Stop, existing.hooks.Stop, 'user hooks are preserved');
+    assert.deepEqual(hooks.SubagentStart, [{ hooks: [codexSubagentHook()] }]);
+    assert.match(codexSubagentHook().command, /HARNESS_SKILL_EXECUTION_ID.*HARNESS_WORKSPACE_ROOT\/\.codex\/scripts\/harness-agent-event\.mjs/);
+    const untrusted = await inspectCodexHookTrust(env);
+    assert.equal(untrusted.trusted, false);
+    assert.deepEqual(untrusted.untrusted, ['SubagentStart', 'SubagentStop']);
+    await writeFile(join(home, 'config.toml'), ['subagent_start', 'subagent_stop'].map((event) => `[hooks.state."${join(home, 'hooks.json')}:${event}:0:0"]\ntrusted_hash = "sha256:${'a'.repeat(64)}"\n`).join('\n'));
+    assert.equal((await inspectCodexHookTrust(env)).trusted, true);
+    const runner = await readFile(new URL('../.codex/scripts/harness-prepare-input.mjs', import.meta.url), 'utf8');
+    assert.match(runner, /PERMISSION_REQUIRED: the Harness subagent hook/);
+  } finally { await rm(home, { recursive: true, force: true }); }
 });

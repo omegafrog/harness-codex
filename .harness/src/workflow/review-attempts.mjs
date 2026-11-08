@@ -48,7 +48,7 @@ async function readHistory(path) {
 // 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
 export const MAX_REPAIR_CYCLES = 3;
 
-export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef }) {
+export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, requireNative = false }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
     if (error.code === 'EEXIST') throw new Error('Review history is being updated; retry after the current command finishes');
@@ -155,6 +155,13 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         if (scope.startsWith('spec-') && !last.native_review && reason.startsWith(SPEC_PREPARATION_ABORT)) last.pre_dispatch_preparation = true;
       } else {
         requireValue(action === 'record', 'Unknown review attempt action');
+        // Reviewer identity comes from the hook-bound native reviewer, never from the stage's own record.
+        const native = last.native_review?.agent_id && last.native_review.stopped ? last.native_review : null;
+        if (requireNative) requireValue(native, 'No hook-bound native reviewer finished this attempt; start the reviewer as a fresh native subagent after begin');
+        if (native) {
+          for (const key of ['reviewer_id', 'author_ids', 'fork_turns']) requireValue(!review || review[key] === undefined || isDeepStrictEqual(review[key], { reviewer_id: native.reviewer_id, author_ids: [native.parent_session_id], fork_turns: 'none' }[key]), `Review ${key} is recorded from the native reviewer hook; do not supply a different value`);
+          review = { ...(review || {}), verdict: review?.verdict ?? native.review?.verdict, findings: review?.findings ?? native.review?.findings, reviewer_id: native.reviewer_id, author_ids: [native.parent_session_id], fork_turns: 'none' };
+        }
         if (review) review = { ...review, inputs: last.inputs };
         requireValue(review && ['pass', 'revise', 'reject', 'blocked'].includes(review.verdict), 'Review verdict is required');
         requireValue(typeof review.reviewer_id === 'string' && review.reviewer_id.trim() && Array.isArray(review.author_ids) && review.author_ids.length && review.author_ids.every((id) => typeof id === 'string' && id.trim()) && !review.author_ids.includes(review.reviewer_id) && review.fork_turns === 'none', 'A fresh independent reviewer is required');

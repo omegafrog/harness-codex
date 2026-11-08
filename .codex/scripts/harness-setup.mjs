@@ -225,6 +225,17 @@ async function prepareProjectFiles() {
   if (!/^\.io\/$/m.test(ignoreText)) await writeFile(gitignore, `${ignoreText}${ignoreText && !ignoreText.endsWith('\n') ? '\n' : ''}# Harness runtime-only artifacts\n.io/\n`);
 }
 
+async function prepareCodexSubagentHook(provider) {
+  if (provider !== 'codex') return;
+  const { syncCodexSubagentHook, inspectCodexHookTrust } = await import(new URL('../../.harness/src/workflow/providers/codex.mjs', import.meta.url).href);
+  const synced = await syncCodexSubagentHook();
+  if (synced.changed) console.log(`Codex 사용자 hook에 Harness subagent 기록 hook을 추가했습니다: ${synced.path}`);
+  const trust = await inspectCodexHookTrust();
+  if (!trust.trusted) console.log('Codex에서 /hooks를 열어 "Recording Harness subagent" hook(SubagentStart·SubagentStop)을 신뢰로 승인하세요. 승인 전에는 workflow stage를 시작할 수 없습니다. 한 번 승인하면 모든 프로젝트와 worktree에 적용됩니다.');
+}
+
+const currentProviderOf = (config) => ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
+
 async function main() {
   const parserUrl = new URL('../../.harness/src/eval/yaml.mjs', import.meta.url);
   const { parseYaml } = await import(parserUrl.href);
@@ -242,6 +253,7 @@ async function main() {
   ], 'reuse', { agents: config.agents || {}, tracker: config.tracker || {}, beads: config.beads || {}, observability: config.observability || {} }) === 'reuse';
   if (reuse && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
     await prepareProjectFiles();
+    await prepareCodexSubagentHook(currentProviderOf(config));
     console.log('기존 설정을 유지했습니다.');
     return;
   }
@@ -474,6 +486,7 @@ async function main() {
     await exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
     console.log('OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·실행 profile·공식 MCP 두 개를 준비했습니다. victorialogs-local-setup 스킬로 기존 앱의 개발 로그를 연결하세요.');
   }
+  await prepareCodexSubagentHook(provider);
   console.log('다음 단계: 필수 파일 존재 여부를 확인하고 workflow 구성을 진행하세요.');
 }
 

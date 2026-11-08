@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url);
-const { inspectStartupState, refreshWorkflowProgress } = await import(installed.href);
+const { bindOrchestratorSession, inspectStartupState, refreshWorkflowProgress } = await import(installed.href);
 try {
   let input = '';
   for await (const chunk of process.stdin) input += chunk;
@@ -22,6 +22,7 @@ try {
   const orchestrator = ['.claude/skills/orchestrator/SKILL.md', '.agents/skills/orchestrator/SKILL.md', '.codex/skills/orchestrator/SKILL.md'].map((path) => resolve(root, path)).find(existsSync);
   const composer = resolve(root, '.codex/internal-skills/workflow-compose/GUIDE.md');
   if (!orchestrator || !existsSync(composer)) throw new Error('Harness orchestrator/workflow-compose skill is missing');
+  if (!uninitialized && event.hook_event_name === 'UserPromptSubmit') await bindOrchestratorSession({ root, provider: 'claude-code', sessionId: event.session_id });
   let observed;
   try { observed = uninitialized ? { decision_hint: 'setup_candidate', reason: 'Git repository not initialized', provider: 'claude-code', session_id: event.session_id || null } : await inspectStartupState({ workspaceRoot: root, sessionId: event.session_id, provider: 'claude-code' }); }
   catch (error) { observed = { decision_hint: 'inspect_required', reason: error.message, provider: 'claude-code', session_id: event.session_id || null }; }

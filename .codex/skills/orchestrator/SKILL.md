@@ -56,10 +56,12 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | 실행 중복이나 model-based log polling을 만들지 않는다. 실행 조율이 제공하는 `harness-stage-listen.mjs`로 해당 execution의 검증된 결과 이벤트를 기다린다. 이벤트가 없으면 완료로 추정하지 않는다. |
+| `running` | 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. stage가 끝나면 runner가 이 orchestrator session을 같은 provider CLI로 재개해 검증된 결과를 전달한다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, skill의 재시도·중단 계약에 따라 라우팅한다. |
 
-Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if both host delivery and the listener report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
+Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
+
+질문은 `title`과 각 선택지 `label`을 글자 그대로 보여 준다. 문구를 합치거나 조건을 덧붙이지 않고, 보충 설명이 필요하면 질문과 분리해 "참고"로 붙인다. 답을 넘길 때 사용자가 선택지만 골랐으면 그 선택지 ID를, 조건을 덧붙이거나 직접 설명했으면 사용자의 답 원문 전체를 `answer`로 넘긴다. 선택지 ID만 넘겨 사용자가 덧붙인 조건을 잃지 않는다.
 
 사용자가 질문 묶음에 대해 “모두 추천”이라고 답하면 그 답은 보여준 해당 묶음에만 적용한다. 이후 새 질문이 반환되면 이전 답변을 새 질문 ID에 복사하거나 직접 답을 만들지 말고, 사용자가 앞으로의 질문까지 명시적으로 위임한 경우가 아니면 새 질문을 사용자에게 전달하고 기다린다.
 

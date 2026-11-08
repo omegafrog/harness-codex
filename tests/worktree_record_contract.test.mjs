@@ -1,3 +1,5 @@
+import './support/trusted-codex-home.mjs';
+import { bindNativeReviewer } from './support/native-reviewer.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -757,6 +759,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
       const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff } }), /complete its independent plan-review loop internally/i);
+      await bindNativeReviewer({ root: tree.workspace, scope: `plan-${ticketId}`, attemptId: planAdmission.attempt_id, executionId: authorInput.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
       await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
     } finally {
       for (const [key, value] of Object.entries(savedEnvironment)) value === undefined ? delete process.env[key] : process.env[key] = value;

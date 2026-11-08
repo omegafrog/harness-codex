@@ -446,6 +446,15 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
     }
   }
+  if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
+    try {
+      const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
+      const trust = await inspectCodexHookTrust();
+      if (!trust.trusted) diagnostics.push(diagnostic('codex_subagent_hook_untrusted', 'warning', trust.missing.length ? 'Harness subagent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness subagent hook is not trusted; run /hooks in Codex and trust "Recording Harness subagent". Codex stages will not start until then.', trust.hooks_path, { missing: trust.missing, untrusted: trust.untrusted }));
+    } catch (error) {
+      diagnostics.push(diagnostic('codex_subagent_hook_invalid', 'warning', safeMessage(error, 'Invalid Codex user hooks'), null));
+    }
+  }
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'claude-code', () => false)) {
     try {
       const hook = await inspectClaudeOrchestratorHook(repositoryRoot);

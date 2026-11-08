@@ -35,6 +35,14 @@ try {
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   await resolveSkillSession(root, session);
+  // Codex stages need the trusted Harness subagent hook to record native reviewer identity.
+  const { parseYaml } = await import(new URL('../eval/yaml.mjs', base));
+  const stageProvider = record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).agents?.provider || 'codex';
+  if (stageProvider === 'codex') {
+    const { inspectCodexHookTrust } = await import(new URL('providers/codex.mjs', base));
+    const trust = await inspectCodexHookTrust();
+    if (!trust.trusted) throw new Error(`PERMISSION_REQUIRED: the Harness subagent hook in ${trust.hooks_path} is ${trust.missing.length ? 'missing; run setup with the codex provider' : 'not trusted; open Codex, run /hooks and trust "Recording Harness subagent" for SubagentStart and SubagentStop'}. Stages do not start without it.`);
+  }
   const recordedOrchestrator = record.agent_sessions?.orchestrator;
   const orchestrator = recordedOrchestrator ? { ...recordedOrchestrator, provider: recordedOrchestrator.provider || 'codex' } : state.orchestrator_session_id ? { session_id: state.orchestrator_session_id, provider: state.orchestrator_provider || 'codex' } : state.codex_session_id ? { session_id: state.codex_session_id, provider: 'codex' } : null;
   const codexSessionId = orchestrator?.provider === 'codex' ? orchestrator.session_id : null;

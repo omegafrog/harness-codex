@@ -7,7 +7,7 @@
 
 ## 사용자 답변으로 재개
 
-`USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.
+`USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 사용자가 선택지에 조건을 덧붙였거나 직접 설명했으면 선택지 ID 대신 사용자의 답 원문 전체를 `answer`로 넘긴다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.
 
 ```bash
 node .codex/scripts/harness-prepare-input.mjs --worktree-ref <절대-worktree.json-경로> --stage-id <stage-id> --answer '[{"question_id":"<현재-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"}]'

@@ -65,6 +65,8 @@ runner를 거치지 않으므로 1번 표의 3~9가 없다. Codex `multi_agent`�
 | [`e2e_test_runner`](../../.codex/agents/e2e_test_runner.toml) | 메인 orchestrator가 최종 E2E 승인 뒤 fresh로 새로 띄움 ([implementation.md](../../.codex/skills/orchestrator/references/implementation.md)) | [`e2e-test`](../../.codex/internal-skills/e2e-test/GUIDE.md) |
 | [`execution_runner`](../../.codex/agents/execution_runner.toml) | `implement-wrapper` stage의 runtime 검증 | 프로필이 규칙을 가짐 |
 
+하위 agent의 시작·종료는 provider와 관계없이 같은 subagent hook([`harness-agent-event.mjs`](../../.codex/scripts/harness-agent-event.mjs))이 그 stage execution의 `subagents.jsonl`에 기록한다. reviewer는 이 hook이 리뷰 회차에 묶은 신원으로만 기록되고, 회차 밖이나 fork로 띄운 reviewer는 `admitted: false`로 남는다. Claude Code는 runner가 `--settings`로 hook을 넣고, Codex는 setup이 사용자 전역 `~/.codex/hooks.json`에 한 번 등록하며 사용자가 `/hooks`에서 한 번 신뢰해야 stage가 시작된다.
+
 `frontend-design`과 `knowledge-harvest`는 메인 세션이 [기능 라우팅](../../.codex/skills/orchestrator/references/capability-routing.md)으로 GUIDE를 직접 읽고 진행하며, [`frontend-design.yaml`](../../.codex/workflows/frontend-design.yaml)·[`knowledge-harvest-workflow.yaml`](../../.codex/workflows/knowledge-harvest-workflow.yaml)의 역할을 위와 같이 하위 agent로 띄운다.
 
 ## 3-1. Workflow manifest가 실제로 쓰이는 곳

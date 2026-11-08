@@ -21,10 +21,13 @@ try {
     if (options.axis !== 'architecture') throw new Error('Only Architecture Spec review is supported');
     const reviews = options.reviews ? JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8')) : null;
     const review = reviews?.[options.axis];
-    if (action === 'record' && (review?.axis !== options.axis || review?.ticket_id !== options.ticketId)) throw new Error('Review axis and ticket must match the admitted target');
-    if (action === 'record' && Object.hasOwn(review, 'inputs')) throw new Error('Review inputs are owned by the admission, not the reviewer');
+    if (action === 'record' && review && (review.axis !== options.axis || review.ticket_id !== options.ticketId)) throw new Error('Review axis and ticket must match the admitted target');
+    if (action === 'record' && review && Object.hasOwn(review, 'inputs')) throw new Error('Review inputs are owned by the admission, not the reviewer');
+    // Verdict, findings and reviewer identity come from the native reviewer bound by the subagent hook.
+    const supplied = action === 'record' && review ? ['reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'findings'].filter((key) => Object.hasOwn(review, key)) : [];
+    if (supplied.length) throw new Error(`Review record must not supply ${supplied.join(', ')}; they are recorded from the native reviewer hook`);
     const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotSpecReview({ ...options, input_paths: action === 'record' ? [] : inputs });
-    result = await updateReviewAttempt({ root: options.root, scope: `spec-${options.ticketId}-${options.axis}`, action, inputs: snapshot, attemptId: options.attempt, review, reason: options.reason });
+    result = await updateReviewAttempt({ root: options.root, scope: `spec-${options.ticketId}-${options.axis}`, action, inputs: snapshot, attemptId: options.attempt, review: action === 'record' ? { axis: options.axis, ticket_id: options.ticketId } : review, reason: options.reason, requireNative: action === 'record' });
     if (action === 'begin') {
       result.target = { workspace_root: options.root, session_directory: sessionDirectory(options.root), ticket_id: options.ticketId, axis: options.axis, attempt_id: result.attempt_id };
       result.review_delta = await reviewDelta({ root: options.root, inputs: result.inputs, previousInputs: result.previous_inputs });

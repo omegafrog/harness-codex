@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
+import { closeSync, openSync } from 'node:fs';
 import { mkdir, readFile, rename, unlink, writeFile, rm, stat } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -8,7 +8,6 @@ import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validate
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 
-const execFileAsync = promisify(execFile);
 const directory = 'runtime/orchestrator/stage-results';
 const deliveryRequestId = (input) => createHash('sha256').update(`${input.context?.worktree_ref || ''}:${input.execution_id}`).digest('hex');
 
@@ -38,7 +37,10 @@ async function locked(session, executionId, callback) {
       } else if (owner?.pid) {
         try { process.kill(owner.pid, 0); } catch (processError) { stale = processError.code === 'ESRCH'; }
       } else {
-        stale = Date.now() - (await stat(lock)).mtimeMs > 5_000;
+        // The owner may release the lock between our mkdir and this stat; retry instead of failing.
+        const info = await stat(lock).catch((statError) => statError.code === 'ENOENT' ? null : Promise.reject(statError));
+        if (!info) continue;
+        stale = Date.now() - info.mtimeMs > 5_000;
       }
       if (stale) { await rm(lock, { recursive: true, force: true }); continue; }
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -72,19 +74,47 @@ function eventPayload(input, envelope) {
   return event;
 }
 
+function deliveryMessage(event, session) {
+  return [
+    `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}.`,
+    `Summary: ${event.summary}`,
+    event.result_ref ? `Validated result: ${join(session, event.result_ref)}` : null,
+    event.questions.length ? `Questions to present to the user verbatim (title and option labels unchanged): ${JSON.stringify(event.questions)}` : null,
+    event.questions_complete ? null : `Some questions were omitted; read them from the validated result before presenting any.`,
+    'Verify this against the canonical worktree state, then continue the Harness workflow with the orchestrator skill.',
+  ].filter(Boolean).join('\n');
+}
+
+// The orchestrator ends its turn after dispatching a stage. The runner resumes that same orchestrator
+// session through its own provider CLI with the result, so the workflow continues without a host app.
+export function orchestratorResumeCommand({ provider, sessionId, root, message }) {
+  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', sessionId, message], cwd: root };
+  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.codex/scripts/harness-claude-orchestrator.mjs'), '--resume', sessionId, message], cwd: root };
+  return null;
+}
+
+function orchestratorEnvironment(session) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^HARNESS_(SKILL|REVIEW|RUNNER|PROVIDER|WORKSPACE|CONTROL)_|^CODEX_THREAD_ID$/.test(key)));
+  return { ...env, HARNESS_SESSION_DIR: session, TMPDIR: join(session, 'tmp'), TMP: join(session, 'tmp'), TEMP: join(session, 'tmp') };
+}
+
 async function deliver(session, input, event) {
-  const expected = input.context?.orchestrator_session_id;
-  if (!expected) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
-  let identity;
-  try { identity = JSON.parse((await execFileAsync('ghostex', ['agents', 'whoami', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout); }
-  catch (error) { if (error.killed || error.code === 'ETIMEDOUT') throw error; return { status: 'unsupported', reason: error.code === 'ENOENT' ? 'ghostex_unavailable' : `host_identity_unavailable:${String(error.code || error.name).slice(0, 40)}` }; }
-  if (identity.agentSessionId !== expected || !identity.globalRef) return { status: 'unsupported', reason: 'session_identity_mismatch' };
-  const bodyPath = join(session, `.stage-result-${randomUUID()}.json`);
-  await writeFile(bodyPath, JSON.stringify(event), { flag: 'wx', mode: 0o600 });
+  const sessionId = input.context?.orchestrator_session_id;
+  if (!sessionId) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
+  const command = orchestratorResumeCommand({ provider: input.context?.orchestrator_provider || 'codex', sessionId, root: input.workspace_root, message: deliveryMessage(event, session) });
+  if (!command) return { status: 'unsupported', reason: 'orchestrator_provider_unsupported' };
+  const log = `runtime/orchestrator/deliveries/${input.execution_id}.log`;
+  await assertWorkspaceTarget(session, log);
+  await mkdir(join(session, 'runtime/orchestrator/deliveries'), { recursive: true });
+  await mkdir(join(session, 'tmp'), { recursive: true });
+  const fd = openSync(join(session, log), 'a', 0o600);
   try {
-    await execFileAsync('ghostex', ['agents', 'send', identity.globalRef, '--body-file', bodyPath, '--queue', '--request-id', event.delivery.request_id], { cwd: input.workspace_root, timeout: 5_000 });
-    return { status: 'sent' };
-  } finally { await unlink(bodyPath).catch(() => {}); }
+    const child = spawn(command.command, command.args, { cwd: command.cwd, env: orchestratorEnvironment(session), detached: true, stdio: ['ignore', fd, fd] });
+    const started = await new Promise((resolve) => { child.once('spawn', () => resolve(null)); child.once('error', resolve); });
+    if (started) return { status: 'unsupported', reason: started.code === 'ENOENT' ? 'orchestrator_cli_unavailable' : `orchestrator_resume_failed:${String(started.code || started.name).slice(0, 40)}` };
+    child.unref();
+    return { status: 'sent', pid: child.pid, log };
+  } finally { closeSync(fd); }
 }
 
 async function deliverPending(session, input, event) {
@@ -95,6 +125,7 @@ async function deliverPending(session, input, event) {
   try {
     const outcome = await deliver(session, input, event);
     event.delivery.status = outcome.status;
+    if (outcome.pid) { event.delivery.pid = outcome.pid; event.delivery.log = outcome.log; }
     if (outcome.reason) event.delivery.reason = outcome.reason;
     else delete event.delivery.reason;
   }

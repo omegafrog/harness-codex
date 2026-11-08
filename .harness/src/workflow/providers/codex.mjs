@@ -1,5 +1,5 @@
 import { dirname, join, resolve } from 'node:path';
-import { realpath, readdir, readFile } from 'node:fs/promises';
+import { mkdir, realpath, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -68,4 +68,70 @@ export async function stageConfigArgs(env = process.env, configPaths = [], role 
 export async function run({ root, args, prompt, env, onStart, onSession, onEvent, onStderr, onCodexError }) {
   const result = await runCodexProcess({ root, args, prompt, env, onStart, onEvent, onStderr, onCodexError, onThread: onSession });
   return { ...result, sessionId: result.threadId };
+}
+
+const snake = (event) => event.replace(/[A-Z]/g, (letter, index) => `${index ? '_' : ''}${letter.toLowerCase()}`);
+const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
+const SUBAGENT_STATUS = 'Recording Harness subagent';
+const codexHome = (env) => resolve(env.CODEX_HOME || join(env.HOME || '', '.codex'));
+
+// One user-level hook serves every project and worktree: it runs the active workspace's
+// harness-agent-event.mjs only inside a Harness stage and does nothing elsewhere.
+export function codexSubagentHook() {
+  return {
+    type: 'command',
+    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && [ -f "$HARNESS_WORKSPACE_ROOT/.codex/scripts/harness-agent-event.mjs" ] && exec node "$HARNESS_WORKSPACE_ROOT/.codex/scripts/harness-agent-event.mjs"; exit 0'`,
+    statusMessage: SUBAGENT_STATUS,
+    timeout: 10,
+  };
+}
+
+export async function syncCodexSubagentHook(env = process.env) {
+  const path = join(codexHome(env), 'hooks.json');
+  const text = await readFile(path, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  const config = text === null ? { hooks: {} } : JSON.parse(text);
+  if (!config || typeof config !== 'object' || Array.isArray(config) || (config.hooks !== undefined && (typeof config.hooks !== 'object' || Array.isArray(config.hooks)))) throw new Error(`Invalid Codex hooks configuration: ${path}`);
+  config.hooks ||= {};
+  const expected = codexSubagentHook();
+  let changed = false;
+  for (const event of SUBAGENT_EVENTS) {
+    const groups = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
+    const owned = groups.flatMap((group) => group.hooks || []).filter((handler) => handler?.statusMessage === SUBAGENT_STATUS);
+    if (owned.length === 1 && JSON.stringify(owned[0]) === JSON.stringify(expected)) continue;
+    const kept = groups.map((group) => ({ ...group, hooks: (group.hooks || []).filter((handler) => handler?.statusMessage !== SUBAGENT_STATUS) })).filter((group) => group.hooks.length);
+    config.hooks[event] = [...kept, { hooks: [expected] }];
+    changed = true;
+  }
+  if (!changed) return { path, changed: false };
+  await mkdir(dirname(path), { recursive: true });
+  if (text !== null) await writeFile(`${path}.harness-backup-${Date.now()}`, text, { flag: 'wx', mode: 0o600 });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, path);
+  return { path, changed: true };
+}
+
+// Codex runs a hook only after the user trusts it with `/hooks`; trust is recorded in
+// `$CODEX_HOME/config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<handler>"]` with a trusted hash.
+export async function inspectCodexHookTrust(env = process.env) {
+  const home = codexHome(env), hooksPath = join(home, 'hooks.json');
+  const text = await readFile(hooksPath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  const hooks = text ? JSON.parse(text).hooks || {} : {};
+  const config = await readFile(join(home, 'config.toml'), 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const trusted = new Set();
+  let current = null;
+  for (const line of config.split('\n')) {
+    const header = /^\s*\[hooks\.state\."(.+)"\]\s*$/.exec(line);
+    if (header) { current = header[1]; continue; }
+    if (/^\s*\[/.test(line)) { current = null; continue; }
+    if (current && /^\s*trusted_hash\s*=\s*"sha256:[0-9a-f]{64}"/.test(line)) trusted.add(current);
+  }
+  const missing = [], untrusted = [];
+  for (const event of SUBAGENT_EVENTS) {
+    const groups = Array.isArray(hooks[event]) ? hooks[event] : [];
+    const slots = groups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === SUBAGENT_STATUS);
+    if (!slots.length) missing.push(event);
+    else if (!slots.some(({ key }) => trusted.has(key))) untrusted.push(event);
+  }
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, hooks_path: hooksPath };
 }

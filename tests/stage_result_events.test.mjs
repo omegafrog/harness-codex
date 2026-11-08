@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,37 +142,40 @@ test('reconciles a runner crash from stopped process identities when no result w
   assert.match(event.summary, /stopped before saving/);
 });
 
-test('host delivery uses exact identity and queued idempotent request; unsupported delivery retries', async (t) => {
+test('delivery resumes the recorded orchestrator session through its provider CLI once, without a host app', async (t) => {
   const fx = await fixture(t, 'host', { orchestrator_session_id: 'conversation-1' });
   const bin = join(fx.primary, 'bin'); await mkdir(bin);
-  const log = join(fx.primary, 'host-args.json'), control = join(fx.primary, 'host-control.json'), trace = join(fx.primary, 'host-trace.log');
-  const setControl = (value) => writeFile(control, JSON.stringify(value));
-  await setControl({ agentSessionId: 'wrong-session' });
-  await writeFile(join(bin, 'ghostex'), `#!/usr/bin/env node\nimport fs from 'node:fs'; const a=process.argv.slice(2); const c=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8')); fs.appendFileSync(${JSON.stringify(trace)},JSON.stringify({args:a,hang:c.hang,session:c.agentSessionId})+'\\n'); if(a[0]==='agents'&&a[1]==='whoami') { if(c.hang) setInterval(()=>{},1000); else process.stdout.write(JSON.stringify({agentSessionId:c.agentSessionId,globalRef:'S1:P1:G1'})); } else { if(c.send_fail) process.exit(9); if(!fs.existsSync(${JSON.stringify(join(fx.session, 'runtime/orchestrator/stage-results/host.json'))})) process.exit(8); fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({args:a,body:fs.readFileSync(a[a.indexOf('--body-file')+1],'utf8')})+'\\n'); }\n`);
-  execFileSync('chmod', ['+x', join(bin, 'ghostex')]);
-  const priorPath = process.env.PATH;
-  process.env.PATH = `${bin}:${priorPath}`;
-  t.after(() => { process.env.PATH = priorPath; });
-  assert.equal(JSON.parse(execFileSync('ghostex', ['agents', 'whoami', '--json'], { cwd: fx.root, encoding: 'utf8' })).agentSessionId, 'wrong-session');
+  const log = join(fx.primary, 'resume-args.jsonl');
+  // Fake provider CLI: records how the runner resumed the orchestrator.
+  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nimport fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), session: process.env.HARNESS_SESSION_DIR, thread: process.env.CODEX_THREAD_ID || null, execution: process.env.HARNESS_SKILL_EXECUTION_ID || null }) + '\\n');\n`);
+  execFileSync('chmod', ['+x', join(bin, 'codex')]);
+  const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID;
+  t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; });
   const saved = envelope('host'); await saveResult(fx, 'host', saved);
-  const unsupported = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(unsupported.delivery.status, 'unsupported');
-  await setControl({ agentSessionId: 'wrong-session', hang: true });
-  const timeout = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(timeout.delivery.status, 'pending', JSON.stringify({ delivery: timeout.delivery, trace: await readFile(trace, 'utf8').catch(() => '') }));
-  assert.equal(JSON.parse(await readFile(join(fx.session, 'runtime/orchestrator/state.json'), 'utf8')).stages.correct.status, 'completed');
-  await setControl({ agentSessionId: 'conversation-1', send_fail: true });
-  const pending = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(pending.delivery.status, 'pending');
-  await setControl({ agentSessionId: 'conversation-1' });
+  // Without a runnable provider CLI the event stays undelivered and is retried later.
+  const noCodex = join(fx.primary, 'no-codex-bin'); await mkdir(noCodex);
+  await symlink(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(), join(noCodex, 'git'));
+  process.env.PATH = noCodex;
+  const missing = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
+  assert.equal(missing.delivery.status, 'unsupported');
+  assert.equal(missing.delivery.reason, 'orchestrator_cli_unavailable');
+  process.env.PATH = `${bin}:${priorPath}`;
+  process.env.CODEX_THREAD_ID = 'stage-thread';
+  process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
   const sent = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
-  const delivery = JSON.parse(await readFile(log, 'utf8'));
-  assert.equal(delivery.args[0], 'agents'); assert.equal(delivery.args[1], 'send'); assert.equal(delivery.args.includes('--queue'), true);
-  assert.equal(delivery.args[delivery.args.indexOf('--request-id') + 1], sent.delivery.request_id);
   await Promise.all([publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved }), publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved })]);
-  const sends = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(sends.length, 1);
+  for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].args.slice(0, 3), ['exec', 'resume', 'conversation-1']);
+  assert.match(calls[0].args[3], /Harness stage result for execution host: completed\/OK/);
+  assert.equal(calls[0].cwd, fx.root);
+  assert.equal(calls[0].session, fx.session);
+  assert.equal(calls[0].thread, null, 'the stage thread must not leak into the orchestrator resume');
+  assert.equal(calls[0].execution, null);
+  const hostReferences = spawnSync('git', ['grep', '-n', '-i', 'ghostex', '--', '.harness', '.codex', ':!.codex/harness-lock.json'], { cwd: source, encoding: 'utf8' });
+  assert.equal(hostReferences.stdout, '', 'Harness must not depend on a host app');
 });
 
 test('listener wakes when result.json arrives after it starts watching', async (t) => {
@@ -194,4 +197,19 @@ test('listener wakes when result.json arrives after it starts watching', async (
   assert.equal(JSON.parse(stdout).status, 'completed');
   await readFile(join(fx.session, 'runtime/orchestrator/stage-results/late.json'));
   await assert.rejects(readFile(join(fx.taskSession, 'runtime/orchestrator/stage-results/late.json')), { code: 'ENOENT' });
+});
+
+test('the session prompting the orchestrator inside the worktree becomes the result delivery target', async (t) => {
+  const fx = await fixture(t, 'rebind', { orchestrator_session_id: 'conversation-1' });
+  const { bindOrchestratorSession } = await import('../.harness/src/workflow/startup-state.mjs');
+  const worktreeSession = '01a1b9df-ba77-7d72-a16b-4cdf2e52426f';
+  await bindOrchestratorSession({ root: fx.root, provider: 'codex', sessionId: worktreeSession });
+  const record = JSON.parse(await readFile(fx.worktree_ref, 'utf8'));
+  assert.deepEqual({ provider: record.agent_sessions.orchestrator.provider, session_id: record.agent_sessions.orchestrator.session_id }, { provider: 'codex', session_id: worktreeSession });
+  // A repeated prompt from the same session leaves the record untouched.
+  const before = record.agent_sessions.orchestrator.updated_at;
+  await bindOrchestratorSession({ root: fx.root, provider: 'codex', sessionId: worktreeSession });
+  assert.equal(JSON.parse(await readFile(fx.worktree_ref, 'utf8')).agent_sessions.orchestrator.updated_at, before);
+  // Outside a Harness worktree nothing is recorded.
+  assert.equal(await bindOrchestratorSession({ root: fx.primary, provider: 'codex', sessionId: worktreeSession }), null);
 });

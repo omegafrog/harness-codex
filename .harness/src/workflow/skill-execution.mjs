@@ -122,6 +122,21 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
 }
 
+// The subagent hook logs every reviewer a stage starts. A reviewer outside an admitted attempt, or forked
+// from the author's conversation, may still have steered the documents; the stage completes only when an
+// admitted fresh reviewer finished after the last such reviewer.
+export async function assertNoRogueReviewer({ root, session, input }) {
+  let text;
+  try { text = String(await readReference(root, { base: 'session', path: `runtime/executions/${input.execution_id}/subagents.jsonl` }, session)); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  const events = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.review_scope);
+  const lastRogue = events.findLastIndex((item) => item.admitted === false);
+  if (lastRogue < 0) return;
+  const laterAdmitted = events.slice(lastRogue + 1).some((item) => item.event === 'SubagentStop' && item.admitted !== false && item.review_attempt_id);
+  const rogue = events[lastRogue];
+  requireValue(laterAdmitted, `Reviewer ${rogue.agent_id} ran ${rogue.forked ? 'forked from the author conversation' : 'outside an admitted review attempt'} after the last admitted review; begin a new review with a fresh reviewer before completing`);
+}
+
 export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {
   requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
   if (workflow) {
@@ -313,6 +328,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     await validatePlanReviewAdmission({ root, planSetId: input.context.plan_set_id, admission, requireActive: false });
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
+  if (envelope.status === 'completed' && ['spec-me', 'to-ticket'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
   if (envelope.status === 'completed') {
     if (!reopening && input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');

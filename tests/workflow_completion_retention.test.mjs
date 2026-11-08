@@ -1,3 +1,5 @@
+import './support/trusted-codex-home.mjs';
+import { bindNativeReviewer } from './support/native-reviewer.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -70,6 +72,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
           process.env.HARNESS_WORKSPACE_ROOT = tree.workspace;
           process.env.HARNESS_SKILL_EXECUTION_ID = input.execution_id;
           const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
+          await bindNativeReviewer({ root: tree.workspace, scope: 'plan-calculator', attemptId: planAdmission.attempt_id, executionId: input.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
           await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
         } finally {
           for (const [key, value] of Object.entries(savedEnvironment)) value === undefined ? delete process.env[key] : process.env[key] = value;

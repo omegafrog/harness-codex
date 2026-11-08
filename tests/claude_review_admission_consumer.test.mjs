@@ -97,7 +97,9 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     callEvent(root, { hook_event_name: 'SubagentStop', session_id: 'claude-session', agent_id: 'native-agent-1', agent_type: 'spec_adversarial_reviewer', last_assistant_message: nativeResult });
     await assert.rejects(assertNoUnrecordedNativeReview({ root, scope: 'spec-ticket-one-architecture' }), /record/i);
     const history = await inspectReviewHistory({ root, scope: 'spec-ticket-one-architecture' });
-    await updateReviewAttempt({ root, scope: 'spec-ticket-one-architecture', action: 'record', attemptId: admitted.attempt_id, inputs: admitted.inputs, review: { axis: 'architecture', ticket_id: 'ticket-one', reviewer_id: `claude-review-stage-${admitted.attempt_id}`, author_ids: ['spec-author'], fork_turns: 'none', verdict: 'pass', findings: [] } });
+    await updateReviewAttempt({ root, scope: 'spec-ticket-one-architecture', action: 'record', attemptId: admitted.attempt_id, inputs: admitted.inputs, review: { axis: 'architecture', ticket_id: 'ticket-one' }, requireNative: true });
+    // Identity is the hook-bound reviewer; the caller's session is the author.
+    assert.deepEqual((await inspectReviewHistory({ root, scope: 'spec-ticket-one-architecture' })).last_review.author_ids, ['claude-session']);
     assert.equal(history.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: 'spec-ticket-one-architecture' });
 
@@ -142,7 +144,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     const planNativeResult = JSON.stringify({ verdict: 'pass', findings: [] });
     callEvent(root, { hook_event_name: 'SubagentStop', session_id: 'claude-session', agent_id: 'native-plan-agent', agent_type: 'plan_reviewer', last_assistant_message: planNativeResult });
     planHistory = await inspectReviewHistory({ root, scope: planScope });
-    const planReview = { reviewer_id: `claude-review-stage-${planAttempt.attempt_id}`, author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] };
+    // The stage names only the attempt; the hook-bound reviewer supplies identity and verdict.
+    const planReview = { schema_version: 1, attempt_id: planAttempt.attempt_id, plan_set_id: 'ticket-one' };
     process.env.HARNESS_SKILL_EXECUTION_ID = 'resumed-author';
     await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
     await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission contents/);
@@ -170,7 +173,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
       const findings = [{ severity: 'minor', description: 'Clarify a detail.', evidence: `Revision ${round}.` }];
       const nativeReview = { verdict: 'revise', findings };
       await updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: roundAdmission.attempt_id, nativeAgentId: agentId, parentSessionId: 'budget-session', nativeResult: JSON.stringify(nativeReview), nativeReview });
-      await updateReviewAttempt({ root, scope, action: 'record', attemptId: roundAdmission.attempt_id, inputs: roundAdmission.inputs, review: { axis: 'architecture', ticket_id: 'budget-ticket', reviewer_id: reviewerId, author_ids: [`author-${round}`], fork_turns: 'none', ...nativeReview } });
+      await updateReviewAttempt({ root, scope, action: 'record', attemptId: roundAdmission.attempt_id, inputs: roundAdmission.inputs, review: { axis: 'architecture', ticket_id: 'budget-ticket' }, requireNative: true });
     }
     await writeFile(budgetSpec, 'Status: approved\nArchitecture revision after budget.\n');
     await assert.rejects(updateReviewAttempt({ root, scope: 'spec-budget-ticket-architecture', action: 'begin', inputs: await snapshotSpecReview({ root, ticketId: 'budget-ticket' }) }), /retry budget exhausted/i);
