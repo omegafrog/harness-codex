@@ -404,9 +404,13 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
       assert.equal(Object.hasOwn(schema.properties, 'question'), false);
       assert.ok(schema.required.includes('questions'));
     }
+    // The stage return contract owns the question format; skills no longer restate it.
+    const returnContractText = await readFile(join(root, '.codex/internal-skills/skill-execution/references/stage-return.md'), 'utf8');
+    assert.match(returnContractText, /`result\.questions`에 \[질문 스키마\]/);
+    assert.match(returnContractText, /질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다/);
     for (const skill of ['grilling', 'spec-me']) {
       const instructions = await readFile(join(root, '.codex/internal-skills', skill, 'GUIDE.md'), 'utf8');
-      assert.match(instructions, /결과의 `questions` 배열/);
+      assert.match(instructions, /stage (return contract|반환 계약)/);
       assert.doesNotMatch(instructions, /결과의 `question`에/);
     }
     await mkdir(join(root, 'docs/agents'), { recursive: true });

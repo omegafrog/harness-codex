@@ -11,8 +11,8 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 | 3 | 실행 위치 안내 | — | prompt 첫 문장: workspace 경로, `input.json` 경로, runtime 디렉터리, plan set의 Spec·plan 디렉터리 |
 | 4 | Stage GUIDE 전문 | `.codex/internal-skills/<skill>/GUIDE.md` | prompt에 `Current stage guide (...)`로 붙임 |
 | 5 | Agent 프로필 전문 | `.codex/agents/<role>.toml` (Claude는 변환된 `.claude/agents/<role>.md`) | prompt에 `Current agent profile (...)`로 붙임. 역할 선언과 GUIDE 경로만 담는다 |
-| 6 | 반환 계약 (2.6KB) | [`stage-return.md`](../../.codex/internal-skills/skill-execution/references/stage-return.md) | prompt에 `Current phase instructions (...)`로 항상 붙임 |
-| 7 | 단계별 추가 지침 | `spec-me`: [`product-spec/GUIDE.md`](../../.codex/internal-skills/product-spec/GUIDE.md) + [`topics.md`](../../.codex/internal-skills/product-spec/references/topics.md). `product-spec`: `topics.md` | 6과 같은 방식. 다른 skill은 없음 |
+| 6 | 반환 계약·질문 반환 형식 (3.0KB) | [`stage-return.md`](../../.codex/internal-skills/skill-execution/references/stage-return.md) | prompt에 `Current phase instructions (...)`로 항상 붙임 |
+| 7 | 단계별 추가 지침 | `spec-me`: [`product-spec/GUIDE.md`](../../.codex/internal-skills/product-spec/GUIDE.md) + [`topics.md`](../../.codex/internal-skills/product-spec/references/topics.md) (Product Spec 파일이 생기기 전까지). `product-spec`: `topics.md` | 6과 같은 방식. 다른 skill은 없음 |
 | 8 | 상황별 문장 | — | 사용자 답변(`answers.json`)·feedback 경로, 현재 phase, compaction 복구 안내, read-only 실행 안내, 마지막 지시문 |
 | 9 | 결과 schema | [`return.schema.json`](../../.codex/internal-skills/skill-execution/schemas/return.schema.json) + `flows/common`·`spec-review`·`plan-review` 중 하나 | Codex `--output-schema`, Claude `--json-schema`. 조립: [`output-schema.mjs`](../../.harness/src/workflow/output-schema.mjs) |
 
@@ -27,7 +27,7 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 
 ## 2. Workflow별 stage 입력
 
-크기: GUIDE / 프로필 / 추가 지침(7번). 모든 stage에 worker-base 0.8KB와 stage-return 2.6KB가 더해진다.
+크기: GUIDE / 프로필 / 추가 지침(7번). 모든 stage에 worker-base 0.8KB와 stage-return 3.0KB가 더해진다.
 
 ### `implement-wrapper` ([manifest](../../.codex/workflows/implement-wrapper.yaml))
 
@@ -46,18 +46,17 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 
 code-review GUIDE는 reviewer용 판정 기준만 담는다. 리뷰 실행·`repair`·사용자 질문 절차는 호출 쪽만 읽는 [`code-review/references/repair.md`](../../.codex/internal-skills/code-review/references/repair.md)에 있어 reviewer stage에 들어가지 않는다.
 
-### `spec-me` ([manifest](../../.codex/workflows/spec-me.yaml))
+### `spec-me`
 
-| stage | role · 프로필 | GUIDE | sandbox | tier | 크기 |
-|---|---|---|---|---|---|
-| product | [`spec_document_writer`](../../.codex/agents/spec_document_writer.toml) | [`product-spec`](../../.codex/internal-skills/product-spec/GUIDE.md) | workspace-write | low | 6.6 / 1.9 / 2.6 KB |
-| define-system-targets | [`spec_document_writer`](../../.codex/agents/spec_document_writer.toml) | [`spec-me`](../../.codex/internal-skills/spec-me/GUIDE.md) | workspace-write | implementation | 11.0 / 1.9 / 9.2 KB |
-| domain-baseline | [`code_researcher`](../../.codex/agents/code_researcher.toml) | [`code-research`](../../.codex/internal-skills/code-research/GUIDE.md) | read-only | low | 4.1 / 0.5 / 0 KB |
-| architecture | [`spec_document_writer`](../../.codex/agents/spec_document_writer.toml) | [`architecture-spec`](../../.codex/internal-skills/architecture-spec/GUIDE.md) | workspace-write | low | 10.7 / 1.9 / 0 KB |
-| review-architecture-decisions (Learning mode) | [`architecture_review_lead`](../../.codex/agents/architecture_review_lead.toml) | [`architecture-review`](../../.codex/internal-skills/architecture-review/GUIDE.md) | read-only | high_performance | 3.2 / 0.5 / 0 KB |
-| verify-architecture-decisions | [`spec_document_writer`](../../.codex/agents/spec_document_writer.toml) | [`spec-me`](../../.codex/internal-skills/spec-me/GUIDE.md) | workspace-write | low | 11.0 / 1.9 / 9.2 KB |
-| architecture-review | [`spec_adversarial_reviewer`](../../.codex/agents/spec_adversarial_reviewer.toml) | [`spec-review`](../../.codex/internal-skills/spec-review/GUIDE.md) | read-only | high_performance | 5.1 / 0.7 / 0 KB |
-| product_diagram · architecture_diagram | [`diagram_creator`](../../.codex/agents/diagram_creator.toml) | [`plantuml-diagrams`](../../.codex/internal-skills/plantuml-diagrams/GUIDE.md) | workspace-write | low | 6.1 / 0.5 / 0 KB |
+기본 흐름에서 `spec-me`는 stage 하나다. Product 인터뷰, System Targets·Architecture 결정, Architecture Spec, 독립 리뷰, 다이어그램을 같은 대화에서 이어서 처리하고, writer·`diagram_creator`·`spec_adversarial_reviewer` 같은 하위 agent는 그 안에서 직접 띄운다. stage 입력에 `context.role`이 없어서 agent 프로필은 붙지 않는다.
+
+| 들어가는 것 | 크기 |
+|---|---|
+| [`spec-me` GUIDE](../../.codex/internal-skills/spec-me/GUIDE.md) | 8.4KB |
+| [`product-spec` GUIDE](../../.codex/internal-skills/product-spec/GUIDE.md) + [`topics.md`](../../.codex/internal-skills/product-spec/references/topics.md) | 8.5KB. 이 plan set의 `product-spec.md`가 생기기 전까지만 넣는다 ([`phaseInstructionPaths`](../../.harness/src/workflow/execution-context.mjs)) |
+| 그 뒤 단계별로 모델이 직접 읽는 문서 | [template](../../.codex/internal-skills/product-spec/references/template.md), [architecture-decision](../../.codex/internal-skills/spec-me/references/architecture-decision.md), [architecture-spec GUIDE](../../.codex/internal-skills/architecture-spec/GUIDE.md), [adversarial-spec-review](../../.codex/internal-skills/spec-me/references/adversarial-spec-review.md), [spec-review GUIDE](../../.codex/internal-skills/spec-review/GUIDE.md) |
+
+[`spec-me.yaml`](../../.codex/workflows/spec-me.yaml)의 stage 목록(product, define-system-targets, architecture 등)은 이 내부 단계별 역할과 model tier를 정하는 데 쓰인다. 기본 흐름에서 runner가 이 stage들을 따로 실행하지는 않는다.
 
 ### `to-ticket` ([manifest](../../.codex/workflows/to-ticket.yaml))
 
@@ -93,7 +92,7 @@ runner를 거치지 않으므로 1번 표의 3~9가 없다. Codex `multi_agent`�
 | agent | 띄우는 곳 | 읽는 GUIDE | 프로필에만 있는 것 |
 |---|---|---|---|
 | [`plan_reviewer`](../../.codex/agents/plan_reviewer.toml) | `to-ticket` stage ([review-routing](../../.codex/internal-skills/to-ticket/references/review-routing.md)) | [`plan-review`](../../.codex/internal-skills/plan-review/GUIDE.md) | 결과 JSON 형식 |
-| [`spec_adversarial_reviewer`](../../.codex/agents/spec_adversarial_reviewer.toml) | `spec-me` stage ([spec-me](../../.codex/internal-skills/spec-me/GUIDE.md)) | [`spec-review`](../../.codex/internal-skills/spec-review/GUIDE.md) | 결과 JSON 형식 |
+| [`spec_adversarial_reviewer`](../../.codex/agents/spec_adversarial_reviewer.toml) | `spec-me` stage ([adversarial-spec-review](../../.codex/internal-skills/spec-me/references/adversarial-spec-review.md)) | [`spec-review`](../../.codex/internal-skills/spec-review/GUIDE.md) | 결과 JSON 형식 |
 | [`execution_runner`](../../.codex/agents/execution_runner.toml) | `implement` stage의 runtime 검증 | [`implement`](../../.codex/internal-skills/implement/GUIDE.md)의 runtime 검증 경계만 | 실행·보고 규칙 전체 (소유 GUIDE가 없음) |
 | [`e2e_test_runner`](../../.codex/agents/e2e_test_runner.toml) | 최종 E2E, `maintain-verification` | [`e2e-test`](../../.codex/internal-skills/e2e-test/GUIDE.md) | 없음 |
 | [`diagram_creator`](../../.codex/agents/diagram_creator.toml) | `sync-contracts` | [`plantuml-diagrams`](../../.codex/internal-skills/plantuml-diagrams/GUIDE.md) | 없음 |

@@ -124,7 +124,9 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
     for (const [path, pattern] of [
-      ['.codex/internal-skills/spec-me/GUIDE.md', /필수이면서 기존 근거와 합리적인 기본 동작으로 해결할 수 없는 결정만 질문한다/],
+      // Question criteria are owned by the Product Spec guide; spec-me links to them.
+      ['.codex/internal-skills/spec-me/GUIDE.md', /무엇을 언제 묻는지는 \[Product Spec 절차\]\(\.\.\/product-spec\/GUIDE\.md\)의 질문 기준/],
+      ['.codex/internal-skills/product-spec/GUIDE.md', /Ask about an ambiguity only when it is necessary to deliver the requested core behavior/],
       ['.codex/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
       ['.codex/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
     ]) {

@@ -38,7 +38,7 @@ This is a phase-local guide. Read it when the Product phase begins; do not prelo
 8. Write the Product Spec only after the `grill-with-docs` completion gate passes.
    Preserve the user's wording of limits and rules; "5,000자" stays "5,000자". Do not introduce an unstated unit, encoding, normalization, locale, or stricter precision unless it is necessary for the requested outcome; otherwise keep the plain meaning. Carry the reason behind an approved option into that rule's `의도`. Record the actual basis of a reasonable default and never present it as a user decision. Ask only if a necessary material choice cannot be resolved from the available evidence or a reasonable default.
 9. Treat every business concept, actor/role, business state, and rule term defined in Product Spec section 4 as the consumer project's ubiquitous language, shared across the project rather than owned by this plan set. Add or update each entry in the active workspace's `CONTEXT.md`, preserving its existing table and language lifecycle. Reuse the current canonical term when its meaning matches; update its definition when approved behavior changes; record an approved replacement in the retired-term table. Do not leave a term defined only in the ticket-scoped Spec. Keep explanatory phrases and UI copy that do not name a domain concept in the Spec. Record bounded-context responsibilities and relationships in `CONTEXT-MAP.md`, not as glossary definitions.
-10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose. The Spec author records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. The spec-me workflow creates diagrams after the Architecture review gate passes; `diagram_creator` uses the finalized Specs and does not make product decisions.
+10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose; a Product Spec never has class diagrams. The Spec author records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. The spec-me workflow creates diagrams after the Architecture review gate passes; `diagram_creator` uses the finalized Specs and does not make product decisions.
 
 ## Coverage gate
 
@@ -51,12 +51,9 @@ There is no minimum question count. Ask about unresolved business behavior and s
 ## Completion Criteria
 
 - Trace requirements and use cases with stable IDs.
-- When a flow is newly created or changed, declare the related Product use-case and activity `.puml` sources plus SVG link targets in the ticket-scoped diagrams directory; a Product Spec must not create class diagrams.
 - Treat `docs/specs/<plan-set-id>/diagrams/product/` `.puml` files as the only editable originals. Link each original and its matching SVG derivative from the Product Spec using relative Markdown links.
 - If no flow changed or a diagram is not applicable, record `해당 없음` with its reason instead of manufacturing a diagram.
-- The independent Architecture review checks the frozen Architecture Spec against the Product Spec and project evidence. The final spec-me diagram stages validate applicable sources, SVG renders, Markdown links, and content consistency after the Architecture review and decision gates pass; a render failure blocks workflow completion.
 - Generate `docs/specs/<plan-set-id>/product-spec.md` in the format of `references/template.md`.
 
 현재 구현 사실은 `code-research`의 입력 보고서로 전달받으며 Product 단계의 source 직접 조사 금지는 유지한다. 요구 변경은 현재 구현과 구분한다.
 
-기술 선택 전 적용 가능한 기능·구축 시간·운영·비용·데이터 제어·성능·변경 가능성 기준을 필수와 선호, 우선순위로 정한다. 기존 사용자 답변과 명시적 위임을 재사용하고 독립 질문을 묶는다.

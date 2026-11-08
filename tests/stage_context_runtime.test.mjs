@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent } from '../.harness/src/workflow/execution-context.mjs';
+import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../.harness/src/workflow/execution-context.mjs';
 import { stageConfigArgs } from '../.harness/src/workflow/providers/codex.mjs';
 import { allowedToolsForRole, buildCommand as buildClaudeCommand } from '../.harness/src/workflow/providers/claude-code.mjs';
 
@@ -93,4 +93,15 @@ test('Claude stage tools retain native delegation and only add research tools fo
   const publicSkill = buildClaudeCommand({ root: '/workspace', sandbox: 'workspace-write', binding: { model: 'model', reasoning_effort: 'medium' }, schema: {}, skill: 'setup', requiredSkill: 'setup' });
   assert.ok(!publicSkill.includes('--disable-slash-commands'));
   assert.ok(publicSkill[publicSkill.indexOf('--tools') + 1].split(',').includes('Skill'));
+});
+
+test('spec-me pastes the Product phase guide only until the Product Spec exists', async () => {
+  const product = ['.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md'];
+  const returnContract = '.codex/internal-skills/skill-execution/references/stage-return.md';
+  assert.deepEqual(phaseInstructionPaths({ skill: 'spec-me', productSpecExists: false }), [returnContract, ...product]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'spec-me', productSpecExists: true }), [returnContract]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'product-spec' }), [returnContract, product[1]]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'implement' }), [returnContract]);
+  const runner = await (await import('node:fs/promises')).readFile(new URL('../.codex/scripts/harness-agent-run.mjs', import.meta.url), 'utf8');
+  assert.match(runner, /phaseInstructionPaths\(\{ skill: input\.skill, productSpecExists: Boolean\(artifactDirectories && existsSync\(join\(artifactDirectories\.specs, 'product-spec\.md'\)\)\) \}\)/);
 });

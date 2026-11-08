@@ -4,6 +4,18 @@ export function instructionVersion(content) {
   return createHash('sha256').update(content).digest('hex');
 }
 
+const RETURN_CONTRACT = '.codex/internal-skills/skill-execution/references/stage-return.md';
+const PRODUCT_GUIDE = '.codex/internal-skills/product-spec/GUIDE.md';
+const PRODUCT_TOPICS = '.codex/internal-skills/product-spec/references/topics.md';
+
+// Phase guidance pasted into the stage prompt. spec-me starts with the Product phase, so its
+// guide is pasted only until the plan set's Product Spec exists; later phases read it on demand.
+export function phaseInstructionPaths({ skill, productSpecExists = false }) {
+  if (skill === 'spec-me') return [RETURN_CONTRACT, ...(productSpecExists ? [] : [PRODUCT_GUIDE, PRODUCT_TOPICS])];
+  if (skill === 'product-spec') return [RETURN_CONTRACT, PRODUCT_TOPICS];
+  return [RETURN_CONTRACT];
+}
+
 export function isCompactionEvent(event) {
   return /compaction|compacted|context.*reset|history.*truncat/i.test([event?.type, event?.item_type, event?.subtype].filter(Boolean).join(' '));
 }

@@ -4,7 +4,7 @@ import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendFileSync, closeSync, openSync } from 'node:fs';
-import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent } from '../../.harness/src/workflow/execution-context.mjs';
+import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../../.harness/src/workflow/execution-context.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 
@@ -117,10 +117,10 @@ try {
   const returnContract = '.codex/internal-skills/skill-execution/references/stage-return.md';
   const instructionPaths = [returnContract, ...(input.skill === 'spec-me' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : [])];
   const instructionVersions = await Promise.all(instructionPaths.map(async (path) => [path, instructionVersion(await readFile(join(root, path)))]));
-  const activeInstructionPaths = [returnContract, ...(input.skill === 'spec-me' ? ['.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/product-spec/references/topics.md'] : [])];
+  const artifactDirectories = input.context?.plan_set_id ? stageArtifactDirectories(root, input.context.plan_set_id) : null;
+  const activeInstructionPaths = phaseInstructionPaths({ skill: input.skill, productSpecExists: Boolean(artifactDirectories && existsSync(join(artifactDirectories.specs, 'product-spec.md'))) });
   const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = await readFile(join(root, path), 'utf8'); return { path, content, version: instructionVersion(content) }; }));
   const previousDelivery = priorStage?.instruction_delivery ? { ...priorStage.instruction_delivery, compaction_observed: priorCompaction } : null;
-  const artifactDirectories = input.context?.plan_set_id ? stageArtifactDirectories(root, input.context.plan_set_id) : null;
   const { prompt: instructions, delivery } = buildStagePrompt({ guide, guideContent, guideVersion: instructionVersion(guideContent), profile: profilePath, profileContent, profileVersion, instructionVersions, instructionContents, resumeSession: resume, previousDelivery, answersPath: existsSync(answers) ? answers : null, feedbackPath: existsSync(feedback) ? feedback : null, sandbox, root, inputPath, executionDirectory: paths.directory, artifactDirectories, workflowPhase: input.context?.phase || null });
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : instructions;
   const owner = await processIdentity(process.pid);
