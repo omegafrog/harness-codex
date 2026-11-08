@@ -39,16 +39,10 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 
 1. caller가 전달한 절대 `workspace_root`를 사용한다.
 2. 모든 repository 명령은 해당 경로를 cwd로 사용한다.
-3. 시작 전에 다음 preflight를 실행한다.
-
-   ```bash
-   node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json
-   ```
-
-4. `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다.
-5. 현재 branch, HEAD, porcelain status를 기록한다.
-6. user-owned dirty changes를 덮어쓰지 않는다. 관련 파일에 충돌 가능성이 있으면 해당 파일은 blocker로 보고한다.
-7. 이 workflow는 새 worktree, tracker ticket, PR을 자동 생성하지 않는다.
+3. workspace 검사는 workflow `before_dispatch`의 workspace gate가 수행하므로 preflight를 별도로 실행하지 않는다.
+4. 현재 branch, HEAD, porcelain status를 기록한다.
+5. user-owned dirty changes를 덮어쓰지 않는다. 관련 파일에 충돌 가능성이 있으면 해당 파일은 blocker로 보고한다.
+6. 이 workflow는 새 worktree, tracker ticket, PR을 자동 생성하지 않는다.
 
 ## Inputs
 

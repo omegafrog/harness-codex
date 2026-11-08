@@ -39,4 +39,4 @@ runtime dispatch가 `plan_review`를 검사해 확인한 canonical plan·Spec �
 4. 명시적 승인 뒤에만 기존 `e2e-test`와 `e2e_test_runner`를 호출한다. 승인된 시나리오·oracle·profile·budget과 답변 참조를 전달한다. 개별 plan 경계에서 E2E를 실행하지 않는다.
 5. 테스트 실패·timeout·환경 차단·cleanup 실패 시 증거와 실패 이력을 보존하고 소유 프로세스/산출물 cleanup만 수행한다. 제품 코드·테스트·assertion·실행 설정을 자동 수정하지 않고 재실행하지 않는다. 실패 시나리오, 기대/실제 결과, 로그/스크린샷/receipt, 원인 가설, 제안 수정과 재실행 범위를 사용자에게 제시하고 `USER_DECISION_REQUIRED`로 반환한다. 사용자가 허용한 조치만 수행하며 수정 승인과 재실행 승인을 구분한다.
 
-최종 E2E, plan-review completion, 승인된 제거 목록의 retirement, tracker sync, 계약 동기화와 cleanup gate가 모두 통과해야 최종 완료를 보고한다. plan set의 integration PR은 한 번만 작성·갱신하고 자동 merge하지 않는다. checkpoint·events·raw 실행 증거는 session에 보존하며 외부 tracker나 PR에 복사하지 않는다.
+최종 완료 전에 [sync-contracts](../../../../.codex/internal-skills/sync-contracts/GUIDE.md)로 통합 계약을 갱신·seal한다. 최종 E2E, plan-review completion, 승인된 제거 목록의 retirement, tracker sync, 계약 동기화와 cleanup gate가 모두 통과해야 최종 완료를 보고한다. plan set의 integration PR은 한 번만 작성·갱신하고 자동 merge하지 않는다. checkpoint·events·raw 실행 증거는 session에 보존하며 외부 tracker나 PR에 복사하지 않는다.

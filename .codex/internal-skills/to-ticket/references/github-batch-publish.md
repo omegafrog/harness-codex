@@ -18,10 +18,10 @@ GitHub Issue 생성과 parent 관계에는 공식 [REST Issues API](https://docs
 
 ## 부분 실패와 재개
 
-발행 상태와 plan mapping은 configured Project에서 `harness-publication.mjs inspect`로 조회한다. 별도 발행 상태 파일을 읽거나 쓰지 않는다. Issue 변환 뒤 Beads mirror를 만들며 canonical 계획 snapshot은 보존한다.
+발행 상태와 plan mapping은 configured Project에서 `harness-publication.mjs inspect`로 조회한다. 별도 발행 상태 파일을 읽거나 쓰지 않는다.
 
 한 query alias 묶음에는 최대 10개 item을 넣는다. 구현 진입 시 초안 변환이 완료되기 전까지 `tracker_sync.ticket_refs`는 빈 배열이다. 구현 진입 절차가 초안을 실제 Issue로 변환한 뒤 Issue별 tracker lifecycle을 시작한다.
 
 ## Beads 연결과 계획 index
 
-발행 상태와 plan mapping은 configured Project에서 `harness-publication.mjs inspect`로 조회한다. 별도 발행 상태 파일을 읽거나 쓰지 않는다. Issue 변환 뒤 Beads mirror를 만들며 canonical 계획 snapshot은 보존한다.
+Issue 변환 뒤 Beads mirror를 만들며 canonical 계획 snapshot은 보존한다.

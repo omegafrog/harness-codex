@@ -11,7 +11,6 @@
 구현 전 workspace 확인은 workflow runtime dispatch의 `before_dispatch` workspace gate가 수행한다. skill 절차와 구현 agent는 `harness-workspace-preflight.mjs`를 별도로 실행하지 않는다. gate 실패는 spawn을 막고 정확한 결과를 caller에게 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
 
 
-Before editing code, follow the assigned worker's concise minimal-change and verification principles. The runner provides them in its worker base instructions; preserve any explicit user implementation preferences and the full project implementation guidance.
 
 ## Harness source distribution
 
@@ -87,7 +86,7 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 
 ## 통합 계약 연속성
 
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. 계약 갱신·seal은 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md)에 따라 최종 구현 workflow만 수행하며 이 단계는 계약을 수정하지 않는다. 개별 plan의 contract snapshot drift는 deferred로 기록하고, 구조 오류·실행 준비 실패는 차단한다.
 
 ## Lifecycle 상태와 실행 단계
 
