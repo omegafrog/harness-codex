@@ -776,6 +776,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(yamlPath, `${originalYaml}\ntracker:\n  mode: github\n`);
     await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /must save a GitHub Issue draft.*runtime\/to-ticket\/drafts\/parent\.md/);
     const draftsDirectory = join(tree.session_directory, 'runtime/to-ticket/drafts');
+    // Reopening the completed result for a user revision must not demand the drafts it is about to create.
+    assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope, reopening: true })).valid, true);
     await mkdir(draftsDirectory, { recursive: true });
     for (const name of ['parent', 'slice']) await writeFile(join(draftsDirectory, `${name}.md`), `# ${name}\n`);
     assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);
