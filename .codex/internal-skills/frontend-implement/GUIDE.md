@@ -1,7 +1,5 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [frontend-figma](../frontend-figma/GUIDE.md).
-
 # frontend-implement
 
 `frontend-design` workflow의 코드 작성과 correction만 담당한다.
@@ -79,4 +77,4 @@ screenshot에 보이는 증상을 숨기기 위한 viewport-specific magic numbe
 
 ## 테스트·서비스 실행 전제
 
-일반 단위·회귀 검증은 프로젝트 `docs/agents/EXEC.md`의 명령을 해당 언어의 기본 CLI로 실행한다. `harness-exec`와 `execution.json`은 명시적 사용자 흐름 E2E에만 사용하며, 그 외 profile을 만들거나 runner로 감싸지 않는다. 실제 E2E에서는 실행 인자·필수 환경·설정 검사와 dependency readiness를 확인하고 receipt를 보고한다.
+일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.

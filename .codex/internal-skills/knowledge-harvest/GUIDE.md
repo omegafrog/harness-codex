@@ -39,6 +39,6 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 - 후속 단계는 workflow 선언의 순서대로 수행하고 각 gate의 근거를 저장한다. countersearch 및 human approval 없이 Principle을 publish하지 않는다.
 - 원문이 없거나 위치를 확인할 수 없으면 Claim을 추측하지 않고 진단 또는 unavailable 상태를 보존한다.
 
-## 세션 출력
+## 실행 산출물 경로
 
-`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.

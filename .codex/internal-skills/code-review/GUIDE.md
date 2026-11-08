@@ -1,6 +1,3 @@
-
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [ddd-design](../../../.codex/internal-skills/ddd-design/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
-
 # code-review
 
 ## What it does
@@ -115,10 +112,10 @@ Wait for both static calls to finish and preserve their actual return files and 
 
 각 plan은 현행 계약을 기준으로 담당 구현·인계·검증을 검토한다. 통합 계약의 본문·diagram·version·seal 갱신은 모든 구현 plan을 통합한 최종 workflow에서 수행한다. 중간 plan은 snapshot drift만 deferred로 기록하고 구조 오류와 실행 준비 실패는 계속 차단한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치를 확인한다.
 
-## 소유 worktree 종료
+## 소유 worktree
 
-구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
+상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
 
-## 세션 출력
+## 실행 산출물 경로
 
-`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.

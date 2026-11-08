@@ -1,7 +1,5 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [sync-contracts](../sync-contracts/GUIDE.md).
-
 # plantuml-diagrams
 
 `plantuml-diagrams`는 Spec에 필요한 다이어그램만 독립 `.puml` 편집 원본으로 만들고, 기존 로컬 renderer를 통해 SVG를 생성·검증한다.

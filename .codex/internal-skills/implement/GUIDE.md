@@ -1,7 +1,5 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [ddd-design](../ddd-design/GUIDE.md) · [implementation-guidance](../implementation-guidance/GUIDE.md) · [session-worktree](../session-worktree/GUIDE.md) · [spec-review](../spec-review/GUIDE.md) · [sync-contracts](../sync-contracts/GUIDE.md) · [testing-guidance](../testing-guidance/GUIDE.md).
-
 # implement
 
 구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다.
@@ -90,19 +88,19 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 
 새 v1 mirror의 시작·차단·완료 전이는 모두 `beads` 스킬의 공통 sync 코드가 canonical을 먼저 갱신하고 Beads를 반영한다. 앞 절의 tracker별 설명은 목적 상태를 뜻하며 v1 mirror에 개별 gh/bd 명령을 중복 실행하지 않는다. 테스트 시작은 `--phase test`, 리뷰 시작은 `--phase review`로 기록하되 lifecycle은 `in-progress`를 유지한다. sync 실패는 업무 실패와 구분하고 canonical을 되돌리지 않는다. gate와 독립 리뷰·통합 계약 검증이 통과한 이후에만 completed로 전환한다.
 
-## 소유 worktree 종료
+## 소유 worktree
 
-구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
+상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
 
-## 세션 출력
+## 실행 산출물 경로
 
-`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
 
 ## 테스트·서비스 실행 전제
 
 최종 E2E 실행에 필요한 앱 실행 방법·환경·시나리오가 확정되지 않았다면 구현 단계에서 사용자에게 확인하고 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 실제 실행 조건을 기록한다.
 
-일반 단위·회귀 검증은 프로젝트 `docs/agents/EXEC.md`의 명령을 해당 언어의 기본 CLI로 실행한다. `harness-exec`와 `execution.json`은 명시적 사용자 흐름 E2E에만 사용하며, 그 외 profile을 만들거나 runner로 감싸지 않는다. 실제 E2E에서는 실행 인자·필수 환경·설정 검사와 dependency readiness를 확인하고 receipt를 보고한다.
+일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.
 
 ## E2E 실패 재발 방지
 

@@ -45,7 +45,7 @@ Spec 설계 전에 대상 프로젝트의 `docs/contracts/` 계약과 연결 다
 
 유비쿼터스 언어는 plan set 산출물이 아니라 대상 프로젝트 전체의 공유 vocabulary다. Product Spec §4의 모든 도메인 용어와 Architecture 단계에서 새로 정하거나 의미를 바꾼 도메인 용어를 활성 `workspace_root/CONTEXT.md`에 추가·갱신한다. 기존 canonical 정의를 먼저 비교하고, 정의 변경·대체·폐기 lifecycle을 적용한다. 동일 의미 용어를 ticket마다 복제하거나 Spec 안에만 남기지 않는다. Bounded Context의 책임·관계는 `CONTEXT-MAP.md`에 갱신한다. framework, package, API identifier와 설명 문구는 도메인 용어가 아니면 glossary에 넣지 않는다.
 
-## 세션 출력
+## 실행 산출물 경로
 
 workflow 실행의 `session_directory`는 현재 작업을 위해 준비된 worktree의 canonical session이며 실행 결과·리뷰 증거·임시 산출물의 기준이다. `context.control_session_directory`는 orchestrator workflow 상태용으로만 사용한다. 두 경로를 서로 대체하거나 `.git` 아래에서 다시 계산하지 않는다. Spec과 다이어그램은 준비된 worktree의 선언 경로에 기록한다.
 

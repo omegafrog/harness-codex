@@ -1,7 +1,5 @@
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [codebase-design](../codebase-design/GUIDE.md) · [ddd-design](../ddd-design/GUIDE.md).
-
 # code-research
 
 ## What it does
