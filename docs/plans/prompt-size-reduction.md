@@ -183,6 +183,8 @@ AGENTS.md는 설치되지 않는 소스 저장소 전용 파일이지만 이 저
 - 임시 consumer의 fresh install과 176b7c3e 설치 후 update: 신규 `runtime-artifact-paths.md`가 설치되고 `.git/info/exclude`로 ignore되며 앱 변경(`M app.txt`)은 그대로 보인다. Doctor의 `permission_conflict .codex/harness.yaml`과 untracked `.harness/`는 setup 없이 설치한 176b7c3e에서도 동일하게 나타난다.
 
 남은 사항:
-- `implement` GUIDE는 구현 agent가 리뷰를 실행하고 ticket을 `completed`로 전환한다고 적지만, `implement-wrapper` GUIDE와 `implementation_agent` 프로필은 `REVIEW_REQUIRED`로 반환하고 orchestrator가 리뷰·완료를 관리한다고 적는다. 동작 소유권 결정이 필요해 이번 범위에서 바꾸지 않았다.
-- 소스 push와 consumer update는 수행하지 않았다.
-
+- 해결: 구현 리뷰 소유권은 fresh reviewer stage와 orchestrator로 정했다(`627a5c76`). `implement` GUIDE는 `REVIEW_REQUIRED`로 반환한다.
+- 해결: 소스 push와 `harness-test` update를 수행했다. update는 Harness 관리 경로를 최신 릴리스와 같게 맞추도록 바꿨다(`01a0c172`, `a00f81d6`).
+- 미달: `implement` 본문+직접 링크는 목표 60KB 대비 약 68KB, `code-review`는 목표 45KB 대비 48.5KB다.
+- 잔여: 완전 중복 문장 38종(9.2KB)이 남아 있다. 각 3곳 미만 반복이라 테스트 기준은 통과한다.
+- 미반영: 변경은 `implement-plan-review-plan-spec-5000` 브랜치에만 있고 `main`에 병합하지 않았다.
