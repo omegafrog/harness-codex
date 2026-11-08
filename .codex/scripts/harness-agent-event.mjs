@@ -17,8 +17,26 @@ try {
   const event = JSON.parse(text);
   if (!['SubagentStart', 'SubagentStop'].includes(event.hook_event_name) || typeof event.session_id !== 'string' || typeof event.agent_id !== 'string' || !event.agent_id || typeof event.agent_type !== 'string') throw new Error('Invalid Claude subagent event');
   const session = process.env.HARNESS_SESSION_DIR, executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
-  // Codex runs project hooks in every session; only stage executions record their subagents.
-  if (!executionId) process.exit(0);
+  if (!executionId) {
+    // The main orchestrator spawns the code reviewers itself. Record only those, in the worktree's own session,
+    // so `harness-code-review.mjs assemble` takes reviewer identity and answers from the hook, not from the caller.
+    if (!['standards_reviewer', 'spec_reviewer'].includes(event.agent_type)) process.exit(0);
+    const recordFile = join(typeof event.cwd === 'string' ? event.cwd : process.cwd(), '.io/worktree.json');
+    let worktree;
+    try { worktree = JSON.parse(await readFile(recordFile, 'utf8')); } catch { process.exit(0); }
+    if (!worktree?.session_directory || worktree.state !== 'active') process.exit(0);
+    const orchestratorLog = 'runtime/orchestrator/subagents.jsonl';
+    await assertWorkspaceTarget(worktree.session_directory, orchestratorLog);
+    const target = join(worktree.session_directory, orchestratorLog);
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    await appendFile(target, `${JSON.stringify({
+      event: event.hook_event_name, session_id: event.session_id, agent_id: event.agent_id, agent_type: event.agent_type,
+      ...(event.hook_event_name === 'SubagentStart' && await forkedTranscript(event.agent_transcript_path) ? { forked: true } : {}),
+      ...(event.hook_event_name === 'SubagentStop' && typeof event.last_assistant_message === 'string' ? { result: event.last_assistant_message } : {}),
+      recorded_at: new Date().toISOString(),
+    })}\n`, { flag: 'a', mode: 0o600 });
+    process.exit(0);
+  }
   if (!session || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Harness execution session is unavailable');
   const relative = `runtime/executions/${executionId}/subagents.jsonl`;
   await assertWorkspaceTarget(session, relative);

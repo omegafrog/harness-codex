@@ -80,7 +80,8 @@ const codexHome = (env) => resolve(env.CODEX_HOME || join(env.HOME || '', '.code
 export function codexSubagentHook() {
   return {
     type: 'command',
-    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && [ -f "$HARNESS_WORKSPACE_ROOT/.codex/scripts/harness-agent-event.mjs" ] && exec node "$HARNESS_WORKSPACE_ROOT/.codex/scripts/harness-agent-event.mjs"; exit 0'`,
+    // Inside a stage HARNESS_WORKSPACE_ROOT names the workspace; in the main orchestrator session the cwd is the worktree.
+    command: `sh -c 'f="\${HARNESS_WORKSPACE_ROOT:-.}/.codex/scripts/harness-agent-event.mjs"; [ -f "$f" ] && exec node "$f"; exit 0'`,
     statusMessage: SUBAGENT_STATUS,
     timeout: 10,
   };

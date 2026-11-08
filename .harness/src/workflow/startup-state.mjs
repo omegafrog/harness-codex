@@ -58,6 +58,29 @@ export async function bindOrchestratorSession({ root, provider, sessionId }) {
   return recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: 'orchestrator', session_id: sessionId, execution_id: 'orchestrator-prompt', provider });
 }
 
+// A conversation keeps its earlier conclusions after Harness is updated. When the installed files changed since this
+// session last prompted, tell the orchestrator to re-read the guides before trusting what it decided earlier.
+export async function harnessUpdateNotice({ root, sessionId }) {
+  if (!sessionId) return null;
+  const { createHash } = await import('node:crypto');
+  const { mkdir, writeFile, rename } = await import('node:fs/promises');
+  let lock;
+  try { lock = await readFile(join(root, '.codex/harness-lock.json')); } catch { return null; }
+  const current = createHash('sha256').update(lock).digest('hex').slice(0, 12);
+  let session;
+  try { session = sessionDirectory(root, { create: false }); } catch { return null; }
+  const path = 'runtime/orchestrator/harness-seen.json';
+  let seen = {};
+  try { seen = JSON.parse(await readFile(join(session, path), 'utf8')); } catch { seen = {}; }
+  if (seen[sessionId] === current) return null;
+  await assertWorkspaceTarget(session, path);
+  await mkdir(join(session, 'runtime/orchestrator'), { recursive: true, mode: 0o700 });
+  const temporary = join(session, `${path}.${process.pid}.tmp`);
+  await writeFile(temporary, JSON.stringify({ ...seen, [sessionId]: current }), { mode: 0o600 });
+  await rename(temporary, join(session, path));
+  return seen[sessionId] ? `Harness was updated since this conversation last ran (installed files ${seen[sessionId]} -> ${current}). Conclusions you reached earlier about what Harness can or cannot do may be outdated: re-read the relevant GUIDE or reference before relying on them.` : null;
+}
+
 export async function inspectStartupState({ workspaceRoot, sessionId = null, provider = 'codex', codexSessionId = null }) {
   sessionId ||= codexSessionId;
   const root = await realpath(workspaceRoot);

@@ -93,9 +93,48 @@ test('assembled implementation review evidence passes the repair provenance chec
   const answer = JSON.stringify({ state: 'passed', report: { findings: [] } });
   const evidence = assembleReviews({ reviewInput, standards: { contextId: 'native-standards-1', raw: answer }, spec: { contextId: 'native-spec-1', raw: answer } });
   assert.equal(validReviewProvenance(evidence.reviews, reviewInput.implementation_commit_sha, reviewInput), true);
+  const { buildReviewInput, readImplementerResult } = await import('../.harness/src/wrapper/review-input.mjs');
+  await assert.rejects(buildReviewInput({ root: '/w', planId: 'A', fixedPoint: 'f'.repeat(40), unplannedAdditions: [] }), /implementation commit SHA .* is required/);
+  assert.equal(typeof readImplementerResult, 'function');
   assert.throws(() => assembleReviews({ reviewInput, standards: { contextId: '', raw: answer }, spec: { contextId: 'x', raw: answer } }), /native context ID/);
   assert.throws(() => assembleReviews({ reviewInput, standards: { contextId: 's', raw: 'not json' }, spec: { contextId: 'x', raw: answer } }), /not JSON/);
   // The caller's hand-built shape that failed in the E2E (string diff_range, commit_list without the fixed point) stays invalid.
   const handBuilt = { ...reviewInput, diff_range: `${reviewInput.fixed_point}..${reviewInput.implementation_commit_sha}`, commit_list: [reviewInput.implementation_commit_sha] };
   assert.equal(validReviewProvenance(evidence.reviews.map((item) => ({ ...item, review_input: handBuilt })), reviewInput.implementation_commit_sha, handBuilt), false);
+});
+
+test('orchestrator-session code reviewers are recorded by the hook and assemble reads them from there', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-orchestrator-reviewers-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const session = join(root, '.io');
+    await mkdir(session, { recursive: true });
+    await writeFile(join(session, 'worktree.json'), JSON.stringify({ state: 'active', session_directory: session }));
+    const hookScript = join(root, '.codex/scripts/harness-agent-event.mjs');
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('HARNESS_')));
+    const hook = (event) => execFileSync(process.execPath, [hookScript], { cwd: root, env, input: JSON.stringify({ cwd: root, session_id: 'orchestrator-thread', ...event }) });
+    const answer = JSON.stringify({ state: 'passed', report: { findings: [] } });
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'standards-1', agent_type: 'standards_reviewer' });
+    hook({ hook_event_name: 'SubagentStop', agent_id: 'standards-1', agent_type: 'standards_reviewer', last_assistant_message: answer });
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'spec-1', agent_type: 'spec_reviewer' });
+    hook({ hook_event_name: 'SubagentStop', agent_id: 'spec-1', agent_type: 'spec_reviewer', last_assistant_message: answer });
+    // Other subagents and sessions outside a worktree are ignored.
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'writer-1', agent_type: 'code_researcher' });
+    const forkedTranscript = join(session, 'forked.jsonl');
+    await writeFile(forkedTranscript, `${JSON.stringify({ payload: { forked_from_id: 'orchestrator-thread' } })}\n`);
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'spec-forked', agent_type: 'spec_reviewer', agent_transcript_path: forkedTranscript });
+    hook({ hook_event_name: 'SubagentStop', agent_id: 'spec-forked', agent_type: 'spec_reviewer', last_assistant_message: answer });
+    const log = (await readFile(join(session, 'runtime/orchestrator/subagents.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(log.map((item) => item.agent_id), ['standards-1', 'standards-1', 'spec-1', 'spec-1', 'spec-forked', 'spec-forked']);
+    const { readHookRecordedReviewer } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
+    assert.deepEqual(await readHookRecordedReviewer({ root, role: 'standards', agentId: 'standards-1' }), { contextId: 'standards-1', raw: answer });
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'spec', agentId: 'spec-forked' }), /forked from the caller's conversation/);
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'invented-id' }), /did not record a finished standards_reviewer/);
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'spec-1' }), /did not record a finished standards_reviewer/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

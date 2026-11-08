@@ -13,7 +13,9 @@ const REVIEW_STATES = new Set(['passed', 'failed']);
 // Builds the exact review_input that `harness-code-review.mjs repair` validates, so the orchestrator never
 // hand-assembles it: commit list with both endpoints, diff_range as an object, Spec paths and the planning
 // snapshot from the plan-review dispatch check, and the implementer's unplanned_additions.
-export async function buildReviewInput({ root, planId, fixedPoint, commit = 'HEAD', unplannedAdditions }) {
+export async function buildReviewInput({ root, planId, fixedPoint, commit, unplannedAdditions }) {
+  // Never default to HEAD: later plans commit on top, and the review must name the commit the implementer reported.
+  if (!/^[0-9a-f]{40}$/i.test(commit || '')) throw new Error('The implementation commit SHA (40 hex) is required; it comes from the implementer\'s result');
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId || '')) throw new Error('Valid plan ID is required');
   const record = parseWorktreeRecord(await readFile(join(root, '.io/worktree.json'), 'utf8'));
   const [fixed, implementation] = await Promise.all([git(root, 'rev-parse', '--verify', `${fixedPoint}^{commit}`), git(root, 'rev-parse', '--verify', `${commit}^{commit}`)]).then((items) => items.map((item) => item.trim()));
@@ -46,10 +48,11 @@ export function reviewInputFromParts({ root, fixed, implementation, between, dif
   };
 }
 
-export async function readImplementerAdditions({ root, resultRef }) {
+export async function readImplementerResult({ root, resultRef }) {
   const result = JSON.parse(await readFile(sessionOutputPath(root, resultRef, { create: false }), 'utf8'));
   if (!Array.isArray(result.unplanned_additions)) throw new Error(`${resultRef} has no unplanned_additions array`);
-  return result.unplanned_additions;
+  if (!/^[0-9a-f]{40}$/i.test(result.commit_sha || '')) throw new Error(`${resultRef} has no commit_sha; the implementation commit must be recorded before review`);
+  return { additions: result.unplanned_additions, commitSha: result.commit_sha };
 }
 
 // Combines the two reviewers' raw JSON answers ({"state","report":{"findings"}}) with the review input.
@@ -63,6 +66,20 @@ export function assembleReviews({ reviewInput, standards, spec }) {
     return { role, context_id: contextId, independent: true, fresh_context: true, implementation_commit_sha: reviewInput.implementation_commit_sha, review_input: reviewInput, state: parsed.state, report: parsed.report, raw_result: typeof raw === 'string' ? raw : JSON.stringify(raw) };
   };
   return { review_input: reviewInput, reviews: [entry('standards', standards), entry('spec', spec)] };
+}
+
+// Reads a reviewer recorded by the subagent hook in the orchestrator session: its Stop answer is the review,
+// its agent ID is the context ID, and a reviewer forked from the caller's conversation is refused.
+export async function readHookRecordedReviewer({ root, role, agentId }) {
+  const agentType = role === 'standards' ? 'standards_reviewer' : 'spec_reviewer';
+  let text;
+  try { text = await readFile(sessionOutputPath(root, 'runtime/orchestrator/subagents.jsonl', { create: false }), 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') throw new Error(`No hook-recorded subagents: the ${role} reviewer was not started as a native subagent in a Harness worktree session`); throw error; }
+  const records = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.agent_id === agentId && item.agent_type === agentType);
+  const start = records.find((item) => item.event === 'SubagentStart'), stop = records.findLast((item) => item.event === 'SubagentStop' && typeof item.result === 'string');
+  if (!start || !stop) throw new Error(`The hook did not record a finished ${agentType} with agent ID ${agentId}`);
+  if (start.forked) throw new Error(`${agentType} ${agentId} was forked from the caller's conversation; start a fresh reviewer with fork_turns none`);
+  return { contextId: agentId, raw: stop.result };
 }
 
 export async function writeReviewEvidence({ root, planId, evidence }) {

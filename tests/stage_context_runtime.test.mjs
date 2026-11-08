@@ -132,7 +132,7 @@ test('Codex subagent hook is one user-level hook that must be trusted before sta
     const hooks = JSON.parse(await readFile(join(home, 'hooks.json'), 'utf8')).hooks;
     assert.deepEqual(hooks.Stop, existing.hooks.Stop, 'user hooks are preserved');
     assert.deepEqual(hooks.SubagentStart, [{ hooks: [codexSubagentHook()] }]);
-    assert.match(codexSubagentHook().command, /HARNESS_SKILL_EXECUTION_ID.*HARNESS_WORKSPACE_ROOT\/\.codex\/scripts\/harness-agent-event\.mjs/);
+    assert.match(codexSubagentHook().command, /HARNESS_WORKSPACE_ROOT:-\.\}\/\.codex\/scripts\/harness-agent-event\.mjs/);
     const untrusted = await inspectCodexHookTrust(env);
     assert.equal(untrusted.trusted, false);
     assert.deepEqual(untrusted.untrusted, ['SubagentStart', 'SubagentStop']);

@@ -224,3 +224,16 @@ test('the session prompting the orchestrator inside the worktree becomes the res
   // Outside a Harness worktree nothing is recorded.
   assert.equal(await bindOrchestratorSession({ root: fx.primary, provider: 'codex', sessionId: worktreeSession }), null);
 });
+
+test('the startup hook tells a resumed orchestrator session when Harness was updated', async (t) => {
+  const fx = await fixture(t, 'notice', { orchestrator_session_id: 'conversation-1' });
+  const { harnessUpdateNotice } = await import('../.harness/src/workflow/startup-state.mjs');
+  const { writeFile: write } = await import('node:fs/promises');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'first prompt only records the installed version');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'unchanged install stays silent');
+  await write(join(fx.root, '.codex/harness-lock.json'), `${await readFile(join(fx.root, '.codex/harness-lock.json'), 'utf8')}\n`);
+  const notice = await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' });
+  assert.match(notice, /Harness was updated since this conversation last ran .* re-read the relevant GUIDE or reference/);
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'told once per update');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'another-conversation' }), null, 'a new conversation has nothing outdated');
+});

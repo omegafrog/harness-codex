@@ -4,13 +4,13 @@ import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
 const { reserveImplementationRepair } = await import(installed.href);
-const { buildReviewInput, readImplementerAdditions, assembleReviews, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
+const { buildReviewInput, readImplementerResult, assembleReviews, readHookRecordedReviewer, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
-    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-answer', '--standards-id', '--spec-answer', '--spec-id'].includes(flag) || !value) throw new Error('Invalid code-review arguments');
+    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent'].includes(flag) || !value) throw new Error('Invalid code-review arguments');
     options[flag.slice(2)] = value;
   }
   options.root = resolve(options.root);
@@ -18,11 +18,11 @@ try {
   let result;
   if (action === 'assemble') {
     // Builds runtime/reviews/implementation-<plan>.json for `repair` from the real commits and the reviewers' own answers.
-    if (!options['fixed-point'] || !options['implementation-result'] || !options['standards-answer'] || !options['standards-id'] || !options['spec-answer'] || !options['spec-id']) throw new Error('assemble needs --fixed-point, --implementation-result, --standards-answer, --standards-id, --spec-answer and --spec-id');
-    const additions = await readImplementerAdditions({ root: options.root, resultRef: options['implementation-result'] });
-    const reviewInput = await buildReviewInput({ root: options.root, planId: options.plan, fixedPoint: options['fixed-point'], commit: options.commit || 'HEAD', unplannedAdditions: additions });
-    const answer = async (path) => readFile(sessionOutputPath(options.root, path, { create: false }), 'utf8');
-    const evidence = assembleReviews({ reviewInput, standards: { contextId: options['standards-id'], raw: await answer(options['standards-answer']) }, spec: { contextId: options['spec-id'], raw: await answer(options['spec-answer']) } });
+    if (!options['fixed-point'] || !options['implementation-result'] || !options['standards-agent'] || !options['spec-agent'] || options['standards-agent'] === options['spec-agent']) throw new Error('assemble needs --fixed-point, --implementation-result and two different reviewer agent IDs: --standards-agent and --spec-agent');
+    const implemented = await readImplementerResult({ root: options.root, resultRef: options['implementation-result'] });
+    if (options.commit && options.commit !== implemented.commitSha) throw new Error(`--commit ${options.commit} differs from the commit the implementer reported (${implemented.commitSha})`);
+    const reviewInput = await buildReviewInput({ root: options.root, planId: options.plan, fixedPoint: options['fixed-point'], commit: implemented.commitSha, unplannedAdditions: implemented.additions });
+    const evidence = assembleReviews({ reviewInput, standards: await readHookRecordedReviewer({ root: options.root, role: 'standards', agentId: options['standards-agent'] }), spec: await readHookRecordedReviewer({ root: options.root, role: 'spec', agentId: options['spec-agent'] }) });
     result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point };
   } else if (action === 'repair') {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));

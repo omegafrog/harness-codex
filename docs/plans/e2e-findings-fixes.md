@@ -82,6 +82,12 @@
 2. 기존 실패 테스트 `installed to-ticket uses skill binding …`: 지금은 없어진 발행 방식을 실제 GitHub에 호출한다. 현행 `harness-publication.mjs` 계약에 맞게 fake `gh`로 다시 쓰거나 삭제한다.
 3. stage 안에서 `rm -f`가 막히는 문제는 영향이 작아 관찰만 한다.
 
+## P9. orchestrator 쪽 reviewer와 낡은 판단 (구현 완료)
+
+- orchestrator가 직접 띄우는 구현 리뷰 reviewer는 stage 밖이라 hook이 기록하지 않아, reviewer의 답을 호출자가 옮겨 적을 수 있었다. 이제 subagent hook이 worktree 세션의 `runtime/orchestrator/subagents.jsonl`에 `standards_reviewer`·`spec_reviewer`의 시작·종료·최종 답과 fork 여부를 기록하고, `harness-code-review.mjs assemble`이 reviewer agent ID만 받아 그 기록에서 답을 읽는다. 기록이 없거나 fork한 reviewer는 거부한다. 구현 commit은 구현자 결과의 `commit_sha`에서만 가져온다(HEAD 기본값 제거).
+- 시작 hook이 설치된 Harness 파일이 바뀐 뒤 처음 프롬프트를 받는 세션에 "이전 판단은 낡았을 수 있으니 관련 GUIDE를 다시 읽는다"는 안내를 넣는다(`harnessUpdateNotice`).
+- 남은 일: Claude Code orchestrator launcher가 같은 subagent hook을 `--settings`로 넣는 것.
+
 ## 검증
 
 - 단계마다 `npm test`와 전체 테스트, 설치된 consumer 회귀 테스트를 통과시킨다.
