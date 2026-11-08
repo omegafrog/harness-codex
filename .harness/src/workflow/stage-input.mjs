@@ -204,8 +204,17 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const stage = { id: stageId, skill: stageId, scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
   const input_refs = [];
   const producer_result_refs = {};
-  const lastStage = state.current_stage;
-  const last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
+  let lastStage = state.current_stage;
+  let last = lastStage && lastStage !== 'workflow-compose' ? state.stages?.[lastStage] : null;
+  // A premature implementation dispatch can only be unblocked by publishing the reviewed plan.
+  if (stageId === 'tracker-publish' && publicationApproved && lastStage === 'implement-wrapper' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && !state.stages?.['tracker-publish']) {
+    const blockedInput = await readExecutionInput({ root, execution_id: last.execution_id });
+    const blockedReturn = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${last.execution_id}/return.json` });
+    await validateSkillReturn({ root, input: blockedInput, envelope: blockedReturn });
+    if (blockedReturn.status !== 'blocked' || blockedReturn.code !== last.code || blockedReturn.result_ref !== last.result_ref) throw new Error('Blocked implementation result does not match stage state');
+    lastStage = 'to-ticket';
+    last = state.stages[lastStage];
+  }
   if (last?.code === 'SUBTASK_REQUIRED') throw new Error('Legacy SUBTASK_REQUIRED execution cannot be resumed: the pending subagent identity and result are not recorded; in-place recovery is unsupported. Preserve the session artifacts and report this limitation.');
   let transition;
   // 사용자 수정은 뒤 stage의 현재성을 요구하지 않는다. 그 stage가 고칠 Spec에 의존하므로 재검증하면 교착된다.
