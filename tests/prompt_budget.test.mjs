@@ -100,3 +100,9 @@ test('the orchestrator is told to start stage runners in the background and not 
   assert.match(skill, /harness-agent-run\.mjs \.\.\. --background true`로만 시작한다/);
   assert.match(skill, /Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다/);
 });
+
+test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {
+  const repair = await readFile(join(sourceRoot, '.codex/internal-skills/code-review/references/repair.md'), 'utf8');
+  assert.match(repair, /harness-code-review\.mjs assemble --root <workspace_root> --plan <plan-id> --fixed-point/);
+  assert.match(repair, /직접 JSON을 조립하지 말고/);
+});

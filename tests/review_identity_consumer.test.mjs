@@ -82,3 +82,20 @@ test('a stage completes only when an admitted fresh reviewer finished after any 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('assembled implementation review evidence passes the repair provenance check', async () => {
+  const { reviewInputFromParts, assembleReviews } = await import('../.harness/src/wrapper/review-input.mjs');
+  const { validReviewProvenance } = await import('../.harness/src/wrapper/repair.mjs');
+  const details = { product_spec_path: 'docs/specs/p/product-spec.md', architecture_spec_path: 'docs/specs/p/architecture-spec.md', review_snapshot_sha256: 'a'.repeat(64), canonical_plan: { kind: 'file', reference: 'docs/plans/p/A.md', input_key: 'docs/plans/p/A.md#canonical', hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: 'b'.repeat(64) } };
+  const reviewInput = reviewInputFromParts({ root: '/w', fixed: 'f'.repeat(40), implementation: 'c'.repeat(40), between: ['c'.repeat(40)], diff: 'diff --git a b\n+x\n', unplannedAdditions: [], planSetId: 'p', details });
+  assert.deepEqual(reviewInput.diff_range, { from: 'f'.repeat(40), to: 'c'.repeat(40) });
+  assert.deepEqual(reviewInput.commit_list, ['f'.repeat(40), 'c'.repeat(40)]);
+  const answer = JSON.stringify({ state: 'passed', report: { findings: [] } });
+  const evidence = assembleReviews({ reviewInput, standards: { contextId: 'native-standards-1', raw: answer }, spec: { contextId: 'native-spec-1', raw: answer } });
+  assert.equal(validReviewProvenance(evidence.reviews, reviewInput.implementation_commit_sha, reviewInput), true);
+  assert.throws(() => assembleReviews({ reviewInput, standards: { contextId: '', raw: answer }, spec: { contextId: 'x', raw: answer } }), /native context ID/);
+  assert.throws(() => assembleReviews({ reviewInput, standards: { contextId: 's', raw: 'not json' }, spec: { contextId: 'x', raw: answer } }), /not JSON/);
+  // The caller's hand-built shape that failed in the E2E (string diff_range, commit_list without the fixed point) stays invalid.
+  const handBuilt = { ...reviewInput, diff_range: `${reviewInput.fixed_point}..${reviewInput.implementation_commit_sha}`, commit_list: [reviewInput.implementation_commit_sha] };
+  assert.equal(validReviewProvenance(evidence.reviews.map((item) => ({ ...item, review_input: handBuilt })), reviewInput.implementation_commit_sha, handBuilt), false);
+});
