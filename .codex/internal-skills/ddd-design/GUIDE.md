@@ -34,7 +34,7 @@ For each target domain, define at least one Aggregate and identify Entities and 
 2. Review the event-storming result: actors, commands, events, policies, and external systems.
 3. Identify domain Entities, Value Objects, behavior and rules, and group them into Aggregates with root Entities.
 4. Describe application services that coordinate Aggregate methods, repositories, external effects and transaction boundaries without owning domain decisions.
-5. Compare candidate bounded contexts by meaning, model, business rules, data ownership and lifecycle, consistency, change independence, and translation needs; record the reasons for the chosen boundaries.
+5. Choose bounded contexts with the comparison criteria above and record the reasons for the chosen boundaries.
 6. Do not infer a bounded context from an aggregate, domain service, event-storming cluster, technical subsystem, algorithm, or named feature alone.
 7. Decide consistency, transaction, and integration boundaries only as far as the design needs them.
 8. Explain the advantages and trade-offs of the selected Context boundaries against plausible alternatives.

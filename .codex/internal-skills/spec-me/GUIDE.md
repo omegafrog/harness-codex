@@ -1,4 +1,3 @@
-
 # spec-me
 
 ## What it does
@@ -23,16 +22,16 @@ If the request is about broken behavior, flaky regression, or performance regres
 
 ## Flow
 
-1. [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)가 전달한 `context.worktree_ref`의 `worktree.json`을 읽고 `workspace`를 `session_worktree`로 사용한다. 신규 worktree를 생성하지 않는다. `workspace_root`와 모든 명령의 cwd는 이 준비된 worktree다. 실행 결과와 임시 파일에는 정본의 `session_directory`를 사용하고 `harness-session-output`이나 `.git` 경로를 다시 계산하지 않는다. standalone 요청도 먼저 메인 orchestrator의 workflow-compose 준비를 거친다. 구현 중 설계 변경은 caller 소유의 같은 worktree를 사용한다. 진입 preflight는 전달된 worktree에서 수행한다.
+1. [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md)가 전달한 `context.worktree_ref`의 `worktree.json`을 읽고 `workspace`를 `session_worktree`로 사용한다. 신규 worktree를 생성하지 않는다. `workspace_root`와 모든 명령의 cwd는 이 준비된 worktree다. standalone 요청도 먼저 메인 orchestrator의 workflow-compose 준비를 거친다. 구현 중 설계 변경은 caller 소유의 같은 worktree를 사용한다. 진입 preflight는 전달된 worktree에서 수행한다.
 2. Begin with the [Product Spec procedure](../../../.codex/internal-skills/product-spec/GUIDE.md) only. After Product decisions and the coverage gate are complete, load [Architecture decisions](references/architecture-decision.md); load the [adversarial review procedure](references/adversarial-spec-review.md) only when both Specs are ready for review. Load any diagram instructions only after the Architecture review passes and the inventory is settled. Keep working in this stage and session across phases.
 3. 리뷰와 완료 gate를 통과한 Specs와 근거를 작업 branch에 보존한다. 신규 Spec 요청은 `completed/OK`로 반환한다. 다음 계획 stage 선택과 실행은 orchestrator가 사용자 요청 범위에 따라 결정한다. 구현 중 설계 변경은 변경 Spec·결정·영향 요구 ID를 상위 구현 caller에 반환한다. caller는 영향 계획의 갱신과 리뷰를 `to-ticket`에 인계하고 승인 근거를 받은 뒤 보존한 fixed point에서 구현을 재개한다.
+
 ## Documents
 
 - Create `docs/specs/<plan-set-id>/` when missing. Product Spec은 `docs/specs/<plan-set-id>/product-spec.md`, Architecture Spec은 `docs/specs/<plan-set-id>/architecture-spec.md`에 둔다.
-- Spec artifacts use the selected `session_worktree`. Before accepting any writer/diagram result, verify every output resolves inside that directory. New Spec sessions preserve artifacts on the session branch until integration; design changes during implementation use the caller-owned workspace and return their approved artifacts to that caller.
+- Before accepting any writer/diagram result, verify every output resolves inside the selected `session_worktree`.
 - Read the `plan_set_id` created during workflow composition from the canonical `worktree.json` and use it for Spec, diagram, decision, plan, review, and handoff paths. Preserve it for the same plan set; do not regenerate or rename it.
 - For a path under the current plan set's Spec directory, run `node .codex/scripts/harness-spec-path.mjs <absolute-workspace-root> <spec-relative-path>` and use the returned path for writing or referencing the artifact. The result runner also derives the current Spec directory from canonical `worktree.json` before validating returned artifact paths and hashes.
-- Preserve an existing Spec owned by another workflow unless the user approves replacing it; revise the current workflow's own Spec when its review requires changes.
 
 ## Rules
 

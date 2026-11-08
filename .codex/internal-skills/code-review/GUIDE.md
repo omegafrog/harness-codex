@@ -59,43 +59,27 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 
 ## Process
 
-When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis using its role profile and return its findings. Do not dispatch another reviewer. The caller coordinates the two independent executions below.
+When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis using its role profile and return its findings. Do not dispatch another reviewer.
 
-1. Confirm the fixed point first.
-2. Use the execution coordinator to read the reviewer model and reasoning effort from setup configuration. The current execution dispatches the reviewers as independent subagents.
-3. If either value is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys. Model configuration belongs to the caller; do not invoke setup automatically.
-4. Dispatch a fresh `standards_reviewer` subagent following the [execution coordination guide](../../../.codex/internal-skills/skill-execution/GUIDE.md). Give it the diff, commit list, Product Spec, scoped plan/evidence and standards sources needed for the Standards axis; allow targeted source/test reads to verify acceptance claims.
-5. Dispatch a separate fresh `spec_reviewer` subagent. Give it the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence. Allow targeted source/caller/test reads needed to verify rule ownership and bypass paths; do not limit it to changed lines.
-   For every planned implementation, include the current Product and Architecture Specs and every canonical plan. Require the reviewer to compare their behavior and constraints directly; a plan set may still omit part of a Spec.
-6. Preserve the actual execution and Codex thread identifiers returned by the two calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
-7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for the independent execution.
-8. Keep the two subagent contexts isolated and read-only.
-9. Wait long enough for both review subagents to finish before aggregating.
-10. Aggregate the two reports without merging or reranking them. Preserve each axis and structured findings; use the repair decision below to route the next action.
+Otherwise the caller coordinates two independent executions:
 
-## Waiting
-
-Wait for both static calls to finish and preserve their actual return files and thread IDs before aggregating. A running process is pending, not a failed review.
-
-## Rules
-
-- Do not auto-fix.
-- Do not auto-rerun.
-- Do not auto-close issues.
-- Do not merge Standards and Spec into one verdict.
-- Do not let one axis mask the other.
-- If subagent isolation is unavailable, report that limitation instead of pretending it ran normally.
-- Treat a caller-specified supported model as higher priority than `.codex/harness.yaml` and the lightest-model fallback.
+1. Confirm the fixed point. If the reviewer model binding is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys; do not invoke setup.
+2. Dispatch a fresh `standards_reviewer` with the diff, commit list, Product Spec, scoped plan/evidence and standards sources; allow targeted source/test reads to verify acceptance claims.
+3. Dispatch a separate fresh `spec_reviewer` with the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence; allow source/caller/test reads beyond changed lines to verify rule ownership and bypass paths.
+   For every planned implementation, give both reviewers the current Product and Architecture Specs and every canonical plan so they compare behavior and constraints directly; a plan set may still omit part of a Spec.
+4. Run them in parallel when supported, otherwise as separate subagent executions. Keep both contexts isolated and read-only. Never run a reviewer pass inline in the parent or simulate isolation with two labels; if isolation is unavailable, report that limitation.
+5. Wait for both to finish (a running reviewer is pending, not failed). Preserve their actual return files, execution and thread IDs; never invent reviewer IDs.
+6. Aggregate without merging, reranking or letting one axis mask the other, then route the next action with the repair decision below. Do not auto-fix, auto-rerun or auto-close issues.
 
 수정이나 사용자 결정 요청 전에 호출한 구현 workflow가 [공통 리뷰 조정](../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 plan-review check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
 
 ## 판정과 수정 절차
 
 1. 현재 plan의 requirement IDs·canonical plan·실행 증거를 두 reviewer에게 전달한다. 추가로 발견한 상위 요구의 누락은 해당 요구의 plan owner를 확인해 기록한다. 다른 plan의 미구현 동작은 그 owner로 연결하고, 현재 plan의 인계 계약 위반은 현재 지적으로 보고한다.
-2. reviewer를 생성하기 전에 plan-review check의 현재 pass 결과와 canonical_plan의 kind·reference·input_key·hash_algorithm·normalization·sha256을 확인한다. wrapper runtime은 필수 metadata를 spawn 전에 검사한다. `hash_algorithm:sha256`, `normalization:frontmatter-status-excluded-v1`은 본문을 UTF-8로 읽고 시작 YAML frontmatter의 status 행만 제외한 hash이며 raw 파일 SHA와 비교하지 않는다. canonical hash 판정은 `harness-plan-review.mjs check` 결과를 사용한다. `canonical_plan.kind`는 file이며 reference 파일을 읽는다. `input_key`는 정본 본문의 hash 키이며 `#canonical` 접미사는 가상 snapshot 식별자다. 실제 파일의 존재 여부는 reference를 기준으로 판단한다.
+2. reviewer를 생성하기 전에 plan-review check의 현재 pass 결과와 `canonical_plan` metadata(kind·reference·input_key·hash_algorithm·normalization·sha256)를 확인한다. hash 판정은 `harness-plan-review.mjs check` 결과를 쓰고 raw 파일 SHA와 비교하지 않는다. `canonical_plan.reference` 파일을 읽으며, `input_key`의 `#canonical` 접미사는 가상 snapshot 식별자다.
 3. 검토 대상 코드·설정·실행 프로필은 지정된 implementation commit의 `git show <SHA>:<path>`와 diff를 기준으로 읽는다. Spec·plan의 승인 snapshot도 함께 보존하고 검토 중 변경 여부를 확인한다. 변경된 작업공간 내용을 특정 커밋의 구현 증거로 섞으면 입력을 다시 고정한다.
 4. reviewer는 아래 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. unrequested_behavior는 승인 근거 없이 diff에 들어간 동작이다. 권고는 kind:advisory로 기록한다. severity는 minor이고 blocking을 true로 쓰지 않는다. 수정 대상 kind(implementation_defect, test_defect, in_scope_spec_mismatch, verification_gap)는 `basis: {source, quote}`가 필수다. `source`는 product_spec, architecture_spec, canonical_plan, repository_standard이며 repository_standard는 `path`도 쓴다. 저장소 표준의 `path`는 `.codex/repository-conventions.md`, 기본 리뷰·테스트 규칙, `docs/agents/`, `docs/architecture/`, `docs/contracts/` 아래만 허용한다. `quote`는 해당 문서의 원문이어야 하며 runtime이 대조한다. 수정 대상 kind는 `intent_ref`와 `failure_scenario`도 필수이며 runtime이 ID의 존재를 대조한다.
-5. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합은 실제 계약 검사 pass를 확인한다. Learning의 자료 사용 승인 절차는 Architecture 선택 토론에서 적용한다.
+5. 각 plan은 현행 계약을 기준으로 검토한다. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치와 실제 계약 검사 pass를 확인한다. Learning의 자료 사용 승인 절차는 Architecture 선택 토론에서 적용한다.
 6. caller는 session JSON의 최상위 `review_input`에 repository, fixed_point, implementation_commit_sha, commit_list, diff_range, diff, product_spec_path, architecture_spec_path와 구현 stage 결과의 `unplanned_additions`를 보존한다. reviewer에게는 4번의 JSON 계약을 그대로 전달하고, 문장으로 된 응답은 JSON으로 다시 받는다. caller가 내용을 옮겨 적어 finding을 만들거나 reviewer 원본 필드를 고치지 않는다. `reviews` 배열은 role이 standards/spec인 두 객체를 포함한다. 각 객체에 실제 도구의 context_id·independent·fresh_context·implementation_commit_sha, 같은 review_input, reviewer의 state와 report.findings를 붙인다. 실제 agent ID와 원본 응답을 대조한다.
 7. 수정·설계 인계·사용자 질문을 하기 전에 지적이 있든 없든 `node .codex/scripts/harness-code-review.mjs repair --root <workspace_root> --plan <plan-id> --reviews <session-relative JSON>`을 실행한다. 기본 한도는 1회이며 승인된 설정이 2회이면 `--max-rounds 2`를 사용한다. `repair`는 `review_input.unplanned_additions` 배열이 없으면 차단한다. 근거 없음이나 인용 불일치로 판정된 수정 지적은 `unbacked_requirement`가 되어 `unrequested_behavior`와 함께 사용자 결정으로 간다. 실행 workspace의 `.io/runtime/reviews/implementation-<plan-id>.json`이 횟수·fixed point·지적의 정본이다. 같은 커밋의 중복 예약과 재개를 통한 한도 상향을 차단한다. wrapper runtime도 같은 예약 함수를 사용한다.
 8. requirement_ambiguity·architecture_decision·scope_expansion·spec_conflict이면 구현 수정을 보류하고 먼저 9번으로 사용자에게 묻는다. `spec-me`는 사용자가 Spec에 추가하기로 답한 지적만 받는다. 전환할 때는 요구를 키워 쓰지 말고 지적과 사용자 답을 그대로 넘긴다. 새 명령·새 업무 상태·새 규칙·새 경계가 필요한지와 현재 구현 결함을 구분하고, 발견한 경로 전체·필요 결정·기존 fixed point·commit·repair 기록을 checkpoint에 보존한다. 승인된 Spec과 영향 계획의 fresh review 뒤 같은 구현 기준으로 재개한다. 설계 재검토 중 구현 repair를 먼저 예약하지 않는다.
@@ -107,10 +91,6 @@ Wait for both static calls to finish and preserve their actual return files and 
 - fixed point와 implementation commit
 - 축별 state·구조화 findings·실제 reviewer metadata
 - 현재 plan의 미해결 blocker와 최종 통합으로 연결한 항목
-
-## 통합 계약 연속성
-
-각 plan은 현행 계약을 기준으로 담당 구현·인계·검증을 검토한다. 통합 계약의 본문·diagram·version·seal 갱신은 모든 구현 plan을 통합한 최종 workflow에서 수행한다. 중간 plan은 snapshot drift만 deferred로 기록하고 구조 오류와 실행 준비 실패는 계속 차단한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치를 확인한다.
 
 ## 소유 worktree
 

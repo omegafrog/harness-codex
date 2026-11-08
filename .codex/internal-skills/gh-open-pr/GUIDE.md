@@ -12,8 +12,7 @@ or the implementation workflow has completed its verification gates.
 - Confirm the head branch is pushed and the PR source is the intended branch.
 - Confirm the caller-supplied fixed base ref is an ancestor of the head branch.
 - Pass the caller-captured current session base branch unchanged to `gh pr create --base`. Do not infer or substitute the repository default branch.
-- For a plan PR, confirm every split plan has been created and linked to the parent Issue.
-- For a plan PR, confirm every child Issue has the configured `Planned` status.
+- For a plan PR, confirm every split plan has been created, linked to the parent Issue and has the configured `Planned` status.
 - For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
 - The workflow creates exactly one PR per plan set. Both plan PR and implementation PR cover the parent Issue and every child Issue; never create one PR per split plan or a child-scoped implementation PR.
 - Before creating or updating the implementation PR, confirm every split plan in the plan set has completed its verification gates and has terminal tracker status (`Done` in GitHub mode; `completed` in local-markdown mode). Do not create or update an implementation PR after an individual split plan finishes.
@@ -37,7 +36,6 @@ or the implementation workflow has completed its verification gates.
 - Put one closing trigger on each line when closing multiple issues.
 - Never add a closing trigger to a plan PR: planning does not complete implementation Issues.
 - For the single plan-set implementation PR, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
-- 단일 plan-set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
 - After creating or updating an implementation PR, verify that GitHub registered every intended Issue in `closingIssuesReferences`. If any Issue is missing, repair the body with the correct closing line, run `gh pr edit`, and verify again; stop if the link is still missing.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
