@@ -94,3 +94,9 @@ test('agent profiles only name their role and point at the GUIDE that owns the r
     assert.ok(Buffer.byteLength(instructions) <= limit, `${file}: move role rules into the GUIDE (${Buffer.byteLength(instructions)} > ${limit} bytes)`);
   }
 });
+
+test('the orchestrator is told to start stage runners in the background and not to read Harness source', async () => {
+  const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
+  assert.match(skill, /harness-agent-run\.mjs \.\.\. --background true`로만 시작한다/);
+  assert.match(skill, /Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다/);
+});

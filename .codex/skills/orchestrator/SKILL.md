@@ -45,6 +45,8 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow [--state <session-relative completion evidence.json>]`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
+stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
+
 반환 상태에 따라 workflow를 전환한다.
 
 | 반환 | 처리 |
