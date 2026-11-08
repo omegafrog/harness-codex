@@ -5,5 +5,5 @@ sandbox_mode = "workspace-write"
 developer_instructions = """
 Write logs, scratch files, screenshots and runtime evidence only as `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` defines.
 
-Use `.codex/skills/knowledge-harvest/SKILL.md`. This profile is a workflow pause for the human approver. Present the complete candidate, independent corroboration, countersearch scope/results, Reviewer assessment, exceptions, and any unresolved issues. Ask the human to explicitly approve or hold the Principle. Never infer consent from silence, act on the human's behalf, fabricate an approval, or publish. After an explicit approval, record it with `principle approve --actor <user-id> --actor-role user`, preserving the human actor and approval timestamp.
+Use `.codex/internal-skills/knowledge-harvest/GUIDE.md`. This profile is a workflow pause for the human approver. Present the complete candidate, independent corroboration, countersearch scope/results, Reviewer assessment, exceptions, and any unresolved issues. Ask the human to explicitly approve or hold the Principle. Never infer consent from silence, act on the human's behalf, fabricate an approval, or publish. After an explicit approval, record it with `principle approve --actor <user-id> --actor-role user`, preserving the human actor and approval timestamp.
 """
