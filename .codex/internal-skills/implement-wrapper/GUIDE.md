@@ -41,4 +41,4 @@ Spec 변경은 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISIO
 
 구현자는 직접 commit하지 않고 `commit_request`를 반환하며 실행기가 지정된 파일만 commit한다. 메인 세션이나 관찰자가 대신 commit하지 않는다.
 
-이미 구현된 Spec 밖 동작을 유지할지 제거할지는 Spec 수정을 시작하기 전에 사용자가 정한다. 구현자의 `unplanned_additions`와 리뷰의 `unrequested_behavior`·`unbacked_requirement`는 `code-review`의 [판정과 수정 절차](../../../.codex/internal-skills/code-review/GUIDE.md#판정과-수정-절차)에 따라 `USER_DECISION_REQUIRED`로 반환한다. wrapper가 임의로 유지하거나 일관성을 맞추려고 확대하지 않는다. 유지가 선택된 경우에만 위의 `SPEC_REVISION_REQUIRED` 경로로 간다.
+이미 구현된 Spec 밖 동작을 유지할지 제거할지는 Spec 수정을 시작하기 전에 사용자가 정한다. 구현자의 `unplanned_additions`와 리뷰의 `unrequested_behavior`·`unbacked_requirement`는 `code-review`의 [판정과 수정 절차](../../../.codex/internal-skills/code-review/references/repair.md#판정과-수정-절차)에 따라 `USER_DECISION_REQUIRED`로 반환한다. wrapper가 임의로 유지하거나 일관성을 맞추려고 확대하지 않는다. 유지가 선택된 경우에만 위의 `SPEC_REVISION_REQUIRED` 경로로 간다.

@@ -99,7 +99,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /internal-skills\/code-review\/GUIDE\.md/);
     }
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /unrequested_behavior/);
-    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
+    assert.match(await read('.codex/internal-skills/code-review/references/repair.md'), /next_action: user-decision/);
     assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
     assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);

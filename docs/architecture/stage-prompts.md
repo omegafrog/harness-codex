@@ -34,15 +34,17 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 | stage | role · 프로필 | GUIDE | sandbox | tier | 크기 |
 |---|---|---|---|---|---|
 | implementation | [`implementation_agent`](../../.codex/agents/implementation_agent.toml) | [`implement`](../../.codex/internal-skills/implement/GUIDE.md) | workspace-write | implementation | 14.5 / 0.5 / 0 KB |
-| standards | [`standards_reviewer`](../../.codex/agents/standards_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 17.5 / 0.7 / 0 KB |
-| spec | [`spec_reviewer`](../../.codex/agents/spec_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 17.5 / 1.1 / 0 KB |
+| standards | [`standards_reviewer`](../../.codex/agents/standards_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 8.6 / 0.7 / 0 KB |
+| spec | [`spec_reviewer`](../../.codex/agents/spec_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 8.6 / 1.1 / 0 KB |
 
 ### `code-review` ([manifest](../../.codex/workflows/code-review.yaml))
 
 | stage | role · 프로필 | GUIDE | sandbox | tier | 크기 |
 |---|---|---|---|---|---|
-| standards | [`standards_reviewer`](../../.codex/agents/standards_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 17.5 / 0.7 / 0 KB |
-| spec | [`spec_reviewer`](../../.codex/agents/spec_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 17.5 / 1.1 / 0 KB |
+| standards | [`standards_reviewer`](../../.codex/agents/standards_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 8.6 / 0.7 / 0 KB |
+| spec | [`spec_reviewer`](../../.codex/agents/spec_reviewer.toml) | [`code-review`](../../.codex/internal-skills/code-review/GUIDE.md) | read-only | implementation | 8.6 / 1.1 / 0 KB |
+
+code-review GUIDE는 reviewer용 판정 기준만 담는다. 리뷰 실행·`repair`·사용자 질문 절차는 호출 쪽만 읽는 [`code-review/references/repair.md`](../../.codex/internal-skills/code-review/references/repair.md)에 있어 reviewer stage에 들어가지 않는다.
 
 ### `spec-me` ([manifest](../../.codex/workflows/spec-me.yaml))
 
