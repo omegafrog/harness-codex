@@ -108,6 +108,13 @@ async function latestActivity(session, entry) {
   const log = await readFile(join(directory, 'runner.stderr.log'), 'utf8').catch(() => '');
   const threadId = log.match(/"thread_id":"([^"]+)"/)?.[1];
   if (!threadId) return null;
+  const activity = await threadActivity(threadId);
+  return activity ? `${activity.text}  (${ago(activity.age)})` : null;
+}
+
+const ago = (seconds) => seconds < 120 ? `${seconds}초 전` : seconds < 7200 ? `${Math.round(seconds / 60)}분 전` : `${Math.round(seconds / 3600)}시간 전`;
+
+async function threadActivity(threadId) {
   const rollout = await rolloutFor(threadId);
   if (!rollout) return null;
   const info = await stat(rollout);
@@ -115,17 +122,27 @@ async function latestActivity(session, entry) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
     const text = describe(event);
-    if (text) {
-      const age = Math.max(0, Math.round((Date.now() - (Date.parse(event.timestamp) || info.mtimeMs)) / 1000));
-      return `${text}  (${age}초 전)`;
-    }
+    if (text) return { text, age: Math.max(0, Math.round((Date.now() - (Date.parse(event.timestamp) || info.mtimeMs)) / 1000)) };
   }
   return null;
 }
 
+// The main orchestrator works between stages (independent reviews, repair, tracker checks); show it too.
+async function orchestratorRows(session, state, progress) {
+  const id = progress?.orchestrator_session_id || state.orchestrator_session_id;
+  const rows = [];
+  const activity = id ? await threadActivity(id).catch(() => null) : null;
+  const active = activity && activity.age < 90;
+  rows.push(`  ${active ? '▶' : '·'} ${'orchestrator'.padEnd(18)} ${active ? '진행 중' : '대기'}${activity && !active ? ` · 마지막 활동 ${ago(activity.age)}` : ''}`);
+  const reviewers = await activeSubagents(session, null, 'runtime/orchestrator/subagents.jsonl');
+  if (reviewers.length) rows.push(`      └ 하위 agent: ${reviewers.join(', ')}`);
+  if (active) rows.push(`      └ ${activity.text}  (${ago(activity.age)})`);
+  return rows;
+}
+
 // Reviewers a stage has started and not yet stopped.
-async function activeSubagents(session, entry) {
-  const text = await readFile(join(session, 'runtime/executions', entry?.execution_id || '-', 'subagents.jsonl'), 'utf8').catch(() => '');
+async function activeSubagents(session, entry, path = null) {
+  const text = await readFile(path ? join(session, path) : join(session, 'runtime/executions', entry?.execution_id || '-', 'subagents.jsonl'), 'utf8').catch(() => '');
   const open = new Map();
   for (const line of text.split('\n').filter(Boolean)) {
     try { const e = JSON.parse(line); if (e.event === 'SubagentStart') open.set(e.agent_id, e.agent_type); else if (e.event === 'SubagentStop') open.delete(e.agent_id); } catch { /* skip */ }
@@ -163,6 +180,7 @@ export async function render(session) {
     }
   }
   lines.push(`기록된 단계 ${counts.completed}/${counts.total} 완료 (앞으로의 단계는 알 수 없음)`, ...rows);
+  lines.push(...await orchestratorRows(session, state, progress));
   lines.push(`갱신 ${state.updated_at || '-'}`);
   return lines.join('\n');
 }
