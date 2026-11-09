@@ -8,7 +8,7 @@
 
 For assigned headless stages, the runner supplies the selected internal GUIDE and current input. Load linked procedures only when their phase begins; do not preload later-phase references. On same-session resume, continue from new answers or feedback and the current phase without rereading unchanged entry instructions. If a new session or context compaction leaves required rules unavailable, reload the current phase's guide and authoritative references before proceeding.
 
-비대화식 Claude 메인 orchestrator의 시작과 재개는 대상 workspace를 cwd로 `node .codex/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .codex/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<요청>'`으로 실행한다. 이 호출은 사용자 요청 범위의 메인 Claude에 `bypassPermissions`를 명시한다. 각 stage의 권한은 아래 profile 규칙을 따른다.
+비대화식 Claude 메인 orchestrator의 시작과 재개는 대상 workspace를 cwd로 `node .claude/harness/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .claude/harness/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<요청>'`으로 실행한다. 이 호출은 사용자 요청 범위의 메인 Claude에 `bypassPermissions`를 명시한다. 각 stage의 권한은 아래 profile 규칙을 따른다.
 
 orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행한다. 입력 검증·상태 기록·gate는 공통 runner가 소유하고 명령 실행·결과 해석·세션 재개는 `.harness/src/workflow/providers/`의 선택된 adapter가 소유한다. `agents.provider`의 기본값은 `codex`다. 같은 단계 재개는 `worktree.json`에 기록된 provider를 유지하며 단계 경계에서는 설정된 provider를 사용한다. Codex는 native subagent를, Claude Code는 `.claude/agents/<role>.md`에 설치된 동일 role의 native subagent를 사용한다. Claude subagent의 시작·종료 ID와 결과는 `runtime/executions/<execution-id>/subagents.jsonl`에 기록한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
 

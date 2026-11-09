@@ -50,15 +50,6 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 
 This project has a Beads workspace for durable tasks and shared handoff. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
 
-## Canonical contracts
-
-- Full Product contract: `docs/contracts/product.md`
-- DDD architecture contract: `docs/contracts/architecture.md`
-- Version/inventory: `docs/contracts/manifest.json`
-- Clickable diagram/detail view: `docs/contracts/architecture.html`
-
-Spec·계획·개별 plan 구현은 `docs/contracts/`를 수정하거나 seal하지 않는다. 최종 구현 workflow만 `sync-contracts`로 갱신한다. 다음 설계는 현행 계약·용어 index·Context map과 source를 먼저 읽으며, ticket Spec은 변경 이력일 뿐 통합 계약을 대신하지 않는다.
-
 ## 테스트·서비스 실행
 
 Harness 소비자 workflow E2E의 정본 테스트 저장소: `/home/jiwoo/workspace/harness-test` (private GitHub: `git@github.com:omegafrog/harness-test.git`). `docs/agents/EXEC.md`의 계산기·인증·커뮤니티 black-box 시나리오와 두 `codex exec` 원문을 사용하고 implement 완료 후 산출물을 검증한다. 중단·실패·질문에 관찰자가 임의로 개입하거나 자동 재실행하지 않는다. 다른 세션에서도 이 저장소를 사용하며, 경로가 없으면 원격 주소로 찾거나 다시 clone한다. 테스트 전 저장소 상태와 설치된 Harness 버전을 확인한다.

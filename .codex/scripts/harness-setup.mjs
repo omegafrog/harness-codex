@@ -261,9 +261,15 @@ async function main() {
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
   const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
-  const provider = reuse ? currentProvider : await choose('실행 provider 선택', [
-    { value: 'codex', label: 'Codex CLI' }, { value: 'claude-code', label: 'Claude Code CLI' },
-  ], currentProvider, { agents: config.agents || {} });
+  // Only providers this installation carries can be chosen (install --provider codex|claude-code|all).
+  const exists = (path) => existsSync(join(root, path));
+  const offered = [
+    ...(exists('.agents/skills/orchestrator/SKILL.md') ? [{ value: 'codex', label: 'Codex CLI' }] : []),
+    ...(exists('.claude/harness/providers/claude-code.mjs') ? [{ value: 'claude-code', label: 'Claude Code CLI' }] : []),
+  ];
+  if (!offered.length) throw new Error('No agent provider is installed; run harness-codex install --provider codex|claude-code|all');
+  if (reuse && !offered.some((item) => item.value === currentProvider)) throw new Error(`agents.provider is ${currentProvider}, which is not installed; install it or choose a new setup`);
+  const provider = reuse ? currentProvider : await choose('실행 provider 선택', offered, offered.some((item) => item.value === currentProvider) ? currentProvider : offered[0].value, { agents: config.agents || {} });
   const validProviderEffort = (value) => provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) : validEffort(value);
   const claudeModels = [
     { id: 'opus', description: '복잡한 설계·최종 검토' },

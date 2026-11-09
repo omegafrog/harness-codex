@@ -51,7 +51,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
     const args = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
     assert.ok(args.includes('sandbox_workspace_write.network_access=true'));
-    const claude = await import(`file://${resolve(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const claude = await import(`file://${resolve(root, '.claude/harness/providers/claude-code.mjs')}`);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
     assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     const otherArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'to-ticket' });

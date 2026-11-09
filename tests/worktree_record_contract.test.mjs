@@ -457,7 +457,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, resultRef), 'utf8')).worktree_ref, tree.worktree_ref);
     const hook = join(root, '.codex/scripts/harness-orchestrator-hook.mjs');
     const context = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' })).hookSpecificOutput.additionalContext;
-    const claudeHook = join(root, '.codex/scripts/harness-claude-orchestrator-hook.mjs');
+    const claudeHook = join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs');
     const claudeContext = JSON.parse(execFileSync(process.execPath, [claudeHook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' })).hookSpecificOutput.additionalContext;
     for (const startupContext of [context, claudeContext]) {
       assert.match(startupContext, /same feature.*continue a listed matching worktree or start a new workflow/);

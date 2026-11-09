@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../.harness/src/workflow/execution-context.mjs';
 import { stageConfigArgs } from '../.harness/src/workflow/providers/codex.mjs';
-import { allowedToolsForRole, buildCommand as buildClaudeCommand } from '../.harness/src/workflow/providers/claude-code.mjs';
+import { allowedToolsForRole, buildCommand as buildClaudeCommand } from '../.claude/harness/providers/claude-code.mjs';
 
 test('same-session resume sends only new inputs and reloads changed instruction files', () => {
   const version = instructionVersion('guide-v1');

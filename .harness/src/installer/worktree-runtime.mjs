@@ -5,7 +5,6 @@ import { readHarnessLock } from './lock.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { protectLocalInstallArtifacts } from './local-exclude.mjs';
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
-import { syncClaudeOrchestratorHook } from './claude-orchestrator-hook.mjs';
 
 // Linked worktrees inherit tracked application files, not ignored installed assets.
 export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
@@ -40,6 +39,6 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
   }
   if (lock) {
     await syncOrchestratorHook(targetRoot);
-    await syncClaudeOrchestratorHook(targetRoot);
+    await (await import('./update.mjs')).syncInstalledClaudeHook(targetRoot);
   }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFile, lstat, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
 import { inspectActiveReviewAttempt, updateReviewAttempt } from '../../.harness/src/workflow/review-attempts.mjs';
@@ -8,6 +8,15 @@ async function forkedTranscript(path) {
   if (typeof path !== 'string' || !path) return false;
   const first = (await readFile(path, 'utf8').catch(() => '')).split('\n', 1)[0];
   try { return Boolean(JSON.parse(first)?.payload?.forked_from_id); } catch { return false; }
+}
+
+// Claude Code can reach this script through both the project settings and a stage's --settings, and runs them
+// concurrently. The first caller for an (event, agent) claims it with an exclusive marker; the others stop quietly.
+let claimedMarker = null;
+async function claimEvent(directory, event) {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const marker = join(directory, `.claimed-${event.hook_event_name}-${event.agent_id}`.replace(/[^A-Za-z0-9._-]/g, '_'));
+  try { await writeFile(marker, '', { flag: 'wx', mode: 0o600 }); claimedMarker = marker; return true; } catch (error) { if (error.code === 'EEXIST') return false; throw error; }
 }
 
 try {
@@ -25,6 +34,7 @@ try {
     let worktree;
     try { worktree = JSON.parse(await readFile(recordFile, 'utf8')); } catch { process.exit(0); }
     if (!worktree?.session_directory || worktree.state !== 'active') process.exit(0);
+    if (!await claimEvent(join(worktree.session_directory, 'runtime/orchestrator'), event)) process.exit(0);
     const orchestratorLog = 'runtime/orchestrator/subagents.jsonl';
     await assertWorkspaceTarget(worktree.session_directory, orchestratorLog);
     const target = join(worktree.session_directory, orchestratorLog);
@@ -38,6 +48,7 @@ try {
     process.exit(0);
   }
   if (!session || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Harness execution session is unavailable');
+  if (!await claimEvent(join(session, 'runtime/executions', executionId), event)) process.exit(0);
   const relative = `runtime/executions/${executionId}/subagents.jsonl`;
   await assertWorkspaceTarget(session, relative);
   const path = join(session, relative);
@@ -84,6 +95,8 @@ try {
   }
   await appendFile(path, `${JSON.stringify(record)}\n`, { flag: 'a', mode: 0o600 });
 } catch (error) {
+  // A failed attempt must not block a later valid delivery of the same event.
+  if (claimedMarker) await rm(claimedMarker, { force: true });
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;
 }

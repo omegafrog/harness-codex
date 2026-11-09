@@ -12,7 +12,7 @@ import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checko
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install; update always does)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --provider <codex|claude-code|all>  Agent provider to install (install default: all; update keeps the installed providers unless given)\n  --force           Back up and overwrite selected managed files (install; update always does)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -31,6 +31,7 @@ function parseArgs(argv) {
     installSkills: true,
     force: false,
     noBackup: false,
+    provider: null,
   };
 
   while (args.length > 0) {
@@ -45,6 +46,11 @@ function parseArgs(argv) {
     } else if (arg === "--skills-only") {
       if (command !== "install") throw new Error("--skills-only is only supported by install");
       options.installAgents = false;
+    } else if (arg === "--provider") {
+      if (command === "lock") throw new Error("--provider is only supported by install/update");
+      const value = args.shift();
+      if (!["codex", "claude-code", "all"].includes(value)) throw new Error("--provider must be codex, claude-code or all");
+      options.provider = value;
     } else if (arg === "--force") {
       if (command === "lock") throw new Error("--force is only supported by install/update");
       options.force = true;
@@ -141,13 +147,15 @@ function ensureBeadsCli() {
 
 async function verify(projectRoot, options) {
   if (options.installSkills) {
+    const providers = options.provider || "all";
+    const skillRoots = [...(providers !== "claude-code" ? [".agents/skills"] : []), ...(providers !== "codex" ? [".claude/skills"] : [])];
     for (const name of ["orchestrator", "eli5", "setup"]) {
-      await stat(join(projectRoot, ".agents", "skills", name, "SKILL.md"));
-      await stat(join(projectRoot, ".claude", "skills", name, "SKILL.md"));
+      for (const directory of skillRoots) await stat(join(projectRoot, directory, name, "SKILL.md"));
     }
+    if (providers !== "codex") await stat(join(projectRoot, ".claude", "harness", "providers", "claude-code.mjs"));
     const internalSkills = new Set(await readdir(join(projectRoot, ".codex", "internal-skills")));
     const lock = JSON.parse(await readFile(join(projectRoot, ".codex", "harness-lock.json"), "utf8"));
-    for (const directory of [".agents/skills", ".claude/skills"]) {
+    for (const directory of skillRoots) {
       const exposed = await readdir(join(projectRoot, directory));
       const unexpected = exposed.find((name) => internalSkills.has(name) && !["orchestrator", "eli5", "setup"].includes(name)
         && lock.files?.[`${directory}/${name}/SKILL.md`]
@@ -240,7 +248,7 @@ async function main() {
     if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
     if (options.installAgents) await assertSafeDirectory(projectRoot, join(projectRoot, ".codex", "agents"), "agent target directory");
     const fullInstall = options.installSkills && options.installAgents;
-    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
+    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, provider: options.provider, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
@@ -264,7 +272,7 @@ async function main() {
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
     // update always matches the latest release for Harness-owned paths; local edits are backed up first.
-    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup });
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup, provider: options.provider });
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);

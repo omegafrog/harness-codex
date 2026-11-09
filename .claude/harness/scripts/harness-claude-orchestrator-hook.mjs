@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 
-const installed = new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url);
+const installed = new URL('../../../.harness/src/workflow/startup-state.mjs', import.meta.url);
 const { bindOrchestratorSession, harnessUpdateNotice, inspectStartupState, refreshWorkflowProgress } = await import(installed.href);
 try {
   let input = '';
@@ -27,7 +27,7 @@ try {
   try { observed = uninitialized ? { decision_hint: 'setup_candidate', reason: 'Git repository not initialized', provider: 'claude-code', session_id: event.session_id || null } : await inspectStartupState({ workspaceRoot: root, sessionId: event.session_id, provider: 'claude-code' }); }
   catch (error) { observed = { decision_hint: 'inspect_required', reason: error.message, provider: 'claude-code', session_id: event.session_id || null }; }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
-    const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
+    const { inspectSetupConfiguration } = await import(new URL('../../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
     observed.setup_configuration = await inspectSetupConfiguration({ workspace_root: root });
     if (observed.setup_configuration.status === 'setup_required') { observed.decision_hint = 'setup_candidate'; observed.reason = 'Required setup configuration is missing or invalid'; }
   }

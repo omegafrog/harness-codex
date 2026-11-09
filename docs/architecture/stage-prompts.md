@@ -6,7 +6,7 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 
 | 순서 | 내용 | 정본 파일 | 전달 방식 |
 |---|---|---|---|
-| 1 | Worker 기본 규칙 (0.8KB) | [`worker-base.md`](../../.codex/internal-skills/skill-execution/worker-base.md) | Codex: `model_instructions_file` ([codex.mjs](../../.harness/src/workflow/providers/codex.mjs) `stageConfigArgs`). Claude: `--system-prompt`에 고정 문구 한 단락을 덧붙여 전달 ([claude-code.mjs](../../.harness/src/workflow/providers/claude-code.mjs) `buildCommand`) |
+| 1 | Worker 기본 규칙 (0.8KB) | [`worker-base.md`](../../.codex/internal-skills/skill-execution/worker-base.md) | Codex: `model_instructions_file` ([codex.mjs](../../.harness/src/workflow/providers/codex.mjs) `stageConfigArgs`). Claude: `--system-prompt`에 고정 문구 한 단락을 덧붙여 전달 ([claude-code.mjs](../../.claude/harness/providers/claude-code.mjs) `buildCommand`) |
 | 2 | 프로젝트 지침 | consumer의 `AGENTS.md`(Codex), `CLAUDE.md`(Claude Code) | provider 기본 동작으로 읽힌다. Harness는 이를 끄거나 따로 넣지 않는다 |
 | 3 | 실행 위치 안내 | — | prompt 첫 문장: workspace 경로, `input.json` 경로, runtime 디렉터리, plan set의 Spec·plan 디렉터리 |
 | 4 | Stage GUIDE 전문 | `.codex/internal-skills/<skill>/GUIDE.md` | prompt에 `Current stage guide (...)`로 붙임 |

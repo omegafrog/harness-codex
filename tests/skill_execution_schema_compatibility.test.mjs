@@ -105,12 +105,12 @@ test('installed stage accepts changed documents while preserving review snapshot
     const managedAssets = await discoverManagedAssetPaths(sourceRoot);
     assert.ok(managedAssets.includes('.codex/agents/tracker_publisher.toml'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-agent-run.mjs'));
-    assert.ok(managedAssets.includes('.codex/scripts/harness-claude-orchestrator.mjs'));
+    assert.ok(managedAssets.includes('.claude/harness/scripts/harness-claude-orchestrator.mjs'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-output-schema.mjs'));
     assert.ok(managedAssets.includes('.codex/internal-skills/skill-execution/references/stage-return.md'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/index.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/codex.mjs'));
-    assert.ok(managedAssets.includes('.harness/src/workflow/providers/claude-code.mjs'));
+    assert.ok(managedAssets.includes('.claude/harness/providers/claude-code.mjs'));
     assert.ok(managedAssets.includes('.claude/agents/spec_reviewer.md'));
     assert.ok(managedAssets.includes('.claude/skills/orchestrator/SKILL.md'));
     assert.ok(managedAssets.includes('.codex/internal-skills/tracker-publish/GUIDE.md'));
@@ -127,7 +127,7 @@ test('installed stage accepts changed documents while preserving review snapshot
       assert.ok((await readFile(join(root, provider, 'skills/spec-me/references/../../../../.codex/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
     }
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
-    const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.harness/src/installer/claude-orchestrator-hook.mjs')}`);
+    const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.claude/harness/installer/claude-orchestrator-hook.mjs')}`);
     const codex = await import(`file://${join(root, '.harness/src/workflow/providers/codex.mjs')}`);
     await writeFile(join(root, 'app.txt'), 'application');
     execFileSync('git', ['add', 'app.txt'], { cwd: root });
@@ -151,7 +151,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(linkedStatus, /app\.txt/);
     assert.doesNotMatch(linkedStatus, /\.codex/);
     execFileSync('git', ['check-ignore', '.codex/harness.yaml'], { cwd: linked });
-    const claude = await import(`file://${join(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const claude = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
     const providers = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     const { writeOutputSchema: writeInstalledOutputSchema } = await import(`file://${join(root, '.harness/src/workflow/output-schema.mjs')}`);
     assert.equal(providers.configuredProvider({ agents: { provider: 'claude-code' } }), 'claude-code');
@@ -189,7 +189,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(claudeAgent, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
     assert.match(claudeAgent, /You are the spec_reviewer agent/);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
-    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
+    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
     assert.match(claudeHook.hookSpecificOutput.additionalContext, /"provider":"claude-code"/);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'sonnet', reasoning_effort: 'medium' }, schema: { type: 'object' }, resume: null });
     assert.ok(claudeArgs.includes('--json-schema'));
@@ -204,7 +204,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     const fakeSession = '123e4567-e89b-12d3-a456-426614174000';
     await writeFile(fakeClaude, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
     await chmod(fakeClaude, 0o755);
-    const launcher = join(root, '.codex/scripts/harness-claude-orchestrator.mjs');
+    const launcher = join(root, '.claude/harness/scripts/harness-claude-orchestrator.mjs');
     for (const args of [['continue'], ['--resume', fakeSession, 'continue']]) {
       const forwarded = JSON.parse(execFileSync(process.execPath, [launcher, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }));
       assert.deepEqual(forwarded, ['-p', '--permission-mode', 'bypassPermissions', ...args]);
@@ -274,8 +274,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
     assert.doesNotMatch(status, /\.claude\//);
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-claude-orchestrator.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/scripts/harness-claude-orchestrator.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/agents/spec_reviewer.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/skills/orchestrator/SKILL.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/settings.local.json'], { cwd: root });

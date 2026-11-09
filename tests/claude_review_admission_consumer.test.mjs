@@ -60,7 +60,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/owned.md'), 'Project-owned contract.\n');
 
-    const provider = await import(`file://${join(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const provider = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
     const command = provider.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'claude-sonnet', reasoning_effort: 'medium' }, schema: {}, resume: 'resume-id', role: null, skill: 'spec-me', workerBase: 'Compact worker base.' });
     const settings = JSON.parse(command[command.indexOf('--settings') + 1]);
     assert.equal(settings.hooks.PreToolUse[0].matcher, 'Agent');
@@ -182,7 +182,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.match(status, /docs\/contracts\/owned\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/workflow\/providers\/claude-code\.mjs/);
-    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-admission.mjs'], { cwd: root });
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -91,7 +91,7 @@ export function orchestratorResumeCommand({ provider, sessionId, root, message, 
   // The resumed turn keeps the workflow's model binding instead of the user's CLI default.
   const model = binding && binding.provider === provider ? binding : null;
   if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', ...(model ? ['--model', model.model, '-c', `model_reasoning_effort=${JSON.stringify(model.reasoning_effort)}`] : []), ...(sandbox ? ['-c', `sandbox_mode=${JSON.stringify(sandbox)}`] : []), sessionId, message], cwd: root };
-  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.codex/scripts/harness-claude-orchestrator.mjs'), ...(model ? ['--model', model.model] : []), '--resume', sessionId, message], cwd: root };
+  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.claude/harness/scripts/harness-claude-orchestrator.mjs'), ...(model ? ['--model', model.model] : []), '--resume', sessionId, message], cwd: root };
   return null;
 }
 

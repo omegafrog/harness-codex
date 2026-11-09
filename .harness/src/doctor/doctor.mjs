@@ -9,7 +9,6 @@ import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
-import { inspectClaudeOrchestratorHook } from '../installer/claude-orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { isWithin } from "../eval/util.mjs";
@@ -73,16 +72,16 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'orchestrator-hook', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
-    paths.push('.claude/skills/orchestrator/SKILL.md');
+    paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
       if (profile.isFile() && profile.name.endsWith('.toml')) paths.push(`.claude/agents/${profile.name.replace(/\.toml$/, '.md')}`);
     }
@@ -457,6 +456,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   }
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'claude-code', () => false)) {
     try {
+      const { inspectClaudeOrchestratorHook } = await import('../../../.claude/harness/installer/claude-orchestrator-hook.mjs').catch((error) => { throw error.code === 'ERR_MODULE_NOT_FOUND' ? new Error('agents.provider is claude-code but the Claude provider is not installed; install with --provider claude-code or all') : error; });
       const hook = await inspectClaudeOrchestratorHook(repositoryRoot);
       if (!hook.valid) diagnostics.push(diagnostic('claude_orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {

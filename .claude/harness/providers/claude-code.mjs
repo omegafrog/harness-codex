@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { parseYaml } from '../../eval/yaml.mjs';
+import { parseYaml } from '../../../.harness/src/eval/yaml.mjs';
 
 export const id = 'claude-code';
 

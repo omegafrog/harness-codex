@@ -6,7 +6,6 @@ import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./loc
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
-import { syncClaudeOrchestratorHook } from './claude-orchestrator-hook.mjs';
 import { transformSourceContent } from './transforms.mjs';
 import { LEGACY_ASSETS } from './legacy-assets.mjs';
 
@@ -110,6 +109,8 @@ async function discoverSourceDescriptors(sourceRoot) {
   for (const sourcePath of await listDirectoryFiles(sourceRoot, "bin", (entry) => entry.isFile() && /^plantuml-(bootstrap|render)\.mjs$/.test(entry.name))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^bin\//, ".codex/tools/")));
   }
+  // Everything specific to the Claude Code provider lives under .claude/harness and installs to the same path.
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".claude/harness", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   descriptors.push(sourceDescriptor('bin/harness-doctor.mjs', '.codex/scripts/harness-doctor.mjs'));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/workflows", (entry) => entry.isFile() && entry.name === "harness-contracts.yml")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github", (entry) => entry.isFile() && entry.name === "pull_request_template.md")) {
@@ -266,9 +267,23 @@ export async function writeHarnessLock({ sourceRoot, targetRoot, lockPath = DEFA
   return lock;
 }
 
-export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, force = false, noBackup = false, initialize = false, scope = "all" } = {}) {
+export const INSTALL_PROVIDERS = Object.freeze(["codex", "claude-code", "all"]);
+
+// Provider-owned install paths: .agents is Codex's skill root; .claude is everything Claude Code uses.
+// Anything else (.codex, .harness, shared scripts and GUIDEs) is shared by both providers.
+const targetProvider = (path) => path.startsWith(".claude/") ? "claude-code" : path.startsWith(".agents/") ? "codex" : null;
+
+// An update keeps the providers already installed; a fresh install without a choice installs both.
+export function installedProviders(lock) {
+  const paths = Object.keys(lock?.files || {});
+  const codex = paths.some((path) => targetProvider(path) === "codex"), claude = paths.some((path) => targetProvider(path) === "claude-code");
+  return codex && claude ? "all" : codex ? "codex" : claude ? "claude-code" : "all";
+}
+
+export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, force = false, noBackup = false, initialize = false, scope = "all", provider = null } = {}) {
   if (!sourceRoot || !targetRoot) throw new TypeError("sourceRoot and targetRoot are required");
   if (typeof force !== "boolean" || typeof noBackup !== "boolean" || typeof initialize !== "boolean" || !["all", "agents", "skills"].includes(scope)) throw new TypeError("Invalid installer force/noBackup/initialize/scope options");
+  if (provider !== null && !INSTALL_PROVIDERS.includes(provider)) throw new TypeError(`provider must be one of ${INSTALL_PROVIDERS.join(", ")}`);
   if (await isHarnessSourceCheckout(sourceRoot, targetRoot)) {
     return { lock: null, updated: [], added: [], removed_lock_entries: [], removed_directories: [], backup_directory: null, skipped: [{ path: ".codex", status: "source_checkout" }] };
   }
@@ -281,7 +296,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const existingLock = await readHarnessLock(lockFile);
   if (!existingLock && !initialize) throw new InstallerUpdateError(`Harness lock is missing: ${lockPath}`, { path: lockFile });
   const lock = existingLock || { schema_version: 1, files: {} };
-  const descriptors = await discoverSourceDescriptors(sourceRoot);
+  const activeProvider = provider || installedProviders(lock);
+  const descriptors = (await discoverSourceDescriptors(sourceRoot)).filter((descriptor) => activeProvider === "all" || [null, activeProvider].includes(targetProvider(descriptor.target_path)));
   const internalSkillNames = new Set((await readdir(resolve(sourceRoot, '.codex/internal-skills'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error)))
     .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
@@ -391,8 +407,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    await syncOrchestratorHook(targetRoot, { noBackup });
-    await syncClaudeOrchestratorHook(targetRoot, { noBackup });
+    if (activeProvider !== 'claude-code') await syncOrchestratorHook(targetRoot, { noBackup });
+    if (activeProvider !== 'codex') await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };
 }
@@ -449,6 +465,12 @@ async function removeEmptyTree(root, directory) {
     removed.push(relative(root, directory));
   }
   return removed;
+}
+
+// The Claude hook installer is itself a Claude provider file, so it is loaded only where it was installed.
+export async function syncInstalledClaudeHook(targetRoot, options = {}) {
+  const module = await import("../../../.claude/harness/installer/claude-orchestrator-hook.mjs").catch((error) => error.code === "ERR_MODULE_NOT_FOUND" ? null : Promise.reject(error));
+  if (module && await lstat(resolve(targetRoot, ".claude/harness/scripts/harness-claude-orchestrator-hook.mjs")).then(() => true, () => false)) await module.syncClaudeOrchestratorHook(targetRoot, options);
 }
 
 async function removeEmptyLegacyRuntimeDirectories(root, directory) {
