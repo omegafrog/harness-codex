@@ -36,7 +36,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       }
     }
     const wrapper = await read('.codex/internal-skills/implement-wrapper/GUIDE.md');
-    assert.match(wrapper, /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
+    assert.match(wrapper, /tracker-publish가 만든 Issue와 Beads mirror를 확인한다/);
     assert.match(wrapper, /최종 E2E 시나리오에 대한 실제 사용자 승인/);
     assert.match(wrapper, /미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required\/SPEC_REVISION_REQUIRED`로 orchestrator에 반환/);
     const implementGuide = await read('.codex/internal-skills/implement/GUIDE.md');

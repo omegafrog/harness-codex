@@ -2,11 +2,9 @@
 
 이 파일은 `.codex/harness.yaml`의 `tracker.mode: github`일 때만 읽는다. GitHub Issue와 configured GitHub Project가 ticket 상태·승인·의존성의 기준이다. `.codex/harness.yaml`의 repository, project owner/number, status field를 사용한다.
 
-## 구현 시작 시 계획 draft 활성화
+## 구현 시작 전 확인
 
-계획 발행 시점에는 저장소 Issue가 없고 Project draft item만 있다. 구현을 처음 시작하기 전에 `harness-publication.mjs inspect`로 configured Project에서 plan ID ↔ Project item ID mapping을 조회한다. draft가 남아 있으면 `convertProjectV2DraftIssueItemToIssue`로 plan set 전체를 저장소 Issue로 변환해 dependency dispatch가 같은 Issue graph를 사용하도록 한다. 변환된 Issue의 node ID, number, URL은 같은 Project item에서 조회한다. 결과가 불명확하면 재변환하지 말고 Project item을 조회해 복구한다.
-
-Issue 변환 후 실제 번호와 URL로 parent/child draft 본문 참조를 갱신하고 sub-issue/dependency 관계를 연결하며 Project의 `Workflow Status`를 `Planned`로 설정한다. 그다음 Beads parent/child mirror에 Issue URL `external_ref`, v1 metadata, dependency를 연결한다. `harness-tracker.mjs check`가 Issue와 mirror를 통과한 뒤에만 선택한 child를 `In Progress`로 바꾸고 구현을 dispatch한다. 이미 Issue인 Project item은 재변환하지 않는다.
+`tracker-publish`가 `harness-publication.mjs activate`로 계획을 저장소 Issue로 바꾸고, parent/child sub-issue 관계와 Beads mirror·의존성까지 만든 뒤 완료한다. 구현 시작 전에는 `node .codex/scripts/harness-tracker.mjs check --root <workspace_root>`로 Issue와 mirror를 확인만 한다. Project에 아직 draft가 남아 있으면(이전 Harness로 발행된 계획) 같은 `activate`를 한 번 실행한 뒤 다시 확인한다. 이 변환·연결·mirror 생성을 직접 API로 수행하지 않으며, 미변환 draft를 구현 차단 사유로 반환하지 않는다. `check`가 통과한 뒤에만 선택한 child를 `In Progress`로 바꾸고 구현을 dispatch한다.
 
 - split plan별 child Issue와 parent Issue 연결은 Project의 plan ID mapping과 `docs/plans/<plan-set-id>/plans.md`로 확인한다. 아직 draft인 plan은 Issue 부재 오류가 아니며, 구현 시작 전에 변환한다. 조회 실패는 부재로 간주하지 않는다.
 - 실행 후보는 configured Project의 `Workflow Status: Planned`인 child Issue다. Project membership 또는 Planned 상태만으로 planning approval을 대신하지 않는다. 현재 입력에 대한 planning review gate도 통과해야 dispatch한다.

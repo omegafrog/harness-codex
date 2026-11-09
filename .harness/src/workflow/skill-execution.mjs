@@ -335,8 +335,8 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
     }
     if (input.skill === 'tracker-publish') {
-      const { verifyDraftPublication } = await import('../tracker/publication.mjs');
-      await verifyDraftPublication({ root, planSetId: input.context?.plan_set_id });
+      const { verifyActivatedPublication } = await import('../tracker/publication.mjs');
+      await verifyActivatedPublication({ root, planSetId: input.context?.plan_set_id });
     }
     if (input.skill === 'to-ticket') {
       const { inspectPlanSet } = await import('./plan-review.mjs');

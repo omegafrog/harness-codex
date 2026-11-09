@@ -95,8 +95,9 @@ export async function inspectPublication({ root, planSetId, run = defaultRun }) 
 }
 
 export async function updatePublication({ root, planSetId, planId, action, itemId, run = defaultRun }) {
-  if (!['inspect', 'begin', 'record', 'publish'].includes(action)) throw new Error('Invalid publication action');
+  if (!['inspect', 'begin', 'record', 'publish', 'activate'].includes(action)) throw new Error('Invalid publication action');
   if (action === 'inspect') return inspectPublication({ root, planSetId, run });
+  if (action === 'activate') return activatePublication({ root, planSetId });
   const lock = sessionOutputPath(root, 'runtime/to-ticket/publication.lock');
   await mkdir(lock);
   try {
@@ -143,5 +144,121 @@ export async function verifyDraftPublication({ root, planSetId, run = defaultRun
       if (!item.item_id || !(item.identity_matches || item.body_matches) || !issueStatuses.has(item.status)) throw new Error(`Converted Project Issue identity or status is unresolved: ${item.plan_id}`);
     } else if (!item.item_id || !item.body_matches || item.content?.__typename !== 'DraftIssue' || item.status !== 'Planned') throw new Error(`Draft publication is missing, changed or not Planned: ${item.plan_id}`);
   }
+  return state;
+}
+
+const defaultCommand = async (command, args, cwd) => (await exec(command, args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
+
+// Plan dependencies come from the reviewed index: each table row starts with the plan link, and plan IDs named in
+// its dependency column are what that plan waits for.
+async function planDependencies(root, planSetId, planIds) {
+  const index = await readFile(join(root, 'docs/plans', planSetId, 'plans.md'), 'utf8');
+  const dependencies = new Map(planIds.map((id) => [id, []]));
+  for (const line of index.split('\n')) {
+    const cells = line.split('|').map((cell) => cell.trim());
+    const owner = planIds.find((id) => cells[1]?.includes(`[${id}]`) || cells[1] === id);
+    if (!owner || cells.length < 4) continue;
+    dependencies.set(owner, planIds.filter((id) => id !== owner && new RegExp(`(^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`).test(cells[3])));
+  }
+  return dependencies;
+}
+
+// Turns an approved, published plan set into the tracker state implementation starts from: every Project draft
+// becomes a repository Issue, children are sub-issues of the parent, and each Issue has its Beads mirror with the
+// plan dependencies. Every step reads the current state first, so a rerun after a partial failure only does what
+// is missing. The result is verified with the same tracker check implementation uses.
+export async function activatePublication({ root, planSetId, run = defaultCommand }) {
+  const gh = (args, cwd) => run('gh', args, cwd);
+  const ghJson = async (args) => JSON.parse(await gh(args, root));
+  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
+  const repository = config.tracker?.github?.repository;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Configured GitHub repository is required to activate the plan set');
+  let state = await inspectPublication({ root, planSetId, run: gh });
+  const missing = state.items.filter((item) => !item.item_id).map((item) => item.plan_id);
+  if (missing.length) throw new Error(`Publish these plans before activation: ${missing.join(', ')}`);
+  const drafts = state.items.filter((item) => item.content?.__typename === 'DraftIssue');
+  if (drafts.length) {
+    const repositoryId = (await ghJson(['repo', 'view', repository, '--json', 'id'])).id;
+    if (!repositoryId) throw new Error('Repository ID is unavailable');
+    for (const item of drafts) {
+      const mutation = `mutation { convertProjectV2DraftIssueItemToIssue(input:{itemId:${JSON.stringify(item.item_id)},repositoryId:${JSON.stringify(repositoryId)}}) { item { id } } }`;
+      let response;
+      try { response = JSON.parse(await gh(['api', 'graphql', '-f', `query=${mutation}`], root)); } catch (error) { response = { errors: [{ message: error.message }] }; }
+      // An unclear response is resolved by reading the Project again, never by converting a second time.
+      const current = (await inspectPublication({ root, planSetId, run: gh })).items.find((entry) => entry.plan_id === item.plan_id);
+      if (current?.content?.__typename !== 'Issue') throw new Error(`Draft conversion did not produce an Issue for ${item.plan_id}: ${(response.errors || []).map((error) => error.message).join('; ') || 'no Issue in the Project item'}`);
+    }
+    state = await inspectPublication({ root, planSetId, run: gh });
+  }
+  const byPlan = new Map(state.items.map((item) => [item.plan_id, item]));
+  for (const item of state.items) {
+    if (item.content?.__typename !== 'Issue' || !item.content.number) throw new Error(`Project item is not an Issue: ${item.plan_id}`);
+    if (!(item.identity_matches || item.body_matches)) throw new Error(`Issue body does not match the reviewed plan: ${item.plan_id}`);
+    if (!item.status) {
+      if (!state.planned_option_id) throw new Error('Planned Project status option is unavailable');
+      const mutation = `mutation { updateProjectV2ItemFieldValue(input:{projectId:${JSON.stringify(state.project_id)},itemId:${JSON.stringify(item.item_id)},fieldId:${JSON.stringify(state.status_field_id)},value:{singleSelectOptionId:${JSON.stringify(state.planned_option_id)}}}) { projectV2Item { id } } }`;
+      const response = JSON.parse(await gh(['api', 'graphql', '-f', `query=${mutation}`], root));
+      if (response.errors?.length) throw new Error(`Setting Planned failed for ${item.plan_id}`);
+    }
+  }
+  const [owner, name] = repository.split('/');
+  const parent = byPlan.get('@parent');
+  const children = state.items.filter((item) => item.plan_id !== '@parent');
+  const issueQuery = (number) => `query { repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { issue(number:${number}) { id subIssues(first:100) { nodes { id } } } } }`;
+  const parentIssue = (await ghJson(['api', 'graphql', '-f', `query=${issueQuery(parent.content.number)}`])).data?.repository?.issue;
+  if (!parentIssue?.id) throw new Error('Parent Issue is unavailable');
+  const linked = new Set(parentIssue.subIssues.nodes.map((node) => node.id));
+  for (const child of children) {
+    const childId = (await ghJson(['api', 'graphql', '-f', `query=${issueQuery(child.content.number)}`])).data?.repository?.issue?.id;
+    if (!childId) throw new Error(`Child Issue is unavailable: ${child.plan_id}`);
+    if (linked.has(childId)) continue;
+    const response = JSON.parse(await gh(['api', 'graphql', '-f', `query=mutation { addSubIssue(input:{issueId:${JSON.stringify(parentIssue.id)},subIssueId:${JSON.stringify(childId)}}) { subIssue { id } } }`], root));
+    if (response.errors?.length) throw new Error(`Linking ${child.plan_id} under the parent failed: ${response.errors.map((error) => error.message).join('; ')}`);
+  }
+  const refs = state.items.map((item) => `${repository}#${item.content.number}`);
+  if (config.beads?.enabled !== false) {
+    const bd = async (args) => run('bd', args, root);
+    const mirrors = new Map();
+    const statusOf = (item) => ({ 'In Progress': 'in_progress', Blocked: 'blocked', Done: 'closed' })[item.status] || 'open';
+    for (const item of [parent, ...children]) {
+      const externalRef = `https://github.com/${repository}/issues/${item.content.number}`;
+      const existing = JSON.parse(await bd(['list', '--all', '--json', '--limit', '0', '--external-ref', externalRef])).filter((bead) => bead.external_ref === externalRef);
+      if (existing.length > 1) throw new Error(`Several Beads mirror ${externalRef}`);
+      if (existing.length) { mirrors.set(item.plan_id, existing[0].id); continue; }
+      const metadata = JSON.stringify({ harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `${planSetId}:${item.plan_id === '@parent' ? 'parent' : item.plan_id}` });
+      const args = ['create', '--title', `${planSetId} / ${item.plan_id === '@parent' ? 'parent' : item.plan_id}`, '--type', item.plan_id === '@parent' ? 'epic' : 'feature', '--status', statusOf(item), '--external-ref', externalRef, '--metadata', metadata, '--silent'];
+      if (item.plan_id !== '@parent') args.push('--parent', mirrors.get('@parent'));
+      const id = (await bd(args)).trim().split(/\s+/).pop();
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id || '')) throw new Error(`Beads did not return an ID for ${item.plan_id}`);
+      mirrors.set(item.plan_id, id);
+    }
+    const dependencies = await planDependencies(root, planSetId, children.map((child) => child.plan_id));
+    for (const [planId, needs] of dependencies) {
+      const shown = JSON.parse(await bd(['show', mirrors.get(planId), '--json']));
+      const current = new Set((Array.isArray(shown) ? shown[0] : shown)?.dependencies?.map((dependency) => dependency.id || dependency.depends_on_id) || []);
+      for (const need of needs) {
+        if (current.has(mirrors.get(need))) continue;
+        try { await bd(['dep', 'add', mirrors.get(planId), mirrors.get(need)]); }
+        catch (error) { if (!/already|exists|duplicate/i.test(error.message)) throw error; }
+      }
+    }
+  }
+  const { inspectTrackerSync } = await import('./lifecycle.mjs');
+  const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
+  if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
+  return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), tracker_check: check };
+}
+
+// tracker-publish is complete only when implementation can start: every plan is an Issue in the Project and the
+// tracker check (Issue status and Beads mirror) passes.
+export async function verifyActivatedPublication({ root, planSetId, run = defaultCommand }) {
+  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
+  if (config.tracker?.mode !== 'github') return;
+  const state = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) });
+  const pending = state.items.filter((item) => item.content?.__typename !== 'Issue').map((item) => item.plan_id);
+  if (pending.length) throw new Error(`Plans are not activated as Issues yet (run harness-publication.mjs activate): ${pending.join(', ')}`);
+  const { inspectTrackerSync } = await import('./lifecycle.mjs');
+  const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: state.items.map((item) => `${config.tracker.github.repository}#${item.content.number}`), run });
+  if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
   return state;
 }
