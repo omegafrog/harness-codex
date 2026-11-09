@@ -21,14 +21,13 @@ try {
     const reuse = options['reuse-axis'];
     if (reuse && !['standards', 'spec'].includes(reuse)) throw new Error('--reuse-axis must be standards or spec');
     // --reuse-axis <role> carries that axis's earlier clean pass forward (see carryForwardReview) instead of a new reviewer for it.
-    const needed = ['standards', 'spec'].filter((role) => role !== reuse).map((role) => `${role}-agent`);
-    if (!options['fixed-point'] || !options['implementation-result'] || needed.some((key) => !options[key]) || (reuse && options[`${reuse}-agent`]) || (!reuse && options['standards-agent'] === options['spec-agent'])) throw new Error('assemble needs --fixed-point, --implementation-result and a fresh reviewer agent ID for each axis: --standards-agent and --spec-agent (omit the one named by --reuse-axis)');
-    const implemented = await readImplementerResult({ root: options.root, resultRef: options['implementation-result'] });
+    if (!options['fixed-point'] || !options['implementation-result'] || (reuse && options[`${reuse}-agent`]) || (!reuse && options['standards-agent'] && options['standards-agent'] === options['spec-agent'])) throw new Error('assemble needs --fixed-point and --implementation-result; reviewer IDs are optional (the hook-recorded reviewer of each type that finished after the result is used), and the axis named by --reuse-axis takes no agent ID');
+    const implemented = await readImplementerResult({ root: options.root, resultRef: options['implementation-result'], commit: options.commit || null });
     if (options.commit && options.commit !== implemented.commitSha) throw new Error(`--commit ${options.commit} differs from the commit the implementer reported (${implemented.commitSha})`);
     const reviewInput = await buildReviewInput({ root: options.root, planId: options.plan, fixedPoint: options['fixed-point'], commit: implemented.commitSha, unplannedAdditions: implemented.additions });
     const side = async (role) => role === reuse
       ? { carried: await carryForwardReview({ root: options.root, planId: options.plan, role, reviewInput }) }
-      : readHookRecordedReviewer({ root: options.root, role, agentId: options[`${role}-agent`] });
+      : readHookRecordedReviewer({ root: options.root, role, agentId: options[`${role}-agent`] || null, after: implemented.recordedAt });
     const evidence = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec') });
     result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point };
   } else if (action === 'record-decision') {

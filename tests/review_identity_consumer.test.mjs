@@ -134,6 +134,14 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
     await assert.rejects(readHookRecordedReviewer({ root, role: 'spec', agentId: 'spec-forked' }), /forked from the caller's conversation/);
     await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'invented-id' }), /did not record a finished standards_reviewer/);
     await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'spec-1' }), /did not record a finished standards_reviewer/);
+    // Without an ID, the single reviewer of each type that finished after the result is used; a mistyped ID names the recorded ones.
+    assert.deepEqual(await readHookRecordedReviewer({ root, role: 'standards' }), { contextId: 'standards-1', raw: answer });
+    assert.deepEqual(await readHookRecordedReviewer({ root, role: 'spec' }), { contextId: 'spec-1', raw: answer }, 'a forked reviewer is never picked');
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'standards-2', agent_type: 'standards_reviewer' });
+    hook({ hook_event_name: 'SubagentStop', agent_id: 'standards-2', agent_type: 'standards_reviewer', last_assistant_message: answer });
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'standards' }), /Several standards_reviewers finished after the implementation result \(standards-1, standards-2\)/);
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', after: Date.now() + 60000 }), /recorded no standards_reviewer that finished after/);
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'standards-l' }), /recorded: standards-1, standards-2/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -192,4 +200,20 @@ test('a recorded decision does not apply to a different finding that reuses the 
   assert.ok(reused.blockers.some((item) => item.id === 'P-STD-001' && !item.scope_decision));
   const { verifiedScopeDecisionsForTest } = await import('../.harness/src/wrapper/repair.mjs');
   assert.deepEqual(await verifiedScopeDecisionsForTest('/nonexistent', [{ finding_id: 'P-STD-001', choice: 'adopt', question_id: 'scope-P:P-STD-001', answers_ref: 'a.json' }]), [], 'a legacy decision without fingerprints is asked again');
+});
+
+test('a re-check result without a new commit is reviewed at the commit an earlier implementation result recorded', async () => {
+  const { readImplementerResult } = await import('../.harness/src/wrapper/review-input.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-recheck-commit-'));
+  const sha = 'a'.repeat(40);
+  try {
+    for (const [id, result] of [['implement-wrapper-1', { unplanned_additions: [], commit_sha: sha }], ['implement-wrapper-2', { unplanned_additions: [] }]]) {
+      await mkdir(join(root, '.io/runtime/executions', id), { recursive: true });
+      await writeFile(join(root, '.io/runtime/executions', id, 'result.json'), JSON.stringify(result));
+    }
+    const resultRef = 'runtime/executions/implement-wrapper-2/result.json';
+    await assert.rejects(readImplementerResult({ root, resultRef }), /has no commit_sha; pass --commit/);
+    await assert.rejects(readImplementerResult({ root, resultRef, commit: 'b'.repeat(40) }), /No implement-wrapper result in this session recorded commit/);
+    assert.equal((await readImplementerResult({ root, resultRef, commit: sha })).commitSha, sha);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

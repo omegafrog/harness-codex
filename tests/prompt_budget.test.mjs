@@ -104,6 +104,7 @@ test('the orchestrator is told to start stage runners in the background and not 
 test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {
   const repair = await readFile(join(sourceRoot, '.codex/internal-skills/code-review/references/repair.md'), 'utf8');
   assert.match(repair, /harness-code-review\.mjs assemble --root <workspace_root> --plan <plan-id> --fixed-point/);
-  assert.match(repair, /--standards-agent <standards reviewer의 native agent ID> --spec-agent/);
+  assert.match(repair, /reviewer ID는 넘기지 않는다/);
+  assert.match(repair, /reviewer 판정을 구현 stage에 직접 넘기거나 repair를 건너뛰지 않는다/);
   assert.match(repair, /review JSON을 직접 조립하지 말고/);
 });

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { userSaidAfter } from '../workflow/user-inputs.mjs';
 import { dirname, join } from 'node:path';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
@@ -50,11 +50,22 @@ export function reviewInputFromParts({ root, fixed, implementation, between, dif
   };
 }
 
-export async function readImplementerResult({ root, resultRef }) {
-  const result = JSON.parse(await readFile(sessionOutputPath(root, resultRef, { create: false }), 'utf8'));
+export async function readImplementerResult({ root, resultRef, commit = null }) {
+  const path = sessionOutputPath(root, resultRef, { create: false });
+  const result = JSON.parse(await readFile(path, 'utf8'));
   if (!Array.isArray(result.unplanned_additions)) throw new Error(`${resultRef} has no unplanned_additions array`);
-  if (!/^[0-9a-f]{40}$/i.test(result.commit_sha || '')) throw new Error(`${resultRef} has no commit_sha; the implementation commit must be recorded before review`);
-  return { additions: result.unplanned_additions, commitSha: result.commit_sha };
+  const recordedAt = (await stat(path)).mtimeMs;
+  if (/^[0-9a-f]{40}$/i.test(result.commit_sha || '')) return { additions: result.unplanned_additions, commitSha: result.commit_sha, recordedAt };
+  // A resumed run that only re-checked an earlier implementation reports no new commit. The caller then names the
+  // commit, and it must be one an earlier implementation result of this session recorded; HEAD is never assumed.
+  if (!/^[0-9a-f]{40}$/i.test(commit || '')) throw new Error(`${resultRef} has no commit_sha; pass --commit <the implementation commit an earlier implement-wrapper result recorded>`);
+  const executions = sessionOutputPath(root, 'runtime/executions', { create: false });
+  for (const name of await readdir(executions).catch(() => [])) {
+    if (!name.startsWith('implement-wrapper-')) continue;
+    const earlier = await readFile(join(executions, name, 'result.json'), 'utf8').then(JSON.parse, () => null);
+    if (earlier?.commit_sha === commit) return { additions: result.unplanned_additions, commitSha: commit, recordedAt };
+  }
+  throw new Error(`No implement-wrapper result in this session recorded commit ${commit}`);
 }
 
 // Combines the two reviewers' raw JSON answers ({"state","report":{"findings"}}) with the review input.
@@ -104,12 +115,21 @@ export async function carryForwardReview({ root, planId, role, reviewInput }) {
 
 // Reads a reviewer recorded by the subagent hook in the orchestrator session: its Stop answer is the review,
 // its agent ID is the context ID, and a reviewer forked from the caller's conversation is refused.
-export async function readHookRecordedReviewer({ root, role, agentId }) {
+// Without an agent ID, the one reviewer of that type that finished after the implementation result is used, so the
+// caller never has to retype a long ID (a mistyped character made the recorded reviewer unrecognizable).
+export async function readHookRecordedReviewer({ root, role, agentId = null, after = null }) {
   const agentType = role === 'standards' ? 'standards_reviewer' : 'spec_reviewer';
   let text;
   try { text = await readFile(sessionOutputPath(root, 'runtime/orchestrator/subagents.jsonl', { create: false }), 'utf8'); }
   catch (error) { if (error.code === 'ENOENT') throw new Error(`No hook-recorded subagents: the ${role} reviewer was not started as a native subagent in a Harness worktree session`); throw error; }
-  const records = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.agent_id === agentId && item.agent_type === agentType);
+  const all = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.agent_type === agentType);
+  const forked = new Set(all.filter((item) => item.event === 'SubagentStart' && item.forked).map((item) => item.agent_id));
+  const finished = [...new Set(all.filter((item) => item.event === 'SubagentStop' && typeof item.result === 'string' && !forked.has(item.agent_id) && (after === null || Date.parse(item.recorded_at) >= after)).map((item) => item.agent_id))];
+  if (!agentId) {
+    if (finished.length !== 1) throw new Error(finished.length ? `Several ${agentType}s finished after the implementation result (${finished.join(', ')}); pass --${role}-agent` : `The hook recorded no ${agentType} that finished after the implementation result; run a fresh reviewer`);
+    agentId = finished[0];
+  } else if (!all.some((item) => item.agent_id === agentId)) throw new Error(`The hook did not record a finished ${agentType} with agent ID ${agentId}${finished.length ? `; recorded: ${finished.join(', ')}` : ''}`);
+  const records = all.filter((item) => item.agent_id === agentId);
   const start = records.find((item) => item.event === 'SubagentStart'), stop = records.findLast((item) => item.event === 'SubagentStop' && typeof item.result === 'string');
   if (!start || !stop) throw new Error(`The hook did not record a finished ${agentType} with agent ID ${agentId}`);
   if (start.forked) throw new Error(`${agentType} ${agentId} was forked from the caller's conversation; start a fresh reviewer with fork_turns none`);
