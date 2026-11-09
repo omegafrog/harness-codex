@@ -13,14 +13,15 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 ## 읽을 문서
 
 - 편집 전 `<workspace_root>/docs/agents/implementation-guidance.md`, 테스트를 계획·작성·선택·실행하기 전 `<workspace_root>/docs/agents/testing-guidance.md`와 [test-writing guidance](../testing-guidance/GUIDE.md). 이 파일들은 활성 workspace의 프로젝트 memory이며 managed workflow에서 원본 checkout의 사본으로 대체하지 않는다. 범위 안의 지침만 적용하고 승인 Spec·실행 계약과 충돌하면 진행 전에 보고한다.
-- 영향받는 [model continuity contract](../ddd-design/references/model-continuity.md), plan의 [execution evidence contract](../../../.codex/internal-skills/to-ticket/references/execution-evidence.md), [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md).
+- 코드를 쓰기 전에 반드시: [model continuity contract](../ddd-design/references/model-continuity.md)의 계층 책임 규칙(도메인 불변식은 도메인 메서드, application은 트랜잭션·작업 순서, web/api는 HTTP·DTO 검증·세션, infrastructure는 저장·전송; 한 규칙을 여러 계층에 복제하지 않음)과 Architecture Spec의 Domain·Aggregate·Application Service·File and Module Structure 절, 그리고 plan의 `계층 배치`. 리뷰어도 같은 기준으로 판정한다. 처음부터 이 배치대로 구현하고, 수정할 때도 지적된 곳만이 아니라 같은 기준을 지킨다.
+- 영향받는 [model continuity contract](../ddd-design/references/model-continuity.md)의 나머지 절, plan의 [execution evidence contract](../../../.codex/internal-skills/to-ticket/references/execution-evidence.md), [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md).
 - `docs/architecture/constraints.md`(있으면)와 `docs/contracts/` 현행 계약. 계약 갱신·seal은 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md)에 따라 최종 구현 workflow만 수행한다. 개별 plan의 contract snapshot drift는 deferred로 기록하고 구조 오류·실행 준비 실패는 차단한다.
 
 ## Flow
 
 1. `.codex/harness.yaml`에서 tracker mode를 확인한다. 구현 dispatch 전에는 실제 `agents.implementation_model` 값이, runtime/E2E 검증 전에는 `agents.execution_model`과 `agents.execution_reasoning_effort` 값이 있어야 한다. 값이 없으면 workflow를 멈추고 `setup`이 필요하다고 보고하며 부모 모델을 상속하지 않는다.
 2. 승인되어 실행 가능한 split plan 하나를 정하고 [Tracker 상태](#tracker-상태)에 따라 `in-progress`로 전환한다.
-   - GitHub Issues: parent plan-set Issue의 child Issue를 고르고 Issue 본문을 plan으로 사용한다.
+   - GitHub Issues: parent plan-set Issue의 child Issue는 상태 추적에만 쓴다. plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다.
    - local-markdown: `docs/plans/<plan-set-id>/<plan-id>.md`를 ticket으로 읽고 `docs/plans/<plan-set-id>/plans.md`가 링크하는지 확인한다.
 3. `implement-wrapper`의 plan-review `check`가 반환한 정확한 canonical plan과 ticket-scoped Product·Architecture Spec을 읽는다. 다른 `plan_path`로 바꾸거나 `ticket_id`가 plan-set ID와 같다고 가정하지 않는다. plan의 test contract가 비즈니스 로직 단위 테스트와 검증을 정하며 다른 test suite를 추정하지 않는다. 누락·stale planning review는 dispatch를 막는다. ticket 존재, canonical tracker 상태, planning-review 승인을 구분한다. 상태 조회 실패나 dirty/uncommitted Spec은 ticket이나 승인 plan이 없다는 증거가 아니다. 누락·stale 입력은 정확히 인용하고 별도 cleanliness 규칙은 그 증거와 함께 보고한다.
 4. 구현 직전 `HEAD`를 `review_fixed_point`로 캡처한다. 기존 model/owner와 요구 ID를 확인하고 관련 변경 전 baseline을 기록하며 현행 public domain operation을 사용한다. 승인된 경계 근거 없는 새 module/scaffolding은 만들지 않는다.

@@ -74,3 +74,13 @@ test('infrastructure checks belong to the e2e plan, not to each feature plan', a
   assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
   assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /그 확인을 `e2e` plan으로 옮기라고 지적한다/);
 });
+
+test('the implementer builds to the same layer criteria the reviewer judges with', async () => {
+  const implement = await read('.codex/internal-skills/implement/GUIDE.md');
+  assert.match(implement, /코드를 쓰기 전에 반드시: \[model continuity contract\]/);
+  assert.match(implement, /리뷰어도 같은 기준으로 판정한다/);
+  assert.match(implement, /plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다/);
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /각 plan에 `계층 배치` 절을 두고/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /`계층 배치`가 있는지 확인한다/);
+  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /리뷰어가 인용한 근거\(`basis`의 source·path·quote\)를 그대로 넣어/);
+});
