@@ -33,10 +33,10 @@ orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [
 
 구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조와 `unplanned_additions` 배열을 남긴다. orchestrator가 독립 구현 리뷰와 `repair`를 실행한다. `repair`가 통과했다는 feedback으로 재개되면 이 stage가 plan을 완료한다: 완료 gate를 확인하고 tracker의 그 plan을 `Done`(local-markdown은 `completed`)으로 바꾼 뒤 다음 ready plan을 고른다. Done 전이를 orchestrator에 미루지 않는다. plan을 고른 뒤 바꿀 코드가 없으면 먼저 `node .codex/scripts/harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`를 실행한다. `status: reviewed`이면 HEAD가 같은 계획 snapshot으로 이미 리뷰를 통과한 commit이므로 `REVIEW_REQUIRED`를 반환하지 않고 같은 방식으로 완료한다.
 
-Spec 변경은 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`, 사용자 결정은 `USER_DECISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
+구현 stage는 승인된 Spec과 plan을 구현할 뿐 사용자에게 질문하지 않는다(`USER_DECISION_REQUIRED`와 questions를 반환하지 않는다). Spec이 정하지 않은 결정이 필요하면 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
 
-구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator가 `spec-me`로 돌려보내 결정과 독립 리뷰를 진행하고 영향 계획을 재검토한 뒤 구현을 재개한다. 실행 환경·E2E 승인 등 Spec 결정이 아닌 사용자 질문은 기존 `USER_DECISION_REQUIRED` 경로를 유지한다.
+구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator가 `spec-me`로 돌려보내 결정과 독립 리뷰를 진행하고 영향 계획을 재검토한 뒤 구현을 재개한다. 실행 환경은 Architecture Spec 12.7이 정하고, E2E 실행 승인은 orchestrator가 받는다.
 
 구현자는 직접 commit하지 않고 `commit_request`를 반환하며 실행기가 지정된 파일만 commit한다. 메인 세션이나 관찰자가 대신 commit하지 않는다.
 
-이미 구현된 Spec 밖 동작을 유지할지 제거할지는 Spec 수정을 시작하기 전에 사용자가 정한다. 구현자의 `unplanned_additions`와 리뷰의 `unrequested_behavior`·`unbacked_requirement`는 `code-review`의 [판정과 수정 절차](../../../.codex/internal-skills/code-review/references/repair.md#판정과-수정-절차)에 따라 `USER_DECISION_REQUIRED`로 반환한다. wrapper가 임의로 유지하거나 일관성을 맞추려고 확대하지 않는다. 유지가 선택된 경우에만 위의 `SPEC_REVISION_REQUIRED` 경로로 간다.
+이미 구현된 Spec 밖 동작을 유지할지 제거할지는 Spec 수정을 시작하기 전에 사용자가 정한다. 구현자는 Spec 밖 동작을 `unplanned_additions`에 신고만 한다. 그것과 리뷰의 `unrequested_behavior`·`unbacked_requirement`에 대한 사용자 결정은 orchestrator가 `code-review`의 [판정과 수정 절차](../../../.codex/internal-skills/code-review/references/repair.md#판정과-수정-절차)로 묻는다. wrapper가 임의로 유지하거나 일관성을 맞추려고 확대하지 않는다. 유지가 선택된 경우에만 위의 `SPEC_REVISION_REQUIRED` 경로로 간다.

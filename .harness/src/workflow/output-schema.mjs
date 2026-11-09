@@ -17,7 +17,12 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
   const result = schema.properties.result.properties;
   delete result.commit_sha;
-  if (IMPLEMENTATION_FLOWS.has(flow)) schema.properties.result.required.push('unplanned_additions', 'commit_request');
+  if (IMPLEMENTATION_FLOWS.has(flow)) {
+    schema.properties.result.required.push('unplanned_additions', 'commit_request');
+    // Implementation only builds the approved Spec: it never asks the user. A missing decision goes back to spec-me.
+    for (const target of [schema.properties, result]) if (target.code?.enum) target.code = { ...target.code, enum: target.code.enum.filter((code) => code !== 'USER_DECISION_REQUIRED') };
+    if (result.questions) result.questions = { ...result.questions, maxItems: 0 };
+  }
   else { delete result.unplanned_additions; delete result.commit_request; }
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));

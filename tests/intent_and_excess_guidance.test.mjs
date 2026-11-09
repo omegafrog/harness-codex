@@ -44,3 +44,25 @@ test('the final E2E is specified in spec-me and planned as the last plan, run on
   assert.match(orchestration, /사용자에게 실행 승인만 묻는다/);
   assert.doesNotMatch(orchestration, /에이전트가 승인 Product\/Architecture Specs와 parent test contract를 읽고/);
 });
+
+test('implementation never asks the user: the output schema and the result validator refuse questions', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { writeOutputSchema } = await import('../.harness/src/workflow/output-schema.mjs');
+  const root = new URL('../', import.meta.url).pathname;
+  const dir = await mkdtemp(join(tmpdir(), 'impl-schema-'));
+  try {
+    const path = join(dir, 'schema.json');
+    await writeOutputSchema({ root, input: { execution_id: 'implement-wrapper-1', skill: 'implement-wrapper' }, prefix: '', path });
+    const schema = JSON.parse(await readFile(path, 'utf8'));
+    assert.ok(!schema.properties.code.enum.includes('USER_DECISION_REQUIRED'));
+    assert.ok(!schema.properties.result.properties.code.enum.includes('USER_DECISION_REQUIRED'));
+    assert.equal(schema.properties.result.properties.questions.maxItems, 0);
+    const other = join(dir, 'spec-me.json');
+    await writeOutputSchema({ root, input: { execution_id: 'spec-me-1', skill: 'spec-me' }, prefix: '', path: other });
+    assert.ok(JSON.parse(await readFile(other, 'utf8')).properties.code.enum.includes('USER_DECISION_REQUIRED'), 'spec-me still asks');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+  assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /Implementation does not ask the user/);
+  assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
+});

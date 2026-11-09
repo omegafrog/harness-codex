@@ -373,6 +373,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
     }
   }
+  if (['implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return SPEC_REVISION_REQUIRED for a decision the approved Spec does not settle');
   if (envelope.code === 'USER_DECISION_REQUIRED' || questions.length) {
     requireValue(questions.length <= 1 && (questions.length === 0 || questions[0].base === 'session'), 'Question requires at most one session user_question artifact');
     requireValue(resultQuestions, 'User decision requires questions');

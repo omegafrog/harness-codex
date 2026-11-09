@@ -218,7 +218,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (last?.code === 'SUBTASK_REQUIRED') throw new Error('Legacy SUBTASK_REQUIRED execution cannot be resumed: the pending subagent identity and result are not recorded; in-place recovery is unsupported. Preserve the session artifacts and report this limitation.');
   let transition;
   // 사용자 수정은 뒤 stage의 현재성을 요구하지 않는다. 그 stage가 고칠 Spec에 의존하므로 재검증하면 교착된다.
-  const reopensCompletedWork = userRevision && last?.status === 'completed' && last.code === 'OK';
+  // The user may also revise a completed Spec or plan while a later stage waits on a question: the revision replaces
+  // that question (the later stage restarts from the revised plan), so it must not have to be answered first.
+  const target = state.stages?.[stageId];
+  const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
+    && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId);
   if (!reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
     const allowed = REVISION_TARGETS;
@@ -326,7 +330,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (matches[0].base === 'session' && producerSession !== taskSession) throw new Error('Producer session artifact differs from the current worktree session');
     input_refs.push(matches[0]);
   }
-  const previous = restart ? null : state.stages?.[stageId];
+  // A question a stage asked before an upstream stage (spec-me, to-ticket, tracker-publish) was completed again is
+  // superseded by that revision: the stage starts over from the new plan instead of waiting for the old answer.
+  const upstreamRevisedAfter = (entry) => ['spec-me', 'to-ticket', 'tracker-publish'].filter((id) => id !== stageId)
+    .some((id) => Date.parse(state.stages?.[id]?.finished_at || 0) > Date.parse(entry?.updated_at || 0));
+  const supersededQuestion = !restart && answer === null && feedback === null && state.stages?.[stageId]?.status === 'waiting'
+    && state.stages[stageId].code === 'USER_DECISION_REQUIRED' && upstreamRevisedAfter(state.stages[stageId]);
+  const previous = restart || supersededQuestion ? null : state.stages?.[stageId];
   const userRevisionWaiting = userRevision && previous?.status === 'completed' && previous.code === 'OK' && previous.result_ref;
   if (userRevision && !userRevisionWaiting) throw new Error('User revision requires a completed stage');
   if (userRevision && Object.values(state.stages).some((item) => item?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
