@@ -61,6 +61,8 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 | `running` | 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. stage가 끝나면 runner가 이 orchestrator session을 같은 provider CLI로 재개해 검증된 결과를 전달한다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, skill의 재시도·중단 계약에 따라 라우팅한다. |
 
+위 세 코드의 전환은 대상 stage를 `--user-revision` 없이 `--stage-id`만으로 준비한다(`--user-revision`은 사용자의 직접 수정 지시 전용이다). 준비기가 이전 결과를 입력으로 연결하고 낡은 완료 결과를 다시 연다.
+
 Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
 
 질문은 `title`과 각 선택지 `label`을 글자 그대로 보여 준다. 문구를 합치거나 조건을 덧붙이지 않고, 보충 설명이 필요하면 질문과 분리해 "참고"로 붙인다. 답을 넘길 때 사용자가 선택지만 골랐으면 그 선택지 ID를, 조건을 덧붙이거나 직접 설명했으면 사용자의 답 원문 전체를 `answer`로 넘긴다. 선택지 ID만 넘겨 사용자가 덧붙인 조건을 잃지 않는다.
