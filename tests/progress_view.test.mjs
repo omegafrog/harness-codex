@@ -35,6 +35,24 @@ test('installed harness-progress summarizes a session and flags a running stage 
     assert.match(output, /✓ spec-me\s+완료 00:02:00 · 2회차/);
     assert.match(output, /⏸ to-ticket\s+대기 .*사용자 답변 필요/);
     assert.match(output, /✗ implement-wrapper\s+정지됨 .*프로세스가 없음/);
+    // The running stage's latest conversation step is shown on one line, read from the provider's rollout file.
+    const home = join(root, 'home');
+    const day = new Date();
+    const rolloutDir = join(home, '.codex/sessions', String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
+    await mkdir(rolloutDir, { recursive: true });
+    await writeFile(join(rolloutDir, 'rollout-x-thread-1.jsonl'), [
+      { type: 'response_item', timestamp: new Date().toISOString(), payload: { type: 'message', role: 'assistant', content: [{ text: '이전 메시지' }] } },
+      { type: 'response_item', timestamp: new Date().toISOString(), payload: { type: 'custom_tool_call', input: 'await tools.exec_command({cmd:"npm test -- \\"auth\\""})' } },
+    ].map((event) => JSON.stringify(event)).join('\n'));
+    const live = { ...state, stages: { ...state.stages, 'implement-wrapper': { status: 'running', execution_id: 'iw-1', started_at: '2026-01-01T00:03:00.000Z', owner: self } } };
+    await writeFile(join(session, 'runtime/orchestrator/state.json'), JSON.stringify(live));
+    await mkdir(join(session, 'runtime/executions/iw-1'), { recursive: true });
+    await writeFile(join(session, 'runtime/executions/iw-1/runner.stderr.log'), '{"event":"thread.started","thread_id":"thread-1"}\n');
+    await writeFile(join(session, 'runtime/executions/iw-1/subagents.jsonl'), `${JSON.stringify({ event: 'SubagentStart', agent_id: 'a1', agent_type: 'standards_reviewer' })}\n`);
+    const running = execFileSync(process.execPath, [script, '--session', session], { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: home } });
+    assert.match(running, /▶ implement-wrapper\s+실행 중/);
+    assert.match(running, /하위 agent: standards_reviewer/);
+    assert.match(running, /└ ▸ npm test -- "auth"\s+\(\d+초 전\)/);
     // Same session found without --session from the project directory.
     assert.match(execFileSync(process.execPath, [script], { cwd: root, encoding: 'utf8' }), /spec-me/);
     assert.equal(execFileSync('git', ['-C', root, 'check-ignore', '-q', '.codex/scripts/harness-progress.mjs'], { stdio: 'pipe' }).length, 0);

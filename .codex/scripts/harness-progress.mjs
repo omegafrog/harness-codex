@@ -2,7 +2,7 @@
 // Read-only workflow progress view. No agent is involved: it reads the files the runner already keeps up to date.
 //   node .codex/scripts/harness-progress.mjs [--session <dir>] [--watch [seconds]]
 // Without --session it uses ./.io, or the most recently updated worktree session of this project.
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { open, readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -54,6 +54,85 @@ async function alive(identity) {
   return Boolean(now && now.start && now.boot === identity.boot && now.start === identity.start && now.state !== 'Z');
 }
 
+
+const oneLine = (text, max = 110) => { const line = String(text).replace(/\s+/g, ' ').trim(); return line.length > max ? `${line.slice(0, max - 1)}…` : line; };
+
+// Codex keeps each conversation as a rollout file named after its thread id; the runner records that id.
+async function rolloutFor(threadId) {
+  const base = join(homedir(), '.codex/sessions');
+  for (let back = 0; back < 3; back++) {
+    const day = new Date(Date.now() - back * 86400000);
+    const dir = join(base, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
+    const name = (await readdir(dir).catch(() => [])).find((file) => file.endsWith(`${threadId}.jsonl`));
+    if (name) return join(dir, name);
+  }
+  return null;
+}
+
+async function tailLines(path, bytes = 98304) {
+  const handle = await open(path, 'r');
+  try {
+    const { size } = await handle.stat();
+    const length = Math.min(size, bytes);
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, size - length);
+    return buffer.toString('utf8').split('\n').slice(size > length ? 1 : 0).filter(Boolean);
+  } finally { await handle.close(); }
+}
+
+function describe(event) {
+  const payload = event.payload || {};
+  if (event.type === 'response_item') {
+    if (payload.type === 'custom_tool_call') {
+      const input = String(payload.input || '');
+      const cmd = input.match(/cmd:\s*(["'`])((?:\\.|(?!\1).)*)\1/s)?.[2];
+      return `▸ ${oneLine((cmd ?? input).replace(/\\(["'])/g, '$1'))}`;
+    }
+    if (payload.type === 'function_call') {
+      let args = {};
+      try { args = JSON.parse(payload.arguments || '{}'); } catch { /* keep raw */ }
+      return `▸ ${oneLine(args.cmd || args.command || `${payload.name} ${payload.arguments || ''}`)}`;
+    }
+    if (payload.type === 'message' && payload.role === 'assistant') {
+      const text = (payload.content || []).map((part) => part.text || '').join(' ');
+      if (text.trim()) return `💬 ${oneLine(text)}`;
+    }
+  }
+  if (event.type === 'event_msg' && payload.type === 'agent_message' && payload.message) return `💬 ${oneLine(payload.message)}`;
+  return null;
+}
+
+async function latestActivity(session, entry) {
+  if (!entry?.execution_id) return null;
+  const directory = join(session, 'runtime/executions', entry.execution_id);
+  const log = await readFile(join(directory, 'runner.stderr.log'), 'utf8').catch(() => '');
+  const threadId = log.match(/"thread_id":"([^"]+)"/)?.[1];
+  if (!threadId) return null;
+  const rollout = await rolloutFor(threadId);
+  if (!rollout) return null;
+  const info = await stat(rollout);
+  for (const line of (await tailLines(rollout)).reverse()) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const text = describe(event);
+    if (text) {
+      const age = Math.max(0, Math.round((Date.now() - (Date.parse(event.timestamp) || info.mtimeMs)) / 1000));
+      return `${text}  (${age}초 전)`;
+    }
+  }
+  return null;
+}
+
+// Reviewers a stage has started and not yet stopped.
+async function activeSubagents(session, entry) {
+  const text = await readFile(join(session, 'runtime/executions', entry?.execution_id || '-', 'subagents.jsonl'), 'utf8').catch(() => '');
+  const open = new Map();
+  for (const line of text.split('\n').filter(Boolean)) {
+    try { const e = JSON.parse(line); if (e.event === 'SubagentStart') open.set(e.agent_id, e.agent_type); else if (e.event === 'SubagentStop') open.delete(e.agent_id); } catch { /* skip */ }
+  }
+  return [...open.values()];
+}
+
 export async function render(session) {
   const state = await readJson(join(session, 'runtime/orchestrator/state.json'));
   const progress = await readJson(join(session, 'runtime/orchestrator/progress.json'));
@@ -76,6 +155,12 @@ export async function render(session) {
     const time = status === 'running' ? duration(entry.started_at) : entry.started_at && entry.finished_at ? duration(entry.started_at, Date.parse(entry.finished_at)) : '';
     const attempts = (entry.attempts || []).length;
     rows.push(`  ${SYMBOL[status] || '?'} ${id.padEnd(18)} ${LABEL[status] || status}${time ? ` ${time}` : ''}${attempts > 1 ? ` · ${attempts}회차` : ''}${note ? ` · ${note}` : ''}`);
+    if (status === 'running') {
+      const agents = await activeSubagents(session, entry);
+      const activity = await latestActivity(session, entry).catch(() => null);
+      if (agents.length) rows.push(`      └ 하위 agent: ${agents.join(', ')}`);
+      if (activity) rows.push(`      └ ${activity}`);
+    }
   }
   lines.push(`기록된 단계 ${counts.completed}/${counts.total} 완료 (앞으로의 단계는 알 수 없음)`, ...rows);
   lines.push(`갱신 ${state.updated_at || '-'}`);

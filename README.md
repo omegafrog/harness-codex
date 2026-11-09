@@ -429,4 +429,4 @@ node .codex/scripts/harness-progress.mjs            # 한 번 출력
 node .codex/scripts/harness-progress.mjs --watch    # 3초마다 갱신 (--watch 5 처럼 초 지정)
 ```
 
-단계별 상태·경과 시간·회차·대기 사유를 보여 주고, `running`인데 실행기 프로세스가 없으면 "정지됨"으로 표시한다. 기록된 단계만 집계하므로 전체 진행률(%)은 계산하지 않는다.
+단계별 상태·경과 시간·회차·대기 사유를 보여 주고, 실행 중인 stage 아래에 하위 agent(reviewer)와 그 stage agent의 마지막 명령·메시지를 한 줄로 보여 주며(Codex 대화 기록을 읽음), `running`인데 실행기 프로세스가 없으면 "정지됨"으로 표시한다. 기록된 단계만 집계하므로 전체 진행률(%)은 계산하지 않는다.
