@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
@@ -65,6 +66,8 @@ test('the default install carries both providers and an explicit provider on upd
   try {
     assert.deepEqual(present(root, CLAUDE), CLAUDE);
     assert.deepEqual(present(root, CODEX), CODEX);
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.deepEqual(doctor.diagnostics.filter((item) => item.code === 'installer_stale_lock_entry' || item.code === 'execution_asset_missing'), [], 'Doctor recognizes the .claude/harness files as installed Harness files');
     const result = await updateProject({ sourceRoot, targetRoot: root, provider: 'codex' });
     assert.ok(result.retired.some((path) => path.startsWith('.claude/')), 'Claude files are retired when the provider is switched');
     assert.deepEqual(present(root, CLAUDE), []);
