@@ -32,7 +32,9 @@ function specPathsFromIndex(index, base, planSetId) {
   for (const line of index.split(/\r?\n/)) {
     const kind = /product\s+spec/i.test(line) ? 'product' : /architecture\s+spec/i.test(line) ? 'architecture' : null;
     if (!kind) continue;
-    const raw = line.match(/`([^`]+\.md)`/)?.[1] || line.match(/\]\(([^)]+\.md)\)/)?.[1];
+    // A line can mention a Spec and link other documents (EXEC.md, a plan); only a path that names that Spec counts.
+    const candidates = [...line.matchAll(/`([^`]+\.md)`/g), ...line.matchAll(/\]\(([^)]+\.md)\)/g)].map((match) => match[1]);
+    const raw = candidates.find((path) => new RegExp(`${kind}[^/]*\\.md$`, 'i').test(path));
     if (!raw || /^https?:/i.test(raw)) continue;
     const path = posix.normalize(raw.startsWith('docs/') ? raw : posix.join(base, raw));
     requireValue(!path.startsWith('../') && !isAbsolute(path), `Spec path escapes workspace: ${raw}`);
@@ -74,7 +76,10 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
   const index = indexFile.content.toString('utf8');
-  const specPaths = specPathsFromIndex(index, base, planSetId);
+  // spec-me writes the Specs at fixed paths; those are the review inputs. The index is only read for older plan sets
+  // whose Specs live elsewhere.
+  const fixedSpecs = [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
+  const specPaths = (await Promise.all(fixedSpecs.map((path) => safeFile(root, path).then(() => true, () => false)))).every(Boolean) ? fixedSpecs : specPathsFromIndex(index, base, planSetId);
   const plans = await discoverPlans({ root, base });
   requireValue(plans.length > 0, 'Plan set has no split plans');
 
