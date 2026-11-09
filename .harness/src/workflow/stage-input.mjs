@@ -159,8 +159,12 @@ async function executionSession({ root, session, executionId, worktreeRef }) {
   return { provider, session_id };
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null }) {
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for spec-me or to-ticket');
+  // implement-wrapper builds one plan the orchestrator assigns; it never chooses the plan itself.
+  if (planId !== null && stageId !== 'implement-wrapper') throw new Error('--plan applies only to implement-wrapper');
+  if (stageId === 'implement-wrapper' && planId === null && feedback === null && answer === null) throw new Error('implement-wrapper needs --plan <plan-id>: the orchestrator assigns the next ready plan');
+  if (planId !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan ID');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
   let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
@@ -349,6 +353,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (stageId === 'implement-wrapper' && planId === null) planId = previousInput.context?.plan_id ?? null;
     // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
     // after checking that its processes are gone.
     let interrupted = ['failed', 'cancelled'].includes(previous?.status);
@@ -383,6 +388,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (previousSession !== taskSession) throw new Error('Pending decision belongs to a different worktree session');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (stageId === 'implement-wrapper' && planId === null) planId = previousInput.context?.plan_id ?? null;
     const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
@@ -419,7 +425,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  if (planId !== null) {
+    if (!plan_set_id) throw new Error('--plan needs a worktree plan set');
+    await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`)).catch(() => { throw new Error(`Plan ${planId} is not part of plan set ${plan_set_id}`); });
+  }
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (approvedSpecOverwrites) input.context.approved_spec_overwrites = approvedSpecOverwrites;
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });

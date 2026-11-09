@@ -3,7 +3,7 @@
 
 plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다. 최종 E2E는 마지막 `e2e` plan이 Spec의 시나리오(Product 13절)와 환경(Architecture 12.7)으로 테스트와 profile을 만들고, 모든 plan 구현과 통합 리뷰 뒤 fresh runner가 한 번 실행한다. `e2e` plan을 구현할 때도 E2E를 직접 실행하지 않는다. 구현하면서 알게 된 앱 실행 사실(실행 명령, 필요한 설정 키와 기본값, 의존 서비스)은 `docs/agents/EXEC.md`에 기록만 한다.
 
-orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
+입력의 `context.plan_id`로 배정된 승인 plan 하나만 구현한다. 다른 plan을 스스로 고르지 않는다. 배정된 plan이 이미 `Done`이면 변경 없이 그 사실을 `completed/OK`로 반환한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 
 전체 plan set의 순차 배정·통합 리뷰·최종 E2E는 기존 [구현 workflow 조율](../../../.codex/skills/orchestrator/references/implementation.md)이 소유한다. 이 wrapper를 새 executor로 대체하지 않는다. 한 번에 split plan 하나를 구현하며, 그 plan의 단위 테스트·독립 리뷰·canonical tracker 완료 확인 뒤 다음 plan으로 진행한다. 모든 구현 후 전체 Spec과 누적 diff의 통합 리뷰를 수행하고, 에이전트가 작성한 최종 E2E 시나리오에 대한 실제 사용자 승인을 받은 뒤 runner를 호출한다. E2E 실패는 자동 수정·재실행하지 않고 사용자에게 확인한다.
 

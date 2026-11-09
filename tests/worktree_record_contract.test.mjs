@@ -785,7 +785,11 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: authorInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: reviewRef });
     await mkdir(join(tree.session_directory, 'runtime/to-ticket/drafts'), { recursive: true });
     for (const name of ['parent', 'slice']) await writeFile(join(tree.session_directory, `runtime/to-ticket/drafts/${name}.md`), `# ${name}\n`);
-    let implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper'], { cwd: tree.workspace, encoding: 'utf8' }));
+    // The orchestrator assigns the plan: a new implement-wrapper run without one, or with a plan outside the set, is refused.
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper'], { cwd: tree.workspace, stdio: 'pipe' }), /needs --plan/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'nope'], { cwd: tree.workspace, stdio: 'pipe' }), /not part of plan set/);
+    let implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(implementation.input.context.plan_id, 'slice');
     const blockedRef = `runtime/executions/${implementation.input.execution_id}/result.json`;
     const blockedResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '계획 발행 후 구현을 시작할 수 있습니다.', artifacts: [], questions: [], review_request: null, unplanned_additions: [], commit_request: null };
     const blockedEnvelope = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: blockedRef, result: blockedResult };
@@ -821,7 +825,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const implementationState = JSON.parse(await readFile(implementationStatePath, 'utf8'));
     implementationState.stages['spec-me'] = { ...implementationState.stages['spec-me'], status: 'completed', code: 'OK', execution_id: next.input.execution_id, result_ref: specRef };
     await writeFile(implementationStatePath, JSON.stringify(implementationState));
-    implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper'], { cwd: tree.workspace, encoding: 'utf8' }));
+    implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.ok(implementation.input.input_refs.some((item) => item.path === `docs/plans/${ticketId}/slice.md`));
     for (const axis of ['product', 'architecture']) assert.ok(implementation.input.input_refs.some((item) => item.path === `docs/specs/${ticketId}/${axis}-spec.md`));
     assert.equal(implementation.input.context.producer_result_refs['to-ticket'].path, reviewRef);

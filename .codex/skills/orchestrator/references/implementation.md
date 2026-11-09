@@ -6,7 +6,7 @@
 
 활성 workspace의 `<workspace_root>/.codex/context-budget.json`과 plan의 예상 토큰을 읽는다. 계획이 현재 `max_plan_tokens`를 넘으면 `to-ticket` 단계로 돌아가 재분할한다. 실행 중 context 사용량을 판단할 때는 `harness-skill-execution.mjs budget --root <workspace_root> --estimate <다음 작업 예상 토큰> --used <관측된 사용 토큰>`으로 `action_fits`를 확인한다. `used + estimate > context_window_tokens - handoff_reserve_tokens`이면 checkpoint 후 새 context로 재개한다. 관측 사용량이 없으면 정량 판정을 했다고 주장하지 않고 필요한 입력을 요청한다. worker가 Smart Zone을 재판단하지 않게 한다.
 
-다음 plan은 canonical tracker 상태와 plans index(`docs/plans/<plan-set-id>/plans.md`)의 의존성 근거로 고르고 한 번에 split plan 하나만 배정한다. 독립 plan이나 `parallel_groups`가 있어도 병렬 dispatch하지 않는다. 진행 중인 plan은 기존 checkpoint에서 재개하고, 해당 plan의 구현·단위 테스트·독립 리뷰·canonical tracker 완료 확인까지 끝나야 다음 ready plan을 선택한다. blocked/failed 또는 사용자 결정 대기 중이면 다음 plan을 시작하지 않는다.
+다음 plan은 canonical tracker 상태와 plans index(`docs/plans/<plan-set-id>/plans.md`)의 의존성 근거로 고르고 한 번에 split plan 하나만 배정한다. 배정은 `harness-prepare-input.mjs --stage-id implement-wrapper --plan <plan-id>`로 입력에 기록한다. 한 plan이 `completed/OK`로 끝나면 다음 ready plan을 같은 방식의 새 실행으로 준비하며, 끝난 실행에 `--feedback`을 보내지 않는다. 독립 plan이나 `parallel_groups`가 있어도 병렬 dispatch하지 않는다. 진행 중인 plan은 기존 checkpoint에서 재개하고, 해당 plan의 구현·단위 테스트·독립 리뷰·canonical tracker 완료 확인까지 끝나야 다음 ready plan을 선택한다. blocked/failed 또는 사용자 결정 대기 중이면 다음 plan을 시작하지 않는다.
 
 순차 실행 위치·통합·보존은 [session-worktree](../../../../.codex/internal-skills/session-worktree/GUIDE.md)의 sequential 방식을 따른다. worker는 정본 `worktree_ref`에서 작업 위치와 session을 읽는다. worker가 실행 방식을 다시 선택하거나 worktree를 생성하지 않게 한다.
 
