@@ -178,6 +178,27 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
   } catch (error) { return { status: 'fail', reason: 'tracker_mirror_unresolved', violations: [error.message] }; }
 }
 
+// Records a note on the ticket (for example what an implementation-only repair changed) without touching the plan.
+export async function commentTracker({ workspace_root: root, ticket_ref: ref, body, run = defaultRun } = {}) {
+  if (typeof body !== 'string' || !body.trim()) throw new Error('A comment body is required');
+  const config = await projectConfig(root);
+  if (config?.mode === 'github') {
+    const { settings, number } = githubReference(config, ref);
+    await run('gh', ['issue', 'comment', String(number), '--repo', settings.repository, '--body', body], root);
+    return { status: 'pass', reason: 'tracker_comment_added', ticket_ref: ref };
+  }
+  if (config?.mode === 'local-markdown') {
+    const ticket = await localTicket(root, config, ref);
+    if (await readFile(ticket.path, 'utf8') !== ticket.content) throw new Error('Local ticket changed concurrently; retry');
+    const note = `${ticket.content.replace(/\n*$/, '\n')}${ticket.content.includes('\n## 수정 기록\n') ? '' : '\n## 수정 기록\n'}\n- ${new Date().toISOString().slice(0, 10)}: ${body.trim().replace(/\n+/g, ' ')}\n`;
+    const temp = `${ticket.path}.${randomUUID()}.tmp`;
+    try { await writeFile(temp, note, { flag: 'wx', mode: (await lstat(ticket.path)).mode }); await rename(temp, ticket.path); }
+    finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    return { status: 'pass', reason: 'tracker_comment_added', ticket_ref: ref };
+  }
+  throw new Error('Exactly one configured tracker mode is required');
+}
+
 export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, run = defaultRun } = {}) {
   if (status !== null && !Object.hasOwn(TRACKER_STATES, status)) throw new Error('Use planned, in-progress, blocked, or completed');
   if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');

@@ -386,7 +386,7 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
   return unverified;
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, resolution, cycleApproval = null, trackerPort = null, scopeDecisions = [], scopeGroups = [] }) {
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, implementationOnly = false, resolution, cycleApproval = null, trackerPort = null, scopeDecisions = [], scopeGroups = [] }) {
   const scope = { root, scope: `implementation-${planId}` };
   if (resolution !== undefined) {
     const prior = await inspectReviewHistory(scope);
@@ -415,7 +415,9 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   const reserveRemoval = () => updateReviewAttempt({ ...scope, action: 'scope-removal', inputs, findings: removals });
   if (decision.repair.scope_removal_only) return reserveRemoval();
   try {
-    return await updateReviewAttempt({ ...scope, action: 'repair', inputs, maxRounds, findings: decision.classification.repairable });
+    // The orchestrator judged these fixes need no test, Spec or plan change; the code checks the kinds agree.
+    if (implementationOnly && !decision.classification.repairable.every((finding) => finding.kind === 'implementation_defect')) throw Object.assign(new Error('--implementation-only accepts only implementation_defect findings; test, Spec or plan changes go through the normal repair or revision path'), { code: 'implementation_only_mismatch' });
+    return await updateReviewAttempt({ ...scope, action: 'repair', inputs, maxRounds, implementationOnly, findings: decision.classification.repairable });
   } catch (error) {
     // 사용자가 제거를 결정한 동작은 수리 예산이 소진돼도 되돌릴 수 있어야 한다.
     if (error.code === 'max_repair_rounds_exceeded' && removals.length) return reserveRemoval();
