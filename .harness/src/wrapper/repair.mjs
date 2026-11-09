@@ -421,6 +421,8 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   } catch (error) {
     // 사용자가 제거를 결정한 동작은 수리 예산이 소진돼도 되돌릴 수 있어야 한다.
     if (error.code === 'max_repair_rounds_exceeded' && removals.length) return reserveRemoval();
+    // Code-only findings do not need the user: say so, so the orchestrator reruns repair with --implementation-only.
+    if (error.code === 'max_repair_rounds_exceeded' && !implementationOnly && decision.classification.repairable.length && decision.classification.repairable.every((finding) => finding.kind === 'implementation_defect')) return { action: 'block', state: 'blocked', reason: error.code, classification: decision.classification, next_action: 'implementation-only-repair', resume_condition: 'Every remaining finding is an implementation_defect: rerun repair with --implementation-only true and send the fix back to the implementer; do not ask the user or update the plan' };
     if (error.code === 'max_repair_rounds_exceeded') return { action: 'block', state: 'blocked', reason: error.code, classification: decision.classification, next_action: 'user-decision', resume_condition: 'Ask the user about each remaining finding; do not route them to Spec or plan revision without an answer', user_questions: buildScopeDecisionQuestions(decision.classification.repairable) };
     throw error;
   }

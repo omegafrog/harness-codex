@@ -37,3 +37,9 @@ test('the implementer records an implementation-only fix on the ticket, not in t
     assert.match(await readFile(join(root, 'docs/plans/set/p.md'), 'utf8'), /## 수정 기록\n\n- \d{4}-\d{2}-\d{2}: Fixed it\n$/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('repair points out the implementation-only route when the budget runs out on code-only findings', async () => {
+  const source = await readFile(new URL('../.harness/src/wrapper/repair.mjs', import.meta.url), 'utf8');
+  assert.match(source, /next_action: 'implementation-only-repair'/);
+  assert.match(await readFile(new URL('../.codex/internal-skills/code-review/references/repair.md', import.meta.url), 'utf8'), /next_action: implementation-only-repair/);
+});
