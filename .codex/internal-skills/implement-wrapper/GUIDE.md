@@ -1,7 +1,7 @@
 
 # implement-wrapper
 
-최종 E2E에 필요한 실행 방법이나 환경이 아직 정해지지 않았다면 구현 workflow에서 사용자에게 확인하고 실제 조건을 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 기록한다.
+plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다. 최종 E2E는 모든 split plan 구현과 통합 리뷰가 끝난 뒤 한 번만 준비한다. 구현하면서 알게 된 앱 실행 사실(실행 명령, 필요한 설정 키와 기본값, 의존 서비스)은 `docs/agents/EXEC.md`에 기록만 한다.
 
 orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 

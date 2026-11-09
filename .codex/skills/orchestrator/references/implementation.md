@@ -34,7 +34,7 @@
 ## 최종 E2E 승인과 실패 처리
 
 1. canonical tracker에서 대상 plan set의 모든 split plan 완료와 통합 리뷰 pass를 확인한다. 여러 plan set이 요청 범위에 있으면 대상 전체가 이 조건을 만족한 뒤 최종 E2E를 준비한다. child 완료와 parent feature 완료를 구분하며 E2E 전 parent 완료를 선언하지 않는다.
-2. 에이전트가 승인 Product/Architecture Specs와 parent test contract를 읽고 실제 엔드유저 E2E 시나리오를 작성한다. 각 시나리오에 요구 ID, 준비 데이터·실제 서버/인프라, 사용자 행동, 관측할 기대 결과/실패 조건, 실행 profile·timeout과 cleanup을 포함한다. 계획과 다른 실행 조건은 차이와 사유를 표시하며 승인 Spec 변경은 해당 설계/계획 단계로 돌린다.
+2. 에이전트가 승인 Product/Architecture Specs와 parent test contract를 읽고 실제 엔드유저 E2E 시나리오를 작성한다. 실행 조건(앱 시작 명령, 설정, 테스트 DB, profile, timeout)은 `docs/agents/EXEC.md`·`execution.json`과 코드에서 도출해 `execution.json` profile로 기록하고 시나리오에 담는다. 이 조건을 사용자에게 작성해 달라고 묻지 않는다. 각 시나리오에 요구 ID, 준비 데이터·실제 서버/인프라, 사용자 행동, 관측할 기대 결과/실패 조건, 실행 profile·timeout과 cleanup을 포함한다. 계획과 다른 실행 조건은 차이와 사유를 표시하며 승인 Spec 변경은 해당 설계/계획 단계로 돌린다.
 3. 완성된 시나리오를 한국어로 사용자에게 보여주고 최종 실행 승인을 요청한다. 기존 질문/답변 계약으로 `USER_DECISION_REQUIRED`를 반환하고 시나리오 파일·대상 commit·실행 조건과 실제 답변 참조를 session에 보존한다. 구현 진행 승인이나 과거 계획 승인을 E2E 실행 승인으로 간주하지 않는다. 응답 대기·거절 중에는 서버/인프라와 runner를 시작하지 않는다. 시나리오·대상 코드·실행 조건이 바뀌면 변경본을 다시 승인받는다.
 4. 명시적 승인 뒤에만 구현·리뷰·orchestrator 대화를 공유하지 않는 fresh `e2e_test_runner` 하위 agent를 새로 띄워 [e2e-test](../../../../.codex/internal-skills/e2e-test/GUIDE.md)를 실행한다. 승인된 시나리오·oracle·profile·budget·대상 commit과 답변 참조만 전달한다. orchestrator나 구현 stage가 직접 E2E를 실행하지 않고, 재실행도 새 fresh runner로 한다. 개별 plan 경계에서 E2E를 실행하지 않는다.
 5. 테스트 실패·timeout·환경 차단·cleanup 실패 시 증거와 실패 이력을 보존하고 소유 프로세스/산출물 cleanup만 수행한다. 제품 코드·테스트·assertion·실행 설정을 자동 수정하지 않고 재실행하지 않는다. 실패 시나리오, 기대/실제 결과, 로그/스크린샷/receipt, 원인 가설, 제안 수정과 재실행 범위를 사용자에게 제시하고 `USER_DECISION_REQUIRED`로 반환한다. 사용자가 허용한 조치만 수행하며 수정 승인과 재실행 승인을 구분한다.

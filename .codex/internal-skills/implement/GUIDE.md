@@ -66,6 +66,6 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 ## E2E 실행 조건과 실패
 
-최종 E2E에 필요한 앱 실행 방법·환경·시나리오가 확정되지 않았다면 구현 단계에서 사용자에게 확인하고 `docs/agents/EXEC.md`와 `docs/agents/execution.json`에 실제 실행 조건을 기록한다.
+plan 구현 단계에서는 최종 E2E 조건을 사용자에게 묻지 않는다. 앱 실행에 필요한 사실(실행 명령, 설정 키와 기본값, 의존 서비스)은 `docs/agents/EXEC.md`에 기록한다. 최종 E2E의 실행 profile과 조건은 모든 plan 구현과 통합 리뷰 뒤 orchestrator 절차가 이 기록과 코드에서 도출한다.
 
 E2E 전·후에는 [공통 실패 학습 절차](../../../.codex/internal-skills/e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 현재 필수 테스트의 실패·미실행과 실제 미해결 blocker는 완료를 막는다. 과거 실패의 학습 분류·지침 갱신·예방 조치 검증 상태는 별도 pending으로 인계하며 테스트 결과나 완료 판정을 바꾸지 않는다. 최종 E2E 실패 후 caller는 자동 수정·재실행하지 않고 `USER_DECISION_REQUIRED`로 실패 근거와 제안 조치를 사용자에게 확인받는다. 실제 승인 뒤에만 허용된 EXEC/profile·제품/검사 수정과 재검증·lesson 반영을 수행한다.

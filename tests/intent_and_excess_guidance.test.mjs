@@ -25,3 +25,9 @@ test('implementation review findings are limited to Spec, repository standards a
   assert.match(guide, /`intent_ref`는 Product Spec의 INT·BR ID나 BASELINE ID만 쓴다/);
   assert.match(await read('.harness/src/wrapper/repair.mjs'), /"\.codex\/internal-skills\/ddd-design\/",/);
 });
+
+test('the final E2E conditions are prepared once after all plans, derived by the agent, not asked during a plan', async () => {
+  assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다/);
+  assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /plan 구현 단계에서는 최종 E2E 조건을 사용자에게 묻지 않는다/);
+  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /이 조건을 사용자에게 작성해 달라고 묻지 않는다/);
+});
