@@ -127,16 +127,27 @@ async function threadActivity(threadId) {
   return null;
 }
 
+// A provider process resuming this conversation names its session ID on the command line. Its log can stay silent
+// for minutes while it waits on a subagent or a long command, so the process, not the log age, says it is working.
+async function conversationProcessAlive(id) {
+  for (const pid of await readdir('/proc').catch(() => [])) {
+    if (!/^\d+$/.test(pid) || Number(pid) === process.pid) continue;
+    const args = await readFile(`/proc/${pid}/cmdline`, 'utf8').catch(() => '');
+    if (args.includes(id)) return true;
+  }
+  return false;
+}
+
 // The main orchestrator works between stages (independent reviews, repair, tracker checks); show it too.
 async function orchestratorRows(session, state, progress) {
   const id = progress?.orchestrator_session_id || state.orchestrator_session_id;
   const rows = [];
   const activity = id ? await threadActivity(id).catch(() => null) : null;
-  const active = activity && activity.age < 90;
+  const active = Boolean(id && (await conversationProcessAlive(id) || (activity && activity.age < 90)));
   rows.push(`  ${active ? '▶' : '·'} ${'orchestrator'.padEnd(18)} ${active ? '진행 중' : '대기'}${activity && !active ? ` · 마지막 활동 ${ago(activity.age)}` : ''}`);
   const reviewers = await activeSubagents(session, null, 'runtime/orchestrator/subagents.jsonl');
   if (reviewers.length) rows.push(`      └ 하위 agent: ${reviewers.join(', ')}`);
-  if (active) rows.push(`      └ ${activity.text}  (${ago(activity.age)})`);
+  if (active && activity) rows.push(`      └ ${activity.text}  (${ago(activity.age)})`);
   return rows;
 }
 
