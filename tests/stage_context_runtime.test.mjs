@@ -120,7 +120,7 @@ test('one provider per setup: models and workflow bindings from another provider
 });
 
 test('Codex subagent hook is one user-level hook that must be trusted before stages start', async () => {
-  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
   const home = await mkdtemp(join(tmpdir(), 'codex-home-'));
   try {
     const env = { CODEX_HOME: home };
@@ -136,7 +136,11 @@ test('Codex subagent hook is one user-level hook that must be trusted before sta
     const untrusted = await inspectCodexHookTrust(env);
     assert.equal(untrusted.trusted, false);
     assert.deepEqual(untrusted.untrusted, ['SubagentStart', 'SubagentStop']);
-    await writeFile(join(home, 'config.toml'), ['subagent_start', 'subagent_stop'].map((event) => `[hooks.state."${join(home, 'hooks.json')}:${event}:0:0"]\ntrusted_hash = "sha256:${'a'.repeat(64)}"\n`).join('\n'));
+    const trustFile = (hash) => ['subagent_start', 'subagent_stop'].map((event) => `[hooks.state."${join(home, 'hooks.json')}:${event}:0:0"]\ntrusted_hash = "sha256:${hash(event)}"\n`).join('\n');
+    // A trust entry for an earlier version of the hook command no longer counts: Codex would not run the hook.
+    await writeFile(join(home, 'config.toml'), trustFile(() => 'a'.repeat(64)));
+    assert.deepEqual((await inspectCodexHookTrust(env)).untrusted, ['SubagentStart', 'SubagentStop']);
+    await writeFile(join(home, 'config.toml'), trustFile((event) => codexHookTrustHash(event, codexSubagentHook())));
     assert.equal((await inspectCodexHookTrust(env)).trusted, true);
     const runner = await readFile(new URL('../.codex/scripts/harness-prepare-input.mjs', import.meta.url), 'utf8');
     assert.match(runner, /PERMISSION_REQUIRED: the Harness subagent hook/);

@@ -1,4 +1,5 @@
 import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { mkdir, realpath, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -112,6 +113,14 @@ export async function syncCodexSubagentHook(env = process.env) {
   return { path, changed: true };
 }
 
+const sortedKeys = (value) => Array.isArray(value) ? value.map(sortedKeys) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortedKeys(value[key])])) : value;
+
+// Codex trusts a hook by this hash (reverse-engineered from recorded trust entries): sha256 over the key-sorted JSON of
+// {event_name, hooks:[handler]} with the handler's default `async: false` filled in. Changing a hook's command changes it.
+export function codexHookTrustHash(eventName, handler) {
+  return createHash('sha256').update(JSON.stringify(sortedKeys({ event_name: eventName, hooks: [{ async: false, ...handler }] }))).digest('hex');
+}
+
 // Codex runs a hook only after the user trusts it with `/hooks`; trust is recorded in
 // `$CODEX_HOME/config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<handler>"]` with a trusted hash.
 export async function inspectCodexHookTrust(env = process.env) {
@@ -119,20 +128,21 @@ export async function inspectCodexHookTrust(env = process.env) {
   const text = await readFile(hooksPath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   const hooks = text ? JSON.parse(text).hooks || {} : {};
   const config = await readFile(join(home, 'config.toml'), 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  const trusted = new Set();
+  const trusted = new Map();
   let current = null;
   for (const line of config.split('\n')) {
     const header = /^\s*\[hooks\.state\."(.+)"\]\s*$/.exec(line);
     if (header) { current = header[1]; continue; }
     if (/^\s*\[/.test(line)) { current = null; continue; }
-    if (current && /^\s*trusted_hash\s*=\s*"sha256:[0-9a-f]{64}"/.test(line)) trusted.add(current);
+    const hash = /^\s*trusted_hash\s*=\s*"sha256:([0-9a-f]{64})"/.exec(line)?.[1];
+    if (current && hash) trusted.set(current, hash);
   }
   const missing = [], untrusted = [];
   for (const event of SUBAGENT_EVENTS) {
     const groups = Array.isArray(hooks[event]) ? hooks[event] : [];
     const slots = groups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === SUBAGENT_STATUS);
     if (!slots.length) missing.push(event);
-    else if (!slots.some(({ key }) => trusted.has(key))) untrusted.push(event);
+    else if (!slots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash(snake(event), handler))) untrusted.push(event);
   }
   return { trusted: !missing.length && !untrusted.length, missing, untrusted, hooks_path: hooksPath };
 }
