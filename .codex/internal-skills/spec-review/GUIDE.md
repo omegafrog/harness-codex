@@ -2,7 +2,7 @@
 
 Product Spec과 Architecture Spec 두 문서만 리뷰 자료로 사용한다. Product Spec은 요구사항 기준이며 Architecture Spec이 이를 충족하는지 독립적으로 검토한다. 리뷰 기준은 [review-criteria.md](references/review-criteria.md)다. 리뷰 지침은 절차를 위한 지침이며 리뷰 자료가 아니다.
 
-1. 두 Spec의 작성을 마친 뒤 `harness-spec-review.mjs begin --root <workspace_root> --ticket <plan-set-id> --axis architecture`를 실행한다. 추가 파일을 입력하지 않는다.
+1. 두 Spec의 작성을 마친 뒤 작업 worktree에서 `node .codex/scripts/harness-spec-review.mjs begin --axis architecture`를 실행한다(`--root`·`--ticket`은 worktree에서 찾는다). 추가 파일을 입력하지 않는다. 이전 stage가 중단돼 끝난 reviewer의 attempt가 active로 남아 있어도 `begin`을 실행한다. Harness가 그 결과를 정리(입력이 바뀌었으면 stale)하고 새 attempt를 연다. `check`의 missing 오류는 환경 문제가 아니라 아직 `begin`하지 않았다는 뜻이다.
 2. `spec_adversarial_reviewer`를 작성자와 분리된 fresh context (`fork_turns: none`)로 호출한다. 두 Spec과 리뷰 기준만 전달한다. 요청 원문, 결정 기록, 근거, 공식 문서, source, glossary, 계약, 다이어그램 등 다른 자료는 읽거나 리뷰하지 않는다. Reviewer의 마지막 assistant 메시지는 `verdict` 값이 `pass`, `revise`, `reject`, `blocked` 중 하나이고 `findings` 배열을 포함하는 JSON 객체여야 한다. 예: `{ "verdict": "pass", "findings": [] }`. Identity와 admission fields는 실행기가 주입·기록하므로 reviewer가 만들거나 추측하지 않는다. 이 실제 마지막 메시지가 native stop 결과와 대조되므로 별도 요약을 덧붙이지 않는다.
    Claude Code에서는 `PreToolUse` Agent admission hook이 현재 활성 Architecture attempt 하나와 연결된 실제 `spec_adversarial_reviewer` 위임만 허가한다. attempt ID와 reviewer identity는 호출 입력에 주입되며, native start/stop identity와 실제 마지막 응답이 기록 결과와 일치해야 한다. hook 차단을 다른 role이나 수동 reviewer 호출로 우회하지 않는다.
 3. 독립 리뷰는 요구사항 누락·모순, DDD 모델과 책임, 구현에 필요한 핵심 동작과 데이터의 누락과 함께 Product 의도에 근거하지 않거나 충분한 수준을 넘는 과한 설계를 확인한다. 지적은 두 Spec의 위치와 구체적인 영향을 포함한다. 근거가 없으면 취향으로 finding을 만들지 않는다.

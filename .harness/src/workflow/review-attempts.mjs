@@ -108,6 +108,14 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
       result = { status: 'pass', scope_removal: true, round: cycle.length, findings };
     } else if (action === 'begin') {
       requireValue(inputs && Object.keys(inputs).length > 0, 'Review inputs are required');
+      // A reviewer that finished after its stage was interrupted leaves the attempt active with a bound result.
+      // Settle it from that result (stale when the inputs changed since) so the next stage can start a review.
+      if (last?.status === 'active' && last.native_review?.agent_id && last.native_review.stopped && last.native_review.review) {
+        const native = last.native_review;
+        last.review = { verdict: native.review.verdict, findings: native.review.findings || [], reviewer_id: native.reviewer_id, author_ids: [native.parent_session_id], fork_turns: 'none', inputs: last.inputs };
+        last.status = !same(last.inputs, inputs) ? 'stale' : native.review.verdict === 'pass' && (native.review.findings || []).every((item) => item.severity === 'minor') ? 'pass' : 'revise';
+        last.settled_after_interruption = true;
+      }
       requireValue(last?.status !== 'active', 'A review is already active; record its result or abort it before dispatch');
       requireValue(!last || last.status === 'aborted' || (scope.startsWith('plan-') && last.status === 'revise') || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
       const trailingPreparationAborts = trailingPreparationAbortCount(history);
