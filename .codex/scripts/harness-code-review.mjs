@@ -4,13 +4,13 @@ import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
 const { reserveImplementationRepair } = await import(installed.href);
-const { buildReviewInput, readImplementerResult, assembleReviews, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
+const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
-    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error('Invalid code-review arguments');
+    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error('Invalid code-review arguments');
     options[flag.slice(2)] = value;
   }
   options.root = resolve(options.root);
@@ -18,11 +18,18 @@ try {
   let result;
   if (action === 'assemble') {
     // Builds runtime/reviews/implementation-<plan>.json for `repair` from the real commits and the reviewers' own answers.
-    if (!options['fixed-point'] || !options['implementation-result'] || !options['standards-agent'] || !options['spec-agent'] || options['standards-agent'] === options['spec-agent']) throw new Error('assemble needs --fixed-point, --implementation-result and two different reviewer agent IDs: --standards-agent and --spec-agent');
+    const reuse = options['reuse-axis'];
+    if (reuse && !['standards', 'spec'].includes(reuse)) throw new Error('--reuse-axis must be standards or spec');
+    // --reuse-axis <role> carries that axis's earlier clean pass forward (see carryForwardReview) instead of a new reviewer for it.
+    const needed = ['standards', 'spec'].filter((role) => role !== reuse).map((role) => `${role}-agent`);
+    if (!options['fixed-point'] || !options['implementation-result'] || needed.some((key) => !options[key]) || (reuse && options[`${reuse}-agent`]) || (!reuse && options['standards-agent'] === options['spec-agent'])) throw new Error('assemble needs --fixed-point, --implementation-result and a fresh reviewer agent ID for each axis: --standards-agent and --spec-agent (omit the one named by --reuse-axis)');
     const implemented = await readImplementerResult({ root: options.root, resultRef: options['implementation-result'] });
     if (options.commit && options.commit !== implemented.commitSha) throw new Error(`--commit ${options.commit} differs from the commit the implementer reported (${implemented.commitSha})`);
     const reviewInput = await buildReviewInput({ root: options.root, planId: options.plan, fixedPoint: options['fixed-point'], commit: implemented.commitSha, unplannedAdditions: implemented.additions });
-    const evidence = assembleReviews({ reviewInput, standards: await readHookRecordedReviewer({ root: options.root, role: 'standards', agentId: options['standards-agent'] }), spec: await readHookRecordedReviewer({ root: options.root, role: 'spec', agentId: options['spec-agent'] }) });
+    const side = async (role) => role === reuse
+      ? { carried: await carryForwardReview({ root: options.root, planId: options.plan, role, reviewInput }) }
+      : readHookRecordedReviewer({ root: options.root, role, agentId: options[`${role}-agent`] });
+    const evidence = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec') });
     result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point };
   } else if (action === 'record-decision') {
     const { SCOPE_OPTION_LABELS } = await import(installed.href);

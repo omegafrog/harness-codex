@@ -58,7 +58,8 @@ export async function readImplementerResult({ root, resultRef }) {
 // Combines the two reviewers' raw JSON answers ({"state","report":{"findings"}}) with the review input.
 // Each context_id is the reviewer's own native agent/thread ID, never a label written by the caller.
 export function assembleReviews({ reviewInput, standards, spec }) {
-  const entry = (role, { contextId, raw }) => {
+  const entry = (role, { contextId, raw, carried }) => {
+    if (carried) return carried;
     if (!contextId || typeof contextId !== 'string') throw new Error(`${role} reviewer needs its native context ID`);
     let parsed;
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { throw new Error(`${role} reviewer answer is not JSON`); }
@@ -66,6 +67,37 @@ export function assembleReviews({ reviewInput, standards, spec }) {
     return { role, context_id: contextId, independent: true, fresh_context: true, implementation_commit_sha: reviewInput.implementation_commit_sha, review_input: reviewInput, state: parsed.state, report: parsed.report, raw_result: typeof raw === 'string' ? raw : JSON.stringify(raw) };
   };
   return { review_input: reviewInput, reviews: [entry('standards', standards), entry('spec', spec)] };
+}
+
+// A repair round normally re-runs both reviewers. When one axis already passed and the repair only touched files the
+// OTHER axis cited in its findings, that passed verdict is carried forward instead of asking a new reviewer to
+// repeat it. The carried entry keeps its original reviewer ID and says so in `carried_forward`; every other check
+// (both roles, one commit, the same review_input) still applies. Anything that does not meet these conditions is
+// refused, and the caller must run both reviewers.
+const cited = (finding) => [finding.file, ...String(finding.evidence ?? '').split(/[\s,;()]+/)]
+  .map((token) => String(token ?? '').replace(/^[ab]\//, '').replace(/:\d+(-\d+)?$/, ''))
+  .filter((token) => /^[\w@.-]+(\/[\w@.-]+)*\.\w+$/.test(token));
+
+export async function carryForwardReview({ root, planId, role, reviewInput }) {
+  if (!['standards', 'spec'].includes(role)) throw new Error('--reuse-axis must be standards or spec');
+  let previous;
+  try { previous = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}.json`, { create: false }), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') throw new Error('There is no earlier review of this plan to carry forward; run both reviewers'); throw error; }
+  const entry = previous.reviews?.find((item) => item.role === role);
+  const other = previous.reviews?.find((item) => item.role !== role);
+  const refuse = (why) => { throw new Error(`The ${role} verdict cannot be carried forward (${why}); run both reviewers`); };
+  if (!entry || !other) refuse('the earlier review is incomplete');
+  if (previous.review_input?.fixed_point !== reviewInput.fixed_point) refuse('the fixed point changed');
+  if (entry.state !== 'passed' || entry.report.findings.some((finding) => finding.kind !== 'advisory')) refuse(`it did not pass cleanly in the earlier round`);
+  if (other.state === 'passed') refuse('the other axis had no findings, so there was no repair to scope');
+  const from = entry.implementation_commit_sha, to = reviewInput.implementation_commit_sha;
+  if (from === to) refuse('the implementation commit did not change');
+  await git(root, 'merge-base', '--is-ancestor', from, to).catch(() => refuse('the new commit does not descend from the reviewed commit'));
+  const delta = (await git(root, 'diff', '--name-only', `${from}..${to}`)).split('\n').filter(Boolean);
+  const allowed = new Set(other.report.findings.filter((finding) => finding.kind !== 'advisory').flatMap(cited));
+  const outside = delta.filter((file) => !allowed.has(file));
+  if (!delta.length || outside.length) refuse(delta.length ? `the repair also changed files the other axis did not cite: ${outside.slice(0, 5).join(', ')}` : 'the repair changed no files');
+  return { ...entry, implementation_commit_sha: to, review_input: reviewInput, carried_forward: { from_commit: from, delta_files: delta, reason: 'repair stayed within files the other axis cited' } };
 }
 
 // Reads a reviewer recorded by the subagent hook in the orchestrator session: its Stop answer is the review,
