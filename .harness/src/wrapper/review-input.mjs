@@ -109,7 +109,7 @@ const cited = (finding) => [finding.file, ...String(finding.evidence ?? '').spli
 export async function carryForwardReview({ root, planId, role, reviewInput }) {
   if (!['standards', 'spec'].includes(role)) throw new Error('--reuse-axis must be standards or spec');
   let previous;
-  try { previous = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`, { create: false }), 'utf8')); }
+  try { previous = await readEvidence(root, planId); }
   catch (error) { if (error.code === 'ENOENT') throw new Error('There is no earlier review of this plan to carry forward; run both reviewers'); throw error; }
   const entry = previous.reviews?.find((item) => item.role === role);
   const other = previous.reviews?.find((item) => item.role !== role);
@@ -153,6 +153,18 @@ export async function readHookRecordedReviewer({ root, role, agentId = null, aft
 
 const pendingPath = (planId) => `runtime/reviews/implementation-${planId}-questions.json`;
 
+// Evidence written before it moved to -evidence.json sits at the review-history path; read it from there while the
+// new file does not exist yet, so a plan reviewed by an older version continues.
+async function readEvidence(root, planId) {
+  for (const path of [`runtime/reviews/implementation-${planId}-evidence.json`, `runtime/reviews/implementation-${planId}.json`]) {
+    try {
+      const parsed = JSON.parse(await readFile(sessionOutputPath(root, path, { create: false }), 'utf8'));
+      if (parsed?.review_input && Array.isArray(parsed?.reviews)) return parsed;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  const error = new Error(`No review evidence for ${planId}`); error.code = 'ENOENT'; throw error;
+}
+
 // `repair` asks; this keeps what it asked, with the fingerprints of the findings and when it was first asked, so a
 // decision can only answer a question of the current review. The question ID carries the fingerprints, so an
 // earlier answer to a finding that reused the same ID is never found under the new question.
@@ -188,7 +200,7 @@ export async function recordScopeDecision({ root, planId, findingId, choice, ans
   if (!await userSaidAfter({ root, text: answer, since: asked.asked_at })) throw new Error(`No user message after the question (${asked.asked_at}) contains this answer; ask the user and record their reply, not an earlier answer`);
   const evidencePath = `runtime/reviews/implementation-${planId}-evidence.json`;
   const answersRef = `runtime/reviews/implementation-${planId}-answers.json`;
-  const evidence = JSON.parse(await readFile(sessionOutputPath(root, evidencePath, { create: false }), 'utf8'));
+  const evidence = await readEvidence(root, planId);
   const questionId = asked.question_id;
   let answers = [];
   try { answers = JSON.parse(await readFile(sessionOutputPath(root, answersRef, { create: false }), 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -204,7 +216,7 @@ export async function recordScopeDecision({ root, planId, findingId, choice, ans
 // needed; `reviewed` says so, and the implementer completes the plan instead of returning REVIEW_REQUIRED again.
 export async function recordPassedReview({ root, planId, evidence }) {
   const path = sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`);
-  const current = JSON.parse(await readFile(path, 'utf8'));
+  const current = await readEvidence(root, planId);
   const input = evidence.review_input;
   current.passed = { implementation_commit_sha: input.implementation_commit_sha, fixed_point: input.fixed_point, planning_snapshot_sha256: input.planning_snapshot_sha256, recorded_at: new Date().toISOString() };
   await writeFile(path, JSON.stringify(current, null, 2) + '\n', { mode: 0o600 });
@@ -213,7 +225,7 @@ export async function recordPassedReview({ root, planId, evidence }) {
 export async function reviewedCommit({ root, planId, commit }) {
   const head = (await git(root, 'rev-parse', commit || 'HEAD')).trim();
   let evidence;
-  try { evidence = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`, { create: false }), 'utf8')); }
+  try { evidence = await readEvidence(root, planId); }
   catch (error) { if (error.code === 'ENOENT') return { status: 'review_required', reason: 'no_passed_review', commit: head }; throw error; }
   const passed = evidence.passed;
   if (!passed || passed.implementation_commit_sha !== head) return { status: 'review_required', reason: passed ? 'commit_changed' : 'no_passed_review', commit: head, ...(passed ? { passed_commit: passed.implementation_commit_sha } : {}) };

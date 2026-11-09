@@ -232,6 +232,10 @@ test('review evidence and review history use separate files, and an overwritten 
     // A history file that an earlier assemble overwrote with evidence no longer blocks every later review.
     await writeFile(join(root, '.io/runtime/reviews/implementation-P.json'), JSON.stringify({ review_input: {}, reviews: [] }));
     assert.equal((await inspectReviewHistory({ root, scope: 'implementation-P' })).recorded_state, 'no-current-reservation');
+    // Evidence still at the old path is read until the new file exists.
+    const { carryForwardReview } = await import('../.harness/src/wrapper/review-input.mjs');
+    await rm(join(root, '.io/runtime/reviews/implementation-P-evidence.json'));
+    await assert.rejects(carryForwardReview({ root, planId: 'P', role: 'standards', reviewInput: { fixed_point: 'x' } }), /earlier review is incomplete/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
