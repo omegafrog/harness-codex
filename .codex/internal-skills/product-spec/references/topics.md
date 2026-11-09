@@ -37,4 +37,4 @@
     Convert all agreed requirements, rules, flows, exceptions, and outcomes into clear and verifiable statements.
 
 13. **End-user Scenarios**
-    Turn the acceptance criteria into the end-user scenarios the final E2E runs: actor, action and the result the user sees, each linked to its UC/BR/AC IDs. Ask the user only when an expected result is not settled by the agreed requirements. Execution environment belongs to the Architecture Spec.
+    Turn the acceptance criteria into the end-user scenarios the final E2E runs: actor, action and the result the user sees, each linked to its UC/BR/AC IDs. Ask the user only when an expected result is not settled by the agreed requirements. Every step must follow from an existing UC/BR/AC. When a natural scenario needs behavior no requirement covers (for example logout after login), do not add the requirement yourself: ask the user whether to add it (with the reason it is needed) or to drop it from the scenario, and record the answer as the requirement's source. Execution environment belongs to the Architecture Spec.

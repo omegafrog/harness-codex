@@ -36,7 +36,8 @@ test('the final E2E is specified in spec-me and planned as the last plan, run on
   assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /13\. \*\*End-user Scenarios\*\*/);
   assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /13\. \*\*End-user Scenarios\*\*/);
   assert.match(await read('.codex/internal-skills/architecture-spec/references/template.md'), /## 12\.7 End-to-End Execution Environment/);
-  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /Product Spec 13절 사용자 시나리오/);
+  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /시나리오를 위해 추가된 요구에 사용자 답변 출처가 있는지/);
+  assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /do not add the requirement yourself: ask the user/);
   assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /마지막 child로 `e2e` plan을 하나 둔다/);
   assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /마지막 `e2e` plan이 모든 기능 plan에 의존/);
   const orchestration = await read('.codex/skills/orchestrator/references/implementation.md');
