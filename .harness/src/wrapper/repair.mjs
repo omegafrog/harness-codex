@@ -327,11 +327,15 @@ function cycleLimitQuestion(cycles) {
   };
 }
 
+export const verifiedScopeDecisionsForTest = (root, scopeDecisions) => verifiedScopeDecisions(root, scopeDecisions);
 async function verifiedScopeDecisions(root, scopeDecisions) {
   if (!Array.isArray(scopeDecisions)) throw new TypeError("scope_decisions must be an array");
   const verified = [];
   for (const decision of scopeDecisions) {
     if (typeof decision?.finding_id !== "string" || !decision.finding_id || !["reject", "accept", "adopt"].includes(decision.choice) || typeof decision.question_id !== "string" || !decision.question_id || typeof decision.answers_ref !== "string" || !decision.answers_ref) throw new TypeError("Each scope decision needs finding_id, choice, question_id and answers_ref");
+    // Orchestrator-recorded decisions (scope-*) must name the question they answered by its finding fingerprints;
+    // an older one without them could belong to a different finding that reused the ID, so it is asked again.
+    if (decision.question_id.startsWith("scope-") && decision.finding_id !== "repair-cycle" && (!decision.question_id.includes("@") || !Array.isArray(decision.fingerprints))) continue;
     const answers = JSON.parse(await readFile(sessionOutputPath(root, decision.answers_ref, { create: false }), "utf8"));
     const answer = Array.isArray(answers) ? answers.find((item) => item?.question_id === decision.question_id)?.answer : undefined;
     const labels = [decision.choice, ...Object.values(SCOPE_OPTION_LABELS).map((item) => item[decision.choice])].filter(Boolean);

@@ -190,4 +190,6 @@ test('a recorded decision does not apply to a different finding that reuses the 
   const reused = classifyReviewFindings(review(today), { scopeDecisions: [decision] });
   assert.equal(reused.dismissed.length, 0, 'a new finding under the same ID is not covered by the earlier answer');
   assert.ok(reused.blockers.some((item) => item.id === 'P-STD-001' && !item.scope_decision));
+  const { verifiedScopeDecisionsForTest } = await import('../.harness/src/wrapper/repair.mjs');
+  assert.deepEqual(await verifiedScopeDecisionsForTest('/nonexistent', [{ finding_id: 'P-STD-001', choice: 'adopt', question_id: 'scope-P:P-STD-001', answers_ref: 'a.json' }]), [], 'a legacy decision without fingerprints is asked again');
 });
