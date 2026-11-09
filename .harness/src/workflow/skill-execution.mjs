@@ -341,7 +341,9 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     if (input.skill === 'to-ticket') {
       const { inspectPlanSet } = await import('./plan-review.mjs');
       const review = await inspectPlanSet({ root, planSetId: input.context?.plan_set_id, phase: 'planning' });
-      requireValue(review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
+      // A completed plan being reopened (user revision, or a Spec change that requires a plan revision) is replaced by the
+      // new run, whose own completion needs a fresh review; the stale review of the old plan must not block the reopening.
+      requireValue(reopening || review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
       // GitHub publication later reads these drafts; a plan set without them can never be published.
       const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch(() => '')).tracker;
       // A completed result being reopened for a user revision is re-validated only to be replaced; it may predate this check.

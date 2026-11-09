@@ -120,7 +120,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
     assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
     assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);
-    assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting\)/);
+    assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting \|\| \(crossStageRevision/);
     assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /--user-revision true/);
     assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /위임은 사용자가 그 선택을 맡긴다고 답한 경우에만 성립한다/);
     const doctor = await runDoctor({ root, sourceRoot });

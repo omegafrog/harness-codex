@@ -353,7 +353,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
       if (previousSession !== taskSession) throw new Error('Feedback target belongs to a different worktree session');
       const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
-      await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: Boolean(userRevisionWaiting) });
+      await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: Boolean(userRevisionWaiting || (crossStageRevision && previous.status === 'completed' && previous.code === 'OK')) });
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
