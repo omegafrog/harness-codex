@@ -4,7 +4,7 @@
    Identify the circumstances in which the problem occurs, how it manifests, and what impact it currently has.
 
 2. **Goals and Desired Outcomes**
-   Focus on the outcome the product should produce rather than only describing what should be built. Capture one product intent per feature: its purpose and what level is sufficient. Do not ask the user to list what is out of bounds.
+   Focus on the outcome the product should produce rather than only describing what should be built. Capture one product intent per feature: the user's reason for wanting it (what it protects or enables for whom) and what level is sufficient for that reason. Restating the feature ("users can log in with email") is not an intent. When the request does not state the reason, ask it together with the feature's decision question (see the intent question rule in the Product Spec GUIDE). Do not ask the user to list what is out of bounds.
 
 3. **Users and Actors**
    Identify the users, external systems, and other participants involved in the product or workflow.

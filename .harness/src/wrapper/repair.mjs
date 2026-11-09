@@ -38,6 +38,7 @@ const REPOSITORY_STANDARD_PATHS = [
   ".codex/repository-conventions.md",
   ".codex/internal-skills/code-review/references/default-rules.md",
   ".codex/internal-skills/testing-guidance/GUIDE.md",
+  ".codex/internal-skills/ddd-design/",
   "docs/agents/",
   "docs/architecture/",
   "docs/contracts/",

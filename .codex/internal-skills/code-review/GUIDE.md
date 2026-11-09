@@ -11,6 +11,8 @@
 
 When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only that axis as the Standards or Spec section below defines and return its findings. Do not dispatch another reviewer, invoke `code-review` recursively, or edit code, tests, plans, Specs or review artifacts. Do not infer semantic correctness from a hash pass.
 
+지적은 세 가지뿐이다: 승인 Spec의 요구 위반, 저장소 기준 위반(DDD 계층 책임은 [ddd-design](../ddd-design/GUIDE.md)과 [model-continuity](../ddd-design/references/model-continuity.md)가 기준이다), Spec·기준에 근거 없는 추가. 그 밖의 구조 제안이나 더 나은 설계 의견은 지적하지 않는다. 기준 위반은 수정 대상이며 `basis.source: repository_standard`와 해당 기준 문서 경로·원문을 쓴다. 기준이 금지한 과잉 구조(한 구현뿐인 불필요한 port, pass-through service, 같은 입력을 전달하는 wrapper, 사용되지 않는 repository·event)도 같은 방식으로 제거를 지적한다.
+
 Read the code, configuration and execution profiles under review at the given implementation commit with `git show <SHA>:<path>` and the diff; if workspace content differs from that commit, report it instead of mixing it into the evidence.
 
 추가로 발견한 상위 요구의 누락은 해당 요구의 plan owner를 확인해 기록한다. 다른 plan의 미구현 동작은 그 owner로 연결하고, 현재 plan의 인계 계약 위반은 현재 지적으로 보고한다.
@@ -52,7 +54,7 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 
 ## 결과 형식
 
-reviewer는 다음 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. 권고는 kind:advisory로 기록한다. severity는 minor이고 blocking을 true로 쓰지 않는다. 수정 대상 kind(implementation_defect, test_defect, in_scope_spec_mismatch, verification_gap)는 `basis: {source, quote}`가 필수다. `source`는 product_spec, architecture_spec, canonical_plan, repository_standard이며 repository_standard는 `path`도 쓴다. 저장소 표준의 `path`는 `.codex/repository-conventions.md`, 기본 리뷰·테스트 규칙, `docs/agents/`, `docs/architecture/`, `docs/contracts/` 아래만 허용한다. `quote`는 해당 문서의 원문이어야 하며 runtime이 대조한다. 수정 대상 kind는 `intent_ref`와 `failure_scenario`도 필수이며 runtime이 ID의 존재를 대조한다.
+reviewer는 다음 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. 권고는 kind:advisory로 기록한다. severity는 minor이고 blocking을 true로 쓰지 않는다. 수정 대상 kind(implementation_defect, test_defect, in_scope_spec_mismatch, verification_gap)는 `basis: {source, quote}`가 필수다. `source`는 product_spec, architecture_spec, canonical_plan, repository_standard이며 repository_standard는 `path`도 쓴다. 저장소 표준의 `path`는 `.codex/repository-conventions.md`, 기본 리뷰·테스트 규칙, `.codex/internal-skills/ddd-design/` 아래 DDD 기준, `docs/agents/`, `docs/architecture/`, `docs/contracts/` 아래만 허용한다. `intent_ref`는 Product Spec의 INT·BR ID나 BASELINE ID만 쓴다(UC·AC·지적 ID는 쓰지 않는다). `quote`는 해당 문서의 원문이어야 하며 runtime이 대조한다. 수정 대상 kind는 `intent_ref`와 `failure_scenario`도 필수이며 runtime이 ID의 존재를 대조한다.
 
 ## 계약 판정
 
