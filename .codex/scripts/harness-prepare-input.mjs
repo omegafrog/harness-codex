@@ -15,6 +15,7 @@ try {
     if (!process.argv[i]?.startsWith('--') || !allowed.has(key) || !process.argv[i + 1] || Object.hasOwn(options, key)) throw new Error(`Invalid argument: ${process.argv[i]}`);
     options[key] = process.argv[i + 1];
   }
+  options['worktree-ref'] = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: options['worktree-ref'] }).worktree_ref ?? options['worktree-ref'];
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
   const repository = await realpath((await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim());
   const bindings = JSON.parse(await readFile(join(repository, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));

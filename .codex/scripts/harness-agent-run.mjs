@@ -32,6 +32,7 @@ try {
     if (!args[i]?.startsWith('--') || !['worktree-ref', 'execution-id', 'workflow', 'stage', 'background'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
+  opts['worktree-ref'] = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: opts['worktree-ref'] }).worktree_ref ?? opts['worktree-ref'];
   if (!isAbsolute(opts['worktree-ref'] || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute worktree-ref and execution-id are required');
   if (opts.background && opts.background !== 'true') throw new Error('background must be true');
   const root = process.cwd();

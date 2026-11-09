@@ -6,8 +6,9 @@ const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.u
 const { reserveImplementationRepair } = await import(installed.href);
 const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, recordPassedReview, reviewedCommit, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
+const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 try {
-  const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() };
+  const [action, ...args] = process.argv.slice(2), options = {};
   for (let i = 0; i < args.length; i++) {
     // Accept both `--flag value` and `--flag=value`.
     const [flag, inline] = args[i].includes('=') && args[i].startsWith('--') ? [args[i].slice(0, args[i].indexOf('=')), args[i].slice(args[i].indexOf('=') + 1)] : [args[i], undefined];
@@ -15,11 +16,14 @@ try {
     if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--implementation-only', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
     options[flag.slice(2)] = value;
   }
-  options.root = resolve(options.root);
+  options.root = resolveCommandContext({ root: options.root }).root;
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.plan || '')) throw new Error('Valid plan ID is required');
   let result;
   if (action === 'assemble') {
     // Builds runtime/reviews/implementation-<plan>.json for `repair` from the real commits and the reviewers' own answers.
+    // The latest review request of this plan and the fixed point its earlier rounds used, unless given.
+    options['implementation-result'] ??= latestReviewResult(options.root, options.plan) ?? undefined;
+    options['fixed-point'] ??= reviewFixedPoint(options.root, options.plan) ?? undefined;
     const reuse = options['reuse-axis'];
     if (reuse && !['standards', 'spec'].includes(reuse)) throw new Error('--reuse-axis must be standards or spec');
     // --reuse-axis <role> carries that axis's earlier clean pass forward (see carryForwardReview) instead of a new reviewer for it.

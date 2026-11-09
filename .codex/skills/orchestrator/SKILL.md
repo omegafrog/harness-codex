@@ -63,6 +63,8 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 
 위 세 코드의 전환은 대상 stage를 `--user-revision` 없이 `--stage-id`만으로 준비한다(`--user-revision`은 사용자의 직접 수정 지시 전용이다). 준비기가 이전 결과를 입력으로 연결하고 낡은 완료 결과를 다시 연다.
 
+작업 worktree에서 실행하는 Harness 명령은 `--root`·`--plan-set`·`--worktree-ref`를 스스로 찾는다. 이 값을 얻으려고 `worktree.json`·`state.json`·결과 파일을 읽지 말고, 상태 확인은 `node .codex/scripts/harness-context.mjs` 한 번으로 한다. `harness-code-review.mjs assemble --plan <plan-id>`도 최신 리뷰 요청 결과와 기존 fixed point를 찾는다.
+
 Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
 
 질문은 `title`과 각 선택지 `label`을 글자 그대로 보여 준다. 문구를 합치거나 조건을 덧붙이지 않고, 보충 설명이 필요하면 질문과 분리해 "참고"로 붙인다. 답을 넘길 때 사용자가 선택지만 골랐으면 그 선택지 ID를, 조건을 덧붙이거나 직접 설명했으면 사용자의 답 원문 전체를 `answer`로 넘긴다. 선택지 ID만 넘겨 사용자가 덧붙인 조건을 잃지 않는다.

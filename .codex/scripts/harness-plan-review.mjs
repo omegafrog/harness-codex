@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const installed = new URL('../../.harness/src/workflow/plan-review.mjs', import.meta.url);
 const { snapshotPlanSet, inspectPlanSet, inspectPlanSetImpact, updatePlanReview } = await import(installed.href);
 const { reviewDelta } = await import(new URL('./review-delta.mjs', installed).href);
+const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 // The stage only names the admitted attempt. Verdict, findings and reviewer identity come from the
 // native reviewer that the subagent hook bound to this attempt, so a stage cannot vouch for itself.
 function validateReviewRecord(review, options) {
@@ -15,13 +16,13 @@ function validateReviewRecord(review, options) {
   if (review.schema_version !== 1 || review.attempt_id !== options.attempt || review.plan_set_id !== options.planSetId) throw new Error('Review record target does not match the admitted attempt');
 }
 try {
-  const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() };
+  const [action, ...args] = process.argv.slice(2), options = {};
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
     if (!['--root', '--plan-set', '--phase', '--plan', '--attempt', '--reason', '--reviews'].includes(flag) || !value) throw new Error('Invalid plan review arguments');
     options[flag === '--plan-set' ? 'planSetId' : flag === '--plan' ? 'planId' : flag.slice(2)] = value;
   }
-  options.root = resolve(options.root);
+  { const ctx = resolveCommandContext({ root: options.root, planSetId: options.planSetId }); options.root = ctx.root; options.planSetId = ctx.plan_set_id ?? undefined; }
   let result;
   if (['begin', 'record', 'abort', 'resolve'].includes(action)) {
     if (action === 'record') {

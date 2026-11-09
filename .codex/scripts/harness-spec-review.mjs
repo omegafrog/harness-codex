@@ -7,15 +7,16 @@ const outputModule = new URL('./session-output.mjs', installed);
 const { sessionOutputPath, sessionDirectory } = await import(outputModule.href);
 const { updateReviewAttempt } = await import(new URL('./review-attempts.mjs', installed).href);
 const { reviewDelta } = await import(new URL('./review-delta.mjs', installed).href);
+const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 try {
-  const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() }, inputs = [];
+  const [action, ...args] = process.argv.slice(2), options = {}, inputs = [];
   for (let i = 0; i < args.length; i++) {
     const flag = args[i], value = args[++i];
     if (!['--root', '--ticket', '--axis', '--reviews', '--input', '--attempt', '--reason'].includes(flag) || !value) throw new Error('Invalid review arguments');
     if (flag === '--input') inputs.push(value);
     else options[flag === '--ticket' ? 'ticketId' : flag.slice(2)] = value;
   }
-  options.root = resolve(options.root);
+  { const ctx = resolveCommandContext({ root: options.root }); options.root = ctx.root; options.ticketId ??= ctx.plan_set_id ?? undefined; }
   let result;
   if (['begin', 'record', 'abort', 'resolve'].includes(action)) {
     if (options.axis !== 'architecture') throw new Error('Only Architecture Spec review is supported');
