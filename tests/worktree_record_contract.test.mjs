@@ -1126,6 +1126,13 @@ test('compose creates input only in the worktree and leaves main without .io', a
     const ownerIdentity = await processIdentity(process.pid);
     await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: ownerIdentity, child: ownerIdentity });
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Do not dispatch a duplicate'], { cwd: tree.workspace, stdio: 'pipe' }), /Command failed/);
+    // A stage the user cancelled resumes in the same conversation once its processes are gone.
+    await recordInstalledSession({ workspace_root: tree.workspace, repository_root: root, key: 'spec-me', session_id: record.worktree_id, execution_id: interruptedResume.input.execution_id });
+    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: deadIdentity, child: deadIdentity });
+    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'cancelled', code: 'CANCELLED' });
+    const cancelledResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Resume after the Harness update'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(cancelledResume.input.context.resume_session_id, record.worktree_id);
+    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', cancelledResume.input.execution_id, 'feedback.json'), 'utf8')).feedback, 'Resume after the Harness update');
     await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'failed', code: 'EXECUTION_ERROR' });
     const recoveryInput = { ...next.input, execution_id: 'recoverable-result' };
     await writeExecutionInput(tree.workspace, recoveryInput, tree.plan_set_id);

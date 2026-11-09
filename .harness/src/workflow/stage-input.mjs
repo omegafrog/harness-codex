@@ -339,7 +339,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
-    let interrupted = previous?.status === 'failed';
+    // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
+    // after checking that its processes are gone.
+    let interrupted = ['failed', 'cancelled'].includes(previous?.status);
     if (interrupted) await assertExecutionStopped(previous, { root, session: taskSession });
     if (!interrupted && previous?.status === 'running' && !previous.result_ref) {
       await assertExecutionStopped(previous, { root, session: taskSession });
@@ -347,7 +349,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
-    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, review, matching revision, blocked, or confirmed interrupted stage');
+    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
     if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
