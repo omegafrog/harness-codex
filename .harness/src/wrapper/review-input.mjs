@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { userSaidAfter } from '../workflow/user-inputs.mjs';
 import { dirname, join } from 'node:path';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { inspectPlanSet } from '../workflow/plan-review.mjs';
@@ -114,22 +116,49 @@ export async function readHookRecordedReviewer({ root, role, agentId }) {
   return { contextId: agentId, raw: stop.result };
 }
 
+const pendingPath = (planId) => `runtime/reviews/implementation-${planId}-questions.json`;
+
+// `repair` asks; this keeps what it asked, with the fingerprints of the findings and when it was first asked, so a
+// decision can only answer a question of the current review. The question ID carries the fingerprints, so an
+// earlier answer to a finding that reused the same ID is never found under the new question.
+export async function recordPendingQuestions({ root, planId, questions, now = new Date() }) {
+  let previous = [];
+  try { previous = JSON.parse(await readFile(sessionOutputPath(root, pendingPath(planId), { create: false }), 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const pending = [];
+  const annotated = questions.map((item) => {
+    if (!item?.finding_id || !Array.isArray(item.fingerprints)) return item;
+    const questionId = `scope-${planId}:${item.finding_id}@${createHash('sha256').update(item.fingerprints.join(',')).digest('hex').slice(0, 12)}`;
+    const askedAt = previous.find((entry) => entry.question_id === questionId)?.asked_at || now.toISOString();
+    pending.push({ question_id: questionId, finding_id: item.finding_id, finding_ids: item.finding_ids, fingerprints: item.fingerprints, asked_at: askedAt });
+    return { ...item, question_id: questionId };
+  });
+  const path = sessionOutputPath(root, pendingPath(planId));
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, JSON.stringify(pending, null, 2) + '\n', { mode: 0o600 });
+  return annotated;
+}
+
 // The main orchestrator is not a stage, so the repair questions it relays have no stage-assigned question IDs.
-// This records the user's own words under a deterministic ID and links them to the finding, so `repair` can
-// verify the decision against that answer exactly as it does for stage questions.
+// This records the user's own words for a question the latest `repair` asked, after checking that the user really
+// said them after that question (hook-recorded user input), and links them to the finding's fingerprints.
 export async function recordScopeDecision({ root, planId, findingId, choice, answer, labels }) {
   if (!findingId || !['reject', 'accept', 'adopt'].includes(choice)) throw new Error('A finding ID and a choice of reject, accept or adopt are required');
   if (typeof answer !== 'string' || !answer.trim()) throw new Error('The user\'s answer text is required');
   const accepted = [choice, ...Object.values(labels).map((item) => item[choice])].filter(Boolean);
   if (!accepted.some((label) => answer.includes(label))) throw new Error(`The answer must contain the chosen option label (${[...new Set(accepted)].join(' / ')}); record the user's actual words`);
+  let pending = [];
+  try { pending = JSON.parse(await readFile(sessionOutputPath(root, pendingPath(planId), { create: false }), 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const asked = pending.find((entry) => entry.finding_id === findingId);
+  if (!asked) throw new Error(`${findingId} is not a question the latest repair asked; run repair and relay its question to the user`);
+  if (!await userSaidAfter({ root, text: answer, since: asked.asked_at })) throw new Error(`No user message after the question (${asked.asked_at}) contains this answer; ask the user and record their reply, not an earlier answer`);
   const evidencePath = `runtime/reviews/implementation-${planId}.json`;
   const answersRef = `runtime/reviews/implementation-${planId}-answers.json`;
   const evidence = JSON.parse(await readFile(sessionOutputPath(root, evidencePath, { create: false }), 'utf8'));
-  const questionId = `scope-${planId}:${findingId}`;
+  const questionId = asked.question_id;
   let answers = [];
   try { answers = JSON.parse(await readFile(sessionOutputPath(root, answersRef, { create: false }), 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   answers = [...answers.filter((item) => item.question_id !== questionId), { question_id: questionId, answer }];
-  evidence.scope_decisions = [...(evidence.scope_decisions || []).filter((item) => item.finding_id !== findingId), { finding_id: findingId, choice, question_id: questionId, answers_ref: answersRef }];
+  evidence.scope_decisions = [...(evidence.scope_decisions || []).filter((item) => item.finding_id !== findingId), { finding_id: findingId, choice, question_id: questionId, answers_ref: answersRef, fingerprints: asked.fingerprints }];
   await writeFile(sessionOutputPath(root, answersRef), JSON.stringify(answers, null, 2) + '\n', { mode: 0o600 });
   await writeFile(sessionOutputPath(root, evidencePath), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
   return { question_id: questionId, answers_ref: answersRef, reviews: evidencePath };

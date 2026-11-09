@@ -19,6 +19,11 @@ try {
     uninitialized = true;
     root = resolve(event.cwd);
   }
+  // Keep the user's own input so a decision relayed by the orchestrator can be checked against what the user said.
+  if (!uninitialized) {
+    const { recordUserInput } = await import(new URL('../../.harness/src/workflow/user-inputs.mjs', import.meta.url));
+    await recordUserInput({ root, event }).catch((error) => process.stderr.write(`Harness could not record the user input: ${error.message}\n`));
+  }
   const orchestrator = ['.codex/skills/orchestrator/SKILL.md', '.agents/skills/orchestrator/SKILL.md'].map((path) => resolve(root, path)).find(existsSync);
   const composer = resolve(root, '.codex/internal-skills/workflow-compose/GUIDE.md');
   if (!orchestrator || !existsSync(composer)) throw new Error('Harness orchestrator/workflow-compose skill is missing');

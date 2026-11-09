@@ -1,4 +1,5 @@
 import { inspectReviewHistory, MAX_REPAIR_CYCLES, updateReviewAttempt } from '../workflow/review-attempts.mjs';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { promisify } from 'node:util';
@@ -101,6 +102,20 @@ function scopeFindingId(finding) {
   return finding.id || `${finding.reviewer_role || "review"}:${finding.finding_index ?? 0}`;
 }
 
+// Reviewers number findings per round (IDENTITY-01-STD-001, ...), so the same ID can name a different finding in a
+// later round. A recorded user decision carries the fingerprints of the findings it answered and applies only to a
+// finding with the same content; a reused ID with new content goes back to the user.
+export function findingFingerprint(finding) {
+  return createHash('sha256').update(JSON.stringify([finding.reviewer_role || finding.role || '', finding.kind || '', finding.summary || '', finding.evidence || ''])).digest('hex').slice(0, 16);
+}
+
+function decisionFor(decisions, id, finding) {
+  const decision = decisions.get(id);
+  if (!decision) return undefined;
+  if (Array.isArray(decision.fingerprints) && !decision.fingerprints.includes(findingFingerprint(finding))) return undefined;
+  return decision;
+}
+
 function scopeGroupIndex(scopeGroups) {
   const groups = new Map();
   for (const group of scopeGroups) for (const member of group.finding_ids) groups.set(member, group.id);
@@ -115,7 +130,7 @@ function canAcceptWithoutSpec(finding) {
 function routeScopeFinding(finding, decisions, routes, groups) {
   const id = scopeFindingId(finding);
   const groupId = groups.get(id);
-  const decision = decisions.get(id) || (groupId && decisions.get(groupId));
+  const decision = decisionFor(decisions, id, finding) || (groupId && decisionFor(decisions, groupId, finding));
   if (BLOCKER_KINDS.has(finding.kind) && decision?.choice === "reject") routes.dismissed.push({ ...finding, scope_decision: decision });
   else if (BLOCKER_KINDS.has(finding.kind) && decision) routes.blockers.push({ ...finding, scope_decision: decision });
   else if (!decision) routes.blockers.push(groupId ? { ...finding, scope_group: groupId } : finding);
@@ -170,6 +185,7 @@ export function buildScopeDecisionQuestions(findings = []) {
     return {
       finding_id: id,
       finding_ids: members.map(scopeFindingId),
+      fingerprints: members.map(findingFingerprint),
       question: {
         title: `${QUESTION_TITLES[key]} ${finding.summary || id}`,
         options: [
@@ -255,7 +271,8 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
       else if (BLOCKER_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
       else if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) {
         if (hasSpecBasis(finding) && !unverifiedBasis.has(`${review?.role}:${index}`)) {
-          if (decisions.get(scopeFindingId(finding))?.choice === "reject") dismissed.push({ ...finding, scope_decision: decisions.get(scopeFindingId(finding)) });
+          const decided = decisionFor(decisions, scopeFindingId(finding), finding);
+          if (decided?.choice === "reject") dismissed.push({ ...finding, scope_decision: decided });
           else repairable.push(finding);
         }
         else routeScopeFinding({ ...finding, kind: "unbacked_requirement", original_kind: finding.kind }, decisions, routes, groups);

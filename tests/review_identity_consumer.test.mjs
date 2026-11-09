@@ -139,7 +139,7 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
   }
 });
 
-test('orchestrator-relayed scope decisions are recorded under a deterministic ID and checked against the answer text', async () => {
+test('orchestrator-relayed scope decisions answer only a question the latest repair asked, with words the user said after it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-scope-decision-'));
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
   try {
@@ -147,20 +147,47 @@ test('orchestrator-relayed scope decisions are recorded under a deterministic ID
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
+    await writeFile(join(root, '.io/worktree.json'), '{}');
     await writeFile(join(root, '.io/runtime/reviews/implementation-A.json'), JSON.stringify({ review_input: {}, reviews: [] }));
     const cli = join(root, '.codex/scripts/harness-code-review.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
+    const { recordPendingQuestions } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
+    const { findingFingerprint } = await import(`file://${join(root, '.harness/src/wrapper/repair.mjs')}`);
+    const userSays = (prompt) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: 's-1', prompt }) });
+
+    // An earlier round's user answer exists, but nothing was asked in this round yet.
+    userSays('Spec에 추가');
+    assert.match(run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가').stderr, /not a question the latest repair asked/);
+
+    // repair asks about F-1; the user has not answered since, so the earlier answer cannot be reused.
+    const today = { reviewer_role: 'standards', kind: 'test_defect', summary: 'integration tests mixed into unit tests', evidence: 'identity/tests/test_identity.py:40' };
+    const [question] = await recordPendingQuestions({ root, planId: 'A', questions: [{ finding_id: 'F-1', finding_ids: ['F-1'], fingerprints: [findingFingerprint(today)], question: { title: 't' } }], now: new Date(Date.now() + 1000) });
+    assert.match(question.question_id, /^scope-A:F-1@[0-9a-f]{12}$/);
+    assert.match(run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가').stderr, /No user message after the question/);
     const wrong = run('--finding', 'F-1', '--choice', 'adopt', '--answer', '지적 기각');
-    assert.notEqual(wrong.status, 0);
     assert.match(wrong.stderr, /must contain the chosen option label/);
+
+    // The user answers after the question: the decision is recorded with the finding's fingerprint.
+    await new Promise((done) => setTimeout(done, 1100));
+    userSays('Spec에 추가'); // the placeholder worktree.json fails later hook steps; the input is recorded first
     const ok = run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가');
     assert.equal(ok.status, 0, ok.stderr);
     const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A.json'), 'utf8'));
-    assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: 'scope-A:F-1', answers_ref: 'runtime/reviews/implementation-A-answers.json' }]);
-    assert.deepEqual(JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A-answers.json'), 'utf8')), [{ question_id: 'scope-A:F-1', answer: 'Spec에 추가' }]);
-    assert.equal(run('--finding', 'F-2', '--choice', 'reject', '--answer', '지적 기각').status, 0);
-    assert.equal(JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A.json'), 'utf8')).scope_decisions.length, 2);
+    assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: question.question_id, answers_ref: 'runtime/reviews/implementation-A-answers.json', fingerprints: [findingFingerprint(today)] }]);
+    assert.equal((await readFile(join(root, '.io/runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').length, 2);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('a recorded decision does not apply to a different finding that reuses the same ID', async () => {
+  const { classifyReviewFindings, findingFingerprint } = await import('../.harness/src/wrapper/repair.mjs');
+  const yesterday = { id: 'P-STD-001', kind: 'scope_expansion', severity: 'major', summary: 'test asserts a framework save call', evidence: 'a.py:34' };
+  const today = { ...yesterday, summary: 'integration tests mixed into unit tests', evidence: 'a.py:40' };
+  const review = (finding) => [{ role: 'standards', state: 'failed', report: { findings: [finding] } }, { role: 'spec', state: 'passed', report: { findings: [] } }];
+  const decision = { finding_id: 'P-STD-001', choice: 'reject', question_id: 'q', answers_ref: 'a', fingerprints: [findingFingerprint({ ...yesterday, reviewer_role: 'standards' })] };
+  assert.equal(classifyReviewFindings(review(yesterday), { scopeDecisions: [decision] }).dismissed.length, 1, 'the answered finding is dismissed');
+  const reused = classifyReviewFindings(review(today), { scopeDecisions: [decision] });
+  assert.equal(reused.dismissed.length, 0, 'a new finding under the same ID is not covered by the earlier answer');
+  assert.ok(reused.blockers.some((item) => item.id === 'P-STD-001' && !item.scope_decision));
 });
