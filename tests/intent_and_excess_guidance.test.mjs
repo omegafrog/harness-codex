@@ -29,5 +29,18 @@ test('implementation review findings are limited to Spec, repository standards a
 test('the final E2E conditions are prepared once after all plans, derived by the agent, not asked during a plan', async () => {
   assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다/);
   assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /plan 구현 단계에서는 최종 E2E 조건을 사용자에게 묻지 않는다/);
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /이 조건을 사용자에게 작성해 달라고 묻지 않는다/);
+  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /시나리오는 Spec에서 확정됐으므로 다시 작성하거나 실행 조건을 묻지 않는다/);
+});
+
+test('the final E2E is specified in spec-me and planned as the last plan, run once after approval', async () => {
+  assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /13\. \*\*End-user Scenarios\*\*/);
+  assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /13\. \*\*End-user Scenarios\*\*/);
+  assert.match(await read('.codex/internal-skills/architecture-spec/references/template.md'), /## 12\.7 End-to-End Execution Environment/);
+  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /Product Spec 13절 사용자 시나리오/);
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /마지막 child로 `e2e` plan을 하나 둔다/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /마지막 `e2e` plan이 모든 기능 plan에 의존/);
+  const orchestration = await read('.codex/skills/orchestrator/references/implementation.md');
+  assert.match(orchestration, /마지막 `e2e` plan을 다른 plan과 같은 방식/);
+  assert.match(orchestration, /사용자에게 실행 승인만 묻는다/);
+  assert.doesNotMatch(orchestration, /에이전트가 승인 Product\/Architecture Specs와 parent test contract를 읽고/);
 });

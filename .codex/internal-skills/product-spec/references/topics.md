@@ -35,3 +35,6 @@
 
 12. **Success Conditions and Acceptance Criteria**
     Convert all agreed requirements, rules, flows, exceptions, and outcomes into clear and verifiable statements.
+
+13. **End-user Scenarios**
+    Turn the acceptance criteria into the end-user scenarios the final E2E runs: actor, action and the result the user sees, each linked to its UC/BR/AC IDs. Ask the user only when an expected result is not settled by the agreed requirements. Execution environment belongs to the Architecture Spec.

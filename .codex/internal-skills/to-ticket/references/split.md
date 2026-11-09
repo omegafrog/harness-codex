@@ -12,7 +12,7 @@
 
 각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
 
-각 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. Parent plan-set에는 모든 split plan이 구현·개별 검증·통합된 뒤 마지막에 한 번 실행할 feature-level E2E 시나리오, oracle, execution profile, timeout을 제안한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
+각 기능 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. 마지막 child로 `e2e` plan을 하나 둔다. 이 plan은 모든 기능 plan에 의존하고, Product Spec 13절 시나리오를 Architecture Spec 12.7 환경에서 실행하는 E2E 테스트 코드와 `execution.json` profile(`purpose: "e2e"`), `docs/agents/EXEC.md` 실행 안내를 만든다. 시나리오와 환경은 Spec을 참조하고 plan에서 새로 정하지 않는다. Parent는 이 plan을 참조한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
 
 분할 결과를 바탕으로 canonical 계획 문서를 작성하고 독립 리뷰를 요청한다. 승인된 Spec만으로 필수 결정을 내릴 수 없을 때는 그 결정만 사용자에게 묻는다. 티켓 발행 승인은 전체 계획과 독립 리뷰가 끝난 뒤 orchestrator가 요청한다.
 

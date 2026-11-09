@@ -509,6 +509,17 @@ stop
 | ----------- | ---------------- | ----------------- |
 | `<failure>` | `<method>`       | `<recovery>`      |
 
+## 12.7 End-to-End Execution Environment
+
+Product Spec 13절의 시나리오를 실행할 환경을 정한다. 코드·기술 결정·`docs/agents/EXEC.md`에서 도출하며 사용자에게 작성해 달라고 묻지 않는다.
+
+| 항목 | 결정 |
+| --- | --- |
+| 앱 시작 | `<command / entrypoint>` |
+| 의존 서비스·테스트 데이터 | `<isolated DB, seed, none>` |
+| 사용자 조작 방식 | `<browser / HTTP client>` |
+| profile·timeout·cleanup | `<execution.json profile id, timeout, cleanup>` |
+
 ## 12.6 Agent Verifier Criteria
 
 ### Domain
