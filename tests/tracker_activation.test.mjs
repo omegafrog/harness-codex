@@ -32,7 +32,7 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     for (const path of [plans, specs, drafts, join(root, 'docs/agents')]) await mkdir(path, { recursive: true });
     await writeFile(join(root, 'docs/agents/EXEC.md'), '');
     for (const id of ['auth', 'posts']) await writeFile(join(plans, `${id}.md`), `# ${id}\nDo ${id}.\n`);
-    await writeFile(join(plans, 'plans.md'), '# Plans\n\n| Plan | 범위 | 의존성 | 토큰 |\n|---|---|---|---|\n| [auth](auth.md) | 로그인 | 없음 | 1 |\n| [posts](posts.md) | 글 | auth (인증 경계) | 1 |\n');
+    await writeFile(join(plans, 'plans.md'), '# Plans\n\n| 순서 | Plan | Issue | 범위 | 의존성 | 토큰 |\n|---|---|---|---|---|---|\n| 1 | [auth](auth.md) | #35 | 로그인 | 없음 | 1 |\n| 2 | [posts](posts.md) | #38 | 글 | auth (인증 경계) | 1 |\n');
     for (const name of ['product', 'architecture']) await writeFile(join(specs, `${name}-spec.md`), `# ${name}\n`);
     for (const name of ['parent', 'auth', 'posts']) await writeFile(join(drafts, `${name}.md`), `${name}\n`);
     const snapshot = await snapshotPlanSet({ root, planSetId: 'example' });

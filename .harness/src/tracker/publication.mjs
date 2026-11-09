@@ -154,11 +154,18 @@ const defaultCommand = async (command, args, cwd) => (await exec(command, args, 
 async function planDependencies(root, planSetId, planIds) {
   const index = await readFile(join(root, 'docs/plans', planSetId, 'plans.md'), 'utf8');
   const dependencies = new Map(planIds.map((id) => [id, []]));
+  const pattern = (id) => new RegExp(`(^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`);
+  // Columns are found by header, so a leading order or Issue column does not shift them.
+  let dependencyColumn = null;
   for (const line of index.split('\n')) {
     const cells = line.split('|').map((cell) => cell.trim());
-    const owner = planIds.find((id) => cells[1]?.includes(`[${id}]`) || cells[1] === id);
-    if (!owner || cells.length < 4) continue;
-    dependencies.set(owner, planIds.filter((id) => id !== owner && new RegExp(`(^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`).test(cells[3])));
+    if (cells.length < 3) continue;
+    const header = cells.findIndex((cell) => /^(의존성|dependencies|depends on)$/i.test(cell));
+    if (header >= 0) { dependencyColumn = header; continue; }
+    if (dependencyColumn === null) continue;
+    const owner = planIds.find((id) => cells.some((cell, index) => index !== dependencyColumn && (cell.includes(`[${id}]`) || cell === id || cell === `\`${id}\``)));
+    if (!owner) continue;
+    dependencies.set(owner, planIds.filter((id) => id !== owner && pattern(id).test(cells[dependencyColumn] || '')));
   }
   return dependencies;
 }
