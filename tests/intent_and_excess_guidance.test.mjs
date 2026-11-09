@@ -67,3 +67,10 @@ test('implementation never asks the user: the output schema and the result valid
   assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /Implementation does not ask the user/);
   assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
 });
+
+test('infrastructure checks belong to the e2e plan, not to each feature plan', async () => {
+  assert.match(await read('.codex/internal-skills/architecture-spec/references/template.md'), /인프라가 있어야 확인되는 계약은 12\.7 환경에서 최종 E2E로 확인한다/);
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /그 plan의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
+  assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /그 확인을 `e2e` plan으로 옮기라고 지적한다/);
+});

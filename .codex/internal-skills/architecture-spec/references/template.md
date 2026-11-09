@@ -493,6 +493,8 @@ stop
 
 ## 12.3 Technical Contract Verification
 
+실제 DB·외부 서비스·보안 체인처럼 인프라가 있어야 확인되는 계약은 12.7 환경에서 최종 E2E로 확인한다. 기능 plan마다 따로 요구하지 않으며, 이 표의 Verification은 E2E 시나리오 ID나 단위 테스트를 가리킨다.
+
 | Contract                                 | Test Level             | Verification     |
 | ---------------------------------------- | ---------------------- | ---------------- |
 | `<API / message / persistence contract>` | Integration / Contract | `<verification>` |
