@@ -26,12 +26,18 @@ async function findSession(explicit) {
   if (local) return local;
   const parents = [join(dirname(cwd), '.harness-worktrees', basename(cwd)), join(homedir(), 'workspace/.harness-worktrees', basename(cwd))];
   let best = null;
+  // Not inside a project that owns worktrees: fall back to the most recent session of any project beside it.
+  for (const base of [join(dirname(cwd), '.harness-worktrees'), join(homedir(), 'workspace/.harness-worktrees')]) {
+    for (const project of await readdir(base).catch(() => [])) if (!parents.includes(join(base, project))) parents.push(join(base, project));
+  }
+  const preferred = parents.slice(0, 2);
   for (const parent of parents) {
     for (const entry of await readdir(parent).catch(() => [])) {
       const dir = await has(join(parent, entry, '.io'));
       if (!dir) continue;
       const info = await stat(join(dir, 'runtime/orchestrator/state.json'));
-      if (!best || info.mtimeMs > best.mtime) best = { dir, mtime: info.mtimeMs };
+      const rank = info.mtimeMs + (preferred.includes(parent) ? 1e13 : 0);
+      if (!best || rank > best.mtime) best = { dir, mtime: rank };
     }
   }
   return best?.dir || null;
