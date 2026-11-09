@@ -56,16 +56,31 @@ export async function readImplementerResult({ root, resultRef, commit = null }) 
   if (!Array.isArray(result.unplanned_additions)) throw new Error(`${resultRef} has no unplanned_additions array`);
   const recordedAt = (await stat(path)).mtimeMs;
   if (/^[0-9a-f]{40}$/i.test(result.commit_sha || '')) return { additions: result.unplanned_additions, commitSha: result.commit_sha, recordedAt };
-  // A resumed run that only re-checked an earlier implementation reports no new commit. The caller then names the
-  // commit, and it must be one an earlier implementation result of this session recorded; HEAD is never assumed.
-  if (!/^[0-9a-f]{40}$/i.test(commit || '')) throw new Error(`${resultRef} has no commit_sha; pass --commit <the implementation commit an earlier implement-wrapper result recorded>`);
+  // A resumed run that only re-checked an earlier implementation reports no new commit. The commit is then one an
+  // earlier implementation result of this session recorded: the one named by --commit (a unique prefix is enough),
+  // or, without --commit, the most recent recorded one when it is still HEAD (no later plan committed on top).
   const executions = sessionOutputPath(root, 'runtime/executions', { create: false });
+  const recorded = [];
   for (const name of await readdir(executions).catch(() => [])) {
     if (!name.startsWith('implement-wrapper-')) continue;
-    const earlier = await readFile(join(executions, name, 'result.json'), 'utf8').then(JSON.parse, () => null);
-    if (earlier?.commit_sha === commit) return { additions: result.unplanned_additions, commitSha: commit, recordedAt };
+    const file = join(executions, name, 'result.json');
+    const earlier = await readFile(file, 'utf8').then(JSON.parse, () => null);
+    if (/^[0-9a-f]{40}$/i.test(earlier?.commit_sha || '')) recorded.push({ sha: earlier.commit_sha.toLowerCase(), at: (await stat(file)).mtimeMs });
   }
-  throw new Error(`No implement-wrapper result in this session recorded commit ${commit}`);
+  const shas = [...new Set(recorded.map((item) => item.sha))];
+  let chosen;
+  if (commit) {
+    if (!/^[0-9a-f]{7,40}$/i.test(commit)) throw new Error(`--commit ${commit} is not a commit SHA (7-40 hex characters)`);
+    const matches = shas.filter((sha) => sha.startsWith(commit.toLowerCase()));
+    if (matches.length !== 1) throw new Error(matches.length ? `--commit ${commit} matches several recorded commits: ${matches.join(', ')}` : `No implement-wrapper result in this session recorded a commit starting with ${commit}; recorded: ${shas.join(', ') || 'none'}`);
+    [chosen] = matches;
+  } else {
+    const latest = recorded.sort((a, b) => b.at - a.at)[0]?.sha;
+    const head = (await git(root, 'rev-parse', 'HEAD').catch(() => '')).trim().toLowerCase();
+    if (!latest || latest !== head) throw new Error(`${resultRef} has no commit_sha and the latest recorded implementation commit (${latest || 'none'}) is not HEAD; pass --commit <SHA> (recorded: ${shas.join(', ') || 'none'})`);
+    chosen = latest;
+  }
+  return { additions: result.unplanned_additions, commitSha: chosen, recordedAt };
 }
 
 // Combines the two reviewers' raw JSON answers ({"state","report":{"findings"}}) with the review input.
@@ -94,7 +109,7 @@ const cited = (finding) => [finding.file, ...String(finding.evidence ?? '').spli
 export async function carryForwardReview({ root, planId, role, reviewInput }) {
   if (!['standards', 'spec'].includes(role)) throw new Error('--reuse-axis must be standards or spec');
   let previous;
-  try { previous = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}.json`, { create: false }), 'utf8')); }
+  try { previous = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`, { create: false }), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') throw new Error('There is no earlier review of this plan to carry forward; run both reviewers'); throw error; }
   const entry = previous.reviews?.find((item) => item.role === role);
   const other = previous.reviews?.find((item) => item.role !== role);
@@ -171,7 +186,7 @@ export async function recordScopeDecision({ root, planId, findingId, choice, ans
   const asked = pending.find((entry) => entry.finding_id === findingId);
   if (!asked) throw new Error(`${findingId} is not a question the latest repair asked; run repair and relay its question to the user`);
   if (!await userSaidAfter({ root, text: answer, since: asked.asked_at })) throw new Error(`No user message after the question (${asked.asked_at}) contains this answer; ask the user and record their reply, not an earlier answer`);
-  const evidencePath = `runtime/reviews/implementation-${planId}.json`;
+  const evidencePath = `runtime/reviews/implementation-${planId}-evidence.json`;
   const answersRef = `runtime/reviews/implementation-${planId}-answers.json`;
   const evidence = JSON.parse(await readFile(sessionOutputPath(root, evidencePath, { create: false }), 'utf8'));
   const questionId = asked.question_id;
@@ -184,9 +199,34 @@ export async function recordScopeDecision({ root, planId, findingId, choice, ans
   return { question_id: questionId, answers_ref: answersRef, reviews: evidencePath };
 }
 
+// A plan re-selected after an upstream change (Spec or plan revision) often has nothing new to implement. When its
+// HEAD is a commit whose review already passed for the same fixed point and planning snapshot, no second review is
+// needed; `reviewed` says so, and the implementer completes the plan instead of returning REVIEW_REQUIRED again.
+export async function recordPassedReview({ root, planId, evidence }) {
+  const path = sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`);
+  const current = JSON.parse(await readFile(path, 'utf8'));
+  const input = evidence.review_input;
+  current.passed = { implementation_commit_sha: input.implementation_commit_sha, fixed_point: input.fixed_point, planning_snapshot_sha256: input.planning_snapshot_sha256, recorded_at: new Date().toISOString() };
+  await writeFile(path, JSON.stringify(current, null, 2) + '\n', { mode: 0o600 });
+}
+
+export async function reviewedCommit({ root, planId, commit }) {
+  const head = (await git(root, 'rev-parse', commit || 'HEAD')).trim();
+  let evidence;
+  try { evidence = JSON.parse(await readFile(sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`, { create: false }), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return { status: 'review_required', reason: 'no_passed_review', commit: head }; throw error; }
+  const passed = evidence.passed;
+  if (!passed || passed.implementation_commit_sha !== head) return { status: 'review_required', reason: passed ? 'commit_changed' : 'no_passed_review', commit: head, ...(passed ? { passed_commit: passed.implementation_commit_sha } : {}) };
+  const record = parseWorktreeRecord(await readFile(join(root, '.io/worktree.json'), 'utf8'));
+  const current = await inspectPlanSet({ root, planSetId: record.plan_set_id, planId, phase: 'dispatch' });
+  if (current.status !== 'pass') return { status: 'review_required', reason: `plan_review_${current.reason}`, commit: head };
+  if (current.details.review_snapshot_sha256 !== passed.planning_snapshot_sha256) return { status: 'review_required', reason: 'plan_changed_since_review', commit: head };
+  return { status: 'reviewed', commit: head, fixed_point: passed.fixed_point, recorded_at: passed.recorded_at };
+}
+
 export async function writeReviewEvidence({ root, planId, evidence }) {
-  const path = sessionOutputPath(root, `runtime/reviews/implementation-${planId}.json`);
+  const path = sessionOutputPath(root, `runtime/reviews/implementation-${planId}-evidence.json`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
-  return `runtime/reviews/implementation-${planId}.json`;
+  return `runtime/reviews/implementation-${planId}-evidence.json`;
 }

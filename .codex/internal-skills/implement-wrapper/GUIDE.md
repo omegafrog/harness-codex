@@ -31,7 +31,7 @@ orchestrator가 선택한 승인 plan 하나를 구현한다. 구현 절차는 [
 
 ## 반환
 
-구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조와 `unplanned_additions` 배열을 남긴다. orchestrator가 독립 구현 리뷰와 plan 완료를 관리한다.
+구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조와 `unplanned_additions` 배열을 남긴다. orchestrator가 독립 구현 리뷰와 `repair`를 실행한다. `repair`가 통과했다는 feedback으로 재개되면 이 stage가 plan을 완료한다: 완료 gate를 확인하고 tracker의 그 plan을 `Done`(local-markdown은 `completed`)으로 바꾼 뒤 다음 ready plan을 고른다. Done 전이를 orchestrator에 미루지 않는다. plan을 고른 뒤 바꿀 코드가 없으면 먼저 `node .codex/scripts/harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`를 실행한다. `status: reviewed`이면 HEAD가 같은 계획 snapshot으로 이미 리뷰를 통과한 commit이므로 `REVIEW_REQUIRED`를 반환하지 않고 같은 방식으로 완료한다.
 
 Spec 변경은 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`, 사용자 결정은 `USER_DECISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
 

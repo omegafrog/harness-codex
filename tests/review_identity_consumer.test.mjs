@@ -156,7 +156,7 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
     await writeFile(join(root, '.io/worktree.json'), '{}');
-    await writeFile(join(root, '.io/runtime/reviews/implementation-A.json'), JSON.stringify({ review_input: {}, reviews: [] }));
+    await writeFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), JSON.stringify({ review_input: {}, reviews: [] }));
     const cli = join(root, '.codex/scripts/harness-code-review.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
     const { recordPendingQuestions } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
@@ -180,7 +180,7 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     userSays('Spec에 추가'); // the placeholder worktree.json fails later hook steps; the input is recorded first
     const ok = run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가');
     assert.equal(ok.status, 0, ok.stderr);
-    const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A.json'), 'utf8'));
+    const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), 'utf8'));
     assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: question.question_id, answers_ref: 'runtime/reviews/implementation-A-answers.json', fingerprints: [findingFingerprint(today)] }]);
     assert.equal((await readFile(join(root, '.io/runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').length, 2);
   } finally {
@@ -205,15 +205,49 @@ test('a recorded decision does not apply to a different finding that reuses the 
 test('a re-check result without a new commit is reviewed at the commit an earlier implementation result recorded', async () => {
   const { readImplementerResult } = await import('../.harness/src/wrapper/review-input.mjs');
   const root = await mkdtemp(join(tmpdir(), 'harness-recheck-commit-'));
-  const sha = 'a'.repeat(40);
+  const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8' }).trim();
   try {
+    git('init', '-q'); git('commit', '-q', '--allow-empty', '-m', 'one');
+    const sha = git('rev-parse', 'HEAD');
     for (const [id, result] of [['implement-wrapper-1', { unplanned_additions: [], commit_sha: sha }], ['implement-wrapper-2', { unplanned_additions: [] }]]) {
       await mkdir(join(root, '.io/runtime/executions', id), { recursive: true });
       await writeFile(join(root, '.io/runtime/executions', id, 'result.json'), JSON.stringify(result));
     }
     const resultRef = 'runtime/executions/implement-wrapper-2/result.json';
-    await assert.rejects(readImplementerResult({ root, resultRef }), /has no commit_sha; pass --commit/);
-    await assert.rejects(readImplementerResult({ root, resultRef, commit: 'b'.repeat(40) }), /No implement-wrapper result in this session recorded commit/);
-    assert.equal((await readImplementerResult({ root, resultRef, commit: sha })).commitSha, sha);
+    assert.equal((await readImplementerResult({ root, resultRef })).commitSha, sha, 'the latest recorded commit is used while it is HEAD');
+    assert.equal((await readImplementerResult({ root, resultRef, commit: sha.slice(0, 8) })).commitSha, sha, 'a unique prefix is enough');
+    await assert.rejects(readImplementerResult({ root, resultRef, commit: sha.slice(0, 39).replace(/.$/, (c) => c === '0' ? '1' : '0') }), /No implement-wrapper result in this session recorded a commit starting with/);
+    await assert.rejects(readImplementerResult({ root, resultRef, commit: 'zz' }), /is not a commit SHA/);
+    git('commit', '-q', '--allow-empty', '-m', 'later plan');
+    await assert.rejects(readImplementerResult({ root, resultRef }), /is not HEAD; pass --commit/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('review evidence and review history use separate files, and an overwritten history starts over', async () => {
+  const { writeReviewEvidence } = await import('../.harness/src/wrapper/review-input.mjs');
+  const { inspectReviewHistory } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-evidence-path-'));
+  try {
+    assert.equal(await writeReviewEvidence({ root, planId: 'P', evidence: { review_input: {}, reviews: [] } }), 'runtime/reviews/implementation-P-evidence.json');
+    // A history file that an earlier assemble overwrote with evidence no longer blocks every later review.
+    await writeFile(join(root, '.io/runtime/reviews/implementation-P.json'), JSON.stringify({ review_input: {}, reviews: [] }));
+    assert.equal((await inspectReviewHistory({ root, scope: 'implementation-P' })).recorded_state, 'no-current-reservation');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('reviewed reports when HEAD still needs a review, and the CLI accepts --flag=value', async () => {
+  const { reviewedCommit } = await import('../.harness/src/wrapper/review-input.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-reviewed-'));
+  const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { encoding: 'utf8' }).trim();
+  try {
+    git('init', '-q'); git('commit', '-q', '--allow-empty', '-m', 'one');
+    assert.equal((await reviewedCommit({ root, planId: 'P' })).reason, 'no_passed_review');
+    await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/reviews/implementation-P-evidence.json'), JSON.stringify({ review_input: {}, reviews: [], passed: { implementation_commit_sha: 'b'.repeat(40) } }));
+    assert.equal((await reviewedCommit({ root, planId: 'P' })).reason, 'commit_changed');
+    const cli = fileURLToPath(new URL('../.codex/scripts/harness-code-review.mjs', import.meta.url));
+    const run = spawnSync(process.execPath, [cli, 'record-decision', `--root=${root}`, '--plan=P', '--finding=F', '--choice=reject', '--answer=지적 기각'], { encoding: 'utf8' });
+    assert.match(run.stderr, /not a question the latest repair asked/, 'inline values are parsed');
+    assert.match(spawnSync(process.execPath, [cli, 'repair', '--bogus', 'x'], { encoding: 'utf8' }).stderr, /Invalid code-review argument --bogus/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

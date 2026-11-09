@@ -40,7 +40,13 @@ function validateHistory(history) {
   return history;
 }
 async function readHistory(path) {
-  try { return validateHistory(JSON.parse(await readFile(path, 'utf8'))); }
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8'));
+    // Earlier `assemble` versions wrote review evidence ({review_input, reviews}) over this file. That history is
+    // lost; start a new one instead of refusing every later review of the plan.
+    if (!Array.isArray(parsed?.attempts) && parsed?.review_input && Array.isArray(parsed?.reviews)) return { attempts: [] };
+    return validateHistory(parsed);
+  }
   catch (error) { if (error.code === 'ENOENT') return { attempts: [] }; throw error; }
 }
 

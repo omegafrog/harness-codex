@@ -25,7 +25,7 @@ async function setup({ standardsFindings = [], specEvidence = 'app/rules.py:12',
     reviews: [entry('standards', first, standardsFindings.length ? 'failed' : 'passed', standardsFindings),
       entry('spec', first, 'failed', [{ id: 'S1', kind: 'implementation_defect', severity: 'blocker', summary: 'x', evidence: specEvidence }])],
   };
-  await writeFile(join(root, '.io/runtime/reviews/implementation-P-1.json'), JSON.stringify(previous));
+  await writeFile(join(root, '.io/runtime/reviews/implementation-P-1-evidence.json'), JSON.stringify(previous));
   return { root, first, second };
 }
 const input = (second) => ({ fixed_point: 'fp', implementation_commit_sha: second });

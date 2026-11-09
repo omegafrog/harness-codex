@@ -4,13 +4,15 @@ import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
 const { reserveImplementationRepair } = await import(installed.href);
-const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
+const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, recordPassedReview, reviewedCommit, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
 try {
   const [action, ...args] = process.argv.slice(2), options = { root: process.cwd() };
   for (let i = 0; i < args.length; i++) {
-    const flag = args[i], value = args[++i];
-    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error('Invalid code-review arguments');
+    // Accept both `--flag value` and `--flag=value`.
+    const [flag, inline] = args[i].includes('=') && args[i].startsWith('--') ? [args[i].slice(0, args[i].indexOf('=')), args[i].slice(args[i].indexOf('=') + 1)] : [args[i], undefined];
+    const value = inline !== undefined ? inline : args[++i];
+    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
     options[flag.slice(2)] = value;
   }
   options.root = resolve(options.root);
@@ -23,7 +25,7 @@ try {
     // --reuse-axis <role> carries that axis's earlier clean pass forward (see carryForwardReview) instead of a new reviewer for it.
     if (!options['fixed-point'] || !options['implementation-result'] || (reuse && options[`${reuse}-agent`]) || (!reuse && options['standards-agent'] && options['standards-agent'] === options['spec-agent'])) throw new Error('assemble needs --fixed-point and --implementation-result; reviewer IDs are optional (the hook-recorded reviewer of each type that finished after the result is used), and the axis named by --reuse-axis takes no agent ID');
     const implemented = await readImplementerResult({ root: options.root, resultRef: options['implementation-result'], commit: options.commit || null });
-    if (options.commit && options.commit !== implemented.commitSha) throw new Error(`--commit ${options.commit} differs from the commit the implementer reported (${implemented.commitSha})`);
+    if (options.commit && !implemented.commitSha.startsWith(options.commit.toLowerCase())) throw new Error(`--commit ${options.commit} differs from the commit the implementer reported (${implemented.commitSha})`);
     const reviewInput = await buildReviewInput({ root: options.root, planId: options.plan, fixedPoint: options['fixed-point'], commit: implemented.commitSha, unplannedAdditions: implemented.additions });
     const side = async (role) => role === reuse
       ? { carried: await carryForwardReview({ root: options.root, planId: options.plan, role, reviewInput }) }
@@ -37,8 +39,12 @@ try {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
     result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']) });
     if (Array.isArray(result.user_questions)) result.user_questions = await recordPendingQuestions({ root: options.root, planId: options.plan, questions: result.user_questions });
+    // Remember that this exact commit passed, so re-selecting the plan later does not ask for the same review again.
+    if (result.state === 'passed' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) await recordPassedReview({ root: options.root, planId: options.plan, evidence });
+  } else if (action === 'reviewed') {
+    result = await reviewedCommit({ root: options.root, planId: options.plan, commit: options.commit });
   } else if (action === 'resolve') result = await reserveImplementationRepair({ root: options.root, planId: options.plan, resolution: options.reason, cycleApproval: options['answers-ref'] ? { answers_ref: options['answers-ref'], question_id: options['question-id'] } : null });
-  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|resolve --root DIR --plan ID [--reviews SESSION-RELATIVE-JSON] [--max-rounds N] [--reason USER-RESOLUTION] [--answers-ref SESSION-RELATIVE-JSON --question-id ID]');
+  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed|resolve --root DIR --plan ID [--reviews SESSION-RELATIVE-JSON] [--max-rounds N] [--reason USER-RESOLUTION] [--answers-ref SESSION-RELATIVE-JSON --question-id ID]');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status !== 'pass' && result.state !== 'passed') process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
