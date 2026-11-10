@@ -1,5 +1,5 @@
 import { isAbsolute, join } from 'node:path';
-import { readFile, realpath } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadNamedWorkflow } from './loader.mjs';
@@ -10,6 +10,28 @@ import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 import { completeExecutionState } from './execution-state.mjs';
 const execFileAsync = promisify(execFile);
+
+// Two gate runs for the same workflow and start commit append to one journal. Started together they both wrote
+// sequence 1, which the journal cannot repair, so only one run may hold the stream at a time.
+export async function lockCompletionStream(evidencePath) {
+  const lock = `${evidencePath}.lock`;
+  await mkdir(join(lock, '..'), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await mkdir(lock);
+      await writeFile(join(lock, 'pid'), String(process.pid));
+      return () => rm(lock, { recursive: true, force: true });
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const holder = Number(await readFile(join(lock, 'pid'), 'utf8').catch(() => ''));
+      let alive = false;
+      if (holder) { try { process.kill(holder, 0); alive = true; } catch (killError) { alive = killError.code === 'EPERM'; } }
+      if (alive) throw new Error(`Another completion run for this workflow holds ${lock} (pid ${holder}); wait for it to finish`);
+      await rm(lock, { recursive: true, force: true });
+    }
+  }
+  throw new Error(`Cannot take the completion lock ${lock}`);
+}
 
 export function completionKindForWorkflow(workflowId) {
   return ({
@@ -22,7 +44,7 @@ export function completionKindForWorkflow(workflowId) {
 }
 
 export async function completeWorkflow({ workflow_id, worktree_id = null, workspace_root, base_ref, state = {}, final_workflow = false, signal = null } = {}) {
-  let writer, result, failure;
+  let writer, result, failure, unlock;
   try {
     signal?.throwIfAborted();
     if (!isAbsolute(workspace_root || '')) throw new Error('Absolute workspace_root is required');
@@ -56,6 +78,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     if (['implement', 'implement-wrapper'].includes(workflow.id)) state = { ...state, ...(workflow.id === 'implement-wrapper' ? { plan_id: undefined } : {}), plan_review: { ...state.plan_review, plan_id: workflow.id === 'implement-wrapper' ? null : state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };
     const evidence_path = sessionOutputPath(workspace_root, `runtime/workflow-completion/${workflow.id}-${base_ref}.jsonl`);
+    unlock = await lockCompletionStream(evidence_path);
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry: new LifecycleGateRegistry({ hooks }), eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
@@ -66,6 +89,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
   } catch (error) { failure = error; }
   finally {
     try { await writer?.close(); } catch (error) { failure ||= error; }
+    try { await unlock?.(); } catch (error) { failure ||= error; }
   }
   if (failure) throw failure;
   return result;
