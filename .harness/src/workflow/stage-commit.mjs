@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 const PROTECTED_PATH = /^(?:\.git|\.io)(?:\/|$)/;
@@ -27,4 +29,30 @@ export async function commitStageRequest({ root, rawPath }) {
   result.commit_sha = await git(root, 'rev-parse', 'HEAD');
   await writeFile(rawPath, JSON.stringify(envelope));
   return result.commit_sha;
+}
+
+// Specs and plans are the review basis of the implementation, so they are committed when the stage that owns them
+// completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
+const WORKFLOW_DOCUMENTS = {
+  'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture'],
+  'to-ticket': (id) => [`docs/plans/${id}`],
+};
+
+export async function commitWorkflowDocuments({ root, input, rawPath }) {
+  const owned = WORKFLOW_DOCUMENTS[input?.skill];
+  const planSetId = input?.context?.plan_set_id;
+  if (!owned || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return null;
+  const envelope = JSON.parse(await readFile(rawPath, 'utf8'));
+  if (envelope.status !== 'completed') return null;
+  const paths = owned(planSetId);
+  const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
+  const staged = (await git(root, 'diff', '--cached', '--name-only')).split('\n').filter(Boolean);
+  const outside = staged.filter((path) => !paths.some((item) => path === item || path.startsWith(`${item}/`)));
+  if (outside.length) throw new Error(`Index already holds files outside the ${input.skill} documents: ${outside.join(', ')}`);
+  if (!changed.length) return null;
+  const present = [];
+  for (const path of paths) if (existsSync(join(root, path)) || await git(root, 'ls-files', '--', path)) present.push(path);
+  await git(root, 'add', '-A', '--', ...present);
+  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`);
+  return git(root, 'rev-parse', 'HEAD');
 }

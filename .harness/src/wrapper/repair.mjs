@@ -71,15 +71,6 @@ const KIND_ALIASES = new Map([
   ["conflict", "spec_conflict"],
 ]);
 
-// Specs and plans stay uncommitted in the worktree during the workflow by design, so a finding that they are
-// untracked or absent from the commit is not a defect or a requirement question.
-const UNTRACKED_TEXT = /\buntracked\b|\bnot (?:been )?committed\b|\buncommitted\b|not (?:part of|in|contained in) the (?:reviewed )?commit|does not contain the (?:product|architecture)? ?spec|커밋(?:되지| 안| 에 없| 에 포함되지)|commit(?:되지| 에 없| 에 포함되지)/i;
-const WORKFLOW_DOCUMENT_TEXT = /docs\/(?:specs|plans)\/|\b(?:product|architecture) spec\b|\bcanonical [a-z-]* ?plan\b|\bplan\b|스펙|계획/i;
-export function isUntrackedWorkflowDocumentFinding(finding) {
-  const text = [finding?.summary, finding?.finding, finding?.description, finding?.evidence].filter((item) => typeof item === "string").join(" ");
-  return UNTRACKED_TEXT.test(text) && WORKFLOW_DOCUMENT_TEXT.test(text) && !/\b(?:src|test|main)\//.test(finding?.location || "");
-}
-
 function findingList(review) {
   const report = review?.report && typeof review.report === "object" ? review.report : review;
   return Array.isArray(report?.findings) ? report.findings : [];
@@ -275,8 +266,7 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
     findings.forEach((rawFinding, index) => {
       const finding = normalizeFinding(rawFinding, review, index);
       const hasEvidence = typeof finding.evidence === 'string' && finding.evidence.trim();
-      if (isUntrackedWorkflowDocumentFinding(finding)) dismissed.push({ ...finding, dismissed_reason: "workflow_document_untracked" });
-      else if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
+      if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
       else if (finding.kind === 'advisory' && (finding.severity === undefined || finding.severity === 'minor') && finding.blocking !== true && hasEvidence) advisory.push(finding);
       else if (SCOPE_DECISION_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
       else if (BLOCKER_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);

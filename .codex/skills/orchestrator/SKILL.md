@@ -63,6 +63,8 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 
 위 세 코드의 전환은 대상 stage를 `--user-revision` 없이 `--stage-id`만으로 준비한다(`--user-revision`은 사용자의 직접 수정 지시 전용이다). 준비기가 이전 결과를 입력으로 연결하고 낡은 완료 결과를 다시 연다.
 
+stage가 Git 작업(add·commit)에 막혀도 orchestrator가 대신하지 않는다. Spec·plan 문서는 해당 stage가 완료될 때 실행기가 commit한다.
+
 작업 worktree에서 실행하는 Harness 명령은 `--root`·`--plan-set`·`--worktree-ref`를 스스로 찾는다. 이 값을 얻으려고 `worktree.json`·`state.json`·결과 파일을 읽지 말고, 상태 확인은 `node .codex/scripts/harness-context.mjs` 한 번으로 한다. `harness-code-review.mjs assemble --plan <plan-id>`도 최신 리뷰 요청 결과와 기존 fixed point를 찾는다.
 
 Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.

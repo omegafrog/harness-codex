@@ -44,16 +44,6 @@ test('repair points out the implementation-only route when the budget runs out o
   assert.match(await readFile(new URL('../.codex/internal-skills/code-review/references/repair.md', import.meta.url), 'utf8'), /next_action: implementation-only-repair/);
 });
 
-test('a finding that Specs or plans are untracked is dismissed, not asked', async () => {
-  const { classifyReviewFindings, isUntrackedWorkflowDocumentFinding } = await import('../.harness/src/wrapper/repair.mjs');
-  const finding = { id: 'STD-AUTH-001', kind: 'requirement_ambiguity', severity: 'major', summary: 'The reviewed commit does not contain the Product Spec or canonical auth plan used for this review; both are untracked in the workspace.', evidence: 'git status' };
-  assert.equal(isUntrackedWorkflowDocumentFinding(finding), true);
-  assert.equal(isUntrackedWorkflowDocumentFinding({ summary: 'EXEC.md says no database is needed', evidence: 'docs/agents/EXEC.md:6' }), false);
-  const routes = classifyReviewFindings([{ role: 'standards', state: 'failed', report: { findings: [finding] } }]);
-  assert.ok(!routes.blockers.some((item) => item.id === 'STD-AUTH-001'));
-  assert.equal(routes.dismissed[0].dismissed_reason, 'workflow_document_untracked');
-});
-
 test('reviews already handed to the Spec owner ask for a fresh review instead of spec-me again', async () => {
   const { reserveImplementationRepair } = await import('../.harness/src/wrapper/repair.mjs');
   const reviews = [{ role: 'standards', context_id: 's1' }, { role: 'spec', context_id: 'p1' }];
