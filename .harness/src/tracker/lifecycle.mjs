@@ -128,6 +128,11 @@ function metadataValid(bead) {
   if (!CLASSIFICATIONS.has(bead.metadata?.harness_classification)) throw new Error('Invalid harness_classification');
 }
 
+async function worktreePlanSetId(root) {
+  try { return JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id || null; }
+  catch { return null; }
+}
+
 export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, run = defaultRun } = {}) {
   try {
     let refs = ticket_refs;
@@ -153,8 +158,12 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       }
       config = await projectConfig(root);
       const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
-      if (items.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
-      refs = items.map((item) => trackerReference(config, item.external_ref));
+      // In a workflow worktree the check covers that plan set's tickets: tickets of other, finished plan sets are not this
+      // workflow's concern, and reading every mirror in the repository took longer each run (about a minute at 44 mirrors).
+      const planSetId = await worktreePlanSetId(root);
+      const scoped = planSetId ? items.filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`)) : items;
+      if (scoped.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
+      refs = scoped.map((item) => trackerReference(config, item.external_ref));
     }
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
     if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };

@@ -56,3 +56,23 @@ for (const [name, ticket_refs, expectedBeadsCalls] of [['explicit references', r
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 }
+
+// In a workflow worktree the check reads only that plan set's mirrors; the primary workspace still checks them all.
+test('tracker check in a worktree covers only the worktree plan set', async () => {
+  const { root, run } = await fixture();
+  try {
+    await mkdir(join(root, '.io'), { recursive: true });
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ plan_set_id: 'set-a' }));
+    const seen = [];
+    const result = await inspectTrackerSync({ workspace_root: root, run: async (command, args, cwd) => {
+      if (command === 'bd' && args.includes('--metadata-field')) {
+        return JSON.stringify([[1, 'set-a'], [2, 'set-a'], [3, 'set-b']].map(([number, set]) => ({ id: `harness-${number}`, status: 'open', external_ref: `https://github.com/${repository}/issues/${number}`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `${set}:plan-${number}` } })));
+      }
+      seen.push(args.join(' '));
+      return run(command, args, cwd);
+    } });
+    assert.equal(result.status, 'pass', JSON.stringify(result));
+    assert.deepEqual(result.tickets.map((ticket) => ticket.ref), refs);
+    assert.ok(!seen.some((call) => call.includes('issues/3')), 'the other plan set is not read');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
