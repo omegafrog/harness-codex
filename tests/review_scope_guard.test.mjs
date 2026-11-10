@@ -267,6 +267,17 @@ test('a quote absent from the approved Spec is treated as an invented requiremen
   assert.equal(result.next_action, 'user-decision');
 });
 
+test('a quote that omits the Markdown emphasis of the approved Spec still counts as verified', async () => {
+  const root = await consumer();
+  await writeFile(resolve(root, 'docs/specs/p/architecture-spec.md'), '# Architecture\n\n- **UC-03**: public browser request → render content and `author` identity; no session required.\n');
+  const { reviews, reviewInput } = evidence({ findings: [{ ...defect, basis: { source: 'architecture_spec', quote: 'UC-03: public browser request → render content and author identity; no session required.' } }] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.status, 'pass', JSON.stringify(result).slice(0, 300));
+  assert.equal(result.round, 1);
+});
+
 test('a verified quote reserves the ordinary repair budget', async () => {
   const root = await consumer();
   const { reviews, reviewInput } = evidence({ findings: [defect] });

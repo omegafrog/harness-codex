@@ -354,7 +354,8 @@ function basisPath(reviewInput, basis) {
 // 인용문이나 의도 ID가 실제 승인 문서에 없으면 reviewer가 만든 요구로 취급한다.
 async function unverifiedFindingBasis(root, reviewInput, reviews) {
   const unverified = new Set();
-  const compact = (text) => text.replace(/\s+/g, " ").trim();
+  // A reviewer quotes the text as read, without the Markdown emphasis (**UC-03**, `code`) the document is written in.
+  const compact = (text) => text.replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
   for (const review of reviews) {
     const findings = findingList(review);
     for (const [index, rawFinding] of findings.entries()) {
