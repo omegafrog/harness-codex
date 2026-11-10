@@ -277,6 +277,36 @@ test('a verified quote reserves the ordinary repair budget', async () => {
   assert.equal(result.round, 1);
 });
 
+test('five automatic repair rounds run, then each remaining finding goes to the user', async () => {
+  const { updateReviewAttempt } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const { AUTO_REPAIR_ROUNDS } = await import('../.harness/src/wrapper/repair.mjs');
+  const root = await consumer();
+  const { reviews, reviewInput } = evidence({ findings: [defect] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  for (let n = 1; n <= AUTO_REPAIR_ROUNDS; n += 1) {
+    await updateReviewAttempt({ root, scope: 'implementation-community', action: 'repair', findings: [], inputs: { fixed_point: input.fixed_point, implementation_commit_sha: `old${n}`, reviewer_ids: [`old-r${n}`] } });
+  }
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.reason, 'auto_repair_rounds_used');
+  assert.equal(result.next_action, 'user-decision');
+  assert.equal(result.rounds, AUTO_REPAIR_ROUNDS);
+  assert.match(result.user_questions[0].question.title, /자동 수정을 5회/);
+  assert.deepEqual(result.user_questions[0].question.options.map((option) => option.label), ['지원 안 함', '수정 계속']);
+});
+
+test('minor findings are reported but do not open a repair round', async () => {
+  const { classifyReviewFindings } = await import('../.harness/src/wrapper/repair.mjs');
+  const { reviews } = evidence({ findings: [{ ...defect, severity: 'minor' }] });
+  const routes = classifyReviewFindings(reviews);
+  assert.equal(routes.repairable.length, 0);
+  assert.equal(routes.advisory.length, 1);
+  assert.equal(routes.advisory[0].advisory_reason, 'minor');
+  assert.equal(routes.has_findings, false);
+  const major = classifyReviewFindings(evidence({ findings: [{ ...defect, severity: 'major' }] }).reviews);
+  assert.equal(major.repairable.length, 1);
+});
+
 test('malformed scope groups are rejected before any reservation', async () => {
   const root = await consumer();
   const { reviews, reviewInput } = evidence({ findings: [defect] });

@@ -53,6 +53,14 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 - [Product Spec의 범위 기준](../product-spec/GUIDE.md)을 리뷰가 제안하는 새 작업에도 적용한다. 명시 요구 또는 그 작업 없이는 실패하는 UC/BR/AC·공통 기본선을 설명하지 못하는 선택적 기능 제안을 필수 수정이나 사용자 질문으로 만들지 않는다. 넓은 INT 참조와 관행·편의·미래 확장만으로 OAuth·복구 흐름·새 인프라 같은 기능을 요구하지 않는다. 이미 구현된 Spec 밖 동작은 위 신고·사용자 결정 계약을 따른다.
 - 두 구현이 어긋나고 그중 하나가 승인되지 않은 동작이면 그 동작을 지적한다. 일관성을 맞추려고 다른 층으로 확대하지 않는다. 수정은 확대가 아니라 제거다.
 
+## 전수 보고와 심각도
+
+한 라운드에 발견할 수 있는 지적을 모두 보고한다. 첫 지적에서 멈추거나 다음 라운드로 미루지 않는다. 라운드마다 하나씩 나오면 수정과 재리뷰가 반복된다.
+
+- **Spec 축:** 승인 Architecture Spec의 요구와 구조 규정(요구 ID, 라우트, 패키지·모듈 경계, DB schema·migration, 계층 배치, 오류·보안 동작, 환경·설정 값)을 하나씩 변경 코드와 대조하고, 불일치는 모두 finding으로 보고한다. 이미 일치하는 항목은 결과에 적지 않는다(결과 형식은 아래와 같다).
+- **Standards 축:** 변경된 파일마다 저장소 기준과 Product Spec 요구를 대조해 위반을 모두 보고한다.
+- **심각도:** `blocker`는 동작하지 않거나 데이터·보안 사고를 낸다. `major`는 승인 Spec·plan·계약을 어기거나 요구한 동작이 빠졌다. 하나라도 있으면 `state`가 `failed`다. `minor`만 있으면 `passed`로 두고 finding에 `severity: minor`로 남긴다. `minor`는 이름·표현·사소한 구조처럼 승인된 동작을 바꾸지 않는 개선이다. minor는 수정 라운드를 열지 않고 결과에 기록만 한다. 심각도를 낮춰 지적을 숨기지 않는다.
+
 ## 결과 형식
 
 reviewer는 다음 JSON 필드를 반환한다. `state`는 현재 plan을 막는 지적이 있으면 failed, 없으면 passed다. 각 finding은 `id`, `kind`, `severity`(blocker/major/minor), `summary`, `evidence`(파일:행·요구 ID)를 가진다. `kind`는 implementation_defect, test_defect, verification_gap, in_scope_spec_mismatch, requirement_ambiguity, architecture_decision, scope_expansion, spec_conflict, contract_sync, advisory 중 하나다. in_scope_spec_mismatch에는 in_scope:true와 범위 근거를 포함한다. 권고는 kind:advisory로 기록한다. severity는 minor이고 blocking을 true로 쓰지 않는다. 수정 대상 kind(implementation_defect, test_defect, in_scope_spec_mismatch, verification_gap)는 `basis: {source, quote}`가 필수다. `source`는 product_spec, architecture_spec, canonical_plan, repository_standard이며 repository_standard는 `path`도 쓴다. 저장소 표준의 `path`는 `.codex/repository-conventions.md`, 기본 리뷰·테스트 규칙, `.codex/internal-skills/ddd-design/` 아래 DDD 기준, `docs/agents/`, `docs/architecture/`, `docs/contracts/` 아래만 허용한다. `intent_ref`는 Product Spec의 INT·BR ID나 BASELINE ID만 쓴다(UC·AC·지적 ID는 쓰지 않는다). `quote`는 해당 문서의 원문이어야 하며 runtime이 대조한다. 수정 대상 kind는 `intent_ref`와 `failure_scenario`도 필수이며 runtime이 ID의 존재를 대조한다.

@@ -8,8 +8,8 @@ import { commentTracker } from '../.harness/src/tracker/lifecycle.mjs';
 
 const inputs = (n) => ({ fixed_point: 'f'.repeat(40), implementation_commit_sha: String(n).repeat(40).slice(0, 40), reviewer_ids: [`s${n}`, `p${n}`], plan_set_id: 'set', planning_snapshot_sha256: 'a'.repeat(64) });
 
-// Repairs have no round limit: each reviewed commit with findings reserves one more round until the reviews pass.
-test('repair rounds are not limited and keep the original fixed point', async () => {
+// The history itself does not limit repair rounds (reserveImplementationRepair asks the user after five automatic ones).
+test('repair rounds are recorded without a limit and keep the original fixed point', async () => {
   const root = await mkdtemp(join(tmpdir(), 'repair-unlimited-'));
   try {
     const scope = { root, scope: 'implementation-P' };

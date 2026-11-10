@@ -1,4 +1,4 @@
-import { updateReviewAttempt } from '../workflow/review-attempts.mjs';
+import { inspectReviewHistory, updateReviewAttempt } from '../workflow/review-attempts.mjs';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
@@ -53,7 +53,7 @@ const QUESTION_TITLES = {
   unrequested_behavior: "구현에 승인된 Spec에 없는 동작이 있습니다. 유지할까요?",
   unbacked_requirement: "리뷰가 승인된 Spec 근거 없이 수정을 요구했습니다. 반영할까요?",
   spec_decision: "리뷰가 승인된 Spec에 없는 결정을 요구합니다. 지원할까요?",
-  budget_decision: "수정 한도가 끝났는데 지적이 남았습니다. 계속 고칠까요?",
+  budget_decision: "자동 수정을 5회 했는데 지적이 남았습니다. 계속 고칠까요?",
 };
 
 const KIND_ALIASES = new Map([
@@ -269,6 +269,8 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
       else if (finding.kind === 'advisory' && (finding.severity === undefined || finding.severity === 'minor') && finding.blocking !== true && hasEvidence) advisory.push(finding);
       else if (SCOPE_DECISION_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
       else if (BLOCKER_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
+      // Minor findings are reported but do not open a repair round; only blocker and major findings are looped on.
+      else if (REPAIRABLE_KINDS.has(finding.kind) && finding.severity === "minor") advisory.push({ ...finding, advisory_reason: "minor" });
       else if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) {
         if (hasSpecBasis(finding) && !unverifiedBasis.has(`${review?.role}:${index}`)) {
           const decided = decisionFor(decisions, scopeFindingId(finding), finding);
@@ -368,6 +370,10 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
   return unverified;
 }
 
+// Blocker and major findings are repaired and re-reviewed automatically for this many rounds; after that each
+// remaining finding goes to the user, who either keeps fixing it ("수정 계속") or accepts the current state.
+export const AUTO_REPAIR_ROUNDS = 5;
+
 export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
   const scope = { root, scope: `implementation-${planId}` };
   // These findings already went to the Spec owner. Sending them again would loop; the revised Spec and plan are
@@ -387,7 +393,18 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   const removals = decision.classification.repairable.filter((finding) => finding.repair_directive === REMOVE_DIRECTIVE);
   const reserveRemoval = () => updateReviewAttempt({ ...scope, action: 'scope-removal', inputs, findings: removals });
   if (decision.repair.scope_removal_only) return reserveRemoval();
-  // Findings are repaired round after round until the reviews pass; there is no round limit to run out of.
+  const rounds = (await inspectReviewHistory(scope)).budget.used;
+  if (rounds >= AUTO_REPAIR_ROUNDS) {
+    const answered = new Map(decisions.map((item) => [item.finding_id, item]));
+    const undecided = decision.classification.repairable.filter((finding) => !decisionFor(answered, scopeFindingId(finding), finding));
+    if (undecided.length) return {
+      action: "block", state: "blocked", reason: "auto_repair_rounds_used", rounds, classification: decision.classification,
+      next_action: "user-decision",
+      resume_condition: "Ask the user about each remaining finding, record the answers, then run repair again",
+      user_questions: buildScopeDecisionQuestions(undecided),
+    };
+  }
+  // The first AUTO_REPAIR_ROUNDS rounds run without asking; the user decides about every finding after that.
   return updateReviewAttempt({ ...scope, action: 'repair', inputs, findings: decision.classification.repairable });
 }
 
