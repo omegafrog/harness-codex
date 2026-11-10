@@ -38,7 +38,10 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (lock) {
-    await syncOrchestratorHook(targetRoot);
+    // With the user-level Codex orchestrator hook installed, a worktree needs no project hook (which Codex would
+    // ask to review again for every new worktree path).
+    const userHook = await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+    if (!userHook) await syncOrchestratorHook(targetRoot);
     await (await import('./update.mjs')).syncInstalledClaudeHook(targetRoot);
   }
 }

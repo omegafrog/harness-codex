@@ -440,7 +440,8 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     try {
       const hook = await inspectOrchestratorHook(repositoryRoot);
-      if (!hook.valid) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
+      const userHook = !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+      if (!hook.valid && !userHook) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {
       diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
     }
@@ -449,6 +450,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
+      if (trust.orchestrator_hook !== 'trusted') diagnostics.push(diagnostic('codex_orchestrator_hook_untrusted', 'warning', trust.orchestrator_hook === 'missing' ? 'Harness orchestrator user hook is missing from the Codex user hooks; run setup with the codex provider so new worktrees need no hook review' : 'Harness orchestrator user hook is not trusted; run /hooks in Codex and trust "Running Harness orchestrator hook" once for all worktrees', null));
       if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked reviewers are refused before they start', null));
       if (!trust.trusted) diagnostics.push(diagnostic('codex_subagent_hook_untrusted', 'warning', trust.missing.length ? 'Harness subagent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness subagent hook is not trusted; run /hooks in Codex and trust "Recording Harness subagent". Codex stages will not start until then.', trust.hooks_path, { missing: trust.missing, untrusted: trust.untrusted }));
     } catch (error) {

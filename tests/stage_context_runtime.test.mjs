@@ -120,7 +120,7 @@ test('one provider per setup: models and workflow bindings from another provider
 });
 
 test('Codex subagent hook is one user-level hook that must be trusted before stages start', async () => {
-  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexFreshAgentHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexFreshAgentHook, codexOrchestratorHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
   const home = await mkdtemp(join(tmpdir(), 'codex-home-'));
   try {
     const env = { CODEX_HOME: home };
@@ -130,9 +130,10 @@ test('Codex subagent hook is one user-level hook that must be trusted before sta
     assert.equal((await syncCodexSubagentHook(env)).changed, true);
     assert.equal((await syncCodexSubagentHook(env)).changed, false, 'sync is idempotent');
     const hooks = JSON.parse(await readFile(join(home, 'hooks.json'), 'utf8')).hooks;
-    assert.deepEqual(hooks.Stop, existing.hooks.Stop, 'user hooks are preserved');
+    assert.deepEqual(hooks.Stop.slice(0, existing.hooks.Stop.length), existing.hooks.Stop, 'user hooks are preserved');
     assert.deepEqual(hooks.SubagentStart, [{ hooks: [codexSubagentHook()] }]);
     assert.deepEqual(hooks.PreToolUse, [{ hooks: [codexFreshAgentHook()] }], 'setup also installs the fresh-agent check');
+    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop']) assert.deepEqual(hooks[event].at(-1), { hooks: [codexOrchestratorHook()] }, 'one user-level orchestrator hook serves every worktree');
     assert.match(codexSubagentHook().command, /HARNESS_WORKSPACE_ROOT:-\.\}\/\.codex\/scripts\/harness-agent-event\.mjs/);
     const untrusted = await inspectCodexHookTrust(env);
     assert.equal(untrusted.trusted, false);

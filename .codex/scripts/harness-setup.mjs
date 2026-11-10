@@ -231,6 +231,7 @@ async function prepareCodexSubagentHook(provider) {
   const synced = await syncCodexSubagentHook();
   if (synced.changed) console.log(`Codex 사용자 hook에 Harness subagent 기록 hook을 추가했습니다: ${synced.path}`);
   const trust = await inspectCodexHookTrust();
+  if (trust.orchestrator_hook !== 'trusted') console.log('Codex에서 /hooks를 열어 "Running Harness orchestrator hook"(UserPromptSubmit·PostToolUse·Stop)을 신뢰로 승인하세요. 한 번 승인하면 새 worktree마다 hook을 다시 리뷰하지 않습니다.');
   if (trust.fresh_agent_check !== 'trusted') console.log('Codex에서 /hooks를 열어 "Checking Harness fresh agent" hook(PreToolUse)도 신뢰로 승인하세요. 리뷰어·E2E runner를 대화 fork로 띄우는 호출을 시작 전에 거부합니다.');
   if (!trust.trusted) console.log('Codex에서 /hooks를 열어 "Recording Harness subagent" hook(SubagentStart·SubagentStop)을 신뢰로 승인하세요. 승인 전에는 workflow stage를 시작할 수 없습니다. 한 번 승인하면 모든 프로젝트와 worktree에 적용됩니다.');
 }

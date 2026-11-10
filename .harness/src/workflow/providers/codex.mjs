@@ -99,7 +99,30 @@ export function codexFreshAgentHook() {
     timeout: 10,
   };
 }
-const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }];
+// Codex trusts a hook by its hooks.json path and command, so a project hook written into each new worktree needed a
+// new review every time. This user-level hook is trusted once and runs the orchestrator hook of whatever Harness
+// workspace the session is in; it steps aside where the project's own hooks.json already has it.
+const ORCHESTRATOR_STATUS = 'Running Harness orchestrator hook';
+export const ORCHESTRATOR_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
+export function codexOrchestratorHook() {
+  return {
+    type: 'command',
+    command: `sh -c 'r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; f="$r/.codex/scripts/harness-orchestrator-hook.mjs"; [ -f "$f" ] || exit 0; grep -qs harness-orchestrator-hook.mjs "$r/.codex/hooks.json" && exit 0; exec node "$f"'`,
+    statusMessage: ORCHESTRATOR_STATUS,
+    timeout: 10,
+  };
+}
+const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, ...ORCHESTRATOR_EVENTS.map((event) => ({ event, status: ORCHESTRATOR_STATUS, handler: codexOrchestratorHook }))];
+
+// Whether the user-level orchestrator hook is installed; worktrees then need no project hook of their own.
+export async function codexUserOrchestratorHookInstalled(env = process.env) {
+  const text = await readFile(join(codexHome(env), 'hooks.json'), 'utf8').catch(() => null);
+  if (!text) return false;
+  try {
+    const hooks = JSON.parse(text).hooks || {};
+    return ORCHESTRATOR_EVENTS.every((event) => (hooks[event] || []).some((group) => (group.hooks || []).some((handler) => handler?.statusMessage === ORCHESTRATOR_STATUS && handler.command === codexOrchestratorHook().command)));
+  } catch { return false; }
+}
 
 export async function syncCodexSubagentHook(env = process.env) {
   const path = join(codexHome(env), 'hooks.json');
@@ -160,7 +183,13 @@ export async function inspectCodexHookTrust(env = process.env) {
   const freshGroups = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
   const freshSlots = freshGroups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:pre_tool_use:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === FRESH_AGENT_STATUS);
   const freshAgentCheck = !freshSlots.length ? 'missing' : freshSlots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash('pre_tool_use', handler)) ? 'trusted' : 'untrusted';
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, hooks_path: hooksPath };
+  const slotState = (event, status, handler) => {
+    const slots = (Array.isArray(hooks[event]) ? hooks[event] : []).flatMap((group, groupIndex) => (group.hooks || []).map((item, handlerIndex) => ({ item, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ item }) => item?.statusMessage === status);
+    return !slots.length ? 'missing' : slots.some(({ key, item }) => trusted.get(key) === codexHookTrustHash(snake(event), item)) ? 'trusted' : 'untrusted';
+  };
+  const orchestratorStates = ORCHESTRATOR_EVENTS.map((event) => slotState(event, ORCHESTRATOR_STATUS, codexOrchestratorHook));
+  const orchestratorHook = orchestratorStates.every((state) => state === 'trusted') ? 'trusted' : orchestratorStates.includes('missing') ? 'missing' : 'untrusted';
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, orchestrator_hook: orchestratorHook, hooks_path: hooksPath };
 }
 
 const DELIVERY_PREFIX = 'Harness stage result for execution';

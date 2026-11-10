@@ -407,7 +407,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    if (activeProvider !== 'claude-code') await syncOrchestratorHook(targetRoot, { noBackup });
+    // A workspace without its own project hook (a worktree created with the user-level Codex hook) keeps relying on it,
+    // so an update does not add a project hook that Codex would ask to review again.
+    const projectHook = await readFile(resolve(targetRoot, '.codex/hooks.json'), 'utf8').then((text) => text.includes('harness-orchestrator-hook.mjs'), () => false);
+    const userHook = !projectHook && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+    if (activeProvider !== 'claude-code' && !userHook) await syncOrchestratorHook(targetRoot, { noBackup });
     if (activeProvider !== 'codex') await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };
