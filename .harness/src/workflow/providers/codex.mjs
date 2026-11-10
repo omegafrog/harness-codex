@@ -88,20 +88,33 @@ export function codexSubagentHook() {
   };
 }
 
+// Refuses a forked start of a reviewer or E2E runner before it runs. Codex hook matchers do not match spawn_agent, so
+// the shell filter keeps node off every other tool call. Optional: without trust, the later fork checks still apply.
+const FRESH_AGENT_STATUS = 'Checking Harness fresh agent';
+export function codexFreshAgentHook() {
+  return {
+    type: 'command',
+    command: `sh -c 'f="\${HARNESS_WORKSPACE_ROOT:-.}/.codex/scripts/harness-fresh-agent.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *spawn_agent*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
+    statusMessage: FRESH_AGENT_STATUS,
+    timeout: 10,
+  };
+}
+const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }];
+
 export async function syncCodexSubagentHook(env = process.env) {
   const path = join(codexHome(env), 'hooks.json');
   const text = await readFile(path, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   const config = text === null ? { hooks: {} } : JSON.parse(text);
   if (!config || typeof config !== 'object' || Array.isArray(config) || (config.hooks !== undefined && (typeof config.hooks !== 'object' || Array.isArray(config.hooks)))) throw new Error(`Invalid Codex hooks configuration: ${path}`);
   config.hooks ||= {};
-  const expected = codexSubagentHook();
   let changed = false;
-  for (const event of SUBAGENT_EVENTS) {
+  for (const { event, status, handler } of OWNED_HOOKS) {
+    const want = handler();
     const groups = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
-    const owned = groups.flatMap((group) => group.hooks || []).filter((handler) => handler?.statusMessage === SUBAGENT_STATUS);
-    if (owned.length === 1 && JSON.stringify(owned[0]) === JSON.stringify(expected)) continue;
-    const kept = groups.map((group) => ({ ...group, hooks: (group.hooks || []).filter((handler) => handler?.statusMessage !== SUBAGENT_STATUS) })).filter((group) => group.hooks.length);
-    config.hooks[event] = [...kept, { hooks: [expected] }];
+    const owned = groups.flatMap((group) => group.hooks || []).filter((item) => item?.statusMessage === status);
+    if (owned.length === 1 && JSON.stringify(owned[0]) === JSON.stringify(want)) continue;
+    const kept = groups.map((group) => ({ ...group, hooks: (group.hooks || []).filter((item) => item?.statusMessage !== status) })).filter((group) => group.hooks.length);
+    config.hooks[event] = [...kept, { hooks: [want] }];
     changed = true;
   }
   if (!changed) return { path, changed: false };
@@ -144,7 +157,10 @@ export async function inspectCodexHookTrust(env = process.env) {
     if (!slots.length) missing.push(event);
     else if (!slots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash(snake(event), handler))) untrusted.push(event);
   }
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, hooks_path: hooksPath };
+  const freshGroups = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
+  const freshSlots = freshGroups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:pre_tool_use:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === FRESH_AGENT_STATUS);
+  const freshAgentCheck = !freshSlots.length ? 'missing' : freshSlots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash('pre_tool_use', handler)) ? 'trusted' : 'untrusted';
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, hooks_path: hooksPath };
 }
 
 const DELIVERY_PREFIX = 'Harness stage result for execution';

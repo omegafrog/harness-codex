@@ -79,7 +79,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
     // Final E2E always runs in a fresh runner, and dispatch checks call real CLIs.
     assert.match(e2eGuide, /E2E는 항상 호출자와 대화를 공유하지 않는 fresh `e2e_test_runner` 하위 agent가 실행한다/);
-    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /fresh `e2e_test_runner` 하위 agent를 새로 띄워/);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /fresh `e2e_test_runner` 하위 agent를 `fork_turns: none`으로 새로 띄워/);
     assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
     assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);
     assert.match(await read('.claude/skills/orchestrator/SKILL.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);
