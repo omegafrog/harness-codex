@@ -168,11 +168,13 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].args.slice(0, 3), ['exec', 'resume', 'conversation-1']);
+  assert.deepEqual(calls[0].args.filter((arg, index, args) => arg !== '-o' && args[index - 1] !== '-o').slice(0, 3), ['exec', 'resume', 'conversation-1']);
+  assert.match(calls[0].args[calls[0].args.indexOf('-o') + 1], /runtime\/orchestrator\/last-turn.txt$/, 'the delivered reply is kept for harness-context');
   const { orchestratorResumeCommand } = await import('../.harness/src/workflow/stage-result-events.mjs');
   // The resumed orchestrator turn keeps the workflow model binding, not the user's CLI default.
   assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', binding: { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' } }).args, ['exec', 'resume', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort="medium"', 's', 'm']);
   assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', sandbox: 'danger-full-access' }).args, ['exec', 'resume', '-c', 'sandbox_mode="danger-full-access"', 's', 'm']);
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', lastMessagePath: '/w/.io/runtime/orchestrator/last-turn.txt' }).args, ['exec', 'resume', '-o', '/w/.io/runtime/orchestrator/last-turn.txt', 's', 'm']);
   // The sandbox comes from the user's last orchestrator turn; runner-driven delivery turns are ignored.
   const { orchestratorSandbox } = await import('../.harness/src/workflow/providers/codex.mjs');
   const home = join(fx.primary, 'codex-home'), sessionId = '01a1ba5e-b967-7c30-8e90-97af4ffd9b02';

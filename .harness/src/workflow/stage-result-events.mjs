@@ -87,10 +87,10 @@ function deliveryMessage(event, session) {
 
 // The orchestrator ends its turn after dispatching a stage. The runner resumes that same orchestrator
 // session through its own provider CLI with the result, so the workflow continues without a host app.
-export function orchestratorResumeCommand({ provider, sessionId, root, message, binding = null, sandbox = null }) {
+export function orchestratorResumeCommand({ provider, sessionId, root, message, binding = null, sandbox = null, lastMessagePath = null }) {
   // The resumed turn keeps the workflow's model binding instead of the user's CLI default.
   const model = binding && binding.provider === provider ? binding : null;
-  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', ...(model ? ['--model', model.model, '-c', `model_reasoning_effort=${JSON.stringify(model.reasoning_effort)}`] : []), ...(sandbox ? ['-c', `sandbox_mode=${JSON.stringify(sandbox)}`] : []), sessionId, message], cwd: root };
+  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', ...(model ? ['--model', model.model, '-c', `model_reasoning_effort=${JSON.stringify(model.reasoning_effort)}`] : []), ...(sandbox ? ['-c', `sandbox_mode=${JSON.stringify(sandbox)}`] : []), ...(lastMessagePath ? ['-o', lastMessagePath] : []), sessionId, message], cwd: root };
   if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.claude/harness/scripts/harness-claude-orchestrator.mjs'), ...(model ? ['--model', model.model] : []), '--resume', sessionId, message], cwd: root };
   return null;
 }
@@ -105,7 +105,10 @@ async function deliver(session, input, event) {
   if (!sessionId) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
   const provider = input.context?.orchestrator_provider || 'codex';
   const sandbox = provider === 'codex' ? await (await import('./providers/codex.mjs')).orchestratorSandbox(sessionId).catch(() => null) : null;
-  const command = orchestratorResumeCommand({ provider, sessionId, root: input.workspace_root, message: deliveryMessage(event, session), binding: input.context?.workflow_binding || null, sandbox });
+  // A delivered turn may run without the project's hooks (they need trust per worktree), so its reply is written
+  // here too; harness-context shows the newer of this file and the Stop hook's record.
+  await mkdir(join(session, 'runtime/orchestrator'), { recursive: true });
+  const command = orchestratorResumeCommand({ provider, sessionId, root: input.workspace_root, message: deliveryMessage(event, session), binding: input.context?.workflow_binding || null, sandbox, lastMessagePath: join(session, 'runtime/orchestrator/last-turn.txt') });
   if (!command) return { status: 'unsupported', reason: 'orchestrator_provider_unsupported' };
   const log = `runtime/orchestrator/deliveries/${input.execution_id}.log`;
   await assertWorkspaceTarget(session, log);

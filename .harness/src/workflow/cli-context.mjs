@@ -26,6 +26,16 @@ export const samePath = (a, b) => resolve(a) === resolve(b);
 
 function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } }
 
+// The orchestrator's latest reply: from the Stop hook (last-turn.json) or a delivered turn's output (last-turn.txt).
+export function lastOrchestratorTurn(root) {
+  const dir = join(root, '.io/runtime/orchestrator');
+  const hook = readJson(join(dir, 'last-turn.json'));
+  let delivered = null;
+  try { const path = join(dir, 'last-turn.txt'); delivered = { at: statSync(path).mtime.toISOString(), message: readFileSync(path, 'utf8') }; } catch { delivered = null; }
+  const candidates = [hook, delivered].filter((item) => item?.at && typeof item.message === 'string' && item.message.trim());
+  return candidates.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0] || null;
+}
+
 export function orchestratorState(root) { return readJson(join(root, '.io/runtime/orchestrator/state.json')); }
 
 // The latest implement-wrapper result that asked for review of this plan.

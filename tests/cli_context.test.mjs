@@ -41,5 +41,9 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     const turn = JSON.parse(run(root, 'harness-context.mjs').stdout).orchestrator_last_turn;
     assert.equal(turn?.message, '댓글로 기록할까요?', stop.stderr);
     assert.equal(turn.after_latest_stage, true);
+    // A delivered turn's reply, written by codex -o, wins when it is newer.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(root, '.io/runtime/orchestrator/last-turn.txt'), '지원할까요?');
+    assert.equal(JSON.parse(run(root, 'harness-context.mjs').stdout).orchestrator_last_turn.message, '지원할까요?');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

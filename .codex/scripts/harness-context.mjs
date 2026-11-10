@@ -4,7 +4,7 @@
 //   node .codex/scripts/harness-context.mjs [--root DIR]
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-const { resolveCommandContext, orchestratorState } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
+const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 try {
   const args = process.argv.slice(2);
@@ -18,7 +18,7 @@ try {
   const plansDir = ctx.plan_set_id ? join(ctx.root, 'docs/plans', ctx.plan_set_id) : null;
   const plans = plansDir && existsSync(plansDir) ? readdirSync(plansDir).filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)) : [];
   const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length })) }]));
-  const lastTurn = read(join(ctx.root, '.io/runtime/orchestrator/last-turn.json'));
+  const lastTurn = lastOrchestratorTurn(ctx.root);
   const latestStage = Math.max(0, ...Object.values(state?.stages || {}).map((stage) => Date.parse(stage.updated_at || 0) || 0));
   process.stdout.write(`${JSON.stringify({
     workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, plan_set_id: ctx.plan_set_id, branch: ctx.record?.branch || null,
