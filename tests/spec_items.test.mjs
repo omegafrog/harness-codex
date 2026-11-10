@@ -211,3 +211,12 @@ test('the contract check lists every gap at once, says how to fix it and separat
     assert.match(result.next_step, /then run harness-contracts\.mjs seal/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// sync-contracts hands its diagrams to diagram_creator, which needs the sub-agent model in the stage input; the stage
+// stopped with MODEL_BINDING_UNAVAILABLE because only spec-me received it.
+test('stage input resolves the diagram sub-agent binding for sync-contracts as well as spec-me', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const text = await readFile(new URL('../.harness/src/workflow/stage-input.mjs', import.meta.url), 'utf8');
+  assert.match(text, /'sync-contracts': 'plantuml-diagrams'/);
+  assert.match(text, /'spec-me': 'architecture-spec'/);
+});
