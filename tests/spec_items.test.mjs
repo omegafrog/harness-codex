@@ -158,3 +158,9 @@ test('plan dependencies come from the plan text and Beads status, not from ticke
     assert.equal((await planDependencies({ workspace_root: root, plan_set_id: 'set', plan_id: 'e2e', run: done })).status, 'pass');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('the test-defect fast path keeps the orchestrator from editing files itself', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const text = await readFile(new URL('../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md', import.meta.url), 'utf8');
+  assert.match(text, /orchestrator는 테스트 파일이든 제품 파일이든 직접 수정하지 않는다/);
+});
