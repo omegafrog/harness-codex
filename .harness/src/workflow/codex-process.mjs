@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process';
 
+// A Codex run that writes nothing for this long is hung (a model call that never answered kept one stage alive for
+// 25 minutes with the process idle). It is stopped so the orchestrator can resume the stage.
+const STALL_MS = Number(process.env.HARNESS_STAGE_STALL_MS) || 20 * 60 * 1000;
+const STALL_CHECK_MS = Number(process.env.HARNESS_STAGE_STALL_CHECK_MS) || 30 * 1000;
+
 export async function runCodexProcess({ root, args, env, prompt, onStart, onThread, onEvent = () => {}, onStderr = () => {}, onCodexError = () => {} }) {
   // Codex를 시작하고 thread 이벤트를 저장한 뒤 종료 코드·오류·session ID를 반환한다.
   // buffer는 아직 줄바꿈이 오지 않은 JSON 조각, threadId는 재개에 쓰는 실제 Codex session이다.
-  let stderr = '', buffer = '', threadId = null, sessionSave = Promise.resolve();
+  let stderr = '', buffer = '', threadId = null, sessionSave = Promise.resolve(), lastActivity = Date.now(), stalled = false;
   const errors = [];
   // JSONL 출력에서 실행 상태와 재개에 필요한 thread ID만 추출한다.
   const consume = (line) => {
@@ -24,14 +29,24 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
   const stopInt = () => { onEvent({ event: 'runner_signal', signal: 'SIGINT' }); child.kill('SIGTERM'); };
   process.once('SIGTERM', stopTerm);
   process.once('SIGINT', stopInt);
-  child.stderr.on('data', (data) => { stderr += data; onStderr(data); });
+  child.stderr.on('data', (data) => { lastActivity = Date.now(); stderr += data; onStderr(data); });
   child.stdout.on('data', (data) => {
+    lastActivity = Date.now();
     buffer += data;
     const lines = buffer.split('\n');
     buffer = lines.pop();
     for (const line of lines) consume(line);
   });
   child.stdin.on('error', () => {});
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastActivity < STALL_MS) return;
+    stalled = true;
+    onEvent({ event: 'stage_stalled', idle_ms: Date.now() - lastActivity });
+    child.kill('SIGTERM');
+    setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
+    clearInterval(watchdog);
+  }, STALL_CHECK_MS);
+  watchdog.unref();
   const completion = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', (code, signal) => resolve({ code, signal })); });
   try {
     await onStart(child.pid);
@@ -42,13 +57,14 @@ export async function runCodexProcess({ root, args, env, prompt, onStart, onThre
     if (buffer) consume(buffer);
     await sessionSave;
     if (threadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) throw new Error('Invalid Codex session ID');
-    return { code, signal, stderr, errors, threadId };
+    return { code, signal, stderr, errors, threadId, stalled };
   } catch (error) {
     onEvent({ event: 'runner_error', message: error.message });
     child.kill('SIGTERM');
     await completion.catch(() => {});
     throw error;
   } finally {
+    clearInterval(watchdog);
     process.removeListener('SIGTERM', stopTerm);
     process.removeListener('SIGINT', stopInt);
   }

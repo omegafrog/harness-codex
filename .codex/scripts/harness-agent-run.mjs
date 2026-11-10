@@ -187,8 +187,9 @@ try {
     await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
     stageEventPublished = true;
   } else {
-    const cancelled = isCancellationOutcome({ requested: cancelRequested, signal: result.signal, code: result.code });
-    const error = Object.assign(new Error(`Stage provider exited with code ${result.code ?? 'null'}${result.signal ? ` (${result.signal})` : ''}`), { name: cancelled ? 'AbortError' : 'Error' });
+    // A stalled run was stopped by the watchdog, not cancelled by the user; it is reported as a failure the orchestrator resumes.
+    const cancelled = !result.stalled && isCancellationOutcome({ requested: cancelRequested, signal: result.signal, code: result.code });
+    const error = Object.assign(new Error(result.stalled ? 'Stage stalled: the provider wrote nothing for too long and was stopped; resume the stage' : `Stage provider exited with code ${result.code ?? 'null'}${result.signal ? ` (${result.signal})` : ''}`), { name: cancelled ? 'AbortError' : 'Error' });
     await publishStageResultEvent({ root, input, binding, error, reason: error.message, hostDelivery: true });
     stageEventPublished = true;
   }
