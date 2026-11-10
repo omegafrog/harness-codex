@@ -33,6 +33,7 @@ export async function commitStageRequest({ root, rawPath }) {
 
 // Specs and plans are the review basis of the implementation, so they are committed when the stage that owns them
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
+// Other staged files are left as they are: the commit names only the stage's own paths.
 const WORKFLOW_DOCUMENTS = {
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture'],
   'to-ticket': (id) => [`docs/plans/${id}`],
@@ -46,13 +47,11 @@ export async function commitWorkflowDocuments({ root, input, rawPath }) {
   if (envelope.status !== 'completed') return null;
   const paths = owned(planSetId);
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
-  const staged = (await git(root, 'diff', '--cached', '--name-only')).split('\n').filter(Boolean);
-  const outside = staged.filter((path) => !paths.some((item) => path === item || path.startsWith(`${item}/`)));
-  if (outside.length) throw new Error(`Index already holds files outside the ${input.skill} documents: ${outside.join(', ')}`);
   if (!changed.length) return null;
   const present = [];
   for (const path of paths) if (existsSync(join(root, path)) || await git(root, 'ls-files', '--', path)) present.push(path);
   await git(root, 'add', '-A', '--', ...present);
-  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`);
+  // A pathspec commit takes only these documents; anything else in the index stays staged for its owner.
+  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present);
   return git(root, 'rev-parse', 'HEAD');
 }

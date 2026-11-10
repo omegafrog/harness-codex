@@ -27,10 +27,15 @@ test('spec-me and to-ticket commit only their own documents when they complete',
     assert.match(await result('to-ticket', 'completed'), /^[0-9a-f]{40}$/);
     assert.deepEqual(git('show', '--name-only', '--format=', 'HEAD').split('\n'), ['docs/plans/set/auth.md']);
     assert.equal(await result('to-ticket', 'completed'), null, 'nothing to commit is not an error');
-    // Implementation-owned files stay visible and uncommitted; a foreign staged file is refused.
+    // Implementation-owned files stay visible and uncommitted, even when something else already staged them.
     assert.match(git('status', '--short'), /\?\? docs\/agents\//);
     git('add', 'docs/agents/EXEC.md');
-    await assert.rejects(result('spec-me', 'completed'), /outside the spec-me documents: docs\/agents\/EXEC.md/);
+    await writeFile(join(root, 'docs/plans/set/auth.md'), '# auth\n\nrevised\n');
+    git('add', 'docs/plans/set/auth.md');
+    await writeFile(join(root, 'docs/specs/set/product-spec.md'), '# Product\n\nrevised\n');
+    assert.match(await result('spec-me', 'completed'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(git('show', '--name-only', '--format=', 'HEAD').split('\n'), ['docs/specs/set/product-spec.md']);
+    assert.deepEqual(git('diff', '--cached', '--name-only').split('\n').sort(), ['docs/agents/EXEC.md', 'docs/plans/set/auth.md']);
     await rm(raw, { force: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
