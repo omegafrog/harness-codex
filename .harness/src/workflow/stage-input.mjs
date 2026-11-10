@@ -173,6 +173,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
+  // The shared contract describes the integrated result, so it is written only after every plan is implemented.
+  if (stageId === 'sync-contracts' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK')) throw new Error('sync-contracts starts only after implement-wrapper completed every plan and the final E2E passed');
   if (specOverwriteApproved && stageId !== 'spec-me') throw new Error('Spec overwrite approval is only valid for spec-me');
   if (restart && (stageId !== 'to-ticket' || answer !== null || feedback !== null)) throw new Error('Restart applies only to to-ticket without an answer or feedback');
   const running = state.stages?.[stageId];

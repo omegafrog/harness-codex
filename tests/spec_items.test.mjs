@@ -178,5 +178,36 @@ test('an unsealed contract is deferred in the final review and the orchestrator 
   const { readFile } = await import('node:fs/promises');
   const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
   assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /`contracts_invalid`이고 `docs\/contracts\/manifest\.json`이 비어 있는 상태는 코드·Spec 결함이 아니다/);
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /최종 E2E 통과 → `sync-contracts` → 완료 gate다/);
+  const implementation = await read('.codex/skills/orchestrator/references/implementation.md');
+  assert.match(implementation, /최종 E2E 통과 → `sync-contracts` stage → 완료 gate다/);
+  assert.match(implementation, /orchestrator는 `docs\/contracts\/`를 직접 작성·수정·seal하지 않는다/);
+  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /\| `sync-contracts` \|/);
+  assert.match(await read('.codex/internal-skills/sync-contracts/GUIDE.md'), /## Stage로 실행/);
+  assert.match(await read('.harness/src/workflow/stage-input.mjs'), /stageId === 'sync-contracts' && \(state\.stages\?\.\['implement-wrapper'\]/);
+});
+
+// The seal loop came from a check that stopped at the first broken field and never said how to fix a diagram entry.
+test('the contract check lists every gap at once, says how to fix it and separates what seal writes', async () => {
+  const { mkdir, mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { inspectContracts } = await import('../.harness/src/contracts/contracts.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'contracts-'));
+  try {
+    (await import('node:child_process')).execFileSync('git', ['init', '-q'], { cwd: root });
+    await mkdir(join(root, 'docs/contracts'), { recursive: true });
+    await writeFile(join(root, 'docs/contracts/product.md'), '<a id="calc"></a>\n## Calc\n');
+    await writeFile(join(root, 'docs/contracts/architecture.md'), '');
+    await writeFile(join(root, 'docs/contracts/architecture.html'), '');
+    await writeFile(join(root, 'docs/contracts/manifest.json'), JSON.stringify({ schema_version: 1, revision: 0, features: [{ id: 'calc', name: 'Calc', status: 'implemented' }], components: [], diagrams: [] }));
+    const result = await inspectContracts({ workspace_root: root });
+    assert.equal(result.status, 'fail');
+    assert.ok(result.violations.includes('revision must be a positive integer'));
+    const state = result.content_violations.find((message) => message.startsWith('Missing state or reason: calc'));
+    assert.match(state, /"kind":"state","feature":"calc","reason"/);
+    assert.ok(result.content_violations.some((message) => message.startsWith('Missing sequence: calc')));
+    assert.ok(!result.content_violations.includes('revision must be a positive integer'));
+    assert.ok(result.content_violations.some((message) => message.startsWith('source_roots must cover')));
+    assert.match(result.next_step, /then run harness-contracts\.mjs seal/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

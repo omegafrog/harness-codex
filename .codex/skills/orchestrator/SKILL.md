@@ -20,6 +20,7 @@ workflow 외의 직접 요청은 [기능 라우팅](references/capability-routin
 | 새 기능의 요구사항이나 승인이 정리되지 않음 | `spec-me` |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
+| 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
 

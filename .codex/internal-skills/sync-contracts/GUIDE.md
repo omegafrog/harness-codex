@@ -21,6 +21,17 @@
 
    pass 전에는 완료 선언·tracker Done·종속 plan 해제를 하지 않는다. `state=completed`는 `completion_kind`가 말하는 산출물만 완료한다: Spec 검토 완료는 `spec_ready_for_planning`, 계획 발행 완료는 `plan_set_ready_for_implementation`, 개별 plan 완료는 `plan_implemented`, 모든 구현을 통합한 완료는 `feature_implemented`다. 기능 계약 갱신은 마지막 종류에서만 수행한다. 실패는 변경 파일/원인과 복구 행동을 남긴다. 완료 조건에 계약 반영과 독립 의미 검토를 포함한다. 사용자 결정/외부 조건 대기는 `waiting`으로 세션을 유지하며, handoff·취소·실패는 각각 `handoff`·`aborted`·`failed`로 기록한다. 이들은 정상 완료가 아니다.
 
+## Stage로 실행
+
+최종 E2E가 통과하면 orchestrator가 이 skill을 독립 stage로 시작한다. 이 stage만 `docs/contracts/`를 쓴다.
+
+1. Product·Architecture Spec, 계획, 실제 source와 테스트·E2E 증거를 읽고 위 갱신 절차대로 `product.md`, `architecture.md`, `manifest.json`, `diagrams/`를 작성한다.
+2. `node .codex/scripts/harness-contracts.mjs check --root <workspace_root>`를 실행한다. 결과의 `content_violations`를 **한 번에 모두** 고친다. 메시지에 적힌 manifest 항목 형식을 그대로 쓴다. revision·날짜·요약·snapshot·`architecture.html`은 seal이 쓰므로 손으로 고치지 않는다.
+3. `content_violations`가 비면 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<바뀐 내용>'`을 실행하고 `check`가 `pass`인지 확인한다.
+4. 제품 코드·테스트·Spec·계획은 바꾸지 않는다. 계약을 source와 맞출 수 없는 코드 결함을 찾으면 `IMPLEMENTATION_REVISION_REQUIRED`로 근거와 함께 반환한다.
+5. 같은 위반이 두 번 고친 뒤에도 남으면 더 반복하지 않고 남은 위반과 시도한 수정을 `blocked/INPUT_MISSING`으로 반환한다.
+6. `check`가 pass이면 바뀐 계약 파일을 artifacts로 `completed/OK`를 반환한다. orchestrator가 이어서 완료 gate를 실행한다.
+
 ## 자동 검사와 의미 검토
 
 `contract_docs` hook과 GitHub Actions는 누락·변경 snapshot·버전·날짜·소유 링크·필수 설명 필드·기능별 diagram·SVG 재생성을 검사한다. 자동 검사는 규칙의 정확성이나 완전한 기능 목록을 증명하지 않는다. reviewer는 source diff와 전체 계약의 영향 섹션을 읽고 변경 누락·동작 회귀·잘못된 DDD 경계를 별도로 판단한다.
