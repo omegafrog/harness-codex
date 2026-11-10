@@ -112,3 +112,15 @@ test('a missing artifact that the stage does not declare as an output is dropped
     assert.match(result.summary, /dropped 1 undeclared artifact/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+// A failing E2E whose evidence shows only a test-code defect is fixed and rerun without a user decision round.
+test('the orchestrator and the E2E guide point at the test-defect fast path', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  const path = '.codex/internal-skills/e2e-test/references/test-defect-fast-path.md';
+  const fast = await read(path);
+  assert.match(fast, /단언을 약하게 만들지 않는다/);
+  assert.match(fast, /3회 미만/);
+  assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /references\/test-defect-fast-path\.md/);
+  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /test-defect-fast-path\.md/);
+});

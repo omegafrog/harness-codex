@@ -41,7 +41,7 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 완료된 Spec이나 계획을 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
 
-구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다.
+구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다.
 
 요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow [--state <session-relative completion evidence.json>]`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
