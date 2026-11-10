@@ -70,3 +70,12 @@ test('update migrates flat model keys in an installed project and keeps harness.
     assert.ok(JSON.parse(flat.stdout).diagnostics.some((item) => item.code === 'agents_config_flat'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// A Spec that writes purpose, sufficient level and source on the INT line itself is as complete as one with the fields
+// on the following lines; the review no longer rejects it for its layout.
+test('intent fields on the INT line itself count', async () => {
+  const { intentIssues } = await import('../.harness/src/workflow/spec-review.mjs');
+  assert.deepEqual(intentIssues('- **INT-A** — 목적: 계산한다. 충분한 수준: 결과를 본다. 출처: 사용자 답변 `basic`.\n'), []);
+  assert.deepEqual(intentIssues('INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n'), []);
+  assert.match(intentIssues('- **INT-A** — 목적: 계산한다. 출처: 사용자 답변.\n')[0], /INT-A: 목적, 충분한 수준, 출처 필요/);
+});

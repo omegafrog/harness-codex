@@ -180,8 +180,9 @@ try {
     }
     const { commitStageRequest, commitWorkflowDocuments } = await import(new URL('stage-commit.mjs', base));
     await commitStageRequest({ root, rawPath: output });
-    await commitWorkflowDocuments({ root, input, rawPath: output });
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' });
+    // The stage's documents are committed only after its result passed validation, so an incomplete Spec is never recorded as done.
+    await commitWorkflowDocuments({ root, input, rawPath: output });
     const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: paths.refs.returned });
     await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
     stageEventPublished = true;

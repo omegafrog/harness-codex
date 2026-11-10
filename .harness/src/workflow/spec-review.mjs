@@ -43,7 +43,8 @@ export function intentIssues(markdown) {
     const intent = line.match(INTENT_LINE)?.[1];
     if (intent) {
       hasIntent = true;
-      const issue = fieldIssue(intent, blockAfter(lines, index), ['목적', '충분한 수준', '출처']);
+      // The fields may follow on their own lines (template) or sit on the same line as the INT ID.
+      const issue = fieldIssue(intent, `${line}\n${blockAfter(lines, index)}`, ['목적', '충분한 수준', '출처']);
       if (issue) issues.push(issue);
       return;
     }
@@ -51,7 +52,7 @@ export function intentIssues(markdown) {
     if (!id) return;
     hasRule = true;
     if (!SCOPED_RULE.test(line.replace(/\b[A-Z]+-\d+\b/g, ''))) return;
-    const issue = fieldIssue(id, blockAfter(lines, index), ['의도', '충분한 수준', '출처']);
+    const issue = fieldIssue(id, `${line}\n${blockAfter(lines, index)}`, ['의도', '충분한 수준', '출처']);
     if (issue) issues.push(issue);
   });
   if (hasRule && !hasIntent) issues.unshift('제품 의도 INT-* 필요');
