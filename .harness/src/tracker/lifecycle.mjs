@@ -123,6 +123,25 @@ async function mirror(root, ref, run, config) {
   if (bead.metadata?.harness_tracker_version !== 1) throw new Error('Ticket is not registered for lifecycle v1');
   return bead;
 }
+// A stage implements one plan. Its tickets are checked against that plan so a guessed Issue number cannot move another
+// plan's ticket (the community-comment stage once completed the e2e Issue).
+function assertTicketPlan(bead, expectedPlanId, ref) {
+  if (!expectedPlanId) return;
+  const actual = bead?.metadata?.harness_plan_id;
+  if (actual !== expectedPlanId) throw new Error(`Ticket ${ref} belongs to plan ${actual || 'unknown'}, but this execution implements ${expectedPlanId}; take the ticket from harness-context.mjs plan_tickets`);
+}
+
+// Plan ID → ticket reference of one plan set, read from the Beads mirrors that tracker-publish created.
+export async function listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run = defaultRun } = {}) {
+  if (!planSetId) return [];
+  const config = await projectConfig(root);
+  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
+  return items
+    .filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`) && item.external_ref)
+    .map((item) => ({ plan_id: item.metadata.harness_plan_id.slice(planSetId.length + 1), ticket_ref: trackerReference(config, item.external_ref), bead_id: item.id, bead_status: item.status }))
+    .sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+}
+
 function metadataValid(bead) {
   if (!PHASES.has(bead.metadata?.harness_phase)) throw new Error('Invalid harness_phase');
   if (!CLASSIFICATIONS.has(bead.metadata?.harness_classification)) throw new Error('Invalid harness_classification');
@@ -133,7 +152,7 @@ async function worktreePlanSetId(root) {
   catch { return null; }
 }
 
-export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, run = defaultRun } = {}) {
+export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, run = defaultRun } = {}) {
   try {
     let refs = ticket_refs;
     let config = null;
@@ -177,6 +196,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
         continue;
       }
       const bead = await mirror(root, ref, run, config);
+      assertTicketPlan(bead, expected_plan_id, ref);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
@@ -208,13 +228,14 @@ export async function commentTracker({ workspace_root: root, ticket_ref: ref, bo
   throw new Error('Exactly one configured tracker mode is required');
 }
 
-export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, run = defaultRun } = {}) {
+export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, expected_plan_id = null, run = defaultRun } = {}) {
   if (status !== null && !Object.hasOwn(TRACKER_STATES, status)) throw new Error('Use planned, in-progress, blocked, or completed');
   if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');
   if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
   const config = await projectConfig(root);
   const beadsEnabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled !== false;
   const bead = beadsEnabled ? await mirror(root, ref, run, config) : null;
+  if (bead) assertTicketPlan(bead, expected_plan_id, ref);
   if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
   const context = {};
   let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;

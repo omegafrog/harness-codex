@@ -15,6 +15,8 @@ try {
     const result = stage.result_ref ? read(join(ctx.root, '.io', stage.result_ref)) : null;
     return [id, { status: stage.status, code: stage.code || null, execution_id: stage.execution_id, attempts: (stage.attempts || []).length, ...(result ? { summary: (result.summary || '').slice(0, 400), questions: (result.questions || []).map((q) => ({ question_id: q.question_id, title: q.title })), commit_sha: result.commit_sha || undefined } : {}) }];
   }));
+  let planTickets = [];
+  try { planTickets = await (await import(new URL('../../.harness/src/tracker/lifecycle.mjs', import.meta.url).href)).listPlanTickets({ workspace_root: ctx.root, plan_set_id: ctx.plan_set_id }); } catch { planTickets = []; }
   const plansDir = ctx.plan_set_id ? join(ctx.root, 'docs/plans', ctx.plan_set_id) : null;
   const plans = plansDir && existsSync(plansDir) ? readdirSync(plansDir).filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)) : [];
   const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length })) }]));
@@ -25,6 +27,9 @@ try {
     current_stage: state?.current_stage || null, workflow_status: state?.status || null,
     // The orchestrator's last reply; when it is newer than every stage update it may be a question awaiting the user.
     orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,
-    stages, plans, implementation_reviews: reviews,
+    stages,
+    // Take a plan's ticket from here: Issue numbers do not follow the plan order.
+    plan_tickets: planTickets,
+    plans, implementation_reviews: reviews,
   }, null, 2)}\n`);
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

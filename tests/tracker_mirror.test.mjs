@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inspectTrackerSync } from '../.harness/src/tracker/lifecycle.mjs';
+import { inspectTrackerSync, listPlanTickets } from '../.harness/src/tracker/lifecycle.mjs';
 
 const repository = 'omegafrog/harness-test';
 const refs = [`${repository}#1`, `${repository}#2`];
@@ -74,5 +74,27 @@ test('tracker check in a worktree covers only the worktree plan set', async () =
     assert.equal(result.status, 'pass', JSON.stringify(result));
     assert.deepEqual(result.tickets.map((ticket) => ticket.ref), refs);
     assert.ok(!seen.some((call) => call.includes('issues/3')), 'the other plan set is not read');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// A stage implements one plan: its tickets must be that plan's, and harness-context lists each plan's ticket.
+test('tickets are checked against the plan a stage implements and plan tickets are listed', async () => {
+  const { root, run } = await fixture();
+  try {
+    const withPlans = async (command, args, cwd) => {
+      const output = await run(command, args, cwd);
+      if (command !== 'bd') return output;
+      const items = JSON.parse(output);
+      return JSON.stringify(items.map((item) => ({ ...item, metadata: { ...item.metadata, harness_plan_id: `set:${item.id === 'harness-1' ? 'calculator' : 'e2e'}` } })));
+    };
+    const mismatch = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[1]], expected_plan_id: 'set:community-comment', run: withPlans });
+    assert.equal(mismatch.status, 'fail');
+    assert.match(mismatch.violations[0], /belongs to plan set:e2e, but this execution implements set:community-comment/);
+    const match = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[0]], expected_plan_id: 'set:calculator', run: withPlans });
+    assert.equal(match.status, 'pass', JSON.stringify(match));
+    assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run: withPlans }), [
+      { plan_id: 'calculator', ticket_ref: refs[0], bead_id: 'harness-1', bead_status: 'open' },
+      { plan_id: 'e2e', ticket_ref: refs[1], bead_id: 'harness-2', bead_status: 'open' },
+    ]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

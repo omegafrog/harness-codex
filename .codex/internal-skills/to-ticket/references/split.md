@@ -10,7 +10,7 @@
 
 ## 계획 분할
 
-각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 각 plan에 `계층 배치` 절을 두고 Architecture Spec에 따라 이 plan의 코드가 어느 계층에 가는지 적는다: domain(Entity·Value Object·Aggregate 메서드와 불변식), service(application 흐름·트랜잭션), api(HTTP 입출력·DTO 검증·세션·HTTP 오류 변환), db(repository 구현·migration). 구현자와 리뷰어가 같은 배치를 기준으로 삼는다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
+각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 각 plan에 `계층 배치` 절을 두고 Architecture Spec에 따라 이 plan의 코드가 어느 계층에 가는지 적는다: domain(Entity·Value Object·Aggregate 메서드와 불변식), service(application 흐름·트랜잭션), api(HTTP 입출력·DTO 검증·세션·HTTP 오류 변환), db(repository 구현·migration). 구현자와 리뷰어가 같은 배치를 기준으로 삼는다. 각 plan에 `인터페이스 계약` 절도 두고 Architecture Spec에서 이 plan이 지켜야 하는 외부 규정을 옮겨 적는다: HTTP 경로와 메서드(폼 action 값 포함)·화면 이름, 패키지·모듈 경계, DB 테이블·제약·migration, 설정 키와 기본값. 항목마다 Spec 절 번호를 붙이고 원문을 줄이거나 바꾸지 않는다. 구현자는 Spec 전체가 아니라 이 절과 plan 전체를 반드시 읽는다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
 
 각 기능 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. 마지막 child로 `e2e` plan을 하나 둔다. 이 plan은 모든 기능 plan에 의존하고, Product Spec 13절 시나리오를 Architecture Spec 12.7 환경에서 실행하는 E2E 테스트 코드와 `execution.json` profile(`purpose: "e2e"`), `docs/agents/EXEC.md` 실행 안내를 만든다. 시나리오와 환경은 Spec을 참조하고 plan에서 새로 정하지 않는다. Parent는 이 plan을 참조한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
 
