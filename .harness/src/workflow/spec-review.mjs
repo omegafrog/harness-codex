@@ -31,7 +31,7 @@ const blockAfter = (lines, index) => {
 };
 const fieldIssue = (id, block, fields) => {
   if (fields.some((field) => !new RegExp(`${field}\\s*:`).test(block))) return `${id}: ${fields.join(', ')} 필요`;
-  return /출처\s*:\s*.*추정/.test(block) ? `${id}: 추정 출처는 사용자 승인 필요` : null;
+  return null;
 };
 
 // 의도가 있어야 구현과 리뷰가 "없으면 무엇이 깨지는가"로 판정하고 규칙을 임의로 강화하지 않는다.
@@ -67,7 +67,7 @@ export function decisionsWithoutDelegation(markdown) {
 
 async function assertSpecDiscipline(root, ticketId) {
   const issues = intentIssues(await readFile(join(root, `docs/specs/${ticketId}/product-spec.md`), 'utf8'));
-  requireValue(!issues.length, `Product Spec intent is incomplete (use 미확인 when the user has not said): ${issues.join('; ')}`);
+  requireValue(!issues.length, `Product Spec intent is incomplete (record purpose, observable sufficient level and actual source): ${issues.join('; ')}`);
   const decisions = await readFile(join(root, `docs/specs/${ticketId}/product-decisions.md`), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
   const unbacked = decisionsWithoutDelegation(decisions);
   requireValue(!unbacked.length, `Delegated product decisions need a recorded answers.json source; ask the user instead: ${unbacked.join(', ')}`);

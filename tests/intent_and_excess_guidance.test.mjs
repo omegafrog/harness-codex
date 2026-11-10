@@ -1,15 +1,116 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { sessionDirectory } from '../.harness/src/workflow/session-output.mjs';
+import { updateProject } from '../.harness/src/installer/update.mjs';
+import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { transformSourceContent } from '../.harness/src/installer/transforms.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('spec-me asks the reason behind each requirement with candidate intents', async () => {
+test('intent questions resolve material scope choices instead of collecting a motive per rule', async () => {
   const guide = await read('.codex/internal-skills/product-spec/GUIDE.md');
-  assert.match(guide, /Intent question rule/);
-  assert.match(guide, /이 요구로 무엇을 지키거나 얻으려고 하나요\?/);
-  assert.match(guide, /each with the sufficient level it implies/);
-  assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /Restating the feature .* is not an intent/);
+  assert.match(guide, /first propose each feature's `목적` and `충분한 수준`/);
+  assert.match(guide, /observable user flows and completion conditions linked to UC\/AC IDs/);
+  assert.match(guide, /a missing reason alone does not require a question/);
+  assert.match(guide, /never as the user's answer or approval/);
+  assert.match(guide, /When asking, show the concrete result and implementation scope of each option/);
+  assert.doesNotMatch(guide, /needs the user's reason before it becomes a requirement/);
+  const topics = await read('.codex/internal-skills/product-spec/references/topics.md');
+  assert.match(topics, /Restating the feature .* is not an intent/);
+  assert.match(topics, /reference the existing feature intent and completion conditions/);
+  assert.doesNotMatch(topics, /When the request does not state the reason, ask/);
+  assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /에이전트 제안과 근거/);
+});
+
+test('every stage requires necessary work to meet completion conditions without adding optional questions', async () => {
+  const product = await read('.codex/internal-skills/product-spec/GUIDE.md');
+  assert.match(product, /explicitly required or indispensable/);
+  assert.match(product, /Agent-proposed intents and completion conditions cannot authorize new product scope/);
+  assert.match(product, /explain which condition would fail without it/);
+  assert.match(product, /Preserve baseline security, authorization, data protection and ordinary error handling/);
+  assert.match(product, /Omit optional improvements without turning them into interview questions/);
+  assert.match(product, /Login alone does not require OAuth, email recovery infrastructure or a custom session-timeout policy/);
+  for (const skill of ['architecture-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']) {
+    assert.match(await read(`.codex/internal-skills/${skill}/GUIDE.md`), /\(\.\.\/product-spec\/GUIDE\.md\)/, skill);
+  }
+  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /누락 지적에도 같은 필요성 기준/);
+});
+
+test('fresh and updated consumers receive scope guidance and the gate while project changes stay visible', async () => {
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  const parent = resolve(sessionDirectory(sourceRoot), 'runtime/intent-scope-tests');
+  await mkdir(parent, { recursive: true });
+  const root = await mkdtemp(`${parent}/consumer-`);
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  await writeFile(resolve(root, 'app.txt'), 'original application\n');
+  git('add', 'app.txt');
+  git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture');
+  await writeFile(resolve(root, 'app.txt'), 'ongoing application change\n');
+  const projectFiles = {
+    'docs/agents/EXEC.md': 'project execution instructions\n',
+    'docs/agents/execution.json': '{"profiles":{}}\n',
+    'docs/agents/implementation-guidance.md': 'project implementation preferences\n',
+    'docs/agents/testing-guidance.md': 'project testing preferences\n',
+    'docs/contracts/product.md': 'project product contract\n',
+  };
+  for (const [path, content] of Object.entries(projectFiles)) {
+    await mkdir(resolve(root, path, '..'), { recursive: true });
+    await writeFile(resolve(root, path), content);
+  }
+  const managedPaths = [
+    ...['product-spec', 'architecture-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']
+      .map((skill) => `.codex/internal-skills/${skill}/GUIDE.md`),
+    '.codex/internal-skills/product-spec/references/topics.md',
+    '.codex/internal-skills/product-spec/references/template.md',
+    '.codex/internal-skills/spec-review/references/review-criteria.md',
+    '.harness/src/workflow/spec-review.mjs',
+  ];
+  await protectLocalInstallArtifacts(root, sourceRoot);
+  await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+  const { runDoctor } = await import(pathToFileURL(resolve(root, '.harness/src/doctor/doctor.mjs')));
+  const spec = 'INT-A\n- 목적: 작성물 관리\n- 충분한 수준: 본인 작성물만 삭제한다(AC-1).\n- 출처: 요청 해석(에이전트 추정, request.md)\nBR-1: 글 삭제 시 모든 댓글도 삭제한다.\n- 의도: INT-A 참조\n- 충분한 수준: 삭제한 글의 댓글은 조회되지 않는다(AC-1).\n- 출처: request.md\n';
+  for (const phase of ['fresh', 'updated']) {
+    const lock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
+    for (const path of managedPaths) {
+      assert.ok(lock.files[path], `${phase} inventory: ${path}`);
+      const expected = transformSourceContent(await readFile(resolve(sourceRoot, path), 'utf8'), lock.files[path].source_transform);
+      assert.equal(await readFile(resolve(root, path), 'utf8'), expected, `${phase}: ${path}`);
+      assert.match(git('check-ignore', '-v', path), /info\/exclude/);
+    }
+    const { intentIssues } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/spec-review.mjs'))}?${phase}`);
+    assert.deepEqual(intentIssues(spec), []);
+    assert.match(intentIssues(spec.replace('- 의도: INT-A 참조\n', ''))[0], /BR-1/);
+    for (const [path, content] of Object.entries(projectFiles)) {
+      assert.equal(await readFile(resolve(root, path), 'utf8'), content);
+      assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '--', path], { encoding: 'utf8' }).startsWith('??'), true, path);
+    }
+    assert.equal(await readFile(resolve(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
+    const status = git('status', '--short', '--untracked-files=all');
+    assert.match(status, / M app\.txt/);
+    assert.ok(managedPaths.every((path) => !status.includes(path)), status);
+    const diagnostics = (await runDoctor({ root, sourceRoot })).diagnostics;
+    assert.deepEqual(diagnostics.filter((item) => item.code.startsWith('installer_') && managedPaths.some((path) => item.path === resolve(root, path))), []);
+    if (phase === 'updated') break;
+    for (const path of managedPaths) {
+      const previous = `${await readFile(resolve(root, path), 'utf8')}\n// previous release\n`;
+      await writeFile(resolve(root, path), previous);
+      const hash = createHash('sha256').update(previous).digest('hex');
+      lock.files[path].installed_sha256 = hash;
+      lock.files[path].upstream_sha256 = hash;
+    }
+    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify(lock));
+    const stale = (await runDoctor({ root, sourceRoot })).diagnostics;
+    for (const path of managedPaths) assert.ok(stale.some((item) => item.code === 'installer_upstream_updated' && item.path === resolve(root, path)), path);
+    const update = await updateProject({ sourceRoot, targetRoot: root });
+    assert.ok(managedPaths.every((path) => update.updated.includes(path)));
+    await protectLocalInstallArtifacts(root, sourceRoot);
+  }
 });
 
 test('the Architecture Spec review looks for excess as well as gaps', async () => {

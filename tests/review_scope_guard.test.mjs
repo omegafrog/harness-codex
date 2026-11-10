@@ -143,11 +143,12 @@ test('scoped rules need intent, sufficient level and source while plain rules do
   assert.deepEqual(intentIssues('- BR-3: 숨김·삭제된 콘텐츠는 일반 열람 결과에 포함하지 않는다.'), ['제품 의도 INT-* 필요']);
 });
 
-test('an unrecorded value may be unknown but an inferred source needs approval', () => {
+test('unknown reasons and sourced interpretations do not force a separate user approval', () => {
   const intent = 'INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n';
-  assert.deepEqual(intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 미확인\n- 충분한 수준: 플랫폼 기본 동작\n- 출처: 사용자 답변\n`), []);
-  const inferred = intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 남용 억제\n- 충분한 수준: 대략적 상한\n- 출처: 추정\n`);
-  assert.match(inferred[0], /추정/);
+  assert.deepEqual(intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 미확인\n- 충분한 수준: 플랫폼 기본 동작\n- 출처: request.md의 상한 요구\n`), []);
+  const inferred = `${intent}BR-1: 최대 10건이다.\n- 의도: INT-A 참조\n- 충분한 수준: 10건 이하를 허용하고 초과를 거부한다(AC-1).\n- 출처: 요청 해석(에이전트 추정, request.md의 상한 요구)\n`;
+  assert.deepEqual(intentIssues(inferred), []);
+  assert.match(intentIssues(inferred.replace(/- 출처: 요청 해석.*\n/, ''))[0], /출처/);
 });
 
 test('a delegated decision needs a recorded user answer', () => {
