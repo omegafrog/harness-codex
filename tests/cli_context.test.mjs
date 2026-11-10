@@ -36,5 +36,10 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     assert.equal(context.current_stage, 'to-ticket');
     assert.deepEqual(context.plans, ['auth']);
     assert.equal(context.stages['to-ticket'].status, 'completed');
+    // A question the orchestrator asked in conversation is kept by the Stop hook and shown here.
+    const stop = spawnSync(process.execPath, [join(scripts, 'harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'Stop', cwd: root, session_id: 'orchestrator', last_assistant_message: '댓글로 기록할까요?' }) });
+    const turn = JSON.parse(run(root, 'harness-context.mjs').stdout).orchestrator_last_turn;
+    assert.equal(turn?.message, '댓글로 기록할까요?', stop.stderr);
+    assert.equal(turn.after_latest_stage, true);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

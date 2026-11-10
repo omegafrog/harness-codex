@@ -127,11 +127,17 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
     await writeFile(forkedTranscript, `${JSON.stringify({ payload: { forked_from_id: 'orchestrator-thread' } })}\n`);
     hook({ hook_event_name: 'SubagentStart', agent_id: 'spec-forked', agent_type: 'spec_reviewer', agent_transcript_path: forkedTranscript });
     hook({ hook_event_name: 'SubagentStop', agent_id: 'spec-forked', agent_type: 'spec_reviewer', last_assistant_message: answer });
+    // Codex may fire SubagentStart before the forked transcript is written; the fork is caught when the reviewer stops.
+    const lateTranscript = join(session, 'late-forked.jsonl');
+    hook({ hook_event_name: 'SubagentStart', agent_id: 'spec-late-fork', agent_type: 'spec_reviewer', agent_transcript_path: lateTranscript });
+    await writeFile(lateTranscript, `${JSON.stringify({ payload: { forked_from_id: 'orchestrator-thread' } })}\n`);
+    hook({ hook_event_name: 'SubagentStop', agent_id: 'spec-late-fork', agent_type: 'spec_reviewer', agent_transcript_path: lateTranscript, last_assistant_message: answer });
     const log = (await readFile(join(session, 'runtime/orchestrator/subagents.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
-    assert.deepEqual(log.map((item) => item.agent_id), ['standards-1', 'standards-1', 'spec-1', 'spec-1', 'spec-forked', 'spec-forked']);
+    assert.deepEqual(log.map((item) => item.agent_id), ['standards-1', 'standards-1', 'spec-1', 'spec-1', 'spec-forked', 'spec-forked', 'spec-late-fork', 'spec-late-fork']);
     const { readHookRecordedReviewer } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
     assert.deepEqual(await readHookRecordedReviewer({ root, role: 'standards', agentId: 'standards-1' }), { contextId: 'standards-1', raw: answer });
     await assert.rejects(readHookRecordedReviewer({ root, role: 'spec', agentId: 'spec-forked' }), /forked from the caller's conversation/);
+    await assert.rejects(readHookRecordedReviewer({ root, role: 'spec', agentId: 'spec-late-fork' }), /forked from the caller's conversation/);
     await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'invented-id' }), /did not record a finished standards_reviewer/);
     await assert.rejects(readHookRecordedReviewer({ root, role: 'standards', agentId: 'spec-1' }), /did not record a finished standards_reviewer/);
     // Without an ID, the single reviewer of each type that finished after the result is used; a mistyped ID names the recorded ones.

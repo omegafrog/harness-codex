@@ -41,7 +41,8 @@ try {
     await mkdir(dirname(target), { recursive: true, mode: 0o700 });
     await appendFile(target, `${JSON.stringify({
       event: event.hook_event_name, session_id: event.session_id, agent_id: event.agent_id, agent_type: event.agent_type,
-      ...(event.hook_event_name === 'SubagentStart' && await forkedTranscript(event.agent_transcript_path) ? { forked: true } : {}),
+      // Codex may not have flushed the transcript when SubagentStart fires; check again when the reviewer stops.
+      ...(await forkedTranscript(event.agent_transcript_path) ? { forked: true } : {}),
       ...(event.hook_event_name === 'SubagentStop' && typeof event.last_assistant_message === 'string' ? { result: event.last_assistant_message } : {}),
       recorded_at: new Date().toISOString(),
     })}\n`, { flag: 'a', mode: 0o600 });
@@ -75,7 +76,7 @@ try {
     catch { attempt = null; }
     // A reviewer started outside an admitted attempt, or forked from the author's conversation, is
     // recorded as such and never bound; completion gates reject stages that used one.
-    const forked = event.hook_event_name === 'SubagentStart' && await forkedTranscript(event.agent_transcript_path);
+    const forked = await forkedTranscript(event.agent_transcript_path);
     if (!attempt || forked) {
       record.admitted = false;
       if (forked) record.forked = true;

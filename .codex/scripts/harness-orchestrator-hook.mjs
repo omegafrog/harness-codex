@@ -24,6 +24,12 @@ try {
     const { recordUserInput } = await import(new URL('../../.harness/src/workflow/user-inputs.mjs', import.meta.url));
     await recordUserInput({ root, event }).catch((error) => process.stderr.write(`Harness could not record the user input: ${error.message}\n`));
   }
+  // Keep the orchestrator's last reply so a question it asked in conversation is visible to harness-context.
+  if (!uninitialized && event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string' && existsSync(resolve(root, '.io/worktree.json'))) {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(resolve(root, '.io/runtime/orchestrator'), { recursive: true, mode: 0o700 });
+    await writeFile(resolve(root, '.io/runtime/orchestrator/last-turn.json'), `${JSON.stringify({ at: new Date().toISOString(), session_id: event.session_id || null, message: event.last_assistant_message.slice(0, 20000) })}\n`, { mode: 0o600 }).catch(() => {});
+  }
   const orchestrator = ['.codex/skills/orchestrator/SKILL.md', '.agents/skills/orchestrator/SKILL.md'].map((path) => resolve(root, path)).find(existsSync);
   const composer = resolve(root, '.codex/internal-skills/workflow-compose/GUIDE.md');
   if (!orchestrator || !existsSync(composer)) throw new Error('Harness orchestrator/workflow-compose skill is missing');

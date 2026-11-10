@@ -138,7 +138,7 @@ export async function readHookRecordedReviewer({ root, role, agentId = null, aft
   try { text = await readFile(sessionOutputPath(root, 'runtime/orchestrator/subagents.jsonl', { create: false }), 'utf8'); }
   catch (error) { if (error.code === 'ENOENT') throw new Error(`No hook-recorded subagents: the ${role} reviewer was not started as a native subagent in a Harness worktree session`); throw error; }
   const all = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.agent_type === agentType);
-  const forked = new Set(all.filter((item) => item.event === 'SubagentStart' && item.forked).map((item) => item.agent_id));
+  const forked = new Set(all.filter((item) => item.forked).map((item) => item.agent_id));
   const finished = [...new Set(all.filter((item) => item.event === 'SubagentStop' && typeof item.result === 'string' && !forked.has(item.agent_id) && (after === null || Date.parse(item.recorded_at) >= after)).map((item) => item.agent_id))];
   if (!agentId) {
     if (finished.length !== 1) throw new Error(finished.length ? `Several ${agentType}s finished after the implementation result (${finished.join(', ')}); pass --${role}-agent` : `The hook recorded no ${agentType} that finished after the implementation result; run a fresh reviewer`);
@@ -147,7 +147,7 @@ export async function readHookRecordedReviewer({ root, role, agentId = null, aft
   const records = all.filter((item) => item.agent_id === agentId);
   const start = records.find((item) => item.event === 'SubagentStart'), stop = records.findLast((item) => item.event === 'SubagentStop' && typeof item.result === 'string');
   if (!start || !stop) throw new Error(`The hook did not record a finished ${agentType} with agent ID ${agentId}`);
-  if (start.forked) throw new Error(`${agentType} ${agentId} was forked from the caller's conversation; start a fresh reviewer with fork_turns none`);
+  if (forked.has(agentId)) throw new Error(`${agentType} ${agentId} was forked from the caller's conversation; start a fresh reviewer with fork_turns none`);
   return { contextId: agentId, raw: stop.result };
 }
 
