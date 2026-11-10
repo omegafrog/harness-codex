@@ -67,3 +67,27 @@ test('assembling reviews applies the coverage rule to the Spec reviewer only', (
   const evidence = assembleReviews({ reviewInput, standards, spec: { contextId: 'spec-1', raw: raw({ findings: [], checked }) }, specItems: items });
   assert.equal(evidence.reviews.length, 2);
 });
+
+// Reviewers run `spec-items` before the Spec review; it works from the worktree without a plan ID.
+test('harness-code-review spec-items lists the Architecture Spec items of the worktree plan set', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdir, mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const script = fileURLToPath(new URL('../.codex/scripts/harness-code-review.mjs', import.meta.url));
+  const directory = await mkdtemp(join(tmpdir(), 'spec-items-'));
+  const primary = join(directory, 'primary'), root = join(directory, 'workspace');
+  try {
+    execFileSync('git', ['init', '-q', '-b', 'main', primary]);
+    execFileSync('git', ['-C', primary, '-c', 'user.name=T', '-c', 'user.email=t@example.test', 'commit', '--allow-empty', '-qm', 'base']);
+    execFileSync('git', ['-C', primary, 'worktree', 'add', '-qb', 'feature/test', root]);
+    await mkdir(join(root, 'docs/specs/set'), { recursive: true });
+    await mkdir(join(root, '.io'), { recursive: true });
+    await writeFile(join(root, 'docs/specs/set/architecture-spec.md'), SPEC);
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'set' }));
+    const result = JSON.parse(execFileSync(process.execPath, [script, 'spec-items'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(result.spec_path, 'docs/specs/set/architecture-spec.md');
+    assert.deepEqual(result.items.map((item) => item.id), ['S6.5-1', 'S6.5-2', 'S9.1-1', 'S9.1-2', 'S9.1-3']);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

@@ -17,7 +17,7 @@ try {
     options[flag.slice(2)] = value;
   }
   options.root = resolveCommandContext({ root: options.root }).root;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.plan || '')) throw new Error('Valid plan ID is required');
+  if (action !== 'spec-items' && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.plan || '')) throw new Error('Valid plan ID is required');
   let result;
   if (action === 'assemble') {
     // Builds runtime/reviews/implementation-<plan>.json for `repair` from the real commits and the reviewers' own answers.
