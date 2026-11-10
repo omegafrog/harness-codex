@@ -513,7 +513,7 @@ stop
 
 ## 12.7 End-to-End Execution Environment
 
-Product Spec 13절의 시나리오를 실행할 환경을 정한다. 코드·기술 결정·`docs/agents/EXEC.md`에서 도출하며 사용자에게 작성해 달라고 묻지 않는다.
+Product Spec 13절의 시나리오를 실행할 환경을 정한다. 코드·기술 결정·`docs/agents/EXEC.md`에서 도출하며 사용자에게 작성해 달라고 묻지 않는다. 구현자가 그대로 실행할 수 있게 도구 이름(예: 브라우저 자동화 도구와 버전), 앱 시작 명령, 격리 DB 같은 의존 서비스의 준비·정리 방법과 명령, `execution.json` profile의 id·준비 확인·timeout·cleanup을 구체적으로 적는다. 도구를 고르는 일은 중요한 기술 결정이므로 [기술 선택](../../technology-selection/GUIDE.md)에 따라 다른 기술 결정과 한 묶음으로 근거와 함께 사용자에게 묻는다.
 
 | 항목 | 결정 |
 | --- | --- |
