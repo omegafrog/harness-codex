@@ -222,19 +222,6 @@ test('an exhausted budget asks about remaining findings instead of escalating th
   assert.equal(planRepairRound({ reviews, round: 1, maxRounds: 1, scopeDecisions: [{ finding_id: 'STD-1', choice: 'reject' }] }).action, 'complete');
 });
 
-test('the repair cycle limit needs a recorded answer to continue', async () => {
-  const { updateReviewAttempt, MAX_REPAIR_CYCLES } = await import('../.harness/src/workflow/review-attempts.mjs');
-  const root = await consumer();
-  const scope = { root, scope: 'implementation-cycle' };
-  const snapshot = (n) => String(n).repeat(64);
-  const reserve = (n) => updateReviewAttempt({ ...scope, action: 'repair', maxRounds: 1, findings: [], inputs: { fixed_point: 'base', implementation_commit_sha: `c${n}`, reviewer_ids: [`r${n}`], plan_set_id: 'p', planning_snapshot_sha256: snapshot(n) } });
-  const resolveCycle = (n, extra = {}) => updateReviewAttempt({ ...scope, action: 'resolve-repair', resolution: { reason: 'scope changed', previous_snapshot_sha256: snapshot(n), current_snapshot_sha256: snapshot(n + 1), ...extra } });
-  for (let n = 1; n < MAX_REPAIR_CYCLES; n += 1) { await reserve(n); await resolveCycle(n); }
-  await reserve(MAX_REPAIR_CYCLES);
-  await assert.rejects(resolveCycle(MAX_REPAIR_CYCLES), { code: 'repair_cycle_limit' });
-  assert.equal((await resolveCycle(MAX_REPAIR_CYCLES, { user_cycle_approval: { choice: 'adopt' } })).status, 'pass');
-});
-
 test('the runner commits only requested paths in a linked worktree', async () => {
   const { commitStageRequest } = await import('../.harness/src/workflow/stage-commit.mjs');
   await mkdir('.io/runtime', { recursive: true });

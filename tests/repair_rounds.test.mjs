@@ -3,22 +3,27 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { updateReviewAttempt } from '../.harness/src/workflow/review-attempts.mjs';
+import { inspectReviewHistory, updateReviewAttempt } from '../.harness/src/workflow/review-attempts.mjs';
 import { commentTracker } from '../.harness/src/tracker/lifecycle.mjs';
 
 const inputs = (n) => ({ fixed_point: 'f'.repeat(40), implementation_commit_sha: String(n).repeat(40).slice(0, 40), reviewer_ids: [`s${n}`, `p${n}`], plan_set_id: 'set', planning_snapshot_sha256: 'a'.repeat(64) });
 
-test('code-only findings go back to the implementer for up to three rounds without a plan change', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'impl-only-'));
+// Repairs have no round limit: each reviewed commit with findings reserves one more round until the reviews pass.
+test('repair rounds are not limited and keep the original fixed point', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'repair-unlimited-'));
   try {
     const scope = { root, scope: 'implementation-P' };
-    // The default budget of one round is spent.
-    await updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(1), maxRounds: 1, findings: [{ kind: 'implementation_defect' }] });
-    await assert.rejects(updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(2), maxRounds: 1, findings: [{ kind: 'implementation_defect' }] }), /budget exhausted/);
-    // Implementation-only repairs continue to round three, then ask the user.
-    assert.equal((await updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(2), implementationOnly: true, findings: [{ kind: 'implementation_defect' }] })).round, 2);
-    assert.equal((await updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(3), implementationOnly: true, findings: [{ kind: 'implementation_defect' }] })).round, 3);
-    await assert.rejects(updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(4), implementationOnly: true, findings: [{ kind: 'implementation_defect' }] }), /budget exhausted/);
+    for (let round = 1; round <= 6; round += 1) {
+      const reserved = await updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(round), findings: [{ kind: 'in_scope_spec_mismatch' }] });
+      assert.equal(reserved.round, round);
+      assert.equal(reserved.limit, undefined);
+    }
+    const history = await inspectReviewHistory(scope);
+    assert.equal(history.budget.limit, null);
+    assert.equal(history.next_admission_requires_resolution, false);
+    // The same commit still cannot reserve twice, and a different fixed point is refused.
+    await assert.rejects(updateReviewAttempt({ ...scope, action: 'repair', inputs: inputs(6), findings: [] }), /already has a reserved repair/);
+    await assert.rejects(updateReviewAttempt({ ...scope, action: 'repair', inputs: { ...inputs(7), fixed_point: 'e'.repeat(40) }, findings: [] }), /original review fixed point/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -36,12 +41,6 @@ test('the implementer records an implementation-only fix on the ticket, not in t
     await commentTracker({ workspace_root: root, ticket_ref: 'docs/plans/set/p.md', body: 'Fixed it' });
     assert.match(await readFile(join(root, 'docs/plans/set/p.md'), 'utf8'), /## 수정 기록\n\n- \d{4}-\d{2}-\d{2}: Fixed it\n$/);
   } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test('repair points out the implementation-only route when the budget runs out on code-only findings', async () => {
-  const source = await readFile(new URL('../.harness/src/wrapper/repair.mjs', import.meta.url), 'utf8');
-  assert.match(source, /next_action: 'implementation-only-repair'/);
-  assert.match(await readFile(new URL('../.codex/internal-skills/code-review/references/repair.md', import.meta.url), 'utf8'), /next_action: implementation-only-repair/);
 });
 
 test('reviews already handed to the Spec owner ask for a fresh review instead of spec-me again', async () => {

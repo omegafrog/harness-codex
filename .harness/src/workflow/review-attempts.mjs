@@ -29,14 +29,10 @@ function validateHistory(history) {
   requireValue(!history.preparation_resolution || Number.isSafeInteger(history.preparation_resolution.after) && history.preparation_resolution.after > 0 && history.preparation_resolution.after <= history.attempts.length && history.attempts.slice(0, history.preparation_resolution.after).at(-1)?.pre_dispatch_preparation && typeof history.preparation_resolution.reason === 'string' && history.preparation_resolution.reason.startsWith('preparation recovery: ') && history.preparation_resolution.reason.trim().length > 'preparation recovery: '.length, 'Invalid preparation recovery');
   requireValue(history.scope_removals === undefined || Array.isArray(history.scope_removals) && history.scope_removals.every((item) => typeof item?.inputs?.implementation_commit_sha === 'string' && Array.isArray(item.findings) && item.findings.length > 0), 'Invalid scope removal history');
   const repairs = history.repairs || [];
-  requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && Number.isSafeInteger(item.limit) && item.limit >= item.round && item.limit <= (item.implementation_only ? IMPLEMENTATION_ONLY_ROUNDS : 2) && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
-  requireValue(!history.repair_resolution || Number.isSafeInteger(history.repair_resolution.after) && history.repair_resolution.after > 0 && history.repair_resolution.after <= repairs.length && repairs[history.repair_resolution.after - 1].round === repairs[history.repair_resolution.after - 1].limit && typeof history.repair_resolution.reason === 'string' && history.repair_resolution.reason.trim() && ((!history.repair_resolution.previous_snapshot_sha256 && !history.repair_resolution.current_snapshot_sha256) || (/^[a-f0-9]{64}$/.test(history.repair_resolution.previous_snapshot_sha256 || '') && /^[a-f0-9]{64}$/.test(history.repair_resolution.current_snapshot_sha256 || '') && history.repair_resolution.previous_snapshot_sha256 !== history.repair_resolution.current_snapshot_sha256)), 'Invalid repair resolution');
+  requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
   requireValue(history.attempts.every((item) => item && ['active', 'pass', 'revise', 'stale', 'aborted'].includes(item.status) && Number.isSafeInteger(item.round) && item.round >= 1 && item.round <= 3 && (!item.review || Array.isArray(item.review.findings))), 'Invalid recorded review');
   requireValue(history.attempts.every((item) => !item.admission_ref && !item.admission_execution_id || /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(item.admission_execution_id || '') && item.admission_ref === `runtime/executions/${item.admission_execution_id}/plan-review-admission-${item.id}.json`), 'Invalid plan review admission reference');
   requireValue(history.attempts.every((item) => !item.native_review || typeof item.native_review.reviewer_id === 'string' && item.native_review.reviewer_id && typeof item.native_review.dispatch_token === 'string' && item.native_review.dispatch_token && typeof item.native_review.parent_session_id === 'string' && item.native_review.parent_session_id && typeof item.native_review.execution_id === 'string' && item.native_review.execution_id && (!item.native_review.agent_id || typeof item.native_review.agent_id === 'string' && typeof item.native_review.stopped === 'boolean' && (!item.native_review.stopped || typeof item.native_review.result === 'string' && item.native_review.result.trim() && ['pass', 'revise', 'reject', 'blocked'].includes(item.native_review.review?.verdict) && Array.isArray(item.native_review.review.findings)))), 'Invalid native review claim');
-  requireValue(repairs.every((item, index) => !index ? item.round === 1 : item.round === 1 ? repairs[index - 1].round === repairs[index - 1].limit : item.round === repairs[index - 1].round + 1 && (item.limit === repairs[index - 1].limit || item.implementation_only && item.limit === IMPLEMENTATION_ONLY_ROUNDS)), 'Invalid historical repair cycle');
-  const cycle = repairs.slice(history.repair_resolution?.after || 0);
-  requireValue(cycle.every((item, index) => item.round === index + 1 && (item.limit === cycle[0].limit || item.implementation_only && item.limit === IMPLEMENTATION_ONLY_ROUNDS)), 'Invalid current repair cycle');
   return history;
 }
 async function readHistory(path) {
@@ -52,12 +48,7 @@ async function readHistory(path) {
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
 // 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
-export const MAX_REPAIR_CYCLES = 3;
-// Findings fixed in code alone (no test contract, Spec or plan change) go straight back to the implementer for up to
-// this many rounds before the user is asked; nothing about the plan changes, so no new planning cycle is needed.
-export const IMPLEMENTATION_ONLY_ROUNDS = 3;
-
-export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, maxRounds = 1, implementationOnly = false, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, requireNative = false }) {
+export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, requireNative = false }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
     if (error.code === 'EEXIST') throw new Error('Review history is being updated; retry after the current command finishes');
@@ -66,40 +57,26 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
   try {
     const history = await readHistory(path), last = history.attempts.at(-1);
     let result;
-    if (action === 'repair' || action === 'resolve-repair') {
+    if (action === 'repair') {
+      // Every review finding that needs a code change is reserved as one more round; there is no round limit, and the
+      // fixed point stays the plan's starting commit.
       requireValue(scope.startsWith('implementation-'), 'Implementation repair scope is required');
       history.repairs ||= [];
-      if (action === 'resolve-repair') {
-        requireValue(history.repairs.length > 0 && typeof resolution?.reason === 'string' && resolution.reason.trim(), 'Explicit user scope/decision resolution is required');
-        const cycle = history.repairs.slice(history.repair_resolution?.after || 0);
-        requireValue(cycle.length && cycle.length >= cycle.at(-1).limit, 'Resolve requires an exhausted implementation repair cycle');
-        const cycles = history.repairs.filter((item) => item.round === 1).length;
-        if (cycles >= MAX_REPAIR_CYCLES && !resolution.user_cycle_approval) throw Object.assign(new Error(`This plan already used ${cycles} repair cycles; ask the user to continue, accept the current state, or stop`), { code: 'repair_cycle_limit', cycles });
-        requireValue(typeof cycle[0].inputs.plan_set_id === 'string' && /^[a-f0-9]{64}$/.test(cycle[0].inputs.planning_snapshot_sha256 || ''), 'Repair budget reset requires a reviewed planning snapshot');
-        requireValue(resolution.previous_snapshot_sha256 === cycle[0].inputs.planning_snapshot_sha256 && /^[a-f0-9]{64}$/.test(resolution.current_snapshot_sha256 || '') && resolution.current_snapshot_sha256 !== resolution.previous_snapshot_sha256, 'Repair budget reset requires a different passing planning snapshot');
-        history.repair_resolution = { after: history.repairs.length, reason: resolution.reason, previous_snapshot_sha256: resolution.previous_snapshot_sha256, current_snapshot_sha256: resolution.current_snapshot_sha256 };
-        result = { status: 'pass', reason: 'user_resolution_recorded' };
-      } else {
-        requireValue(Number.isSafeInteger(maxRounds) && maxRounds >= 0 && maxRounds <= 2, 'Repair limit must be an integer from zero to two');
-        requireValue(inputs?.fixed_point && inputs?.implementation_commit_sha, 'Fixed point and implementation commit are required');
-        const start = history.repair_resolution?.after || 0;
-        const cycle = history.repairs.slice(start);
-        requireValue(!cycle.length || cycle[0].inputs.fixed_point === inputs.fixed_point, 'Keep the original review fixed point across repair and resume');
-        requireValue(!cycle.some((item) => item.inputs.implementation_commit_sha === inputs.implementation_commit_sha), 'This commit already has a reserved repair; resume that correction before requesting another');
-        requireValue(!cycle.some((item) => item.inputs.reviewer_ids?.some((id) => inputs.reviewer_ids?.includes(id))), 'Each implementation repair review requires fresh reviewer contexts');
-        const limit = implementationOnly ? IMPLEMENTATION_ONLY_ROUNDS : cycle.length ? Math.min(cycle[0].limit, maxRounds) : maxRounds;
-        if (cycle.length >= limit) throw Object.assign(new Error('Implementation repair budget exhausted; present unresolved findings for a user scope/decision resolution'), { code: 'max_repair_rounds_exceeded', rounds: cycle.length });
-        const reservation = { round: cycle.length + 1, limit, inputs, findings, ...(implementationOnly ? { implementation_only: true } : {}) };
-        history.repairs.push(reservation);
-        result = { status: 'pass', ...reservation };
-      }
+      requireValue(inputs?.fixed_point && inputs?.implementation_commit_sha, 'Fixed point and implementation commit are required');
+      const cycle = history.repairs;
+      requireValue(!cycle.length || cycle[0].inputs.fixed_point === inputs.fixed_point, 'Keep the original review fixed point across repair and resume');
+      requireValue(!cycle.some((item) => item.inputs.implementation_commit_sha === inputs.implementation_commit_sha), 'This commit already has a reserved repair; resume that correction before requesting another');
+      requireValue(!cycle.some((item) => item.inputs.reviewer_ids?.some((id) => inputs.reviewer_ids?.includes(id))), 'Each implementation repair review requires fresh reviewer contexts');
+      const reservation = { round: cycle.length + 1, inputs, findings };
+      history.repairs.push(reservation);
+      result = { status: 'pass', ...reservation };
     } else if (action === 'scope-removal') {
       // 사용자가 제거를 결정한 Spec 밖 동작은 예산과 별도로 기록하되 커밋·reviewer 재사용은 똑같이 막는다.
       requireValue(scope.startsWith('implementation-'), 'Implementation repair scope is required');
       requireValue(inputs?.fixed_point && inputs?.implementation_commit_sha, 'Fixed point and implementation commit are required');
       requireValue(Array.isArray(findings) && findings.length > 0 && findings.every((item) => item?.repair_directive === 'remove_unrequested_behavior' && item.scope_decision?.choice === 'reject'), 'Scope removal requires findings with a recorded user rejection');
       history.scope_removals ||= [];
-      const cycle = (history.repairs || []).slice(history.repair_resolution?.after || 0);
+      const cycle = history.repairs || [];
       const reserved = [...cycle, ...history.scope_removals];
       requireValue(!cycle.length || cycle[0].inputs.fixed_point === inputs.fixed_point, 'Keep the original review fixed point across repair and resume');
       requireValue(!reserved.some((item) => item.inputs.implementation_commit_sha === inputs.implementation_commit_sha), 'This commit already has a reserved repair; resume that correction before requesting another');
@@ -238,19 +215,19 @@ export async function inspectReviewHistory({ root, scope }) {
   const history = await readHistory(path);
   const last = history.attempts.at(-1), substantive = lastSubstantiveAttempt(history);
   const repair = scope.startsWith('implementation-');
-  const cycle = repair ? (history.repairs || []).slice(history.repair_resolution?.after || 0) : null;
+  const cycle = repair ? history.repairs || [] : null;
   const reset = resolutionApplied(history, substantive);
   const lastReview = lastRecordedReview(history);
   const used = repair ? cycle.length : !substantive || substantive.status === 'pass' || reset ? 0 : substantive.round;
-  const limit = repair ? cycle.at(-1)?.limit ?? null : 3;
+  const limit = repair ? null : 3;
   requireValue(Number.isSafeInteger(used) && used >= 0 && (limit === null || Number.isSafeInteger(limit) && limit >= 0), 'Invalid review budget');
   return { root, scope, evidence_path: path, recorded_state: repair ? cycle.length ? 'repair-reserved' : 'no-current-reservation' : last?.pre_dispatch_preparation ? substantive?.status || 'aborted' : last?.status || 'not-started',
     ...(last?.pre_dispatch_preparation ? { last_attempt_status: last.status } : {}),
     ...(lastReview ? { last_review: lastReview.review, last_attempt_id: lastReview.id, last_round: lastReview.round } : {}),
     budget: { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) },
-    next_admission_requires_resolution: repair ? cycle.length > 0 && used >= limit : Boolean(scope.startsWith('spec-') && trailingPreparationAbortCount(history) >= MAX_PREPARATION_ABORTS || last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
+    next_admission_requires_resolution: repair ? false : Boolean(scope.startsWith('spec-') && trailingPreparationAbortCount(history) >= MAX_PREPARATION_ABORTS || last && last.status !== 'active' && last.status !== 'pass' && !reset && used >= limit),
     findings: repair ? cycle.at(-1)?.findings || [] : lastReview?.review.findings || [],
     ...(repair && cycle.length ? { plan_set_id: cycle[0].inputs.plan_set_id || null, planning_snapshot_sha256: cycle[0].inputs.planning_snapshot_sha256 || null } : {}),
     findings_source: repair ? 'last-repair-reservation' : 'last-recorded-review',
-    reason: last?.reason || null, resolution: repair ? history.repair_resolution || null : history.preparation_resolution?.after === history.attempts.length ? history.preparation_resolution : history.resolution || null };
+    reason: last?.reason || null, resolution: repair ? null : history.preparation_resolution?.after === history.attempts.length ? history.preparation_resolution : history.resolution || null };
 }

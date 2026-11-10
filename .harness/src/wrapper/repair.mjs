@@ -1,4 +1,4 @@
-import { inspectReviewHistory, MAX_REPAIR_CYCLES, updateReviewAttempt } from '../workflow/review-attempts.mjs';
+import { updateReviewAttempt } from '../workflow/review-attempts.mjs';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
@@ -48,7 +48,6 @@ const SCOPE_OPTION_LABELS = {
   unbacked_requirement: { reject: "지적 기각", adopt: "Spec에 추가" },
   spec_decision: { reject: "지원 안 함", adopt: "Spec에 추가" },
   budget_decision: { reject: "지원 안 함", adopt: "수정 계속" },
-  cycle_decision: { reject: "현재 상태 수용", adopt: "수정 계속" },
 };
 const QUESTION_TITLES = {
   unrequested_behavior: "구현에 승인된 Spec에 없는 동작이 있습니다. 유지할까요?",
@@ -167,7 +166,7 @@ const REJECT_CONSEQUENCES = {
   budget_decision: "이 지적을 고치지 않고 넘어갑니다. 결정을 기록해 같은 지적을 다시 묻지 않습니다.",
 };
 const ADOPT_CONSEQUENCES = {
-  budget_decision: "계획을 갱신하고 새 수정 사이클을 엽니다. 사이클 수 제한이 적용됩니다.",
+  budget_decision: "남은 지적을 이어서 고칩니다.",
 };
 
 export function buildScopeDecisionQuestions(findings = []) {
@@ -311,23 +310,6 @@ function validScopeGroups(scopeGroups) {
   return scopeGroups;
 }
 
-function cycleLimitQuestion(cycles) {
-  const labels = SCOPE_OPTION_LABELS.cycle_decision;
-  return {
-    finding_id: "repair-cycle",
-    finding_ids: ["repair-cycle"],
-    question: {
-      title: `이 plan의 수정 사이클이 ${cycles}번 끝났습니다(기준 ${MAX_REPAIR_CYCLES}번). 계속할까요?`,
-      options: [
-        { id: "reject", label: labels.reject, consequence: "남은 지적을 고치지 않고 현재 구현을 기준으로 다음 단계로 갑니다." },
-        { id: "adopt", label: labels.adopt, consequence: "계획을 갱신하고 사이클을 한 번 더 엽니다. 같은 지적이 반복될 수 있습니다." },
-      ],
-      recommended_option_id: "reject",
-      rationale: "같은 plan에서 수정이 반복되면 요구가 커지고 있을 가능성이 높습니다.",
-    },
-  };
-}
-
 export const verifiedScopeDecisionsForTest = (root, scopeDecisions) => verifiedScopeDecisions(root, scopeDecisions);
 async function verifiedScopeDecisions(root, scopeDecisions) {
   if (!Array.isArray(scopeDecisions)) throw new TypeError("scope_decisions must be an array");
@@ -386,23 +368,8 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
   return unverified;
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, implementationOnly = false, resolution, cycleApproval = null, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
   const scope = { root, scope: `implementation-${planId}` };
-  if (resolution !== undefined) {
-    const prior = await inspectReviewHistory(scope);
-    if (!prior.plan_set_id || !prior.planning_snapshot_sha256) throw new Error('Repair budget reset requires a reviewed plan-set snapshot; a general continue instruction cannot reset it');
-    const current = await inspectPlanSet({ root, planSetId: prior.plan_set_id, phase: 'dispatch', planId, trackerPort });
-    if (current.status !== 'pass') throw Object.assign(new Error(`Repair budget reset requires a passing updated plan review: ${current.reason}`), { code: 'repair_resolution_review_required' });
-    const currentSnapshot = current.details.review_snapshot_sha256;
-    if (currentSnapshot === prior.planning_snapshot_sha256) throw new Error('Repair budget reset requires an approved scope/spec change and a new planning snapshot; continue alone is not a scope resolution');
-    const approved = cycleApproval ? (await verifiedScopeDecisions(root, [{ finding_id: 'repair-cycle', choice: 'adopt', ...cycleApproval }]))[0] : null;
-    try {
-      return await updateReviewAttempt({ ...scope, action: 'resolve-repair', resolution: { reason: resolution, previous_snapshot_sha256: prior.planning_snapshot_sha256, current_snapshot_sha256: currentSnapshot, ...(approved ? { user_cycle_approval: approved } : {}) } });
-    } catch (error) {
-      if (error.code !== 'repair_cycle_limit') throw error;
-      return { action: 'block', state: 'blocked', reason: error.code, cycles: error.cycles, next_action: 'user-decision', resume_condition: 'Resume with the recorded user answer through --answers-ref and --question-id', user_questions: [cycleLimitQuestion(error.cycles)] };
-    }
-  }
   // These findings already went to the Spec owner. Sending them again would loop; the revised Spec and plan are
   // judged by fresh reviewers of the current commit instead.
   if (specHandoff && Array.isArray(specHandoff.reviewer_ids) && specHandoff.reviewer_ids.join(',') === reviews.map((item) => item.context_id).join(',')) return {
@@ -413,30 +380,20 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decisions = await verifiedScopeDecisions(root, scopeDecisions);
   const unverifiedBasis = await unverifiedFindingBasis(root, reviewInput, reviews);
-  const decision = planRepairRound({ reviews, maxRounds, scopeDecisions: decisions, scopeGroups: validScopeGroups(scopeGroups), unverifiedBasis });
+  const decision = planRepairRound({ reviews, scopeDecisions: decisions, scopeGroups: validScopeGroups(scopeGroups), unverifiedBasis });
   if (decision.action !== 'repair') return decision;
   await assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort });
   const inputs = { ...reviewInput, reviewer_ids: reviews.map((item) => item.context_id) };
   const removals = decision.classification.repairable.filter((finding) => finding.repair_directive === REMOVE_DIRECTIVE);
   const reserveRemoval = () => updateReviewAttempt({ ...scope, action: 'scope-removal', inputs, findings: removals });
   if (decision.repair.scope_removal_only) return reserveRemoval();
-  try {
-    // The orchestrator judged these fixes need no test, Spec or plan change; the code checks the kinds agree.
-    if (implementationOnly && !decision.classification.repairable.every((finding) => finding.kind === 'implementation_defect')) throw Object.assign(new Error('--implementation-only accepts only implementation_defect findings; test, Spec or plan changes go through the normal repair or revision path'), { code: 'implementation_only_mismatch' });
-    return await updateReviewAttempt({ ...scope, action: 'repair', inputs, maxRounds, implementationOnly, findings: decision.classification.repairable });
-  } catch (error) {
-    // 사용자가 제거를 결정한 동작은 수리 예산이 소진돼도 되돌릴 수 있어야 한다.
-    if (error.code === 'max_repair_rounds_exceeded' && removals.length) return reserveRemoval();
-    // Code-only findings do not need the user: say so, so the orchestrator reruns repair with --implementation-only.
-    if (error.code === 'max_repair_rounds_exceeded' && !implementationOnly && decision.classification.repairable.length && decision.classification.repairable.every((finding) => finding.kind === 'implementation_defect')) return { action: 'block', state: 'blocked', reason: error.code, classification: decision.classification, next_action: 'implementation-only-repair', resume_condition: 'Every remaining finding is an implementation_defect: rerun repair with --implementation-only true and send the fix back to the implementer; do not ask the user or update the plan' };
-    if (error.code === 'max_repair_rounds_exceeded') return { action: 'block', state: 'blocked', reason: error.code, classification: decision.classification, next_action: 'user-decision', resume_condition: 'Ask the user about each remaining finding; do not route them to Spec or plan revision without an answer', user_questions: buildScopeDecisionQuestions(decision.classification.repairable) };
-    throw error;
-  }
+  // Findings are repaired round after round until the reviews pass; there is no round limit to run out of.
+  return updateReviewAttempt({ ...scope, action: 'repair', inputs, findings: decision.classification.repairable });
 }
 
-export function planRepairRound({ reviews = [], round = 0, maxRounds = 1, scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
+export function planRepairRound({ reviews = [], round = 0, maxRounds = Infinity, scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
   if (!Number.isInteger(round) || round < 0) throw new TypeError("round must be a non-negative integer");
-  if (!Number.isInteger(maxRounds) || maxRounds < 0) throw new TypeError("maxRounds must be a non-negative integer");
+  if (maxRounds !== Infinity && (!Number.isInteger(maxRounds) || maxRounds < 0)) throw new TypeError("maxRounds must be a non-negative integer or omitted");
   const classification = classifyReviewFindings(reviews, { scopeDecisions, scopeGroups, unverifiedBasis });
   if (!classification.has_findings) return { action: "complete", state: "passed", round, classification };
   if (classification.blockers.length > 0) {

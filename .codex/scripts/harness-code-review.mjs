@@ -13,7 +13,7 @@ try {
     // Accept both `--flag value` and `--flag=value`.
     const [flag, inline] = args[i].includes('=') && args[i].startsWith('--') ? [args[i].slice(0, args[i].indexOf('=')), args[i].slice(args[i].indexOf('=') + 1)] : [args[i], undefined];
     const value = inline !== undefined ? inline : args[++i];
-    if (!['--root', '--plan', '--reviews', '--reason', '--max-rounds', '--answers-ref', '--question-id', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--implementation-only', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
+    if (!['--root', '--plan', '--reviews', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
     options[flag.slice(2)] = value;
   }
   options.root = resolveCommandContext({ root: options.root }).root;
@@ -41,7 +41,7 @@ try {
     result = { status: 'pass', ...await recordScopeDecision({ root: options.root, planId: options.plan, findingId: options.finding, choice: options.choice, answer: options.answer, labels: SCOPE_OPTION_LABELS }) };
   } else if (action === 'repair') {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
-    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], specHandoff: evidence.spec_handoff ?? null, maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']), implementationOnly: options['implementation-only'] === 'true' });
+    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], specHandoff: evidence.spec_handoff ?? null });
     // Remember the hand-off so the next repair of these same reviews asks for a fresh review instead of spec-me again.
     if (result.next_action === 'spec-me' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) {
       evidence.spec_handoff = { at: new Date().toISOString(), reviewer_ids: evidence.reviews.map((item) => item.context_id) };
@@ -52,8 +52,8 @@ try {
     if (result.state === 'passed' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) await recordPassedReview({ root: options.root, planId: options.plan, evidence });
   } else if (action === 'reviewed') {
     result = await reviewedCommit({ root: options.root, planId: options.plan, commit: options.commit });
-  } else if (action === 'resolve') result = await reserveImplementationRepair({ root: options.root, planId: options.plan, resolution: options.reason, cycleApproval: options['answers-ref'] ? { answers_ref: options['answers-ref'], question_id: options['question-id'] } : null });
-  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed|resolve --root DIR --plan ID [--reviews SESSION-RELATIVE-JSON] [--max-rounds N] [--reason USER-RESOLUTION] [--answers-ref SESSION-RELATIVE-JSON --question-id ID]');
+  }
+  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed [--root DIR] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status !== 'pass' && result.state !== 'passed') process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
