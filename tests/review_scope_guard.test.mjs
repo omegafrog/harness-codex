@@ -306,6 +306,20 @@ test('five automatic repair rounds run, then each remaining finding goes to the 
   assert.deepEqual(result.user_questions[0].question.options.map((option) => option.label), ['지원 안 함', '수정 계속']);
 });
 
+// A finding no repair can remove (a missing prerequisite) came back unchanged, so a third identical repair is not run.
+test('the same finding after a repair goes to the user instead of another repair', async () => {
+  const { updateReviewAttempt } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const root = await consumer();
+  const { reviews, reviewInput } = evidence({ findings: [defect] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  await updateReviewAttempt({ root, scope: 'implementation-community', action: 'repair', findings: [defect], inputs: { fixed_point: input.fixed_point, implementation_commit_sha: 'old1', reviewer_ids: ['old-r1'] } });
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.reason, 'repeated_finding');
+  assert.equal(result.next_action, 'user-decision');
+  assert.ok(result.user_questions.length > 0);
+});
+
 test('minor findings are reported but do not open a repair round', async () => {
   const { classifyReviewFindings } = await import('../.harness/src/wrapper/repair.mjs');
   const { reviews } = evidence({ findings: [{ ...defect, severity: 'minor' }] });

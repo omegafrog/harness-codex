@@ -375,6 +375,14 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
 // remaining finding goes to the user, who either keeps fixing it ("수정 계속") or accepts the current state.
 export const AUTO_REPAIR_ROUNDS = 5;
 
+// Two rounds in a row ending on the same finding mean the fix is not what is missing (a shared cause, such as a
+// prerequisite no repair can produce), so a third identical repair is not scheduled.
+const findingSignature = (finding) => [finding.kind, finding.file || '', String(finding.summary || '').replace(/\s+/g, ' ').trim().slice(0, 120)].join('|');
+export function repeatedFindings(previous = [], current = []) {
+  const before = new Set(previous.filter((finding) => finding.kind !== 'advisory').map(findingSignature));
+  return current.filter((finding) => finding.kind !== 'advisory' && before.has(findingSignature(finding)));
+}
+
 export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
   const scope = { root, scope: `implementation-${planId}` };
   // These findings already went to the Spec owner. Sending them again would loop; the revised Spec and plan are
@@ -394,7 +402,19 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   const removals = decision.classification.repairable.filter((finding) => finding.repair_directive === REMOVE_DIRECTIVE);
   const reserveRemoval = () => updateReviewAttempt({ ...scope, action: 'scope-removal', inputs, findings: removals });
   if (decision.repair.scope_removal_only) return reserveRemoval();
-  const rounds = (await inspectReviewHistory(scope)).budget.used;
+  const history = await inspectReviewHistory(scope);
+  const rounds = history.budget.used;
+  const repeated = repeatedFindings(history.findings, decision.classification.repairable);
+  if (repeated.length) {
+    const answered = new Map(decisions.map((item) => [item.finding_id, item]));
+    const undecided = repeated.filter((finding) => !decisionFor(answered, scopeFindingId(finding), finding));
+    if (undecided.length) return {
+      action: "block", state: "blocked", reason: "repeated_finding", rounds, classification: decision.classification,
+      next_action: "user-decision",
+      resume_condition: "The same finding came back after a repair. Ask the user how to handle it, record the answer, then run repair again",
+      user_questions: buildScopeDecisionQuestions(undecided),
+    };
+  }
   if (rounds >= AUTO_REPAIR_ROUNDS) {
     const answered = new Map(decisions.map((item) => [item.finding_id, item]));
     const undecided = decision.classification.repairable.filter((finding) => !decisionFor(answered, scopeFindingId(finding), finding));

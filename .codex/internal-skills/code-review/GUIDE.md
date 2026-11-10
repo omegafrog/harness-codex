@@ -67,4 +67,4 @@ reviewer는 다음 JSON 필드를 반환한다. `state`는 현재 plan을 막는
 
 ## 계약 판정
 
-각 plan은 현행 계약을 기준으로 검토한다. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치와 실제 계약 검사 pass를 확인한다. 현행 `docs/contracts/` 전체와 대조한다.
+각 plan은 현행 계약을 기준으로 검토한다. 개별 plan의 contract snapshot 동기화는 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 최종 통합에 연결한다. 계약 구조 오류·누락, 실제 구현 결함과 현재 plan의 실행 증거 부족은 해당 blocking kind로 보고한다. 최종 통합 리뷰는 전체 계약·source·검증 증거의 일치와 실제 계약 검사 pass를 확인한다. 현행 `docs/contracts/` 전체와 대조한다. 단 `sync-contracts`가 아직 계약을 작성·seal하지 않아 `harness-contracts.mjs check`가 `contracts_invalid`이고 `docs/contracts/manifest.json`이 비어 있는 상태는 코드·Spec 결함이 아니다. 이때는 blocking finding이 아니라 kind:contract_sync·severity:minor·disposition:integration_deferred·completion_kind:feature_implemented로 보고한다. 계약이 이미 seal된 뒤의 불일치만 blocking으로 보고한다.

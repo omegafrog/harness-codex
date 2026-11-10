@@ -172,3 +172,11 @@ test('the implementation stage does not skip a fix requested through feedback be
   assert.match(text, /`feedback\.json`이 있으면 이 규칙을 적용하지 않는다/);
   assert.match(text, /파일을 하나도 바꾸지 않은 채 `completed\/OK`로 끝내지 않는다/);
 });
+
+// The final review used to demand a sealed contract that only a later step produces, so it failed in every round.
+test('an unsealed contract is deferred in the final review and the orchestrator seals it before the completion gate', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /`contracts_invalid`이고 `docs\/contracts\/manifest\.json`이 비어 있는 상태는 코드·Spec 결함이 아니다/);
+  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /최종 E2E 통과 → `sync-contracts` → 완료 gate다/);
+});
