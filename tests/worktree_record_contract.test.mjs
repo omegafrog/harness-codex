@@ -451,6 +451,19 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const blockedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(blockedCompletion.status, 0);
     assert.equal(JSON.parse(blockedCompletion.stdout).state, 'in-progress');
+    // The gate finds the plan set's Architecture review in the review history itself; the state file need not carry it.
+    const planSetId = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).plan_set_id;
+    if (planSetId) {
+      assert.match(JSON.parse(blockedCompletion.stdout).verdict.reason, /missing or for another ticket/);
+      const { updateReviewAttempt } = await import(`file://${join(tree.workspace, '.harness/src/workflow/review-attempts.mjs')}`);
+      const reviewInputs = { [`docs/specs/${planSetId}/architecture-spec.md`]: 'a'.repeat(64) };
+      const scope = `spec-${planSetId}-architecture`;
+      const admission = await updateReviewAttempt({ root: tree.workspace, scope, action: 'begin', inputs: reviewInputs });
+      await updateReviewAttempt({ root: tree.workspace, scope, action: 'record', attemptId: admission.attempt_id, inputs: reviewInputs, review: { axis: 'architecture', ticket_id: planSetId, verdict: 'pass', findings: [], reviewer_id: 'reviewer', author_ids: ['author'], fork_turns: 'none' } });
+      const withReview = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head], { cwd: tree.workspace, encoding: 'utf8' });
+      assert.doesNotMatch(withReview.stdout, /missing or for another ticket/);
+      await rm(join(tree.session_directory, `runtime/reviews/${scope}.json`), { force: true });
+    }
     assert.equal(await readFile(join(tree.workspace, 'user-draft.txt'), 'utf8'), 'preserve me');
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
     assert.equal(execFileSync('git', ['check-ignore', '-q', '.io/runtime/spec-me/completion-state.json'], { cwd: tree.workspace }).length, 0);
