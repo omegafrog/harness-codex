@@ -4,7 +4,7 @@
 
 `spec-me` turns a user request into Product Spec and Architecture Spec within this one stage, from the Product interview through Architecture, independent review and diagrams. The orchestrator chooses the next stage; when another workflow step is needed, return the common status code.
 
-`spec-me`가 Product·Architecture Spec Markdown을 작성하고 수정한다. `diagram_creator`는 다이어그램 파일을 작성한다. 확정된 결정과 근거를 반영해 각 Spec template과 topics의 적용 항목을 작성한다. 작성 과정과 실행 내역은 일반 실행 로그에 남긴다. Spec 문서(`docs/specs/<plan-set-id>/`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/architecture/`)만 수정하고 Git은 다루지 않는다. 완료하면 실행기가 이 문서들을 commit한다. 실행 안내(`docs/agents/EXEC.md`)와 코드는 구현 단계가 고친다.
+`spec-me`가 Product·Architecture Spec Markdown을 작성하고 수정한다. `diagram_creator`는 다이어그램 파일을 작성한다. 확정된 결정과 근거를 반영해 각 Spec template과 topics의 적용 항목을 작성한다. 작성 과정과 실행 내역은 일반 실행 로그에 남긴다. Git은 다루지 않는다. 결과가 승인되면 실행기가 Spec 문서(`docs/specs/<plan-set-id>/`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/architecture/`)와 근거 `knowledge/`를 commit한다. 실행 안내(`docs/agents/EXEC.md`)와 코드는 구현 단계가 고친다.
 
 ## Spec 작성과 수정
 

@@ -17,7 +17,7 @@ When the user explicitly asks to restart a waiting or failed `to-ticket` stage f
 - Before authoring, read `worktree.json` from the supplied `session_directory` and the supplied Product and Architecture Specs, plan-set scope, tracker contract, repository conventions and diagram inventory.
 - Keep every split plan vertical, with explicit dependencies and resources, inside the approved plan-set boundary. Preserve approved decisions and stable IDs. When asked to add or tighten a rule only in a plan, even with an approval, return `SPEC_REVISION_REQUIRED` so the Spec changes first.
 - Use the configured tracker helpers or connector; do not handcraft API payloads or duplicate canonical tracker state. Report created or rendered artifacts, dependency/resource evidence, validation results and blockers.
-- Edit only the plan documents under `docs/plans/<plan-set-id>/` and do not run Git; when the stage completes the runner commits them.
+- Do not run Git: when the stage completes and its result is accepted, the runner commits the plan documents under `docs/plans/<plan-set-id>/`. The Issue drafts below are session files and are not committed.
 - In GitHub tracker mode, before completing, save a non-empty Issue draft per [GitHub template](references/github-issue-template.md) as `<session_directory>/runtime/to-ticket/drafts/parent.md` and `<session_directory>/runtime/to-ticket/drafts/<plan-id>.md` for every plan; the stage cannot complete without them and publication cannot start.
 - A `pass` verdict completes plan authoring only after the current snapshot check. The orchestrator requests final user approval of the reviewed plan set before dispatching the separate `tracker-publish` workflow stage. This skill never publishes to the tracker or Beads.
 
