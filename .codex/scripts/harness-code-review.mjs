@@ -34,7 +34,9 @@ try {
     const side = async (role) => role === reuse
       ? { carried: await carryForwardReview({ root: options.root, planId: options.plan, role, reviewInput }) }
       : readHookRecordedReviewer({ root: options.root, role, agentId: options[`${role}-agent`] || null, after: implemented.recordedAt });
-    const evidence = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec') });
+    const specText = await readFile(resolve(options.root, reviewInput.architecture_spec_path), 'utf8').catch(() => '');
+    const specItems = (await import(new URL('../wrapper/spec-items.mjs', installed).href)).extractSpecContractItems(specText);
+    const evidence = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec'), specItems });
     result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point };
   } else if (action === 'record-decision') {
     const { SCOPE_OPTION_LABELS } = await import(installed.href);
@@ -50,10 +52,18 @@ try {
     if (Array.isArray(result.user_questions)) result.user_questions = await recordPendingQuestions({ root: options.root, planId: options.plan, questions: result.user_questions });
     // Remember that this exact commit passed, so re-selecting the plan later does not ask for the same review again.
     if (result.state === 'passed' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) await recordPassedReview({ root: options.root, planId: options.plan, evidence });
+  } else if (action === 'spec-items') {
+    // The Architecture Spec items a Spec reviewer must answer one by one (see report.checked in the code-review guide).
+    const { extractSpecContractItems } = await import(new URL('../wrapper/spec-items.mjs', installed).href);
+    const { resolveCommandContext } = await import(new URL('../workflow/cli-context.mjs', installed).href);
+    const planSetId = resolveCommandContext({ root: options.root }).plan_set_id;
+    if (!planSetId) throw new Error('spec-items needs a plan-set worktree');
+    const specPath = `docs/specs/${planSetId}/architecture-spec.md`;
+    result = { status: 'pass', plan_set_id: planSetId, spec_path: specPath, items: extractSpecContractItems(await readFile(resolve(options.root, specPath), 'utf8')) };
   } else if (action === 'reviewed') {
     result = await reviewedCommit({ root: options.root, planId: options.plan, commit: options.commit });
   }
-  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed [--root DIR] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
+  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed|spec-items [--root DIR] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status !== 'pass' && result.state !== 'passed') process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

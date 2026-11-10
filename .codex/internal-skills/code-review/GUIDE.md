@@ -57,7 +57,7 @@ For implement-wrapper reviews, missing or stale Product/Architecture Specs block
 
 한 라운드에 발견할 수 있는 지적을 모두 보고한다. 첫 지적에서 멈추거나 다음 라운드로 미루지 않는다. 라운드마다 하나씩 나오면 수정과 재리뷰가 반복된다.
 
-- **Spec 축:** 승인 Architecture Spec의 요구와 구조 규정(요구 ID, 라우트, 패키지·모듈 경계, DB schema·migration, 계층 배치, 오류·보안 동작, 환경·설정 값)을 하나씩 변경 코드와 대조하고, 불일치는 모두 finding으로 보고한다. 이미 일치하는 항목은 결과에 적지 않는다(결과 형식은 아래와 같다).
+- **Spec 축:** 먼저 `node .codex/scripts/harness-code-review.mjs spec-items`를 실행해 Architecture Spec의 계약 항목 목록(경로·메서드, schema·migration, 인프라 의존성, 파일·모듈 구조, 인증·인가, 입력 검증, E2E 환경)을 받는다. 항목마다 변경 코드와 대조하고 `report.checked`에 항목 하나당 `{"id":"S6.5-3","verdict":"match|mismatch|not_applicable","evidence":"파일:행 또는 해당 없는 이유"}`를 모두 적는다. 이 plan이 맡지 않은 항목은 `not_applicable`과 담당 plan을 증거로 적는다. `mismatch`인 항목은 반드시 finding을 만들고 그 finding의 `spec_items`에 항목 ID를 적는다. 한 항목이라도 빠지면 결과가 거부되고 리뷰를 다시 해야 한다.
 - **Standards 축:** 변경된 파일마다 저장소 기준과 Product Spec 요구를 대조해 위반을 모두 보고한다.
 - **심각도:** `blocker`는 동작하지 않거나 데이터·보안 사고를 낸다. `major`는 승인 Spec·plan·계약을 어기거나 요구한 동작이 빠졌다. 하나라도 있으면 `state`가 `failed`다. `minor`만 있으면 `passed`로 두고 finding에 `severity: minor`로 남긴다. `minor`는 이름·표현·사소한 구조처럼 승인된 동작을 바꾸지 않는 개선이다. minor는 수정 라운드를 열지 않고 결과에 기록만 한다. 심각도를 낮춰 지적을 숨기지 않는다.
 

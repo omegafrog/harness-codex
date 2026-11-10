@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { inspectPlanSet } from '../workflow/plan-review.mjs';
 import { parseWorktreeRecord } from '../workflow/worktrees.mjs';
+import { assertSpecCoverage } from './spec-items.mjs';
 
 const execFileAsync = promisify(execFile);
 const git = async (root, ...args) => (await execFileAsync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })).stdout;
@@ -85,13 +86,15 @@ export async function readImplementerResult({ root, resultRef, commit = null }) 
 
 // Combines the two reviewers' raw JSON answers ({"state","report":{"findings"}}) with the review input.
 // Each context_id is the reviewer's own native agent/thread ID, never a label written by the caller.
-export function assembleReviews({ reviewInput, standards, spec }) {
+export function assembleReviews({ reviewInput, standards, spec, specItems = [] }) {
   const entry = (role, { contextId, raw, carried }) => {
     if (carried) return carried;
     if (!contextId || typeof contextId !== 'string') throw new Error(`${role} reviewer needs its native context ID`);
     let parsed;
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { throw new Error(`${role} reviewer answer is not JSON`); }
     if (!parsed || !REVIEW_STATES.has(parsed.state) || !Array.isArray(parsed.report?.findings)) throw new Error(`${role} reviewer answer must be {"state":"passed"|"failed","report":{"findings":[...]}}`);
+    // The Spec reviewer must answer every contract item of the Architecture Spec, not only report the first mismatch.
+    if (role === 'spec') assertSpecCoverage(specItems, parsed.report);
     return { role, context_id: contextId, independent: true, fresh_context: true, implementation_commit_sha: reviewInput.implementation_commit_sha, review_input: reviewInput, state: parsed.state, report: parsed.report, raw_result: typeof raw === 'string' ? raw : JSON.stringify(raw) };
   };
   return { review_input: reviewInput, reviews: [entry('standards', standards), entry('spec', spec)] };
