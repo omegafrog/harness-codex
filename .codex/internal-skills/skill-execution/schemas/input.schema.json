@@ -81,6 +81,7 @@
         "publication_approved": { "type": "boolean" },
         "provider": { "enum": ["codex", "claude-code"] },
         "workflow_binding": { "type": "object", "additionalProperties": false, "required": ["provider", "model", "reasoning_effort"], "properties": { "provider": { "enum": ["codex", "claude-code"] }, "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$" }, "reasoning_effort": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,31}$" } } },
+        "subagent_binding": { "type": "object", "additionalProperties": false, "required": ["model", "reasoning_effort"], "properties": { "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$" }, "reasoning_effort": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,31}$" } } },
         "resume_provider": { "enum": ["codex", "claude-code"] },
         "orchestrator_provider": { "enum": ["codex", "claude-code"] },
         "orchestrator_session_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
