@@ -204,7 +204,7 @@ function validateComparison(decision, errors) {
 }
 
 const CRITERION_FIELDS = ["id", "requirement_id", "condition", "kind", "priority"];
-const EVALUATION_FIELDS = ["option_id", "criterion_id", "result", "reason", "evidence_kind", "source", "condition", "checked_at"];
+const EVALUATION_FIELDS = ["option_id", "criterion_id", "result", "reason", "evidence_kind", "source", "claim_ids", "condition", "checked_at"];
 const EVIDENCE_KINDS = ["measured", "external_measurement", "documented", "estimated", "unknown"];
 const nonEmpty = (value) => typeof value === "string" && value.trim().length > 0;
 
@@ -232,6 +232,8 @@ function evaluationProblems(entry) {
     if (!nonEmpty(entry.source)) problems.push("source is required unless evidence_kind is unknown");
     if (typeof entry.checked_at !== "string" || Number.isNaN(Date.parse(entry.checked_at))) problems.push("checked_at must be an ISO date unless evidence_kind is unknown");
   }
+  // A documented judgement cites the stored Claims (knowledge/claims) it rests on, so the evidence can be reused and re-checked.
+  if (entry.evidence_kind === "documented" && (!Array.isArray(entry.claim_ids) || !entry.claim_ids.length || !entry.claim_ids.every((id) => SAFE_ID.test(id ?? "")))) problems.push("claim_ids must list the stored knowledge Claims a documented evaluation cites");
   return problems;
 }
 

@@ -24,6 +24,11 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     if (result.questions) result.questions = { ...result.questions, maxItems: 0 };
   }
   else { delete result.unplanned_additions; delete result.commit_request; }
+  // Structured output requires every property; earlier results without these fields stay valid in the stored schema.
+  const question = result.questions?.items;
+  if (question?.properties?.decision_kind && !question.required.includes('decision_kind')) question.required = [...question.required, 'decision_kind'];
+  const option = question?.properties?.options?.items;
+  if (option?.properties?.evidence && !option.required.includes('evidence')) option.required = [...option.required, 'evidence'];
   if (result.review_request) {
     const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
     const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill) && !(input.skill === 'spec-me' && skill === 'spec-review'));

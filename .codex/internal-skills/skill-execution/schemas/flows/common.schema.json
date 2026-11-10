@@ -141,6 +141,52 @@
                 "consequence": {
                   "type": "string",
                   "minLength": 1
+                },
+                "evidence": {
+                  "type": "array",
+                  "description": "Why this option meets or misses each criterion, citing a stored knowledge Claim from an authoritative source. Empty for a non-technology question.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "criterion",
+                      "result",
+                      "claim_id",
+                      "source_title",
+                      "url",
+                      "checked_at"
+                    ],
+                    "properties": {
+                      "criterion": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "result": {
+                        "type": "string",
+                        "enum": [
+                          "met",
+                          "unmet",
+                          "unknown"
+                        ]
+                      },
+                      "claim_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "source_title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "checked_at": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -152,6 +198,17 @@
           "rationale": {
             "type": "string",
             "minLength": 1
+          },
+          "decision_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "technology",
+              null
+            ],
+            "description": "technology for a technical choice (every option then carries evidence citing stored knowledge Claims); null otherwise."
           }
         }
       }

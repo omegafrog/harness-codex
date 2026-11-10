@@ -371,6 +371,8 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       validate(question, schema);
       requireValue(question.question_id === `${input.execution_id}:${index + 1}`, 'Invalid deterministic question ID');
       requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
+      // A technology question shows, per option, why it meets each criterion, citing a stored Claim from an authoritative source.
+      if (question.decision_kind === 'technology') await assertTechnologyQuestionEvidence(root, question);
     }
   }
   if (['implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return SPEC_REVISION_REQUIRED for a decision the approved Spec does not settle');
@@ -397,3 +399,18 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   }
   return { valid: true, usable_result: true, ...envelope };
 }
+
+export async function assertTechnologyQuestionEvidence(root, question) {
+  const { readClaim, readSource } = await import('../knowledge/registry.mjs');
+  for (const option of question.options) {
+    requireValue(Array.isArray(option.evidence) && option.evidence.length > 0, `Technology option ${option.id} needs evidence citing stored knowledge Claims`);
+    const tiers = [];
+    for (const item of option.evidence) {
+      const claim = await readClaim({ root, claimId: item.claim_id }).catch(() => null);
+      requireValue(claim, `Technology option ${option.id} cites Claim ${item.claim_id}, which is not in knowledge/claims; save it with harness-knowledge.mjs claim save`);
+      tiers.push((await readSource({ root, sourceId: claim.source_id })).tier);
+    }
+    requireValue(tiers.some((tier) => tier !== 'community'), `Technology option ${option.id} rests only on community sources; cite a standard, official document or measurement`);
+  }
+}
+

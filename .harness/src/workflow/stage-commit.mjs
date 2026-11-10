@@ -35,7 +35,7 @@ export async function commitStageRequest({ root, rawPath }) {
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
 // Other staged files are left as they are: the commit names only the stage's own paths.
 const WORKFLOW_DOCUMENTS = {
-  'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture'],
+  'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
 };
 

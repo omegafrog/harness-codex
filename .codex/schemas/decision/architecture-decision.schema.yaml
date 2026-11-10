@@ -41,6 +41,7 @@ properties:
         reason: { type: string }
         evidence_kind: { type: string, enum: [measured, external_measurement, documented, estimated, unknown] }
         source: { type: string }
+        claim_ids: { type: array, items: { type: string }, description: Stored knowledge Claims (knowledge/claims) a documented evaluation cites; required when evidence_kind is documented. }
         condition: { type: string }
         checked_at: { type: string, format: date-time }
   selection:

@@ -578,9 +578,11 @@ Product Spec 13절의 시나리오를 실행할 환경을 정한다. 코드·기
 
 # 13. Alternatives and Trade-offs
 
-| Decision     | Option     | Advantages     | Disadvantages     | Result                 |
-| ------------ | ---------- | -------------- | ----------------- | ---------------------- |
-| `<decision and criteria>` | `<option and evidence conditions>` | `<meets / unmet / unknown>` | `<operational responsibility and accepted trade-offs>` | Adopt / Reject / Defer and reason |
+결정마다 후보를 2개 이상 비교한다. 판정마다 `knowledge/claims`의 Claim과 출처(제목·URL·판/버전·확인일)를 인용한다. community 출처만으로 판정하지 않는다.
+
+| Decision     | Option     | Criterion | Result | Evidence (Claim · source · checked) | Operational responsibility / accepted trade-offs | Choice |
+| ------------ | ---------- | --------- | ------ | ----------------------------------- | ------------------------------------------------ | ------ |
+| `<decision>` | `<option>` | `<criterion from requirement>` | met / unmet / unknown | `<claim_id>` · `<source title, URL, section>` · `<YYYY-MM-DD>` | `<what we run ourselves, what we accept>` | Adopt / Reject / Defer and the user's choice |
 
 ---
 

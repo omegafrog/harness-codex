@@ -143,6 +143,18 @@ export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), t
       if (decision.review_required === true) return result("blocked", DECISION_EVIDENCE_GATE_ID, `Decision ${id} is marked review-required after a referenced Principle changed lifecycle.`, `docs/specs/${safeTicketId}/architecture-decisions/${id}.yaml`, (decision.review_flags ?? []).map((flag) => ({ code: "decision_review_required", path: "$.review_flags", message: flag })));
       const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids ?? [] });
       const principleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
+      // Every Claim a documented evaluation cites must be stored, and no judgement may rest on community sources alone.
+      const { readClaim, readSource } = await import("../knowledge/registry.mjs");
+      for (const evaluation of decision.evaluations ?? []) {
+        if (!Array.isArray(evaluation.claim_ids) || !evaluation.claim_ids.length) continue;
+        const tiers = [];
+        for (const claimId of evaluation.claim_ids) {
+          const claim = await readClaim({ root, claimId }).catch(() => null);
+          if (!claim) return result("fail", DECISION_EVIDENCE_GATE_ID, `Decision ${id} cites Claim ${claimId}, which is not stored in knowledge/claims.`, `knowledge/claims/${claimId}.yaml`);
+          tiers.push((await readSource({ root, sourceId: claim.source_id })).tier);
+        }
+        if (tiers.every((tier) => tier === "community")) return result("fail", DECISION_EVIDENCE_GATE_ID, `Decision ${id} judges ${evaluation.option_id}/${evaluation.criterion_id} on community sources only.`, evidencePath);
+      }
       const gates = evaluateDecisionGate(decision, context.targets, undefined, { evidenceIds, principleIds });
       if (gates.decision_evidence_complete.status !== "pass") return gates.decision_evidence_complete;
     }
