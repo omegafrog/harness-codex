@@ -91,3 +91,24 @@ test('harness-code-review spec-items lists the Architecture Spec items of the wo
     assert.deepEqual(result.items.map((item) => item.id), ['S6.5-1', 'S6.5-2', 'S9.1-1', 'S9.1-2', 'S9.1-3']);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+// A mistyped path to evidence the stage does not own must not fail a stage whose work is done.
+test('a missing artifact that the stage does not declare as an output is dropped, a declared one is kept', async () => {
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { dropMissingUndeclaredArtifacts } = await import('../.harness/src/workflow/result-artifacts.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'artifacts-'));
+  try {
+    await writeFile(join(directory, 'real.json'), '{}');
+    const result = { summary: 'done', artifacts: [
+      { base: 'workspace', path: 'real.json', kind: 'prior_evidence' },
+      { base: 'workspace', path: 'e2e/01cc65fd-f0f5f73e0e3d/failure.json', kind: 'prior_evidence' },
+      { base: 'workspace', path: 'missing-output.md', kind: 'checkpoint' },
+    ] };
+    const dropped = dropMissingUndeclaredArtifacts({ result, outputs: [{ id: 'checkpoint' }], baseDirectory: () => directory });
+    assert.deepEqual(dropped, ['prior_evidence:e2e/01cc65fd-f0f5f73e0e3d/failure.json']);
+    assert.deepEqual(result.artifacts.map((artifact) => artifact.path), ['real.json', 'missing-output.md']);
+    assert.match(result.summary, /dropped 1 undeclared artifact/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

@@ -96,6 +96,8 @@ try {
     if (info?.isFile() && !info.isSymbolicLink()) artifact.sha256 = createHash('sha256').update(await readFile(join(base, artifact.path))).digest('hex');
     else if (info?.isDirectory()) artifact.sha256 = null;
   }
+  const { dropMissingUndeclaredArtifacts } = await import(new URL('result-artifacts.mjs', installed));
+  dropMissingUndeclaredArtifacts({ result: envelope.result, outputs: input.context?.outputs, baseDirectory: (base) => base === 'workspace' ? opts.root : base === 'session' ? session : base === 'control_session' ? (input.context?.control_session_directory || session) : null });
   await validateSkillReturn({ root: opts.root, input, envelope });
   if (envelope.result_ref) {
     const path = join(session, envelope.result_ref);
