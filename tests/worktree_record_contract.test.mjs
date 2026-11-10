@@ -568,7 +568,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', result_ref: resultRefForQuestion });
     await writeFile(join(resultDir, 'exec.stderr.json'), JSON.stringify({ thread_id: record.worktree_id }));
     const userRevision = { root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, codexSessionId: record.worktree_id, userRevision: true };
-    await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me', feedback: '고쳐' }), /requires a completed stage/);
+    await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me', feedback: '고쳐' }), /requires a completed stage or one waiting on its question/);
     await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'implement-wrapper', feedback: '고쳐' }), /spec-me or to-ticket/);
     await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me' }), /requires feedback/);
     const unblocked = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me', '--feedback', '누락된 자료를 준비했습니다'], { cwd: tree.workspace, encoding: 'utf8' }));
@@ -662,6 +662,11 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const state = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
     assert.equal(state.current_stage, 'spec-me');
     assert.equal(state.stages['spec-me'].status, 'waiting');
+    // The user can redirect a stage waiting on its own question; the instruction replaces the question.
+    const redirected = await prepareStageInput({ root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, codexSessionId: record.worktree_id, userRevision: true, stageId: 'spec-me', feedback: '기술 결정을 출처를 붙인 후보 비교로 다시 물어봐' });
+    assert.equal(redirected.input.context.user_revision, true);
+    assert.equal(redirected.input.context.previous_result_ref, `runtime/executions/${next.input.execution_id}/result.json`);
+    await rm(join(tree.session_directory, 'runtime/executions', redirected.input.execution_id), { recursive: true, force: true });
     const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'spec-me', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], questions: [], review_request: null };
     const specRef = `runtime/executions/${next.input.execution_id}/result.json`;
     const sameStageRevision = { ...specResult, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '리뷰 지적 수정' };

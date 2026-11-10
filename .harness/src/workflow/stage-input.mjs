@@ -341,8 +341,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const supersededQuestion = !restart && answer === null && feedback === null && state.stages?.[stageId]?.status === 'waiting'
     && state.stages[stageId].code === 'USER_DECISION_REQUIRED' && upstreamRevisedAfter(state.stages[stageId]);
   const previous = restart || supersededQuestion ? null : state.stages?.[stageId];
-  const userRevisionWaiting = userRevision && previous?.status === 'completed' && previous.code === 'OK' && previous.result_ref;
-  if (userRevision && !userRevisionWaiting) throw new Error('User revision requires a completed stage');
+  // The user may also redirect a stage that is waiting on its own question: the instruction replaces that question,
+  // and the stage resumes in the same conversation with it instead of an answer.
+  const userRevisionWaiting = userRevision && previous?.result_ref && (previous.status === 'completed' && previous.code === 'OK' || previous.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED');
+  if (userRevision && !userRevisionWaiting) throw new Error('User revision requires a completed stage or one waiting on its question');
   if (userRevision && Object.values(state.stages).some((item) => item?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
   let conversation = {};
   let interruptedAnswers;
@@ -381,7 +383,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
     conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
-  if (previous?.code === 'USER_DECISION_REQUIRED' || answer !== null) {
+  if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting) || answer !== null) {
     if (answer === null) throw new Error('User answer required before resuming this stage');
     if (previous?.status !== 'waiting') throw new Error('Stage is not waiting for a response');
     const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
