@@ -71,6 +71,15 @@ const KIND_ALIASES = new Map([
   ["conflict", "spec_conflict"],
 ]);
 
+// Specs and plans stay uncommitted in the worktree during the workflow by design, so a finding that they are
+// untracked or absent from the commit is not a defect or a requirement question.
+const UNTRACKED_TEXT = /\buntracked\b|\bnot (?:been )?committed\b|\buncommitted\b|not (?:part of|in|contained in) the (?:reviewed )?commit|does not contain the (?:product|architecture)? ?spec|커밋(?:되지| 안| 에 없| 에 포함되지)|commit(?:되지| 에 없| 에 포함되지)/i;
+const WORKFLOW_DOCUMENT_TEXT = /docs\/(?:specs|plans)\/|\b(?:product|architecture) spec\b|\bcanonical [a-z-]* ?plan\b|\bplan\b|스펙|계획/i;
+export function isUntrackedWorkflowDocumentFinding(finding) {
+  const text = [finding?.summary, finding?.finding, finding?.description, finding?.evidence].filter((item) => typeof item === "string").join(" ");
+  return UNTRACKED_TEXT.test(text) && WORKFLOW_DOCUMENT_TEXT.test(text) && !/\b(?:src|test|main)\//.test(finding?.location || "");
+}
+
 function findingList(review) {
   const report = review?.report && typeof review.report === "object" ? review.report : review;
   return Array.isArray(report?.findings) ? report.findings : [];
@@ -266,7 +275,8 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
     findings.forEach((rawFinding, index) => {
       const finding = normalizeFinding(rawFinding, review, index);
       const hasEvidence = typeof finding.evidence === 'string' && finding.evidence.trim();
-      if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
+      if (isUntrackedWorkflowDocumentFinding(finding)) dismissed.push({ ...finding, dismissed_reason: "workflow_document_untracked" });
+      else if (finding.kind === 'contract_sync' && finding.disposition === 'integration_deferred' && finding.severity === 'minor' && finding.completion_kind === 'feature_implemented' && hasEvidence) deferred.push(finding);
       else if (finding.kind === 'advisory' && (finding.severity === undefined || finding.severity === 'minor') && finding.blocking !== true && hasEvidence) advisory.push(finding);
       else if (SCOPE_DECISION_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
       else if (BLOCKER_KINDS.has(finding.kind)) routeScopeFinding(finding, decisions, routes, groups);
@@ -386,7 +396,7 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
   return unverified;
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, implementationOnly = false, resolution, cycleApproval = null, trackerPort = null, scopeDecisions = [], scopeGroups = [] }) {
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, maxRounds = 1, implementationOnly = false, resolution, cycleApproval = null, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
   const scope = { root, scope: `implementation-${planId}` };
   if (resolution !== undefined) {
     const prior = await inspectReviewHistory(scope);
@@ -403,6 +413,12 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
       return { action: 'block', state: 'blocked', reason: error.code, cycles: error.cycles, next_action: 'user-decision', resume_condition: 'Resume with the recorded user answer through --answers-ref and --question-id', user_questions: [cycleLimitQuestion(error.cycles)] };
     }
   }
+  // These findings already went to the Spec owner. Sending them again would loop; the revised Spec and plan are
+  // judged by fresh reviewers of the current commit instead.
+  if (specHandoff && Array.isArray(specHandoff.reviewer_ids) && specHandoff.reviewer_ids.join(',') === reviews.map((item) => item.context_id).join(',')) return {
+    action: 'rereview', state: 'blocked', reason: 'spec_revision_handled', handed_off_at: specHandoff.at || null, next_action: 'fresh-review',
+    resume_condition: 'The Spec owner already handled these findings. Implement what the updated plan requires (if anything), commit, and return REVIEW_REQUIRED so fresh reviewers judge the commit against the current Spec and plan.',
+  };
   if (resolve(reviewInput?.repository || '') !== resolve(root)) throw new TypeError('Review input must belong to the active implementation workspace');
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decisions = await verifiedScopeDecisions(root, scopeDecisions);

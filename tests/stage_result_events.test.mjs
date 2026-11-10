@@ -182,7 +182,7 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   const turn = (mode, text) => [{ type: 'turn_context', payload: { sandbox_policy: { type: mode } } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>x' }] } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text }] } }];
   await writeFile(join(home, `sessions/2026/11/08/rollout-2026-11-08T17-55-32-${sessionId}.jsonl`), [...turn('danger-full-access', '$orchestrator 계속 진행해'), ...turn('workspace-write', 'Harness stage result for execution spec-me-1: completed/OK.')].map((entry) => JSON.stringify(entry)).join('\n'));
   assert.equal(await orchestratorSandbox(sessionId, { CODEX_HOME: home }), 'danger-full-access');
-  assert.match(calls[0].args[3], /Harness stage result for execution host: completed\/OK/);
+  assert.match(calls[0].args.at(-1), /Harness stage result for execution host: completed\/OK/);
   assert.equal(calls[0].cwd, fx.root);
   assert.equal(calls[0].session, fx.session);
   assert.equal(calls[0].thread, null, 'the stage thread must not leak into the orchestrator resume');

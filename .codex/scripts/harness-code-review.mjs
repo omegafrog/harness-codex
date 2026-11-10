@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
@@ -41,7 +41,12 @@ try {
     result = { status: 'pass', ...await recordScopeDecision({ root: options.root, planId: options.plan, findingId: options.finding, choice: options.choice, answer: options.answer, labels: SCOPE_OPTION_LABELS }) };
   } else if (action === 'repair') {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
-    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']), implementationOnly: options['implementation-only'] === 'true' });
+    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], specHandoff: evidence.spec_handoff ?? null, maxRounds: options['max-rounds'] === undefined ? 1 : Number(options['max-rounds']), implementationOnly: options['implementation-only'] === 'true' });
+    // Remember the hand-off so the next repair of these same reviews asks for a fresh review instead of spec-me again.
+    if (result.next_action === 'spec-me' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) {
+      evidence.spec_handoff = { at: new Date().toISOString(), reviewer_ids: evidence.reviews.map((item) => item.context_id) };
+      await writeFile(sessionOutputPath(options.root, options.reviews), `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+    }
     if (Array.isArray(result.user_questions)) result.user_questions = await recordPendingQuestions({ root: options.root, planId: options.plan, questions: result.user_questions });
     // Remember that this exact commit passed, so re-selecting the plan later does not ask for the same review again.
     if (result.state === 'passed' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) await recordPassedReview({ root: options.root, planId: options.plan, evidence });

@@ -13,7 +13,7 @@ When `context.role` is `standards_reviewer` or `spec_reviewer`, perform only tha
 
 지적은 세 가지뿐이다: 승인 Spec의 요구 위반, 저장소 기준 위반(DDD 계층 책임은 [ddd-design](../ddd-design/GUIDE.md)과 [model-continuity](../ddd-design/references/model-continuity.md)가 기준이다), Spec·기준에 근거 없는 추가. 그 밖의 구조 제안이나 더 나은 설계 의견은 지적하지 않는다. 기준 위반은 수정 대상이며 `basis.source: repository_standard`와 해당 기준 문서 경로·원문을 쓴다. 기준이 금지한 과잉 구조(한 구현뿐인 불필요한 port, pass-through service, 같은 입력을 전달하는 wrapper, 사용되지 않는 repository·event)도 같은 방식으로 제거를 지적한다.
 
-Read the code, configuration and execution profiles under review at the given implementation commit with `git show <SHA>:<path>` and the diff; if workspace content differs from that commit, report it instead of mixing it into the evidence.
+Read the code, configuration and execution profiles under review at the given implementation commit with `git show <SHA>:<path>` and the diff; if workspace content differs from that commit, report it instead of mixing it into the evidence. Product/Architecture Specs (`docs/specs/<plan-set-id>/`) and canonical plans (`docs/plans/<plan-set-id>/`) are workflow documents that stay uncommitted in the worktree until the workflow ends; read them from those workspace paths and never report that they are untracked or missing from the commit.
 
 추가로 발견한 상위 요구의 누락은 해당 요구의 plan owner를 확인해 기록한다. 다른 plan의 미구현 동작은 그 owner로 연결하고, 현재 plan의 인계 계약 위반은 현재 지적으로 보고한다.
 
