@@ -132,3 +132,29 @@ test('the orchestrator waits for sub-agents instead of ending the turn on them',
   assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /최종 보고를 돌려줄 때까지 이 턴 안에서 기다린다/);
   assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /하위 agent는 결과를 받을 때까지 이 턴에서 기다린다/);
 });
+
+// The stage reads prerequisite completion from Harness, so it cannot take its own ticket for a prerequisite.
+test('plan dependencies come from the plan text and Beads status, not from ticket numbers', async () => {
+  const { mkdir, mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { planDependencies } = await import('../.harness/src/tracker/lifecycle.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'dependencies-'));
+  try {
+    await mkdir(join(root, '.codex'), { recursive: true });
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
+    await writeFile(join(root, 'docs/plans/set/comment.md'), '## 의존성 및 인계\n`auth`, `post` 선행. Cascade는 `e2e`에서 검증한다.\n\n## 다음\n`other` 선행\n');
+    await writeFile(join(root, 'docs/plans/set/e2e.md'), '## 의존성 및 인계\n`auth`, `post`, `comment` 모두 선행한다.\n');
+    const bead = (plan, status) => ({ id: `b-${plan}`, status, external_ref: `docs/plans/set/${plan}.md`, metadata: { harness_plan_id: `set:${plan}` } });
+    const run = async () => JSON.stringify([bead('auth', 'closed'), bead('post', 'in_progress'), bead('comment', 'in_progress'), bead('e2e', 'in_progress')]);
+    const comment = await planDependencies({ workspace_root: root, plan_set_id: 'set', plan_id: 'comment', run });
+    assert.deepEqual(comment.dependencies.map((item) => item.plan_id), ['auth', 'post']);
+    assert.equal(comment.status, 'blocked');
+    assert.deepEqual(comment.incomplete, ['post']);
+    const e2e = await planDependencies({ workspace_root: root, plan_set_id: 'set', plan_id: 'e2e', run });
+    assert.deepEqual(e2e.dependencies.map((item) => item.plan_id), ['auth', 'post', 'comment']);
+    const done = async () => JSON.stringify(['auth', 'post', 'comment', 'e2e'].map((plan) => bead(plan, plan === 'e2e' ? 'in_progress' : 'closed')));
+    assert.equal((await planDependencies({ workspace_root: root, plan_set_id: 'set', plan_id: 'e2e', run: done })).status, 'pass');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

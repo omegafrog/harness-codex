@@ -142,6 +142,26 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
     .sort((a, b) => a.plan_id.localeCompare(b.plan_id));
 }
 
+// Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
+// same plan set), and whether each one's Beads ticket is closed. The stage reads this answer instead of matching Issue
+// numbers to plans by hand, which has mistaken the plan's own ticket for a prerequisite.
+export async function planDependencies({ workspace_root: root, plan_set_id: planSetId, plan_id: planId, run = defaultRun } = {}) {
+  if (!planSetId || !planId) throw new Error('dependencies needs a plan-set worktree and a plan ID');
+  const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run });
+  const known = new Set(tickets.map((ticket) => ticket.plan_id));
+  const text = await readFile(resolve(root, 'docs/plans', planSetId, `${planId}.md`), 'utf8');
+  const section = /^##\s+의존성[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(text)?.[1] ?? '';
+  // Only sentences that say "선행" name prerequisites; plans mentioned elsewhere (downstream checks) are not dependencies.
+  const prerequisite = section.split(/(?<=[.。])\s+|\n+/).filter((sentence) => sentence.includes('선행')).join(' ');
+  const ids = [...new Set([...prerequisite.matchAll(/`([A-Za-z0-9][A-Za-z0-9._-]*)`/g)].map((match) => match[1]))].filter((id) => id !== planId && known.has(id));
+  const dependencies = ids.map((id) => {
+    const ticket = tickets.find((item) => item.plan_id === id);
+    return { plan_id: id, ticket_ref: ticket.ticket_ref, bead_status: ticket.bead_status, complete: ticket.bead_status === 'closed' };
+  });
+  const incomplete = dependencies.filter((item) => !item.complete);
+  return { status: incomplete.length ? 'blocked' : 'pass', plan_id: planId, dependencies, incomplete: incomplete.map((item) => item.plan_id) };
+}
+
 function metadataValid(bead) {
   if (!PHASES.has(bead.metadata?.harness_phase)) throw new Error('Invalid harness_phase');
   if (!CLASSIFICATIONS.has(bead.metadata?.harness_classification)) throw new Error('Invalid harness_classification');
