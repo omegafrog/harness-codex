@@ -19,7 +19,7 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 ## Flow
 
-1. `.codex/harness.yaml`에서 tracker mode를 확인한다. 구현 dispatch 전에는 실제 `agents.implementation_model` 값이, runtime/E2E 검증 전에는 `agents.execution_model`과 `agents.execution_reasoning_effort` 값이 있어야 한다. 값이 없으면 workflow를 멈추고 `setup`이 필요하다고 보고하며 부모 모델을 상속하지 않는다.
+1. `.codex/harness.yaml`에서 tracker mode를 확인한다. 구현 dispatch 전에는 실제 `agents.<provider>.implementation_model` 값이, runtime/E2E 검증 전에는 `agents.<provider>.execution_model`과 `agents.<provider>.execution_reasoning_effort` 값이 있어야 한다. 값이 없으면 workflow를 멈추고 `setup`이 필요하다고 보고하며 부모 모델을 상속하지 않는다.
 2. 승인되어 실행 가능한 split plan 하나를 정하고 [Tracker 상태](#tracker-상태)에 따라 `in-progress`로 전환한다.
    - GitHub Issues: parent plan-set Issue의 child Issue는 상태 추적에만 쓴다. plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다.
    - local-markdown: `docs/plans/<plan-set-id>/<plan-id>.md`를 ticket으로 읽고 `docs/plans/<plan-set-id>/plans.md`가 링크하는지 확인한다.

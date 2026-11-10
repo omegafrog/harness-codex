@@ -6,6 +6,7 @@ import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./loc
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
+import { migrateAgentsText } from '../workflow/agent-config.mjs';
 import { transformSourceContent } from './transforms.mjs';
 import { LEGACY_ASSETS } from './legacy-assets.mjs';
 
@@ -406,6 +407,18 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   if (scope !== 'agents') removed_directories.push(...await pruneEmptySkillDirectories(targetRoot, new Set([...internalSkillNames, ...descriptors.map((descriptor) => /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(descriptor.target_path)?.[1]).filter(Boolean)])));
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
+  // harness.yaml belongs to the project, so it is only rewritten to move older flat model keys under agents.<provider>.
+  const configPath = resolve(targetRoot, '.codex/harness.yaml');
+  const configText = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  const migrated = configText === null ? null : migrateAgentsText(configText);
+  if (migrated?.moved.length) {
+    if (!noBackup) {
+      const backup = `.codex/installer-backups/harness-yaml-${Date.now()}`;
+      await mkdir(resolve(targetRoot, backup), { recursive: true, mode: 0o700 });
+      await writeFile(resolve(targetRoot, backup, 'harness.yaml'), configText, { mode: 0o600 });
+    }
+    await writeFile(configPath, migrated.text);
+  }
   if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     // A workspace without its own project hook (a worktree created with the user-level Codex hook) keeps relying on it,
     // so an update does not add a project hook that Codex would ask to review again.

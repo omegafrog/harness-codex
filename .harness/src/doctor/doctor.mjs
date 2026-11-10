@@ -1,4 +1,6 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { parseYaml } from "../eval/yaml.mjs";
+import { legacyAgentKeys } from '../workflow/agent-config.mjs';
 import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -446,6 +448,10 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
     }
   }
+  // Model settings live under agents.<provider>; older flat keys must be moved by update or setup.
+  const agentConfig = await readFile(join(repositoryRoot, '.codex/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
+  const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
+  if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');

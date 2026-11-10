@@ -112,10 +112,14 @@ test('one provider per setup: models and workflow bindings from another provider
   assert.equal(modelBelongsToProvider('claude-code', 'claude-sonnet-5-5'), true);
   assert.equal(modelBelongsToProvider('codex', 'haiku'), false);
   assert.equal(modelBelongsToProvider('codex', 'gpt-6-luna'), true);
-  const claude = { agents: { provider: 'claude-code', high_performance_model: 'opus', low_performance_model: 'haiku' } };
+  const claude = { agents: { provider: 'claude-code', 'claude-code': { high_performance_model: 'opus', low_performance_model: 'haiku' } } };
   assert.equal(assertSingleProvider(claude), 'claude-code');
   assert.throws(() => assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /differs from the setup provider claude-code/);
-  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'haiku' } }), /agents\.low_performance_model is haiku, which is not a codex model/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'haiku' } } }), /agents\.codex\.low_performance_model is haiku, which is not a codex model/);
+  // Each provider keeps its own section; an inactive provider's models are checked against that provider.
+  assert.equal(assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'gpt-6-luna' }, 'claude-code': { low_performance_model: 'haiku' } } }), 'codex');
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', 'claude-code': { low_performance_model: 'gpt-6-luna' } } }), /agents\.claude-code\.low_performance_model is gpt-6-luna, which is not a claude-code model/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'gpt-6-luna' } }), /flat key; run harness-codex update/);
   assert.throws(() => assertSingleProvider(claude, { provider: 'claude-code', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /not a claude-code model/);
 });
 

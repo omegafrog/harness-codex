@@ -92,7 +92,9 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
   const keys = bindings.tiers[tier];
   requireValue(keys, `Unknown model tier: ${tier}`);
-  const get = (key) => key.split('.').reduce((value, part) => value?.[part], config);
+  // Model settings live under agents.<provider>; only the active provider's section is read.
+  const provider = configuredProvider(config);
+  const get = (key) => key.replace('{provider}', provider).split('.').reduce((value, part) => value?.[part], config);
   const model = get(keys.model_key), effort = get(keys.reasoning_effort_key);
   let recordedBinding = null;
   let session;
@@ -117,7 +119,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');
   }
   if (!override) for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
-    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
+    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key.replace('{provider}', provider)}`);
   }
   return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
 }

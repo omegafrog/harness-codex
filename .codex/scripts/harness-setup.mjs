@@ -246,7 +246,9 @@ async function main() {
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const budgetPath = join(root, '.codex/context-budget.json');
   const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  const config = parseYaml(oldConfig);
+  // Settings from versions that kept one flat set of model keys move under the active provider first.
+  const { migrateAgentsText, providerAgents } = await import(new URL('../../.harness/src/workflow/agent-config.mjs', import.meta.url).href);
+  const config = parseYaml(migrateAgentsText(oldConfig).text);
   const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   const existing = await inspectSetupConfiguration({ workspace_root: root });
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
@@ -278,9 +280,10 @@ async function main() {
     { id: 'sonnet', description: '일반 구현·실행' },
     { id: 'haiku', description: '문서·제한된 조사' },
   ].map((model) => ({ ...model, supportedReasoningEfforts: ['low', 'medium', 'high'] }));
-  const needsModelList = provider === 'codex' && (!reuse || tiers.some((key) => !hasText(config.agents?.[`${key}_model`]) || !modelBelongsToProvider(provider, config.agents[`${key}_model`]) || !validProviderEffort(config.agents?.[`${key}_reasoning_effort`])));
+  const providerSettings = providerAgents(config, provider);
+  const needsModelList = provider === 'codex' && (!reuse || tiers.some((key) => !hasText(providerSettings[`${key}_model`]) || !modelBelongsToProvider(provider, providerSettings[`${key}_model`]) || !validProviderEffort(providerSettings[`${key}_reasoning_effort`])));
   const models = provider === 'codex' ? (needsModelList ? await readModelList() : []) : claudeModels;
-  const selection = { provider };
+  const selection = {};
   for (const [key, title, recommendation] of [
     ['high_performance', '복잡한 설계·최종 검토 모델', provider === 'claude-code' ? 'opus' : '가장 높은 추론 성능'],
     ['implementation', '일반 구현 모델', provider === 'claude-code' ? 'sonnet' : '가벼운 모델과 high effort'],
@@ -288,9 +291,9 @@ async function main() {
     ['low_performance', '문서·제한된 조사 모델', provider === 'claude-code' ? 'haiku' : '가장 가벼운 모델과 low effort'],
   ]) {
     console.log(`\n${title} — 권장: ${recommendation}`);
-    models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === config.agents?.[`${key}_model`] ? ' (현재값)' : ''}`));
-    const currentModel = config.agents?.[`${key}_model`];
-    const currentEffort = config.agents?.[`${key}_reasoning_effort`];
+    models.forEach((model, index) => console.log(`  ${index + 1}) ${model.id} — ${model.description || model.displayName}${model.id === providerSettings[`${key}_model`] ? ' (현재값)' : ''}`));
+    const currentModel = providerSettings[`${key}_model`];
+    const currentEffort = providerSettings[`${key}_reasoning_effort`];
     const preferred = provider === 'claude-code' ? (key === 'high_performance' ? 'opus' : key === 'low_performance' ? 'haiku' : 'sonnet') : currentModel || '';
     const selectedCurrentModel = reuse && hasText(currentModel) && modelBelongsToProvider(provider, currentModel) && (provider === 'codex' || models.some((item) => item.id === currentModel)) ? currentModel : '';
     const model = selectedCurrentModel || await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), preferred);
@@ -433,7 +436,7 @@ async function main() {
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${reuseObservability ? '기존 설정 유지' : useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: selection, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
   if (createRepository) {
     const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
     if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
@@ -443,8 +446,10 @@ async function main() {
 
   const currentConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
-  let configText = currentConfig;
-  for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(config.agents?.[key]) : hasText(config.agents?.[key]))) configText = setYamlScalar(configText, ['agents', key], value);
+  let configText = migrateAgentsText(currentConfig).text;
+  if (!reuse || !hasText(config.agents?.provider)) configText = setYamlScalar(configText, ['agents', 'provider'], provider);
+  // Each provider keeps its own section, so choosing another provider later leaves these models in place.
+  for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(providerSettings[key]) : hasText(providerSettings[key]))) configText = setYamlScalar(configText, ['agents', provider, key], value);
   if (!reuse || !['local-markdown', 'github'].includes(config.tracker?.mode)) configText = setYamlScalar(configText, ['tracker', 'mode'], mode);
   if (!reuseTracker && mode === 'local-markdown' && (!reuse || !hasText(config.tracker?.local_markdown?.directory))) configText = setYamlScalar(configText, ['tracker', 'local_markdown', 'directory'], tracker.local_markdown.directory);
   else if (!reuseTracker) {

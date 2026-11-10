@@ -434,7 +434,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  high_performance_model: gpt-6.1-sol\n  high_performance_reasoning_effort: high\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);

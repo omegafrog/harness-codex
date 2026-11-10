@@ -2,20 +2,20 @@
   "schema_version": 1,
   "tiers": {
     "high_performance": {
-      "model_key": "agents.high_performance_model",
-      "reasoning_effort_key": "agents.high_performance_reasoning_effort"
+      "model_key": "agents.{provider}.high_performance_model",
+      "reasoning_effort_key": "agents.{provider}.high_performance_reasoning_effort"
     },
     "implementation": {
-      "model_key": "agents.implementation_model",
-      "reasoning_effort_key": "agents.implementation_reasoning_effort"
+      "model_key": "agents.{provider}.implementation_model",
+      "reasoning_effort_key": "agents.{provider}.implementation_reasoning_effort"
     },
     "execution": {
-      "model_key": "agents.execution_model",
-      "reasoning_effort_key": "agents.execution_reasoning_effort"
+      "model_key": "agents.{provider}.execution_model",
+      "reasoning_effort_key": "agents.{provider}.execution_reasoning_effort"
     },
     "low": {
-      "model_key": "agents.low_performance_model",
-      "reasoning_effort_key": "agents.low_performance_reasoning_effort"
+      "model_key": "agents.{provider}.low_performance_model",
+      "reasoning_effort_key": "agents.{provider}.low_performance_reasoning_effort"
     }
   },
   "skills": {

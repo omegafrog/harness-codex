@@ -111,7 +111,7 @@ test('spec paths use the canonical plan set and reject traversal', async () => {
 });
 
 async function seedSetup(root) {
-  await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  low_performance_model: example\n  low_performance_reasoning_effort: medium\n  high_performance_model: example\n  high_performance_reasoning_effort: medium\n');
+  await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
   await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n');
   for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(root, path, '..'), { recursive: true });
@@ -259,7 +259,7 @@ test('installed readiness checks required files without validating their content
       assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), 'legacy managed asset');
     }
     await readFile(join(root, '.codex/scripts/harness-codex-run.mjs'));
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     const installedDoctor = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' }));
     assert.equal(installedDoctor.passed, true);
     assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.codex/harness.yaml')), false);
@@ -912,13 +912,13 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  low_performance_model: gpt-6-luna-mini\n  low_performance_reasoning_effort: medium\n  high_performance_model: gpt-6-luna\n  high_performance_reasoning_effort: medium\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     // A binding for another provider than setup chose is refused before any worktree exists.
     const claudeConfig = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  low_performance_model: haiku\n  low_performance_reasoning_effort: medium\n  high_performance_model: haiku\n  high_performance_reasoning_effort: medium\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: haiku\n    high_performance_reasoning_effort: medium\n    low_performance_model: haiku\n    low_performance_reasoning_effort: medium\n');
     const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
     assert.notEqual(mixed.status, 0);
     assert.match(mixed.stderr, /Workflow binding provider codex differs from the setup provider claude-code; run setup with codex first/);
