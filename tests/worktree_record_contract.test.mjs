@@ -964,10 +964,10 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(next.input.context.orchestrator_provider, 'codex');
     assert.equal(next.input.context.provider, workflowBinding.provider);
     assert.deepEqual(next.input.context.workflow_binding, workflowBinding);
-    // spec-me starts diagram_creator with the lightweight tier; the runner resolves it so the stage need not search harness.yaml.
-    assert.deepEqual(next.input.context.subagent_binding, { model: workflowBinding.model, reasoning_effort: workflowBinding.reasoning_effort });
+    // A sub-agent's model is asked for through the binding command, never carried in the stage input.
+    assert.equal(Object.hasOwn(next.input.context, 'subagent_binding'), false);
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'spec-me', workflowBinding: next.input.context.workflow_binding }), { skill: 'spec-me', provider: 'codex', model_tier: 'high_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
-    assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'plantuml-diagrams' }), { skill: 'plantuml-diagrams', provider: 'codex', model_tier: 'low', model: 'gpt-6-luna', reasoning_effort: 'medium' });
+    assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'plantuml-diagrams' }), { skill: 'plantuml-diagrams', provider: 'codex', model_tier: 'low_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
     const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(roleBinding.provider, 'codex');
     assert.equal(roleBinding.model, 'gpt-6-luna');

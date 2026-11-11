@@ -6,6 +6,12 @@ export const AGENT_KEYS = [...AGENT_TIERS.flatMap((tier) => [`${tier}_model`, `$
 
 export const activeAgentProvider = (config) => config?.agents?.provider || 'codex';
 
+// The only place a tier is turned into settings: agents.<provider>.<tier>_model and agents.<provider>.<tier>_reasoning_effort.
+export const tierSettingKeys = (tier) => {
+  if (!AGENT_TIERS.includes(tier)) throw new Error(`Unknown model tier: ${tier}`);
+  return { model: `${tier}_model`, reasoning_effort: `${tier}_reasoning_effort` };
+};
+
 // The active (or named) provider's settings, e.g. { high_performance_model, low_performance_reasoning_effort, ... }.
 export function providerAgents(config, provider = activeAgentProvider(config)) {
   const section = config?.agents?.[provider];

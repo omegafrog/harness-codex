@@ -39,6 +39,12 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     assert.ok(commands[0].at(-1).includes(join(session, 'runtime/executions', id)));
     assert.ok(commands[0].at(-1).includes(join(root, 'docs/specs/example')));
     assert.ok(commands[0].at(-1).includes(join(root, 'docs/plans/example')));
+    // The stage receives the GUIDEs without the runner's model declaration, which they carry in their frontmatter.
+    assert.match(await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8'), /^---\nmodel_tier: high_performance\n---\n/);
+    assert.match(await readFile(join(root, '.codex/internal-skills/product-spec/GUIDE.md'), 'utf8'), /^---\nmodel_tier: low_performance\n---\n/);
+    assert.match(commands[0].at(-1), /# spec-me/);
+    assert.match(commands[0].at(-1), /# Product Spec/);
+    assert.doesNotMatch(commands[0].at(-1), /model_tier|main_session/);
     const returned = JSON.parse(await readFile(join(session, 'runtime/executions', id, 'return.json'), 'utf8'));
     assert.equal(returned.code, 'USER_DECISION_REQUIRED');
     assert.equal(returned.result_ref, `runtime/executions/${id}/result.json`);

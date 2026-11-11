@@ -7,6 +7,7 @@ const base = new URL('../../.harness/src/workflow/', import.meta.url);
 const { prepareStageInput } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
+const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 try {
   const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'user-revision', 'plan']);
   const options = {};
@@ -18,8 +19,8 @@ try {
   options['worktree-ref'] = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: options['worktree-ref'] }).worktree_ref ?? options['worktree-ref'];
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
   const repository = await realpath((await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim());
-  const bindings = JSON.parse(await readFile(join(repository, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
-  if (!Object.hasOwn(bindings.skills, options['stage-id'])) throw new Error(`Unregistered skill: ${options['stage-id']}; --stage-id must be the selected skill name`);
+  const stageSkill = await readSkillDeclaration({ root: repository, skill: options['stage-id'] }).catch((error) => { throw new Error(`${error.message}; --stage-id must be the selected skill name`); });
+  if (stageSkill.main_session) throw new Error(`${options['stage-id']} runs in the main session; --stage-id must be the selected sub-agent skill name`);
   const session = await resolveSkillSession(repository, dirname(options['worktree-ref']));
   const workflowRef = null;
   const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });

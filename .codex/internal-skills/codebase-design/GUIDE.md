@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
 내부 절차: [ddd-design](../ddd-design/GUIDE.md) · [event-storming](../event-storming/GUIDE.md).

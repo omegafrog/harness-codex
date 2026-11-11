@@ -1,3 +1,6 @@
+---
+model_tier: execution
+---
 # evaluate-harness
 
 ## Purpose

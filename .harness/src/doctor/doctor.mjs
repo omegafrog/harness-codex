@@ -13,6 +13,7 @@ import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
+import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
@@ -41,19 +42,40 @@ async function inspectPublicSkills(root, diagnostics) {
   }
 }
 
+// Each skill's own document declares the setup tier it runs with. Internal GUIDEs and the Harness public skills are
+// Harness-owned, so a malformed declaration there is an error; so is a workflow stage whose skill declares none.
+async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
+  const candidates = [];
+  const internal = join(root, '.codex/internal-skills');
+  for (const entry of await readdir(internal, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
+    if (entry.isDirectory()) candidates.push({ skill: entry.name, path: join(internal, entry.name, 'GUIDE.md'), stage: false });
+  }
+  for (const directory of ['.agents/skills', '.claude/skills', '.codex/skills']) for (const name of PUBLIC_HARNESS_SKILLS) candidates.push({ skill: name, path: join(root, directory, name, 'SKILL.md'), stage: false });
+  for (const [skill, path] of stageSkills) candidates.push({ skill, path, stage: true });
+  // One file can be reached through more than one candidate (a stage skill resolves to its real path).
+  const documents = new Map();
+  for (const candidate of candidates) {
+    const info = await lstat(candidate.path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (!info || !info.isFile() || info.isSymbolicLink()) continue;
+    const key = await realpath(candidate.path);
+    documents.set(key, { ...candidate, stage: candidate.stage || documents.get(key)?.stage === true });
+  }
+  for (const { skill, path, stage } of documents.values()) {
+    let declaration;
+    try { declaration = parseSkillDeclaration(await readFile(path, 'utf8')); }
+    catch (error) {
+      diagnostics.push(diagnostic('skill_model_tier_invalid', 'error', `Invalid model declaration for skill ${skill}: ${safeMessage(error, 'unreadable frontmatter')}`, path));
+      continue;
+    }
+    if (!declaration && stage) diagnostics.push(diagnostic('skill_model_tier_missing', 'error', `Workflow stage skill ${skill} declares no model_tier in its document`, path));
+  }
+}
+
 async function inspectExecutionAssets(root, diagnostics) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
-  const bindingsPath = join(root, '.codex/internal-skills/skill-execution/bindings.json');
-  let bindings;
-  try { bindings = JSON.parse(await readFile(bindingsPath, 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT') diagnostics.push(diagnostic('execution_bindings_invalid', 'error', safeMessage(error, 'Invalid execution bindings'), bindingsPath));
-    return;
-  }
-  if (!bindings.skills || typeof bindings.skills !== 'object' || Array.isArray(bindings.skills) || Object.keys(bindings.skills).some((name) => !/^[a-z0-9][a-z0-9-]*$/.test(name))) {
-    diagnostics.push(diagnostic('execution_bindings_invalid', 'error', 'Execution bindings must contain a skills object', bindingsPath));
-    return;
-  }
+  // The execution contract directory marks a project that installed the stage runtime.
+  const contract = await lstat(join(root, '.codex/internal-skills/skill-execution')).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (!contract) return;
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
     '.codex/internal-skills/workflow-compose/GUIDE.md',
@@ -79,7 +101,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
@@ -154,7 +176,7 @@ async function readContainedRegularFile(root, path, label) {
   return readFile(resolvedPath, "utf8");
 }
 
-async function inspectWorkflows(root, diagnostics) {
+async function inspectWorkflows(root, diagnostics, stageSkills) {
   const directory = resolve(root, DEFAULT_WORKFLOW_DIR);
   let entries;
   try {
@@ -198,6 +220,7 @@ async function inspectWorkflows(root, diagnostics) {
       if (workflow.hooks.before_complete.includes("contract_docs") && completionKindForWorkflow(workflow.id) !== "feature_implemented") {
         diagnostics.push(diagnostic("completion_gate_scope", "warning", `Workflow ${workflow.id} declares contract_docs, but this completion scope ignores that gate`, path, { completion_kind: completionKindForWorkflow(workflow.id) }));
       }
+      for (const stage of workflow.stages) stageSkills.set(stage.skill, workflow.references.skills[stage.skill]);
       const legacySkillRoot = resolve(root, ".codex/skills");
       for (const [skill, skillPath] of Object.entries(workflow.references.skills)) {
         if (isWithin(legacySkillRoot, skillPath)) diagnostics.push(diagnostic("stale_skill_path", "warning", `Workflow ${workflow.id} resolves skill ${skill} from legacy .codex/skills`, skillPath));
@@ -480,7 +503,9 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   } catch (error) {
     if (error.code !== 'ENOENT') diagnostics.push(diagnostic('context_budget_invalid', 'error', safeMessage(error, 'Invalid context budget'), budgetPath));
   }
-  await inspectWorkflows(repositoryRoot, diagnostics);
+  const stageSkills = new Map();
+  await inspectWorkflows(repositoryRoot, diagnostics, stageSkills);
+  await inspectSkillDeclarations(repositoryRoot, diagnostics, stageSkills);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectLegacyRuntime(repositoryRoot, diagnostics);

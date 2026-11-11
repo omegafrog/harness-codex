@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 # spec-me
 
 ## What it does

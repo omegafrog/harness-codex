@@ -216,7 +216,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## Codex native setup UI
 
-`$setup`은 실행마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 기존 설정이 있으면 재사용 또는 재설정을 질문하고, 재사용 시 유효한 값은 보존하며 누락 항목만 묻는다. 질문과 제출된 답만 해당 실행 파일에 보관하며 이전 설정 해시를 사용하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 스킬은 native 선택 도구에서 실제 제출된 value만 저장한다. 잘못된 option과 session 밖 답 파일은 거부한다. 수동 CLI는 유지한다.
+`$setup`은 실행마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 기존 설정이 있으면 재사용 또는 재설정을 질문하고, 재사용 시 유효한 값은 보존하며 누락 항목만 묻는다. 아직 답이 없는 질문은 한 번의 `needs_input`(`questions`)으로 모두 돌려주고, 뒤 질문은 앞 질문의 current 값을 임시 답으로 삼아 만든 뒤 `depends_on`으로 표시한다. 모든 답이 있기 전에는 어떤 설정도 쓰지 않으며, 답을 돌려받으면 아직 없거나 선행 답이 바뀌어 맞지 않게 된 질문만 다시 돌려준다. 질문과 제출된 답만 해당 실행 파일에 보관하며 이전 설정 해시를 사용하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 스킬은 native 선택 도구에서 실제 제출된 value만 저장한다. 잘못된 option과 session 밖 답 파일은 거부한다. 수동 CLI는 유지한다.
 
 ## 구현 리뷰 회귀 검사
 

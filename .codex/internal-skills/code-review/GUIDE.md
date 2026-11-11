@@ -1,3 +1,6 @@
+---
+model_tier: implementation
+---
 # code-review
 
 `code-review` reviews the diff between `HEAD` and a caller-supplied fixed point with two independent, read-only reviewers:

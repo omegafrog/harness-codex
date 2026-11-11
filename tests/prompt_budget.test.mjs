@@ -12,7 +12,7 @@ const PROMPT_FILE = /\.(md|toml|yaml)$/;
 // Files that setup or the project creates after installation.
 const GENERATED = new Set(['.codex/harness.yaml', '.codex/repository-conventions.md']);
 const BANNED = [
-  [/기본 `model_tier`는/, 'model tier is resolved by bindings.json and workflow stages'],
+  [/기본 `model_tier`는/, 'a skill declares its model tier in its own document and the runner resolves it'],
   [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'worker-base.md states the internal GUIDE rule once'],
   [/`docs\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'use skill-execution/references/runtime-artifact-paths.md'],
   // These name runtime steps that no runner executes; GUIDEs must call the real CLIs instead.

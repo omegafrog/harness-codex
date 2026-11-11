@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 # to-ticket
 
 `execution_id`를 받은 호출은 해당 stage 파일에 지정된 작업을 수행하고 결과 파일과 공통 envelope를 반환한다.

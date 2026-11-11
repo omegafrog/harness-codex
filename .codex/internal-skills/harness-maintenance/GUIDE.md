@@ -1,3 +1,6 @@
+---
+model_tier: execution
+---
 # Harness Maintenance
 
 Use this skill for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.

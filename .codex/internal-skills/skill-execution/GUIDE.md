@@ -4,7 +4,7 @@
 
 질문 형식도 그 계약이 정한다. 사용자에게 질문을 제시할 때 질문 도구에는 `title`과 문자열 options만 전달하고 결과 객체를 그대로 전달하지 않는다.
 
-실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. 각 skill의 model·effort는 실행기가 `bindings.json`과 workflow stage의 `model_tier`로 정한다. skill은 사용자 결정과 workflow 단계 전환을 직접 처리하지 않고 caller에 반환한다.
+실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. 각 skill의 model·effort는 setup이 `agents.<provider>`에 쓴 네 tier(`high_performance`·`implementation`·`execution`·`low_performance`)의 값이며, 어느 tier를 쓰는지는 skill 문서 frontmatter의 `model_tier`가 정하고 workflow stage의 선택적 `model_tier`가 덮어쓴다. 하위 agent의 model·effort는 `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill <skill>`이 반환한 값만 쓴다. skill은 사용자 결정과 workflow 단계 전환을 직접 처리하지 않고 caller에 반환한다.
 
 For assigned headless stages, the runner supplies the selected internal GUIDE and current input. Load linked procedures only when their phase begins; do not preload later-phase references. On same-session resume, continue from new answers or feedback and the current phase without rereading unchanged entry instructions. If a new session or context compaction leaves required rules unavailable, reload the current phase's guide and authoritative references before proceeding.
 

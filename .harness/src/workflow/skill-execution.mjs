@@ -9,6 +9,8 @@ import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { assertSingleProvider, configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { providerAgents, tierSettingKeys } from './agent-config.mjs';
+import { readSkillDeclaration } from './skill-declaration.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
@@ -77,11 +79,12 @@ function validate(value, schema, path = '$') {
   }
 }
 
+// A skill's tier comes from its own document (see skill-declaration.mjs) and a workflow stage may override it with another
+// setup tier; the model and effort are always the active provider's agents.<provider>.<tier>_* values written by setup.
 export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null }) {
-  const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-  requireValue(!bindings.main_session_skills?.includes(skill), `${skill} runs in the main session and cannot be bound as a subagent`);
-  let tier = bindings.skills[skill];
-  requireValue(typeof tier === 'string', `Unregistered skill: ${skill}`);
+  const declaration = await readSkillDeclaration({ root, skill });
+  requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
+  let tier = declaration.model_tier;
   requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
   if (workflow) {
     const manifest = await loadNamedWorkflow(workflow, { root });
@@ -90,12 +93,11 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     tier = selected.model_tier || tier;
   }
   const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
-  const keys = bindings.tiers[tier];
-  requireValue(keys, `Unknown model tier: ${tier}`);
+  const keys = tierSettingKeys(tier);
   // Model settings live under agents.<provider>; only the active provider's section is read.
   const provider = configuredProvider(config);
-  const get = (key) => key.replace('{provider}', provider).split('.').reduce((value, part) => value?.[part], config);
-  const model = get(keys.model_key), effort = get(keys.reasoning_effort_key);
+  const settings = providerAgents(config, provider);
+  const model = settings[keys.model], effort = settings[keys.reasoning_effort];
   let recordedBinding = null;
   let session;
   try { session = sessionDirectory(root, { create: false }); }
@@ -118,8 +120,8 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     const supplied = parseWorkflowBinding(workflowBinding);
     requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');
   }
-  if (!override) for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
-    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key.replace('{provider}', provider)}`);
+  if (!override) for (const [key, value] of [[keys.model, model], [keys.reasoning_effort, effort]]) {
+    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: agents.${provider}.${key}`);
   }
   return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
 }
@@ -302,11 +304,9 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   for (const reference of result.artifacts) await readReference(root, reference, session, controlSession, true);
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
     const request = result.review_request;
-    const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-    requireValue(typeof request.skill === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill) && Object.hasOwn(bindings.skills, request.skill) && !bindings.main_session_skills?.includes(request.skill), `Unregistered review skill: ${request.skill}`);
-    const entries = [`.codex/internal-skills/${request.skill}/GUIDE.md`, `.agents/skills/${request.skill}/SKILL.md`, `.codex/skills/${request.skill}/SKILL.md`];
-    const present = await Promise.all(entries.map((path) => readReference(root, { base: 'workspace', path }, session).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; })));
-    requireValue(present.some(Boolean), `Review skill instruction missing: ${request.skill}`);
+    // A review runs a sub-agent skill, so the skill must declare a setup tier in its own document.
+    const reviewer = await readSkillDeclaration({ root, skill: request.skill }).catch((error) => { throw new Error(`Unregistered review skill: ${request.skill} (${error.message})`); });
+    requireValue(!reviewer.main_session, `Unregistered review skill: ${request.skill} runs in the main session`);
     if (request.agent_profile !== null && request.agent_profile !== 'default') {
       requireValue(typeof request.agent_profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.agent_profile), 'Invalid agent profile');
       await readReference(root, { base: 'workspace', path: `.codex/agents/${request.agent_profile}.toml` }, session);

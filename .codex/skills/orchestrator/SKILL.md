@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Select workflow skills from the request and current workflow state, dispatch them, and route their structured results.
+main_session: true
 ---
 
 # orchestrator

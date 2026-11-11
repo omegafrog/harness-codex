@@ -1,6 +1,7 @@
 ---
 name: eli5
 description: Explain a topic to a complete beginner with a visual-first, low-text explanation. Use when the user invokes eli5, asks to explain something like they are five, or asks for a dead-simple picture-style explanation of how something works.
+model_tier: low_performance
 ---
 
 # eli5

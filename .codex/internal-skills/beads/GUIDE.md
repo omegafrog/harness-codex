@@ -1,3 +1,6 @@
+---
+model_tier: low_performance
+---
 
 # Beads
 

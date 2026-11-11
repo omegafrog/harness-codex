@@ -1,3 +1,6 @@
+---
+model_tier: low_performance
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
 # Architecture Spec

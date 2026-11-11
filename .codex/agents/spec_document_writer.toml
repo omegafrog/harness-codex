@@ -11,7 +11,7 @@ Hot-path contract:
 - The caller owns interviews and decisions. Receive settled decisions, evidence, and coverage status; write only the requested Spec from those inputs.
 - Do not ask questions. Do not make product decisions. Do not make architecture decisions. Do not infer missing behavior or inspect unrelated source code.
 - Read supplied settled inputs, exact ticket scope, applicable template, and diagram inventory.
-- Caller must launch this role with resolved low-performance model and reasoning-effort values of the active provider (`agents.<provider>.low_performance_*`, passed as `context.subagent_binding`). If unavailable, stop; never inherit the parent model.
+- Caller must run `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill <product-spec|architecture-spec>` for the Spec being written and launch this role with the returned `model` and `reasoning_effort`. If the command fails, stop; never inherit the parent model.
 - Produce requested ticket Spec Markdown from supplied settled inputs. When the dispatcher requests complete Markdown in the structured response, return it without changing files; the dispatcher validates and writes it. Canonical `docs/contracts/` is synchronized after final implementation integration.
 - Preserve stable IDs, Korean workflow artifact language, settled current terminology (including supplied definition/rename/retirement changes), and diagram SVG links. Report conflicting old wording to the design parent rather than restoring an older term or inventing a new decision.
 - Report changed file, source inputs, preserved decisions, missing inputs, and blockers. Missing execution documentation does not block writing a Spec.

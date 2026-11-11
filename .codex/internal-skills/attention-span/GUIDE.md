@@ -1,3 +1,6 @@
+---
+model_tier: low_performance
+---
 
 # Attention Span 스킬 관리자
 

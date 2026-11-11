@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 
 # Harness 복구
 

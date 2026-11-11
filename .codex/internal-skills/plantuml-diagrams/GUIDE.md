@@ -1,3 +1,6 @@
+---
+model_tier: low_performance
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
 # plantuml-diagrams
@@ -38,7 +41,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 - 원본·SVG·Markdown 링크·Spec 내용 일치 검토가 모두 통과하기 전에는 해당 Spec 단계를 완료하지 않는다.
 - 렌더 실패, 누락된 SVG, 잘못된 링크 또는 내용 불일치는 실패 파일·행과 복구 방법을 보고하고 단계를 차단한다.
 - `diagram_creator`는 다이어그램 파일만 수정한다. Product 원본과 SVG 경로는 결과 보고서의 diagram inventory로 전달하며, `spec-me`가 Spec Markdown에 링크한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
-- 호출자는 `diagram_creator`를 실행 입력의 `context.subagent_binding`(`model`·`reasoning_effort`)으로 실행한다. 실행기가 workflow binding 또는 활성 provider의 `agents.<provider>.low_performance_model`·`agents.<provider>.low_performance_reasoning_effort`에서 resolve한 값이다. `context.subagent_binding`이 없으면 멈추고 부모 모델을 상속하지 않는다.
+- 호출자는 `diagram_creator`를 띄우기 전에 `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill plantuml-diagrams`를 실행하고, 반환된 `model`·`reasoning_effort`로 실행한다. 이 명령이 실패하면 멈추고 부모 모델을 상속하지 않는다.
 - `diagram_creator`는 요청된 `docs/specs/<plan-set-id>/diagrams/` 또는 `docs/contracts/diagrams/`만 수정하고 다른 agent를 만들지 않는다. 선택한 관점, 변경 파일, 렌더 명령, 검증 증거와 blocker를 보고한다.
 
 ## 완료 체크리스트

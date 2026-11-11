@@ -52,22 +52,45 @@ if (native) {
   console.log = (...values) => process.stderr.write(values.join(' ') + '\n');
 } else if (!stdin.isTTY || !stdout.isTTY) throw new Error('Setup requires an interactive terminal; Codex native choices use --answers SESSION_JSON.');
 class PendingQuestion extends Error {
-  constructor(pending) { super('needs_input'); this.pending = pending; }
+  constructor(batch) { super('needs_input'); this.batch = batch; }
 }
+// An answer that cannot be right whatever the other answers are; it is reported at once, never treated as a provisional gap.
+class InvalidAnswer extends Error {}
 const occurrences = new Map();
-function nativeAnswer(prompt, current = '', choices = null, context = null) {
+// Native mode asks every unanswered question in one round. An unanswered question joins `batch` and setup carries on with
+// its current value (or the first option) as a provisional answer, so the questions that follow from it are discovered too.
+// Nothing is written or created while `batch` has a question in it: requireComplete() stops before any such step.
+const batch = [];
+const unanswered = new Set();
+let lastQuestionId = null;
+let baseDependencies = [];
+// `dependsOn` lists earlier question IDs this question's existence or options come from. A selection that no longer fits
+// because such an answer changed is asked again; one with no dependency that does not fit is an error. A `revisit`
+// question is the final confirmation: it is consumed only when nothing else is pending, otherwise it is asked again.
+function nativeAnswer(prompt, current = '', choices = null, context = null, { dependsOn = [], revisit = false } = {}) {
   const count = (occurrences.get(prompt) || 0) + 1;
   occurrences.set(prompt, count);
   const id = `${prompt}#${count}`;
-  if (!Object.hasOwn(document.answers, id)) throw new PendingQuestion({ id, prompt, type: choices ? 'select' : 'text', current, ...(choices ? { options: choices } : {}), ...(context ? { context } : {}) });
-  const value = document.answers[id];
-  if (choices && !choices.some((option) => option.value === value)) throw new Error(`Invalid or stale selection for ${id}`);
-  return choices ? value : value || current;
+  lastQuestionId = id;
+  const given = Object.hasOwn(document.answers, id) ? document.answers[id] : undefined;
+  const fits = given !== undefined && (!choices || choices.some((option) => option.value === given));
+  if (given !== undefined && !fits && !dependsOn.length) throw new InvalidAnswer(`Invalid or stale selection for ${id}`);
+  if (fits && !(revisit && batch.length)) return choices ? given : given || current;
+  const parents = [...new Set([...baseDependencies, ...dependsOn])].filter((parent) => unanswered.has(parent));
+  batch.push({ id, prompt, type: choices ? 'select' : 'text', current, ...(choices ? { options: choices } : {}), ...(context ? { context } : {}), ...(parents.length ? { depends_on: parents } : {}), ...(given !== undefined ? { previous_answer: given } : {}) });
+  unanswered.add(id);
+  return choices ? (choices.some((option) => option.value === current) ? current : choices[0]?.value ?? '') : current;
 }
+const requireComplete = () => { if (batch.length) throw new PendingQuestion(batch); };
+// A section whose later questions cannot be derived from provisional answers ends there, and setup still looks at the rest.
+const explore = async (section) => {
+  try { return await section(); }
+  catch (error) { if (error instanceof PendingQuestion || error instanceof InvalidAnswer || !batch.length) throw error; }
+};
 const rl = native ? null : createInterface({ input: stdin, output: stdout });
-const ask = async (label, initial = '') => native ? nativeAnswer(label, initial) : (await rl.question(`${label}${initial ? ` [${initial}]` : ''}: `)).trim() || initial;
-const choose = async (label, options, current = '', context = null) => {
-  if (native) return nativeAnswer(label, current, options, context);
+const ask = async (label, initial = '', extra = {}) => native ? nativeAnswer(label, initial, null, null, extra) : (await rl.question(`${label}${initial ? ` [${initial}]` : ''}: `)).trim() || initial;
+const choose = async (label, options, current = '', context = null, extra = {}) => {
+  if (native) return nativeAnswer(label, current, options, context, extra);
   options.forEach((option, index) => console.log(`  ${index + 1}) ${option.label}${option.value === current ? ' (현재값)' : ''}`));
   for (;;) {
     const answer = await ask(label), index = Number(answer);
@@ -77,8 +100,8 @@ const choose = async (label, options, current = '', context = null) => {
     console.log('목록의 번호 또는 정확한 값을 입력해 주세요.');
   }
 };
-const confirm = async (label, initial = 'n', context = null) => {
-  if (native) return nativeAnswer(label, initial, [{ value: 'y', label: '예' }, { value: 'n', label: '아니요' }], context) === 'y';
+const confirm = async (label, initial = 'n', context = null, extra = {}) => {
+  if (native) return nativeAnswer(label, initial, [{ value: 'y', label: '예' }, { value: 'n', label: '아니요' }], context, extra) === 'y';
   for (;;) {
     const answer = (await ask(`${label} (y/n)`, initial)).toLowerCase();
     if (['y', 'yes'].includes(answer)) return true;
@@ -247,7 +270,7 @@ async function main() {
   const budgetPath = join(root, '.codex/context-budget.json');
   const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   // Settings from versions that kept one flat set of model keys move under the active provider first.
-  const { migrateAgentsText, providerAgents } = await import(new URL('../../.harness/src/workflow/agent-config.mjs', import.meta.url).href);
+  const { AGENT_TIERS, migrateAgentsText, providerAgents } = await import(new URL('../../.harness/src/workflow/agent-config.mjs', import.meta.url).href);
   const config = parseYaml(migrateAgentsText(oldConfig).text);
   const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   const existing = await inspectSetupConfiguration({ workspace_root: root });
@@ -255,13 +278,17 @@ async function main() {
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
     { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
   ], 'reuse', { agents: config.agents || {}, tracker: config.tracker || {}, beads: config.beads || {}, observability: config.observability || {} }) === 'reuse';
+  // Reusing or reconfiguring decides which of the later questions exist, so each of them is marked as depending on it.
+  if (hasExisting && native) baseDependencies = [lastQuestionId];
   if (reuse && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
+    requireComplete();
     await prepareProjectFiles();
     await prepareCodexSubagentHook(currentProviderOf(config));
     console.log('기존 설정을 유지했습니다.');
     return;
   }
-  const tiers = ['high_performance', 'implementation', 'execution', 'low_performance'];
+  // The tier names are shared with the skill declarations and workflow stages that choose among them.
+  const tiers = AGENT_TIERS;
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
   const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
@@ -274,6 +301,8 @@ async function main() {
   if (!offered.length) throw new Error('No agent provider is installed; run harness-codex install --provider codex|claude-code|all');
   if (reuse && !offered.some((item) => item.value === currentProvider)) throw new Error(`agents.provider is ${currentProvider}, which is not installed; install it or choose a new setup`);
   const provider = reuse ? currentProvider : await choose('실행 provider 선택', offered, offered.some((item) => item.value === currentProvider) ? currentProvider : offered[0].value, { agents: config.agents || {} });
+  // The provider decides the model list, and each model decides its effort list.
+  const providerDeps = !reuse && native ? [lastQuestionId] : [];
   const validProviderEffort = (value) => provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) : validEffort(value);
   const claudeModels = [
     { id: 'opus', description: '복잡한 설계·최종 검토' },
@@ -296,13 +325,14 @@ async function main() {
     const currentEffort = providerSettings[`${key}_reasoning_effort`];
     const preferred = provider === 'claude-code' ? (key === 'high_performance' ? 'opus' : key === 'low_performance' ? 'haiku' : 'sonnet') : currentModel || '';
     const selectedCurrentModel = reuse && hasText(currentModel) && modelBelongsToProvider(provider, currentModel) && (provider === 'codex' || models.some((item) => item.id === currentModel)) ? currentModel : '';
-    const model = selectedCurrentModel || await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), preferred);
+    const model = selectedCurrentModel || await choose(`${title} 모델 선택`, models.map((item) => ({ value: item.id, label: item.id })), preferred, null, { dependsOn: providerDeps });
+    const modelDeps = selectedCurrentModel || !native ? [] : [lastQuestionId];
     let effort = currentEffort;
     if (!(reuse && selectedCurrentModel && validProviderEffort(currentEffort))) {
       const selected = models.find((item) => item.id === model);
       if (!selected) throw new Error(`Configured model is unavailable: ${model}`);
       const efforts = selected.supportedReasoningEfforts.map((item) => typeof item === 'string' ? ({ value: item, label: item }) : ({ value: item.reasoningEffort, label: `${item.reasoningEffort} — ${item.description}` }));
-      effort = await choose(`${title} 추론 강도 선택`, efforts, currentEffort || 'medium');
+      effort = await choose(`${title} 추론 강도 선택`, efforts, currentEffort || 'medium', null, { dependsOn: [...providerDeps, ...modelDeps] });
     }
     selection[`${key}_model`] = model;
     selection[`${key}_reasoning_effort`] = effort;
@@ -322,53 +352,64 @@ async function main() {
     const answer = useCurrent ? String(previousBudget[key]) : await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
     contextBudget[key] = answer.trim() ? Number(answer) : NaN;
   }
-  validateContextBudget(contextBudget);
+  // A provisional answer is often blank; the numbers are validated once every answer is in.
+  try { validateContextBudget(contextBudget); } catch (error) { if (!batch.length) throw error; }
 
   console.log('\n티켓 추적 방식');
   const reuseTracker = reuse && hasTrackerConfiguration(config.tracker);
-  const mode = reuse && ['local-markdown', 'github'].includes(config.tracker?.mode) ? config.tracker.mode : await choose('Tracker 선택', [
+  const trackerChosen = reuse && ['local-markdown', 'github'].includes(config.tracker?.mode);
+  const mode = trackerChosen ? config.tracker.mode : await choose('Tracker 선택', [
     { value: 'local-markdown', label: 'local-markdown' },
     { value: 'github', label: 'GitHub Project' },
   ], config.tracker?.mode);
+  // Which tracker questions exist follows from the chosen mode, and a project's questions from its owner and repository.
+  const trackerDeps = trackerChosen || !native ? [] : [lastQuestionId];
+  const idOfLast = (asked) => asked && native ? [lastQuestionId] : [];
   let tracker, createRepository = null;
+  await explore(async () => {
   if (reuseTracker) tracker = config.tracker;
   else if (mode === 'local-markdown') {
     const current = config.tracker?.local_markdown?.directory;
-    const directory = reuse && hasText(current) ? current : await ask('로컬 계획 디렉터리', current || 'docs/plans');
+    const directory = reuse && hasText(current) ? current : await ask('로컬 계획 디렉터리', current || 'docs/plans', { dependsOn: trackerDeps });
     if (!directory || directory.startsWith('/') || directory.split(/[\\/]/).includes('..')) throw new Error('로컬 계획 디렉터리는 프로젝트 상대경로여야 합니다.');
     tracker = { mode, local_markdown: { ...(config.tracker?.local_markdown || {}), directory } };
   } else {
     const existingGithub = config.tracker?.github || {};
     const reuseRepository = reuse && /^[\w.-]+\/[\w.-]+$/.test(existingGithub.repository || '');
-    const repository = reuseRepository ? existingGithub.repository : await ask('GitHub repository (owner/repo)', existingGithub.repository || '');
+    const repository = reuseRepository ? existingGithub.repository : await ask('GitHub repository (owner/repo)', existingGithub.repository || '', { dependsOn: trackerDeps });
+    const repositoryDeps = [...trackerDeps, ...idOfLast(!reuseRepository)];
     if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('repository는 owner/repo 형식이어야 합니다.');
     if (!reuseRepository) {
       const repositoryCheck = await commandResult('gh', ['api', `repos/${repository}`, '--jq', '.name']);
       if (repositoryCheck.status !== 0) {
         if (!/HTTP 404/.test(repositoryCheck.stderr || '')) throw new Error(`GitHub repository 확인 실패: ${repositoryCheck.stderr || repositoryCheck.error?.message}`);
-        const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }]);
+        const visibility = await choose('새 GitHub repository 공개 범위', [{ value: 'private', label: 'Private' }, { value: 'public', label: 'Public' }], '', null, { dependsOn: repositoryDeps });
         createRepository = { repository, visibility };
       }
     }
-    const owner = reuse && hasText(existingGithub.project_owner) ? existingGithub.project_owner : await ask('Project owner', existingGithub.project_owner || repository.split('/')[0]);
+    const reuseOwner = reuse && hasText(existingGithub.project_owner);
+    const owner = reuseOwner ? existingGithub.project_owner : await ask('Project owner', existingGithub.project_owner || repository.split('/')[0], { dependsOn: repositoryDeps });
+    const ownerDeps = [...repositoryDeps, ...idOfLast(!reuseOwner)];
     let chosen;
     if (reuse && Number.isSafeInteger(existingGithub.project_number) && existingGithub.project_number > 0) chosen = String(existingGithub.project_number);
     else {
       let projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
       if (!projects.length) {
         const title = `${repository.split('/')[1]}-workflow`;
-        if (!await confirm(`Project가 없습니다. '${title}'을 만들까요?`)) throw new Error('GitHub Project가 선택되지 않았습니다.');
+        if (!await confirm(`Project가 없습니다. '${title}'을 만들까요?`, 'n', null, { dependsOn: ownerDeps })) throw new Error('GitHub Project가 선택되지 않았습니다.');
+        requireComplete();
         await exec('gh', ['project', 'create', '--owner', owner, '--title', title]);
         projects = JSON.parse(await exec('gh', ['project', 'list', '--owner', owner, '--format', 'json', '--limit', '200'])).projects || [];
       }
-      chosen = await choose('GitHub Project 선택', projects.map((item) => ({ value: String(item.number), label: `#${item.number} ${item.title}` })), String(existingGithub.project_number || ''));
+      chosen = await choose('GitHub Project 선택', projects.map((item) => ({ value: String(item.number), label: `#${item.number} ${item.title}` })), String(existingGithub.project_number || ''), null, { dependsOn: ownerDeps });
     }
     let statusField = reuse && hasText(existingGithub.status_field) ? { name: existingGithub.status_field } : null;
     if (!statusField) {
     const fields = JSON.parse(await exec('gh', ['project', 'field-list', chosen, '--owner', owner, '--format', 'json'])).fields || [];
     statusField = fields.find((field) => field.name === 'Workflow Status' && field.type === 'ProjectV2SingleSelectField');
     if (!statusField) {
-      if (!await confirm('Workflow Status 필드(Planned, In Progress, Blocked, Done)를 만들까요?')) throw new Error('Workflow Status 필드가 없어 설정을 중단했습니다.');
+      if (!await confirm('Workflow Status 필드(Planned, In Progress, Blocked, Done)를 만들까요?', 'n', null, { dependsOn: ownerDeps })) throw new Error('Workflow Status 필드가 없어 설정을 중단했습니다.');
+      requireComplete();
       await exec('gh', ['project', 'field-create', chosen, '--owner', owner, '--name', 'Workflow Status', '--data-type', 'SINGLE_SELECT', '--single-select-options', 'Planned,In Progress,Blocked,Done']);
       statusField = { name: 'Workflow Status' };
     }
@@ -382,14 +423,17 @@ async function main() {
     }
     tracker = { mode, github: { ...existingGithub, repository, project_owner: owner, project_number: Number(chosen), status_field: statusField.name, assignees: { spec_me: existingGithub.assignees?.spec_me || '@me', codex: existingGithub.assignees?.codex || '@copilot' } } };
   }
+  });
 
   const reuseBeads = reuse && typeof config.beads?.enabled === 'boolean';
   const reuseObservability = reuse && typeof config.observability?.victorialogs?.local?.enabled === 'boolean';
   const useBeads = reuseBeads ? config.beads.enabled : await confirm('Beads를 프로젝트 작업 보드로 사용할까요?', config.beads?.enabled === false ? 'n' : 'y');
   const useVictoriaLogs = reuseObservability ? config.observability.victorialogs.local.enabled : await confirm('로컬 관측성(OpenTelemetry Collector + VictoriaLogs + VictoriaMetrics + 공식 MCP 2개)을 구성할까요?', config.observability?.victorialogs?.local?.enabled === false ? 'n' : 'y');
+  // The port and project questions exist only when observability is configured.
+  const observabilityDeps = reuseObservability || !native ? [] : [lastQuestionId];
   const askInteger = async (label, initial, max) => {
     for (;;) {
-      const value = Number(await ask(label, String(initial)));
+      const value = Number(await ask(label, String(initial), { dependsOn: observabilityDeps }));
       if (Number.isInteger(value) && value >= 1 && value <= max) return value;
       console.log(`1~${max} 사이 정수를 입력해 주세요.`);
     }
@@ -402,33 +446,34 @@ async function main() {
   if (configureObservability && new Set([logPort, metricsPort, otelPort]).size !== 3) throw new Error('로그·메트릭·OTLP 포트는 달라야 합니다.');
   const metricsRetention = configureObservability ? await askInteger('메트릭 보존 일수', config.observability?.victoriametrics?.local?.retention_days || 7, 30) : null;
   let projects = [];
-  if (configureObservability) {
+  if (configureObservability) await explore(async () => {
     console.log('Docker bridge를 사용합니다. 앱→Collector는 localhost 공개 포트, 컨테이너→WSL 앱은 host.docker.internal 주소를 사용합니다.');
     const previous = await readFile(join(root, 'docs/observability/victorialogs/config.json'), 'utf8').then(JSON.parse).catch((error) => { if (error.code !== 'ENOENT') throw error; return {}; });
-    if (previous.projects?.length && previous.projects.every((item) => item.services.every((service) => service.scrape_url)) && await confirm('기존 프로젝트·Actuator 대상 목록을 유지할까요?', 'y')) projects = previous.projects;
+    if (previous.projects?.length && previous.projects.every((item) => item.services.every((service) => service.scrape_url)) && await confirm('기존 프로젝트·Actuator 대상 목록을 유지할까요?', 'y', null, { dependsOn: observabilityDeps })) projects = previous.projects;
     else {
       do {
-        const projectRoot = resolve(await ask('수집할 프로젝트 Git root', projects.length ? '' : root));
+        const projectRoot = resolve(await ask('수집할 프로젝트 Git root', projects.length ? '' : root, { dependsOn: observabilityDeps }));
         if (await exec('git', ['rev-parse', '--show-toplevel'], projectRoot) !== projectRoot) throw new Error('프로젝트 Git root를 입력해야 합니다.');
-        const id = await ask('프로젝트 ID (영문·숫자·_·-)', projectRoot.split('/').at(-1));
+        const id = await ask('프로젝트 ID (영문·숫자·_·-)', projectRoot.split('/').at(-1), { dependsOn: observabilityDeps });
         if (!/^[a-zA-Z0-9_-]+$/.test(id) || projects.some((item) => item.id === id || item.root === projectRoot)) throw new Error('프로젝트 ID와 root는 유일해야 합니다.');
         const services = [];
         do {
-          const name = await ask('Spring service 이름 (spring.application.name)');
-          const metrics_url = await ask('Actuator Prometheus 전체 URL (실제 포트 포함)');
+          const name = await ask('Spring service 이름 (spring.application.name)', '', { dependsOn: observabilityDeps });
+          const metrics_url = await ask('Actuator Prometheus 전체 URL (실제 포트 포함)', '', { dependsOn: observabilityDeps });
+          const metricsUrlDeps = [...observabilityDeps, ...(native ? [lastQuestionId] : [])];
           const url = new URL(metrics_url);
           if (!/^[a-zA-Z0-9_.-]+$/.test(name) || services.some((item) => item.name === name) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('서비스 이름 또는 Actuator URL이 올바르지 않습니다. 비밀값 없는 HTTP(S) URL을 입력하세요.');
           const suggested = new URL(metrics_url);
           if (['127.0.0.1', 'localhost', '[::1]'].includes(suggested.hostname)) suggested.hostname = 'host.docker.internal';
-          const scrape_url = await ask('컨테이너에서 접근할 Actuator URL (Docker Desktop/WSL은 host.docker.internal)', suggested.href);
+          const scrape_url = await ask('컨테이너에서 접근할 Actuator URL (Docker Desktop/WSL은 host.docker.internal)', suggested.href, { dependsOn: metricsUrlDeps });
           const scrape = new URL(scrape_url);
           if (!['http:', 'https:'].includes(scrape.protocol) || scrape.username || scrape.password || scrape.search || scrape.hash) throw new Error('비밀값 없는 컨테이너용 Actuator HTTP(S) URL을 입력하세요.');
           services.push({ name, metrics_url, scrape_url });
-        } while (await confirm('이 프로젝트에 서비스를 더 등록할까요?'));
+        } while (await confirm('이 프로젝트에 서비스를 더 등록할까요?', 'n', null, { dependsOn: observabilityDeps }));
         projects.push({ id, root: projectRoot, services });
-      } while (await confirm('다른 프로젝트를 더 등록할까요?'));
+      } while (await confirm('다른 프로젝트를 더 등록할까요?', 'n', null, { dependsOn: observabilityDeps }));
     }
-  }
+  });
   console.log('\n선택 요약');
   console.log(`  provider: ${provider}`);
   for (const [key, value] of Object.entries(selection)) console.log(`  ${key}: ${value}`);
@@ -436,7 +481,12 @@ async function main() {
   console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${reuseObservability ? '기존 설정 유지' : useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
-  if (!await confirm('이 설정으로 계속할까요?', 'n', { agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } })) throw new Error('사용자가 설정 적용을 취소했습니다.');
+  // The summary needs every answer, so while any question is pending the confirmation is asked in the same batch and
+  // covers the answers given in it; it is asked again whenever a later round brings new or changed answers.
+  const summary = { agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
+  const approved = await confirm('이 설정으로 계속할까요?', 'n', batch.length ? { provisional: true, note: '이 질문들에 대한 답으로 설정을 적용합니다. 요약은 모든 답을 받은 뒤에만 정해집니다.' } : summary, { dependsOn: [...unanswered], revisit: true });
+  requireComplete();
+  if (!approved) throw new Error('사용자가 설정 적용을 취소했습니다.');
   if (createRepository) {
     const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
     if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
@@ -506,6 +556,10 @@ async function main() {
 main().then(() => {
   if (native) process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
 }).catch((error) => {
-  if (error instanceof PendingQuestion) process.stdout.write(JSON.stringify({ status: 'needs_input', pending: error.pending }) + '\n');
+  // `pending` stays the first question for callers that still ask one at a time; `questions` is the whole batch.
+  const needsInput = () => process.stdout.write(JSON.stringify({ status: 'needs_input', pending: batch[0], questions: batch }) + '\n');
+  if (error instanceof PendingQuestion) needsInput();
+  // An error reached only through provisional answers ends the discovery; it is raised for real once they are answered.
+  else if (native && batch.length && !(error instanceof InvalidAnswer)) needsInput();
   else { console.error(error.message); process.exitCode = 1; }
 }).finally(() => rl?.close());

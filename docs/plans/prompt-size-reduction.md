@@ -40,7 +40,7 @@
 
 ## 3. 정본 배치 원칙
 
-1. **런타임이 결정하는 값은 지침에 다시 쓰지 않는다.** model tier·model·effort는 `skill-execution/bindings.json`과 `harness-skill-execution.mjs binding`이 정한다. workspace 검사는 workflow `before_dispatch` gate가 수행한다. plan hash 정규화는 `harness-plan-review.mjs check`가 판정한다.
+1. **런타임이 결정하는 값은 지침에 다시 쓰지 않는다.** model tier·model·effort는 각 skill 문서 frontmatter의 `model_tier`와 `harness-skill-execution.mjs binding`이 정한다. workspace 검사는 workflow `before_dispatch` gate가 수행한다. plan hash 정규화는 `harness-plan-review.mjs check`가 판정한다.
 2. **공통 규칙은 설치되는 관리 자산 한 곳에 둔다.** consumer의 `docs/agents/EXEC.md`는 프로젝트 소유이며 설치되지 않는다. 실제 테스트 consumer(`harness-test`)의 EXEC.md에는 "세션 파일 출력 경계" 섹션이 없다. 따라서 실행 산출물 경로 규칙(로그·임시 파일·스크린샷 등을 어디에 쓰는가)의 정본은 `EXEC.md`가 아니라 `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md`(신규)에 둔다.
 3. **링크는 그 실행이 실제로 따라야 할 문서만 건다.** 참고용 링크도 모델이 읽는 계기가 된다.
 4. **agent toml에는 역할별 차이만 둔다.** 공통 절차는 역할이 읽는 GUIDE가 소유한다.
@@ -66,7 +66,7 @@
 - 남길 내용은 스킬별 고유 정보뿐이다. 예: "구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다", "사용자 결정과 단계 전환은 caller에 반환한다". 고유 정보가 없으면 섹션 전체를 삭제한다.
 - 공통 문장 "사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다"는 `skill-execution/GUIDE.md`에 한 번만 둔다.
 - `spec-me/GUIDE.md:14`의 standalone 모델 설명과 `frontend-design/GUIDE.md`의 `## Model routing`도 같은 이유로 삭제한다. stage별 tier는 `frontend-design.yaml`이 이미 정한다.
-- 확인: `bindings.json`의 모든 skill 항목과 workflow yaml의 stage `model_tier`가 삭제된 설명과 일치하는지 대조한다(설명 삭제 전 값 손실 여부 점검).
+- 확인: 각 skill 문서 frontmatter의 `model_tier`와 workflow yaml의 stage `model_tier`가 삭제된 설명과 일치하는지 대조한다(설명 삭제 전 값 손실 여부 점검).
 
 ### 단계 3 — 공통 섹션 통합 (−약 17 KB)
 

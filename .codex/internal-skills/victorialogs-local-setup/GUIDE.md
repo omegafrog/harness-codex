@@ -1,3 +1,6 @@
+---
+model_tier: execution
+---
 
 # 로컬 OpenTelemetry 관측성 설정
 

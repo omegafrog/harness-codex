@@ -8,7 +8,7 @@ import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
 import { migrateAgentsText } from '../workflow/agent-config.mjs';
 import { transformSourceContent } from './transforms.mjs';
-import { LEGACY_ASSETS } from './legacy-assets.mjs';
+import { LEGACY_ASSETS, RETIRED_ASSET_PATHS } from './legacy-assets.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const SOURCE_TRANSFORM = "project-local-paths-v1";
@@ -316,7 +316,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       const target = await readTarget(targetRoot, entry.path);
       if (target && entry.current_sha256 !== entry.installed_sha256) {
         const internalizedPublicSkill = /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(entry.path)?.[1];
-        if (internalizedPublicSkill && internalSkillNames.has(internalizedPublicSkill)) {
+        if (RETIRED_ASSET_PATHS.has(entry.path) || (internalizedPublicSkill && internalSkillNames.has(internalizedPublicSkill))) {
           actions.push({ descriptor: sourceDescriptor(entry.source_path || entry.path, entry.path), retired: true, backup: target.content });
           delete nextFiles[entry.path];
           removed_lock_entries.push(entry.path);
@@ -358,6 +358,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     const target = await readTarget(targetRoot, path);
     if (target && LEGACY_ASSETS.some((item) => item.action === 'retire' && item.path === path && hashContent(target.content) === item.sha256)) actions.push({ descriptor: sourceDescriptor(path, path), retired: true, backup: target.content });
     else if (target) skipped.push({ path, status: 'legacy_unrecognized' });
+  }
+  if (scope !== "agents") for (const path of RETIRED_ASSET_PATHS) {
+    if (lock.files[path]) continue;
+    const target = await readTarget(targetRoot, path);
+    if (target) actions.push({ descriptor: sourceDescriptor(path, path), retired: true, backup: target.content });
   }
   for (const descriptor of descriptors) {
     if (!selected(descriptor.target_path) || nextFiles[descriptor.target_path]) continue;

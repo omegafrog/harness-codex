@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 # frontend-design
 
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.

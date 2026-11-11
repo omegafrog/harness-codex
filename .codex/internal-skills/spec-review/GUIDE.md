@@ -1,3 +1,6 @@
+---
+model_tier: high_performance
+---
 # 독립 Architecture Spec 리뷰
 
 Product Spec과 Architecture Spec 두 문서만 리뷰 자료로 사용한다. Product Spec은 요구사항 기준이며 Architecture Spec이 이를 충족하는지 독립적으로 검토한다. 리뷰 기준은 [review-criteria.md](references/review-criteria.md)다. 리뷰 지침은 절차를 위한 지침이며 리뷰 자료가 아니다.

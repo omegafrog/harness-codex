@@ -12,6 +12,7 @@ const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const base = installed;
 const { loadProvider } = await import(new URL('providers/index.mjs', base));
 const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, readExecutionInput, readSkillSessionJson, resolveSkillSession, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
+const { stripSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { executionInputAbsolutePath } = await import(new URL('execution-input.mjs', base));
 const { stageExecutionPaths, stageArtifactDirectories } = await import(new URL('session-output.mjs', base));
@@ -111,16 +112,17 @@ try {
     try { priorCompaction = (await readFile(join(priorSession, priorEvents), 'utf8')).split('\n').some((line) => { try { return isCompactionEvent(JSON.parse(line)); } catch { return false; } }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  const guideContent = await readFile(join(root, guide), 'utf8');
+  // The model declaration in a skill document is metadata for the runner; the stage receives the instructions without it.
+  const guideContent = stripSkillDeclaration(await readFile(join(root, guide), 'utf8'));
   const workerBase = providerId === 'claude-code' ? await readFile(join(root, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8') : null;
   const profileContent = profilePath ? await readFile(join(root, profilePath), 'utf8') : null;
   const profileVersion = profileContent === null ? null : instructionVersion(profileContent);
   const returnContract = '.codex/internal-skills/skill-execution/references/stage-return.md';
   const instructionPaths = [returnContract, ...(input.skill === 'spec-me' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : [])];
-  const instructionVersions = await Promise.all(instructionPaths.map(async (path) => [path, instructionVersion(await readFile(join(root, path)))]));
+  const instructionVersions = await Promise.all(instructionPaths.map(async (path) => [path, instructionVersion(stripSkillDeclaration(await readFile(join(root, path), 'utf8')))]));
   const artifactDirectories = input.context?.plan_set_id ? stageArtifactDirectories(root, input.context.plan_set_id) : null;
   const activeInstructionPaths = phaseInstructionPaths({ skill: input.skill, productSpecExists: Boolean(artifactDirectories && existsSync(join(artifactDirectories.specs, 'product-spec.md'))) });
-  const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = await readFile(join(root, path), 'utf8'); return { path, content, version: instructionVersion(content) }; }));
+  const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = stripSkillDeclaration(await readFile(join(root, path), 'utf8')); return { path, content, version: instructionVersion(content) }; }));
   const previousDelivery = priorStage?.instruction_delivery ? { ...priorStage.instruction_delivery, compaction_observed: priorCompaction } : null;
   const { prompt: instructions, delivery } = buildStagePrompt({ guide, guideContent, guideVersion: instructionVersion(guideContent), profile: profilePath, profileContent, profileVersion, instructionVersions, instructionContents, resumeSession: resume, previousDelivery, answersPath: existsSync(answers) ? answers : null, feedbackPath: existsSync(feedback) ? feedback : null, sandbox, root, inputPath, executionDirectory: paths.directory, artifactDirectories, workflowPhase: input.context?.phase || null });
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : instructions;

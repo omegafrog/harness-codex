@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { loadProvider } from './providers/index.mjs';
+import { listDeclaredSkills } from './skill-declaration.mjs';
 
 // 구현 stage만 Spec 밖 동작을 구조화해 신고한다. 과거 결과 호환을 위해 저장 스키마에서는 선택으로 둔다.
 const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
@@ -30,8 +31,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const option = question?.properties?.options?.items;
   if (option?.properties?.evidence && !option.required.includes('evidence')) option.required = [...option.required, 'evidence'];
   if (result.review_request) {
-    const bindings = JSON.parse(await readFile(join(root, '.codex/internal-skills/skill-execution/bindings.json'), 'utf8'));
-    const skills = Object.keys(bindings.skills).filter((skill) => !bindings.main_session_skills?.includes(skill) && !(input.skill === 'spec-me' && skill === 'spec-review'));
+    // A review can run any sub-agent skill, that is, any skill whose document declares a setup tier.
+    const skills = (await listDeclaredSkills(root)).filter((item) => !item.main_session && !(input.skill === 'spec-me' && item.skill === 'spec-review')).map((item) => item.skill);
     const profiles = (await readdir(join(root, '.codex/agents'))).filter((name) => name.endsWith('.toml')).map((name) => name.slice(0, -5));
     const item = result.review_request.anyOf.find((shape) => shape.type === 'object');
     item.properties.skill = { type: 'string', enum: skills, description: '실행할 skill ID' };

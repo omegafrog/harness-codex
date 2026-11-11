@@ -6,13 +6,15 @@ import { DEFAULT_HOOK_CHECKS, LifecycleGateRegistry } from "../gates/lifecycle.m
 import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "../installer/source-checkout.mjs";
+import { AGENT_TIERS } from "./agent-config.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PACKAGE_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
 const WORKFLOW_FIELDS = new Set(["schema_version", "id", "orchestrator", "roles", "skills", "hooks", "stages"]);
 const STAGE_FIELDS = new Set(["id", "role", "skill", "model_tier", "needs", "condition", "gates"]);
-const WORKFLOW_MODEL_TIERS = new Set(["high_performance", "implementation", "execution", "low"]);
+// A stage may override its skill's tier with another setup tier; the names are the ones setup writes to agents.<provider>.
+const WORKFLOW_MODEL_TIERS = new Set(AGENT_TIERS);
 export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "architecture_adversarial_review",
   "product_diagram_completion",
