@@ -17,7 +17,7 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 
 ## 실행 절차
 
-1. 현재 디렉터리와 `git rev-parse --show-toplevel`을 확인해 활성 워크트리 경로를 확정한다. 호출 세션에서 전달된 워크트리와 다르면 실행하지 않고 불일치를 보고한다. 이후 모든 명령의 working directory는 이 경로로 고정한다. 인프라를 시작하기 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <worktree> --json`을 실행하고 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. 실패하면 서버나 테스트를 시작하지 않는다.
+1. 현재 디렉터리와 `git rev-parse --show-toplevel`을 확인해 활성 워크트리 경로를 확정한다. 호출 세션에서 전달된 워크트리와 다르면 실행하지 않고 불일치를 보고한다. 이후 모든 명령의 working directory는 이 경로로 고정한다. 인프라를 시작하기 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <worktree> --for-e2e --json`을 실행하고 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. E2E는 tracker lifecycle에 의존하지 않는다. 실패하면 서버나 테스트를 시작하지 않는다.
 2. 활성 worktree의 `docs/agents/testing-guidance.md`, `docs/agents/EXEC.md`, E2E 대상의 실행 지침을 읽는다. 서버·인프라 준비, 환경 변수, 실행·대기·종료 명령은 활성 worktree의 프로젝트 계약을 따른다. 필요한 명령이나 전제가 없으면 추측해 환경을 변경하지 말고 blocker로 보고한다.
 3. `ARTIFACT_GUARD=.codex/internal-skills/e2e-test/scripts/artifact-guard.mjs`로 지정하고 `node "$ARTIFACT_GUARD" snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
 

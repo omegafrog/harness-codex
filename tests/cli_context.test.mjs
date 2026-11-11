@@ -47,3 +47,20 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     assert.equal(JSON.parse(run(root, 'harness-context.mjs').stdout).orchestrator_last_turn.message, '지원할까요?');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('E2E workspace preflight checks Git registration without requiring tracker storage', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'e2e-preflight-'));
+  const primary = join(directory, 'primary'), workspace = join(directory, 'workspace');
+  try {
+    execFileSync('git', ['init', '-q', '-b', 'main', primary]);
+    execFileSync('git', ['-C', primary, '-c', 'user.name=T', '-c', 'user.email=t@example.test', 'commit', '--allow-empty', '-qm', 'base']);
+    execFileSync('git', ['-C', primary, 'worktree', 'add', '-qb', 'test/e2e', workspace]);
+    const result = run(workspace, 'harness-workspace-preflight.mjs', '--workspace-root', workspace, '--for-e2e', '--json');
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.valid, true);
+    assert.equal(report.worktree_registered, true);
+    assert.deepEqual(report.tracker_sync, { status: 'not_required', reason: 'e2e_workspace_integrity_only' });
+    assert.notEqual(run(workspace, 'harness-workspace-preflight.mjs', '--workspace-root', workspace, '--for-e2e', '--for-implementation', '--json').status, 0);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
