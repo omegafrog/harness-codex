@@ -248,3 +248,28 @@ test('a reviewer that finished after its stage was interrupted is settled when t
     assert.equal(history.attempts.at(-2).settled_after_interruption, true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('only a terminated matching plan execution releases its unfinished native review', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-interrupted-'));
+  try {
+    const scope = 'plan-example', inputs = { plan: 'hash' }, executionId = 'to-ticket-old';
+    const first = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    await updateReviewAttempt({ root, scope, action: 'bind-admission', attemptId: first.attempt_id, executionId, admissionRef: `runtime/executions/${executionId}/plan-review-admission-${first.attempt_id}.json` });
+    await updateReviewAttempt({ root, scope, action: 'claim', attemptId: first.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'token', parentSessionId: 'parent', executionId });
+    await updateReviewAttempt({ root, scope, action: 'bind-native', attemptId: first.attempt_id, nativeAgentId: 'agent', parentSessionId: 'parent' });
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'abort', attemptId: 'wrong', reason: 'test' }), new RegExp(`requested wrong, active ${first.attempt_id}`));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), new RegExp(first.attempt_id));
+    const dir = join(root, '.io/runtime/executions', executionId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 0, session_id: 'another-parent' }));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), /already active/);
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'claude-code', exit_code: 0, session_id: 'parent' }));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), /already active/);
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 0, session_id: 'parent' }));
+    const next = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    assert.equal(next.round, 2);
+    const history = JSON.parse(await readFile(join(root, `.io/runtime/reviews/${scope}.json`), 'utf8'));
+    assert.equal(history.attempts[0].status, 'aborted');
+    assert.match(history.attempts[0].reason, /without a recorded reviewer result/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

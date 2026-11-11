@@ -30,7 +30,7 @@ try {
       if (options.reviews) validateReviewRecord(JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8')), options);
       result = await updatePlanReview({ ...options, action, attemptId: options.attempt, review: { schema_version: 1, attempt_id: options.attempt, plan_set_id: options.planSetId }, requireNative: true });
     } else {
-      result = await updatePlanReview({ ...options, action });
+      result = await updatePlanReview({ ...options, action, attemptId: options.attempt });
       if (action === 'begin') result.review_delta = await reviewDelta({ root: options.root, inputs: result.inputs, previousInputs: result.previous_inputs });
     }
   } else if (action === 'snapshot') result = await snapshotPlanSet(options);

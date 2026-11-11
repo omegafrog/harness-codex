@@ -31,6 +31,7 @@ Reviewer는 `verdict` (`pass` 또는 `revise`), `findings` (각각 `severity`, `
 ## to-ticket review loop
 
 1. 매 최초·재검토 전에 `node .codex/scripts/harness-plan-review.mjs begin --root <workspace_root> --plan-set <plan-set-id>`를 실행한다. begin 결과 전체를 session의 JSON으로 저장한다. 실행기가 반환한 `reviewer_input_ref`를 reviewer에게 전달한다. Reviewer는 이 runner-owned JSON의 `execution_id`, `attempt_id`, `plan_set_id`, `inputs`, `files`, `previous_inputs`, `previous_findings`를 현재 admission으로 사용한다. JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나 `.io`를 검색하지 않는다. 승인된 Product/Architecture Spec, 계획 index, canonical plan은 admission의 `files`에서 대조한다. 재리뷰는 현재·이전 hash를 비교하고 변경된 파일 전체와 직전 지적·직접 영향 관계를 검토한다.
+   이전 Codex 실행이 종료됐지만 reviewer 결과가 없는 경우 begin은 종료 증거를 확인해 이전 시도를 aborted로 보존하고 새 리뷰를 연다. 종료를 확인할 수 없으면 오류에 표시된 attempt와 execution을 진단하고 무작정 중단하거나 재시도하지 않는다. 명시적으로 중단할 때는 표시된 attempt ID를 `abort --attempt <attempt_id> --reason <reason>`으로 전달한다.
 2. `to-ticket`은 독립 subagent를 직접 생성하며 작성자 대화를 reviewer context에 복사하지 않는다. 실행기가 제공한 `reviewer_input_ref`와 명시된 문서 기준을 전달한다. Reviewer는 schema 필드와 구체적 근거를 반환한다.
 3. reviewer가 끝나면 `node .codex/scripts/harness-plan-review.mjs record --root <workspace_root> --plan-set <plan-set-id> --attempt <attempt_id>`로 기록한다. reviewer 신원과 결과를 담은 파일을 직접 만들어 넘기지 않는다. `pass` 이후 반드시 `check --phase planning`을 실행한다. 통과 전에는 발행 stage로 이동하거나 tracker/Beads를 변경하지 않는다.
 4. `revise`이면 `to-ticket`은 findings를 반영해 계획을 수정하고 새 attempt와 새 native reviewer로 재검토한다. 최대 3회차 뒤 미해결 항목은 범위 또는 결정을 묻는 실제 사용자 질문으로 반환한다. 사용자 답변은 해당 결정을 해결할 뿐 review pass로 간주하지 않는다.

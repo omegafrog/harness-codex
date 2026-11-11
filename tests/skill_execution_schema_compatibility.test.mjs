@@ -373,6 +373,25 @@ test('installed result validation accepts safe directory artifacts and keeps con
 });
 
 
+test('installed plan review abort uses its requested attempt ID', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-review-abort-install-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    const { updateReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
+    const first = await updateReviewAttempt({ root, scope: 'plan-sample', action: 'begin', inputs: { plan: 'hash' } });
+    const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
+    const result = JSON.parse(execFileSync(process.execPath, [cli, 'abort', '--root', root, '--plan-set', 'sample', '--attempt', first.attempt_id, '--reason', 'review interrupted'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(result.reason, 'aborted');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.doesNotMatch(status, /\.harness\/src\/workflow\/review-attempts|\.codex\/scripts\/harness-plan-review|\.io\/runtime\/reviews/);
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('fresh install and update use consolidated flow schemas and Doctor inventory', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-schema-install-'));
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
