@@ -51,6 +51,9 @@ const FORMER_REGISTRY = [
   'sync-contracts', 'to-ticket', 'tracker-publish', 'victorialogs-local-setup', 'workflow-compose', 'worktree-create',
 ];
 
+// Skills added after the registry was retired; each declares its tier in its own document from the start.
+const DECLARED_SINCE_REGISTRY = ['contract-review'];
+
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
 
@@ -101,7 +104,8 @@ test('every skill the retired registry listed declares its tier in its own docum
   const expected = { 'plantuml-diagrams': 'low_performance', 'architecture-spec': 'low_performance', 'spec-me': 'high_performance', implement: 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
   for (const [skill, tier] of Object.entries(expected)) assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   const declared = (await listDeclaredSkills(sourceRoot)).filter((item) => !item.main_session).map((item) => item.skill);
-  assert.deepEqual(declared, [...FORMER_REGISTRY].sort(), 'a skill document declares a tier that the retired registry did not list, or the reverse');
+  assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'a skill document declares a tier that neither the retired registry nor the later additions list, or the reverse');
+  assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'contract-review' })).model_tier, 'high_performance');
   assert.equal((await readdir(join(sourceRoot, '.codex/internal-skills/skill-execution'))).includes('bindings.json'), false);
 });
 

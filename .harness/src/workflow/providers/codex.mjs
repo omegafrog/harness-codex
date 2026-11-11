@@ -99,6 +99,18 @@ export function codexFreshAgentHook() {
     timeout: 10,
   };
 }
+// Denies the orchestrator main session's own writes to product code, tests and contracts (see harness-write-guard.mjs).
+// Stage runners set HARNESS_SKILL_EXECUTION_ID and workspaces without an active workflow have no `.io/worktree.json`, so
+// the shell filter stops there without starting node; Codex matchers are not relied on, the script checks the tool.
+const WRITE_GUARD_STATUS = 'Guarding Harness orchestrator writes';
+export function codexWriteGuardHook() {
+  return {
+    type: 'command',
+    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && exit 0; r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f "$r/.io/worktree.json" ] || exit 0; f="$r/.codex/scripts/harness-write-guard.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *apply_patch*|*Bash*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
+    statusMessage: WRITE_GUARD_STATUS,
+    timeout: 10,
+  };
+}
 // Codex trusts a hook by its hooks.json path and command, so a project hook written into each new worktree needed a
 // new review every time. This user-level hook is trusted once and runs the orchestrator hook of whatever Harness
 // workspace the session is in; it steps aside where the project's own hooks.json already has it.
@@ -112,7 +124,7 @@ export function codexOrchestratorHook() {
     timeout: 10,
   };
 }
-const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, ...ORCHESTRATOR_EVENTS.map((event) => ({ event, status: ORCHESTRATOR_STATUS, handler: codexOrchestratorHook }))];
+const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, { event: 'PreToolUse', status: WRITE_GUARD_STATUS, handler: codexWriteGuardHook }, ...ORCHESTRATOR_EVENTS.map((event) => ({ event, status: ORCHESTRATOR_STATUS, handler: codexOrchestratorHook }))];
 
 // Whether the user-level orchestrator hook is installed; worktrees then need no project hook of their own.
 export async function codexUserOrchestratorHookInstalled(env = process.env) {
@@ -189,7 +201,8 @@ export async function inspectCodexHookTrust(env = process.env) {
   };
   const orchestratorStates = ORCHESTRATOR_EVENTS.map((event) => slotState(event, ORCHESTRATOR_STATUS, codexOrchestratorHook));
   const orchestratorHook = orchestratorStates.every((state) => state === 'trusted') ? 'trusted' : orchestratorStates.includes('missing') ? 'missing' : 'untrusted';
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, orchestrator_hook: orchestratorHook, hooks_path: hooksPath };
+  const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS, codexWriteGuardHook);
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, orchestrator_hook: orchestratorHook, hooks_path: hooksPath };
 }
 
 const DELIVERY_PREFIX = 'Harness stage result for execution';

@@ -279,7 +279,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (orchestratorSession && workflowBinding.provider !== orchestratorSession.provider) throw new Error('Workflow binding provider must match the orchestrator provider');
       provider = workflowBinding.provider;
     }
-    if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
+    if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
   }
   if (restart) {
     if (!worktree_ref || state.current_stage !== 'to-ticket' || !['waiting', 'failed'].includes(state.stages?.['to-ticket']?.status)) throw new Error('Restart requires a waiting or failed to-ticket stage in its active worktree');

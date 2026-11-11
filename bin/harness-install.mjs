@@ -172,6 +172,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".codex", "internal-skills", "architecture-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -188,6 +189,7 @@ async function verify(projectRoot, options) {
       "frontend_implementation_agent.toml",
       "frontend_visual_reviewer.toml",
       "plan_reviewer.toml",
+      "contract_reviewer.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
@@ -210,6 +212,9 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/wrapper/repair.mjs",
     ".harness/src/knowledge/evidence.mjs",
     ".codex/scripts/harness-plan-review.mjs",
+    ".codex/scripts/harness-contract-review.mjs",
+    ".codex/scripts/harness-write-guard.mjs",
+    ".harness/src/workflow/contract-review.mjs",
     ".codex/scripts/harness-code-review.mjs",
     ".codex/scripts/harness-review-status.mjs",
     ".harness/src/workflow/plan-review.mjs",
@@ -263,6 +268,7 @@ async function main() {
     if (syncResult.removed_directories?.length) console.log(`Removed empty directories: ${syncResult.removed_directories.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
     if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
+    if (fullInstall) await noteCodexUserHooks(projectRoot, options);
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
       ? `Beads CLI available: ${beadsVersion}`
@@ -282,7 +288,19 @@ async function main() {
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+    await noteCodexUserHooks(projectRoot, options);
   }
+}
+
+// Codex user-level hooks live in ~/.codex, which an update never edits; setup registers them and /hooks trusts them.
+async function noteCodexUserHooks(projectRoot, options) {
+  try {
+    const config = await readFile(join(projectRoot, ".codex", "harness.yaml"), "utf8").catch(() => "");
+    if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
+    const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
+    const trust = await inspectCodexHookTrust();
+    if (trust.write_guard !== "trusted") console.log(`Codex user hook "Guarding Harness orchestrator writes" is ${trust.write_guard}: run $setup (codex provider) to register it, then trust it in /hooks, so the orchestrator main session cannot edit product code, tests or contracts.`);
+  } catch { /* the notice is advisory; Doctor reports the same state */ }
 }
 
 main().catch((error) => {

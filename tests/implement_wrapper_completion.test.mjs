@@ -29,6 +29,20 @@ const profileManifest = {
 const planBody = (title, extra = '') => `---\nstatus: planned\n---\n# ${title}\n\n## 구현 목적과 범위\n${title} 구현.\n${extra}`;
 const passingAnswer = JSON.stringify({ state: 'passed', report: { findings: [] } });
 
+// The sync-contracts stage's semantic review of the sealed contract: `begin`, a native reviewer bound by the real subagent
+// hook (Codex and Claude Code share it), then `record`. Nothing here writes reviewer identity or the verdict by hand.
+async function reviewSealedContract({ ws, session, executionId = 'sync-contracts', reviewerId = 'contract-reviewer-1', verdict = 'pass', findings = [], forked = false }) {
+  const env = { ...process.env, HARNESS_WORKSPACE_ROOT: ws, HARNESS_SKILL_EXECUTION_ID: executionId, HARNESS_SESSION_DIR: session, HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: executionId };
+  const run = (script, args) => execFileSync(process.execPath, [join(ws, '.codex/scripts', script), ...args], { cwd: ws, env, encoding: 'utf8' });
+  const begin = JSON.parse(run('harness-contract-review.mjs', ['begin', '--root', ws, '--plan-set', PLAN_SET]));
+  const transcript = join(session, `${reviewerId}-rollout.jsonl`);
+  if (forked) await writeFile(transcript, `${JSON.stringify({ type: 'session_meta', payload: { id: reviewerId, forked_from_id: 'sync-contracts-thread' } })}\n`);
+  const hook = (event) => execFileSync(process.execPath, [join(ws, '.codex/scripts/harness-agent-event.mjs')], { cwd: ws, env, input: JSON.stringify({ session_id: 'sync-contracts-thread', agent_type: 'contract_reviewer', agent_id: reviewerId, ...(forked ? { agent_transcript_path: transcript } : {}), ...event }) });
+  hook({ hook_event_name: 'SubagentStart' });
+  hook({ hook_event_name: 'SubagentStop', last_assistant_message: JSON.stringify({ verdict, findings }) });
+  return { begin, record: spawnSync(process.execPath, [join(ws, '.codex/scripts/harness-contract-review.mjs'), 'record', '--root', ws, '--plan-set', PLAN_SET, '--attempt', begin.attempt_id], { cwd: ws, env, encoding: 'utf8' }) };
+}
+
 // A consumer with Harness installed through the real installer, a plan set whose plan review passed, two implemented
 // plans with passed code reviews, one passing E2E receipt written by harness-exec.mjs, completed tickets and a sealed
 // contract bundle: every canonical record the final implement-wrapper gate reads, produced by the code that owns it.
@@ -122,13 +136,15 @@ async function buildConsumer() {
   await write('docs/contracts/architecture.md', '# Architecture\n');
   await write('docs/contracts/manifest.json', JSON.stringify({ schema_version: 1, features: [], components: [], diagrams: [{ kind: 'ddd', reason: 'fixture has no domain model' }, { kind: 'class', reason: 'fixture has no domain model' }], source_roots: [], empty_project_reason: 'fixture has no domain model' }));
   await (await here('.harness/src/contracts/contracts.mjs')).sealContracts({ workspace_root: ws, change_summary: 'fixture' });
+  const contractReview = await reviewSealedContract({ ws, session });
+  assert.equal(contractReview.record.status, 0, contractReview.record.stderr);
   wgit('add', 'docs');
   wgit('commit', '-q', '-m', 'Complete tickets and seal contracts');
 
   const cli = (extra = [], { workflow = 'implement-wrapper' } = {}) => spawnSync(process.execPath, [join(ws, '.codex/scripts/harness-workflow-complete.mjs'), '--root', ws, '--workflow', workflow, '--worktree-id', tree.worktree_id, '--base-ref', tree.head, ...extra], { cwd: ws, encoding: 'utf8' });
   const gate = (extra, options) => { const run = cli(extra, options); return { status: run.status, result: run.stdout ? JSON.parse(run.stdout) : null, stderr: run.stderr }; };
   return {
-    root, tree, ws, session, git, wgit, write, here, commits, documented, gate,
+    root, tree, ws, session, git, wgit, write, here, commits, documented, gate, reviewSealedContract: (options) => reviewSealedContract({ ws, session, ...options }),
     derive: async () => (await here(NEW_FILE)).deriveImplementationCompletion({ root: ws, planSetId: PLAN_SET }),
     cleanup: async () => { await finishWorkflowWorktree({ workspace_root: ws, repository_root: root, worktree_id: tree.worktree_id, outcome: 'aborted' }).catch(() => {}); await rm(root, { recursive: true, force: true }); },
   };
@@ -175,9 +191,12 @@ test('implement-wrapper final gate is derived from canonical records, never from
       assert.equal(result.state, 'completed');
       assert.equal(result.ignored_state_keys, undefined);
       const checks = Object.fromEntries(result.verdict.checks.map((check) => [check.rule_id, check]));
-      assert.deepEqual(Object.keys(checks).sort(), ['contract_docs', 'evidence', 'plan_review', 'required_outcome', 'retirement', 'review', 'tests', 'tracker_sync']);
+      assert.deepEqual(Object.keys(checks).sort(), ['contract_docs', 'contract_review', 'evidence', 'plan_review', 'required_outcome', 'retirement', 'review', 'tests', 'tracker_sync']);
       for (const check of Object.values(checks)) assert.equal(check.status, 'pass', `${check.rule_id}: ${check.reason}`);
       assert.equal(checks.plan_review.reason, 'plan_set_completion_current');
+      assert.equal(checks.contract_review.reason, 'contract_review_current');
+      assert.equal(checks.contract_review.details.contract_revision, JSON.parse(await readFile(join(f.ws, 'docs/contracts/manifest.json'), 'utf8')).revision);
+      assert.equal(checks.contract_review.details.native_agent_id, 'contract-reviewer-1', 'the reviewer ID is the hook-recorded native ID');
       assert.equal(checks.tests.details.profiles[0].head, f.commits.e2e);
       assert.equal(checks.retirement.details.removed_paths.length, 0);
       assert.match(checks.retirement.details.reason, /No plan of calc declares an approved removal list/);
@@ -191,24 +210,26 @@ test('implement-wrapper final gate is derived from canonical records, never from
         reviews: { spec: { state: 'passed' }, standards: { state: 'passed' } },
         retirement: { workspace_root: f.ws, removed_paths: [], reason: 'nothing to remove' },
         plan_review: { plan_set_id: 'other-set', phase: 'planning' }, plan_set_id: 'other-set',
+        contract_review: { passed: true, contract_revision: 99 },
       }));
       const state = ['--state', 'runtime/implement-wrapper/completion-state.json'];
-      await withHidden(sessionFile(f, 'runtime/execution'), () => withHidden(evidencePath('calculator'), async () => {
+      await withHidden(sessionFile(f, 'runtime/execution'), () => withHidden(evidencePath('calculator'), () => withHidden(sessionFile(f, `runtime/reviews/contracts-${PLAN_SET}.json`), async () => {
         const { status, result } = gate(state);
         assert.notEqual(status, 0);
         assert.equal(result.state, 'in-progress');
-        assert.deepEqual(result.ignored_state_keys.sort(), ['evidence', 'plan_review', 'plan_set_id', 'required_outcome', 'retirement', 'reviews', 'tests']);
+        assert.deepEqual(result.ignored_state_keys.sort(), ['contract_review', 'evidence', 'plan_review', 'plan_set_id', 'required_outcome', 'retirement', 'reviews', 'tests']);
         const checks = Object.fromEntries(result.verdict.checks.map((check) => [check.rule_id, check]));
         assert.equal(checks.review.reason, 'review_evidence_missing');
         assert.equal(checks.review.details.problems[0].plan_id, 'calculator');
         assert.equal(checks.tests.reason, 'test_evidence_missing');
         for (const rule of ['review', 'tests', 'required_outcome', 'evidence']) assert.notEqual(checks[rule].status, 'pass', rule);
         assert.equal(checks.plan_review.status, 'pass', 'the plan set comes from the worktree record, not the state');
-      }));
+        assert.equal(checks.contract_review.reason, 'contract_review_missing', 'a state claiming a passed contract review does not satisfy the gate');
+      })));
       // With the records present the same state file changes nothing: it is ignored, not trusted and not rejected.
       const { status, result } = gate(state);
       assert.equal(status, 0, JSON.stringify(result?.verdict));
-      assert.equal(result.ignored_state_keys.length, 7);
+      assert.equal(result.ignored_state_keys.length, 8);
     });
 
     await t.test('code reviews: each missing or unsound record names its plan and role', async () => {
@@ -369,6 +390,100 @@ test('implement-wrapper final gate is derived from canonical records, never from
       const run = gate(['--state', 'runtime/implement-wrapper/completion-state.json'], { workflow: 'spec-me' });
       assert.equal(run.result.workflow_id, 'spec-me');
       assert.equal(run.result.ignored_state_keys, undefined);
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('the completion gate and the sync-contracts stage need a passing independent review of the sealed contract revision', async (t) => {
+  const f = await buildConsumer();
+  const history = sessionFile(f, `runtime/reviews/contracts-${PLAN_SET}.json`);
+  const log = sessionFile(f, 'runtime/executions/sync-contracts/subagents.jsonl');
+  const { inspectContractReview } = await f.here('.harness/src/workflow/contract-review.mjs');
+  const { validateSkillReturn } = await f.here('.harness/src/workflow/skill-execution.mjs');
+  const contractCheck = async () => (await f.derive()).checks.contract_review;
+  const input = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', workspace_root: f.ws, session_directory: f.session, scope: PLAN_SET, input_refs: [], context: { worktree_ref: join(f.session, 'worktree.json'), plan_set_id: PLAN_SET } };
+  const result = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', summary: 'Contract sealed and reviewed', artifacts: [], questions: [], review_request: null };
+  const envelope = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', result_ref: 'runtime/executions/sync-contracts/result.json', result };
+  await writeFile(sessionFile(f, envelope.result_ref), JSON.stringify(result));
+  const logLines = async () => (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  const edited = (mutate) => (text) => `${text.trim().split('\n').map((line) => JSON.stringify(mutate(JSON.parse(line)))).join('\n')}\n`;
+  try {
+    await t.test('a recorded review of the sealed revision opens the gate and the stage return', async () => {
+      const verdict = await contractCheck();
+      assert.equal(verdict.status, 'pass', JSON.stringify(verdict));
+      assert.equal(verdict.details.round, 1);
+      const events = await logLines();
+      assert.deepEqual(events.map((item) => [item.event, item.agent_type, item.review_scope, item.admitted ?? true]), [['SubagentStart', 'contract_reviewer', `contracts-${PLAN_SET}`, true], ['SubagentStop', 'contract_reviewer', `contracts-${PLAN_SET}`, true]]);
+      assert.equal((await validateSkillReturn({ root: f.ws, input, envelope })).valid, true);
+    });
+
+    await t.test('without a review the gate blocks, a state file cannot supply one, and the stage cannot complete', async () => {
+      await withHidden(history, async () => {
+        const verdict = await contractCheck();
+        assert.equal(verdict.status, 'blocked');
+        assert.equal(verdict.reason, 'contract_review_missing');
+        const run = f.gate();
+        assert.notEqual(run.status, 0);
+        assert.equal(Object.fromEntries(run.result.verdict.checks.map((check) => [check.rule_id, check])).contract_review.reason, 'contract_review_missing');
+        await assert.rejects(validateSkillReturn({ root: f.ws, input, envelope }), /current passing independent contract review: contract_review_missing/);
+        // A stage being reopened by the orchestrator is replaced by a new run that needs its own review.
+        assert.equal((await validateSkillReturn({ root: f.ws, input, envelope, reopening: true })).valid, true);
+      });
+    });
+
+    await t.test('a reviewer the subagent hook did not record, or recorded as forked or another agent, does not count', async () => {
+      await withHidden(log, async () => {
+        assert.match((await contractCheck()).details.problem, /hook log of the reviewing execution is missing/);
+      });
+      await withEdit(log, (text) => text.split('\n').filter((line) => !line.includes('SubagentStart')).join('\n'), async () => {
+        assert.match((await contractCheck()).details.problem, /never recorded this reviewer starting/);
+      });
+      await withEdit(log, edited((item) => ({ ...item, forked: true })), async () => {
+        const verdict = await contractCheck();
+        assert.equal(verdict.reason, 'contract_review_reviewer_unrecorded');
+        assert.match(verdict.details.problem, /forked from the author conversation/);
+        await assert.rejects(validateSkillReturn({ root: f.ws, input, envelope }), /forked from the author conversation/);
+      });
+      await withEdit(log, edited((item) => ({ ...item, agent_type: 'plan_reviewer' })), async () => {
+        assert.match((await contractCheck()).details.problem, /not a contract_reviewer/);
+      });
+      await withEdit(log, edited((item) => ({ ...item, review_attempt_id: 'another-attempt' })), async () => {
+        assert.match((await contractCheck()).details.problem, /outside this admitted review attempt/);
+      });
+      // A history entry the hook never bound (no agent ID, as a hand-edited file would have) names no reviewer.
+      await editJson(history, (value) => { delete value.attempts.at(-1).native_review.agent_id; }, async () => {
+        assert.match((await contractCheck()).details.problem, /names no hook-bound reviewer/);
+      });
+      // A reviewer started outside the attempt, or forked from the author, after the last admitted review fails the stage.
+      await withEdit(log, (text) => `${text}${JSON.stringify({ event: 'SubagentStart', agent_id: 'late-forked', agent_type: 'contract_reviewer', review_scope: `contracts-${PLAN_SET}`, admitted: false, forked: true })}\n`, async () => {
+        await assert.rejects(validateSkillReturn({ root: f.ws, input, envelope }), /Reviewer late-forked ran forked from the author conversation/);
+      });
+      assert.equal((await contractCheck()).status, 'pass');
+    });
+
+    await t.test('a review for an older contract revision does not count', async () => {
+      const manifestBefore = JSON.parse(await readFile(join(f.ws, 'docs/contracts/manifest.json'), 'utf8'));
+      await f.write('docs/contracts/product.md', '# Product\n\nA rule the reviewed revision did not have.\n');
+      // Edited but not sealed: the contract check itself fails first.
+      assert.equal((await contractCheck()).reason, 'contract_review_contracts_not_sealed');
+      const sealed = spawnSync(process.execPath, [join(f.ws, '.codex/scripts/harness-contracts.mjs'), 'seal', '--root', f.ws, '--summary', 'a later contract change'], { cwd: f.ws, encoding: 'utf8' });
+      assert.equal(sealed.status, 0, sealed.stdout + sealed.stderr);
+      const verdict = await contractCheck();
+      assert.equal(verdict.status, 'blocked');
+      assert.equal(verdict.reason, 'contract_review_stale');
+      assert.deepEqual([verdict.details.reviewed_revision, verdict.details.current_revision], [manifestBefore.revision, manifestBefore.revision + 1]);
+      await assert.rejects(validateSkillReturn({ root: f.ws, input, envelope }), /contract_review_stale/);
+      const direct = await inspectContractReview({ root: f.ws, planSetId: PLAN_SET });
+      assert.equal(direct.reason, 'contract_review_stale');
+      // Reviewing the new revision with a new reviewer opens the gate again.
+      const again = await f.reviewSealedContract({ reviewerId: 'contract-reviewer-2' });
+      assert.equal(again.record.status, 0, again.record.stderr);
+      const verdictAgain = await contractCheck();
+      assert.equal(verdictAgain.status, 'pass', JSON.stringify(verdictAgain));
+      assert.equal(verdictAgain.details.contract_revision, manifestBefore.revision + 1);
+      assert.equal(verdictAgain.details.native_agent_id, 'contract-reviewer-2');
     });
   } finally {
     await f.cleanup();

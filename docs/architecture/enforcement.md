@@ -32,6 +32,8 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 
 `.harness/src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
 
+`check`는 형식만 검사하므로 의미 검토를 별도로 강제한다. `sync-contracts` stage는 seal 뒤 `.codex/scripts/harness-contract-review.mjs`로 `contracts-<plan-set-id>` review history에 회차를 열고(`begin`), fresh `contract_reviewer`(`fork_turns: none`; fork 시작은 PreToolUse fresh-agent hook이 거부)의 판정을 기록한다(`record`). reviewer ID와 판정은 `harness-agent-event.mjs`가 stage execution의 `subagents.jsonl`과 history에 남기며 stage가 쓰지 않는다. 회차의 입력은 sealed `revision`과 manifest snapshot hash이므로 계약이나 source가 바뀌면 이전 통과는 stale이다. 반복 제한은 `review-attempts.mjs`가 소유한다: 5회차(`CONTRACT_REVIEW_ROUNDS`)를 넘거나 같은 blocker·major 지적이 연속 두 회차 남으면 `begin`을 거부하고 stage가 사용자에게 묻는다. `implement-wrapper` 완료 gate의 `contract_review`(`implementation-completion.mjs`)와 `sync-contracts` stage 반환 검증이 같은 history와 hook 로그를 다시 읽으며 `--state` 값은 쓰지 않는다. 검증: `tests/contract_review.test.mjs`, `tests/implement_wrapper_completion.test.mjs`.
+
 문서에는 전체 Product 규칙과 DDD 구성요소별 상세를 보존한다. `.puml`의 모든 DDD 이름은 stable section으로 연결하고, renderer가 SVG에 원본 SHA를 붙인다. `seal`은 검토 사유와 변경 snapshot을 기록하고 revision을 올리며 `check`는 base보다 증가했는지 검사한다. source만 바뀌고 계약이 같으면 구체적인 영향 없음 근거를 요구한다. `architecture.html`은 같은 페이지 안에서 SVG 이름→상세 이동을 제공한다.
 
 자동 검사가 증명하는 범위는 파일·형식·소유 관계·링크·버전·입력 정합성이다. 전체 기능 목록의 완전성, source_roots 축소의 타당성, DDD 규칙 캡슐화, 통신·분리 배포 결정의 근거와 실제 기능 회귀는 독립 reviewer와 실제 실행 evidence로 검증한다. receipt를 작성했다는 사실을 설계 승인이나 실제 제품 테스트 통과로 해석하지 않는다.
@@ -43,12 +45,25 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 | check | 읽는 기록 | 통과 조건 |
 |---|---|---|
 | `review` | plan별 `runtime/reviews/implementation-<plan>-evidence.json`, `runtime/orchestrator/subagents.jsonl` | 계획 세트의 모든 plan에 `repair`가 기록한 `passed`가 있고, standards·spec 두 리뷰가 독립·fresh·서로 다른 context이며 같은 commit을 대상으로 하고, 그 reviewer를 subagent hook이 기록(fork 아님·종료)했고, commit이 HEAD 이력에 있으며 plan 본문 hash가 리뷰 당시와 같다. 실패 plan·역할은 `details.problems`에 남는다 |
+| `contract_review` | `runtime/reviews/contracts-<plan-set>.json`, 그 reviewer가 속한 stage execution의 `subagents.jsonl`, `docs/contracts/manifest.json` | `contract_docs`가 통과한 sealed revision·snapshot과 마지막 통과 회차의 입력이 같고, 그 회차의 reviewer를 subagent hook이 `contract_reviewer`로, fork 없이, 같은 attempt로 시작·종료 기록했다. 기록이 없거나 revision이 낡았거나 hook 로그가 없으면 `contract_review_*`로 차단한다 |
 | `tests` | `docs/agents/execution.json`의 `purpose: e2e` profile 중 `e2e` plan이 이름을 든 것, `runtime/execution/<profile>-<uuid>/receipt.json` | 각 profile의 마지막 verdict receipt가 통과이고 `head`가 HEAD 이력에 있으며 이후 문서 외 변경이 없고 실행 시 문서 외 미커밋 변경이 없고 `config_hashes` 파일이 같다. 실패 receipt가 있으면 `e2e_learning`은 `pending`으로 보고하며 판정을 바꾸지 않는다 |
 | `required_outcome` | tracker의 plan별 canonical 상태(local-markdown은 plan frontmatter, GitHub는 Beads 매핑 뒤 Project 상태) | 모든 plan이 `completed`이고 위 `tests`가 통과다 |
 | `retirement` | canonical plan의 `## 제거 대상`(또는 `## 승인된 제거 목록`) 절 불릿의 backtick 경로 | 승인된 경로가 workspace에 없다. 절이 없으면 승인된 제거 없음으로 `removed_paths: []`와 도출한 사유로 통과한다 |
 | `evidence` | plan별 `runtime/plans/[<plan-set>/]<plan>/checkpoint.md`, 위 리뷰 evidence, 선택된 receipt와 step log | 모두 존재하고 checkpoint가 비어 있지 않다 |
 
 파일 기반 기록이므로 session 디렉터리에 쓸 수 있는 주체의 직접 위조까지 막지는 못한다. gate가 막는 것은 `--state`로 통과 값을 주장하는 자기 증명이다. `tests/implement_wrapper_completion.test.mjs`가 설치형 consumer에서 통과·각 기록 누락 차단·직접 쓴 state 무시·Git 가시성·Doctor를 검사한다.
+
+## orchestrator 메인 세션 쓰기 가드
+
+orchestrator가 구현·계약 stage를 우회해 제품 코드, 테스트, `docs/contracts/`를 직접 고친 사례(E2E spec 두 번, 계약 한 번)를 안내문만으로 막지 못했다. PreToolUse hook이 집행한다: Codex는 `~/.codex/hooks.json`의 사용자 hook "Guarding Harness orchestrator writes"(`providers/codex.mjs`의 `codexWriteGuardHook`, `$setup`이 등록하고 `/hooks` 신뢰가 필요하며 Doctor `codex_write_guard_hook_untrusted`가 상태를 보고), Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`에 등록하고 Doctor `claude_orchestrator_hook_missing`이 검사한다. 두 provider는 같은 `.codex/scripts/harness-write-guard.mjs`를 쓴다.
+
+| 항목 | 규칙 |
+|---|---|
+| 적용 대상 | 활성 workflow worktree(`.io/worktree.json`의 `state: "active"`)의 메인 세션만. stage runner는 `HARNESS_SKILL_EXECUTION_ID`를 환경에 두므로 stage와 그 하위 agent는 제외되고, payload에 `agent_id`가 있으면(하위 agent) 제외된다. |
+| 거부 | worktree 안이면서 `.io/**`와 `docs/agents/{implementation-guidance.md,testing-guidance.md,EXEC.md,execution.json}`·`docs/verification/e2e-lessons.md`가 아닌 경로에 대한 Codex `apply_patch`(patch 본문의 `Add/Update/Delete File`·`Move to`), Claude Code `Edit`·`Write`·`MultiEdit`·`NotebookEdit`, 두 provider의 `Bash` 명령 중 대상이 글자로 보이는 리다이렉션·`tee`·`sed -i`·`perl -i`·`cp`·`mv`·`install`·`ln`·`truncate`·`dd of=`·`touch`·`sh -c` 내부 스크립트 |
+| 볼 수 없음 | 스크립트·인터프리터·포매터·`git apply`·`patch`가 내부에서 쓰는 파일, 변수·명령 치환으로 만든 대상, MCP 파일 도구. 차단은 우회 불가능한 경계가 아니라 안내를 집행하는 장치다 |
+
+검증: `tests/orchestrator_write_guard.test.mjs`(판정·셸 파서·Codex 사용자 hook 필터·설치/갱신/Doctor), `tests/stage_context_runtime.test.mjs`(사용자 hook 등록과 신뢰).
 
 ## Tracker lifecycle와 mirror gate
 

@@ -330,7 +330,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     await validatePlanReviewAdmission({ root, planSetId: input.context.plan_set_id, admission, requireActive: false });
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
-  if (envelope.status === 'completed' && ['spec-me', 'to-ticket'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
+  if (envelope.status === 'completed' && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
   if (envelope.status === 'completed') {
     if (!reopening && input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');
@@ -339,6 +339,13 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     if (input.skill === 'tracker-publish') {
       const { verifyActivatedPublication } = await import('../tracker/publication.mjs');
       await verifyActivatedPublication({ root, planSetId: input.context?.plan_set_id });
+    }
+    // The sync-contracts stage seals the contract and has it independently reviewed; it cannot finish on a revision that no
+    // hook-recorded fresh reviewer passed. A stage being reopened is replaced by the new run, which needs its own review.
+    if (input.skill === 'sync-contracts' && input.context?.worktree_ref && input.context?.plan_set_id) {
+      const { inspectContractReview } = await import('./contract-review.mjs');
+      const review = await inspectContractReview({ root, planSetId: input.context.plan_set_id });
+      requireValue(reopening || review.status === 'pass', `sync-contracts requires a current passing independent contract review: ${review.reason}${review.details?.problem ? ` (${review.details.problem})` : ''}${review.details?.next ? `; ${review.details.next}` : ''}`);
     }
     if (input.skill === 'to-ticket') {
       const { inspectPlanSet } = await import('./plan-review.mjs');

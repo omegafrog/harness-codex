@@ -96,12 +96,12 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'agent-run', 'orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'agent-run', 'orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
@@ -481,6 +481,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       const trust = await inspectCodexHookTrust();
       if (trust.orchestrator_hook !== 'trusted') diagnostics.push(diagnostic('codex_orchestrator_hook_untrusted', 'warning', trust.orchestrator_hook === 'missing' ? 'Harness orchestrator user hook is missing from the Codex user hooks; run setup with the codex provider so new worktrees need no hook review' : 'Harness orchestrator user hook is not trusted; run /hooks in Codex and trust "Running Harness orchestrator hook" once for all worktrees', null));
       if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked reviewers are refused before they start', null));
+      if (trust.write_guard !== 'trusted') diagnostics.push(diagnostic('codex_write_guard_hook_untrusted', 'warning', trust.write_guard === 'missing' ? 'Harness write-guard hook is missing from the Codex user hooks; run setup with the codex provider so the orchestrator main session cannot edit product code, tests or contracts' : 'Harness write-guard hook is not trusted; run /hooks in Codex and trust "Guarding Harness orchestrator writes" (PreToolUse) so the orchestrator main session cannot edit product code, tests or contracts', null));
       if (!trust.trusted) diagnostics.push(diagnostic('codex_subagent_hook_untrusted', 'warning', trust.missing.length ? 'Harness subagent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness subagent hook is not trusted; run /hooks in Codex and trust "Recording Harness subagent". Codex stages will not start until then.', trust.hooks_path, { missing: trust.missing, untrusted: trust.untrusted }));
     } catch (error) {
       diagnostics.push(diagnostic('codex_subagent_hook_invalid', 'warning', safeMessage(error, 'Invalid Codex user hooks'), null));

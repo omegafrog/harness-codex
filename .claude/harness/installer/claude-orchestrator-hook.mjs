@@ -5,12 +5,17 @@ import { assertWorkspaceTarget } from '../../../.harness/src/eval/case-workspace
 
 // Prompt/Stop hooks run the orchestrator start-up script; the subagent hooks record the reviewers the main
 // orchestrator spawns (a stage's runner passes the same hook through --settings, and the recorder de-duplicates).
+// The PreToolUse hook denies the orchestrator main session's own writes to product code, tests and contracts; it steps
+// aside inside stage runners (HARNESS_SKILL_EXECUTION_ID) and sub-agents (agent_id), which share this settings file.
 const PROMPT_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
 const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
-const EVENTS = [...PROMPT_EVENTS, ...SUBAGENT_EVENTS];
+const GUARD_EVENTS = ['PreToolUse'];
+const EVENTS = [...PROMPT_EVENTS, ...SUBAGENT_EVENTS, ...GUARD_EVENTS];
 const SCRIPT = 'harness-claude-orchestrator-hook.mjs';
 const SUBAGENT_SCRIPT = 'harness-agent-event.mjs';
-const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && (hook.command.includes(SCRIPT) || hook.command.includes(SUBAGENT_SCRIPT));
+const GUARD_SCRIPT = 'harness-write-guard.mjs';
+export const WRITE_GUARD_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash';
+const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && (hook.command.includes(SCRIPT) || hook.command.includes(SUBAGENT_SCRIPT) || hook.command.includes(GUARD_SCRIPT));
 
 export function claudeOrchestratorHook() {
   return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/${SCRIPT}"`, timeout: 10 };
@@ -20,7 +25,12 @@ export function claudeSubagentHook() {
   return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${SUBAGENT_SCRIPT}"`, timeout: 10 };
 }
 
-const expectedHook = (event) => SUBAGENT_EVENTS.includes(event) ? claudeSubagentHook() : claudeOrchestratorHook();
+export function claudeWriteGuardHook() {
+  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${GUARD_SCRIPT}"`, timeout: 10 };
+}
+
+const expectedHook = (event) => SUBAGENT_EVENTS.includes(event) ? claudeSubagentHook() : GUARD_EVENTS.includes(event) ? claudeWriteGuardHook() : claudeOrchestratorHook();
+const expectedMatcher = (event) => GUARD_EVENTS.includes(event) ? WRITE_GUARD_MATCHER : undefined;
 
 async function readSettings(root) {
   const path = join(root, '.claude/settings.local.json');
@@ -38,8 +48,9 @@ async function readSettings(root) {
 export async function inspectClaudeOrchestratorHook(root) {
   const { path, config } = await readSettings(root);
   const valid = EVENTS.every((event) => {
-    const handlers = (config.hooks[event] || []).flatMap((group) => group.hooks).filter(owned);
-    return handlers.length === 1 && Object.entries(expectedHook(event)).every(([key, value]) => handlers[0][key] === value);
+    const groups = (config.hooks[event] || []).filter((group) => group.hooks.some(owned));
+    const handlers = groups.flatMap((group) => group.hooks).filter(owned);
+    return handlers.length === 1 && groups[0].matcher === expectedMatcher(event) && Object.entries(expectedHook(event)).every(([key, value]) => handlers[0][key] === value);
   });
   return { valid, path, reason: valid ? 'claude_orchestrator_hook_registered' : 'claude_orchestrator_hook_missing_or_stale' };
 }
@@ -55,7 +66,7 @@ export async function syncClaudeOrchestratorHook(root, { noBackup = false } = {}
       const hooks = group.hooks.filter((hook) => !owned(hook));
       return hooks.length || !group.hooks.some(owned) ? [{ ...group, hooks }] : [];
     });
-    config.hooks[event] = [...groups, { hooks: [expectedHook(event)] }];
+    config.hooks[event] = [...groups, { ...(expectedMatcher(event) ? { matcher: expectedMatcher(event) } : {}), hooks: [expectedHook(event)] }];
   }
   if (text !== null && !noBackup) {
     const backup = `.claude/installer-backups/${randomUUID()}/settings.local.json`;

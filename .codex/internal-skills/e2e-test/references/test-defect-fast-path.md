@@ -14,7 +14,7 @@
 ## 절차
 
 1. orchestrator는 사용자에게 보내는 다음 응답에 분류와 근거를 적는다: 실패 시나리오, 앱이 정상이었다는 증거 인용, 고칠 파일, 허용 조건 충족 여부. 사용자 답을 기다리지 않는다.
-2. orchestrator는 테스트 파일이든 제품 파일이든 직접 수정하지 않는다. 구현 stage가 수정 없이 끝났더라도 orchestrator가 대신 고치지 않고 같은 `implement-wrapper`를 `--feedback`으로 다시 시작한다. 해당 e2e plan을 `implement-wrapper`로 다시 열어 `--feedback`에 실패 증거 경로, 고칠 범위(테스트 파일만), 위 3번 금지 사항을 그대로 전달한다. 구현자가 제품 코드나 Spec을 바꿔야 한다고 판단하면 수정하지 않고 `IMPLEMENTATION_REVISION_REQUIRED` 또는 `SPEC_REVISION_REQUIRED`로 돌려보낸다.
+2. orchestrator는 테스트 파일이든 제품 파일이든 직접 수정하지 않는다(메인 세션의 쓰기 도구는 PreToolUse hook이 거부한다). 구현 stage가 수정 없이 끝났더라도 orchestrator가 대신 고치지 않고 같은 `implement-wrapper`를 `--feedback`으로 다시 시작한다. 해당 e2e plan을 `implement-wrapper`로 다시 열어 `--feedback`에 실패 증거 경로, 고칠 범위(테스트 파일만), 위 3번 금지 사항을 그대로 전달한다. 구현자가 제품 코드나 Spec을 바꿔야 한다고 판단하면 수정하지 않고 `IMPLEMENTATION_REVISION_REQUIRED` 또는 `SPEC_REVISION_REQUIRED`로 돌려보낸다.
 3. 수정 commit은 기존 독립 Standards·Spec 리뷰와 완료 gate를 통과해야 한다. 리뷰는 테스트 diff가 단언을 약화하지 않았는지 확인한다.
 4. 이미 승인된 시나리오·대상 commit 갱신·실행 조건이 같으면 실행 승인을 다시 묻지 않는다. orchestrator는 새 대상 commit과 승인 근거(이전 승인 참조)를 runner에 넘긴다. 시나리오나 실행 조건이 바뀌었으면 기존대로 승인을 받는다.
 5. 재실행 결과도 같은 방식으로 분류한다. 앱 결함이나 Spec 결함이 드러나면 이 경로를 끝내고 사용자에게 증거와 제안 조치를 보여 준다.

@@ -79,7 +79,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
       state = { ...state, plan_set_id: planSetId, plan_review: { plan_set_id: planSetId, plan_id: null, phase: 'completion' } };
       derived = await deriveImplementationCompletion({ root: workspace_root, planSetId });
     }
-    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'spec-me' ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
+    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'spec-me' ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
     // The Architecture review of the worktree's plan set is already in the review history, so the gate reads it there
     // instead of needing the orchestrator to assemble a completion state file that names the ticket and the record.
     if (workflow.id === 'spec-me' && worktreeRecord?.plan_set_id && !state.spec_reviews) {

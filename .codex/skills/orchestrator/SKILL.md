@@ -21,7 +21,7 @@ workflow 외의 직접 요청은 [기능 라우팅](references/capability-routin
 | 새 기능의 요구사항이나 승인이 정리되지 않음 | `spec-me` |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
-| 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal되지 않음 | `sync-contracts` |
+| 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
 
@@ -48,6 +48,8 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
 gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 완료(`implement-wrapper`)는 plan별 리뷰 evidence, 최종 E2E receipt, tracker 완료 상태, plan의 제거 목록, session checkpoint를 읽으므로 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`에서 막힌 check의 `reason`과 `details`(plan·역할·receipt)를 보고 그 기록을 만드는 단계(리뷰, 승인된 최종 E2E 실행, tracker 완료 전이, 계약 동기화)를 진행한 뒤 다시 실행한다. `passed: true` 같은 값을 직접 써서 gate를 통과시키려 하지 않는다. 그런 값은 무시되고 결과의 `ignored_state_keys`에 기록된다.
+
+메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `spec-me`, `to-ticket`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 
 stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
 

@@ -258,6 +258,9 @@ const DEFAULT_CHECKS = Object.freeze({
     return readiness.status === 'pass' ? passed(readiness.reason, readiness) : blocked(readiness.reason, readiness);
   },
   contract_docs: checkContractDocs,
+  // The semantic review of the sealed contract is judged from the review history and the hook log, which only the final
+  // implement-wrapper completion reads; any other caller (or a state file) cannot supply it.
+  contract_review: () => blocked("contract_review_requires_canonical_records"),
   spec_reviews: (state) => inspectSpecReviews({ root: state.workspace_root || state.workspace?.workspace_root, ticketId: state.ticket_id, reviews: state.spec_reviews }),
   dependency: checkDependency,
   resource_conflict: checkResourceConflict,

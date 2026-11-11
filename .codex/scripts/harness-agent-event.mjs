@@ -65,11 +65,13 @@ try {
     ...(event.hook_event_name === 'SubagentStop' && typeof event.last_assistant_message === 'string' ? { result: event.last_assistant_message } : {}),
     recorded_at: new Date().toISOString(),
   };
-  if (['spec_adversarial_reviewer', 'plan_reviewer'].includes(event.agent_type)) {
+  // Each reviewer profile that a stage runs inside its own review loop has one review-history scope.
+  const reviewScopes = { spec_adversarial_reviewer: (id) => `spec-${id}-architecture`, plan_reviewer: (id) => `plan-${id}`, contract_reviewer: (id) => `contracts-${id}` };
+  if (Object.hasOwn(reviewScopes, event.agent_type)) {
     const ticketId = process.env.HARNESS_REVIEW_TICKET_ID;
     const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticketId || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Canonical review ticket or execution is unavailable');
-    const scope = event.agent_type === 'spec_adversarial_reviewer' ? `spec-${ticketId}-architecture` : `plan-${ticketId}`;
+    const scope = reviewScopes[event.agent_type](ticketId);
     record.review_scope = scope;
     let attempt = null;
     try { attempt = await inspectActiveReviewAttempt({ root: process.cwd(), scope }); }

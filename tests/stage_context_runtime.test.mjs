@@ -124,7 +124,7 @@ test('one provider per setup: models and workflow bindings from another provider
 });
 
 test('Codex subagent hook is one user-level hook that must be trusted before stages start', async () => {
-  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexFreshAgentHook, codexOrchestratorHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexFreshAgentHook, codexWriteGuardHook, codexOrchestratorHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
   const home = await mkdtemp(join(tmpdir(), 'codex-home-'));
   try {
     const env = { CODEX_HOME: home };
@@ -136,7 +136,7 @@ test('Codex subagent hook is one user-level hook that must be trusted before sta
     const hooks = JSON.parse(await readFile(join(home, 'hooks.json'), 'utf8')).hooks;
     assert.deepEqual(hooks.Stop.slice(0, existing.hooks.Stop.length), existing.hooks.Stop, 'user hooks are preserved');
     assert.deepEqual(hooks.SubagentStart, [{ hooks: [codexSubagentHook()] }]);
-    assert.deepEqual(hooks.PreToolUse, [{ hooks: [codexFreshAgentHook()] }], 'setup also installs the fresh-agent check');
+    assert.deepEqual(hooks.PreToolUse, [{ hooks: [codexFreshAgentHook()] }, { hooks: [codexWriteGuardHook()] }], 'setup also installs the fresh-agent check and the orchestrator write guard');
     for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop']) assert.deepEqual(hooks[event].at(-1), { hooks: [codexOrchestratorHook()] }, 'one user-level orchestrator hook serves every worktree');
     assert.match(codexSubagentHook().command, /HARNESS_WORKSPACE_ROOT:-\.\}\/\.codex\/scripts\/harness-agent-event\.mjs/);
     const untrusted = await inspectCodexHookTrust(env);
@@ -148,6 +148,14 @@ test('Codex subagent hook is one user-level hook that must be trusted before sta
     assert.deepEqual((await inspectCodexHookTrust(env)).untrusted, ['SubagentStart', 'SubagentStop']);
     await writeFile(join(home, 'config.toml'), trustFile((event) => codexHookTrustHash(event, codexSubagentHook())));
     assert.equal((await inspectCodexHookTrust(env)).trusted, true);
+    // The write guard is trusted by its own entry (PreToolUse group 1), and a trust entry for other command text does not count.
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'untrusted');
+    const guardKey = `[hooks.state."${join(home, 'hooks.json')}:pre_tool_use:1:0"]\ntrusted_hash = "sha256:`;
+    const subagentTrust = await readFile(join(home, 'config.toml'), 'utf8');
+    await writeFile(join(home, 'config.toml'), `${subagentTrust}\n${guardKey}${'b'.repeat(64)}"\n`);
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'untrusted');
+    await writeFile(join(home, 'config.toml'), `${subagentTrust}\n${guardKey}${codexHookTrustHash('pre_tool_use', codexWriteGuardHook())}"\n`);
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'trusted');
     const runner = await readFile(new URL('../.codex/scripts/harness-prepare-input.mjs', import.meta.url), 'utf8');
     assert.match(runner, /PERMISSION_REQUIRED: the Harness subagent hook/);
   } finally { await rm(home, { recursive: true, force: true }); }

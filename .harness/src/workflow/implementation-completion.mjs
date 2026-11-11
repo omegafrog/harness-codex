@@ -8,6 +8,7 @@ import { checkRetirement } from '../gates/lifecycle.mjs';
 import { readPlanSetTicketStatuses } from '../tracker/lifecycle.mjs';
 import { readEvidence } from '../wrapper/review-input.mjs';
 import { readExecutionManifest } from './execution.mjs';
+import { inspectContractReview } from './contract-review.mjs';
 import { snapshotPlanSet } from './plan-review.mjs';
 import { sessionOutputPath } from './session-output.mjs';
 
@@ -15,7 +16,7 @@ const execFileAsync = promisify(execFile);
 
 // The final implement-wrapper gate reads these facts only from canonical Harness records. A completion state file may
 // still carry them (older orchestrator guidance told it to), but the gate ignores every one of these keys.
-export const DERIVED_STATE_KEYS = Object.freeze(['required_outcome', 'tests', 'reviews', 'retirement', 'evidence', 'plan_review', 'plan_set_id', 'plan_id']);
+export const DERIVED_STATE_KEYS = Object.freeze(['required_outcome', 'tests', 'reviews', 'retirement', 'evidence', 'plan_review', 'plan_set_id', 'plan_id', 'contract_review']);
 
 // Changes after a passing E2E receipt that cannot change what the E2E exercised. Everything else (application source,
 // tests, build files, migrations) invalidates the receipt. Files the receipt itself fingerprints (config_hashes) are
@@ -267,7 +268,7 @@ async function deriveEvidence({ root, planSetId, plans, tests, reviews }) {
 // Derives every implement-wrapper completion input that a model used to assert (required_outcome, tests, reviews,
 // retirement, evidence) from the canonical records of the plan set in `root`. Nothing here reads a completion state.
 export async function deriveImplementationCompletion({ root, planSetId, run } = {}) {
-  const unresolved = (why) => ({ checks: Object.fromEntries(['required_outcome', 'tests', 'review', 'retirement', 'evidence'].map((rule) => [rule, blocked('plan_set_unresolved', { why })])), plan_ids: [] });
+  const unresolved = (why) => ({ checks: Object.fromEntries(['required_outcome', 'tests', 'review', 'retirement', 'evidence', 'contract_review'].map((rule) => [rule, blocked('plan_set_unresolved', { why })])), plan_ids: [] });
   if (!planSetId) return unresolved('the worktree record has no plan_set_id');
   let snapshot;
   try { snapshot = await snapshotPlanSet({ root, planSetId }); }
@@ -279,5 +280,7 @@ export async function deriveImplementationCompletion({ root, planSetId, run } = 
   const retirement = await deriveRetirement({ root, planSetId, plans });
   const required = await deriveRequiredOutcome({ root, planSetId, plans, tests, run });
   const evidence = await deriveEvidence({ root, planSetId, plans, tests, reviews });
-  return { checks: { required_outcome: required, tests: tests.verdict, review: reviews.verdict, retirement, evidence }, plan_ids: plans.map((plan) => plan.id) };
+  // The sealed contract needs its own independent semantic review (sync-contracts stage), read from the review history.
+  const contractReview = await inspectContractReview({ root, planSetId });
+  return { checks: { required_outcome: required, tests: tests.verdict, review: reviews.verdict, retirement, evidence, contract_review: contractReview }, plan_ids: plans.map((plan) => plan.id) };
 }
