@@ -23,6 +23,7 @@ export const DERIVED_STATE_KEYS = Object.freeze(['required_outcome', 'tests', 'r
 // compared by content whatever their path, so docs/agents/execution.json stays covered even though it lives in docs/.
 const DOCUMENTATION_FILES = new Set(['CONTEXT.md', 'CONTEXT-MAP.md', '.harness/contracts.mjs']);
 export const isDocumentationPath = (path) => path.startsWith('docs/') || DOCUMENTATION_FILES.has(path);
+const isGeneratedPythonCache = (path) => path.split('/').includes('__pycache__') || /\.(?:pyc|pyo)$/i.test(path);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA = /^[0-9a-f]{40}$/;
@@ -178,11 +179,11 @@ async function deriveTests({ root, plans, head }) {
     if (receipt.exit_code !== 0 || !receipt.config_hashes || typeof receipt.config_hashes !== 'object') { problems.push({ profile_id: profileId, reason: 'e2e_receipt_incomplete', receipt: latest.ref }); continue; }
     if (!SHA.test(receipt.head || '')) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_commit_missing', receipt: latest.ref, why: 'the receipt does not record the commit it ran; run the profile again' }); continue; }
     if (!(await isAncestor(root, receipt.head, head))) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_not_in_history', receipt: latest.ref, receipt_commit: receipt.head }); continue; }
-    const uncommitted = (receipt.uncommitted_paths || []).filter((path) => !isDocumentationPath(path));
+    const uncommitted = (receipt.uncommitted_paths || []).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path));
     if (uncommitted.length || receipt.uncommitted_truncated) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_ran_on_uncommitted_changes', receipt: latest.ref, paths: uncommitted.slice(0, MAX_LISTED) }); continue; }
     const configuration = await changedConfiguration(root, receipt);
     if (configuration.length) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_config_changed', receipt: latest.ref, files: configuration.slice(0, MAX_LISTED) }); continue; }
-    const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path));
+    const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path));
     if (changed.length) problems.push({ profile_id: profileId, reason: 'e2e_receipt_stale', receipt: latest.ref, receipt_commit: receipt.head, head, paths: changed.slice(0, MAX_LISTED), path_count: changed.length });
   }
   const learning = e2eLearningComplete({ e2e_failures: failures }) ? 'complete' : 'pending';
