@@ -27,7 +27,7 @@ async function createWorkspace({ prepareCode = 0, commandCode = 0, cleanupCode =
         config_inputs: ['docs/agents/EXEC.md'],
         prepare: [script(prepareCode)],
         verify_config: [script(0)],
-        cleanup: [script(cleanupCode, cleanupMarker)],
+        cleanup: [script(cleanupCode), script(0, cleanupMarker)],
         dependencies: [],
         timeout_ms: 5_000,
         readiness_timeout_ms: 2_000,
@@ -60,6 +60,7 @@ test('runs profile cleanup after command failure and reports a cleanup failure a
     assert.equal(result.status, 'failed');
     assert.equal(result.cleanup_status, 'failed');
     assert.match(result.cleanup_error, /Cleanup command failed/);
+    await assert.rejects(readFile(failedCleanup.cleanupMarker), { code: 'ENOENT' });
   } finally {
     process.chdir(originalCwd);
     await rm(failedCleanup.root, { recursive: true, force: true });
