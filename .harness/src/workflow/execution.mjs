@@ -22,7 +22,8 @@ function validate(profile) {
   requireValue(Array.isArray(profile.config_inputs) && profile.config_inputs.length > 0, 'config_inputs must include the actual execution configuration sources');
   for (const file of profile.config_inputs) requireValue(typeof file === 'string' && file && !isAbsolute(file) && !file.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'config_inputs must be workspace-relative files');
   requireValue(Array.isArray(profile.prepare) && Array.isArray(profile.verify_config) && profile.verify_config.length > 0, 'prepare and nonempty verify_config are required');
-  [...profile.prepare, ...profile.verify_config].forEach(command);
+  requireValue(profile.cleanup === undefined || Array.isArray(profile.cleanup), 'cleanup must be an array of argv commands');
+  [...profile.prepare, ...profile.verify_config, ...(profile.cleanup || [])].forEach(command);
   requireValue(Array.isArray(profile.dependencies), 'dependencies must explicitly list required infrastructure, or []');
   for (const dependency of profile.dependencies) {
     requireValue(ID.test(dependency.id), 'Dependency id is required');
@@ -115,6 +116,9 @@ export async function runExecution({ workspace_root, profile_id, environment = p
   await mkdir(directory, { mode: 0o700 });
   // receipt는 단계별 진행·로그와 최종 상태를 보관해 마지막에 영속화한다.
   const receipt = { profile_id, status: 'blocked', phase: 'load', started_at: new Date().toISOString(), head: null, uncommitted_paths: [], uncommitted_truncated: false, steps: [], config_hashes: null };
+  let cleanups = [];
+  let cleanupTimeout = 30_000;
+  let step;
   try {
     // Preserve the target even when preparation or configuration verification fails.
     Object.assign(receipt, await codeUnderTest(root));
@@ -122,6 +126,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     const { manifest, text: manifestText } = await readExecutionManifest(root);
     const profile = manifest.profiles?.[profile_id];
     validate(profile);
+    cleanupTimeout = profile.readiness_timeout_ms;
     requireValue(profile.purpose === 'e2e', 'harness-exec is reserved for end-to-end tests');
     const temporary = sessionOutputPath(root, 'tmp');
     await mkdir(temporary, { recursive: true, mode: 0o700 });
@@ -130,6 +135,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     // Resolve every command before side effects, including parameters used only by a later readiness check.
     const prepare = profile.prepare.map((argv) => expand(argv, env));
     const verify = profile.verify_config.map((argv) => expand(argv, env));
+    cleanups = (profile.cleanup || []).map((argv) => expand(argv, env));
     const dependencies = profile.dependencies.map((item) => ({ id: item.id, argv: expand(item.check, env) }));
     const main = expand(profile.command, env);
     // 실행 중 바뀌면 안 되는 계약·설정 파일을 준비 전후에 같은 snapshot으로 비교한다.
@@ -138,10 +144,10 @@ export async function runExecution({ workspace_root, profile_id, environment = p
       requireValue(typeof file === 'string' && file && !isAbsolute(file) && !file.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'config_inputs must be workspace-relative files');
       await assertWorkspaceTarget(root, file);
     }
-    const step = async (phase, argv, timeout = profile.readiness_timeout_ms) => {
+    step = async (phase, argv, timeout = profile.readiness_timeout_ms, cleanup = false) => {
       receipt.phase = phase;
       const path = sessionOutputPath(root, relative(sessionDirectory(root), join(directory, `${receipt.steps.length}.log`)));
-      const code = await execute(argv, { root, env, path, timeout, signal });
+      const code = await execute(argv, { root, env, path, timeout, ...(cleanup ? {} : { signal }) });
       receipt.steps.push({ phase, exit_code: code, log: path });
       return code;
     };
@@ -169,6 +175,22 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     receipt.exit_code = await step('command', main, profile.timeout_ms);
     receipt.status = receipt.exit_code === 0 ? 'passed' : 'failed';
   } catch (error) { receipt.status = signal?.aborted ? 'interrupted' : receipt.phase === 'command' ? 'failed' : 'blocked'; receipt.error = error.message; }
-  finally { receipt.finished_at = new Date().toISOString(); await writeFile(join(directory, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 }); }
+  finally {
+    if (cleanups.length && step) {
+      receipt.cleanup_status = 'passed';
+      for (const argv of cleanups) {
+        try {
+          if (await step('cleanup', argv, cleanupTimeout, true) !== 0) throw new Error('Cleanup command failed');
+        } catch (error) {
+          receipt.cleanup_status = 'failed';
+          if (receipt.status === 'passed') receipt.status = 'failed';
+          receipt.cleanup_error = error.message;
+          break;
+        }
+      }
+    }
+    receipt.finished_at = new Date().toISOString();
+    await writeFile(join(directory, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  }
   return { ...receipt, evidence_path: join(directory, 'receipt.json'), session_directory: sessionDirectory(root) };
 }
