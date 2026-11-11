@@ -190,7 +190,11 @@ try {
     // The stage's documents are committed only after its result passed validation, so an incomplete Spec is never recorded as done.
     await commitWorkflowDocuments({ root, input, rawPath: output });
     const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: paths.refs.returned });
-    await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
+    const published = await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
+    if (published.status !== envelope.status || published.code !== envelope.code) {
+      recordEvent({ event: 'stage_result_failed', status: published.status, code: published.code, message: published.summary });
+      process.exitCode = 1;
+    }
     stageEventPublished = true;
   } else {
     // A stalled run was stopped by the watchdog, not cancelled by the user; it is reported as a failure the orchestrator resumes.

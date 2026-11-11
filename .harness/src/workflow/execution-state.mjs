@@ -61,7 +61,7 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null, recoverFromExecutionId = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
   const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
@@ -113,6 +113,10 @@ export async function recordExecutionState({ root, input, binding, status, code 
       previous.recovered_at = new Date().toISOString();
     }
     if (status !== 'running' && previous?.execution_id !== input.execution_id && !(input.skill === 'workflow-compose' && status === 'completed' && !previous)) throw new Error('Stage execution changed');
+    if (beforeTransition) {
+      if (status === 'running' || typeof beforeTransition !== 'function') throw new Error('Invalid terminal transition preparation');
+      await beforeTransition();
+    }
     const now = new Date().toISOString();
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };

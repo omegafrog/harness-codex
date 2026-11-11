@@ -821,6 +821,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'nope'], { cwd: tree.workspace, stdio: 'pipe' }), /not part of plan set/);
     let implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(implementation.input.context.plan_id, 'slice');
+    assert.equal(implementation.input.context.checkpoint_path, join(tree.session_directory, 'runtime/plans/slice/checkpoint.md'));
     const blockedRef = `runtime/executions/${implementation.input.execution_id}/result.json`;
     const blockedResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '계획 발행 후 구현을 시작할 수 있습니다.', artifacts: [], questions: [], review_request: null, unplanned_additions: [], commit_request: null };
     const blockedEnvelope = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: blockedRef, result: blockedResult };

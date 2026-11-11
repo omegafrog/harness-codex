@@ -20,7 +20,7 @@ plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에�
 
 1. GitHub tracker mode에서는 [GitHub tracker 절차](references/tracker/github.md)에 따라 `harness-tracker.mjs check`로 tracker-publish가 만든 Issue와 Beads mirror를 확인한다. 이전 Harness로 발행돼 draft가 남아 있으면 `harness-publication.mjs activate`를 한 번 실행한다. 이후 활성 `workspace_root`의 implementation/testing guidance를 읽고, 승인 plan의 요구 ID·수용 조건·구현 범위와 대조한다. 관리 worktree에서는 원본 checkout의 지침 파일을 대신 읽지 않는다.
 2. 전달된 fixed point와 기존 checkpoint를 보존하고 해당 plan만 구현한다. plan에서 지정한 비즈니스 로직 단위 테스트를 작성·실행한다. 테스트 작성은 [testing guidance](../../../.codex/internal-skills/testing-guidance/GUIDE.md), 실행은 EXEC의 기본 CLI 명령을 따른다. `harness-exec`는 최종 사용자 흐름 E2E에만 사용한다.
-3. 요구별 변경 파일·검증 파일·실행 receipt와 commit을 기존 traceability/checkpoint 형식으로 기록한다. 이전 실패·측정 근거를 보존한다.
+3. 요구별 변경 파일·검증 파일·실행 receipt와 commit을 stage result의 summary·artifacts에 반환하고, 이전 실패·측정 근거도 result에 보존한다. checkpoint 파일은 직접 만들거나 경로를 정하지 않는다. 실행기가 input의 `context.checkpoint_path`에 canonical plan checkpoint를 기록한다.
 4. 상세 결과 객체를 공통 envelope의 `result` 필드로 반환한다. 실행기가 이를 검증하고 복구 경로에 보존한다.
 
 ## Plan 입력 확인

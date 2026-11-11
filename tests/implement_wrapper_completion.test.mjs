@@ -377,6 +377,18 @@ test('implement-wrapper final gate is derived from canonical records, never from
         const { evidence } = (await derive()).checks;
         assert.equal(evidence.reason, 'evidence_incomplete');
         assert.deepEqual(evidence.details.missing.map((item) => [item.kind, item.plan_id]), [['checkpoint', 'e2e']]);
+        const legacy = sessionFile(f, 'runtime/plans/e2e-implementation-checkpoint.md');
+        await writeFile(legacy, '');
+        assert.equal((await derive()).checks.evidence.reason, 'evidence_incomplete');
+        await writeFile(legacy, '# e2e implementation checkpoint\n');
+        try {
+          assert.equal((await derive()).checks.evidence.status, 'pass');
+          const journal = sessionFile(f, 'runtime/plans/e2e/events.jsonl');
+          await mkdir(dirname(journal), { recursive: true });
+          await writeFile(journal, '{}\n');
+          try { assert.equal((await derive()).checks.evidence.reason, 'evidence_incomplete'); }
+          finally { await unlink(journal); }
+        } finally { await unlink(legacy); }
       });
       const log = join(await receiptDirectory(), '0.log');
       await withHidden(log, async () => {

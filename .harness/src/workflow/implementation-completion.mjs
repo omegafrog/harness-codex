@@ -246,7 +246,11 @@ async function deriveRequiredOutcome({ root, planSetId, plans, tests, run }) {
 async function deriveEvidence({ root, planSetId, plans, tests, reviews }) {
   const missing = [];
   for (const plan of plans) {
-    const candidates = [`runtime/plans/${planSetId}/${plan.id}/checkpoint.md`, `runtime/plans/${plan.id}/checkpoint.md`];
+    let journal = false;
+    try { await stat(sessionOutputPath(root, `runtime/plans/${plan.id}/events.jsonl`, { create: false })); journal = true; }
+    catch (error) { if (error.code !== 'ENOENT') journal = true; }
+    // shortcut: accept flat checkpoints from existing sessions until those sessions finish.
+    const candidates = [`runtime/plans/${planSetId}/${plan.id}/checkpoint.md`, `runtime/plans/${plan.id}/checkpoint.md`, ...(!journal ? [`runtime/plans/${plan.id}-implementation-checkpoint.md`] : [])];
     const found = await Promise.all(candidates.map(async (ref) => { try { return await exists(sessionOutputPath(root, ref, { create: false })); } catch { return null; } }));
     if (!found.some((info) => info?.isFile() && info.size > 0)) missing.push({ kind: 'checkpoint', plan_id: plan.id, looked_for: candidates });
     if (!reviews.records.has(plan.id)) missing.push({ kind: 'review_evidence', plan_id: plan.id });

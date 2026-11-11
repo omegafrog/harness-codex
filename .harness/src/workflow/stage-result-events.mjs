@@ -8,6 +8,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn } from './skill-execution.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
+import { PlanCheckpointStore } from '../wrapper/checkpoint.mjs';
 
 const directory = 'runtime/orchestrator/stage-results';
 const execFileAsync = promisify(execFile);
@@ -181,6 +182,37 @@ async function deliverPending(session, input, event) {
   return event;
 }
 
+async function writeImplementationCheckpoint({ input, status, code, envelope, verified, reason, error }) {
+  let checkpoint;
+  try {
+    checkpoint = new PlanCheckpointStore({ root: input.workspace_root, planId: input.context.plan_id });
+    if (input.context.checkpoint_path && input.context.checkpoint_path !== checkpoint.paths.checkpoint_path) throw new Error('Implementation checkpoint path does not match the runner-owned plan path');
+    const previous = await checkpoint.read();
+    const recorded = previous?.lifecycle_evidence?.stage_result;
+    if (recorded?.execution_id !== input.execution_id || recorded.status !== status || recorded.code !== code) {
+      const handoff = !verified || status !== 'completed' || code !== 'OK';
+      const result = verified ? envelope.result : null;
+      const artifacts = (result?.artifacts || []).map(({ base, path, kind, sha256 }) => ({ base, path, kind, ...(sha256 ? { sha256 } : {}) }));
+      const changedFiles = [...new Set([...(previous?.changed_files || []), ...artifacts.filter((item) => item.base === 'workspace').map((item) => item.path)])];
+      const stageResult = { execution_id: input.execution_id, status, code, result_ref: verified ? envelope.result_ref : null };
+      const history = Array.isArray(previous?.lifecycle_evidence?.stage_results) ? previous.lifecycle_evidence.stage_results : [];
+      await checkpoint.write({
+        orchestration_state: handoff ? 'handoff-required' : 'running',
+        last_completed_step: `stage-${status}-${code}`,
+        changed_files: changedFiles,
+        ...(!previous?.tests || previous.tests.status === 'not-run' ? { tests: { ...previous?.tests, status: 'unknown', result_ref: verified ? envelope.result_ref : null } } : {}),
+        lifecycle_evidence: { ...(previous?.lifecycle_evidence || {}), stage_results: [...history, stageResult], stage_result: { ...stageResult, ...(result ? { summary: result.summary, artifacts } : {}) } },
+        blocker: ['blocked', 'failed', 'cancelled'].includes(status) ? { kind: code, summary: (result?.summary || reason || error?.message || code).slice(0, 1200), unblock_condition: 'Continue from the stage result and its recovery route' } : null,
+        handoff_reason: handoff ? (status === 'action_required' ? 'milestone' : 'retry') : null,
+        next_action: handoff ? `Route ${code} from the stage result` : 'Continue the implementation workflow',
+      });
+    }
+    await checkpoint.close(); checkpoint = null;
+  } catch (cause) {
+    throw Object.assign(new Error(`Cannot persist the implementation checkpoint: ${cause.message}`, { cause }), { checkpointFailure: true });
+  } finally { if (checkpoint) await checkpoint.close().catch(() => {}); }
+}
+
 export async function publishStageResultEvent({ root, input, envelope = null, binding = { model: null, reasoning_effort: null }, reason = null, error = null, hostDelivery = true }) {
   if (!input?.execution_id || (envelope && envelope.execution_id !== input.execution_id)) throw new Error('Stage result execution ID mismatch');
   const canonicalInput = await readExecutionInput({ root, execution_id: input.execution_id });
@@ -191,17 +223,26 @@ export async function publishStageResultEvent({ root, input, envelope = null, bi
     try { await validateSkillReturn({ root, input, envelope }); verified = true; }
     catch (validationError) { reason ||= validationError.message; }
   }
-  const status = verified ? envelope.status : error?.name === 'AbortError' ? 'cancelled' : 'failed';
-  const code = verified ? envelope.code : status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
+  let status = verified ? envelope.status : error?.name === 'AbortError' ? 'cancelled' : 'failed';
+  let code = verified ? envelope.code : status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const path = `${directory}/${input.execution_id}.json`;
   return locked(session, input.execution_id, async () => {
-  await recordExecutionState({ root, input, binding, status, code, result_ref: verified ? envelope.result_ref : null, reason: reason || error?.message });
   let event;
   try { event = await readSkillSessionJson({ root, session_directory: session, path }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (event && (event.execution_id !== input.execution_id || event.worktree_ref !== (input.context?.worktree_ref || null) || !event.delivery || event.delivery.request_id !== deliveryRequestId(input))) throw new Error('Stale stage result event');
   if (['sent', 'uncertain', 'sending'].includes(event?.delivery.status)) return event;
+  try {
+    const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
+      ? () => writeImplementationCheckpoint({ input, status, code, envelope, verified, reason, error }) : null;
+    await recordExecutionState({ root, input, binding, status, code, result_ref: verified ? envelope.result_ref : null, reason: reason || error?.message, beforeTransition });
+  } catch (checkpointError) {
+    if (!checkpointError.checkpointFailure) throw checkpointError;
+    verified = false;
+    status = 'failed'; code = 'EXECUTION_ERROR'; reason = checkpointError.message;
+    await recordExecutionState({ root, input, binding, status, code, result_ref: null, reason });
+  }
   event ||= eventPayload(input, verified ? envelope : { status, code, result_ref: null, reason: reason || error?.message });
   if (['sent', 'uncertain', 'sending'].includes(event.delivery.status)) return event;
   const payload = eventPayload(input, verified ? envelope : { status, code, result_ref: null, reason: reason || error?.message });
@@ -257,8 +298,8 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
     const result = await readSkillSessionJson({ root, session_directory: taskSession, path: event.result_ref });
     const envelope = { schema_version: 1, execution_id, skill: input.skill, status: event.status, code: event.code, result_ref: event.result_ref, result };
     await validateSkillReturn({ root, input, envelope });
-    await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
-    return envelope;
+    const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+    return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const paths = stageExecutionPaths(root, execution_id, { create: false });
   const resultPath = paths.refs.result;
@@ -283,6 +324,6 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
     }
   }
   await validateSkillReturn({ root, input, envelope });
-  await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
-  return envelope;
+  const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+  return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
 }

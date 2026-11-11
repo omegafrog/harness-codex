@@ -76,6 +76,7 @@
       "properties": {
         "worktree_ref": { "type": "string", "minLength": 1 },
         "plan_set_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "checkpoint_path": { "type": "string", "minLength": 1, "description": "Runner-generated canonical session checkpoint path for the assigned implement-wrapper plan." },
         "execution_workspace": {"type": "object", "additionalProperties": false, "required": ["workspace_root", "workspace_branch"], "properties": {"workspace_root": {"type": "string", "minLength": 1}, "workspace_branch": {"type": "string", "minLength": 1}}},
         "publication_drafts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["plan_id", "body_path", "body_sha256"], "properties": {"plan_id": {"type": "string", "minLength": 1}, "body_path": {"type": "string", "minLength": 1}, "body_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}}},
         "publication_approved": { "type": "boolean" },
