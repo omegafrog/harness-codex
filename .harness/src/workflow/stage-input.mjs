@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { execFileSync } from 'node:child_process';
 import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
@@ -14,7 +15,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
-const USER_REVISION_STAGES = new Set(['spec-me', 'to-ticket']);
+const USER_REVISION_STAGES = new Set(['spec-me', 'to-ticket', 'implement-wrapper']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 
 async function archiveToTicket({ root, session, planSetId, previousExecutionId, restartExecutionId }) {
@@ -159,8 +160,10 @@ async function executionSession({ root, session, executionId, worktreeRef }) {
   return { provider, session_id };
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null }) {
-  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for spec-me or to-ticket');
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null }) {
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for spec-me, to-ticket or implement-wrapper');
+  if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
+  if ((repairReceipt || approvalAnswer) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   // implement-wrapper builds one plan the orchestrator assigns; it never chooses the plan itself.
   if (planId !== null && stageId !== 'implement-wrapper') throw new Error('--plan applies only to implement-wrapper');
   if (stageId === 'implement-wrapper' && planId === null && feedback === null && answer === null) throw new Error('implement-wrapper needs --plan <plan-id>: the orchestrator assigns the next ready plan');
@@ -357,6 +360,26 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (userRevision && stageId === 'implement-wrapper') {
+      if (previous.status !== 'completed' || previous.code !== 'OK') throw new Error('E2E repair requires a completed implementation');
+      if (previousInput.context?.plan_id !== planId) throw new Error('Implementation revision plan must match the completed stage');
+      if (!/^runtime\/execution\/[A-Za-z0-9._-]+\/receipt\.json$/.test(repairReceipt)) throw new Error('Invalid E2E failure receipt reference');
+      const receipt = await readSkillSessionJson({ root, session_directory: taskSession, path: repairReceipt });
+      if (!['failed', 'blocked', 'interrupted'].includes(receipt.status) || !receipt.profile_id || !receipt.finished_at) throw new Error('E2E failure receipt is not a finished failure');
+      if (!/^[a-f0-9]{64}$/.test(receipt.config_hashes?.['docs/agents/execution.json'] || '')) throw new Error('E2E failure receipt lacks profile evidence');
+      const review = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/reviews/implementation-${planId}-evidence.json` });
+      const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+      if (review.review_input?.implementation_commit_sha !== head || (receipt.head && receipt.head !== head)) throw new Error('E2E failure target commit is stale');
+      const plan = await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`), 'utf8');
+      if (!plan.includes(`\`${receipt.profile_id}\``)) throw new Error('E2E failure profile does not match the plan');
+      const inputs = (await readFile(join(taskSession, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+      const orchestratorId = orchestratorSession?.session_id || codexSessionId;
+      if (!orchestratorId || !inputs.some((item) => item.text === approvalAnswer && item.session_id === orchestratorId && Date.parse(item.at) > Date.parse(receipt.finished_at))) throw new Error('E2E repair approval was not recorded after the failure');
+      for (const [path, hash] of Object.entries(receipt.config_hashes || {})) {
+        await assertWorkspaceTarget(root, path);
+        if (createHash('sha256').update(await readFile(join(root, path))).digest('hex') !== hash) throw new Error(`E2E failure receipt is stale: ${path}`);
+      }
+    }
     if (stageId === 'implement-wrapper' && planId === null) planId = previousInput.context?.plan_id ?? null;
     // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
     // after checking that its processes are gone.
@@ -383,7 +406,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     else if (previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
-    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting) || answer !== null) {
     if (answer === null) throw new Error('User answer required before resuming this stage');

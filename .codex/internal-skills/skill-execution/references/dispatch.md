@@ -18,6 +18,8 @@ runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 �
 
 사용자가 완료된 `spec-me` 또는 `to-ticket` 산출물을 고치라고 지시하면 `--feedback <사용자 지시 원문>`과 `--user-revision true`를 함께 전달한다. 뒤 stage가 질문을 기다리는 중이어도 그 질문에 먼저 답하지 않는다. 사용자 수정이 그 질문을 대체하고, 뒤 stage는 수정된 계획으로 처음부터 다시 시작한다. 같은 session에서 이어가며 다른 stage가 실행 중이면 거부된다. 실제 사용자 지시에만 사용하고 agent 판단이나 리뷰 지적을 이 경로로 넘기지 않는다. Spec이 바뀌면 기존 리뷰가 stale이 되므로 fresh 리뷰와 영향 계획 재검토를 다시 거친다.
 
+최종 E2E 실패 뒤 사용자가 마지막으로 완료된 구현 plan의 수정을 승인한 경우의 재개는 orchestrator의 구현 workflow 조율 절차를 따른다. 실패 receipt·승인 답 원문·plan을 함께 전달하며, 수정 승인과 E2E 재실행 승인은 구분한다.
+
 `REVIEW_REQUIRED` stage에 독립 reviewer 결과를 돌려줄 때도 같은 `--feedback` 경로를 사용한다. 준비기는 waiting stage의 반환 envelope, code, result reference와 canonical session을 확인하고 기존 Codex thread를 재개한다. `review_request`가 있으면 caller가 해당 context를 reviewer에게 전달하고, 없는 구현 리뷰는 stage artifact와 검증 근거를 사용한다. reviewer가 사용자 결정을 요구하면 먼저 native 대화에서 답을 받은 뒤 reviewer 결과를 전달한다.
 
 입력 준비 결과에 `answer`가 있으면 준비기가 저장한 `runtime/executions/<execution_id>/answers.json`을 확인한다. 파일이 없거나 답변이 다르면 실행을 중단한다. 실행기는 해당 파일을 읽도록 지시한다.

@@ -116,6 +116,8 @@ export async function runExecution({ workspace_root, profile_id, environment = p
   // receipt는 단계별 진행·로그와 최종 상태를 보관해 마지막에 영속화한다.
   const receipt = { profile_id, status: 'blocked', phase: 'load', started_at: new Date().toISOString(), head: null, uncommitted_paths: [], uncommitted_truncated: false, steps: [], config_hashes: null };
   try {
+    // Preserve the target even when preparation or configuration verification fails.
+    Object.assign(receipt, await codeUnderTest(root));
     const manifestPath = 'docs/agents/execution.json';
     const { manifest, text: manifestText } = await readExecutionManifest(root);
     const profile = manifest.profiles?.[profile_id];

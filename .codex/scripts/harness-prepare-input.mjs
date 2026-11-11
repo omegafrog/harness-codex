@@ -9,7 +9,7 @@ const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'user-revision', 'plan']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'user-revision', 'plan', 'repair-receipt', 'approval-answer']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -52,7 +52,7 @@ try {
   if (options['spec-overwrite-approved'] !== undefined && options['spec-overwrite-approved'] !== 'true') throw new Error('spec-overwrite-approved must be true');
   if (options.restart !== undefined && options.restart !== 'true') throw new Error('restart must be true');
   if (options['user-revision'] !== undefined && options['user-revision'] !== 'true') throw new Error('user-revision must be true');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', specOverwriteApproved: options['spec-overwrite-approved'] === 'true', restart: options.restart === 'true' });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', specOverwriteApproved: options['spec-overwrite-approved'] === 'true', restart: options.restart === 'true' });
   process.stdout.write(`${JSON.stringify(prepared)}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
