@@ -477,6 +477,12 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
     try {
+      const wake = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: repositoryRoot, timeout: 5_000 })).stdout);
+      if (!wake.enabled || wake.transport?.type !== 'stdio') throw new Error('Wake MCP is not enabled');
+    } catch {
+      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', 'Codex Wake MCP is unavailable; install or enable codex-wake and restart Codex to deliver stage results automatically.', null));
+    }
+    try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
       if (trust.orchestrator_hook !== 'trusted') diagnostics.push(diagnostic('codex_orchestrator_hook_untrusted', 'warning', trust.orchestrator_hook === 'missing' ? 'Harness orchestrator user hook is missing from the Codex user hooks; run setup with the codex provider so new worktrees need no hook review' : 'Harness orchestrator user hook is not trusted; run /hooks in Codex and trust "Running Harness orchestrator hook" once for all worktrees', null));

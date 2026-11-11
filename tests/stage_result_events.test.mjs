@@ -4,7 +4,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
@@ -142,12 +142,14 @@ test('reconciles a runner crash from stopped process identities when no result w
   assert.match(event.summary, /stopped before saving/);
 });
 
-test('delivery resumes the recorded orchestrator session through its provider CLI once, without a host app', async (t) => {
+test('installed consumer queues the recorded result through Wake without duplicates', async (t) => {
   const fx = await fixture(t, 'host', { orchestrator_session_id: 'conversation-1' });
+  const installedPublish = (await import(pathToFileURL(join(fx.root, '.harness/src/workflow/stage-result-events.mjs')))).publishStageResultEvent;
   const bin = join(fx.primary, 'bin'); await mkdir(bin);
   const log = join(fx.primary, 'resume-args.jsonl');
-  // Fake provider CLI: records how the runner resumed the orchestrator.
-  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nimport fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), session: process.env.HARNESS_SESSION_DIR, thread: process.env.CODEX_THREAD_ID || null, execution: process.env.HARNESS_SKILL_EXECUTION_ID || null }) + '\\n');\n`);
+  const server = join(bin, 'wake.cjs');
+  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
+  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
   execFileSync('chmod', ['+x', join(bin, 'codex')]);
   const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID;
   t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; });
@@ -156,20 +158,39 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   const noCodex = join(fx.primary, 'no-codex-bin'); await mkdir(noCodex);
   await symlink(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(), join(noCodex, 'git'));
   process.env.PATH = noCodex;
-  const missing = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
+  const missing = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(missing.delivery.status, 'unsupported');
-  assert.equal(missing.delivery.reason, 'orchestrator_cli_unavailable');
+  assert.equal(missing.delivery.reason, 'wake_unavailable');
   process.env.PATH = `${bin}:${priorPath}`;
   process.env.CODEX_THREAD_ID = 'stage-thread';
   process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
-  const sent = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
+  const sent = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
-  await Promise.all([publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved }), publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved })]);
+  await Promise.all([installedPublish({ root: fx.root, input: fx.input, envelope: saved }), installedPublish({ root: fx.root, input: fx.input, envelope: saved })]);
   for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].args.filter((arg, index, args) => arg !== '-o' && args[index - 1] !== '-o').slice(0, 3), ['exec', 'resume', 'conversation-1']);
-  assert.match(calls[0].args[calls[0].args.indexOf('-o') + 1], /runtime\/orchestrator\/last-turn.txt$/, 'the delivered reply is kept for harness-context');
+  assert.equal(calls[0].name, 'queue_thread');
+  assert.equal(calls[0].arguments.thread, 'conversation-1');
+  assert.equal(calls[0].arguments.resume, true);
+  assert.match(calls[0].arguments.message_template, /runtime\/executions\/host\/result.json/);
+  const eventPath = join(fx.session, 'runtime/orchestrator/stage-results/host.json');
+  const uncertain = JSON.parse(await readFile(eventPath, 'utf8'));
+  uncertain.delivery.status = 'sending';
+  await writeFile(eventPath, JSON.stringify(uncertain));
+  assert.equal((await installedPublish({ root: fx.root, input: fx.input, envelope: saved })).delivery.status, 'sending');
+  assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1);
+  const interrupted = await fixture(t, 'interrupted', { orchestrator_session_id: 'conversation-1' });
+  const interruptedResult = envelope('interrupted');
+  await saveResult(interrupted, 'interrupted', interruptedResult);
+  await writeFile(server, `const readline = require('node:readline'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); if(m.id===2) process.exit(0); });`);
+  const unknown = await installedPublish({ root: interrupted.root, input: interrupted.input, envelope: interruptedResult });
+  assert.equal(unknown.delivery.status, 'uncertain');
+  assert.equal((await installedPublish({ root: interrupted.root, input: interrupted.input, envelope: interruptedResult })).delivery.status, 'uncertain');
+  await writeFile(join(fx.root, 'user-change.txt'), 'preserve');
+  const status = execFileSync('git', ['status', '--short'], { cwd: fx.root, encoding: 'utf8' });
+  assert.match(status, /user-change\.txt/);
+  assert.doesNotMatch(status, /\.harness\/src\/workflow\/stage-result-events/);
   const { orchestratorResumeCommand } = await import('../.harness/src/workflow/stage-result-events.mjs');
   // The resumed orchestrator turn keeps the workflow model binding, not the user's CLI default.
   assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', binding: { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' } }).args, ['exec', 'resume', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort="medium"', 's', 'm']);
@@ -182,11 +203,7 @@ test('delivery resumes the recorded orchestrator session through its provider CL
   const turn = (mode, text) => [{ type: 'turn_context', payload: { sandbox_policy: { type: mode } } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>x' }] } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text }] } }];
   await writeFile(join(home, `sessions/2026/11/08/rollout-2026-11-08T17-55-32-${sessionId}.jsonl`), [...turn('danger-full-access', '$orchestrator 계속 진행해'), ...turn('workspace-write', 'Harness stage result for execution spec-me-1: completed/OK.')].map((entry) => JSON.stringify(entry)).join('\n'));
   assert.equal(await orchestratorSandbox(sessionId, { CODEX_HOME: home }), 'danger-full-access');
-  assert.match(calls[0].args.at(-1), /Harness stage result for execution host: completed\/OK/);
-  assert.equal(calls[0].cwd, fx.root);
-  assert.equal(calls[0].session, fx.session);
-  assert.equal(calls[0].thread, null, 'the stage thread must not leak into the orchestrator resume');
-  assert.equal(calls[0].execution, null);
+  assert.match(calls[0].arguments.message_template, /Harness stage result for execution host: completed\/OK/);
   const hostReferences = spawnSync('git', ['grep', '-n', '-i', 'ghostex', '--', '.harness', '.codex', ':!.codex/harness-lock.json'], { cwd: source, encoding: 'utf8' });
   assert.equal(hostReferences.stdout, '', 'Harness must not depend on a host app');
 });

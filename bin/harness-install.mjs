@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { updateProject, writeHarnessLock } from "../.harness/src/installer/index.mjs";
+import { installedProviders } from "../.harness/src/installer/update.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
 
@@ -124,6 +125,20 @@ function installPonytailPlugin() {
   const pluginResult = JSON.parse(runCodex(["plugin", "list", "--json"]));
   const installed = pluginResult.installed?.some((plugin) => plugin.pluginId === "ponytail@ponytail" && plugin.enabled === true);
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
+}
+
+function installWakePlugin() {
+  if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Codex Wake requires Linux x86_64 and a working systemd user manager.');
+  const pluginId = 'codex-wake@codex-wake-local';
+  const plugins = JSON.parse(runCodex(['plugin', 'list', '--json']));
+  if (plugins.installed?.some((plugin) => plugin.pluginId === pluginId && plugin.enabled === true)) return;
+  const marketplaces = JSON.parse(runCodex(['plugin', 'marketplace', 'list', '--json']));
+  const existing = marketplaces.marketplaces?.find((marketplace) => marketplace.name === 'codex-wake-local');
+  if (existing && existing.marketplaceSource?.source !== 'https://github.com/alexx-ftw/codex-wake.git') throw new Error('Existing codex-wake-local marketplace has a different source; inspect it before installing Wake.');
+  if (!existing) runCodex(['plugin', 'marketplace', 'add', 'alexx-ftw/codex-wake', '--ref', 'v0.2.0-alpha.5']);
+  runCodex(['plugin', 'add', pluginId]);
+  const verified = JSON.parse(runCodex(['plugin', 'list', '--json']));
+  if (!verified.installed?.some((plugin) => plugin.pluginId === pluginId && plugin.enabled === true)) throw new Error('Codex Wake installation did not report an enabled plugin.');
 }
 
 function beadsCliVersion() {
@@ -257,6 +272,10 @@ async function main() {
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
+    if (fullInstall && (options.provider || 'all') !== 'claude-code') {
+      installWakePlugin();
+      console.log('Codex Wake is installed; restart Codex and review its hooks. Verify the Wake service before relying on automatic result delivery.');
+    }
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
@@ -279,6 +298,10 @@ async function main() {
   } else {
     // update always matches the latest release for Harness-owned paths; local edits are backed up first.
     const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup, provider: options.provider });
+    if (installedProviders(result.lock) !== 'claude-code') {
+      installWakePlugin();
+      console.log('Codex Wake is installed; restart Codex and review its hooks. Verify the Wake service before relying on automatic result delivery.');
+    }
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
