@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inspectTrackerSync, listPlanTickets } from '../.harness/src/tracker/lifecycle.mjs';
+import { inspectTrackerSync, listPlanTickets, readPlanSetTicketStatuses } from '../.harness/src/tracker/lifecycle.mjs';
 
 const repository = 'omegafrog/harness-test';
 const refs = [`${repository}#1`, `${repository}#2`];
@@ -96,5 +96,23 @@ test('tickets are checked against the plan a stage implements and plan tickets a
       { plan_id: 'calculator', ticket_ref: refs[0], bead_id: 'harness-1', bead_status: 'open' },
       { plan_id: 'e2e', ticket_ref: refs[1], bead_id: 'harness-2', bead_status: 'open' },
     ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// The final implementation gate reads each plan's canonical status from the tracker, not from a report.
+test('plan set ticket statuses come from the configured tracker', async () => {
+  const { root, run } = await fixture();
+  try {
+    const withPlans = async (command, args, cwd) => {
+      const output = await run(command, args, cwd);
+      if (command !== 'bd') return output;
+      return JSON.stringify(JSON.parse(output).map((item) => ({ ...item, metadata: { ...item.metadata, harness_plan_id: `set:${item.id === 'harness-1' ? 'calculator' : 'e2e'}` } })));
+    };
+    assert.deepEqual(await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run: withPlans }), [
+      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' },
+      { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' },
+      { plan_id: 'unmapped', ticket_ref: null, status: null },
+    ]);
+    await assert.rejects(readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', run: withPlans }), /plan IDs are required/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

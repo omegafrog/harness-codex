@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdir, readFile, realpath, writeFile, open } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
@@ -8,6 +9,8 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+const execFileAsync = promisify(execFile);
+const MAX_RECORDED_PATHS = 200;
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
 function command(value) {
   requireValue(Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string' && item.length > 0 && !item.includes('\0')), 'Commands must be nonempty argv arrays');
@@ -87,6 +90,21 @@ async function execute(argv, { root, env, path, timeout, signal }) {
   } finally { await log.close(); }
 }
 
+// What the command is about to test: the commit and any uncommitted or untracked change in the workspace. The
+// completion gate compares the receipt with the workspace it is evaluated in, so a passing receipt cannot be reused
+// for code that changed after the run. A workspace without readable Git state records nulls and attests nothing.
+async function codeUnderTest(root) {
+  const git = async (...args) => (await execFileAsync('git', ['--no-optional-locks', ...args], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })).stdout;
+  try {
+    const head = (await git('rev-parse', 'HEAD')).trim();
+    const changed = [...new Set([
+      ...(await git('diff', '--name-only', '--no-renames', '-z', 'HEAD')).split('\0'),
+      ...(await git('ls-files', '--others', '--exclude-standard', '-z')).split('\0'),
+    ].filter(Boolean))].sort();
+    return { head, uncommitted_paths: changed.slice(0, MAX_RECORDED_PATHS), uncommitted_truncated: changed.length > MAX_RECORDED_PATHS };
+  } catch { return { head: null, uncommitted_paths: [], uncommitted_truncated: false }; }
+}
+
 export async function runExecution({ workspace_root, profile_id, environment = process.env, signal } = {}) {
   // 명시된 E2E profile을 준비·검증·readiness 확인 후 실행하고 재현 가능한 receipt를 남긴다.
   requireValue(isAbsolute(workspace_root || '') && ID.test(profile_id || ''), 'Absolute workspace_root and profile_id are required');
@@ -96,7 +114,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
   const directory = sessionOutputPath(root, `runtime/execution/${profile_id}-${randomUUID()}`);
   await mkdir(directory, { mode: 0o700 });
   // receipt는 단계별 진행·로그와 최종 상태를 보관해 마지막에 영속화한다.
-  const receipt = { profile_id, status: 'blocked', phase: 'load', steps: [], config_hashes: null };
+  const receipt = { profile_id, status: 'blocked', phase: 'load', started_at: new Date().toISOString(), head: null, uncommitted_paths: [], uncommitted_truncated: false, steps: [], config_hashes: null };
   try {
     const manifestPath = 'docs/agents/execution.json';
     const { manifest, text: manifestText } = await readExecutionManifest(root);
@@ -145,9 +163,10 @@ export async function runExecution({ workspace_root, profile_id, environment = p
       requireValue(ready, `Infrastructure is not ready: ${dependency.id}`);
     }
     requireValue(await fingerprint(root, inputs) === snapshot, 'Configuration changed during preflight; rerun with current settings');
+    Object.assign(receipt, await codeUnderTest(root));
     receipt.exit_code = await step('command', main, profile.timeout_ms);
     receipt.status = receipt.exit_code === 0 ? 'passed' : 'failed';
   } catch (error) { receipt.status = signal?.aborted ? 'interrupted' : receipt.phase === 'command' ? 'failed' : 'blocked'; receipt.error = error.message; }
-  finally { await writeFile(join(directory, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 }); }
+  finally { receipt.finished_at = new Date().toISOString(); await writeFile(join(directory, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 }); }
   return { ...receipt, evidence_path: join(directory, 'receipt.json'), session_directory: sessionDirectory(root) };
 }

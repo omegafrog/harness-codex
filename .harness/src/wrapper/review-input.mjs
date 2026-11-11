@@ -158,7 +158,7 @@ const pendingPath = (planId) => `runtime/reviews/implementation-${planId}-questi
 
 // Evidence written before it moved to -evidence.json sits at the review-history path; read it from there while the
 // new file does not exist yet, so a plan reviewed by an older version continues.
-async function readEvidence(root, planId) {
+export async function readEvidence(root, planId) {
   for (const path of [`runtime/reviews/implementation-${planId}-evidence.json`, `runtime/reviews/implementation-${planId}.json`]) {
     try {
       const parsed = JSON.parse(await readFile(sessionOutputPath(root, path, { create: false }), 'utf8'));

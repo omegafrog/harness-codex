@@ -22,7 +22,7 @@ Live agent 확인이 필요한 경우에는 사전 승인한 task와 task/enviro
 
 - 변경된 rule과 enforcement method/function, 허용·금지 의존성, 기존 검사 또는 도메인 테스트.
 - 현행/폐기 용어와 호환 식별자 예외. 기존 구현 대체라면 old → new 경로, 이전할 소비자, 삭제할 구현/export/config/fixture와 잔존 검색·동작 검증. 제거할 수 없는 호환 경로는 소비자 근거·제거 조건·후속 tracker 참조를 포함한다.
-- 제거하기로 승인된 파일/디렉터리는 `retirement.removed_paths`의 저장소 상대 경로 목록으로 runtime handoff에 전달한다. canonical tracker에는 기존 acceptance/test-contract 문자열에 목록을 보존하고 새로운 structured-source key를 추가하지 않는다. 제거 대상이 없으면 빈 목록과 근거 `reason`을 전달한다. 이 검사는 새 후보가 임의로 정한 목록이 아니라 승인된 계획의 제거 목록을 사용한다.
+- 제거하기로 승인된 파일/디렉터리는 해당 canonical plan의 `## 제거 대상` 절에 불릿 한 줄당 backtick 저장소 상대 경로(``- `src/old/Legacy.java` — 대체 경로``)로 적는다. 최종 완료 gate가 이 절을 읽어 `retirement.removed_paths`로 쓰고 경로가 실제로 없는지 확인하며, 절이 없으면 승인된 제거가 없는 것으로 본다. 이 절은 plan 리뷰 snapshot에 들어가므로 구현 중에 목록을 바꾸지 않는다. canonical tracker에는 기존 acceptance/test-contract 문자열에 같은 목록을 보존하고 새로운 structured-source key를 추가하지 않는다. 제거 대상이 없으면 절을 쓰지 않으며 gate가 빈 목록과 도출한 사유로 통과시킨다. 이 검사는 새 후보가 임의로 정한 목록이 아니라 승인된 계획의 제거 목록을 사용한다.
 - 성능·용량·자원 사용·장기 실행 안정성이 관련되면 연결된 System Target, 실제 사용자 경로, 대표 workload 크기/분포/동시성, 지표·단위, 측정 명령, 환경, baseline commit, 허용 회귀와 성공 조건.
 - baseline은 구현 전에 관측한다. 수치가 없으면 `미측정`과 수집 방법을 쓰며 예상치를 측정값으로 쓰지 않는다. 새 기능은 이전 동등 경로나 명시적 목표와 비교하고, 비교 불가능하면 전후 개선율을 계산하지 않는다.
 - 성능과 무관한 작은 변경은 `해당 없음 — 근거`로 충분하다. 모든 slice에 benchmark나 runtime logging을 추가하지 않는다.

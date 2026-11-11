@@ -142,6 +142,30 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
     .sort((a, b) => a.plan_id.localeCompare(b.plan_id));
 }
 
+// Canonical tracker status of every plan of a plan set, read from the configured tracker (never from a model's report).
+// local-markdown: the plan document's own frontmatter status. github: the Workflow Status of the Issue that the Beads
+// mirror maps to the plan. A plan without a mapped ticket is reported with ticket_ref null; unreadable trackers throw.
+export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run = defaultRun } = {}) {
+  if (!planSetId || !Array.isArray(planIds)) throw new Error('A plan set ID and its plan IDs are required');
+  const config = await projectConfig(root);
+  if (config?.mode === 'local-markdown') {
+    const tickets = [];
+    for (const planId of planIds) {
+      const ref = `docs/plans/${planSetId}/${planId}.md`;
+      tickets.push({ plan_id: planId, ticket_ref: ref, status: (await localTicket(root, config, ref)).status });
+    }
+    return tickets;
+  }
+  if (config?.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
+  const mapped = new Map((await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run })).map((ticket) => [ticket.plan_id, ticket]));
+  const refs = planIds.map((planId) => mapped.get(planId)?.ticket_ref).filter(Boolean);
+  const statuses = refs.length ? await githubTickets(root, config, refs, run, {}) : new Map();
+  return planIds.map((planId) => {
+    const ticket = mapped.get(planId);
+    return { plan_id: planId, ticket_ref: ticket?.ticket_ref ?? null, status: ticket ? statuses.get(ticket.ticket_ref).status : null };
+  });
+}
+
 // Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
 // same plan set), and whether each one's Beads ticket is closed. The stage reads this answer instead of matching Issue
 // numbers to plans by hand, which has mistaken the plan's own ticket for a prerequisite.

@@ -20,7 +20,7 @@
 | 스킬의 supporting reference도 갱신된다 | `.harness/src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
 | checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `.harness/src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
 | 업무 규칙은 선언된 owner에서 보호한다 | `ddd-design/references/model-continuity.md`, Spec reviewer의 실제 source/caller/우회 경로 검토와 프로젝트별 domain/dependency 검사 | 범용 JavaScript 구조 검사로 DDD 의미를 자동 판정하지 않음 |
-| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
+| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인된 canonical plan의 `## 제거 대상` 절에서 읽으며 자동 추론하지 않음(`implement-wrapper` 최종 gate는 `.harness/src/workflow/implementation-completion.mjs`, `tests/implement_wrapper_completion.test.mjs`); 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
 | E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/internal-skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
@@ -35,6 +35,20 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 문서에는 전체 Product 규칙과 DDD 구성요소별 상세를 보존한다. `.puml`의 모든 DDD 이름은 stable section으로 연결하고, renderer가 SVG에 원본 SHA를 붙인다. `seal`은 검토 사유와 변경 snapshot을 기록하고 revision을 올리며 `check`는 base보다 증가했는지 검사한다. source만 바뀌고 계약이 같으면 구체적인 영향 없음 근거를 요구한다. `architecture.html`은 같은 페이지 안에서 SVG 이름→상세 이동을 제공한다.
 
 자동 검사가 증명하는 범위는 파일·형식·소유 관계·링크·버전·입력 정합성이다. 전체 기능 목록의 완전성, source_roots 축소의 타당성, DDD 규칙 캡슐화, 통신·분리 배포 결정의 근거와 실제 기능 회귀는 독립 reviewer와 실제 실행 evidence로 검증한다. receipt를 작성했다는 사실을 설계 승인이나 실제 제품 테스트 통과로 해석하지 않는다.
+
+## implement-wrapper 최종 완료 gate
+
+`.harness/src/workflow/completion.mjs`는 `implement-wrapper`의 `required_outcome`·`tests`·`review`·`retirement`·`evidence`를 `.harness/src/workflow/implementation-completion.mjs`가 정본 기록에서 도출한 verdict로 대체하고 `plan_review`에는 worktree 기록의 `plan_set_id`를 전달한다. `--state`의 같은 키(`DERIVED_STATE_KEYS`)는 버려지고 `ignored_state_keys`에 남는다. 모델이 쓴 boolean은 어떤 check도 통과시키지 못한다.
+
+| check | 읽는 기록 | 통과 조건 |
+|---|---|---|
+| `review` | plan별 `runtime/reviews/implementation-<plan>-evidence.json`, `runtime/orchestrator/subagents.jsonl` | 계획 세트의 모든 plan에 `repair`가 기록한 `passed`가 있고, standards·spec 두 리뷰가 독립·fresh·서로 다른 context이며 같은 commit을 대상으로 하고, 그 reviewer를 subagent hook이 기록(fork 아님·종료)했고, commit이 HEAD 이력에 있으며 plan 본문 hash가 리뷰 당시와 같다. 실패 plan·역할은 `details.problems`에 남는다 |
+| `tests` | `docs/agents/execution.json`의 `purpose: e2e` profile 중 `e2e` plan이 이름을 든 것, `runtime/execution/<profile>-<uuid>/receipt.json` | 각 profile의 마지막 verdict receipt가 통과이고 `head`가 HEAD 이력에 있으며 이후 문서 외 변경이 없고 실행 시 문서 외 미커밋 변경이 없고 `config_hashes` 파일이 같다. 실패 receipt가 있으면 `e2e_learning`은 `pending`으로 보고하며 판정을 바꾸지 않는다 |
+| `required_outcome` | tracker의 plan별 canonical 상태(local-markdown은 plan frontmatter, GitHub는 Beads 매핑 뒤 Project 상태) | 모든 plan이 `completed`이고 위 `tests`가 통과다 |
+| `retirement` | canonical plan의 `## 제거 대상`(또는 `## 승인된 제거 목록`) 절 불릿의 backtick 경로 | 승인된 경로가 workspace에 없다. 절이 없으면 승인된 제거 없음으로 `removed_paths: []`와 도출한 사유로 통과한다 |
+| `evidence` | plan별 `runtime/plans/[<plan-set>/]<plan>/checkpoint.md`, 위 리뷰 evidence, 선택된 receipt와 step log | 모두 존재하고 checkpoint가 비어 있지 않다 |
+
+파일 기반 기록이므로 session 디렉터리에 쓸 수 있는 주체의 직접 위조까지 막지는 못한다. gate가 막는 것은 `--state`로 통과 값을 주장하는 자기 증명이다. `tests/implement_wrapper_completion.test.mjs`가 설치형 consumer에서 통과·각 기록 누락 차단·직접 쓴 state 무시·Git 가시성·Doctor를 검사한다.
 
 ## Tracker lifecycle와 mirror gate
 

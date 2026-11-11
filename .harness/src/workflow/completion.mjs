@@ -9,6 +9,7 @@ import { parseWorktreeRecord } from './worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 import { completeExecutionState } from './execution-state.mjs';
+import { DERIVED_STATE_KEYS, deriveImplementationCompletion } from './implementation-completion.mjs';
 const execFileAsync = promisify(execFile);
 
 // Two gate runs for the same workflow and start commit append to one journal. Started together they both wrote
@@ -66,6 +67,18 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const workflow = await loadNamedWorkflow(workflow_id, { root: workspace_root });
     const completion_kind = completionKindForWorkflow(workflow.id);
     const finalImplementation = completion_kind === 'feature_implemented';
+    // implement-wrapper completion is judged from canonical records only. A state file (or anything else the caller
+    // supplies) cannot assert required_outcome, tests, reviews, retirement, evidence or the plan set, so those keys are
+    // dropped before any check runs; the ones that were dropped are reported in the result.
+    let derived = null;
+    let ignoredStateKeys = [];
+    if (workflow.id === 'implement-wrapper') {
+      ignoredStateKeys = DERIVED_STATE_KEYS.filter((key) => state?.[key] !== undefined);
+      state = Object.fromEntries(Object.entries(state || {}).filter(([key]) => !DERIVED_STATE_KEYS.includes(key)));
+      const planSetId = worktreeRecord?.plan_set_id || null;
+      state = { ...state, plan_set_id: planSetId, plan_review: { plan_set_id: planSetId, plan_id: null, phase: 'completion' } };
+      derived = await deriveImplementationCompletion({ root: workspace_root, planSetId });
+    }
     const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'spec-me' ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
     // The Architecture review of the worktree's plan set is already in the review history, so the gate reads it there
     // instead of needing the orchestrator to assemble a completion state file that names the ticket and the record.
@@ -75,15 +88,17 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
       if (architecture) state = { ...state, ticket_id: state.ticket_id ?? worktreeRecord.plan_set_id, spec_reviews: { architecture } };
     }
     if (workflow.id === 'to-ticket') state = { ...state, plan_set_id: worktreeRecord?.plan_set_id, plans_index: { workspace_root, plan_set_id: worktreeRecord?.plan_set_id }, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, phase: 'planning' } };
-    if (['implement', 'implement-wrapper'].includes(workflow.id)) state = { ...state, ...(workflow.id === 'implement-wrapper' ? { plan_id: undefined } : {}), plan_review: { ...state.plan_review, plan_id: workflow.id === 'implement-wrapper' ? null : state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
+    if (workflow.id === 'implement') state = { ...state, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, ...state.plan_review, plan_id: state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };
     const evidence_path = sessionOutputPath(workspace_root, `runtime/workflow-completion/${workflow.id}-${base_ref}.jsonl`);
     unlock = await lockCompletionStream(evidence_path);
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();
-    const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry: new LifecycleGateRegistry({ hooks }), eventWriter: writer, evidencePath: evidence_path });
+    const registry = new LifecycleGateRegistry({ hooks });
+    for (const [ruleId, verdictOfRecords] of Object.entries(derived?.checks || {})) registry.replace(ruleId, () => verdictOfRecords);
+    const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry, eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();
-    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
+    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(ignoredStateKeys.length ? { ignored_state_keys: ignoredStateKeys } : {}), ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
     await writer.append('workflow_completion', result, { critical: true });
     if (final_workflow && verdict.status === 'pass') await completeExecutionState({ root: workspace_root, session_directory: result.session_directory });
   } catch (error) { failure = error; }
