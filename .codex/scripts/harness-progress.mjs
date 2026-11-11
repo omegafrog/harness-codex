@@ -5,6 +5,7 @@
 import { open, readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 const installed = new URL('../../.harness/src/workflow/execution-state.mjs', import.meta.url);
 const { processIdentity } = await import(installed.href);
@@ -24,6 +25,18 @@ async function findSession(explicit) {
   const cwd = process.cwd();
   const local = await has(join(cwd, '.io'));
   if (local) return local;
+  let registered = [];
+  try {
+    registered = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
+  } catch {}
+  let registeredBest = null;
+  for (const workspace of registered) {
+    const dir = await has(join(workspace, '.io'));
+    if (!dir) continue;
+    const info = await stat(join(dir, 'runtime/orchestrator/state.json'));
+    if (!registeredBest || info.mtimeMs > registeredBest.mtime) registeredBest = { dir, mtime: info.mtimeMs };
+  }
+  if (registeredBest) return registeredBest.dir;
   const parents = [join(dirname(cwd), '.harness-worktrees', basename(cwd)), join(homedir(), 'workspace/.harness-worktrees', basename(cwd))];
   let best = null;
   // Not inside a project that owns worktrees: fall back to the most recent session of any project beside it.

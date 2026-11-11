@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -281,7 +281,8 @@ async function main() {
   ], 'reuse', { agents: config.agents || {}, tracker: config.tracker || {}, beads: config.beads || {}, observability: config.observability || {} }) === 'reuse';
   // Reusing or reconfiguring decides which of the later questions exist, so each of them is marked as depending on it.
   if (hasExisting && native) baseDependencies = [lastQuestionId];
-  if (reuse && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
+  const hasWorktreeDirectory = typeof config.worktrees?.directory === 'string' && isAbsolute(config.worktrees.directory) && !config.worktrees.directory.includes('\0');
+  if (reuse && hasWorktreeDirectory && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
     requireComplete();
     await prepareProjectFiles();
     await prepareCodexSubagentHook(currentProviderOf(config));
@@ -291,6 +292,8 @@ async function main() {
   // The tier names are shared with the skill declarations and workflow stages that choose among them.
   const tiers = AGENT_TIERS;
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
+  const worktreeDirectory = reuse && hasWorktreeDirectory ? config.worktrees.directory : await ask('워크트리 생성 위치 (절대 경로)', hasWorktreeDirectory ? config.worktrees.directory : join(dirname(root), `${basename(root)}-worktrees`));
+  if (!isAbsolute(worktreeDirectory) || worktreeDirectory.includes('\0')) throw new Error('워크트리 생성 위치는 절대 경로여야 합니다.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
   const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
   // Only providers this installation carries can be chosen (install --provider codex|claude-code|all).
@@ -484,7 +487,7 @@ async function main() {
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
   // The summary needs every answer, so while any question is pending the confirmation is asked in the same batch and
   // covers the answers given in it; it is asked again whenever a later round brings new or changed answers.
-  const summary = { agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
+  const summary = { worktrees: { directory: worktreeDirectory }, agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
   const approved = await confirm('이 설정으로 계속할까요?', 'n', batch.length ? { provisional: true, note: '이 질문들에 대한 답으로 설정을 적용합니다. 요약은 모든 답을 받은 뒤에만 정해집니다.' } : summary, { dependsOn: [...unanswered], revisit: true });
   requireComplete();
   if (!approved) throw new Error('사용자가 설정 적용을 취소했습니다.');
@@ -498,6 +501,7 @@ async function main() {
   const currentConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   let configText = migrateAgentsText(currentConfig).text;
+  if (!reuse || !hasWorktreeDirectory) configText = setYamlScalar(configText, ['worktrees', 'directory'], worktreeDirectory);
   if (!reuse || !hasText(config.agents?.provider)) configText = setYamlScalar(configText, ['agents', 'provider'], provider);
   // Each provider keeps its own section, so choosing another provider later leaves these models in place.
   for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(providerSettings[key]) : hasText(providerSettings[key]))) configText = setYamlScalar(configText, ['agents', provider, key], value);

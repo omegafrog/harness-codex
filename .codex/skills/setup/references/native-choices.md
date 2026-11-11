@@ -1,5 +1,6 @@
 # 설정 선택
 
+워크트리 생성 위치는 절대 경로로 받는다. 기본값은 프로젝트 옆 `<프로젝트명>-worktrees`이며 선택한 상위 디렉터리 아래에 각 worktree를 만든다. 기존 설정 재사용 시 위치가 없으면 이 항목을 묻고, 위치를 바꾸려면 새로 설정을 선택한다. 기존 worktree는 이동하지 않는다.
 
 1. `harness-session-output.mjs --root <absolute-project-root>`로 session directory를 구한다. 새 setup 요청마다 그 안에 새 UUID를 사용한 `runtime/setup/<setup-id>/answers.json`을 만들고 `{"answers":{}}`로 시작한다. 이전 실행의 답변 파일을 읽거나 덮어쓰지 않는다. 같은 setup의 질문을 이어갈 때만 이 파일을 사용한다.
 2. 같은 cwd에서 `node .codex/scripts/harness-setup.mjs --root <absolute-project-root> --answers <해당 setup의 절대 answers.json 경로>`를 실행하고 프로세스 종료를 기다린다. 기존 설정이 있으면 CLI가 현재 설정을 재사용할지 새로 설정할지 먼저 묻는다. 재사용을 선택하면 유효한 값은 유지하고 누락·오류 항목만 확인한다. `status: configured`만 적용 완료다.

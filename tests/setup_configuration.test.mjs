@@ -19,7 +19,8 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     const config = 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: high\n    implementation_model: example\n    implementation_reasoning_effort: medium\n    execution_model: example\n    execution_reasoning_effort: low\n    low_performance_model: example\n    low_performance_reasoning_effort: low\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\nobservability:\n  victorialogs:\n    local:\n      enabled: false\n';
-    await writeFile(join(root, '.codex/harness.yaml'), config);
+    const configured = `${config}worktrees:\n  directory: ${JSON.stringify(join(root, '..', 'chosen worktrees'))}\n`;
+    await writeFile(join(root, '.codex/harness.yaml'), configured);
     const budget = '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n';
     await writeFile(join(root, '.codex/context-budget.json'), budget);
     await writeFile(join(root, 'CONTEXT.md'), 'project context');
@@ -41,9 +42,14 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.equal(Object.hasOwn(first, 'configuration_hash'), false);
     await writeFile(answers, JSON.stringify({ configuration_hash: 'obsolete', answers: { [first.pending.id]: 'reuse' } }));
     assert.equal(run('--answers', answers).status, 'configured');
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), configured);
     assert.equal(await readFile(join(root, '.codex/context-budget.json'), 'utf8'), budget);
     assert.equal(await readFile(join(root, 'CONTEXT.md'), 'utf8'), 'project context');
+    await writeFile(join(root, '.codex/harness.yaml'), config);
+    const migrateWorktrees = run('--answers', answers);
+    assert.equal(migrateWorktrees.pending.id, '워크트리 생성 위치 (절대 경로)#1');
+    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    await writeFile(join(root, '.codex/harness.yaml'), configured);
     await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600}\n');
     assert.equal(run('--check').status, 'setup_required');
     const partial = run('--answers', answers);
@@ -53,7 +59,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse', [partial.pending.id]: '200' } }));
     const confirmation = run('--answers', answers);
     assert.equal(confirmation.pending.id, '이 설정으로 계속할까요?#1');
-    await writeFile(join(root, '.codex/harness.yaml'), `${config}custom:\n  preserved: yes\n`);
+    await writeFile(join(root, '.codex/harness.yaml'), `${configured}custom:\n  preserved: yes\n`);
     await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1100,"max_plan_tokens":600}\n');
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse', [partial.pending.id]: '200', [confirmation.pending.id]: 'y' } }));
     assert.equal(run('--answers', answers).status, 'configured');
@@ -67,16 +73,16 @@ test('installed setup reuses current configuration and ignores old answer hashes
     const runWithModels = () => JSON.parse(execFileSync(process.execPath, [setup, '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure' } }));
     const provider = runWithModels();
-    assert.equal(provider.pending.id, '실행 provider 선택#1');
-    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure', [provider.pending.id]: 'codex' } }));
+    assert.equal(provider.pending.id, '워크트리 생성 위치 (절대 경로)#1');
+    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure', [provider.pending.id]: join(root, '..', 'chosen worktrees'), '실행 provider 선택#1': 'codex' } }));
     const reconfigure = runWithModels();
     assert.equal(reconfigure.pending.id, '복잡한 설계·최종 검토 모델 모델 선택#1');
     assert.equal(reconfigure.pending.current, 'example');
-    await writeFile(join(root, '.codex/harness.yaml'), config.replace('  execution_model: example\n', ''));
+    await writeFile(join(root, '.codex/harness.yaml'), configured.replace('    execution_model: example\n', ''));
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const missingModel = runWithModels();
     assert.equal(missingModel.pending.id, '서버·E2E 실행과 polling 모델 모델 선택#1');
-    await writeFile(join(root, '.codex/harness.yaml'), config.replace('  execution_reasoning_effort: low', '  execution_reasoning_effort: invalid'));
+    await writeFile(join(root, '.codex/harness.yaml'), configured.replace('  execution_reasoning_effort: low', '  execution_reasoning_effort: invalid'));
     const invalidEffort = runWithModels();
     assert.equal(invalidEffort.pending.id, '서버·E2E 실행과 polling 모델 추론 강도 선택#1');
     assert.equal(run('--check').status, 'setup_required');
@@ -173,9 +179,11 @@ test('answering the batch applies the configuration in one more run and keeps Ha
   const { root, run, git } = await freshProject();
   try {
     const first = await run({});
-    const answered = await run(answerBatch(first.questions, BATCH_CHOICES));
+    const selected = join(root, '..', 'custom worktree location');
+    const answered = await run(answerBatch(first.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': selected }));
     assert.equal(answered.status, 'configured');
     const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    assert.ok(config.includes(`directory: ${JSON.stringify(selected)}`));
     assert.match(config, /provider: "codex"/);
     assert.match(config, /high_performance_model: "example-a"/);
     assert.match(config, /high_performance_reasoning_effort: "xhigh"/);
@@ -190,6 +198,15 @@ test('answering the batch applies the configuration in one more run and keeps Ha
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
     git('check-ignore', '-v', '.codex/harness.yaml');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('setup rejects a relative worktree location', async () => {
+  const { root, run } = await freshProject();
+  try {
+    const first = await run({});
+    await assert.rejects(run(answerBatch(first.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': 'relative/path' })), /절대 경로/);
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

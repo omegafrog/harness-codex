@@ -56,8 +56,11 @@ Codex에서 직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrat
 
 - `CONTEXT.md`, `CONTEXT-MAP.md` 초기화
 - 역할별 model / reasoning 설정
+- workflow worktree를 만들 상위 디렉터리의 절대 경로 선택 (기본값: 프로젝트 옆 `<프로젝트명>-worktrees`)
 - GitHub 또는 local-markdown tracker 설정
 - `.codex/harness.yaml` 관리
+
+선택한 위치는 `worktrees.directory`에 저장하며 새 workflow부터 적용한다. 기존 worktree는 Git에 등록된 위치에 그대로 남는다. 경로를 바꾸려면 `$setup`에서 새로 설정을 선택한다.
 
 ### 2. `spec-me`
 
