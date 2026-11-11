@@ -41,7 +41,7 @@ export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, bindi
     dirs = [...new Set([...dirs, dirname(gitCommonDir), gitCommonDir])];
   }
   return ['exec', '--sandbox', sandbox, ...dirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model,
-    ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), ...(githubTracker && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : []), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
+    ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), ...((githubTracker || skill === 'e2e-test') && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : []), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
     '--output-schema', schemaPath, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
 }
 

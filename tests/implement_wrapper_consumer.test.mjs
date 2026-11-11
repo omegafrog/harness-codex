@@ -56,6 +56,10 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     const otherArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'to-ticket' });
     assert.ok(!otherArgs.includes('sandbox_workspace_write.network_access=true'));
+    const e2eArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'e2e-test' });
+    assert.ok(e2eArgs.includes('sandbox_workspace_write.network_access=true'));
+    const e2eClaudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'e2e-test' });
+    assert.deepEqual(JSON.parse(e2eClaudeArgs[e2eClaudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['localhost', '127.0.0.1']);
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
     const localArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
     assert.ok(!localArgs.includes('sandbox_workspace_write.network_access=true'));
@@ -78,8 +82,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     // The runner profile points at the GUIDE, which owns approval, no-auto-fix and rerun rules.
     const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
     // Final E2E always runs in a fresh runner, and dispatch checks call real CLIs.
-    assert.match(e2eGuide, /E2E는 항상 호출자와 대화를 공유하지 않는 fresh `e2e_test_runner` 하위 agent가 실행한다/);
-    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /fresh `e2e_test_runner` 하위 agent를 `fork_turns: none`으로 새로 띄워/);
+    assert.match(e2eGuide, /백그라운드 `e2e-test` stage/);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
     assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
     assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);
     assert.match(await read('.claude/skills/orchestrator/SKILL.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);

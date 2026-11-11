@@ -43,7 +43,7 @@ export function buildCommand({ root, sandbox, binding, schema, resume, role, ski
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       ...(sandbox === 'read-only' ? { filesystem: { denyWrite: [root] } } : {}),
-      ...(sandbox === 'danger-full-access' || githubTracker ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : {}),
+      ...(sandbox === 'danger-full-access' || githubTracker ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : skill === 'e2e-test' ? { network: { allowedDomains: ['localhost', '127.0.0.1'] } } : {}),
     },
     hooks: {
       PreToolUse: [{ matcher: 'Agent', hooks: [agentAdmissionHook] }],

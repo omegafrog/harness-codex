@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { publishStageResultEvent, waitForStageResult } from '../.harness/src/workflow/stage-result-events.mjs';
+import { validateSkillReturn } from '../.harness/src/workflow/skill-execution.mjs';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const inputPath = (id) => `.io/plans/correct/${id}/input.json`;
@@ -56,6 +57,57 @@ async function saveResult(fx, id, value) {
   await mkdir(join(path, '..'), { recursive: true });
   await writeFile(path, JSON.stringify(value.result));
 }
+
+test('background E2E publishes only a verified receipt and cleanup for the approved commit', async (t) => {
+  const id = 'e2e-event', fx = await fixture(t, id, { orchestrator_session_id: 'conversation-e2e' });
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fx.root, encoding: 'utf8' }).trim();
+  const writeArtifact = async (path, value) => {
+    const text = JSON.stringify(value);
+    await mkdir(join(fx.taskSession, path, '..'), { recursive: true });
+    await writeFile(join(fx.taskSession, path), text);
+    return createHash('sha256').update(text).digest('hex');
+  };
+  const requestPath = 'runtime/e2e/requests/test.json';
+  const requestHash = await writeArtifact(requestPath, { target_commit: commit, profile_id: 'test-e2e', scenarios: ['E2E-01'], timeout_ms: 1000, approval_answer: '승인', manifest_sha256: 'a'.repeat(64) });
+  fx.input.skill = 'e2e-test'; fx.input.context.stage_id = 'e2e-test';
+  fx.input.input_refs = [{ base: 'session', path: requestPath, kind: 'approved_e2e_request', sha256: requestHash }];
+  await rm(join(fx.root, inputPath(id)));
+  const e2eInputPath = `.io/plans/e2e-test/${id}/input.json`;
+  await mkdir(join(fx.root, e2eInputPath, '..'), { recursive: true });
+  await writeFile(join(fx.root, e2eInputPath), JSON.stringify(fx.input));
+  const statePath = join(fx.session, 'runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  state.current_stage = 'e2e-test'; state.stages['e2e-test'] = state.stages.correct; delete state.stages.correct;
+  await writeFile(statePath, JSON.stringify(state));
+  const receiptPath = 'runtime/execution/test-e2e-1/receipt.json', cleanupPath = 'runtime/e2e/test/cleanup.json';
+  let receiptHash = await writeArtifact(receiptPath, { status: 'failed', head: commit, profile_id: 'test-e2e' });
+  const cleanupHash = await writeArtifact(cleanupPath, { status: 'passed' });
+  const result = { schema_version: 1, execution_id: id, skill: 'e2e-test', status: 'completed', code: 'OK', summary: 'done', artifacts: [{ base: 'session', path: receiptPath, kind: 'e2e_receipt', sha256: receiptHash }, { base: 'session', path: cleanupPath, kind: 'e2e_cleanup', sha256: cleanupHash }], questions: [], review_request: null };
+  const out = { schema_version: 1, execution_id: id, skill: 'e2e-test', status: 'completed', code: 'OK', result_ref: resultPath(id), result };
+  await saveResult(fx, id, out);
+  await assert.rejects(validateSkillReturn({ root: fx.root, input: fx.input, envelope: out }), /does not prove/);
+  receiptHash = await writeArtifact(receiptPath, { status: 'passed', exit_code: 0, head: commit, profile_id: 'test-e2e', config_hashes: { 'docs/agents/execution.json': 'a'.repeat(64) } });
+  result.artifacts[0].sha256 = receiptHash;
+  await saveResult(fx, id, out);
+  const bin = join(fx.primary, 'e2e-bin'); await mkdir(bin);
+  const wakeLog = join(fx.primary, 'e2e-wake.jsonl'), wake = join(bin, 'wake.cjs');
+  await writeFile(wake, `const rl=require('node:readline').createInterface({input:process.stdin}),fs=require('node:fs');rl.on('line',line=>{const m=JSON.parse(line);if(m.id===1)console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));if(m.id===2){fs.appendFileSync(${JSON.stringify(wakeLog)},JSON.stringify(m.params)+'\\n');console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}}));}});`);
+  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(wake)}],cwd:${JSON.stringify(bin)}}}));\n`);
+  execFileSync('chmod', ['+x', join(bin, 'codex')]);
+  const previousPath = process.env.PATH; process.env.PATH = `${bin}:${previousPath}`;
+  t.after(() => { process.env.PATH = previousPath; });
+  const event = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: out });
+  assert.equal(event.status, 'completed');
+  assert.equal(event.result_ref, resultPath(id));
+  assert.equal(event.delivery.reason, 'wake_queued');
+  await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: out });
+  const calls = (await readFile(wakeLog, 'utf8')).trim().split('\n');
+  assert.equal(calls.length, 1);
+  const wakeCall = JSON.parse(calls[0]);
+  assert.equal(wakeCall.arguments.thread, 'conversation-e2e');
+  assert.match(wakeCall.arguments.message_template, /e2e-event: completed\/OK/);
+  assert.equal((await waitForStageResult({ root: fx.root, worktree_ref: fx.worktree_ref, execution_id: id })).status, 'completed');
+});
 
 test('publishes completed and complete action_required batches, and suppresses duplicates', async (t) => {
   for (const [id, status, code, questionCount] of [['done', 'completed', 'OK', 0], ['question', 'action_required', 'USER_DECISION_REQUIRED', 1], ['manyquestions', 'action_required', 'USER_DECISION_REQUIRED', 6]]) {

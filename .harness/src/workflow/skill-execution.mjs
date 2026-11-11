@@ -262,6 +262,20 @@ export async function validateSkillInput({ root, input }) {
   const session = await resolveSkillSession(root, input.session_directory);
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
+  if (input.skill === 'e2e-test') {
+    const requests = input.input_refs.filter((item) => item.kind === 'approved_e2e_request' && item.base === 'session');
+    requireValue(input.context?.agent_profile === 'e2e_test_runner' && requests.length === 1, 'E2E requires one approved request and a dedicated runner');
+    const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
+    const head = (await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' })).stdout.trim();
+    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    requireValue(request.manifest_sha256 === createHash('sha256').update(manifestText).digest('hex'), 'E2E request execution profile has changed');
+    const manifest = JSON.parse(manifestText);
+    const profile = manifest.profiles?.[request.profile_id];
+    requireValue(request.target_commit === head && Array.isArray(request.scenarios) && request.scenarios.length > 0 && request.scenarios.every((item) => typeof item === 'string' && item.trim()) && profile?.purpose === 'e2e' && Number.isInteger(request.timeout_ms) && request.timeout_ms > 0 && profile.timeout_ms === request.timeout_ms, 'E2E request does not match the current commit or profile');
+    const inputs = (await readFile(join(session, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    const orchestratorId = input.context.orchestrator_session_id || input.context.codex_session_id;
+    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId), 'E2E request approval was not recorded');
+  }
 }
 
 // reopening: 사용자 수정으로 다시 열 완료 stage는 고칠 대상 Spec의 현재 리뷰를 요구하지 않는다.
@@ -302,6 +316,18 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   validate(schemaResult, resultSchema);
   for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(result[key] === envelope[key], `Result ${key} mismatch`);
   for (const reference of result.artifacts) await readReference(root, reference, session, controlSession, true);
+  if (input.skill === 'e2e-test' && envelope.status === 'completed') {
+    const requests = input.input_refs.filter((item) => item.kind === 'approved_e2e_request');
+    const receipts = result.artifacts.filter((item) => item.kind === 'e2e_receipt' && item.base === 'session');
+    const cleanups = result.artifacts.filter((item) => item.kind === 'e2e_cleanup' && item.base === 'session');
+    requireValue(requests.length === 1 && receipts.length === 1 && cleanups.length === 1, 'Completed E2E requires its approved request, receipt and cleanup evidence');
+    requireValue(/^runtime\/execution\/[A-Za-z0-9._-]+\/receipt\.json$/.test(receipts[0].path) && /^runtime\/e2e\/[A-Za-z0-9._-]+\/cleanup\.json$/.test(cleanups[0].path), 'E2E evidence must belong to the execution session');
+    const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
+    const receipt = JSON.parse(await readReference(root, receipts[0], session, controlSession));
+    const cleanup = JSON.parse(await readReference(root, cleanups[0], session, controlSession));
+    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && receipt.config_hashes?.['docs/agents/execution.json'] === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
+    requireValue(cleanup.status === 'passed', 'E2E cleanup is not verified');
+  }
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
     const request = result.review_request;
     // A review runs a sub-agent skill, so the skill must declare a setup tier in its own document.

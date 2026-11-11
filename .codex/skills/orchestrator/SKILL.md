@@ -64,8 +64,10 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | (`harness-agent-run.mjs --background true`로 시작한 stage에만 적용한다. `e2e_test_runner`·reviewer 같은 하위 agent는 결과를 받을 때까지 이 턴에서 기다린다. 턴을 끝내면 하위 agent도 중단된다.) 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. stage가 끝나면 runner가 Codex Wake 큐 또는 Claude 재개를 통해 검증된 결과를 전달한다. 큐 수락만으로 실행 완료를 추정하지 않는다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
+| `running` | (`harness-agent-run.mjs --background true`로 시작한 stage에만 적용한다. reviewer 같은 native 하위 agent는 결과를 받을 때까지 이 턴에서 기다린다.) 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. E2E도 별도 백그라운드 stage로 실행한다. stage가 끝나면 runner가 Codex Wake 큐 또는 Claude 재개를 통해 검증된 결과를 전달한다. 큐 수락만으로 실행 완료를 추정하지 않는다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, 같은 stage를 `--feedback`으로 재개해 같은 대화에서 이어간다(사용자가 업데이트 등으로 중단한 경우 포함). |
+
+`e2e-test` 결과는 일반 stage 재시작 규칙보다 [구현 workflow 조율](references/implementation.md)의 최종 E2E 실패 처리가 우선한다. `completed/OK`는 receipt와 cleanup을 확인하고 `sync-contracts`로 이어간다. 실패·차단·취소는 같은 stage를 자동 재실행하지 않고 실패 증거를 읽어 테스트 코드 결함 빠른 경로 또는 사용자 결정을 적용한다. 정본 execution ID와 worktree가 다르거나 결과가 이미 처리됐으면 중복 처리하지 않는다.
 
 위 세 코드의 전환은 대상 stage를 `--user-revision` 없이 `--stage-id`만으로 준비한다(`--user-revision`은 사용자의 직접 수정 지시 전용이다). 준비기가 이전 결과를 입력으로 연결하고 낡은 완료 결과를 다시 연다.
 
