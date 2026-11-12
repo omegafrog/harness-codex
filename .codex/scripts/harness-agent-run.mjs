@@ -61,7 +61,7 @@ try {
   const schemaInfo = await lstat(schema);
   if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
   const outputSchema = JSON.parse(await readFile(schema, 'utf8'));
-  if (outputSchema.properties?.execution_id?.const !== opts['execution-id'] || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
+  if (Object.hasOwn(outputSchema.properties || {}, 'execution_id') || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex-last-message.json`);
   if (opts.background === 'true') {
     await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stdout.log`);
