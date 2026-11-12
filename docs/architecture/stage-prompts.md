@@ -27,7 +27,7 @@ workflow stage 하나가 실행될 때 모델이 받는 입력을 정리한다. 
 
 ## 2. 기본 흐름의 runner stage
 
-orchestrator는 `harness-prepare-input.mjs --stage-id <skill>`로 입력을 만들고 `harness-agent-run.mjs`로 실행한다. runner는 `context.stage_id`와 skill이 같은 stage를 가진 workflow manifest가 하나 있을 때만 그 stage의 `role` 프로필과 sandbox를 붙인다([`resolveWorkflowStage`](../../.harness/src/workflow/skill-execution.mjs)). 기본 흐름에서 이 조건을 만족하는 것은 `to-ticket`과 `tracker-publish`뿐이다.
+orchestrator는 `harness-prepare-input.mjs --stage-id <stage-id>`로 입력을 만들고 `harness-agent-run.mjs`로 실행한다. 입력은 manifest의 stage ID를 보존하고 해당 stage의 skill을 사용한다. runner는 `context.stage_id`와 skill로 workflow manifest의 `role`, model tier, sandbox를 붙인다([`stage-input.mjs`](../../.harness/src/workflow/stage-input.mjs), [`resolveWorkflowStage`](../../.harness/src/workflow/skill-execution.mjs)). 기본 흐름에는 `plan-pr`와 `integration-pr`처럼 stage ID와 skill 이름이 다른 stage도 있다.
 
 | 순서 | stage | GUIDE (prompt에 붙음) | 프로필 | sandbox | 반환과 runtime 검사 |
 |---|---|---|---|---|---|

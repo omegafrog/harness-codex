@@ -14,6 +14,7 @@ import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
+import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
@@ -39,6 +40,18 @@ export async function assertPrStageReadiness({ root, state, stageId }) {
   if (trackerMode !== 'github') throw new Error('Pull request authoring requires GitHub tracker mode');
   if (stageId === 'plan-pr' && (state.stages?.['tracker-publish']?.status !== 'completed' || state.stages?.['tracker-publish']?.code !== 'OK')) throw new Error('Plan PR requires completed approved tracker publication');
   if (stageId === 'integration-pr' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK' || state.stages?.['sync-contracts']?.status !== 'completed' || state.stages?.['sync-contracts']?.code !== 'OK' || !(await hasPassingImplementationGate(root)))) throw new Error('Integration PR requires passing non-final implementation and contract completion gates');
+}
+
+export async function resolveStageSkill({ root, stageId }) {
+  const workflows = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
+  const matches = [];
+  for (const file of workflows) {
+    if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
+    const manifest = await loadNamedWorkflow(file.name, { root });
+    matches.push(...manifest.stages.filter((stage) => stage.id === stageId));
+  }
+  if (matches.length > 1) throw new Error(`Workflow stage is ambiguous: ${stageId}`);
+  return matches[0] || { id: stageId, skill: stageId };
 }
 
 async function archiveToTicket({ root, session, planSetId, previousExecutionId, restartExecutionId }) {
@@ -237,7 +250,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
   }
   const prepared = await readExecutionInput({ root, execution_id: state.stages['workflow-compose'].execution_id });
-  const stage = { id: stageId, skill: stageId, scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
+  const stage = { ...await resolveStageSkill({ root, stageId }), scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
   const input_refs = [];
   const producer_result_refs = {};
   let lastStage = state.current_stage;

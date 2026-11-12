@@ -29,6 +29,7 @@ test('install --provider codex carries no Claude Code files and the Claude provi
   try {
     assert.deepEqual(present(root, CLAUDE), []);
     assert.deepEqual(present(root, [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]), [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]);
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: gpt-6.1-sol\n    low_performance_reasoning_effort: medium\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
     assert.match(await readFile(join(root, '.codex/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
     assert.match(await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8'), /id: integration-pr[\s\S]*skill: gh-open-pr/);
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
@@ -36,7 +37,22 @@ test('install --provider codex carries no Claude Code files and the Claude provi
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     await assert.rejects(loadProvider('claude-code'), /claude-code provider is not installed/);
     assert.equal((await loadProvider('codex')).id, 'codex');
-    const { resolveAgentSandbox } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveStageSkill } = await import(`file://${join(root, '.harness/src/workflow/stage-input.mjs')}`);
+    for (const [stageId, workflow] of [['plan-pr', 'to-ticket'], ['integration-pr', 'implement-wrapper']]) {
+      assert.equal((await resolveStageSkill({ root, stageId })).skill, 'gh-open-pr');
+      const input = { skill: 'gh-open-pr', context: { stage_id: stageId } };
+      const binding = await resolveWorkflowStage({ root, input });
+      assert.deepEqual(binding, { workflow, stage: stageId });
+      assert.deepEqual(await resolveAgentSandbox({ root, input, ...binding }), { profile: 'pr_author', sandbox: 'workspace-write' });
+      assert.equal((await resolveSkillBinding({ root, skill: input.skill, ...binding })).model_tier, 'low_performance');
+    }
+    assert.equal((await resolveStageSkill({ root, stageId: 'tracker-publish' })).skill, 'tracker-publish');
+    const duplicateManifest = join(root, '.codex/workflows/implement-wrapper-copy.yaml');
+    const originalManifest = await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8');
+    await writeFile(duplicateManifest, originalManifest.replace('id: implement-wrapper\n', 'id: implement-wrapper-copy\n'));
+    await assert.rejects(resolveStageSkill({ root, stageId: 'integration-pr' }), /Workflow stage is ambiguous: integration-pr/);
+    await rm(duplicateManifest);
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } }, workflow: 'to-ticket', stage: 'plan-pr' }), { profile: 'pr_author', sandbox: 'workspace-write' });
     await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } } }), /only at its gated/);
     // A plain update keeps what is installed instead of adding the other provider.
