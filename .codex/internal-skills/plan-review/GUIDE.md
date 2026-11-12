@@ -23,6 +23,7 @@ Reviewer는 `verdict` (`pass` 또는 `revise`), `findings` (각각 `severity`, `
 
 ## Reviewer 규칙 (`plan_reviewer`)
 
+- 첫 구현 plan에 승인된 기술 스택과 저장소를 기준으로 Git 제외 규칙을 점검·수정하고 제외 및 보존 경로를 확인하는 선행 작업이 있는지, 다른 구현 plan이 이에 의존하는지 확인한다. 이 공통 환경 준비는 제품 Spec에 없는 기능 추가로 취급하지 않는다.
 - runner가 준 `reviewer_input_ref`가 admission 전체다. 보관된 restart 문서를 현재 입력으로 취급하지 않는다.
 - 구현 위치와 무관하게 admission snapshot을 리뷰하고 구현 위치를 지시하지 않는다.
 - DDD 소유권, plan 간 인계, 각 plan이 설정된 Smart Zone 안에 들어가게 나뉘었는지 확인한다. 단위 테스트는 관련 업무 규칙과 의미 있는 업무 거부 분기를 다루며 모든 잘못된 타입이나 기술 실패를 나열하지 않는다. 마지막 `e2e` plan은 Architecture Spec 12.7이 정한 도구 이름, 시작 명령, 의존 서비스 준비·정리 방법, `execution.json` profile 항목을 `인터페이스 계약`에 그대로 옮겨 담아야 한다. 12.7에 이 중 하나라도 없으면 plan을 통과시키지 말고 Spec 수정(spec-me)이 필요하다고 지적한다. 마지막 `e2e` plan이 모든 기능 plan에 의존하고 Product Spec 13절 시나리오와 Architecture Spec 12.7 환경을 참조하는지 확인한다. 기능 plan에는 E2E를 배정하지 않는다. 기능 plan마다 Architecture Spec과 맞는 `계층 배치`가 있는지 확인한다. 기능 plan마다 `인터페이스 계약`이 있고, 그 plan에 관련된 Spec의 경로·메서드·패키지 경계·DB 제약·설정 값을 빠짐없이 원문대로 담았는지 Spec 해당 절과 대조한다. 기능 plan의 비테스트 검증이 실제 DB·외부 서비스·보안 체인을 요구하면 그 확인을 `e2e` plan으로 옮기라고 지적한다.
