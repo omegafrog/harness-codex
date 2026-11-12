@@ -11,6 +11,6 @@
 - 선행 plan의 완료 여부는 `node .codex/scripts/harness-tracker.mjs dependencies --root <workspace_root>`의 `status`와 `incomplete`로만 판단한다. 이 명령이 plan의 `의존성` 절과 Beads 상태에서 계산하므로 Issue 번호를 plan에 직접 대응시키거나 현재 plan 자신의 티켓을 선행으로 읽지 않는다. `blocked`이면 `incomplete`의 plan이 끝날 때까지 대기한다. shared-resource 사실은 연결된 parent/child Issue 및 Project에서 읽는다. Issue, mapping, ledger 중 필요한 근거가 없거나 충돌하면 구체 근거를 보고하고 dispatch를 막는다.
 - Issue가 plan index에 연결되지 않았으면 현재 reviewed ledger와 검증된 parent/child mapping으로만 index를 보완한다. API/read 실패로 Issue 부재나 승인 여부를 추정하지 않는다.
 - ready child가 있을 때 Beads parent epic `harness_plan_id=$PLAN_SET_ID:parent`를 `in_progress`로 전환하고 검증한다. Beads v1 공통 절차를 사용한다. 모든 Beads child가 `closed`이고 통합 리뷰·사용자 승인된 최종 E2E·feature 완료 gate가 통과한 뒤에만 epic을 닫는다. child 구현 완료만으로 최종 E2E 전에 parent를 완료 처리하지 않는다.
-- 구현 완료 상태는 configured `Workflow Status` Project field를 `Done`으로 갱신하고 child Issue는 open으로 둔다. PR merge 뒤에는 승인된 closure만 확인한다. 상태 전이와 Beads mirror는 이 문서의 절차와 공통 Beads 계약을 따른다.
+- 구현 완료 상태는 configured `Workflow Status` Project field를 canonical로 `Done`에 갱신하고 GitHub 기본 `Status`도 `Done`으로 동기화한다. 구현 시작 시 기본 `Status`는 `In Progress`, 계획 대기 시 `Todo`로 맞춘다. `Blocked`는 canonical field에 보존하고 기본 `Status`는 `In Progress`로 둔다. child Issue는 PR merge 전까지 open으로 둔다. PR merge 뒤에는 승인된 closure만 확인한다. 상태 전이와 Beads mirror는 이 문서의 절차와 공통 Beads 계약을 따른다.
 
-Canonical 상태 이름은 `Planned`, `In Progress`, `Blocked`, `Done`이다. 기본 Project `Status` 필드를 `Workflow Status` 대신 사용하지 않는다.
+Canonical 상태 이름은 `Planned`, `In Progress`, `Blocked`, `Done`이며 설정된 `Workflow Status` field가 소유한다. GitHub 기본 `Status`는 같은 실행 시점이 보이도록 함께 갱신한다.

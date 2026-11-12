@@ -10,6 +10,7 @@ import { JsonlEventWriter } from '../eval/journal.mjs';
 
 const exec = promisify(execFile);
 export const TRACKER_STATES = Object.freeze({ planned: ['Planned', 'open'], 'in-progress': ['In Progress', 'in_progress'], blocked: ['Blocked', 'blocked'], completed: ['Done', 'closed'] });
+const githubBoardStatus = Object.freeze({ planned: 'Todo', 'in-progress': 'In Progress', blocked: 'In Progress', completed: 'Done' });
 const PHASES = new Set(['planning', 'implementation', 'test', 'review']);
 const CLASSIFICATIONS = new Set(['backlog', 'committed']);
 const canonical = (value) => Object.keys(TRACKER_STATES).find((key) => key === value || TRACKER_STATES[key][0] === value);
@@ -47,19 +48,22 @@ async function githubProjectMetadata(root, settings, run, context) {
     if (fields.totalCount > fields.fields.length) throw new Error('Incomplete project field list');
     const field = single(fields.fields.filter((f) => f.name === settings.status_field && f.type === 'ProjectV2SingleSelectField'), 'Configured status field');
     for (const [name] of Object.values(TRACKER_STATES)) single(field.options.filter((o) => o.name === name), `Status option ${name}`);
-    return { project, field };
+    const statusField = settings.status_field === 'Status' ? null : fields.fields.find((f) => f.name === 'Status' && f.type === 'ProjectV2SingleSelectField') || null;
+    if (statusField) for (const name of ['Todo', 'In Progress', 'Done']) single(statusField.options.filter((o) => o.name === name), `Status option ${name}`);
+    return { project, field, statusField };
   })();
   return context.githubProjectMetadata;
 }
-function githubIssueStatus(issue, ref, project, field) {
+function githubIssueStatus(issue, ref, project, field, statusField) {
   if (!issue || issue.projectItems.pageInfo.hasNextPage) throw new Error(`Missing issue or incomplete project item pagination: ${ref}`);
   const item = single(issue.projectItems.nodes.filter((i) => i.project.id === project.id), 'Configured project item');
   if (item.fieldValues.pageInfo.hasNextPage) throw new Error('Incomplete project field pagination');
   const value = single(item.fieldValues.nodes.filter((v) => v.field?.id === field.id), 'Configured status value');
   const status = canonical(value.name);
   if (!status) throw new Error(`Unsupported Workflow Status: ${value.name}`);
+  const defaultStatus = statusField ? single(item.fieldValues.nodes.filter((v) => v.field?.id === statusField.id), 'Project Status value').name : null;
   if (issue.state !== 'OPEN' && status !== 'completed') throw new Error('A closed GitHub issue cannot have an unfinished Workflow Status');
-  return { status, project, field, item, issue_state: issue.state };
+  return { status, default_status: defaultStatus, project, field, statusField, item, issue_state: issue.state };
 }
 
 function githubReference(config, ref) {
@@ -83,7 +87,7 @@ function trackerReference(config, externalRef) {
 
 async function githubTickets(root, config, refs, run, context) {
   const { settings } = githubReference(config, refs[0]);
-  const { project, field } = await githubProjectMetadata(root, settings, run, context);
+  const { project, field, statusField } = await githubProjectMetadata(root, settings, run, context);
   const parsed = refs.map((ref) => ({ ref, ...githubReference(config, ref) }));
   const results = new Map();
   for (let offset = 0; offset < parsed.length; offset += 10) {
@@ -96,7 +100,7 @@ async function githubTickets(root, config, refs, run, context) {
     if (response.errors?.length) throw new Error(`GitHub batched issue query failed: ${response.errors.map((error) => error.message).filter(Boolean).join('; ') || 'API returned errors'}`);
     const repository = response.data?.repository;
     if (!repository) throw new Error('GitHub batched issue query returned no repository');
-    batch.forEach((item, index) => results.set(item.ref, githubIssueStatus(repository[`issue_${index}`], item.ref, project, field)));
+    batch.forEach((item, index) => results.set(item.ref, githubIssueStatus(repository[`issue_${index}`], item.ref, project, field, statusField)));
   }
   return results;
 }
@@ -112,7 +116,7 @@ async function readTracker(root, config, ref, run, context = {}) {
 export async function readTrackerStatus({ workspace_root: root, ticket_ref: ref, run = defaultRun } = {}) {
   try {
     const tracker = await readTracker(root, await projectConfig(root), ref, run, {});
-    return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
+    return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, project_status: tracker.default_status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
   } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
 }
 async function mirror(root, ref, run, config) {
@@ -236,6 +240,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     for (const ref of refs) {
       if (beadsDisabled) {
         const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
+        if (tracker.statusField && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
         tickets.push({ ref, status: tracker.status });
         continue;
       }
@@ -243,6 +248,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       assertTicketPlan(bead, expected_plan_id, ref);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
+      if (tracker.statusField && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
       tickets.push({ ref, bead_id: bead.id, status: tracker.status });
@@ -289,11 +295,21 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     const desired = status || tracker.status;
     if (desired === 'in-progress' && (classification || bead?.metadata.harness_classification) === 'backlog') throw new Error('Commit backlog classification before starting execution');
     await writer.append('tracker_sync_started', { ticket_ref: ref, desired, previous: tracker.status, phase, classification }, { critical: true });
-    if (tracker.status !== desired) {
-      if (config.mode === 'github') {
-        const option = single(tracker.field.options.filter((o) => o.name === TRACKER_STATES[desired][0]), 'Status option');
+    if (config.mode === 'github') {
+      if (tracker.status !== desired) {
+        const option = single(tracker.field.options.filter((o) => o.name === TRACKER_STATES[desired][0]), 'Workflow Status option');
         await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.field.id, '--single-select-option-id', option.id], root);
-      } else {
+        tracker_updated = true;
+      }
+      if (tracker.statusField) {
+        const optionName = githubBoardStatus[desired];
+        if (tracker.default_status !== optionName) {
+          const option = single(tracker.statusField.options.filter((o) => o.name === optionName), 'Project Status option');
+          await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.statusField.id, '--single-select-option-id', option.id], root);
+          tracker_updated = true;
+        }
+      }
+    } else if (tracker.status !== desired) {
         const updated = tracker.frontmatter.replace(/^status:[ \t]*[^\r\n]+/m, `status: ${desired}`);
         if (await readFile(tracker.path, 'utf8') !== tracker.content) throw new Error('Local ticket changed concurrently; retry from the latest state');
         const temp = `${tracker.path}.${randomUUID()}.tmp`;
@@ -301,11 +317,11 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
           await writeFile(temp, tracker.content.replace(tracker.frontmatter, updated), { flag: 'wx', mode: (await lstat(tracker.path)).mode });
           await rename(temp, tracker.path);
         } finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
-      }
-      tracker_updated = true;
+        tracker_updated = true;
     }
     tracker = await readTracker(root, config, ref, run, context);
     if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
+    if (tracker.statusField && tracker.default_status !== githubBoardStatus[desired]) throw new Error('GitHub Project Status write did not verify');
     if (!bead) {
       const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
       await writer.append('tracker_sync', result, { critical: true });
