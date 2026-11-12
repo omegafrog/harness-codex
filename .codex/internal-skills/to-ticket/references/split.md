@@ -10,9 +10,11 @@
 
 ## 계획 분할
 
-각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
+첫 구현 child plan에 Git 제외 규칙 점검을 선행 작업으로 넣고 나머지 구현 plan이 이 작업에 의존하게 한다. 승인된 Architecture Spec과 실제 저장소에서 사용하는 언어·도구·인프라 및 기존 ignore 규칙을 확인해 캐시, 빌드 산출물, 로컬 환경·비밀 파일 등 해당 프로젝트에서 생성되는 비추적 대상을 식별하고 필요한 `.gitignore`를 수정한다. 소스, 테스트, 예제 설정과 공유해야 할 설정은 추적 대상으로 보존한다. `git check-ignore`로 제외 대상과 보존 대상의 대표 경로를 확인하고, 이미 추적된 파일은 ignore만으로 제거되지 않으므로 삭제하거나 추적 해제하지 말고 별도로 보고한다. 규칙이 이미 충분하면 점검 결과를 기록하고 불필요한 변경은 하지 않는다. 이 작업은 제품 동작을 추가하는 요구가 아니라 구현 환경의 공통 준비다.
 
-각 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. Parent plan-set에는 모든 split plan이 구현·개별 검증·통합된 뒤 마지막에 한 번 실행할 feature-level E2E 시나리오, oracle, execution profile, timeout을 제안한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
+각 vertical slice를 업무 기능과 승인된 DDD owner에 맞춘다. 각 plan에 `계층 배치` 절을 두고 Architecture Spec에 따라 이 plan의 코드가 어느 계층에 가는지 적는다: domain(Entity·Value Object·Aggregate 메서드와 불변식), service(application 흐름·트랜잭션), api(HTTP 입출력·DTO 검증·세션·HTTP 오류 변환), db(repository 구현·migration). 구현자와 리뷰어가 같은 배치를 기준으로 삼는다. 각 plan에 `인터페이스 계약` 절도 두고 Architecture Spec에서 이 plan이 지켜야 하는 외부 규정을 옮겨 적는다: HTTP 경로와 메서드(폼 action 값 포함)·화면 이름, 패키지·모듈 경계, DB 테이블·제약·migration, 설정 키와 기본값. 항목마다 Spec 절 번호를 붙이고 원문을 줄이거나 바꾸지 않는다. 구현자는 Spec 전체가 아니라 이 절과 plan 전체를 반드시 읽는다. 소유 Aggregate의 Root·Entity·Value Object·도메인 메서드·불변 조건과 application service 조합을 보존한다. 요청·Product/Architecture Spec의 동작, 제약, 수용 기준, UC/BR/AC/INV 및 decision ID를 소유 plan에 연결한다. 의존성과 plan 간 handoff를 제안한다.
+
+각 기능 child plan은 소유 업무 규칙의 조건·행위·기대 결과를 설명하는 business-logic unit test 계약만 담는다. 마지막 child로 `e2e` plan을 하나 둔다. 이 plan은 모든 기능 plan에 의존하고, Product Spec 13절 시나리오를 Architecture Spec 12.7 환경에서 실행하는 E2E 테스트 코드와 `execution.json` profile(`purpose: "e2e"`), `docs/agents/EXEC.md` 실행 안내를 만든다. 시나리오와 환경은 Spec을 참조하고 plan에서 새로 정하지 않는다. Parent는 이 plan을 참조한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
 
 분할 결과를 바탕으로 canonical 계획 문서를 작성하고 독립 리뷰를 요청한다. 승인된 Spec만으로 필수 결정을 내릴 수 없을 때는 그 결정만 사용자에게 묻는다. 티켓 발행 승인은 전체 계획과 독립 리뷰가 끝난 뒤 orchestrator가 요청한다.
 
@@ -20,7 +22,7 @@
 
 `worktree.json`에서 받은 `plan_set_id`를 그대로 사용해 각 child plan은 `docs/plans/<plan-set-id>/<plan-id>.md`, index는 `docs/plans/<plan-set-id>/plans.md`에 작성한다. 이 단계에서 `plan_set_id`를 만들거나 바꾸지 않는다. 각 slice의 안정된 `plan_id`는 계속 정하며 tracker Issue 번호와 독립적으로 유지한다.
 
-각 plan에 한국어 구현 목적·범위·수용 기준·의존성·plan handoff·업무 규칙 단위 테스트 계약·필요한 비테스트 검증을 작성한다. 실행 위치·브랜치는 agent가 작성하지 않고 정적 실행기가 생성한다. [실행 위치 계약](execution-evidence.md#실행-위치) 및 [검증 근거 계약](execution-evidence.md)을 적용한다. Index에는 canonical plan 링크, 요약, 의존성을 기록한다.
+기능 plan의 `필요한 비테스트 검증`에는 그 plan의 작업 환경에서 바로 실행할 수 있는 것만 적는다(빌드, `./mvnw test` 같은 기본 CLI, 정적 확인). 실제 DB·외부 서비스·보안 체인이 있어야 하는 확인은 쓰지 않고 마지막 `e2e` plan의 시나리오로 확인한다. 각 plan에 한국어 구현 목적·범위·수용 기준·의존성·plan handoff·업무 규칙 단위 테스트 계약·필요한 비테스트 검증을 작성한다. 실행 위치·브랜치는 agent가 작성하지 않고 정적 실행기가 생성한다. [실행 위치 계약](execution-evidence.md#실행-위치) 및 [검증 근거 계약](execution-evidence.md)을 적용한다. Index에는 canonical plan 링크, 요약, 의존성을 기록한다.
 
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 Product/Architecture Spec 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 split plan을 표현한다.
 

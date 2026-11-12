@@ -74,8 +74,8 @@ Planned
 
 ## 테스트 계약
 
-- 단위/정책: [업무 규칙 검증 대상; verification_files: 경로 또는 none; verification_command: 기본 CLI 명령. Parent E2E만 execution_profile을 기록]
-- `ui ~ entity` E2E: [parent에는 plan-set 전체 통합 후 실행할 사용자 시나리오·oracle·profile·timeout; child에는 parent의 최종 E2E 참조]
+- 단위/정책: [업무 규칙 검증 대상; verification_files: 경로 또는 none; verification_command: 기본 CLI 명령. `e2e` plan만 execution_profile을 기록]
+- `ui ~ entity` E2E: [`e2e` plan에는 Product Spec 13절 시나리오 ID·Architecture Spec 12.7 환경·profile·timeout; 기능 child에는 `e2e` plan 참조]
 
 ## 필요한 비테스트 검증
 
@@ -106,13 +106,13 @@ Planned
 - 실행 위치는 [실행 위치 계약](execution-evidence.md#실행-위치)에 따라 정적 실행기가 생성한다. canonical plan·index·structured-source에 agent가 경로를 복사하지 않는다. publisher는 정적 준비기의 `publication_drafts` 본문 파일을 그대로 사용한다.
 
 - `수용 기준`에는 관련 UC/BR/INV ID, 소유 모델과 enforcement operation, 관찰 가능한 결과를 보존한다.
-- Child `테스트 계약`에는 소유 UC/BR/AC의 업무 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 테스트 파일과 실행 프로필은 계획 자체의 테스트 계약에 기록한다. 발행 전 해당 계약이 canonical plan과 같은지 확인한다. 비즈니스 로직 변경이 없으면 경로는 `none`으로 하고 테스트를 추가하지 않는다. Parent의 `ui ~ entity E2E`에는 plan-set 전체 통합 후 마지막에 한 번 실행할 feature-level 시나리오와 oracle/profile/timeout/budget을 기록하고 child는 이를 참조한다. 성능 측정은 테스트와 별도 검증 evidence로 관련 System Target, workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 연결한다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.
+- Child `테스트 계약`에는 소유 UC/BR/AC의 업무 조건·행위·기대 결과를 검증하는 단위 테스트만 기록한다. 테스트 파일과 실행 프로필은 계획 자체의 테스트 계약에 기록한다. 발행 전 해당 계약이 canonical plan과 같은지 확인한다. 비즈니스 로직 변경이 없으면 경로는 `none`으로 하고 테스트를 추가하지 않는다. 마지막 `e2e` plan의 `ui ~ entity E2E`에 시나리오 ID와 profile/timeout/budget을 기록하고 기능 child는 이를 참조한다. 성능 측정은 테스트와 별도 검증 evidence로 관련 System Target, workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 연결한다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.
 - 구조 입력의 비테스트 검증은 `verification` 문자열 배열에 기록한다. 기존 입력에는 이 필드가 없어도 된다.
 
 - parent와 child 본문을 서로 바꾸지 않는다.
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 split plan만 표현한다.
-- 상태는 `Planned`로 고정한다. tracker 상태가 아닌 임의 상태/label을 쓰지 않는다.
+- 상태는 `Planned`로 고정한다. 분류 label은 `activate`가 Issue 변환 뒤 적용하는 `harness:plan-set` 또는 `harness:plan`만 사용하며, tracker 상태와 label을 혼동하지 않는다.
 - Project draft 상태는 `Planned`로 설정한다. 저장소 Issue 상태는 이 단계에서 만들지 않는다.
 - 의존성은 canonical plan ID를 사용한다. Issue 번호·URL을 추측하지 않는다.
 - parent의 Product/Architecture Spec 경로는 실제 존재하는 non-empty 파일이어야 한다.

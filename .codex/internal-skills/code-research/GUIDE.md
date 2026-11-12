@@ -1,12 +1,9 @@
+---
+model_tier: low_performance
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [codebase-design](../codebase-design/GUIDE.md) · [ddd-design](../ddd-design/GUIDE.md).
-
 # code-research
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## What it does
 
@@ -35,7 +32,7 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
-The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files or make design decisions, and returns a concise report with source locations and inspected commit. The caller reads the result and decides what to pass to the next skill.
+The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files, make design decisions, invoke `code-research` recursively or spawn another agent, and returns only the Output sections plus blockers, with a file path for every concrete claim and the inspected commit. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out
 
@@ -51,4 +48,4 @@ The caller delegates this bounded task to `code_researcher` using the configured
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
 
-실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조한다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.
+`docs/agents/EXEC.md`와 `execution.json`은 실행·설정·인프라 요구가 조사 범위일 때만 읽으며, 두 파일이 없다는 것만으로 조사를 막지 않는다. 실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 EXEC에 대조해 빠진 인프라, 필수 flag·환경 변수, 생성된 설정의 stale 검증, 사용자 흐름 E2E 전용인 harness-exec로 잘못 보낸 일반 검증을 보고한다. 비어 있는 dependency/prepare 목록은 추측한 기본값이 아니라 source 근거가 필요하다. 명시적 최종 사용자 흐름 E2E가 있다면 해당 `purpose: "e2e"` profile도 검토해 필수 인자·설정·인프라 누락을 보고한다. 일반 검증 명령은 기본 CLI로 기록한다.

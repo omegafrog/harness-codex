@@ -4,7 +4,7 @@
    Identify the circumstances in which the problem occurs, how it manifests, and what impact it currently has.
 
 2. **Goals and Desired Outcomes**
-   Focus on the outcome the product should produce rather than only describing what should be built. Capture one product intent per feature: its purpose and what level is sufficient. Do not ask the user to list what is out of bounds.
+   Focus on the outcome the product should produce rather than only describing what should be built. Capture one product intent per feature and observable user flows and completion conditions that define its sufficient level. Restating the feature ("users can log in with email") is not an intent. First propose these from the request and settled evidence, labeling agent interpretations accurately. Reuse the feature intent for detailed rules. A missing reason alone is not a material gap; apply the intent and scope admission rules in the Product Spec GUIDE. Do not ask the user to list what is out of bounds.
 
 3. **Users and Actors**
    Identify the users, external systems, and other participants involved in the product or workflow.
@@ -16,7 +16,7 @@
    Describe the main user flows, including how each flow begins, progresses, and ends.
 
 6. **Business Rules and Invariants**
-   Identify conditions and rules necessary for the requested use cases. For a required numeric, length, boundary, format, validation or delete-propagation rule, capture its purpose and sufficient level. Reuse existing evidence or a reasonable platform default where possible; ask only when the required outcome materially depends on an otherwise unresolved decision. Do not add optional rules just to fill this topic.
+   Identify conditions and rules necessary for the requested use cases. For a required numeric, length, boundary, format, validation or delete-propagation rule, capture its purpose and sufficient level; reference the existing feature intent and completion conditions when they suffice instead of asking for a separate motive. Reuse existing evidence or a reasonable platform default where possible; ask only when the required outcome materially depends on an otherwise unresolved decision. Do not add optional rules just to fill this topic.
 
 7. **States and State Transitions**
    For features that have states, define the possible states, how transitions occur, and what conditions or events trigger each transition.
@@ -35,3 +35,6 @@
 
 12. **Success Conditions and Acceptance Criteria**
     Convert all agreed requirements, rules, flows, exceptions, and outcomes into clear and verifiable statements.
+
+13. **End-user Scenarios**
+    Turn the acceptance criteria into the end-user scenarios the final E2E runs: actor, action and the result the user sees, each linked to its UC/BR/AC IDs. Ask the user only when an expected result is not settled by the agreed requirements. Every step must follow from an existing UC/BR/AC. When a natural scenario needs behavior no requirement covers (for example logout after login), do not add the requirement yourself: ask the user whether to add it (with the reason it is needed) or to drop it from the scenario, and record the answer as the requirement's source. Execution environment belongs to the Architecture Spec.

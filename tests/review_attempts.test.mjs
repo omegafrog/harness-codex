@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInputs, assertReviewAttempt, assertNoUnrecordedNativeReview } from '../.harness/src/workflow/review-attempts.mjs';
@@ -208,9 +208,11 @@ test('native claim admits one reviewer and records only its bound stopped identi
     await assert.rejects(updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'other-session', nativeResult, nativeReview }), /does not match its active claim/);
     await updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'claude-session', nativeResult, nativeReview });
     await assert.rejects(assertNoUnrecordedNativeReview({ root, scope }), /must be recorded/);
-    await assert.rejects(updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review }), /claimed, stopped native reviewer result/);
-    const revise = { ...review, ...nativeReview };
-    assert.equal((await updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review: revise })).reason, 'revise');
+    // Identity comes from the bound native reviewer: a stage-supplied author list is refused.
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review }), /author_ids is recorded from the native reviewer hook/);
+    assert.equal((await updateReviewAttempt({ root, scope, action: 'record', attemptId: admission.attempt_id, inputs, review: null, requireNative: true })).reason, 'revise');
+    const recorded = (await inspectReviewHistory({ root, scope })).last_review;
+    assert.deepEqual({ reviewer_id: recorded.reviewer_id, author_ids: recorded.author_ids, fork_turns: recorded.fork_turns, verdict: recorded.verdict }, { reviewer_id: 'reviewer', author_ids: ['claude-session'], fork_turns: 'none', verdict: 'revise' });
     await assertNoUnrecordedNativeReview({ root, scope });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -226,5 +228,48 @@ test('a claimed native dispatch cannot use the pre-dispatch abort exemption', as
     await assertNoUnrecordedNativeReview({ root, scope });
     assert.equal((await inspectReviewHistory({ root, scope })).budget.used, 1);
     assert.equal((await updateReviewAttempt({ root, scope, action: 'begin', inputs })).round, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a reviewer that finished after its stage was interrupted is settled when the next review begins', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-interrupted-'));
+  try {
+    const scope = 'spec-ticket-architecture';
+    const admission = await updateReviewAttempt({ root, scope, action: 'begin', inputs: { spec: 'old' } });
+    await updateReviewAttempt({ root, scope, action: 'claim', attemptId: admission.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'token', parentSessionId: 'stage-session', executionId: 'review-stage' });
+    await updateReviewAttempt({ root, scope, action: 'bind-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'stage-session' });
+    const nativeReview = { verdict: 'revise', findings: [{ severity: 'major', description: 'gap', evidence: 'spec' }] };
+    await updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: admission.attempt_id, nativeAgentId: 'agent-1', parentSessionId: 'stage-session', nativeResult: JSON.stringify(nativeReview), nativeReview });
+    // The stage was killed before record; the Spec changed afterwards.
+    const next = await updateReviewAttempt({ root, scope, action: 'begin', inputs: { spec: 'new' } });
+    assert.equal(next.round, 2);
+    const history = JSON.parse(await readFile(join(root, `.io/runtime/reviews/${scope}.json`), 'utf8'));
+    assert.equal(history.attempts.at(-2).status, 'stale');
+    assert.equal(history.attempts.at(-2).settled_after_interruption, true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('only a terminated matching plan execution releases its unfinished native review', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-interrupted-'));
+  try {
+    const scope = 'plan-example', inputs = { plan: 'hash' }, executionId = 'to-ticket-old';
+    const first = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    await updateReviewAttempt({ root, scope, action: 'bind-admission', attemptId: first.attempt_id, executionId, admissionRef: `runtime/executions/${executionId}/plan-review-admission-${first.attempt_id}.json` });
+    await updateReviewAttempt({ root, scope, action: 'claim', attemptId: first.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'token', parentSessionId: 'parent', executionId });
+    await updateReviewAttempt({ root, scope, action: 'bind-native', attemptId: first.attempt_id, nativeAgentId: 'agent', parentSessionId: 'parent' });
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'abort', attemptId: 'wrong', reason: 'test' }), new RegExp(`requested wrong, active ${first.attempt_id}`));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), new RegExp(first.attempt_id));
+    const dir = join(root, '.io/runtime/executions', executionId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 0, session_id: 'another-parent' }));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), /already active/);
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'claude-code', exit_code: 0, session_id: 'parent' }));
+    await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs }), /already active/);
+    await writeFile(join(dir, 'exec.stderr.json'), JSON.stringify({ provider: 'codex', exit_code: 0, session_id: 'parent' }));
+    const next = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    assert.equal(next.round, 2);
+    const history = JSON.parse(await readFile(join(root, `.io/runtime/reviews/${scope}.json`), 'utf8'));
+    assert.equal(history.attempts[0].status, 'aborted');
+    assert.match(history.attempts[0].reason, /without a recorded reviewer result/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

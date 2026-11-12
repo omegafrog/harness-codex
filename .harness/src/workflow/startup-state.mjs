@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path';
 import { sessionDirectory } from './session-output.mjs';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { WORKTREE_STAGE } from './worktree-stages.mjs';
@@ -41,6 +41,44 @@ function gitWorktrees(text) {
     else if (token.startsWith('branch ') && rows.length) rows.at(-1).branch = token.slice(7).replace(/^refs\/heads\//, '');
   }
   return rows;
+}
+
+// Codex cannot move a session into another workspace, so after compose the user continues in a new
+// session opened inside the worktree. The session that last prompted the orchestrator there is the one
+// stage results are delivered to; record it instead of keeping the compose session.
+export async function bindOrchestratorSession({ root, provider, sessionId }) {
+  if (!sessionId || !['codex', 'claude-code'].includes(provider)) return null;
+  const path = join(root, '.io/worktree.json');
+  let record;
+  try { record = parseWorktreeRecord(await readFile(path, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  if (record.state !== 'active' || await realpath(record.workspace) !== await realpath(root)) return null;
+  const current = record.agent_sessions?.orchestrator;
+  if (current?.session_id === sessionId && current?.provider === provider) return current;
+  return recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: 'orchestrator', session_id: sessionId, execution_id: 'orchestrator-prompt', provider });
+}
+
+// A conversation keeps its earlier conclusions after Harness is updated. When the installed files changed since this
+// session last prompted, tell the orchestrator to re-read the guides before trusting what it decided earlier.
+export async function harnessUpdateNotice({ root, sessionId }) {
+  if (!sessionId) return null;
+  const { createHash } = await import('node:crypto');
+  const { mkdir, writeFile, rename } = await import('node:fs/promises');
+  let lock;
+  try { lock = await readFile(join(root, '.codex/harness-lock.json')); } catch { return null; }
+  const current = createHash('sha256').update(lock).digest('hex').slice(0, 12);
+  let session;
+  try { session = sessionDirectory(root, { create: false }); } catch { return null; }
+  const path = 'runtime/orchestrator/harness-seen.json';
+  let seen = {};
+  try { seen = JSON.parse(await readFile(join(session, path), 'utf8')); } catch { seen = {}; }
+  if (seen[sessionId] === current) return null;
+  await assertWorkspaceTarget(session, path);
+  await mkdir(join(session, 'runtime/orchestrator'), { recursive: true, mode: 0o700 });
+  const temporary = join(session, `${path}.${process.pid}.tmp`);
+  await writeFile(temporary, JSON.stringify({ ...seen, [sessionId]: current }), { mode: 0o600 });
+  await rename(temporary, join(session, path));
+  return seen[sessionId] ? `Harness was updated since this conversation last ran (installed files ${seen[sessionId]} -> ${current}). Conclusions you reached earlier about what Harness can or cannot do may be outdated: re-read the relevant GUIDE or reference before relying on them.` : null;
 }
 
 export async function inspectStartupState({ workspaceRoot, sessionId = null, provider = 'codex', codexSessionId = null }) {

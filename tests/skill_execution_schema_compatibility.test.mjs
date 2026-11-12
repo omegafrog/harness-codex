@@ -34,6 +34,8 @@ test('generated output schemas expose questions without a singular result field'
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
+      assert.equal(Object.hasOwn(schema.properties, 'execution_id'), false);
+      assert.equal(Object.hasOwn(schema.properties.result.properties, 'execution_id'), false);
       assert.equal(Object.hasOwn(schema, 'anyOf'), false);
       assert.equal(Object.hasOwn(schema.properties.status, 'description'), false);
       assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);
@@ -105,12 +107,12 @@ test('installed stage accepts changed documents while preserving review snapshot
     const managedAssets = await discoverManagedAssetPaths(sourceRoot);
     assert.ok(managedAssets.includes('.codex/agents/tracker_publisher.toml'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-agent-run.mjs'));
-    assert.ok(managedAssets.includes('.codex/scripts/harness-claude-orchestrator.mjs'));
+    assert.ok(managedAssets.includes('.claude/harness/scripts/harness-claude-orchestrator.mjs'));
     assert.ok(managedAssets.includes('.codex/scripts/harness-output-schema.mjs'));
     assert.ok(managedAssets.includes('.codex/internal-skills/skill-execution/references/stage-return.md'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/index.mjs'));
     assert.ok(managedAssets.includes('.harness/src/workflow/providers/codex.mjs'));
-    assert.ok(managedAssets.includes('.harness/src/workflow/providers/claude-code.mjs'));
+    assert.ok(managedAssets.includes('.claude/harness/providers/claude-code.mjs'));
     assert.ok(managedAssets.includes('.claude/agents/spec_reviewer.md'));
     assert.ok(managedAssets.includes('.claude/skills/orchestrator/SKILL.md'));
     assert.ok(managedAssets.includes('.codex/internal-skills/tracker-publish/GUIDE.md'));
@@ -127,7 +129,7 @@ test('installed stage accepts changed documents while preserving review snapshot
       assert.ok((await readFile(join(root, provider, 'skills/spec-me/references/../../../../.codex/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
     }
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
-    const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.harness/src/installer/claude-orchestrator-hook.mjs')}`);
+    const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.claude/harness/installer/claude-orchestrator-hook.mjs')}`);
     const codex = await import(`file://${join(root, '.harness/src/workflow/providers/codex.mjs')}`);
     await writeFile(join(root, 'app.txt'), 'application');
     execFileSync('git', ['add', 'app.txt'], { cwd: root });
@@ -151,7 +153,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(linkedStatus, /app\.txt/);
     assert.doesNotMatch(linkedStatus, /\.codex/);
     execFileSync('git', ['check-ignore', '.codex/harness.yaml'], { cwd: linked });
-    const claude = await import(`file://${join(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const claude = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
     const providers = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     const { writeOutputSchema: writeInstalledOutputSchema } = await import(`file://${join(root, '.harness/src/workflow/output-schema.mjs')}`);
     assert.equal(providers.configuredProvider({ agents: { provider: 'claude-code' } }), 'claude-code');
@@ -189,7 +191,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(claudeAgent, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
     assert.match(claudeAgent, /You are the spec_reviewer agent/);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
-    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
+    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
     assert.match(claudeHook.hookSpecificOutput.additionalContext, /"provider":"claude-code"/);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'sonnet', reasoning_effort: 'medium' }, schema: { type: 'object' }, resume: null });
     assert.ok(claudeArgs.includes('--json-schema'));
@@ -204,7 +206,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     const fakeSession = '123e4567-e89b-12d3-a456-426614174000';
     await writeFile(fakeClaude, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
     await chmod(fakeClaude, 0o755);
-    const launcher = join(root, '.codex/scripts/harness-claude-orchestrator.mjs');
+    const launcher = join(root, '.claude/harness/scripts/harness-claude-orchestrator.mjs');
     for (const args of [['continue'], ['--resume', fakeSession, 'continue']]) {
       const forwarded = JSON.parse(execFileSync(process.execPath, [launcher, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }));
       assert.deepEqual(forwarded, ['-p', '--permission-mode', 'bypassPermissions', ...args]);
@@ -274,8 +276,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.doesNotMatch(status, /\.harness\/src\/|\.codex\//);
     assert.doesNotMatch(status, /\.claude\//);
     execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-claude-orchestrator.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/scripts/harness-claude-orchestrator.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/agents/spec_reviewer.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/skills/orchestrator/SKILL.md'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.claude/settings.local.json'], { cwd: root });
@@ -373,6 +375,25 @@ test('installed result validation accepts safe directory artifacts and keeps con
 });
 
 
+test('installed plan review abort uses its requested attempt ID', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-review-abort-install-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await updateProject({ sourceRoot, targetRoot: root });
+    const { updateReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
+    const first = await updateReviewAttempt({ root, scope: 'plan-sample', action: 'begin', inputs: { plan: 'hash' } });
+    const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
+    const result = JSON.parse(execFileSync(process.execPath, [cli, 'abort', '--root', root, '--plan-set', 'sample', '--attempt', first.attempt_id, '--reason', 'review interrupted'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(result.reason, 'aborted');
+    const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+    assert.doesNotMatch(status, /\.harness\/src\/workflow\/review-attempts|\.codex\/scripts\/harness-plan-review|\.io\/runtime\/reviews/);
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('fresh install and update use consolidated flow schemas and Doctor inventory', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-schema-install-'));
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -404,9 +425,13 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
       assert.equal(Object.hasOwn(schema.properties, 'question'), false);
       assert.ok(schema.required.includes('questions'));
     }
+    // The stage return contract owns the question format; skills no longer restate it.
+    const returnContractText = await readFile(join(root, '.codex/internal-skills/skill-execution/references/stage-return.md'), 'utf8');
+    assert.match(returnContractText, /`result\.questions`에 \[질문 스키마\]/);
+    assert.match(returnContractText, /질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다/);
     for (const skill of ['grilling', 'spec-me']) {
       const instructions = await readFile(join(root, '.codex/internal-skills', skill, 'GUIDE.md'), 'utf8');
-      assert.match(instructions, /결과의 `questions` 배열/);
+      assert.match(instructions, /stage (return contract|반환 계약)/);
       assert.doesNotMatch(instructions, /결과의 `question`에/);
     }
     await mkdir(join(root, 'docs/agents'), { recursive: true });
@@ -430,7 +455,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  high_performance_model: gpt-6.1-sol\n  high_performance_reasoning_effort: high\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
@@ -448,7 +473,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish' }), /user publication approval are required/);
     await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /Completed to-ticket/);
     const workflow = await loadNamedWorkflow('to-ticket', { root });
-    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish']);
+    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish', 'plan-pr']);
     assert.deepEqual(workflow.stages[1].needs, ['to-ticket']);
     assert.ok(workflow.stages.every((stage) => !Object.hasOwn(stage, 'model_tier')));
     assert.equal((await resolveSkillBinding({ root, skill: 'to-ticket', workflow: 'to-ticket', stage: 'to-ticket' })).model_tier, 'high_performance');

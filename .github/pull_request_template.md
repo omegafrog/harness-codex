@@ -15,6 +15,7 @@
 - Architecture Spec:
 - Diagrams:
   - 해당 없음 — 적용 가능한 ticket-scoped SVG가 없음
+  <!-- SVG를 넣을 때는 항목마다 한 줄씩 두고, 각 항목 사이에 빈 줄을 남겨 개별 행으로 렌더링한다. -->
 
 ## Implemented Plans
 

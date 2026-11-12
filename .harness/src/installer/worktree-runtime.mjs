@@ -5,7 +5,6 @@ import { readHarnessLock } from './lock.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { protectLocalInstallArtifacts } from './local-exclude.mjs';
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
-import { syncClaudeOrchestratorHook } from './claude-orchestrator-hook.mjs';
 
 // Linked worktrees inherit tracked application files, not ignored installed assets.
 export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
@@ -39,7 +38,10 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (lock) {
-    await syncOrchestratorHook(targetRoot);
-    await syncClaudeOrchestratorHook(targetRoot);
+    // With the user-level Codex orchestrator hook installed, a worktree needs no project hook (which Codex would
+    // ask to review again for every new worktree path).
+    const userHook = await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+    if (!userHook) await syncOrchestratorHook(targetRoot);
+    await (await import('./update.mjs')).syncInstalledClaudeHook(targetRoot);
   }
 }

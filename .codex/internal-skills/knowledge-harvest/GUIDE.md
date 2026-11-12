@@ -1,9 +1,10 @@
+---
+model_tier: low_performance
+---
 
 # Knowledge Harvest
 
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 필요한 조사·추출·검토를 서브에이전트에 위임한다. 사용자 결정은 상위 caller에 반환한다.
+[실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 필요한 조사·추출·검토를 서브에이전트에 위임한다.
 
 ## 목적
 
@@ -40,7 +41,9 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 - Source/Claim 수집과 저장은 사용자 material-use approval 전에 제시 목적으로 할 수 있다. 이 기록은 Reviewer의 자료 사용 승인이나 Principle 승인이 아니다.
 - 후속 단계는 workflow 선언의 순서대로 수행하고 각 gate의 근거를 저장한다. countersearch 및 human approval 없이 Principle을 publish하지 않는다.
 - 원문이 없거나 위치를 확인할 수 없으면 Claim을 추측하지 않고 진단 또는 unavailable 상태를 보존한다.
+- Reviewer는 새로 발견한 Source/Claim에 의존하기 전에 그 내용·맥락·출처를 사용자에게 보여 주고 `recordMaterialApproval`/`writeMaterialApproval`로 별도 자료 사용 승인을 받는다. Principle 승인은 자료 사용 승인을 대신하지 않는다. 거절되거나 대기 중인 자료는 제외한다.
+- Human approver 단계는 후보 전체, 독립 corroboration, countersearch 범위·결과, Reviewer 평가, 예외와 미해결 사항을 제시하고 명시적 승인 또는 보류를 받는다. 침묵을 동의로 보지 않고 사용자를 대신하거나 게시하지 않는다. 승인은 `principle approve --actor <user-id> --actor-role user`로 사람 actor와 시각을 보존해 기록한다.
 
-## 세션 출력
+## 실행 산출물 경로
 
-`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.

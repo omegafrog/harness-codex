@@ -4,7 +4,7 @@ import { lstat, readFile, realpath, readdir, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendFileSync, closeSync, openSync } from 'node:fs';
-import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent } from '../../.harness/src/workflow/execution-context.mjs';
+import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../../.harness/src/workflow/execution-context.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 
@@ -12,6 +12,7 @@ const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const base = installed;
 const { loadProvider } = await import(new URL('providers/index.mjs', base));
 const { resolveSkillBinding, resolveWorkflowStage, resolveAgentSandbox, readExecutionInput, readSkillSessionJson, resolveSkillSession, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
+const { stripSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { executionInputAbsolutePath } = await import(new URL('execution-input.mjs', base));
 const { stageExecutionPaths, stageArtifactDirectories } = await import(new URL('session-output.mjs', base));
@@ -32,6 +33,7 @@ try {
     if (!args[i]?.startsWith('--') || !['worktree-ref', 'execution-id', 'workflow', 'stage', 'background'].includes(k) || !args[i + 1] || Object.hasOwn(opts, k)) throw new Error(`Invalid argument: ${args[i]}`);
     opts[k] = args[i + 1];
   }
+  opts['worktree-ref'] = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: opts['worktree-ref'] }).worktree_ref ?? opts['worktree-ref'];
   if (!isAbsolute(opts['worktree-ref'] || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Absolute worktree-ref and execution-id are required');
   if (opts.background && opts.background !== 'true') throw new Error('background must be true');
   const root = process.cwd();
@@ -59,7 +61,7 @@ try {
   const schemaInfo = await lstat(schema);
   if (!schemaInfo.isFile() || schemaInfo.isSymbolicLink()) throw new Error('Output schema must be a regular file');
   const outputSchema = JSON.parse(await readFile(schema, 'utf8'));
-  if (outputSchema.properties?.execution_id?.const !== opts['execution-id'] || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
+  if (Object.hasOwn(outputSchema.properties || {}, 'execution_id') || outputSchema.properties?.skill?.const !== input.skill) throw new Error('Output schema does not match the execution input');
   await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/codex-last-message.json`);
   if (opts.background === 'true') {
     await assertWorkspaceTarget(session, `runtime/executions/${opts['execution-id']}/runner.stdout.log`);
@@ -110,17 +112,18 @@ try {
     try { priorCompaction = (await readFile(join(priorSession, priorEvents), 'utf8')).split('\n').some((line) => { try { return isCompactionEvent(JSON.parse(line)); } catch { return false; } }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  const guideContent = await readFile(join(root, guide), 'utf8');
+  // The model declaration in a skill document is metadata for the runner; the stage receives the instructions without it.
+  const guideContent = stripSkillDeclaration(await readFile(join(root, guide), 'utf8'));
   const workerBase = providerId === 'claude-code' ? await readFile(join(root, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8') : null;
   const profileContent = profilePath ? await readFile(join(root, profilePath), 'utf8') : null;
   const profileVersion = profileContent === null ? null : instructionVersion(profileContent);
   const returnContract = '.codex/internal-skills/skill-execution/references/stage-return.md';
   const instructionPaths = [returnContract, ...(input.skill === 'spec-me' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/skill-execution/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md', '.codex/internal-skills/product-spec/references/template.md'] : [])];
-  const instructionVersions = await Promise.all(instructionPaths.map(async (path) => [path, instructionVersion(await readFile(join(root, path)))]));
-  const activeInstructionPaths = [returnContract, ...(input.skill === 'spec-me' ? ['.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md'] : input.skill === 'product-spec' ? ['.codex/internal-skills/product-spec/references/topics.md'] : [])];
-  const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = await readFile(join(root, path), 'utf8'); return { path, content, version: instructionVersion(content) }; }));
-  const previousDelivery = priorStage?.instruction_delivery ? { ...priorStage.instruction_delivery, compaction_observed: priorCompaction } : null;
+  const instructionVersions = await Promise.all(instructionPaths.map(async (path) => [path, instructionVersion(stripSkillDeclaration(await readFile(join(root, path), 'utf8')))]));
   const artifactDirectories = input.context?.plan_set_id ? stageArtifactDirectories(root, input.context.plan_set_id) : null;
+  const activeInstructionPaths = phaseInstructionPaths({ skill: input.skill, productSpecExists: Boolean(artifactDirectories && existsSync(join(artifactDirectories.specs, 'product-spec.md'))) });
+  const instructionContents = await Promise.all(activeInstructionPaths.map(async (path) => { const content = stripSkillDeclaration(await readFile(join(root, path), 'utf8')); return { path, content, version: instructionVersion(content) }; }));
+  const previousDelivery = priorStage?.instruction_delivery ? { ...priorStage.instruction_delivery, compaction_observed: priorCompaction } : null;
   const { prompt: instructions, delivery } = buildStagePrompt({ guide, guideContent, guideVersion: instructionVersion(guideContent), profile: profilePath, profileContent, profileVersion, instructionVersions, instructionContents, resumeSession: resume, previousDelivery, answersPath: existsSync(answers) ? answers : null, feedbackPath: existsSync(feedback) ? feedback : null, sandbox, root, inputPath, executionDirectory: paths.directory, artifactDirectories, workflowPhase: input.context?.phase || null });
   const prompt = requiredSkill ? adapter.skillPrompt(requiredSkill, instructions) : instructions;
   const owner = await processIdentity(process.pid);
@@ -147,7 +150,7 @@ try {
   const runParent = async ({ output: parentOutput, prompt: parentPrompt, resume: parentResume }) => {
     const resumeWriteDirs = parentResume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(parentResume, process.env) : [];
     const invocationSkill = parentRuns++ === 0 && !input.context?.interrupted_execution_id ? requiredSkill : null;
-    const command = await adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume, role: profile, skill: input.skill, requiredSkill: invocationSkill, workerBase, env: process.env });
+    const command = await adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume, role: profile, skill: input.skill, stageId: input.context?.stage_id, requiredSkill: invocationSkill, workerBase, env: process.env });
     return adapter.run({ root, args: command, prompt: parentPrompt, requiredSkill: invocationSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'], HARNESS_WORKSPACE_ROOT: root, HARNESS_PROVIDER_ID: providerId, HARNESS_REVIEW_EXECUTION_ID: opts['execution-id'], HARNESS_REVIEW_TICKET_ID: input.context?.plan_set_id || '' }, onEvent: (event) => { recordEvent(event); if (event.event === 'runner_signal') cancelRequested = true; if (isCompactionEvent(event)) compactionObserved = true; }, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
@@ -177,15 +180,26 @@ try {
       const { assertNoUnrecordedNativeReview } = await import(new URL('review-attempts.mjs', base));
       await assertNoUnrecordedNativeReview({ root, scope: `plan-${input.context.plan_set_id}` });
     }
-    const { commitStageRequest } = await import(new URL('stage-commit.mjs', base));
+    if (providerId === 'claude-code' && input.skill === 'sync-contracts' && input.context?.plan_set_id) {
+      const { assertNoUnrecordedNativeReview } = await import(new URL('review-attempts.mjs', base));
+      await assertNoUnrecordedNativeReview({ root, scope: `contracts-${input.context.plan_set_id}` });
+    }
+    const { commitStageRequest, commitWorkflowDocuments } = await import(new URL('stage-commit.mjs', base));
     await commitStageRequest({ root, rawPath: output });
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', opts['execution-id'], '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' });
+    // The stage's documents are committed only after its result passed validation, so an incomplete Spec is never recorded as done.
+    await commitWorkflowDocuments({ root, input, rawPath: output });
     const envelope = await readSkillSessionJson({ root, session_directory: input.session_directory, path: paths.refs.returned });
-    await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
+    const published = await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: true });
+    if (published.status !== envelope.status || published.code !== envelope.code) {
+      recordEvent({ event: 'stage_result_failed', status: published.status, code: published.code, message: published.summary });
+      process.exitCode = 1;
+    }
     stageEventPublished = true;
   } else {
-    const cancelled = isCancellationOutcome({ requested: cancelRequested, signal: result.signal, code: result.code });
-    const error = Object.assign(new Error(`Stage provider exited with code ${result.code ?? 'null'}${result.signal ? ` (${result.signal})` : ''}`), { name: cancelled ? 'AbortError' : 'Error' });
+    // A stalled run was stopped by the watchdog, not cancelled by the user; it is reported as a failure the orchestrator resumes.
+    const cancelled = !result.stalled && isCancellationOutcome({ requested: cancelRequested, signal: result.signal, code: result.code });
+    const error = Object.assign(new Error(result.stalled ? 'Stage stalled: the provider wrote nothing for too long and was stopped; resume the stage' : `Stage provider exited with code ${result.code ?? 'null'}${result.signal ? ` (${result.signal})` : ''}`), { name: cancelled ? 'AbortError' : 'Error' });
     await publishStageResultEvent({ root, input, binding, error, reason: error.message, hostDelivery: true });
     stageEventPublished = true;
   }

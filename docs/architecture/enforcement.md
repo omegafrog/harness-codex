@@ -7,7 +7,7 @@
 | 실행 경로와 발행 본문의 실행 정보는 agent가 선택하지 않고 정적 실행기가 생성한다 | `resolveExecutionWorkspace`가 정본 worktree.json과 Git root/common/등록/branch를 검증하고 stage 입력·plan-review에 주입한다. 발행 입력 준비기와 publication publish가 본문 파일을 생성하며 최종 Project body를 비교한다. `tests/execution_workspace.test.mjs`는 설치 consumer에서 main 유도·입력 변조·본문 변조·branch 불일치·업무 파일 보존과 Git 가시성을 검사한다 | 구형 승인 plan의 경로 문자열은 표시 이력만 보존하며 실행 입력으로 쓰지 않음. 본문 업무 의미는 독립 리뷰가 판단 |
 | Spec 밖 동작은 자동 수정·확대되지 않고 사용자 유지/제거 결정을 받는다 | `.harness/src/wrapper/repair.mjs`의 `classifyReviewFindings`·`reserveImplementationRepair`가 `unplanned_additions` 신고, `basis` 인용 대조, 답변 기록을 강제하고 `tests/review_scope_guard.test.mjs`가 검사한다 | 인용이 실제로 그 수정을 요구하는지, diff의 숨은 추가를 찾았는지는 reviewer의 의미 판단이다. 실제 문서에 있는 관련 문장을 인용하면 기계 검사는 통과한다. `rule_impact`의 정직성은 reviewer가 검토하며 기계 검사는 표시값만 본다. `failure_scenario`는 존재와 ID만 검사하며 시나리오의 타당성은 reviewer와 사용자가 판단한다. 규칙의 `의도`·`충분한 수준`은 Spec·plan 리뷰가 확인한다 |
 | Codex linked worktree의 worker가 `.git`에 쓸 수 없어도 구현 commit이 끊기지 않는다 | `.harness/src/workflow/stage-commit.mjs`가 `commit_request`의 경로만 sandbox 밖에서 commit하고 `tests/review_scope_guard.test.mjs`가 검사한다 | worker가 파일 목록을 정확히 쓰는지는 리뷰가 확인한다 |
-| 구현 폭이 넓은 규칙과 기능은 의도·충분한 수준·출처를 기록하고, 위임 결정은 실제 사용자 답변을 근거로 한다 | `.harness/src/workflow/spec-review.mjs`의 `intentIssues`·`decisionsWithoutDelegation`이 `inspectSpecReviews`를 통해 Spec 완료와 계획 인계를 막고 `tests/review_scope_guard.test.mjs`가 검사한다 | 규칙 판별은 키워드 기반이다. 내용의 타당성과 `미확인` 남용은 Spec review가 판단한다. 위임 검사는 `answers.json` 언급만 확인하며 그 답변의 의미는 검증하지 않는다 |
+| 구현 폭이 넓은 규칙과 기능은 의도·충분한 수준·출처를 기록하고, 위임 결정은 실제 사용자 답변을 근거로 한다 | `.harness/src/workflow/spec-review.mjs`의 `intentIssues`·`decisionsWithoutDelegation`이 `inspectSpecReviews`를 통해 Spec 완료와 계획 인계를 막고 `tests/review_scope_guard.test.mjs`가 검사한다 | 규칙 판별은 키워드 기반이며 필드 존재만 검사한다. 요청 해석·추정이라는 출처만으로 사용자 질문을 강제하지 않는다. 해석의 근거·승인 오기재, 충분한 수준의 관찰 가능성, 작업 없이는 실패하는 UC/BR/AC·공통 기본선의 타당성은 Spec·plan·구현 reviewer가 판단한다. 위임 검사는 `answers.json` 언급만 확인하며 그 답변의 의미는 검증하지 않는다 |
 | 기존 implement-wrapper는 split plan을 하나씩 구현하고 통합 Spec 리뷰 뒤 최종 E2E 시나리오의 사용자 승인을 받으며 실패 시 자동 수정·재실행을 멈춘다 | orchestrator의 implementation reference·implement-wrapper·e2e-test·runner 지침; `tests/implement_wrapper_consumer.test.mjs`의 신규/갱신 consumer 배포·링크·Doctor·Git 가시성 검사 | 순서·실제 승인·실패 후 조치는 agent가 준수하는 의미적 계약이며 범용 runtime 자동 gate는 아니다. 설치 검사는 실제 모델 실행의 준수 여부를 증명하지 않음 |
 | workflow 입력 참조와 결과 artifact는 workspace 내부 파일 또는 디렉터리를 가리킨다 | `.harness/src/workflow/skill-execution.mjs`의 경로·workspace 경계 검사, `tests/skill_execution_schema_compatibility.test.mjs`의 설치 소비자 회귀 | 파일 내용을 실제로 읽는 참조는 regular file만 허용하며, 디렉터리 내용의 완전성은 artifact 작성 스킬과 리뷰어가 판단 |
 | 전달 workspace와 실제 Git worktree가 일치해야 한다 | `.codex/scripts/harness-workspace-preflight.mjs`, `tests/workspace_preflight.test.mjs`, dispatch의 before_dispatch hook | 작업별로 hook/명령을 실제 실행했는지 확인 필요 |
@@ -20,7 +20,7 @@
 | 스킬의 supporting reference도 갱신된다 | `.harness/src/installer/update.mjs`, `tests/installer_update.test.mjs`의 reference 배포·변경·충돌 보존 검사 | 로컬 수정 충돌은 자동 덮어쓰지 않음 |
 | checkpoint가 손상된 journal을 완료 증거로 사용하지 않고 status-only handoff에서 측정·추적 증거를 보존한다 | `.harness/src/wrapper/checkpoint.mjs`, `tests/wrapper_checkpoint.test.mjs` | measurements 값의 사실성·조건 동등성은 별도 검증 필요; 명시적 evidence 필드 교체는 허용 |
 | 업무 규칙은 선언된 owner에서 보호한다 | `ddd-design/references/model-continuity.md`, Spec reviewer의 실제 source/caller/우회 경로 검토와 프로젝트별 domain/dependency 검사 | 범용 JavaScript 구조 검사로 DDD 의미를 자동 판정하지 않음 |
-| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인 계획에서 전달하며 자동 추론하지 않음; 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
+| 승인된 구형 경로 제거를 실제 파일로 확인한다 | `.harness/src/gates/lifecycle.mjs`의 `retirement`, wrapper completion의 실제 workspace 검사, `tests/lifecycle_gates.test.mjs` | 제거 목록은 승인된 canonical plan의 `## 제거 대상` 절에서 읽으며 자동 추론하지 않음(`implement-wrapper` 최종 gate는 `.harness/src/workflow/implementation-completion.mjs`, `tests/implement_wrapper_completion.test.mjs`); 용어의 의미와 호환 예외는 독립 리뷰가 판단; 옵션 없는 legacy 직접 API는 기존 동작 |
 | 성능 개선은 실제 작업·오류·조건·편차로 뒷받침한다 | `evaluate-harness/references/measurement.md`, plan의 실행 증거 계약, Standards/Spec review | 측정 계약은 자동 통계 gate가 아니며 raw 결과 확인 필요 |
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
 | E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/internal-skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
@@ -32,9 +32,38 @@ Spec·계획 리뷰의 반복 제한은 `.harness/src/workflow/review-attempts.m
 
 `.harness/src/contracts/contracts.mjs`는 consumer 프로젝트의 `docs/contracts/` bundle을 검사한다. `contract_docs`는 모든 workflow의 `before_complete`에 등록되며 `harness-workflow-complete.mjs`가 이를 실제 호출해 pass/fail receipt를 기록한다. 시작 SHA 누락은 차단된다. `executeImplementPlan`도 실제 검증된 workspace에서 직접 검사하므로, agent가 누락하거나 pass를 주장해도 source/문서 snapshot이 어긋나면 완료 reconciliation과 종속 plan 해제가 차단된다. 순수 `evaluateCompletion`에도 pass verdict가 필수다.
 
+`check`는 형식만 검사하므로 의미 검토를 별도로 강제한다. `sync-contracts` stage는 seal 뒤 `.codex/scripts/harness-contract-review.mjs`로 `contracts-<plan-set-id>` review history에 회차를 열고(`begin`), fresh `contract_reviewer`(`fork_turns: none`; fork 시작은 PreToolUse fresh-agent hook이 거부)의 판정을 기록한다(`record`). reviewer ID와 판정은 `harness-agent-event.mjs`가 stage execution의 `subagents.jsonl`과 history에 남기며 stage가 쓰지 않는다. 회차의 입력은 sealed `revision`과 manifest snapshot hash이므로 계약이나 source가 바뀌면 이전 통과는 stale이다. 반복 제한은 `review-attempts.mjs`가 소유한다: 5회차(`CONTRACT_REVIEW_ROUNDS`)를 넘거나 같은 blocker·major 지적이 연속 두 회차 남으면 `begin`을 거부하고 stage가 사용자에게 묻는다. `implement-wrapper` 완료 gate의 `contract_review`(`implementation-completion.mjs`)와 `sync-contracts` stage 반환 검증이 같은 history와 hook 로그를 다시 읽으며 `--state` 값은 쓰지 않는다. 검증: `tests/contract_review.test.mjs`, `tests/implement_wrapper_completion.test.mjs`.
+
 문서에는 전체 Product 규칙과 DDD 구성요소별 상세를 보존한다. `.puml`의 모든 DDD 이름은 stable section으로 연결하고, renderer가 SVG에 원본 SHA를 붙인다. `seal`은 검토 사유와 변경 snapshot을 기록하고 revision을 올리며 `check`는 base보다 증가했는지 검사한다. source만 바뀌고 계약이 같으면 구체적인 영향 없음 근거를 요구한다. `architecture.html`은 같은 페이지 안에서 SVG 이름→상세 이동을 제공한다.
 
 자동 검사가 증명하는 범위는 파일·형식·소유 관계·링크·버전·입력 정합성이다. 전체 기능 목록의 완전성, source_roots 축소의 타당성, DDD 규칙 캡슐화, 통신·분리 배포 결정의 근거와 실제 기능 회귀는 독립 reviewer와 실제 실행 evidence로 검증한다. receipt를 작성했다는 사실을 설계 승인이나 실제 제품 테스트 통과로 해석하지 않는다.
+
+## implement-wrapper 최종 완료 gate
+
+`.harness/src/workflow/completion.mjs`는 `implement-wrapper`의 `required_outcome`·`tests`·`review`·`retirement`·`evidence`를 `.harness/src/workflow/implementation-completion.mjs`가 정본 기록에서 도출한 verdict로 대체하고 `plan_review`에는 worktree 기록의 `plan_set_id`를 전달한다. `--state`의 같은 키(`DERIVED_STATE_KEYS`)는 버려지고 `ignored_state_keys`에 남는다. 모델이 쓴 boolean은 어떤 check도 통과시키지 못한다.
+
+| check | 읽는 기록 | 통과 조건 |
+|---|---|---|
+| `review` | plan별 `runtime/reviews/implementation-<plan>-evidence.json`, `runtime/orchestrator/subagents.jsonl` | 계획 세트의 모든 plan에 `repair`가 기록한 `passed`가 있고, standards·spec 두 리뷰가 독립·fresh·서로 다른 context이며 같은 commit을 대상으로 하고, 그 reviewer를 subagent hook이 기록(fork 아님·종료)했고, commit이 HEAD 이력에 있으며 plan 본문 hash가 리뷰 당시와 같다. 실패 plan·역할은 `details.problems`에 남는다 |
+| `contract_review` | `runtime/reviews/contracts-<plan-set>.json`, 그 reviewer가 속한 stage execution의 `subagents.jsonl`, `docs/contracts/manifest.json` | `contract_docs`가 통과한 sealed revision·snapshot과 마지막 통과 회차의 입력이 같고, 그 회차의 reviewer를 subagent hook이 `contract_reviewer`로, fork 없이, 같은 attempt로 시작·종료 기록했다. 기록이 없거나 revision이 낡았거나 hook 로그가 없으면 `contract_review_*`로 차단한다 |
+| `tests` | `docs/agents/execution.json`의 `purpose: e2e` profile 중 `e2e` plan이 이름을 든 것, `runtime/execution/<profile>-<uuid>/receipt.json` | 각 profile의 마지막 verdict receipt가 통과이고 `head`가 HEAD 이력에 있으며 이후 문서 외 변경이 없고 실행 시 문서 외 미커밋 변경이 없고 `config_hashes` 파일이 같다. 실패 receipt가 있으면 `e2e_learning`은 `pending`으로 보고하며 판정을 바꾸지 않는다 |
+| `required_outcome` | tracker의 plan별 canonical 상태(local-markdown은 plan frontmatter, GitHub는 Beads 매핑 뒤 Project 상태) | 모든 plan이 `completed`이고 위 `tests`가 통과다 |
+| `retirement` | canonical plan의 `## 제거 대상`(또는 `## 승인된 제거 목록`) 절 불릿의 backtick 경로 | 승인된 경로가 workspace에 없다. 절이 없으면 승인된 제거 없음으로 `removed_paths: []`와 도출한 사유로 통과한다 |
+| `evidence` | plan별 `runtime/plans/[<plan-set>/]<plan>/checkpoint.md`, 위 리뷰 evidence, 선택된 receipt와 step log | 모두 존재하고 checkpoint가 비어 있지 않다 |
+
+파일 기반 기록이므로 session 디렉터리에 쓸 수 있는 주체의 직접 위조까지 막지는 못한다. gate가 막는 것은 `--state`로 통과 값을 주장하는 자기 증명이다. `tests/implement_wrapper_completion.test.mjs`가 설치형 consumer에서 통과·각 기록 누락 차단·직접 쓴 state 무시·Git 가시성·Doctor를 검사한다.
+
+## orchestrator 메인 세션 쓰기 가드
+
+orchestrator가 구현·계약 stage를 우회해 제품 코드, 테스트, `docs/contracts/`를 직접 고친 사례(E2E spec 두 번, 계약 한 번)를 안내문만으로 막지 못했다. PreToolUse hook이 집행한다: Codex는 `~/.codex/hooks.json`의 사용자 hook "Guarding Harness orchestrator writes"(`providers/codex.mjs`의 `codexWriteGuardHook`, `$setup`이 등록하고 `/hooks` 신뢰가 필요하며 Doctor `codex_write_guard_hook_untrusted`가 상태를 보고), Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`에 등록하고 Doctor `claude_orchestrator_hook_missing`이 검사한다. 두 provider는 같은 `.codex/scripts/harness-write-guard.mjs`를 쓴다.
+
+| 항목 | 규칙 |
+|---|---|
+| 적용 대상 | 활성 workflow worktree(`.io/worktree.json`의 `state: "active"`)의 메인 세션만. stage runner는 `HARNESS_SKILL_EXECUTION_ID`를 환경에 두므로 stage와 그 하위 agent는 제외되고, payload에 `agent_id`가 있으면(하위 agent) 제외된다. |
+| 거부 | worktree 안이면서 `.io/**`와 `docs/agents/{implementation-guidance.md,testing-guidance.md,EXEC.md,execution.json}`·`docs/verification/e2e-lessons.md`가 아닌 경로에 대한 Codex `apply_patch`(patch 본문의 `Add/Update/Delete File`·`Move to`), Claude Code `Edit`·`Write`·`MultiEdit`·`NotebookEdit`, 두 provider의 `Bash` 명령 중 대상이 글자로 보이는 리다이렉션·`tee`·`sed -i`·`perl -i`·`cp`·`mv`·`install`·`ln`·`truncate`·`dd of=`·`touch`·`sh -c` 내부 스크립트 |
+| 볼 수 없음 | 스크립트·인터프리터·포매터·`git apply`·`patch`가 내부에서 쓰는 파일, 변수·명령 치환으로 만든 대상, MCP 파일 도구. 차단은 우회 불가능한 경계가 아니라 안내를 집행하는 장치다 |
+
+검증: `tests/orchestrator_write_guard.test.mjs`(판정·셸 파서·Codex 사용자 hook 필터·설치/갱신/Doctor), `tests/stage_context_runtime.test.mjs`(사용자 hook 등록과 신뢰).
 
 ## Tracker lifecycle와 mirror gate
 

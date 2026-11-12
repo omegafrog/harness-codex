@@ -12,21 +12,21 @@ stages:
   - id: discover
     role: knowledge_source_researcher
     skill: knowledge-harvest
-    model_tier: low
+    model_tier: low_performance
   - id: qualify
     role: knowledge_source_researcher
     skill: knowledge-harvest
-    model_tier: low
+    model_tier: low_performance
     needs: [discover]
   - id: collect
     role: knowledge_source_researcher
     skill: knowledge-harvest
-    model_tier: low
+    model_tier: low_performance
     needs: [qualify]
   - id: extract
     role: knowledge_claim_extractor
     skill: knowledge-harvest
-    model_tier: low
+    model_tier: low_performance
     needs: [collect]
   - id: corroboration
     role: knowledge_principle_reviewer

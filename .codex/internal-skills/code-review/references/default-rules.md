@@ -27,6 +27,10 @@
 - Middle Man
 - Refused Bequest
 
+## Execution guide
+
+- `docs/agents/EXEC.md`는 plan 하나가 아니라 애플리케이션 전체의 현재 실행 안내다. 실행 명령, 설정 키와 기본값, 의존 서비스는 Architecture Spec의 실행 환경(12.7)과 일치해야 하며, 서로 모순되는 문장이나 특정 plan 시점의 사실("아직 필요 없음", "이후 plan이 담당")을 남기지 않는다.
+
 ## Use
 
 - 저장소에 더 구체적인 규칙이 있으면 그게 우선이다.

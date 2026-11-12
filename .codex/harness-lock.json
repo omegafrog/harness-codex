@@ -967,11 +967,6 @@
       "source_path": ".codex/internal-skills/skill-execution/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
-    ".codex/internal-skills/skill-execution/bindings.json": {
-      "installed_sha256": "ec6248e7fab642f248c5fe487070bb89d80b21f02c56de77d8a2512bcee213e9",
-      "upstream_sha256": "ec6248e7fab642f248c5fe487070bb89d80b21f02c56de77d8a2512bcee213e9",
-      "source_path": ".codex/internal-skills/skill-execution/bindings.json"
-    },
     ".codex/internal-skills/skill-execution/schemas/input.schema.json": {
       "installed_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",
       "upstream_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",

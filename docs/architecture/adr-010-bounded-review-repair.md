@@ -12,7 +12,7 @@ Accepted
 
 수정 지적은 의도나 공통 기본선을 가리키는 `intent_ref`와 `failure_scenario`가 있어야 한다. 설계 결정을 요구하는 지적과 한도 소진 뒤 남은 지적은 사용자 답 없이 `spec-me`나 plan 수정으로 가지 않는다. 같은 plan의 수정 사이클은 3번까지이며 그 뒤에는 사용자 답이 필요하다. 구현 commit은 worker가 아니라 sandbox 밖의 stage runner가 수행한다.
 
-기본 repair round는 1회다. repair agent는 동일 plan에 대해 새롭고 비어 있는 context에서 실행하고, repair 후 두 reviewer를 모두 새 context에서 다시 실행한다. 새 commit과 두 reviewer의 provenance가 확인되지 않으면 완료로 판정하지 않는다.
+기본 repair round는 1회다. repair agent는 동일 plan에 대해 새롭고 비어 있는 context에서 실행하고, repair 후 두 reviewer를 모두 새 context에서 다시 실행한다. 예외로, 직전 라운드에서 한 축이 지적 없이(advisory만) 통과했고 repair가 다른 축의 blocking 지적이 인용한 파일만 바꾼 경우에는 `assemble --reuse-axis`가 그 통과 판정을 이월할 수 있다. 이월한 항목은 원래 reviewer ID와 `carried_forward`(이전 commit, 바뀐 파일, 사유)를 기록하고, 조건 하나라도 어긋나면 코드가 거부해 두 축을 모두 새로 실행한다. 이월은 새 reviewer를 만들지 않으므로 reviewer 독립성 규칙을 약화하지 않는다. 새 commit과 두 reviewer의 provenance가 확인되지 않으면 완료로 판정하지 않는다.
 
 ## 책임 경계
 

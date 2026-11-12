@@ -12,6 +12,7 @@ try {
     if (!['--root', '--spec-root', '--ticket', '--plan-set', '--plan', '--reviews'].includes(flag) || !value || options[flag]) throw new Error('Invalid review status arguments');
     options[flag] = value;
   }
+  { const ctx = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ root: options['--root'], planSetId: options['--plan-set'] }); options['--root'] = ctx.root; if (!options['--ticket'] && !options['--plan'] && ctx.plan_set_id) options['--plan-set'] = ctx.plan_set_id; }
   if (!options['--root'] || !['--ticket', '--plan-set', '--plan'].some((key) => options[key])) throw new Error('Usage: harness-review-status.mjs --root DIR [--spec-root DIR] [--ticket ID] [--plan-set ID] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
   for (const key of ['--ticket', '--plan-set', '--plan']) if (options[key] && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options[key])) throw new Error('Invalid review scope ID');
   const root = resolve(options['--root']), specRoot = resolve(options['--spec-root'] || root);

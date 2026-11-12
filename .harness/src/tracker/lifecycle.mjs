@@ -123,12 +123,80 @@ async function mirror(root, ref, run, config) {
   if (bead.metadata?.harness_tracker_version !== 1) throw new Error('Ticket is not registered for lifecycle v1');
   return bead;
 }
+// A stage implements one plan. Its tickets are checked against that plan so a guessed Issue number cannot move another
+// plan's ticket (the community-comment stage once completed the e2e Issue).
+function assertTicketPlan(bead, expectedPlanId, ref) {
+  if (!expectedPlanId) return;
+  const actual = bead?.metadata?.harness_plan_id;
+  if (actual !== expectedPlanId) throw new Error(`Ticket ${ref} belongs to plan ${actual || 'unknown'}, but this execution implements ${expectedPlanId}; take the ticket from harness-context.mjs plan_tickets`);
+}
+
+// Plan ID → ticket reference of one plan set, read from the Beads mirrors that tracker-publish created.
+export async function listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run = defaultRun } = {}) {
+  if (!planSetId) return [];
+  const config = await projectConfig(root);
+  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
+  return items
+    .filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`) && item.external_ref)
+    .map((item) => ({ plan_id: item.metadata.harness_plan_id.slice(planSetId.length + 1), ticket_ref: trackerReference(config, item.external_ref), bead_id: item.id, bead_status: item.status }))
+    .sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+}
+
+// Canonical tracker status of every plan of a plan set, read from the configured tracker (never from a model's report).
+// local-markdown: the plan document's own frontmatter status. github: the Workflow Status of the Issue that the Beads
+// mirror maps to the plan. A plan without a mapped ticket is reported with ticket_ref null; unreadable trackers throw.
+export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run = defaultRun } = {}) {
+  if (!planSetId || !Array.isArray(planIds)) throw new Error('A plan set ID and its plan IDs are required');
+  const config = await projectConfig(root);
+  if (config?.mode === 'local-markdown') {
+    const tickets = [];
+    for (const planId of planIds) {
+      const ref = `docs/plans/${planSetId}/${planId}.md`;
+      tickets.push({ plan_id: planId, ticket_ref: ref, status: (await localTicket(root, config, ref)).status });
+    }
+    return tickets;
+  }
+  if (config?.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
+  const mapped = new Map((await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run })).map((ticket) => [ticket.plan_id, ticket]));
+  const refs = planIds.map((planId) => mapped.get(planId)?.ticket_ref).filter(Boolean);
+  const statuses = refs.length ? await githubTickets(root, config, refs, run, {}) : new Map();
+  return planIds.map((planId) => {
+    const ticket = mapped.get(planId);
+    return { plan_id: planId, ticket_ref: ticket?.ticket_ref ?? null, status: ticket ? statuses.get(ticket.ticket_ref).status : null };
+  });
+}
+
+// Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
+// same plan set), and whether each one's Beads ticket is closed. The stage reads this answer instead of matching Issue
+// numbers to plans by hand, which has mistaken the plan's own ticket for a prerequisite.
+export async function planDependencies({ workspace_root: root, plan_set_id: planSetId, plan_id: planId, run = defaultRun } = {}) {
+  if (!planSetId || !planId) throw new Error('dependencies needs a plan-set worktree and a plan ID');
+  const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run });
+  const known = new Set(tickets.map((ticket) => ticket.plan_id));
+  const text = await readFile(resolve(root, 'docs/plans', planSetId, `${planId}.md`), 'utf8');
+  const section = /^##\s+의존성[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(text)?.[1] ?? '';
+  // Only sentences that say "선행" name prerequisites; plans mentioned elsewhere (downstream checks) are not dependencies.
+  const prerequisite = section.split(/(?<=[.。])\s+|\n+/).filter((sentence) => sentence.includes('선행')).join(' ');
+  const ids = [...new Set([...prerequisite.matchAll(/`([A-Za-z0-9][A-Za-z0-9._-]*)`/g)].map((match) => match[1]))].filter((id) => id !== planId && known.has(id));
+  const dependencies = ids.map((id) => {
+    const ticket = tickets.find((item) => item.plan_id === id);
+    return { plan_id: id, ticket_ref: ticket.ticket_ref, bead_status: ticket.bead_status, complete: ticket.bead_status === 'closed' };
+  });
+  const incomplete = dependencies.filter((item) => !item.complete);
+  return { status: incomplete.length ? 'blocked' : 'pass', plan_id: planId, dependencies, incomplete: incomplete.map((item) => item.plan_id) };
+}
+
 function metadataValid(bead) {
   if (!PHASES.has(bead.metadata?.harness_phase)) throw new Error('Invalid harness_phase');
   if (!CLASSIFICATIONS.has(bead.metadata?.harness_classification)) throw new Error('Invalid harness_classification');
 }
 
-export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, run = defaultRun } = {}) {
+async function worktreePlanSetId(root) {
+  try { return JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id || null; }
+  catch { return null; }
+}
+
+export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, run = defaultRun } = {}) {
   try {
     let refs = ticket_refs;
     let config = null;
@@ -153,8 +221,12 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       }
       config = await projectConfig(root);
       const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
-      if (items.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
-      refs = items.map((item) => trackerReference(config, item.external_ref));
+      // In a workflow worktree the check covers that plan set's tickets: tickets of other, finished plan sets are not this
+      // workflow's concern, and reading every mirror in the repository took longer each run (about a minute at 44 mirrors).
+      const planSetId = await worktreePlanSetId(root);
+      const scoped = planSetId ? items.filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`)) : items;
+      if (scoped.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
+      refs = scoped.map((item) => trackerReference(config, item.external_ref));
     }
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
     if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
@@ -168,6 +240,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
         continue;
       }
       const bead = await mirror(root, ref, run, config);
+      assertTicketPlan(bead, expected_plan_id, ref);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
@@ -178,13 +251,35 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
   } catch (error) { return { status: 'fail', reason: 'tracker_mirror_unresolved', violations: [error.message] }; }
 }
 
-export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, run = defaultRun } = {}) {
+// Records a note on the ticket (for example what an implementation-only repair changed) without touching the plan.
+export async function commentTracker({ workspace_root: root, ticket_ref: ref, body, run = defaultRun } = {}) {
+  if (typeof body !== 'string' || !body.trim()) throw new Error('A comment body is required');
+  const config = await projectConfig(root);
+  if (config?.mode === 'github') {
+    const { settings, number } = githubReference(config, ref);
+    await run('gh', ['issue', 'comment', String(number), '--repo', settings.repository, '--body', body], root);
+    return { status: 'pass', reason: 'tracker_comment_added', ticket_ref: ref };
+  }
+  if (config?.mode === 'local-markdown') {
+    const ticket = await localTicket(root, config, ref);
+    if (await readFile(ticket.path, 'utf8') !== ticket.content) throw new Error('Local ticket changed concurrently; retry');
+    const note = `${ticket.content.replace(/\n*$/, '\n')}${ticket.content.includes('\n## 수정 기록\n') ? '' : '\n## 수정 기록\n'}\n- ${new Date().toISOString().slice(0, 10)}: ${body.trim().replace(/\n+/g, ' ')}\n`;
+    const temp = `${ticket.path}.${randomUUID()}.tmp`;
+    try { await writeFile(temp, note, { flag: 'wx', mode: (await lstat(ticket.path)).mode }); await rename(temp, ticket.path); }
+    finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    return { status: 'pass', reason: 'tracker_comment_added', ticket_ref: ref };
+  }
+  throw new Error('Exactly one configured tracker mode is required');
+}
+
+export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, expected_plan_id = null, run = defaultRun } = {}) {
   if (status !== null && !Object.hasOwn(TRACKER_STATES, status)) throw new Error('Use planned, in-progress, blocked, or completed');
   if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');
   if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
   const config = await projectConfig(root);
   const beadsEnabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled !== false;
   const bead = beadsEnabled ? await mirror(root, ref, run, config) : null;
+  if (bead) assertTicketPlan(bead, expected_plan_id, ref);
   if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
   const context = {};
   let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;

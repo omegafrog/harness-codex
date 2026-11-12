@@ -32,7 +32,9 @@ function specPathsFromIndex(index, base, planSetId) {
   for (const line of index.split(/\r?\n/)) {
     const kind = /product\s+spec/i.test(line) ? 'product' : /architecture\s+spec/i.test(line) ? 'architecture' : null;
     if (!kind) continue;
-    const raw = line.match(/`([^`]+\.md)`/)?.[1] || line.match(/\]\(([^)]+\.md)\)/)?.[1];
+    // A line can mention a Spec and link other documents (EXEC.md, a plan); only a path that names that Spec counts.
+    const candidates = [...line.matchAll(/`([^`]+\.md)`/g), ...line.matchAll(/\]\(([^)]+\.md)\)/g)].map((match) => match[1]);
+    const raw = candidates.find((path) => new RegExp(`${kind}[^/]*\\.md$`, 'i').test(path));
     if (!raw || /^https?:/i.test(raw)) continue;
     const path = posix.normalize(raw.startsWith('docs/') ? raw : posix.join(base, raw));
     requireValue(!path.startsWith('../') && !isAbsolute(path), `Spec path escapes workspace: ${raw}`);
@@ -74,7 +76,10 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
   const index = indexFile.content.toString('utf8');
-  const specPaths = specPathsFromIndex(index, base, planSetId);
+  // spec-me writes the Specs at fixed paths; those are the review inputs. The index is only read for older plan sets
+  // whose Specs live elsewhere.
+  const fixedSpecs = [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
+  const specPaths = (await Promise.all(fixedSpecs.map((path) => safeFile(root, path).then(() => true, () => false)))).every(Boolean) ? fixedSpecs : specPathsFromIndex(index, base, planSetId);
   const plans = await discoverPlans({ root, base });
   requireValue(plans.length > 0, 'Plan set has no split plans');
 
@@ -146,7 +151,7 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
   } catch (error) { return { status: 'blocked', reason: error.message, plan_set_id: planSetId }; }
 }
 
-export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason }) {
+export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason, requireNative = false }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
   let reviewer_input_ref;
   let reviewerFiles;
@@ -162,12 +167,13 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
       reviewerFiles.push({ path, sha256: capturedHash, normalization: plan ? 'frontmatter-status-excluded-v1' : 'raw-v1', content: file.content.toString('utf8') });
     }
   }
-  if (action === 'record' && process.env.HARNESS_PROVIDER_ID === 'claude-code') {
+  // Inside a stage, both providers bind the reviewer through the subagent hook before a record is accepted.
+  if (action === 'record' && process.env.HARNESS_SKILL_EXECUTION_ID) {
     const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
-    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Claude plan review requires its runtime workspace and execution identity');
+    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review requires its runtime workspace and execution identity');
     const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
     const native = active.native_review;
-    requireValue(active.attempt_id === attemptId && native?.execution_id === active.admission_execution_id && native.agent_id && native.stopped, 'Claude plan review record requires a stopped native reviewer bound to this admission');
+    requireValue(active.attempt_id === attemptId && native?.execution_id === active.admission_execution_id && native.agent_id && native.stopped, 'Plan review record requires a stopped native reviewer bound to this admission by the subagent hook');
   }
   if (action === 'record') {
     const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
@@ -180,7 +186,7 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
       return hash(file.normalization === 'frontmatter-status-excluded-v1' ? normalizeReviewContent(file.path, content) : content) === file.sha256;
     }), 'Plan review admission contents do not match its snapshot');
   }
-  const result = await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason });
+  const result = await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason, requireNative });
   if (action === 'begin') {
     const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
     if (executionId) {

@@ -1,4 +1,5 @@
 import { sessionDirectory, sessionOutputPath } from '../workflow/session-output.mjs';
+import { providerAgents } from '../workflow/agent-config.mjs';
 import { mkdir } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { execFile } from "node:child_process";
@@ -43,14 +44,16 @@ function required(value, name) {
 }
 
 export function resolveImplementationProfile({ config = null, model = null, reasoningEffort = null } = {}) {
-  const resolvedModel = model || config?.agents?.implementation_model || config?.agents?.default_model || null;
-  const resolvedReasoning = reasoningEffort || config?.agents?.implementation_reasoning_effort || null;
+  const agents = providerAgents(config);
+  const resolvedModel = model || agents.implementation_model || agents.default_model || null;
+  const resolvedReasoning = reasoningEffort || agents.implementation_reasoning_effort || null;
   return { model: resolvedModel, reasoning_effort: resolvedReasoning };
 }
 
 export function resolveReviewerProfile({ config = null, profile = null } = {}) {
-  const resolvedModel = profile?.model || config?.agents?.implementation_model || config?.agents?.low_performance_model || config?.agents?.default_model || null;
-  const resolvedEffort = profile?.reasoning_effort || config?.agents?.implementation_reasoning_effort || config?.agents?.low_performance_reasoning_effort || null;
+  const agents = providerAgents(config);
+  const resolvedModel = profile?.model || agents.implementation_model || agents.low_performance_model || agents.default_model || null;
+  const resolvedEffort = profile?.reasoning_effort || agents.implementation_reasoning_effort || agents.low_performance_reasoning_effort || null;
   return { model: resolvedModel, reasoning_effort: resolvedEffort };
 }
 

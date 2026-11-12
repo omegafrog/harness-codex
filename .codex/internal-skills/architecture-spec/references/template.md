@@ -493,6 +493,8 @@ stop
 
 ## 12.3 Technical Contract Verification
 
+실제 DB·외부 서비스·보안 체인처럼 인프라가 있어야 확인되는 계약은 12.7 환경에서 최종 E2E로 확인한다. 기능 plan마다 따로 요구하지 않으며, 이 표의 Verification은 E2E 시나리오 ID나 단위 테스트를 가리킨다.
+
 | Contract                                 | Test Level             | Verification     |
 | ---------------------------------------- | ---------------------- | ---------------- |
 | `<API / message / persistence contract>` | Integration / Contract | `<verification>` |
@@ -508,6 +510,17 @@ stop
 | Failure     | Injection Method | Expected Recovery |
 | ----------- | ---------------- | ----------------- |
 | `<failure>` | `<method>`       | `<recovery>`      |
+
+## 12.7 End-to-End Execution Environment
+
+Product Spec 13절의 시나리오를 실행할 환경을 정한다. 코드·기술 결정·`docs/agents/EXEC.md`에서 도출하며 사용자에게 작성해 달라고 묻지 않는다. 구현자가 그대로 실행할 수 있게 도구 이름(예: 브라우저 자동화 도구와 버전), 앱 시작 명령, 격리 DB 같은 의존 서비스의 준비·정리 방법과 명령, `execution.json` profile의 id·준비 확인·timeout·cleanup을 구체적으로 적는다. 도구를 고르는 일은 중요한 기술 결정이므로 [기술 선택](../../technology-selection/GUIDE.md)에 따라 다른 기술 결정과 한 묶음으로 근거와 함께 사용자에게 묻는다.
+
+| 항목 | 결정 |
+| --- | --- |
+| 앱 시작 | `<command / entrypoint>` |
+| 의존 서비스·테스트 데이터 | `<isolated DB, seed, none>` |
+| 사용자 조작 방식 | `<browser / HTTP client>` |
+| profile·timeout·cleanup | `<execution.json profile id, timeout, cleanup>` |
 
 ## 12.6 Agent Verifier Criteria
 
@@ -565,9 +578,11 @@ stop
 
 # 13. Alternatives and Trade-offs
 
-| Decision     | Option     | Advantages     | Disadvantages     | Result                 |
-| ------------ | ---------- | -------------- | ----------------- | ---------------------- |
-| `<decision and criteria>` | `<option and evidence conditions>` | `<meets / unmet / unknown>` | `<operational responsibility and accepted trade-offs>` | Adopt / Reject / Defer and reason |
+결정마다 후보를 2개 이상 비교한다. 판정마다 `knowledge/claims`의 Claim과 출처(제목·URL·판/버전·확인일)를 인용한다. community 출처만으로 판정하지 않는다.
+
+| Decision     | Option     | Criterion | Result | Evidence (Claim · source · checked) | Operational responsibility / accepted trade-offs | Choice |
+| ------------ | ---------- | --------- | ------ | ----------------------------------- | ------------------------------------------------ | ------ |
+| `<decision>` | `<option>` | `<criterion from requirement>` | met / unmet / unknown | `<claim_id>` · `<source title, URL, section>` · `<YYYY-MM-DD>` | `<what we run ourselves, what we accept>` | Adopt / Reject / Defer and the user's choice |
 
 ---
 

@@ -1,11 +1,7 @@
-
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [frontend-figma](../../../.codex/internal-skills/frontend-figma/GUIDE.md) · [frontend-implement](../../../.codex/internal-skills/frontend-implement/GUIDE.md) · [frontend-visual-review](../../../.codex/internal-skills/frontend-visual-review/GUIDE.md) · [implement](../../../.codex/internal-skills/implement/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
-
+---
+model_tier: high_performance
+---
 # frontend-design
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.
 
@@ -25,30 +21,14 @@
 
 단순 copy 변경, 눈에 보이지 않는 frontend infrastructure, backend-only 변경에는 사용하지 않는다.
 
-## Model routing
-
-`.codex/harness.yaml`에서 실제 model ID와 reasoning effort를 resolve한다.
-
-- Design direction / reference synthesis: `agents.high_performance_model`
-- Implementation / correction: `agents.implementation_model`
-- Visual / UX review: `agents.high_performance_model`
-
-literal config key를 agent에 전달하지 않는다. 필요한 값이 없으면 `setup`이 필요하다고 보고하고 시작하지 않는다.
-
 ## Workspace contract
 
 1. caller가 전달한 절대 `workspace_root`를 사용한다.
 2. 모든 repository 명령은 해당 경로를 cwd로 사용한다.
-3. 시작 전에 다음 preflight를 실행한다.
-
-   ```bash
-   node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json
-   ```
-
-4. `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다.
-5. 현재 branch, HEAD, porcelain status를 기록한다.
-6. user-owned dirty changes를 덮어쓰지 않는다. 관련 파일에 충돌 가능성이 있으면 해당 파일은 blocker로 보고한다.
-7. 이 workflow는 새 worktree, tracker ticket, PR을 자동 생성하지 않는다.
+3. 시작 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`을 실행하고, 실패하면 작업하지 않고 결과를 보고한다.
+4. 현재 branch, HEAD, porcelain status를 기록한다.
+5. user-owned dirty changes를 덮어쓰지 않는다. 관련 파일에 충돌 가능성이 있으면 해당 파일은 blocker로 보고한다.
+6. 이 workflow는 새 worktree, tracker ticket, PR을 자동 생성하지 않는다.
 
 ## Inputs
 
@@ -291,14 +271,20 @@ tracker, 기존 implementation plan status, PR은 변경하지 않는다.
 
 시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
 
-## 소유 worktree 종료
+## 소유 worktree
 
-구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
+상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
 
-## 세션 출력
+## 실행 산출물 경로
 
-`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
 
 ## 테스트·서비스 실행 전제
 
-일반 단위·회귀 검증은 프로젝트 `docs/agents/EXEC.md`의 명령을 해당 언어의 기본 CLI로 실행한다. `harness-exec`와 `execution.json`은 명시적 사용자 흐름 E2E에만 사용하며, 그 외 profile을 만들거나 runner로 감싸지 않는다. 실제 E2E에서는 실행 인자·필수 환경·설정 검사와 dependency readiness를 확인하고 receipt를 보고한다.
+일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.
+
+## `frontend_designer` 역할
+
+- 이 GUIDE의 Current UI inventory, Reference-first design, Frontend design brief와 해당할 때 Figwright/Figma authoring 단계만 수행하고 `frontend-design`을 재귀 호출하지 않는다.
+- 실제로 열람하지 않은 reference, Figma 파일, 웹페이지, screenshot을 확인했다고 쓰거나 지어내지 않는다.
+- application source·tests·Spec·plan·tracker·설정을 수정하지 않는다. Figma canvas 쓰기는 workflow가 Figma 경로를 선택했을 때만 허용한다. 완성된 design brief와 미해결 blocker를 반환한다.

@@ -1,12 +1,9 @@
+---
+model_tier: implementation
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [frontend-figma](../frontend-figma/GUIDE.md).
-
 # frontend-implement
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `implementation`이며 `agents.implementation_model`와 `agents.implementation_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 `frontend-design` workflow의 코드 작성과 correction만 담당한다.
 
@@ -34,7 +31,7 @@
 10. Figwright handoff가 있으면 `.codex/internal-skills/frontend-figma/GUIDE.md`의 Mode B를 먼저 적용해 Figma 구조와 mapping을 grounding한다.
 11. Figma screenshot을 보고 spacing/color를 추측하지 않는다. `get_design_context`, `component_map`, `token_map`, `icon_map` evidence를 우선한다.
 12. Figma-first flow에서는 application code만 수정하고 Figma canvas를 다시 설계하지 않는다.
-13. unrelated backend, workflow, tracker, spec, plan 파일을 수정하지 않는다.
+13. unrelated backend, workflow, tracker, spec, plan 파일을 수정하지 않는다. brief가 부족하면 새 제품·디자인 방향을 정하지 않고 design blocker로 보고한다. 범용 `implement`·`implement-wrapper`·`code-review`·`e2e-test`를 호출하지 않는다.
 14. `frontend-design`의 **UI Copy Restraint**를 따른다. UI가 이미 보여주는 상태·규칙을 설명 문장으로 반복하지 말고, 요청되지 않은 helper text, subtitle, description, hint를 추가하지 않는다.
 15. UX 모호성을 설명 문구로 덮지 않는다. interaction이나 visual hierarchy를 고쳐서 해결한다: “Do not solve UX ambiguity by adding explanatory copy. Fix the interaction or visual hierarchy instead.”
 16. 게임 HUD와 일반 component의 기본 설명 문장 예산은 0개다. 상태는 시각 요소, 숫자, 아이콘, 짧은 label로 표현한다. 접근성 이름과 필수 오류·안전 정보는 유지한다.
@@ -83,4 +80,4 @@ screenshot에 보이는 증상을 숨기기 위한 viewport-specific magic numbe
 
 ## 테스트·서비스 실행 전제
 
-일반 단위·회귀 검증은 프로젝트 `docs/agents/EXEC.md`의 명령을 해당 언어의 기본 CLI로 실행한다. `harness-exec`와 `execution.json`은 명시적 사용자 흐름 E2E에만 사용하며, 그 외 profile을 만들거나 runner로 감싸지 않는다. 실제 E2E에서는 실행 인자·필수 환경·설정 검사와 dependency readiness를 확인하고 receipt를 보고한다.
+일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.

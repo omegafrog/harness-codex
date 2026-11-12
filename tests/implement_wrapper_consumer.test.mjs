@@ -1,3 +1,4 @@
+import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -35,25 +36,45 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
       }
     }
     const wrapper = await read('.codex/internal-skills/implement-wrapper/GUIDE.md');
-    assert.match(wrapper, /구현할 plan ID로 plan-set draft 활성화를 시작한다/);
+    assert.match(wrapper, /tracker-publish가 만든 Issue와 Beads mirror를 확인한다/);
     assert.match(wrapper, /최종 E2E 시나리오에 대한 실제 사용자 승인/);
     assert.match(wrapper, /미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required\/SPEC_REVISION_REQUIRED`로 orchestrator에 반환/);
-    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /구현 단계에서 직접 사용자에게 결정 질문을 하거나 임의로 정하지 않는다/);
+    const implementGuide = await read('.codex/internal-skills/implement/GUIDE.md');
+    assert.match(implementGuide, /구현 단계에서 직접 사용자에게 결정 질문을 하거나 임의로 정하지 않는다/);
+    // Review must come from fresh reviewer stages, never the implementer itself.
+    assert.match(implementGuide, /`action_required\/REVIEW_REQUIRED`로 반환/);
+    assert.match(implementGuide, /구현자는 자기 diff를 리뷰하거나 reviewer를 직접 호출하지 않는다/);
+    assert.doesNotMatch(implementGuide, /`code-review`를 `review_fixed_point`에 대해 실행/);
+    assert.match(await read('.agents/skills/orchestrator/references/implementation.md'), /구현 context를 공유하지 않는 fresh `standards_reviewer`·`spec_reviewer`/);
     const provider = await import(`file://${resolve(root, '.harness/src/workflow/providers/codex.mjs')}`);
     const harnessConfig = await read('.codex/harness.yaml').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
     const args = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
     assert.ok(args.includes('sandbox_workspace_write.network_access=true'));
-    const claude = await import(`file://${resolve(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const claude = await import(`file://${resolve(root, '.claude/harness/providers/claude-code.mjs')}`);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
     assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
+    const claudePrArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.deepEqual(JSON.parse(claudePrArgs[claudePrArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     const otherArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'to-ticket' });
     assert.ok(!otherArgs.includes('sandbox_workspace_write.network_access=true'));
+    const e2eArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'e2e-test' });
+    assert.ok(e2eArgs.includes('sandbox_workspace_write.network_access=true'));
+    const prArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.ok(prArgs.includes('sandbox_workspace_write.network_access=true'), 'only the dedicated PR author skill gets GitHub network access outside tracker publication');
+    const unboundPrArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'gh-open-pr' });
+    assert.ok(!unboundPrArgs.includes('sandbox_workspace_write.network_access=true'));
+    const e2eClaudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'e2e-test' });
+    assert.deepEqual(JSON.parse(e2eClaudeArgs[e2eClaudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['localhost', '127.0.0.1']);
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
     const localArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
     assert.ok(!localArgs.includes('sandbox_workspace_write.network_access=true'));
+    const localPrArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.ok(localPrArgs.includes('sandbox_workspace_write.network_access=true'), 'PR author can reach GitHub; stage-input rejects local-markdown PR dispatch');
     const localClaude = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
     assert.equal(JSON.parse(localClaude[localClaude.indexOf('--settings') + 1]).sandbox.network, undefined);
+    const localClaudePr = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.deepEqual(JSON.parse(localClaudePr[localClaudePr.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     if (harnessConfig === null) await unlink(resolve(root, '.codex/harness.yaml'));
     else await writeFile(resolve(root, '.codex/harness.yaml'), harnessConfig);
     for (const match of wrapper.matchAll(/\]\(([^)]+\.md)\)/g)) {
@@ -61,16 +82,30 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     }
     assert.match(await read('.codex/internal-skills/implement-wrapper/references/tracker/local-markdown.md'), /GitHub Issue\/Project 조회나 갱신을 하지 않는다/);
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /missing or stale Product\/Architecture Specs block completion/);
+    assert.match(await read('.codex/internal-skills/review-coordination/GUIDE.md'), /record-basis-result/);
+    assert.match(await read('.codex/internal-skills/code-review/references/repair.md'), /basis_unverified/);
+    const installedBasis = await import(`file://${resolve(root, '.harness/src/wrapper/basis-recheck.mjs')}?scope=${Date.now()}`);
+    assert.equal(typeof installedBasis.prepareBasisRecheck, 'function');
+    assert.equal(typeof installedBasis.recordBasisRecheck, 'function');
+    assert.match(await read('.codex/scripts/harness-code-review.mjs'), /record-basis-result/);
     assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
     for (const path of ['.codex/agents/e2e_test_runner.toml', '.claude/agents/e2e_test_runner.md']) {
       const runner = await read(path);
-      assert.match(runner, /actual user approval reference before starting services/);
-      assert.match(runner, /neither caller nor runner may automatically fix/);
       assert.match(runner, /internal-skills\/e2e-test\/GUIDE\.md/);
       assert.doesNotMatch(runner, /skills\/e2e-test\/SKILL\.md/);
-      assert.match(runner, /follow explicit user instructions for reruns/i);
       assert.doesNotMatch(runner, /at most two total attempts/i);
     }
+    // The runner profile points at the GUIDE, which owns approval, no-auto-fix and rerun rules.
+    const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
+    // Final E2E always runs in a fresh runner, and dispatch checks call real CLIs.
+    assert.match(e2eGuide, /백그라운드 `e2e-test` stage/);
+    assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
+    assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);
+    assert.match(await read('.claude/skills/orchestrator/SKILL.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);
+    assert.match(e2eGuide, /실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
+    assert.match(e2eGuide, /caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고/);
+    assert.match(await read('.codex/internal-skills/e2e-test/references/failure-learning.md'), /사용자가 재실행을 지시하면 시도 횟수와 관계없이 따른다/);
     const verificationPolicy = await read('.codex/internal-skills/e2e-test/references/verification-policy.md');
     assert.match(verificationPolicy, /사용자가 재실행을 지시한 경우 횟수만을 이유로 거부하지 않는다/);
     assert.doesNotMatch(verificationPolicy, /시나리오별 시도 budget은 최초 1회/);
@@ -84,11 +119,14 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.equal(blocked.reason, 'unbacked_requirement');
     assert.equal(blocked.next_action, 'user-decision');
     assert.match(await read('.codex/scripts/harness-code-review.mjs'), /scope_decisions/);
-    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /unplanned_additions/);
+    // Profiles point at the GUIDE that owns the rule; the GUIDEs carry the result fields.
+    for (const path of ['.codex/agents/implementation_agent.toml', '.claude/agents/implementation_agent.md']) assert.match(await read(path), /internal-skills\/implement\/GUIDE\.md/);
+    assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /unplanned_additions/);
     for (const agent of ['standards_reviewer', 'spec_reviewer']) {
-      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /unrequested_behavior/);
+      for (const path of [`.codex/agents/${agent}.toml`, `.claude/agents/${agent}.md`]) assert.match(await read(path), /internal-skills\/code-review\/GUIDE\.md/);
     }
-    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /next_action: user-decision/);
+    assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /unrequested_behavior/);
+    assert.match(await read('.codex/internal-skills/code-review/references/repair.md'), /next_action: user-decision/);
     assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
     assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);
@@ -102,7 +140,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
     assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
     assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);
-    assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting\)/);
+    assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting \|\| \(crossStageRevision/);
     assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /--user-revision true/);
     assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /위임은 사용자가 그 선택을 맡긴다고 답한 경우에만 성립한다/);
     const doctor = await runDoctor({ root, sourceRoot });
@@ -125,6 +163,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     '.agents/skills/orchestrator/references/implementation.md',
     '.claude/skills/orchestrator/references/implementation.md',
     '.codex/agents/e2e_test_runner.toml',
+    '.codex/internal-skills/review-coordination/GUIDE.md',
   ];
   const lock = JSON.parse(await read('.codex/harness-lock.json'));
   for (const path of stalePaths) {

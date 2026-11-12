@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Select workflow skills from the request and current workflow state, dispatch them, and route their structured results.
+main_session: true
 ---
 
 # orchestrator
@@ -20,6 +21,7 @@ workflow 외의 직접 요청은 [기능 라우팅](references/capability-routin
 | 새 기능의 요구사항이나 승인이 정리되지 않음 | `spec-me` |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
+| 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
 
@@ -37,13 +39,19 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 공통 절차를 사용한다.
 
-`to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다.
+`to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
 
-완료된 Spec이나 계획을 사용자가 고치라고 지시하면 해당 소유 skill을 `--user-revision true`로 다시 연다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+완료된 Spec이나 계획을 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
 
-구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 split plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 최종 E2E 시나리오를 작성해 사용자 승인을 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다.
+구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
 
-요청 범위의 마지막 stage가 완료되면 해당 완료 gate를 `harness-workflow-complete.mjs`의 `--final-workflow`와 함께 실행한다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 이 옵션을 사용하지 않는다.
+요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
+
+gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 완료(`implement-wrapper`)는 plan별 리뷰 evidence, 최종 E2E receipt, tracker 완료 상태, plan의 제거 목록, session checkpoint를 읽으므로 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`에서 막힌 check의 `reason`과 `details`(plan·역할·receipt)를 보고 그 기록을 만드는 단계(리뷰, 승인된 최종 E2E 실행, tracker 완료 전이, 계약 동기화)를 진행한 뒤 다시 실행한다. `passed: true` 같은 값을 직접 써서 gate를 통과시키려 하지 않는다. 그런 값은 무시되고 결과의 `ignored_state_keys`에 기록된다.
+
+메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `spec-me`, `to-ticket`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
+
+stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
 
 반환 상태에 따라 workflow를 전환한다.
 
@@ -56,10 +64,20 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | 실행 중복이나 model-based log polling을 만들지 않는다. 실행 조율이 제공하는 `harness-stage-listen.mjs`로 해당 execution의 검증된 결과 이벤트를 기다린다. 이벤트가 없으면 완료로 추정하지 않는다. |
-| `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, skill의 재시도·중단 계약에 따라 라우팅한다. |
+| `running` | (`harness-agent-run.mjs --background true`로 시작한 stage에만 적용한다. reviewer 같은 native 하위 agent는 결과를 받을 때까지 이 턴에서 기다린다.) 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. E2E도 별도 백그라운드 stage로 실행한다. stage가 끝나면 runner가 Codex Wake 큐 또는 Claude 재개를 통해 검증된 결과를 전달한다. 큐 수락만으로 실행 완료를 추정하지 않는다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
+| `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, 같은 stage를 `--feedback`으로 재개해 같은 대화에서 이어간다(사용자가 업데이트 등으로 중단한 경우 포함). |
 
-Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if both host delivery and the listener report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
+`e2e-test` 결과는 일반 stage 재시작 규칙보다 [구현 workflow 조율](references/implementation.md)의 최종 E2E 실패 처리가 우선한다. `completed/OK`는 receipt와 cleanup을 확인하고 `sync-contracts`로 이어간다. 실패·차단·취소는 같은 stage를 자동 재실행하지 않고 실패 증거를 읽어 테스트 코드 결함 빠른 경로 또는 사용자 결정을 적용한다. 정본 execution ID와 worktree가 다르거나 결과가 이미 처리됐으면 중복 처리하지 않는다.
+
+위 세 코드의 전환은 대상 stage를 `--user-revision` 없이 `--stage-id`만으로 준비한다(`--user-revision`은 사용자의 직접 수정 지시 전용이다). 준비기가 이전 결과를 입력으로 연결하고 낡은 완료 결과를 다시 연다.
+
+stage가 Git 작업(add·commit)에 막혀도 orchestrator가 대신하지 않는다. Spec·plan 문서는 해당 stage가 완료될 때 실행기가 commit한다.
+
+작업 worktree에서 실행하는 Harness 명령은 `--root`·`--plan-set`·`--worktree-ref`를 스스로 찾는다. 이 값을 얻으려고 `worktree.json`·`state.json`·결과 파일을 읽지 말고, 상태 확인은 `node .codex/scripts/harness-context.mjs` 한 번으로 한다. `harness-code-review.mjs assemble --plan <plan-id>`도 최신 리뷰 요청 결과와 기존 fixed point를 찾는다.
+
+Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
+
+질문은 `title`과 각 선택지 `label`을 글자 그대로 보여 준다. `decision_kind: "technology"` 질문은 각 선택지 아래에 `evidence`의 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. 문구를 합치거나 조건을 덧붙이지 않고, 보충 설명이 필요하면 질문과 분리해 "참고"로 붙인다. 답을 넘길 때 사용자가 선택지만 골랐으면 그 선택지 ID를, 조건을 덧붙이거나 직접 설명했으면 사용자의 답 원문 전체를 `answer`로 넘긴다. 선택지 ID만 넘겨 사용자가 덧붙인 조건을 잃지 않는다.
 
 사용자가 질문 묶음에 대해 “모두 추천”이라고 답하면 그 답은 보여준 해당 묶음에만 적용한다. 이후 새 질문이 반환되면 이전 답변을 새 질문 ID에 복사하거나 직접 답을 만들지 말고, 사용자가 앞으로의 질문까지 명시적으로 위임한 경우가 아니면 새 질문을 사용자에게 전달하고 기다린다.
 

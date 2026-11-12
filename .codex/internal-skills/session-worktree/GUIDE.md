@@ -1,10 +1,9 @@
+---
+model_tier: execution
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
 # Session worktree
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 구현 실행 방식을 확인할 때 아래 해당 파일 하나만 읽는다. 작업 단위의 worktree 생성은 `worktree-create` skill을 사용한다. 디렉터리 전체나 모든 reference를 한 번에 읽지 않는다.
 

@@ -1,3 +1,10 @@
+// Harness files that nothing reads any more. An update removes them (backing up the content) even when they were edited
+// or lost their lock entry, because no setting in them can take effect after the change that retired them.
+export const RETIRED_ASSET_PATHS = new Set([
+  // Skill tiers moved into each skill's own document (`model_tier` frontmatter); setup's agents.<provider> values are the only models.
+  '.codex/internal-skills/skill-execution/bindings.json',
+]);
+
 // Identified from released source snapshots; unknown or modified content is never adopted.
 export const LEGACY_ASSETS = [
   { release: '3d8e3e60', path: '.codex/scripts/harness-spec-writer.mjs', sha256: '800ea15bfbef0c69adc4effbf2298e5d3a448c3a80eb9ca19441075e672fb58d', action: 'retire' },

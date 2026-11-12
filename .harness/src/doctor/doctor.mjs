@@ -1,4 +1,6 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { parseYaml } from "../eval/yaml.mjs";
+import { legacyAgentKeys } from '../workflow/agent-config.mjs';
 import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -9,9 +11,9 @@ import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
-import { inspectClaudeOrchestratorHook } from '../installer/claude-orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
+import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
@@ -40,19 +42,40 @@ async function inspectPublicSkills(root, diagnostics) {
   }
 }
 
+// Each skill's own document declares the setup tier it runs with. Internal GUIDEs and the Harness public skills are
+// Harness-owned, so a malformed declaration there is an error; so is a workflow stage whose skill declares none.
+async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
+  const candidates = [];
+  const internal = join(root, '.codex/internal-skills');
+  for (const entry of await readdir(internal, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
+    if (entry.isDirectory()) candidates.push({ skill: entry.name, path: join(internal, entry.name, 'GUIDE.md'), stage: false });
+  }
+  for (const directory of ['.agents/skills', '.claude/skills', '.codex/skills']) for (const name of PUBLIC_HARNESS_SKILLS) candidates.push({ skill: name, path: join(root, directory, name, 'SKILL.md'), stage: false });
+  for (const [skill, path] of stageSkills) candidates.push({ skill, path, stage: true });
+  // One file can be reached through more than one candidate (a stage skill resolves to its real path).
+  const documents = new Map();
+  for (const candidate of candidates) {
+    const info = await lstat(candidate.path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (!info || !info.isFile() || info.isSymbolicLink()) continue;
+    const key = await realpath(candidate.path);
+    documents.set(key, { ...candidate, stage: candidate.stage || documents.get(key)?.stage === true });
+  }
+  for (const { skill, path, stage } of documents.values()) {
+    let declaration;
+    try { declaration = parseSkillDeclaration(await readFile(path, 'utf8')); }
+    catch (error) {
+      diagnostics.push(diagnostic('skill_model_tier_invalid', 'error', `Invalid model declaration for skill ${skill}: ${safeMessage(error, 'unreadable frontmatter')}`, path));
+      continue;
+    }
+    if (!declaration && stage) diagnostics.push(diagnostic('skill_model_tier_missing', 'error', `Workflow stage skill ${skill} declares no model_tier in its document`, path));
+  }
+}
+
 async function inspectExecutionAssets(root, diagnostics) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
-  const bindingsPath = join(root, '.codex/internal-skills/skill-execution/bindings.json');
-  let bindings;
-  try { bindings = JSON.parse(await readFile(bindingsPath, 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT') diagnostics.push(diagnostic('execution_bindings_invalid', 'error', safeMessage(error, 'Invalid execution bindings'), bindingsPath));
-    return;
-  }
-  if (!bindings.skills || typeof bindings.skills !== 'object' || Array.isArray(bindings.skills) || Object.keys(bindings.skills).some((name) => !/^[a-z0-9][a-z0-9-]*$/.test(name))) {
-    diagnostics.push(diagnostic('execution_bindings_invalid', 'error', 'Execution bindings must contain a skills object', bindingsPath));
-    return;
-  }
+  // The execution contract directory marks a project that installed the stage runtime.
+  const contract = await lstat(join(root, '.codex/internal-skills/skill-execution')).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (!contract) return;
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
     '.codex/internal-skills/workflow-compose/GUIDE.md',
@@ -60,11 +83,13 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
     '.codex/internal-skills/e2e-test/references/failure-learning.md',
     '.codex/agents/tracker_publisher.toml',
+    '.codex/agents/pr_author.toml',
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/internal-skills/skill-execution/references/input.md',
     '.codex/internal-skills/skill-execution/worker-base.md',
     '.codex/internal-skills/skill-execution/references/stage-return.md',
+    '.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
@@ -72,16 +97,16 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'agent-run', 'orchestrator-hook', 'claude-orchestrator', 'claude-orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'prepare-input', 'compose-workspace', 'output-schema', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'agent-run', 'orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'providers/claude-code'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
-    paths.push('.claude/skills/orchestrator/SKILL.md');
+    paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
       if (profile.isFile() && profile.name.endsWith('.toml')) paths.push(`.claude/agents/${profile.name.replace(/\.toml$/, '.md')}`);
     }
@@ -152,7 +177,7 @@ async function readContainedRegularFile(root, path, label) {
   return readFile(resolvedPath, "utf8");
 }
 
-async function inspectWorkflows(root, diagnostics) {
+async function inspectWorkflows(root, diagnostics, stageSkills) {
   const directory = resolve(root, DEFAULT_WORKFLOW_DIR);
   let entries;
   try {
@@ -196,6 +221,7 @@ async function inspectWorkflows(root, diagnostics) {
       if (workflow.hooks.before_complete.includes("contract_docs") && completionKindForWorkflow(workflow.id) !== "feature_implemented") {
         diagnostics.push(diagnostic("completion_gate_scope", "warning", `Workflow ${workflow.id} declares contract_docs, but this completion scope ignores that gate`, path, { completion_kind: completionKindForWorkflow(workflow.id) }));
       }
+      for (const stage of workflow.stages) stageSkills.set(stage.skill, workflow.references.skills[stage.skill]);
       const legacySkillRoot = resolve(root, ".codex/skills");
       for (const [skill, skillPath] of Object.entries(workflow.references.skills)) {
         if (isWithin(legacySkillRoot, skillPath)) diagnostics.push(diagnostic("stale_skill_path", "warning", `Workflow ${workflow.id} resolves skill ${skill} from legacy .codex/skills`, skillPath));
@@ -419,6 +445,15 @@ async function inspectAuthoring(root, diagnostics) {
   if (headingPositions.some((position, index) => position < 0 || (index > 0 && position <= headingPositions[index - 1]))) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template canonical sections must remain in order inside the managed section", templatePath));
   if (!managed.includes("Closes #<PARENT-ISSUE-NUMBER>") || !managed.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
   if (!managed.includes("Single integration PR: required")) diagnostics.push(diagnostic("authoring_single_pr_invariant", "error", "Pull request template must declare one integration PR per plan set", templatePath));
+  const planTemplatePath = join(githubDirectory, "PULL_REQUEST_TEMPLATE/plan-set.md");
+  const planTemplate = await readFile(planTemplatePath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (planTemplate === null) diagnostics.push(diagnostic('plan_pr_template_missing', 'error', 'Managed plan-set pull request template is missing', planTemplatePath));
+  else {
+    for (const heading of ['Plan Set', 'Execution Order', 'Specifications', 'Planning Validation', 'Remaining Work']) {
+      if (!new RegExp(`^## ${heading}$`, 'm').test(planTemplate)) diagnostics.push(diagnostic('plan_pr_template_invalid', 'error', `Plan-set pull request template is missing section: ${heading}`, planTemplatePath));
+    }
+    if (/^\s*(?:Closes|Fixes|Resolves) #/mi.test(planTemplate)) diagnostics.push(diagnostic('plan_pr_template_invalid', 'error', 'Plan-set pull request template cannot close issues', planTemplatePath));
+  }
 }
 
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
@@ -440,13 +475,37 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     try {
       const hook = await inspectOrchestratorHook(repositoryRoot);
-      if (!hook.valid) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
+      const userHook = !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+      if (!hook.valid && !userHook) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {
       diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
     }
   }
+  // Model settings live under agents.<provider>; older flat keys must be moved by update or setup.
+  const agentConfig = await readFile(join(repositoryRoot, '.codex/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
+  const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
+  if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
+  if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
+    try {
+      const wake = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: repositoryRoot, timeout: 5_000 })).stdout);
+      if (!wake.enabled || wake.transport?.type !== 'stdio') throw new Error('Wake MCP is not enabled');
+    } catch {
+      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', 'Codex Wake MCP is unavailable; install or enable codex-wake and restart Codex to deliver stage results automatically.', null));
+    }
+    try {
+      const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
+      const trust = await inspectCodexHookTrust();
+      if (trust.orchestrator_hook !== 'trusted') diagnostics.push(diagnostic('codex_orchestrator_hook_untrusted', 'warning', trust.orchestrator_hook === 'missing' ? 'Harness orchestrator user hook is missing from the Codex user hooks; run setup with the codex provider so new worktrees need no hook review' : 'Harness orchestrator user hook is not trusted; run /hooks in Codex and trust "Running Harness orchestrator hook" once for all worktrees', null));
+      if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked reviewers are refused before they start', null));
+      if (trust.write_guard !== 'trusted') diagnostics.push(diagnostic('codex_write_guard_hook_untrusted', 'warning', trust.write_guard === 'missing' ? 'Harness write-guard hook is missing from the Codex user hooks; run setup with the codex provider so the orchestrator main session cannot edit product code, tests or contracts' : 'Harness write-guard hook is not trusted; run /hooks in Codex and trust "Guarding Harness orchestrator writes" (PreToolUse) so the orchestrator main session cannot edit product code, tests or contracts', null));
+      if (!trust.trusted) diagnostics.push(diagnostic('codex_subagent_hook_untrusted', 'warning', trust.missing.length ? 'Harness subagent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness subagent hook is not trusted; run /hooks in Codex and trust "Recording Harness subagent". Codex stages will not start until then.', trust.hooks_path, { missing: trust.missing, untrusted: trust.untrusted }));
+    } catch (error) {
+      diagnostics.push(diagnostic('codex_subagent_hook_invalid', 'warning', safeMessage(error, 'Invalid Codex user hooks'), null));
+    }
+  }
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'claude-code', () => false)) {
     try {
+      const { inspectClaudeOrchestratorHook } = await import('../../../.claude/harness/installer/claude-orchestrator-hook.mjs').catch((error) => { throw error.code === 'ERR_MODULE_NOT_FOUND' ? new Error('agents.provider is claude-code but the Claude provider is not installed; install with --provider claude-code or all') : error; });
       const hook = await inspectClaudeOrchestratorHook(repositoryRoot);
       if (!hook.valid) diagnostics.push(diagnostic('claude_orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {
@@ -461,7 +520,9 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   } catch (error) {
     if (error.code !== 'ENOENT') diagnostics.push(diagnostic('context_budget_invalid', 'error', safeMessage(error, 'Invalid context budget'), budgetPath));
   }
-  await inspectWorkflows(repositoryRoot, diagnostics);
+  const stageSkills = new Map();
+  await inspectWorkflows(repositoryRoot, diagnostics, stageSkills);
+  await inspectSkillDeclarations(repositoryRoot, diagnostics, stageSkills);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectLegacyRuntime(repositoryRoot, diagnostics);

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -124,7 +124,9 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
     for (const [path, pattern] of [
-      ['.codex/internal-skills/spec-me/GUIDE.md', /필수이면서 기존 근거와 합리적인 기본 동작으로 해결할 수 없는 결정만 질문한다/],
+      // Question criteria are owned by the Product Spec guide; spec-me links to them.
+      ['.codex/internal-skills/spec-me/GUIDE.md', /무엇을 언제 묻는지는 \[Product Spec 절차\]\(\.\.\/product-spec\/GUIDE\.md\)의 질문 기준/],
+      ['.codex/internal-skills/product-spec/GUIDE.md', /Ask about an ambiguity only when it is necessary to deliver the requested core behavior/],
       ['.codex/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
       ['.codex/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
     ]) {
@@ -184,4 +186,85 @@ test('update can replace managed skills without creating backups when explicitly
     assert.match(await readFile(resolve(root, '.codex/hooks.json'), 'utf8'), /harness-orchestrator-hook\.mjs/);
     assert.match(await readFile(resolve(root, '.claude/settings.local.json'), 'utf8'), /harness-claude-orchestrator-hook\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('update deletes retired skill files with their empty directories and keeps project files', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/retired-dirs-`);
+  const exists = (path) => stat(resolve(root, path)).then(() => true, () => false);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    // A retired public skill file that is still in the lock.
+    const retiredFile = '.agents/skills/code-review/references/old.md';
+    await mkdir(resolve(root, '.agents/skills/code-review/references'), { recursive: true });
+    await writeFile(resolve(root, retiredFile), 'old managed');
+    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    const oldHash = createHash('sha256').update('old managed').digest('hex');
+    lock.files[retiredFile] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: '.codex/skills/code-review/references/old.md', source_transform: 'project-local-paths-v1' };
+    await writeFile(lockPath, JSON.stringify(lock));
+    // Empty directories left by earlier updates, plus project-owned skills that must survive.
+    await mkdir(resolve(root, '.claude/skills/spec-me/references'), { recursive: true });
+    await mkdir(resolve(root, '.codex/internal-skills/static-caller'), { recursive: true });
+    await mkdir(resolve(root, '.agents/skills/my-skill'), { recursive: true });
+    await mkdir(resolve(root, '.agents/skills/my-notes'), { recursive: true });
+    await writeFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'project owned');
+    await writeFile(resolve(root, 'app.txt'), 'app');
+
+    const result = await updateProject({ sourceRoot, targetRoot: root });
+
+    assert.deepEqual(result.retired, [retiredFile]);
+    assert.equal(await readFile(resolve(result.backup_directory, retiredFile), 'utf8'), 'old managed');
+    for (const path of ['.agents/skills/code-review', '.claude/skills/spec-me', '.codex/internal-skills/static-caller']) assert.equal(await exists(path), false, path);
+    assert.ok(result.removed_directories.includes('.agents/skills/code-review'));
+    assert.equal(await exists('.agents/skills/my-skill'), true, 'unknown empty skill directories are not Harness-owned');
+    assert.equal(await readFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'utf8'), 'project owned');
+    assert.equal(await exists('.agents/skills/orchestrator/SKILL.md'), true);
+    const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall', '.agents', '.claude', '.codex', 'app.txt'], { encoding: 'utf8' });
+    assert.equal(status, '?? .agents/skills/my-notes/SKILL.md\n?? app.txt\n');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('update to the latest release backs up and removes locally modified retired files and the legacy runtime root', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/latest-`);
+  const exists = (path) => stat(resolve(root, path)).then(() => true, () => false);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const retired = '.codex/scripts/old-modified.mjs';
+    await writeFile(resolve(root, retired), 'user modified');
+    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    const oldHash = createHash('sha256').update('old managed').digest('hex');
+    lock.files[retired] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: retired };
+    await writeFile(lockPath, JSON.stringify(lock));
+    const guide = '.codex/internal-skills/implement/GUIDE.md';
+    const installedGuide = await readFile(resolve(root, guide), 'utf8');
+    await writeFile(resolve(root, guide), 'local edit');
+    await mkdir(resolve(root, '.codex/harness-runtime/src/workflow'), { recursive: true });
+
+    const result = await updateProject({ sourceRoot, targetRoot: root, force: true });
+
+    assert.equal(await exists(retired), false);
+    assert.equal(await readFile(resolve(result.backup_directory, retired), 'utf8'), 'user modified');
+    assert.equal(JSON.parse(await readFile(lockPath, 'utf8')).files[retired], undefined);
+    assert.equal(await readFile(resolve(root, guide), 'utf8'), installedGuide);
+    assert.equal(await readFile(resolve(result.backup_directory, guide), 'utf8'), 'local edit');
+    assert.equal(await exists('.codex/harness-runtime'), false);
+    assert.ok(result.skipped.every((item) => item.status === 'legacy_unrecognized'), JSON.stringify(result.skipped));
+    const cli = await readFile(resolve(sourceRoot, 'bin/harness-install.mjs'), 'utf8');
+    assert.match(cli, /updateProject\(\{ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

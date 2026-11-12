@@ -8,7 +8,9 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
-import { configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { assertSingleProvider, configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { providerAgents, tierSettingKeys } from './agent-config.mjs';
+import { readSkillDeclaration } from './skill-declaration.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
@@ -77,11 +79,12 @@ function validate(value, schema, path = '$') {
   }
 }
 
+// A skill's tier comes from its own document (see skill-declaration.mjs) and a workflow stage may override it with another
+// setup tier; the model and effort are always the active provider's agents.<provider>.<tier>_* values written by setup.
 export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null }) {
-  const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-  requireValue(!bindings.main_session_skills?.includes(skill), `${skill} runs in the main session and cannot be bound as a subagent`);
-  let tier = bindings.skills[skill];
-  requireValue(typeof tier === 'string', `Unregistered skill: ${skill}`);
+  const declaration = await readSkillDeclaration({ root, skill });
+  requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
+  let tier = declaration.model_tier;
   requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
   if (workflow) {
     const manifest = await loadNamedWorkflow(workflow, { root });
@@ -90,10 +93,11 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     tier = selected.model_tier || tier;
   }
   const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
-  const keys = bindings.tiers[tier];
-  requireValue(keys, `Unknown model tier: ${tier}`);
-  const get = (key) => key.split('.').reduce((value, part) => value?.[part], config);
-  const model = get(keys.model_key), effort = get(keys.reasoning_effort_key);
+  const keys = tierSettingKeys(tier);
+  // Model settings live under agents.<provider>; only the active provider's section is read.
+  const provider = configuredProvider(config);
+  const settings = providerAgents(config, provider);
+  const model = settings[keys.model], effort = settings[keys.reasoning_effort];
   let recordedBinding = null;
   let session;
   try { session = sessionDirectory(root, { create: false }); }
@@ -111,14 +115,30 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     }
   }
   const override = recordedBinding ? parseWorkflowBinding(recordedBinding) : workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  assertSingleProvider(config, override);
   if (recordedBinding && workflowBinding) {
     const supplied = parseWorkflowBinding(workflowBinding);
     requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');
   }
-  if (!override) for (const [key, value] of [[keys.model_key, model], [keys.reasoning_effort_key, effort]]) {
-    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: ${key}`);
+  if (!override) for (const [key, value] of [[keys.model, model], [keys.reasoning_effort, effort]]) {
+    requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: agents.${provider}.${key}`);
   }
   return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
+}
+
+// The subagent hook logs every reviewer a stage starts. A reviewer outside an admitted attempt, or forked
+// from the author's conversation, may still have steered the documents; the stage completes only when an
+// admitted fresh reviewer finished after the last such reviewer.
+export async function assertNoRogueReviewer({ root, session, input }) {
+  let text;
+  try { text = String(await readReference(root, { base: 'session', path: `runtime/executions/${input.execution_id}/subagents.jsonl` }, session)); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  const events = text.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((item) => item.review_scope);
+  const lastRogue = events.findLastIndex((item) => item.admitted === false);
+  if (lastRogue < 0) return;
+  const laterAdmitted = events.slice(lastRogue + 1).some((item) => item.event === 'SubagentStop' && item.admitted !== false && item.review_attempt_id);
+  const rogue = events[lastRogue];
+  requireValue(laterAdmitted, `Reviewer ${rogue.agent_id} ran ${rogue.forked ? 'forked from the author conversation' : 'outside an admitted review attempt'} after the last admitted review; begin a new review with a fresh reviewer before completing`);
 }
 
 export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {
@@ -149,6 +169,7 @@ export async function resolveAgentSandbox({ root, input, workflow = null, stage 
     profile = selected.role;
   } else requireValue(!stage, 'workflow and stage must be supplied together');
   if (input.skill === 'tracker-publish') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'Tracker publishing is available only as the to-ticket workflow stage');
+  if (input.skill === 'gh-open-pr') requireValue(profile === 'pr_author' && (workflow === 'to-ticket' && stage === 'plan-pr' || workflow === 'implement-wrapper' && stage === 'integration-pr'), 'PR authoring is available only at its gated to-ticket or implement-wrapper workflow stage');
   const mode = profile ? /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8'))?.[1] : 'workspace-write';
   requireValue(['read-only', 'workspace-write', 'danger-full-access'].includes(mode), 'Agent profile requires a supported sandbox_mode');
   if (mode === 'danger-full-access') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'danger-full-access is reserved for the to-ticket tracker-publish stage');
@@ -242,6 +263,20 @@ export async function validateSkillInput({ root, input }) {
   const session = await resolveSkillSession(root, input.session_directory);
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
+  if (input.skill === 'e2e-test') {
+    const requests = input.input_refs.filter((item) => item.kind === 'approved_e2e_request' && item.base === 'session');
+    requireValue(input.context?.agent_profile === 'e2e_test_runner' && requests.length === 1, 'E2E requires one approved request and a dedicated runner');
+    const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
+    const head = (await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' })).stdout.trim();
+    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    requireValue(request.manifest_sha256 === createHash('sha256').update(manifestText).digest('hex'), 'E2E request execution profile has changed');
+    const manifest = JSON.parse(manifestText);
+    const profile = manifest.profiles?.[request.profile_id];
+    requireValue(request.target_commit === head && Array.isArray(request.scenarios) && request.scenarios.length > 0 && request.scenarios.every((item) => typeof item === 'string' && item.trim()) && profile?.purpose === 'e2e' && Number.isInteger(request.timeout_ms) && request.timeout_ms > 0 && profile.timeout_ms === request.timeout_ms, 'E2E request does not match the current commit or profile');
+    const inputs = (await readFile(join(session, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    const orchestratorId = input.context.orchestrator_session_id || input.context.codex_session_id;
+    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId), 'E2E request approval was not recorded');
+  }
 }
 
 // reopening: 사용자 수정으로 다시 열 완료 stage는 고칠 대상 Spec의 현재 리뷰를 요구하지 않는다.
@@ -282,13 +317,23 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   validate(schemaResult, resultSchema);
   for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(result[key] === envelope[key], `Result ${key} mismatch`);
   for (const reference of result.artifacts) await readReference(root, reference, session, controlSession, true);
+  if (input.skill === 'e2e-test' && envelope.status === 'completed') {
+    const requests = input.input_refs.filter((item) => item.kind === 'approved_e2e_request');
+    const receipts = result.artifacts.filter((item) => item.kind === 'e2e_receipt' && item.base === 'session');
+    const cleanups = result.artifacts.filter((item) => item.kind === 'e2e_cleanup' && item.base === 'session');
+    requireValue(requests.length === 1 && receipts.length === 1 && cleanups.length === 1, 'Completed E2E requires its approved request, receipt and cleanup evidence');
+    requireValue(/^runtime\/execution\/[A-Za-z0-9._-]+\/receipt\.json$/.test(receipts[0].path) && /^runtime\/e2e\/[A-Za-z0-9._-]+\/cleanup\.json$/.test(cleanups[0].path), 'E2E evidence must belong to the execution session');
+    const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
+    const receipt = JSON.parse(await readReference(root, receipts[0], session, controlSession));
+    const cleanup = JSON.parse(await readReference(root, cleanups[0], session, controlSession));
+    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && receipt.config_hashes?.['docs/agents/execution.json'] === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
+    requireValue(cleanup.status === 'passed', 'E2E cleanup is not verified');
+  }
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
     const request = result.review_request;
-    const bindings = await json(join(root, CONTRACT, 'bindings.json'));
-    requireValue(typeof request.skill === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.skill) && Object.hasOwn(bindings.skills, request.skill) && !bindings.main_session_skills?.includes(request.skill), `Unregistered review skill: ${request.skill}`);
-    const entries = [`.codex/internal-skills/${request.skill}/GUIDE.md`, `.agents/skills/${request.skill}/SKILL.md`, `.codex/skills/${request.skill}/SKILL.md`];
-    const present = await Promise.all(entries.map((path) => readReference(root, { base: 'workspace', path }, session).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; })));
-    requireValue(present.some(Boolean), `Review skill instruction missing: ${request.skill}`);
+    // A review runs a sub-agent skill, so the skill must declare a setup tier in its own document.
+    const reviewer = await readSkillDeclaration({ root, skill: request.skill }).catch((error) => { throw new Error(`Unregistered review skill: ${request.skill} (${error.message})`); });
+    requireValue(!reviewer.main_session, `Unregistered review skill: ${request.skill} runs in the main session`);
     if (request.agent_profile !== null && request.agent_profile !== 'default') {
       requireValue(typeof request.agent_profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(request.agent_profile), 'Invalid agent profile');
       await readReference(root, { base: 'workspace', path: `.codex/agents/${request.agent_profile}.toml` }, session);
@@ -312,19 +357,42 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     await validatePlanReviewAdmission({ root, planSetId: input.context.plan_set_id, admission, requireActive: false });
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
+  if (envelope.status === 'completed' && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
   if (envelope.status === 'completed') {
     if (!reopening && input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
       const { requireCurrentSpecReview } = await import('./spec-review.mjs');
       await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
     }
     if (input.skill === 'tracker-publish') {
-      const { verifyDraftPublication } = await import('../tracker/publication.mjs');
-      await verifyDraftPublication({ root, planSetId: input.context?.plan_set_id });
+      const { verifyActivatedPublication } = await import('../tracker/publication.mjs');
+      await verifyActivatedPublication({ root, planSetId: input.context?.plan_set_id });
+    }
+    // The sync-contracts stage seals the contract and has it independently reviewed; it cannot finish on a revision that no
+    // hook-recorded fresh reviewer passed. A stage being reopened is replaced by the new run, which needs its own review.
+    if (input.skill === 'sync-contracts' && input.context?.worktree_ref && input.context?.plan_set_id) {
+      const { inspectContractReview } = await import('./contract-review.mjs');
+      const review = await inspectContractReview({ root, planSetId: input.context.plan_set_id });
+      requireValue(reopening || review.status === 'pass', `sync-contracts requires a current passing independent contract review: ${review.reason}${review.details?.problem ? ` (${review.details.problem})` : ''}${review.details?.next ? `; ${review.details.next}` : ''}`);
     }
     if (input.skill === 'to-ticket') {
       const { inspectPlanSet } = await import('./plan-review.mjs');
       const review = await inspectPlanSet({ root, planSetId: input.context?.plan_set_id, phase: 'planning' });
-      requireValue(review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
+      // A completed plan being reopened (user revision, or a Spec change that requires a plan revision) is replaced by the
+      // new run, whose own completion needs a fresh review; the stale review of the old plan must not block the reopening.
+      requireValue(reopening || review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
+      // GitHub publication later reads these drafts; a plan set without them can never be published.
+      const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch(() => '')).tracker;
+      // A completed result being reopened for a user revision is re-validated only to be replaced; it may predate this check.
+      if (tracker?.mode === 'github' && !reopening) {
+        const snapshot = await (await import('./plan-review.mjs')).snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
+        const missing = [];
+        for (const planId of ['@parent', ...snapshot.plans.map((plan) => plan.id)]) {
+          const name = planId === '@parent' ? 'parent' : planId;
+          const body = await readFile(join(session, 'runtime/to-ticket/drafts', `${name}.md`), 'utf8').catch(() => '');
+          if (!body.trim()) missing.push(`runtime/to-ticket/drafts/${name}.md`);
+        }
+        requireValue(!missing.length, `to-ticket must save a GitHub Issue draft for the plan set and every plan in the session directory before completing; missing or empty: ${missing.join(', ')}`);
+      }
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
@@ -339,8 +407,11 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       validate(question, schema);
       requireValue(question.question_id === `${input.execution_id}:${index + 1}`, 'Invalid deterministic question ID');
       requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
+      // A technology question shows, per option, why it meets each criterion, citing a stored Claim from an authoritative source.
+      if (question.decision_kind === 'technology') await assertTechnologyQuestionEvidence(root, question);
     }
   }
+  if (['implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return SPEC_REVISION_REQUIRED for a decision the approved Spec does not settle');
   if (envelope.code === 'USER_DECISION_REQUIRED' || questions.length) {
     requireValue(questions.length <= 1 && (questions.length === 0 || questions[0].base === 'session'), 'Question requires at most one session user_question artifact');
     requireValue(resultQuestions, 'User decision requires questions');
@@ -364,3 +435,18 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   }
   return { valid: true, usable_result: true, ...envelope };
 }
+
+export async function assertTechnologyQuestionEvidence(root, question) {
+  const { readClaim, readSource } = await import('../knowledge/registry.mjs');
+  for (const option of question.options) {
+    requireValue(Array.isArray(option.evidence) && option.evidence.length > 0, `Technology option ${option.id} needs evidence citing stored knowledge Claims`);
+    const tiers = [];
+    for (const item of option.evidence) {
+      const claim = await readClaim({ root, claimId: item.claim_id }).catch(() => null);
+      requireValue(claim, `Technology option ${option.id} cites Claim ${item.claim_id}, which is not in knowledge/claims; save it with harness-knowledge.mjs claim save`);
+      tiers.push((await readSource({ root, sourceId: claim.source_id })).tier);
+    }
+    requireValue(tiers.some((tier) => tier !== 'community'), `Technology option ${option.id} rests only on community sources; cite a standard, official document or measurement`);
+  }
+}
+

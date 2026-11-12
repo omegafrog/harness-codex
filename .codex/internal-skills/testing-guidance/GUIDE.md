@@ -14,7 +14,7 @@ Record explicit reusable user preferences and settled lessons from completed wor
 
 Every implementation worker reads `<workspace_root>/docs/agents/testing-guidance.md` before planning, writing, modifying, selecting, or running tests. Apply only matching entries. If it conflicts with an approved plan or execution contract, stop and report the conflict for resolution. The project native CLI command in EXEC is authoritative for ordinary checks. An E2E profile is authoritative only for the final user-flow test.
 
-For scoped Spring Boot diagnostic logging changes, use the project-owned `docs/observability/victorialogs/diagnostic-log-schema.md` and JSON schema. The installed `victorialogs-local-setup` assets supply the v1 contract; its setup helper records the matching reusable guidance in the active workspace documents. Keep general framework logs distinct from diagnostic events. Do not claim source schema validation proves runtime context propagation, redaction or live ingestion.
+For scoped Spring Boot diagnostic logging changes, follow the project-owned schema in `docs/observability/victorialogs/` and the `spring-boot-diagnostic-log-v1` entry that `victorialogs-local-setup` records in the workspace guidance. Do not claim source schema validation proves runtime context propagation, redaction or live ingestion.
 
 ## 비즈니스 로직 단위 테스트
 

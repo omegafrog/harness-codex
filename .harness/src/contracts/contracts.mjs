@@ -103,7 +103,8 @@ async function validate(root, manifest) {
   const emptyInventory = Array.isArray(manifest.features) && manifest.features.length === 0 && Array.isArray(manifest.components) && manifest.components.length === 0;
   require(emptyInventory ? text(manifest.empty_project_reason) : !Object.hasOwn(manifest, "empty_project_reason"), "An empty project reason is required only when no features or components exist");
   require(Array.isArray(manifest.diagrams), "diagrams are required");
-  if (errors.length) return errors;
+  // Revision, date and summary are written by seal; the rest of the checks still run so every gap is listed at once.
+  if (![manifest.features, manifest.components, manifest.diagrams].every(Array.isArray)) return errors;
   const productText = await read(root, `${DIRECTORY}/product.md`);
   const architectureText = await read(root, `${DIRECTORY}/architecture.md`);
   const product = sections(productText), architecture = sections(architectureText);
@@ -123,8 +124,8 @@ async function validate(root, manifest) {
     checkSection(feature, product, ["설명", "비즈니스 규칙", "수용 조건"]);
     require(["implemented", "accepted-target", "retired"].includes(feature.status), `Invalid feature status: ${feature.id}`);
     require(manifest.components.some((c) => c.features?.includes(feature.id)), `Feature has no architecture owner: ${feature.id}`);
-    if (feature.status !== "retired") require(manifest.diagrams.some((d) => d.kind === "sequence" && d.feature === feature.id && d.source), `Missing sequence: ${feature.id}`);
-    require(manifest.diagrams.some((d) => d.kind === "state" && d.feature === feature.id && (d.source || text(d.reason))), `Missing state or reason: ${feature.id}`);
+    if (feature.status !== "retired") require(manifest.diagrams.some((d) => d.kind === "sequence" && d.feature === feature.id && d.source), `Missing sequence: ${feature.id} — add {"kind":"sequence","feature":"${feature.id}","source":"docs/contracts/diagrams/${feature.id}.sequence.puml"} to manifest.diagrams with its rendered SVG`);
+    require(manifest.diagrams.some((d) => d.kind === "state" && d.feature === feature.id && (d.source || text(d.reason))), `Missing state or reason: ${feature.id} — add {"kind":"state","feature":"${feature.id}","source":"docs/contracts/diagrams/${feature.id}.state.puml"} (with its SVG) or, when the feature has no lifecycle states, {"kind":"state","feature":"${feature.id}","reason":"<why there are no states>"} to manifest.diagrams`);
   }
   for (const component of manifest.components) {
     const body = checkSection(component, architecture, kinds[component.kind] || []);
@@ -178,12 +179,19 @@ export async function inspectContracts({ workspace_root, base_ref = null } = {})
     if (!isAbsolute(workspace_root || "")) throw new Error("Absolute workspace_root is required");
     const manifest = JSON.parse(await read(workspace_root, MANIFEST));
     const errors = await validate(workspace_root, manifest);
-    const hashes = await snapshot(workspace_root, manifest);
-    if (JSON.stringify(hashes) !== JSON.stringify(manifest.hashes)) errors.push("Contract/source snapshot changed; reconcile and seal");
+    // A missing source_roots inventory is one more content gap, not a reason to hide every other violation.
+    const hashes = await snapshot(workspace_root, manifest).catch((error) => { errors.push(error.message); return null; });
+    if (hashes && JSON.stringify(hashes) !== JSON.stringify(manifest.hashes)) errors.push("Contract/source snapshot changed; reconcile and seal");
     const old = await previous(workspace_root, base_ref);
     if (old && JSON.stringify(old) !== JSON.stringify(manifest) && manifest.revision <= old.revision) errors.push("Contract revision must increase from base");
-    if (await read(workspace_root, `${DIRECTORY}/architecture.html`) !== await viewer(workspace_root, manifest)) errors.push("Architecture HTML is stale");
-    return { status: errors.length ? "fail" : "pass", reason: errors.length ? "contracts_out_of_sync" : "contracts_current", revision: manifest.revision, violations: errors, evidence_path: MANIFEST };
+    const view = await viewer(workspace_root, manifest).catch(() => null);
+    if (view === null || await read(workspace_root, `${DIRECTORY}/architecture.html`) !== view) errors.push("Architecture HTML is stale");
+    // seal writes revision, date, summary, snapshot and the HTML view; everything else needs a contract edit first.
+    const sealed = (message) => /^(revision must be a positive integer|updated_at must be YYYY-MM-DD|change_summary is required|Contract\/source snapshot changed|Architecture HTML is stale|Contract revision must increase)/.test(message);
+    const content = errors.filter((message) => !sealed(message));
+    return { status: errors.length ? "fail" : "pass", reason: errors.length ? "contracts_out_of_sync" : "contracts_current", revision: manifest.revision, violations: errors,
+      ...(errors.length ? { content_violations: content, next_step: content.length ? "Fix every content_violations entry in docs/contracts, then run harness-contracts.mjs seal" : "Run harness-contracts.mjs seal --summary <what changed>" } : {}),
+      evidence_path: MANIFEST };
   } catch (error) {
     return { status: "fail", reason: "contracts_invalid", violations: [error.message], evidence_path: MANIFEST };
   }

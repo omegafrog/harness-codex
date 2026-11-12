@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { closeSync, openSync } from 'node:fs';
 import { mkdir, readFile, rename, unlink, writeFile, rm, stat } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -7,9 +8,10 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn } from './skill-execution.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
+import { PlanCheckpointStore } from '../wrapper/checkpoint.mjs';
 
-const execFileAsync = promisify(execFile);
 const directory = 'runtime/orchestrator/stage-results';
+const execFileAsync = promisify(execFile);
 const deliveryRequestId = (input) => createHash('sha256').update(`${input.context?.worktree_ref || ''}:${input.execution_id}`).digest('hex');
 
 async function save(session, path, value) {
@@ -38,7 +40,10 @@ async function locked(session, executionId, callback) {
       } else if (owner?.pid) {
         try { process.kill(owner.pid, 0); } catch (processError) { stale = processError.code === 'ESRCH'; }
       } else {
-        stale = Date.now() - (await stat(lock)).mtimeMs > 5_000;
+        // The owner may release the lock between our mkdir and this stat; retry instead of failing.
+        const info = await stat(lock).catch((statError) => statError.code === 'ENOENT' ? null : Promise.reject(statError));
+        if (!info) continue;
+        stale = Date.now() - info.mtimeMs > 5_000;
       }
       if (stale) { await rm(lock, { recursive: true, force: true }); continue; }
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -72,29 +77,102 @@ function eventPayload(input, envelope) {
   return event;
 }
 
-async function deliver(session, input, event) {
-  const expected = input.context?.orchestrator_session_id;
-  if (!expected) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
-  let identity;
-  try { identity = JSON.parse((await execFileAsync('ghostex', ['agents', 'whoami', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout); }
-  catch (error) { if (error.killed || error.code === 'ETIMEDOUT') throw error; return { status: 'unsupported', reason: error.code === 'ENOENT' ? 'ghostex_unavailable' : `host_identity_unavailable:${String(error.code || error.name).slice(0, 40)}` }; }
-  if (identity.agentSessionId !== expected || !identity.globalRef) return { status: 'unsupported', reason: 'session_identity_mismatch' };
-  const bodyPath = join(session, `.stage-result-${randomUUID()}.json`);
-  await writeFile(bodyPath, JSON.stringify(event), { flag: 'wx', mode: 0o600 });
+function deliveryMessage(event, session) {
+  return [
+    `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}.`,
+    `Summary: ${event.summary}`,
+    event.result_ref ? `Validated result: ${join(session, event.result_ref)}` : null,
+    event.questions.length ? `Questions to present to the user verbatim (title and option labels unchanged): ${JSON.stringify(event.questions)}` : null,
+    event.questions_complete ? null : `Some questions were omitted; read them from the validated result before presenting any.`,
+    'Verify this against the canonical worktree state, then continue the Harness workflow with the orchestrator skill.',
+  ].filter(Boolean).join('\n');
+}
+
+// The orchestrator ends its turn after dispatching a stage. The runner resumes that same orchestrator
+// session through its own provider CLI with the result, so the workflow continues without a host app.
+export function orchestratorResumeCommand({ provider, sessionId, root, message, binding = null, sandbox = null, lastMessagePath = null }) {
+  // The resumed turn keeps the workflow's model binding instead of the user's CLI default.
+  const model = binding && binding.provider === provider ? binding : null;
+  if (provider === 'codex') return { command: 'codex', args: ['exec', 'resume', ...(model ? ['--model', model.model, '-c', `model_reasoning_effort=${JSON.stringify(model.reasoning_effort)}`] : []), ...(sandbox ? ['-c', `sandbox_mode=${JSON.stringify(sandbox)}`] : []), ...(lastMessagePath ? ['-o', lastMessagePath] : []), sessionId, message], cwd: root };
+  if (provider === 'claude-code') return { command: process.execPath, args: [join(root, '.claude/harness/scripts/harness-claude-orchestrator.mjs'), ...(model ? ['--model', model.model] : []), '--resume', sessionId, message], cwd: root };
+  return null;
+}
+
+function orchestratorEnvironment(session) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^HARNESS_(SKILL|REVIEW|RUNNER|PROVIDER|WORKSPACE|CONTROL)_|^CODEX_THREAD_ID$/.test(key)));
+  return { ...env, HARNESS_SESSION_DIR: session, TMPDIR: join(session, 'tmp'), TMP: join(session, 'tmp'), TEMP: join(session, 'tmp') };
+}
+
+async function wakeDelivery(input, event, session) {
+  let config;
   try {
-    await execFileAsync('ghostex', ['agents', 'send', identity.globalRef, '--body-file', bodyPath, '--queue', '--request-id', event.delivery.request_id], { cwd: input.workspace_root, timeout: 5_000 });
-    return { status: 'sent' };
-  } finally { await unlink(bodyPath).catch(() => {}); }
+    config = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout);
+  } catch { return { status: 'unsupported', reason: 'wake_unavailable' }; }
+  if (!config.enabled || config.transport?.type !== 'stdio' || !config.transport.command || !config.transport.cwd) return { status: 'unsupported', reason: 'wake_unavailable' };
+  const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} Verify the canonical worktree state and continue the workflow using the orchestrator skill; present any questions verbatim.`;
+  return new Promise((resolve) => {
+    const child = spawn(config.transport.command, config.transport.args || [], { cwd: config.transport.cwd, env: { ...orchestratorEnvironment(session), ...config.transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
+    let buffer = '', submitted = false, finished = false;
+    const finish = (value) => { if (finished) return; finished = true; clearTimeout(timer); child.kill(); resolve(value); };
+    const timer = setTimeout(() => finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_timeout' }), 15_000);
+    child.on('error', () => finish({ status: submitted ? 'uncertain' : 'unsupported', reason: 'wake_start_failed' }));
+    child.on('close', () => finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_closed' }));
+    child.stdin.on('error', () => finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_input_failed' }));
+    const send = (value) => child.stdin.write(JSON.stringify(value) + '\n');
+    child.stdout.setEncoding('utf8').on('data', (data) => {
+      buffer += data;
+      if (buffer.length > 100_000) return finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_response_too_large' });
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+        let response; try { response = JSON.parse(line); } catch { return finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_invalid_response' }); }
+        if (response.id === 1 && response.result) {
+          send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+          submitted = true;
+          send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'queue_thread', arguments: { thread: input.context.orchestrator_session_id, message_template: message, resume: true } } });
+        } else if (response.id === 2) {
+          const result = response.result?.structuredContent;
+          finish(result?.state === 'queued' && !response.result?.isError ? { status: 'sent', reason: 'wake_queued' } : { status: 'uncertain', reason: 'wake_delivery_unconfirmed' });
+        } else if (response.id === 1 && response.error) finish({ status: 'pending', reason: 'wake_initialize_failed' });
+      }
+    });
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness', version: '1' } } });
+  });
+}
+
+async function deliver(session, input, event) {
+  const sessionId = input.context?.orchestrator_session_id;
+  if (!sessionId) return { status: 'unsupported', reason: 'orchestrator_session_missing' };
+  const provider = input.context?.orchestrator_provider || 'codex';
+  if (provider === 'codex') return wakeDelivery(input, event, session);
+  // A delivered turn may run without the project's hooks (they need trust per worktree), so its reply is written
+  // here too; harness-context shows the newer of this file and the Stop hook's record.
+  await mkdir(join(session, 'runtime/orchestrator'), { recursive: true });
+  const command = orchestratorResumeCommand({ provider, sessionId, root: input.workspace_root, message: deliveryMessage(event, session), binding: input.context?.workflow_binding || null, lastMessagePath: join(session, 'runtime/orchestrator/last-turn.txt') });
+  if (!command) return { status: 'unsupported', reason: 'orchestrator_provider_unsupported' };
+  const log = `runtime/orchestrator/deliveries/${input.execution_id}.log`;
+  await assertWorkspaceTarget(session, log);
+  await mkdir(join(session, 'runtime/orchestrator/deliveries'), { recursive: true });
+  await mkdir(join(session, 'tmp'), { recursive: true });
+  const fd = openSync(join(session, log), 'a', 0o600);
+  try {
+    const child = spawn(command.command, command.args, { cwd: command.cwd, env: orchestratorEnvironment(session), detached: true, stdio: ['ignore', fd, fd] });
+    const started = await new Promise((resolve) => { child.once('spawn', () => resolve(null)); child.once('error', resolve); });
+    if (started) return { status: 'unsupported', reason: started.code === 'ENOENT' ? 'orchestrator_cli_unavailable' : `orchestrator_resume_failed:${String(started.code || started.name).slice(0, 40)}` };
+    child.unref();
+    return { status: 'sent', pid: child.pid, log };
+  } finally { closeSync(fd); }
 }
 
 async function deliverPending(session, input, event) {
-  if (event.delivery.status === 'sent') return event;
-  event.delivery.status = 'pending';
+  if (['sent', 'uncertain', 'sending'].includes(event.delivery.status)) return event;
+  event.delivery.status = 'sending';
   event.delivery.updated_at = new Date().toISOString();
   await save(session, `${directory}/${input.execution_id}.json`, event);
   try {
     const outcome = await deliver(session, input, event);
     event.delivery.status = outcome.status;
+    if (outcome.pid) { event.delivery.pid = outcome.pid; event.delivery.log = outcome.log; }
     if (outcome.reason) event.delivery.reason = outcome.reason;
     else delete event.delivery.reason;
   }
@@ -102,6 +180,37 @@ async function deliverPending(session, input, event) {
   event.delivery.updated_at = new Date().toISOString();
   await save(session, `${directory}/${input.execution_id}.json`, event);
   return event;
+}
+
+async function writeImplementationCheckpoint({ input, status, code, envelope, verified, reason, error }) {
+  let checkpoint;
+  try {
+    checkpoint = new PlanCheckpointStore({ root: input.workspace_root, planId: input.context.plan_id });
+    if (input.context.checkpoint_path && input.context.checkpoint_path !== checkpoint.paths.checkpoint_path) throw new Error('Implementation checkpoint path does not match the runner-owned plan path');
+    const previous = await checkpoint.read();
+    const recorded = previous?.lifecycle_evidence?.stage_result;
+    if (recorded?.execution_id !== input.execution_id || recorded.status !== status || recorded.code !== code) {
+      const handoff = !verified || status !== 'completed' || code !== 'OK';
+      const result = verified ? envelope.result : null;
+      const artifacts = (result?.artifacts || []).map(({ base, path, kind, sha256 }) => ({ base, path, kind, ...(sha256 ? { sha256 } : {}) }));
+      const changedFiles = [...new Set([...(previous?.changed_files || []), ...artifacts.filter((item) => item.base === 'workspace').map((item) => item.path)])];
+      const stageResult = { execution_id: input.execution_id, status, code, result_ref: verified ? envelope.result_ref : null };
+      const history = Array.isArray(previous?.lifecycle_evidence?.stage_results) ? previous.lifecycle_evidence.stage_results : [];
+      await checkpoint.write({
+        orchestration_state: handoff ? 'handoff-required' : 'running',
+        last_completed_step: `stage-${status}-${code}`,
+        changed_files: changedFiles,
+        ...(!previous?.tests || previous.tests.status === 'not-run' ? { tests: { ...previous?.tests, status: 'unknown', result_ref: verified ? envelope.result_ref : null } } : {}),
+        lifecycle_evidence: { ...(previous?.lifecycle_evidence || {}), stage_results: [...history, stageResult], stage_result: { ...stageResult, ...(result ? { summary: result.summary, artifacts } : {}) } },
+        blocker: ['blocked', 'failed', 'cancelled'].includes(status) ? { kind: code, summary: (result?.summary || reason || error?.message || code).slice(0, 1200), unblock_condition: 'Continue from the stage result and its recovery route' } : null,
+        handoff_reason: handoff ? (status === 'action_required' ? 'milestone' : 'retry') : null,
+        next_action: handoff ? `Route ${code} from the stage result` : 'Continue the implementation workflow',
+      });
+    }
+    await checkpoint.close(); checkpoint = null;
+  } catch (cause) {
+    throw Object.assign(new Error(`Cannot persist the implementation checkpoint: ${cause.message}`, { cause }), { checkpointFailure: true });
+  } finally { if (checkpoint) await checkpoint.close().catch(() => {}); }
 }
 
 export async function publishStageResultEvent({ root, input, envelope = null, binding = { model: null, reasoning_effort: null }, reason = null, error = null, hostDelivery = true }) {
@@ -114,19 +223,28 @@ export async function publishStageResultEvent({ root, input, envelope = null, bi
     try { await validateSkillReturn({ root, input, envelope }); verified = true; }
     catch (validationError) { reason ||= validationError.message; }
   }
-  const status = verified ? envelope.status : error?.name === 'AbortError' ? 'cancelled' : 'failed';
-  const code = verified ? envelope.code : status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
+  let status = verified ? envelope.status : error?.name === 'AbortError' ? 'cancelled' : 'failed';
+  let code = verified ? envelope.code : status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const path = `${directory}/${input.execution_id}.json`;
   return locked(session, input.execution_id, async () => {
-  await recordExecutionState({ root, input, binding, status, code, result_ref: verified ? envelope.result_ref : null, reason: reason || error?.message });
   let event;
   try { event = await readSkillSessionJson({ root, session_directory: session, path }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (event && (event.execution_id !== input.execution_id || event.worktree_ref !== (input.context?.worktree_ref || null) || !event.delivery || event.delivery.request_id !== deliveryRequestId(input))) throw new Error('Stale stage result event');
-  if (event?.delivery.status === 'sent') return event;
+  if (['sent', 'uncertain', 'sending'].includes(event?.delivery.status)) return event;
+  try {
+    const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
+      ? () => writeImplementationCheckpoint({ input, status, code, envelope, verified, reason, error }) : null;
+    await recordExecutionState({ root, input, binding, status, code, result_ref: verified ? envelope.result_ref : null, reason: reason || error?.message, beforeTransition });
+  } catch (checkpointError) {
+    if (!checkpointError.checkpointFailure) throw checkpointError;
+    verified = false;
+    status = 'failed'; code = 'EXECUTION_ERROR'; reason = checkpointError.message;
+    await recordExecutionState({ root, input, binding, status, code, result_ref: null, reason });
+  }
   event ||= eventPayload(input, verified ? envelope : { status, code, result_ref: null, reason: reason || error?.message });
-  if (event.delivery.status === 'sent') return event;
+  if (['sent', 'uncertain', 'sending'].includes(event.delivery.status)) return event;
   const payload = eventPayload(input, verified ? envelope : { status, code, result_ref: null, reason: reason || error?.message });
   event.status = status;
   event.code = code;
@@ -180,8 +298,8 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
     const result = await readSkillSessionJson({ root, session_directory: taskSession, path: event.result_ref });
     const envelope = { schema_version: 1, execution_id, skill: input.skill, status: event.status, code: event.code, result_ref: event.result_ref, result };
     await validateSkillReturn({ root, input, envelope });
-    await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
-    return envelope;
+    const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+    return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const paths = stageExecutionPaths(root, execution_id, { create: false });
   const resultPath = paths.refs.result;
@@ -206,6 +324,6 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
     }
   }
   await validateSkillReturn({ root, input, envelope });
-  await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
-  return envelope;
+  const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+  return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
 }

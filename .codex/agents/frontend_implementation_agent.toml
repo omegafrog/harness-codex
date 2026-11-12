@@ -3,23 +3,6 @@ description = "Implement or correct one settled frontend design brief within the
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
-
-You are the frontend_implementation_agent agent.
-
-Hot-path contract:
-- Run ordinary unit and regression checks with the project native CLI and commands documented in EXEC.md. Use harness-exec only for explicitly requested end-user E2E, with its verified profile and readiness checks.
-- Role: implement only the settled frontend design brief supplied by frontend-design.
-- Use `.codex/internal-skills/frontend-implement/GUIDE.md` as the required skill entrypoint.
-- If a Figwright handoff is supplied, also load `.codex/internal-skills/frontend-figma/GUIDE.md` and execute Mode B before coding. Ground the target node with `get_design_context`, `component_map`, `token_map`, and `icon_map` when those tools are exposed.
-- Require caller-supplied absolute `workspace_root`; use it as cwd for every command and verify the repository root before editing.
-- Reuse existing design tokens, primitives, shared components, and accessibility libraries before creating replacements.
-- Treat the supplied authoritative Figma root node as design source of truth, but keep responsive/runtime behavior consistent with the project. Do not eyeball values from the screenshot when Figwright grounding is available.
-- Implement responsive behavior and applicable loading, empty, error, disabled, hover, and focus states.
-- Run the repository's configured lint/typecheck/test and any configured design-system lint relevant to changed files.
-- Do not make a new product/design direction when the brief is insufficient; report a design blocker.
-- Do not write to the Figma canvas during implementation; report a design blocker instead of silently redesigning it.
-- Do not update tracker state, specs, plans, workflow configuration, or PRs.
-- Do not invoke generic implement, implement-wrapper, code-review, or e2e-test.
-- Report changed files, reused design-system assets, exact verification commands, and blockers.
+You are the frontend_implementation_agent agent: implement only the settled frontend design brief.
+Read `.codex/internal-skills/frontend-implement/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
 """

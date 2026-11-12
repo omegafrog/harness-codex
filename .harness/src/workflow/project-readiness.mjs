@@ -1,4 +1,5 @@
 import { isAbsolute, join } from 'node:path';
+import { AGENT_TIERS, activeAgentProvider, legacyAgentKeys, providerAgents } from './agent-config.mjs';
 import { readFile, stat } from 'node:fs/promises';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
@@ -21,12 +22,15 @@ export async function inspectSetupConfiguration({ workspace_root: root } = {}) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid configuration');
   }
   catch (error) { if (error.code && error.code !== 'ENOENT') throw error; config = {}; violations.push('Missing or invalid .codex/harness.yaml'); }
+  if (config.worktrees?.directory !== undefined && (typeof config.worktrees.directory !== 'string' || !isAbsolute(config.worktrees.directory) || config.worktrees.directory.includes('\0'))) violations.push('Invalid worktrees.directory');
   if (config.agents?.provider !== undefined && !['codex', 'claude-code'].includes(config.agents.provider)) violations.push('Invalid agents.provider');
-  for (const tier of ['high_performance', 'implementation', 'execution', 'low_performance']) {
+  const provider = activeAgentProvider(config), agents = providerAgents(config, provider);
+  for (const flat of legacyAgentKeys(config)) violations.push(`agents.${flat} must move under agents.${provider} (run harness-codex update)`);
+  for (const tier of AGENT_TIERS) {
     for (const suffix of ['model', 'reasoning_effort']) {
       const key = `${tier}_${suffix}`;
-      if (typeof config.agents?.[key] !== 'string' || !config.agents[key].trim() || config.agents[key].startsWith('agents.')) violations.push(`Missing agents.${key}`);
-      else if (suffix === 'reasoning_effort' && !(config.agents?.provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).includes(config.agents[key])) violations.push(`Invalid agents.${key}`);
+      if (typeof agents[key] !== 'string' || !agents[key].trim() || agents[key].startsWith('agents.')) violations.push(`Missing agents.${provider}.${key}`);
+      else if (suffix === 'reasoning_effort' && !(provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).includes(agents[key])) violations.push(`Invalid agents.${provider}.${key}`);
     }
   }
   if (!hasTrackerConfiguration(config.tracker)) violations.push('Missing or invalid tracker configuration');

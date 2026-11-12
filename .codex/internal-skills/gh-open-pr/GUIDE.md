@@ -1,11 +1,7 @@
-
-내부 절차를 호출할 때 공개 스킬 검색 대신 해당 GUIDE를 읽는다: [architecture-spec](../../../.codex/internal-skills/architecture-spec/GUIDE.md) · [product-spec](../../../.codex/internal-skills/product-spec/GUIDE.md) · [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md) · [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md).
-
+---
+model_tier: low_performance
+---
 # gh-open-pr
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## Purpose
 
@@ -19,8 +15,7 @@ or the implementation workflow has completed its verification gates.
 - Confirm the head branch is pushed and the PR source is the intended branch.
 - Confirm the caller-supplied fixed base ref is an ancestor of the head branch.
 - Pass the caller-captured current session base branch unchanged to `gh pr create --base`. Do not infer or substitute the repository default branch.
-- For a plan PR, confirm every split plan has been created and linked to the parent Issue.
-- For a plan PR, confirm every child Issue has the configured `Planned` status.
+- For a plan PR, confirm every split plan has been created, linked to the parent Issue and has the configured `Planned` status.
 - For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
 - The workflow creates exactly one PR per plan set. Both plan PR and implementation PR cover the parent Issue and every child Issue; never create one PR per split plan or a child-scoped implementation PR.
 - Before creating or updating the implementation PR, confirm every split plan in the plan set has completed its verification gates and has terminal tracker status (`Done` in GitHub mode; `completed` in local-markdown mode). Do not create or update an implementation PR after an individual split plan finishes.
@@ -35,6 +30,7 @@ or the implementation workflow has completed its verification gates.
 ## Core Rules
 
 - Use `gh pr create` for a new PR and `gh pr edit` for an existing PR.
+- Query PRs for the exact head branch before creation. If one exists, update it; never create a second PR for that head/plan set. The runner-supplied canonical plan-set ID and issue IDs are authoritative; never generate them.
 - Never merge or close a PR. The user owns the final merge or close decision.
 - Prefer `--draft` for a plan-set PR.
 - Use `--body-file` for multi-section bodies; do not place long Markdown in shell quoting.
@@ -44,7 +40,6 @@ or the implementation workflow has completed its verification gates.
 - Put one closing trigger on each line when closing multiple issues.
 - Never add a closing trigger to a plan PR: planning does not complete implementation Issues.
 - For the single plan-set implementation PR, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
-- 단일 plan-set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
 - After creating or updating an implementation PR, verify that GitHub registered every intended Issue in `closingIssuesReferences`. If any Issue is missing, repair the body with the correct closing line, run `gh pr edit`, and verify again; stop if the link is still missing.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
@@ -68,6 +63,8 @@ For a plan-set PR, use this order:
 5. Record the planning validation performed.
 6. State that implementation and completion gates remain pending.
 7. State the captured session base branch.
+
+Use `.github/PULL_REQUEST_TEMPLATE/plan-set.md` as the managed plan PR structure. Populate parent and child Issue links, reviewed plan-set identifier, exact Product and Architecture Spec paths, all available non-empty ticket-scoped diagrams, plan-review approval, tracker publication completion, and tracker status evidence from runner context and canonical artifacts. Do not infer these from titles or branch names.
 
 ```md
 ## Plan Set
@@ -101,11 +98,13 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 2. Write a title that makes the implementation intent clear.
 3. Add the problem, change flow, and test or verification results.
 4. Read and use the repo-local `.codex/skills/eli5/SKILL.md` as the explanation pass. Put its output first under the canonical `## Summary`: 한 문장, 최대 세 단계의 `Before → After` 흐름 (one sentence and at most three steps). `## Summary` is the structured authoring heading; do not introduce a second `## 한눈에 보기` section.
-5. Put changed PlantUML diagram entries under the canonical `## Plan Set` → `Diagrams` list. Each entry must include the requirement or use-case ID·이름·유형 and a head-branch-qualified rendered SVG URL. `<details>` blocks may wrap long diagram context, but do not create a second canonical diagram section.
+5. Put changed PlantUML diagram entries under the canonical `## Plan Set` → `Diagrams` list. Each entry must include the requirement or use-case ID·이름·유형 and a head-branch-qualified rendered SVG URL. Put each SVG on its own bullet and leave a blank line between entries so GitHub renders each diagram on a separate row. `<details>` blocks may wrap long diagram context, but do not create a second canonical diagram section.
 6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
 7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
 8. Put one closing line at the bottom for the parent Issue and every child Issue. These Issues close only after the implementation PR merges.
 9. Confirm that each closing phrase targets the intended Issue and that the single PR scope matches the complete plan set.
+
+Use `.github/pull_request_template.md` as the managed structure and populate it from the existing `implementation-pr` schema and renderer contract. Preserve its canonical sections and list `Implemented Plans` in canonical execution order. Carry implementation verification and independent review evidence in their named sections, and parent plus every child closing reference only for this implementation PR. Do not copy runtime checkpoints, events, or raw runner evidence into the PR.
 
 ## Body Example
 
@@ -117,7 +116,11 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 
 ## Plan Set
 - Diagrams:
-  - UC-001 · 댓글 제출 · Activity: ![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/product/UC-001.activity.svg?raw=true)
+  - UC-001 · 댓글 제출 · Activity:
+    ![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/product/UC-001.activity.svg?raw=true)
+
+  - UC-002 · 직접 가입 · Activity:
+    ![UC-002 직접 가입 Activity](../blob/<head-branch>/docs/specs/<plan-set-id>/diagrams/product/UC-002.activity.svg?raw=true)
 
 ## 검증
 - `Postman`으로 로그인 후 댓글 생성을 확인했습니다.
@@ -196,8 +199,8 @@ After the user merges the plan-set integration PR, verify intended parent/child 
 
 ## 통합 계약 연속성
 
-시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. 계약 갱신·seal은 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md)에 따라 최종 구현 workflow만 수행하며 이 단계는 계약을 수정하지 않는다.
 
-## 소유 worktree 종료
+## 소유 worktree
 
-구현 중에는 상위 workflow가 전달한 `workspace_mode`와 `workspace_reference`를 유지하고 선택된 파일의 종료 절차만 적용한다. standalone 또는 별도 소유 workflow에서는 `session-worktree` GUIDE의 분기로 해당 reference 하나만 읽는다. 하위 단계가 실행 방식을 다시 추론하거나 상위 worktree의 소유권을 가져오지 않는다.
+상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.

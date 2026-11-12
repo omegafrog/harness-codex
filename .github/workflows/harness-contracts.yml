@@ -23,6 +23,10 @@ jobs:
           CONTRACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         shell: bash
         run: |
+          if [[ ! -f docs/contracts/manifest.json ]]; then
+            echo "No canonical contracts to check"
+            exit 0
+          fi
           base_args=()
           if [[ -n "$CONTRACT_BASE" && ! "$CONTRACT_BASE" =~ ^0+$ ]]; then
             base_args=(--base-ref "$CONTRACT_BASE")

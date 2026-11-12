@@ -1,0 +1,44 @@
+# code-review 호출과 수정 절차
+
+리뷰를 실행하고 그 결과로 다음 행동을 정하는 메인 orchestrator가 읽는다. reviewer의 판정 기준과 결과 형식은 [code-review GUIDE](../GUIDE.md)에 있다.
+
+## 실행
+
+The main orchestrator spawns the two reviewers as fresh native subagents (`standards_reviewer`, `spec_reviewer`); each reads the [code-review GUIDE](../GUIDE.md) from its profile pointer:
+
+1. Confirm the fixed point. If the reviewer model binding is missing, return `blocked/MODEL_BINDING_UNAVAILABLE` with the missing keys; do not invoke setup.
+2. Dispatch a fresh `standards_reviewer` with the diff, commit list, Product Spec, scoped plan/evidence and standards sources; allow targeted source/test reads to verify acceptance claims.
+3. Dispatch a separate fresh `spec_reviewer` with the diff, commit list, Architecture Spec, affected durable model/ADR refs and scoped plan/evidence; allow source/caller/test reads beyond changed lines to verify rule ownership and bypass paths.
+   For every planned implementation, give both reviewers the current Product and Architecture Specs and every canonical plan so they compare behavior and constraints directly; a plan set may still omit part of a Spec.
+4. Run them in parallel when supported, otherwise as separate subagent executions. Keep both contexts isolated and read-only. Never run a reviewer pass inline in the parent or simulate isolation with two labels; if isolation is unavailable, report that limitation.
+5. Wait for both to finish (a running reviewer is pending, not failed). Preserve their actual return files, execution and thread IDs; never invent reviewer IDs.
+6. Aggregate without merging, reranking or letting one axis mask the other, then route the next action with the repair decision below. Do not auto-fix, auto-rerun or auto-close issues.
+
+인용 검증 실패가 `basis_unverified`로 반환되면 질문·repair 예약을 만들지 않는다. 원본 finding과 `review_input`의 commit·Spec 경로·plan metadata·planning snapshot 참조를 유지하고, [공통 리뷰 조정의 근거 재확인 절차](../../../../.codex/internal-skills/review-coordination/GUIDE.md#구현-리뷰-근거-재확인)에 따라 처리한다.
+
+수정이나 사용자 결정 요청 전에 orchestrator가 [공통 리뷰 조정](../../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 plan-review check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
+
+## 판정과 수정 절차
+
+1. reviewer를 생성하기 전에 plan-review check의 현재 pass 결과와 `canonical_plan` metadata(kind·reference·input_key·hash_algorithm·normalization·sha256)를 확인한다. hash 판정은 `harness-plan-review.mjs check` 결과를 쓰고 raw 파일 SHA와 비교하지 않는다. `canonical_plan.reference` 파일을 읽으며, `input_key`의 `#canonical` 접미사는 가상 snapshot 식별자다.
+2. 두 reviewer가 끝나면 review JSON을 직접 조립하지 말고 `node .codex/scripts/harness-code-review.mjs assemble --root <workspace_root> --plan <plan-id> --fixed-point <review_fixed_point> --implementation-result <REVIEW_REQUIRED를 반환한 구현 stage의 session-relative result.json>`를 실행한다. reviewer ID는 넘기지 않는다. 결과 파일 이후 끝난 각 유형의 reviewer를 hook 기록에서 고르고, 여러 명이면 그 ID 목록과 함께 거부하므로 그때만 `--standards-agent`/`--spec-agent`로 고른다. 결과에 `commit_sha`가 없으면(변경 없이 재확인만 한 실행) 세션에 기록된 최신 구현 commit이 HEAD일 때 그 commit을 자동으로 쓰고, 아니면 앞선 구현 결과가 기록한 commit을 `--commit`(앞 7자 이상)으로 넘긴다. assemble이 거부하면 그 오류를 고쳐 다시 실행하고, reviewer 판정을 구현 stage에 직접 넘기거나 repair를 건너뛰지 않는다. subagent hook이 worktree session의 `runtime/orchestrator/subagents.jsonl`에 기록한 두 reviewer의 최종 답(`{"state":"passed"|"failed","report":{"findings":[...]}}`)이 review가 되며, 기록되지 않았거나 작성자 대화를 fork한 reviewer는 거부된다. 이 명령이 실제 commit 목록(기준점 포함)·`diff_range` 객체·diff, plan-review dispatch check의 Spec 경로·`canonical_plan`·planning snapshot, 구현자의 `unplanned_additions`로 `review_input`을 만들어 `runtime/reviews/implementation-<plan-id>-evidence.json`에 기록한다(리뷰 이력 `implementation-<plan-id>.json`과 다른 파일이다). reviewer의 답을 파일로 옮겨 적거나 고치지 않는다.
+3. 수정·설계 인계·사용자 질문을 하기 전에 지적이 있든 없든 `node .codex/scripts/harness-code-review.mjs repair --root <workspace_root> --plan <plan-id> --reviews runtime/reviews/implementation-<plan-id>-evidence.json`을 실행한다. 결과가 `state: passed`이면 구현 stage를 `--feedback`으로 재개해 plan 완료(완료 gate 확인과 tracker `Done` 전이)를 맡긴다. `repair`는 `review_input.unplanned_additions` 배열이 없으면 차단한다. 근거 없음이나 인용 불일치로 판정된 수정 지적은 `unbacked_requirement`가 되어 `unrequested_behavior`와 함께 사용자 결정으로 간다. 실행 workspace의 `.io/runtime/reviews/implementation-<plan-id>.json`이 수정 순번·fixed point·지적의 정본이다. 수정 횟수에는 한도가 없다. 같은 커밋의 중복 예약만 차단한다. wrapper runtime도 같은 예약 함수를 사용한다.
+4. requirement_ambiguity·architecture_decision·scope_expansion·spec_conflict이면 구현 수정을 보류하고 먼저 5번으로 사용자에게 묻는다. `spec-me`는 사용자가 Spec에 추가하기로 답한 지적만 받는다. 전환할 때는 요구를 키워 쓰지 말고 지적과 사용자 답을 그대로 넘긴다. 새 명령·새 업무 상태·새 규칙·새 경계가 필요한지와 현재 구현 결함을 구분하고, 발견한 경로 전체·필요 결정·기존 fixed point·commit·repair 기록을 checkpoint에 보존한다. 승인된 Spec과 영향 계획의 fresh review 뒤 같은 구현 기준으로 재개한다. 설계 재검토 중 구현 repair를 먼저 예약하지 않는다.
+5. `repair`가 `next_action: user-decision`으로 차단하면 수정을 시작하지 않는다. `user_questions`의 각 `question`을 `questions` 배열에 그대로 넣어 `action_required/USER_DECISION_REQUIRED`로 반환하고 질문 본문을 바꾸지 않는다. orchestrator는 stage가 아니라서 이 질문에는 실행기가 부여한 `question_id`가 없다. 사용자가 답하면 지적마다 `node .codex/scripts/harness-code-review.mjs record-decision --root <workspace_root> --plan <plan-id> --finding <finding_id> --choice <reject|accept|adopt> --answer '<사용자의 답 원문>'`을 실행한다. 이 명령은 가장 최근 `repair`가 물은 질문(`question_id`에 지적 내용의 지문이 들어 있다)에만 답을 받고, 그 질문 뒤에 사용자가 실제로 보낸 입력(hook이 `runtime/orchestrator/user-inputs.jsonl`에 기록)에 답 원문이 있어야 기록한다. 답 원문에 선택한 선택지 라벨이 없어도 거부한다. 지적 ID가 이전 라운드와 같아도 다른 지적일 수 있으므로 이전 답을 재사용하지 말고 매번 질문 원문 그대로 사용자에게 묻는다. 기록된 결정은 같은 내용의 지적에만 적용된다. 그 뒤 3번을 다시 실행하면 runtime이 답변과 대조한다. ID를 추측해 만들거나 답을 요약해 쓰지 않는다. 같은 항목을 가리키는 지적은 원본을 고치지 말고 session JSON 최상위 `scope_groups`에 `{id, finding_ids}`로 묶은 뒤 3번을 다시 실행한다. 그러면 질문이 항목별로 하나만 나오고 결정의 `finding_id`에 그룹 `id`를 쓴다. 지원하지 않기로 한 결정은 `product-decisions.md`에 기록해 같은 지적을 다시 묻지 않는다. `choice`는 reject, accept, adopt다. accept는 묶인 항목이 모두 `rule_impact: none`일 때만 제시되며 Spec 변경 없이 유지하고 리뷰 기록에 남는다. 규칙 영향이 있는 항목의 유지는 adopt와 같이 Spec 승인으로 간다. `unrequested_behavior`의 reject는 제거 수정이며 Spec 변경 없이 진행하고 수리 예산이 소진돼도 허용된다. `unbacked_requirement`의 reject는 지적 기각이다. adopt는 `scope_expansion`으로 바뀌어 4번으로 간다. 사용자가 답하기 전에는 유지도 제거도 하지 않는다.
+5-1. `repair`가 `next_action: fresh-review`(`reason: spec_revision_handled`)를 반환하면 같은 리뷰의 지적은 이미 Spec 소유 단계가 처리했다. 다시 `SPEC_REVISION_REQUIRED`로 넘기지 않는다. 갱신된 plan이 요구하는 변경이 있으면 구현·commit하고, 없으면 그대로 `action_required/REVIEW_REQUIRED`로 반환해 orchestrator가 fresh reviewer로 현재 commit을 다시 리뷰하게 한다.
+6. `blocker`·`major` 지적은 수정 대상이고 `minor`는 수정 라운드를 열지 않는다(`classification.advisory`에 `advisory_reason: minor`로 남고, 필요하면 plan Issue에 댓글로 기록한다). 수정할 지적(테스트·구현·Spec 일치 모두)은 `repair`가 `state: repair-required`로 예약하며 같은 plan을 새 worker에게 바로 되돌린다. 처음 5회까지는 사용자에게 묻지 않고 자동으로 반복한다. 6번째 수정부터는 `repair`가 `auto_repair_rounds_used`로 멈추고 남은 지적마다 `user_questions`("지원 안 함"/"수정 계속")를 돌려준다. 질문은 3·5번과 같은 방식으로 그대로 전달하고, 답을 `record-decision`으로 기록한 뒤 `repair`를 다시 실행한다. "수정 계속"으로 답한 지적은 다시 묻지 않고, "지원 안 함"은 현재 상태로 수용한다. 구현 stage는 plan 문서를 고치지 않고, 무엇을 고쳤는지 `node .codex/scripts/harness-tracker.mjs comment --root <workspace_root> --ticket <ref> --body '<수정 요약>'`로 Issue에만 남긴다. 테스트 계약·Spec·plan 변경이 필요한 지적은 이 경로를 쓰지 않고 해당 단계에 인계한다.
+7. 허용된 수정을 마치면 focused verification과 새 commit을 보존하고 두 축을 새 reviewer로 재검토한다. 직전 라운드에서 한 축이 지적 없이 통과했고 수정이 다른 축의 blocking 지적이 인용한 파일만 바꿨다면, 그 축의 reviewer를 띄우지 말고 2번의 `assemble`에서 그 축의 `--standards-agent`/`--spec-agent` 대신 `--reuse-axis standards|spec`을 쓴다. 조건이 어긋나면 `assemble`이 거부하므로 그때는 두 축 모두 새 reviewer를 띄운다. 자신이 조건을 판단해 이월하지 않는다. handoff checkpoint에는 수정 예약 결과와 원장 경로·기존 fixed point·남은 지적·다음 작업을 보존한다.
+
+## Output
+
+- fixed point와 implementation commit
+- 축별 state·구조화 findings·실제 reviewer metadata
+- 현재 plan의 미해결 blocker와 최종 통합으로 연결한 항목
+
+## 소유 worktree
+
+상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
+
+## 실행 산출물 경로
+
+실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.

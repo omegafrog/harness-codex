@@ -1,9 +1,8 @@
+---
+model_tier: high_performance
+---
 
 # grilling
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## What it does
 
@@ -26,6 +25,4 @@ For example, instead of asking “Keep the snapshot or regenerate it?”, explai
 Use `/grilling` when you want to pressure-test a plan, design, or idea before building it.
 
 
-## Exec 호출의 질문 전달
-
-사용자 결정이 필요한 실행은 [질문 스키마](../../../.codex/internal-skills/skill-execution/schemas/question.schema.json)에 따라 질문을 결과의 `questions` 배열에 넣고 `action_required / USER_DECISION_REQUIRED`로 반환한다. 질문이 하나여도 배열에 담는다. 질문 내용과 순서는 이 skill이 결정한다. 메인 orchestrator가 사용자에게 제시하고 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어간다. checkpoint와 이미 확정된 답변을 결과 파일에 보존한다. 질문 문장은 `title`에 기록한다. stage 내부에서 사용자 질문 도구를 직접 호출하지 않는다.
+In a stage execution, return questions as the stage return contract defines instead of asking interactively.

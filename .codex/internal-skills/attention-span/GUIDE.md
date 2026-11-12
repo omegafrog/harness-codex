@@ -1,9 +1,8 @@
+---
+model_tier: low_performance
+---
 
 # Attention Span 스킬 관리자
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 공식 저장소는 [alexgreensh/attention-span](https://github.com/alexgreensh/attention-span)이다. 실행할 때마다 GitHub에서 현재 스킬 목록과 내용을 확인한다. 기본 지원 목록은 `spartan`, `rundown`, `tldr`이며, 저장소에 새 스킬이 추가되면 별도 요청 없이 설치하지 않는다. `attention-kind`는 제거된 스킬이며 이 관리 절차로 다시 설치하지 않는다.
 

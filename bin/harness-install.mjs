@@ -6,13 +6,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { updateProject, writeHarnessLock } from "../.harness/src/installer/index.mjs";
+import { installedProviders } from "../.harness/src/installer/update.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install/update)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --provider <codex|claude-code|all>  Agent provider to install (install default: all; update keeps the installed providers unless given)\n  --force           Back up and overwrite selected managed files (install; update always does)\n  --no-backup       Update managed files without saving local copies (update only)\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -31,6 +32,7 @@ function parseArgs(argv) {
     installSkills: true,
     force: false,
     noBackup: false,
+    provider: null,
   };
 
   while (args.length > 0) {
@@ -45,6 +47,11 @@ function parseArgs(argv) {
     } else if (arg === "--skills-only") {
       if (command !== "install") throw new Error("--skills-only is only supported by install");
       options.installAgents = false;
+    } else if (arg === "--provider") {
+      if (command === "lock") throw new Error("--provider is only supported by install/update");
+      const value = args.shift();
+      if (!["codex", "claude-code", "all"].includes(value)) throw new Error("--provider must be codex, claude-code or all");
+      options.provider = value;
     } else if (arg === "--force") {
       if (command === "lock") throw new Error("--force is only supported by install/update");
       options.force = true;
@@ -120,6 +127,20 @@ function installPonytailPlugin() {
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
 }
 
+function installWakePlugin() {
+  if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Codex Wake requires Linux x86_64 and a working systemd user manager.');
+  const pluginId = 'codex-wake@codex-wake-local';
+  const plugins = JSON.parse(runCodex(['plugin', 'list', '--json']));
+  if (plugins.installed?.some((plugin) => plugin.pluginId === pluginId && plugin.enabled === true)) return;
+  const marketplaces = JSON.parse(runCodex(['plugin', 'marketplace', 'list', '--json']));
+  const existing = marketplaces.marketplaces?.find((marketplace) => marketplace.name === 'codex-wake-local');
+  if (existing && existing.marketplaceSource?.source !== 'https://github.com/alexx-ftw/codex-wake.git') throw new Error('Existing codex-wake-local marketplace has a different source; inspect it before installing Wake.');
+  if (!existing) runCodex(['plugin', 'marketplace', 'add', 'alexx-ftw/codex-wake', '--ref', 'v0.2.0-alpha.5']);
+  runCodex(['plugin', 'add', pluginId]);
+  const verified = JSON.parse(runCodex(['plugin', 'list', '--json']));
+  if (!verified.installed?.some((plugin) => plugin.pluginId === pluginId && plugin.enabled === true)) throw new Error('Codex Wake installation did not report an enabled plugin.');
+}
+
 function beadsCliVersion() {
   const executables = process.platform === "win32" ? [["bd.exe", false], ["bd.cmd", true]] : [["bd", false]];
   for (const [executable, shell] of executables) {
@@ -141,13 +162,15 @@ function ensureBeadsCli() {
 
 async function verify(projectRoot, options) {
   if (options.installSkills) {
+    const providers = options.provider || "all";
+    const skillRoots = [...(providers !== "claude-code" ? [".agents/skills"] : []), ...(providers !== "codex" ? [".claude/skills"] : [])];
     for (const name of ["orchestrator", "eli5", "setup"]) {
-      await stat(join(projectRoot, ".agents", "skills", name, "SKILL.md"));
-      await stat(join(projectRoot, ".claude", "skills", name, "SKILL.md"));
+      for (const directory of skillRoots) await stat(join(projectRoot, directory, name, "SKILL.md"));
     }
+    if (providers !== "codex") await stat(join(projectRoot, ".claude", "harness", "providers", "claude-code.mjs"));
     const internalSkills = new Set(await readdir(join(projectRoot, ".codex", "internal-skills")));
     const lock = JSON.parse(await readFile(join(projectRoot, ".codex", "harness-lock.json"), "utf8"));
-    for (const directory of [".agents/skills", ".claude/skills"]) {
+    for (const directory of skillRoots) {
       const exposed = await readdir(join(projectRoot, directory));
       const unexpected = exposed.find((name) => internalSkills.has(name) && !["orchestrator", "eli5", "setup"].includes(name)
         && lock.files?.[`${directory}/${name}/SKILL.md`]
@@ -164,6 +187,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".codex", "internal-skills", "architecture-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -180,6 +204,7 @@ async function verify(projectRoot, options) {
       "frontend_implementation_agent.toml",
       "frontend_visual_reviewer.toml",
       "plan_reviewer.toml",
+      "contract_reviewer.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
@@ -202,6 +227,9 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/wrapper/repair.mjs",
     ".harness/src/knowledge/evidence.mjs",
     ".codex/scripts/harness-plan-review.mjs",
+    ".codex/scripts/harness-contract-review.mjs",
+    ".codex/scripts/harness-write-guard.mjs",
+    ".harness/src/workflow/contract-review.mjs",
     ".codex/scripts/harness-code-review.mjs",
     ".codex/scripts/harness-review-status.mjs",
     ".harness/src/workflow/plan-review.mjs",
@@ -240,10 +268,14 @@ async function main() {
     if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
     if (options.installAgents) await assertSafeDirectory(projectRoot, join(projectRoot, ".codex", "agents"), "agent target directory");
     const fullInstall = options.installSkills && options.installAgents;
-    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
+    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, provider: options.provider, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
+    if (fullInstall && (options.provider || 'all') !== 'claude-code') {
+      installWakePlugin();
+      console.log('Codex Wake is installed; restart Codex and review its hooks. Verify the Wake service before relying on automatic result delivery.');
+    }
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
@@ -252,8 +284,10 @@ async function main() {
     if (syncResult.retired?.length) console.log(`Retired managed assets: ${syncResult.retired.join(", ")}`);
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
+    if (syncResult.removed_directories?.length) console.log(`Removed empty directories: ${syncResult.removed_directories.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
     if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
+    if (fullInstall) await noteCodexUserHooks(projectRoot, options);
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
       ? `Beads CLI available: ${beadsVersion}`
@@ -262,15 +296,34 @@ async function main() {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
-    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force, noBackup: options.noBackup });
+    // update always matches the latest release for Harness-owned paths; local edits are backed up first.
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup, provider: options.provider });
+    if (installedProviders(result.lock) !== 'claude-code') {
+      installWakePlugin();
+      console.log('Codex Wake is installed; restart Codex and review its hooks. Verify the Wake service before relying on automatic result delivery.');
+    }
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
     if (result.added.length > 0) console.log(`Added: ${result.added.join(", ")}`);
     if (result.backup_directory) console.log(`Local backups: ${result.backup_directory}`);
+    if (result.retired?.length) console.log(`Retired managed assets: ${result.retired.join(", ")}`);
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
+    if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+    await noteCodexUserHooks(projectRoot, options);
   }
+}
+
+// Codex user-level hooks live in ~/.codex, which an update never edits; setup registers them and /hooks trusts them.
+async function noteCodexUserHooks(projectRoot, options) {
+  try {
+    const config = await readFile(join(projectRoot, ".codex", "harness.yaml"), "utf8").catch(() => "");
+    if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
+    const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
+    const trust = await inspectCodexHookTrust();
+    if (trust.write_guard !== "trusted") console.log(`Codex user hook "Guarding Harness orchestrator writes" is ${trust.write_guard}: run $setup (codex provider) to register it, then trust it in /hooks, so the orchestrator main session cannot edit product code, tests or contracts.`);
+  } catch { /* the notice is advisory; Doctor reports the same state */ }
 }
 
 main().catch((error) => {

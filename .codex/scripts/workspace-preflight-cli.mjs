@@ -1,19 +1,21 @@
 import { inspectWorkspace } from "./workspace-preflight-core.mjs";
 
 export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd = process.cwd()) {
-  const options = { workspaceRoot: null, json: false, forImplementation: false, deferTrackerSync: false };
+  const options = { workspaceRoot: null, json: false, forImplementation: false, deferTrackerSync: false, forE2e: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--workspace-root" && argv[index + 1]) options.workspaceRoot = argv[++index];
     else if (token === "--json") options.json = true;
     else if (token === "--for-implementation") options.forImplementation = true;
     else if (token === "--defer-tracker-sync") options.deferTrackerSync = true;
+    else if (token === "--for-e2e") options.forE2e = true;
     else throw new Error(`Unknown or incomplete argument: ${token}`);
   }
-  if (!options.workspaceRoot || (options.deferTrackerSync && options.forImplementation)) throw new Error("Usage: harness-workspace-preflight.mjs --workspace-root <absolute-workspace-root> [--for-implementation | --defer-tracker-sync] [--json]");
+  if (!options.workspaceRoot || (options.deferTrackerSync && options.forImplementation) || (options.forE2e && (options.deferTrackerSync || options.forImplementation))) throw new Error("Usage: harness-workspace-preflight.mjs --workspace-root <absolute-workspace-root> [--for-implementation | --defer-tracker-sync | --for-e2e] [--json]");
   const result = await inspectWorkspace({ workspaceRoot: options.workspaceRoot, cwd });
+  if (result.valid && options.forE2e) result.tracker_sync = { status: "not_required", reason: "e2e_workspace_integrity_only" };
   if (result.valid && options.deferTrackerSync) result.tracker_sync = { status: "deferred", reason: "to_ticket_batch_publish" };
-  if (result.valid && !options.deferTrackerSync) {
+  if (result.valid && !options.deferTrackerSync && !options.forE2e) {
     const installed = new URL("../../.harness/src/tracker/lifecycle.mjs", import.meta.url);
     const { inspectTrackerSync } = await import(installed.href);
     result.tracker_sync = await inspectTrackerSync({ workspace_root: result.workspace_root });

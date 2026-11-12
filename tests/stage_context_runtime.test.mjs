@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent } from '../.harness/src/workflow/execution-context.mjs';
+import { buildStagePrompt, instructionVersion, isCancellationOutcome, isCompactionEvent, phaseInstructionPaths } from '../.harness/src/workflow/execution-context.mjs';
 import { stageConfigArgs } from '../.harness/src/workflow/providers/codex.mjs';
-import { allowedToolsForRole, buildCommand as buildClaudeCommand } from '../.harness/src/workflow/providers/claude-code.mjs';
+import { allowedToolsForRole, buildCommand as buildClaudeCommand } from '../.claude/harness/providers/claude-code.mjs';
 
 test('same-session resume sends only new inputs and reloads changed instruction files', () => {
   const version = instructionVersion('guide-v1');
@@ -93,4 +93,70 @@ test('Claude stage tools retain native delegation and only add research tools fo
   const publicSkill = buildClaudeCommand({ root: '/workspace', sandbox: 'workspace-write', binding: { model: 'model', reasoning_effort: 'medium' }, schema: {}, skill: 'setup', requiredSkill: 'setup' });
   assert.ok(!publicSkill.includes('--disable-slash-commands'));
   assert.ok(publicSkill[publicSkill.indexOf('--tools') + 1].split(',').includes('Skill'));
+});
+
+test('spec-me pastes the Product phase guide only until the Product Spec exists', async () => {
+  const product = ['.codex/internal-skills/product-spec/GUIDE.md', '.codex/internal-skills/product-spec/references/topics.md'];
+  const returnContract = '.codex/internal-skills/skill-execution/references/stage-return.md';
+  assert.deepEqual(phaseInstructionPaths({ skill: 'spec-me', productSpecExists: false }), [returnContract, ...product]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'spec-me', productSpecExists: true }), [returnContract]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'product-spec' }), [returnContract, product[1]]);
+  assert.deepEqual(phaseInstructionPaths({ skill: 'implement' }), [returnContract]);
+  const runner = await (await import('node:fs/promises')).readFile(new URL('../.codex/scripts/harness-agent-run.mjs', import.meta.url), 'utf8');
+  assert.match(runner, /phaseInstructionPaths\(\{ skill: input\.skill, productSpecExists: Boolean\(artifactDirectories && existsSync\(join\(artifactDirectories\.specs, 'product-spec\.md'\)\)\) \}\)/);
+});
+
+test('one provider per setup: models and workflow bindings from another provider are refused', async () => {
+  const { assertSingleProvider, modelBelongsToProvider } = await import('../.harness/src/workflow/providers/index.mjs');
+  assert.equal(modelBelongsToProvider('claude-code', 'haiku'), true);
+  assert.equal(modelBelongsToProvider('claude-code', 'claude-sonnet-5-5'), true);
+  assert.equal(modelBelongsToProvider('codex', 'haiku'), false);
+  assert.equal(modelBelongsToProvider('codex', 'gpt-6-luna'), true);
+  const claude = { agents: { provider: 'claude-code', 'claude-code': { high_performance_model: 'opus', low_performance_model: 'haiku' } } };
+  assert.equal(assertSingleProvider(claude), 'claude-code');
+  assert.throws(() => assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /differs from the setup provider claude-code/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'haiku' } } }), /agents\.codex\.low_performance_model is haiku, which is not a codex model/);
+  // Each provider keeps its own section; an inactive provider's models are checked against that provider.
+  assert.equal(assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'gpt-6-luna' }, 'claude-code': { low_performance_model: 'haiku' } } }), 'codex');
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', 'claude-code': { low_performance_model: 'gpt-6-luna' } } }), /agents\.claude-code\.low_performance_model is gpt-6-luna, which is not a claude-code model/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'gpt-6-luna' } }), /flat key; run harness-codex update/);
+  assert.throws(() => assertSingleProvider(claude, { provider: 'claude-code', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /not a claude-code model/);
+});
+
+test('Codex subagent hook is one user-level hook that must be trusted before stages start', async () => {
+  const { syncCodexSubagentHook, inspectCodexHookTrust, codexSubagentHook, codexFreshAgentHook, codexWriteGuardHook, codexOrchestratorHook, codexHookTrustHash } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const home = await mkdtemp(join(tmpdir(), 'codex-home-'));
+  try {
+    const env = { CODEX_HOME: home };
+    const existing = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'notify', timeout: 5 }] }] } };
+    await writeFile(join(home, 'hooks.json'), JSON.stringify(existing));
+    assert.deepEqual((await inspectCodexHookTrust(env)).missing, ['SubagentStart', 'SubagentStop']);
+    assert.equal((await syncCodexSubagentHook(env)).changed, true);
+    assert.equal((await syncCodexSubagentHook(env)).changed, false, 'sync is idempotent');
+    const hooks = JSON.parse(await readFile(join(home, 'hooks.json'), 'utf8')).hooks;
+    assert.deepEqual(hooks.Stop.slice(0, existing.hooks.Stop.length), existing.hooks.Stop, 'user hooks are preserved');
+    assert.deepEqual(hooks.SubagentStart, [{ hooks: [codexSubagentHook()] }]);
+    assert.deepEqual(hooks.PreToolUse, [{ hooks: [codexFreshAgentHook()] }, { hooks: [codexWriteGuardHook()] }], 'setup also installs the fresh-agent check and the orchestrator write guard');
+    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop']) assert.deepEqual(hooks[event].at(-1), { hooks: [codexOrchestratorHook()] }, 'one user-level orchestrator hook serves every worktree');
+    assert.match(codexSubagentHook().command, /HARNESS_WORKSPACE_ROOT:-\.\}\/\.codex\/scripts\/harness-agent-event\.mjs/);
+    const untrusted = await inspectCodexHookTrust(env);
+    assert.equal(untrusted.trusted, false);
+    assert.deepEqual(untrusted.untrusted, ['SubagentStart', 'SubagentStop']);
+    const trustFile = (hash) => ['subagent_start', 'subagent_stop'].map((event) => `[hooks.state."${join(home, 'hooks.json')}:${event}:0:0"]\ntrusted_hash = "sha256:${hash(event)}"\n`).join('\n');
+    // A trust entry for an earlier version of the hook command no longer counts: Codex would not run the hook.
+    await writeFile(join(home, 'config.toml'), trustFile(() => 'a'.repeat(64)));
+    assert.deepEqual((await inspectCodexHookTrust(env)).untrusted, ['SubagentStart', 'SubagentStop']);
+    await writeFile(join(home, 'config.toml'), trustFile((event) => codexHookTrustHash(event, codexSubagentHook())));
+    assert.equal((await inspectCodexHookTrust(env)).trusted, true);
+    // The write guard is trusted by its own entry (PreToolUse group 1), and a trust entry for other command text does not count.
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'untrusted');
+    const guardKey = `[hooks.state."${join(home, 'hooks.json')}:pre_tool_use:1:0"]\ntrusted_hash = "sha256:`;
+    const subagentTrust = await readFile(join(home, 'config.toml'), 'utf8');
+    await writeFile(join(home, 'config.toml'), `${subagentTrust}\n${guardKey}${'b'.repeat(64)}"\n`);
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'untrusted');
+    await writeFile(join(home, 'config.toml'), `${subagentTrust}\n${guardKey}${codexHookTrustHash('pre_tool_use', codexWriteGuardHook())}"\n`);
+    assert.equal((await inspectCodexHookTrust(env)).write_guard, 'trusted');
+    const runner = await readFile(new URL('../.codex/scripts/harness-prepare-input.mjs', import.meta.url), 'utf8');
+    assert.match(runner, /PERMISSION_REQUIRED: the Harness subagent hook/);
+  } finally { await rm(home, { recursive: true, force: true }); }
 });

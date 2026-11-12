@@ -29,7 +29,7 @@
 | Local Evidence | 로컬 관측 근거 | Local Evidence | Knowledge Object | 원래 프로젝트와 측정 환경에서 수집한 관측 결과로 유효성 및 실행 상태를 구분하는 근거 | - | 프로젝트 간 무조건 일반화 | `docs/specs/506/product-spec.md` |
 | Learning Mode | 학습 모드 | Learning Mode | Workflow Mode | 사용자가 설계를 제안·방어하고 Reviewer가 목표·근거에 기반한 이의를 제기하여 승인 조건을 검토하는 방식 | - | Reviewer의 정답 대행 | `docs/specs/506/product-spec.md` |
 | Unrequested Behavior | 요청되지 않은 동작 | Unrequested Behavior | Rule | 승인된 Spec·plan에 근거 없이 구현에 들어간 동작. 사용자가 유지 또는 제거를 정할 때까지 완료를 막는다 | - | 구현 세부 | `docs/architecture/adr-010-bounded-review-repair.md` |
-| Sufficient Level | 충분한 수준 | Sufficient Level | Rule | 제품 의도나 규칙의 의도를 만족하는 데 필요한 정도. 구현과 리뷰의 판정 기준이다 | - | 엄밀도 | `.codex/internal-skills/product-spec/references/template.md` |
+| Sufficient Level | 충분한 수준 | Sufficient Level | Rule | 제품 의도를 만족하는 관찰 가능한 사용자 흐름·완료 조건. 명시 요구와 해당 조건을 안전하고 온전하게 충족하는 데 필수인 작업을 구현·리뷰의 범위로 정한다 | - | 엄밀도 | `.codex/internal-skills/product-spec/references/template.md` |
 
 ## Tracker lifecycle 용어
 

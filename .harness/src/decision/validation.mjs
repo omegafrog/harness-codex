@@ -180,7 +180,8 @@ function validateComparison(decision, errors) {
   if (!criteria.length) issue(errors, "missing_criteria", "$.criteria", "At least one decision criterion is required.");
   for (const [index, criterion] of criteria.entries()) {
     const path = `$.criteria[${index}]`;
-    if (!isRecord(criterion) || Object.keys(criterion).some((key) => !["id", "requirement_id", "condition", "kind", "priority"].includes(key)) || !SAFE_ID.test(criterion.id ?? "") || ids.has(criterion.id) || !Array.isArray(decision.requirement_ids) || !decision.requirement_ids.includes(criterion.requirement_id) || typeof criterion.condition !== "string" || !criterion.condition.trim() || !["required", "preferred"].includes(criterion.kind) || typeof criterion.priority !== "string" || !criterion.priority.trim()) issue(errors, "invalid_criterion", path, "Criterion needs a unique ID, requirement, condition, kind and priority.");
+    const problems = criterionProblems(criterion, decision, ids);
+    if (problems.length) issue(errors, "invalid_criterion", path, `Criterion ${path} is invalid: ${problems.join("; ")}.`);
     else ids.add(criterion.id);
   }
   if (options.length === 1 && (typeof decision.single_option_reason !== "string" || !decision.single_option_reason.trim())) issue(errors, "missing_single_option_reason", "$.single_option_reason", "Explain why no alternative is available.");
@@ -189,11 +190,51 @@ function validateComparison(decision, errors) {
     const matches = evaluations.filter((entry) => entry?.option_id === optionId && entry?.criterion_id === criterionId);
     if (matches.length !== 1) { issue(errors, "missing_evaluation", "$.evaluations", `Exactly one evaluation is required for ${optionId}/${criterionId}.`); continue; }
     const entry = matches[0];
-    if (!isRecord(entry) || Object.keys(entry).some((key) => !["option_id", "criterion_id", "result", "reason", "evidence_kind", "source", "condition", "checked_at"].includes(key)) || !["met", "unmet", "unknown"].includes(entry.result) || typeof entry.reason !== "string" || !entry.reason.trim() || !["measured", "external_measurement", "documented", "estimated", "unknown"].includes(entry.evidence_kind) || typeof entry.condition !== "string" || !entry.condition.trim() || (entry.evidence_kind !== "unknown" && (typeof entry.source !== "string" || !entry.source.trim() || typeof entry.checked_at !== "string" || Number.isNaN(Date.parse(entry.checked_at))))) issue(errors, "invalid_evaluation", "$.evaluations", `Evaluation ${optionId}/${criterionId} needs a result, reason and evidence conditions.`);
+    const problems = evaluationProblems(entry);
+    if (problems.length) issue(errors, "invalid_evaluation", `$.evaluations[${evaluations.indexOf(entry)}]`, `Evaluation ${optionId}/${criterionId} is invalid: ${problems.join("; ")}.`);
   }
   if (evaluations.length !== options.length * criteria.length) issue(errors, "unexpected_evaluation", "$.evaluations", "Evaluations must cover exactly the declared options and criteria.");
   const selected = decision.selection;
-  if (!isRecord(selected) || Object.keys(selected).some((key) => !["decision", "accepted_tradeoffs", "uncertainty", "revisit_when", "user_choice"].includes(key)) || ["decision", "accepted_tradeoffs", "uncertainty", "revisit_when", "user_choice"].some((key) => typeof selected[key] !== "string" || !selected[key].trim())) issue(errors, "invalid_selection", "$.selection", "Record the choice, accepted tradeoffs, uncertainty, revisit condition and user choice or delegation.");
+  const selectionFields = ["decision", "accepted_tradeoffs", "uncertainty", "revisit_when", "user_choice"];
+  const selectionProblems = !isRecord(selected) ? ["must be an object"] : [
+    ...Object.keys(selected).filter((key) => !selectionFields.includes(key)).map((key) => `unsupported field ${key} (allowed: ${selectionFields.join(", ")})`),
+    ...selectionFields.filter((key) => typeof selected[key] !== "string" || !selected[key].trim()).map((key) => `${key} must be a non-empty string`),
+  ];
+  if (selectionProblems.length) issue(errors, "invalid_selection", "$.selection", `Selection is invalid: ${selectionProblems.join("; ")}. Record the choice, accepted tradeoffs, uncertainty, revisit condition and the user's choice or delegation.`);
+}
+
+const CRITERION_FIELDS = ["id", "requirement_id", "condition", "kind", "priority"];
+const EVALUATION_FIELDS = ["option_id", "criterion_id", "result", "reason", "evidence_kind", "source", "claim_ids", "condition", "checked_at"];
+const EVIDENCE_KINDS = ["measured", "external_measurement", "documented", "estimated", "unknown"];
+const nonEmpty = (value) => typeof value === "string" && value.trim().length > 0;
+
+// Each problem names the field and the accepted values so an author can fix the YAML in one pass.
+function criterionProblems(criterion, decision, ids) {
+  if (!isRecord(criterion)) return ["must be an object"];
+  const problems = Object.keys(criterion).filter((key) => !CRITERION_FIELDS.includes(key)).map((key) => `unsupported field ${key} (allowed: ${CRITERION_FIELDS.join(", ")})`);
+  if (!SAFE_ID.test(criterion.id ?? "")) problems.push("id must be a stable identifier");
+  else if (ids.has(criterion.id)) problems.push(`id ${criterion.id} is repeated`);
+  if (!Array.isArray(decision.requirement_ids) || !decision.requirement_ids.includes(criterion.requirement_id)) problems.push(`requirement_id ${JSON.stringify(criterion.requirement_id ?? null)} must be one of $.requirement_ids (${(Array.isArray(decision.requirement_ids) ? decision.requirement_ids : []).join(", ") || "none declared"})`);
+  if (!nonEmpty(criterion.condition)) problems.push("condition must be a non-empty string");
+  if (!["required", "preferred"].includes(criterion.kind)) problems.push("kind must be required or preferred");
+  if (!nonEmpty(criterion.priority)) problems.push("priority must be a non-empty string");
+  return problems;
+}
+
+function evaluationProblems(entry) {
+  if (!isRecord(entry)) return ["must be an object"];
+  const problems = Object.keys(entry).filter((key) => !EVALUATION_FIELDS.includes(key)).map((key) => `unsupported field ${key} (allowed: ${EVALUATION_FIELDS.join(", ")})`);
+  if (!["met", "unmet", "unknown"].includes(entry.result)) problems.push("result must be met, unmet or unknown");
+  if (!nonEmpty(entry.reason)) problems.push("reason must be a non-empty string");
+  if (!EVIDENCE_KINDS.includes(entry.evidence_kind)) problems.push(`evidence_kind must be one of ${EVIDENCE_KINDS.join(", ")}`);
+  if (!nonEmpty(entry.condition)) problems.push("condition must be a non-empty string");
+  if (entry.evidence_kind !== "unknown") {
+    if (!nonEmpty(entry.source)) problems.push("source is required unless evidence_kind is unknown");
+    if (typeof entry.checked_at !== "string" || Number.isNaN(Date.parse(entry.checked_at))) problems.push("checked_at must be an ISO date unless evidence_kind is unknown");
+  }
+  // A documented judgement cites the stored Claims (knowledge/claims) it rests on, so the evidence can be reused and re-checked.
+  if (entry.evidence_kind === "documented" && (!Array.isArray(entry.claim_ids) || !entry.claim_ids.length || !entry.claim_ids.every((id) => SAFE_ID.test(id ?? "")))) problems.push("claim_ids must list the stored knowledge Claims a documented evaluation cites");
+  return problems;
 }
 
 export function validateReviewRecord(review, refs = {}) {

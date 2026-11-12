@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { publishStageResultEvent, waitForStageResult } from '../.harness/src/workflow/stage-result-events.mjs';
+import { validateSkillReturn } from '../.harness/src/workflow/skill-execution.mjs';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
 const inputPath = (id) => `.io/plans/correct/${id}/input.json`;
@@ -57,6 +58,57 @@ async function saveResult(fx, id, value) {
   await writeFile(path, JSON.stringify(value.result));
 }
 
+test('background E2E publishes only a verified receipt and cleanup for the approved commit', async (t) => {
+  const id = 'e2e-event', fx = await fixture(t, id, { orchestrator_session_id: 'conversation-e2e' });
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fx.root, encoding: 'utf8' }).trim();
+  const writeArtifact = async (path, value) => {
+    const text = JSON.stringify(value);
+    await mkdir(join(fx.taskSession, path, '..'), { recursive: true });
+    await writeFile(join(fx.taskSession, path), text);
+    return createHash('sha256').update(text).digest('hex');
+  };
+  const requestPath = 'runtime/e2e/requests/test.json';
+  const requestHash = await writeArtifact(requestPath, { target_commit: commit, profile_id: 'test-e2e', scenarios: ['E2E-01'], timeout_ms: 1000, approval_answer: '승인', manifest_sha256: 'a'.repeat(64) });
+  fx.input.skill = 'e2e-test'; fx.input.context.stage_id = 'e2e-test';
+  fx.input.input_refs = [{ base: 'session', path: requestPath, kind: 'approved_e2e_request', sha256: requestHash }];
+  await rm(join(fx.root, inputPath(id)));
+  const e2eInputPath = `.io/plans/e2e-test/${id}/input.json`;
+  await mkdir(join(fx.root, e2eInputPath, '..'), { recursive: true });
+  await writeFile(join(fx.root, e2eInputPath), JSON.stringify(fx.input));
+  const statePath = join(fx.session, 'runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  state.current_stage = 'e2e-test'; state.stages['e2e-test'] = state.stages.correct; delete state.stages.correct;
+  await writeFile(statePath, JSON.stringify(state));
+  const receiptPath = 'runtime/execution/test-e2e-1/receipt.json', cleanupPath = 'runtime/e2e/test/cleanup.json';
+  let receiptHash = await writeArtifact(receiptPath, { status: 'failed', head: commit, profile_id: 'test-e2e' });
+  const cleanupHash = await writeArtifact(cleanupPath, { status: 'passed' });
+  const result = { schema_version: 1, execution_id: id, skill: 'e2e-test', status: 'completed', code: 'OK', summary: 'done', artifacts: [{ base: 'session', path: receiptPath, kind: 'e2e_receipt', sha256: receiptHash }, { base: 'session', path: cleanupPath, kind: 'e2e_cleanup', sha256: cleanupHash }], questions: [], review_request: null };
+  const out = { schema_version: 1, execution_id: id, skill: 'e2e-test', status: 'completed', code: 'OK', result_ref: resultPath(id), result };
+  await saveResult(fx, id, out);
+  await assert.rejects(validateSkillReturn({ root: fx.root, input: fx.input, envelope: out }), /does not prove/);
+  receiptHash = await writeArtifact(receiptPath, { status: 'passed', exit_code: 0, head: commit, profile_id: 'test-e2e', config_hashes: { 'docs/agents/execution.json': 'a'.repeat(64) } });
+  result.artifacts[0].sha256 = receiptHash;
+  await saveResult(fx, id, out);
+  const bin = join(fx.primary, 'e2e-bin'); await mkdir(bin);
+  const wakeLog = join(fx.primary, 'e2e-wake.jsonl'), wake = join(bin, 'wake.cjs');
+  await writeFile(wake, `const rl=require('node:readline').createInterface({input:process.stdin}),fs=require('node:fs');rl.on('line',line=>{const m=JSON.parse(line);if(m.id===1)console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));if(m.id===2){fs.appendFileSync(${JSON.stringify(wakeLog)},JSON.stringify(m.params)+'\\n');console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}}));}});`);
+  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(wake)}],cwd:${JSON.stringify(bin)}}}));\n`);
+  execFileSync('chmod', ['+x', join(bin, 'codex')]);
+  const previousPath = process.env.PATH; process.env.PATH = `${bin}:${previousPath}`;
+  t.after(() => { process.env.PATH = previousPath; });
+  const event = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: out });
+  assert.equal(event.status, 'completed');
+  assert.equal(event.result_ref, resultPath(id));
+  assert.equal(event.delivery.reason, 'wake_queued');
+  await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: out });
+  const calls = (await readFile(wakeLog, 'utf8')).trim().split('\n');
+  assert.equal(calls.length, 1);
+  const wakeCall = JSON.parse(calls[0]);
+  assert.equal(wakeCall.arguments.thread, 'conversation-e2e');
+  assert.match(wakeCall.arguments.message_template, /e2e-event: completed\/OK/);
+  assert.equal((await waitForStageResult({ root: fx.root, worktree_ref: fx.worktree_ref, execution_id: id })).status, 'completed');
+});
+
 test('publishes completed and complete action_required batches, and suppresses duplicates', async (t) => {
   for (const [id, status, code, questionCount] of [['done', 'completed', 'OK', 0], ['question', 'action_required', 'USER_DECISION_REQUIRED', 1], ['manyquestions', 'action_required', 'USER_DECISION_REQUIRED', 6]]) {
     const fx = await fixture(t, id);
@@ -77,6 +129,89 @@ test('publishes completed and complete action_required batches, and suppresses d
     const state = JSON.parse(await readFile(join(fx.session, 'runtime/orchestrator/state.json'), 'utf8'));
     assert.equal(state.stages.correct.status, status === 'action_required' ? 'waiting' : 'completed');
   }
+});
+
+test('installed runner records each implementation result at its canonical checkpoint path', async (t) => {
+  const id = 'implementation-checkpoint', fx = await fixture(t, id);
+  await rm(join(fx.root, inputPath(id)));
+  fx.input.skill = 'implement-wrapper';
+  Object.assign(fx.input.context, { stage_id: 'implement-wrapper', plan_id: 'community', checkpoint_path: join(fx.taskSession, 'runtime/plans/community/checkpoint.md') });
+  const installedInput = `.io/plans/implement-wrapper/${id}/input.json`;
+  await mkdir(join(fx.root, installedInput, '..'), { recursive: true });
+  await writeFile(join(fx.root, installedInput), JSON.stringify(fx.input));
+  const statePath = join(fx.session, 'runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  state.current_stage = 'implement-wrapper'; state.stages['implement-wrapper'] = state.stages.correct; delete state.stages.correct;
+  await writeFile(statePath, JSON.stringify(state));
+  const result = envelope(id); result.skill = 'implement-wrapper'; result.result.skill = 'implement-wrapper';
+  await saveResult(fx, id, result);
+  const installed = await import(pathToFileURL(join(fx.root, '.harness/src/workflow/stage-result-events.mjs')));
+  const installedPublish = installed.publishStageResultEvent;
+  await installedPublish({ root: fx.root, input: fx.input, envelope: result, hostDelivery: false });
+  const checkpoint = await readFile(fx.input.context.checkpoint_path, 'utf8');
+  assert.match(checkpoint, /plan_id: "community"/);
+  assert.match(checkpoint, /implementation-checkpoint/);
+  assert.match(checkpoint, /tests: \{"status":"unknown"/);
+  const journalPath = join(fx.taskSession, 'runtime/plans/community/events.jsonl');
+  const journal = await readFile(journalPath, 'utf8');
+  await installedPublish({ root: fx.root, input: fx.input, envelope: result, hostDelivery: false });
+  assert.equal(await readFile(journalPath, 'utf8'), journal);
+  const newer = JSON.parse(await readFile(statePath, 'utf8'));
+  newer.stages['implement-wrapper'].execution_id = 'newer';
+  await writeFile(statePath, JSON.stringify(newer));
+  await assert.rejects(installedPublish({ root: fx.root, input: fx.input, envelope: result, hostDelivery: false }), /Stage execution changed/);
+  assert.equal(await readFile(journalPath, 'utf8'), journal);
+  newer.stages['implement-wrapper'].execution_id = id;
+  await writeFile(statePath, JSON.stringify(newer));
+  await rm(journalPath);
+  await rm(join(fx.session, `runtime/orchestrator/stage-results/${id}.json`));
+  const failed = await installed.waitForStageResult({ root: fx.root, worktree_ref: fx.worktree_ref, execution_id: id });
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.summary, /Cannot persist the implementation checkpoint/);
+  assert.equal(await readFile(fx.input.context.checkpoint_path, 'utf8'), checkpoint);
+  const outside = join(fx.primary, 'wrong-checkpoint.md');
+  fx.input.context.checkpoint_path = outside;
+  await writeFile(join(fx.root, installedInput), JSON.stringify(fx.input));
+  await rm(join(fx.session, `runtime/orchestrator/stage-results/${id}.json`));
+  const rejected = await installed.waitForStageResult({ root: fx.root, worktree_ref: fx.worktree_ref, execution_id: id });
+  assert.equal(rejected.status, 'failed');
+  assert.match(rejected.summary, /does not match the runner-owned plan path/);
+  await assert.rejects(readFile(outside), { code: 'ENOENT' });
+  await writeFile(join(fx.root, 'user-note.txt'), 'preserve\n');
+  const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: fx.root, encoding: 'utf8' });
+  assert.match(status, /\?\? user-note\.txt/);
+  assert.doesNotMatch(status, /\.io\/runtime\/plans/);
+});
+
+test('review handoff creates the same runner-owned checkpoint', async (t) => {
+  const id = 'implementation-review', fx = await fixture(t, id);
+  await rm(join(fx.root, inputPath(id)));
+  fx.input.skill = 'implement-wrapper';
+  Object.assign(fx.input.context, { stage_id: 'implement-wrapper', plan_id: 'community', checkpoint_path: join(fx.taskSession, 'runtime/plans/community/checkpoint.md') });
+  const installedInput = `.io/plans/implement-wrapper/${id}/input.json`;
+  await mkdir(join(fx.root, installedInput, '..'), { recursive: true });
+  await writeFile(join(fx.root, installedInput), JSON.stringify(fx.input));
+  const statePath = join(fx.session, 'runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  state.current_stage = 'implement-wrapper'; state.stages['implement-wrapper'] = state.stages.correct; delete state.stages.correct;
+  await writeFile(statePath, JSON.stringify(state));
+  const result = envelope(id, 'action_required', 'REVIEW_REQUIRED', 0); result.skill = 'implement-wrapper'; result.result.skill = 'implement-wrapper';
+  await saveResult(fx, id, result);
+  const { PlanCheckpointStore } = await import(pathToFileURL(join(fx.root, '.harness/src/wrapper/checkpoint.mjs')));
+  const checkpointStore = new PlanCheckpointStore({ root: fx.root, planId: 'community' });
+  await checkpointStore.write({ review_fixed_point: 'a'.repeat(40), tests: { status: 'passed', e2e_failures: [{ id: 'old-failure', evidence_path: 'runtime/e2e/old/failure.json' }] }, lifecycle_evidence: { fixed_point: 'a'.repeat(40), stage_results: [{ execution_id: 'prior', status: 'blocked', code: 'INPUT_MISSING', result_ref: 'runtime/executions/prior/result.json' }] } });
+  await checkpointStore.close();
+  const installedPublish = (await import(pathToFileURL(join(fx.root, '.harness/src/workflow/stage-result-events.mjs')))).publishStageResultEvent;
+  const event = await installedPublish({ root: fx.root, input: fx.input, envelope: result, hostDelivery: false });
+  assert.equal(event.code, 'REVIEW_REQUIRED');
+  const checkpoint = await readFile(fx.input.context.checkpoint_path, 'utf8');
+  assert.match(checkpoint, /orchestration_state: "handoff-required"/);
+  assert.match(checkpoint, /stage-action_required-REVIEW_REQUIRED/);
+  const restored = await new PlanCheckpointStore({ root: fx.root, planId: 'community' }).read();
+  assert.equal(restored.review_fixed_point, 'a'.repeat(40));
+  assert.equal(restored.lifecycle_evidence.fixed_point, 'a'.repeat(40));
+  assert.deepEqual(restored.lifecycle_evidence.stage_results.map((item) => item.execution_id), ['prior', id]);
+  assert.deepEqual(restored.tests.e2e_failures, [{ id: 'old-failure', evidence_path: 'runtime/e2e/old/failure.json' }]);
 });
 
 test('records malformed returns and cancellation as explicit terminal events; rejects stale execution IDs', async (t) => {
@@ -142,37 +277,70 @@ test('reconciles a runner crash from stopped process identities when no result w
   assert.match(event.summary, /stopped before saving/);
 });
 
-test('host delivery uses exact identity and queued idempotent request; unsupported delivery retries', async (t) => {
+test('installed consumer queues the recorded result through Wake without duplicates', async (t) => {
   const fx = await fixture(t, 'host', { orchestrator_session_id: 'conversation-1' });
+  const installedPublish = (await import(pathToFileURL(join(fx.root, '.harness/src/workflow/stage-result-events.mjs')))).publishStageResultEvent;
   const bin = join(fx.primary, 'bin'); await mkdir(bin);
-  const log = join(fx.primary, 'host-args.json'), control = join(fx.primary, 'host-control.json'), trace = join(fx.primary, 'host-trace.log');
-  const setControl = (value) => writeFile(control, JSON.stringify(value));
-  await setControl({ agentSessionId: 'wrong-session' });
-  await writeFile(join(bin, 'ghostex'), `#!/usr/bin/env node\nimport fs from 'node:fs'; const a=process.argv.slice(2); const c=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8')); fs.appendFileSync(${JSON.stringify(trace)},JSON.stringify({args:a,hang:c.hang,session:c.agentSessionId})+'\\n'); if(a[0]==='agents'&&a[1]==='whoami') { if(c.hang) setInterval(()=>{},1000); else process.stdout.write(JSON.stringify({agentSessionId:c.agentSessionId,globalRef:'S1:P1:G1'})); } else { if(c.send_fail) process.exit(9); if(!fs.existsSync(${JSON.stringify(join(fx.session, 'runtime/orchestrator/stage-results/host.json'))})) process.exit(8); fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({args:a,body:fs.readFileSync(a[a.indexOf('--body-file')+1],'utf8')})+'\\n'); }\n`);
-  execFileSync('chmod', ['+x', join(bin, 'ghostex')]);
-  const priorPath = process.env.PATH;
-  process.env.PATH = `${bin}:${priorPath}`;
-  t.after(() => { process.env.PATH = priorPath; });
-  assert.equal(JSON.parse(execFileSync('ghostex', ['agents', 'whoami', '--json'], { cwd: fx.root, encoding: 'utf8' })).agentSessionId, 'wrong-session');
+  const log = join(fx.primary, 'resume-args.jsonl');
+  const server = join(bin, 'wake.cjs');
+  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
+  await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
+  execFileSync('chmod', ['+x', join(bin, 'codex')]);
+  const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID;
+  t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; });
   const saved = envelope('host'); await saveResult(fx, 'host', saved);
-  const unsupported = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(unsupported.delivery.status, 'unsupported');
-  await setControl({ agentSessionId: 'wrong-session', hang: true });
-  const timeout = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(timeout.delivery.status, 'pending', JSON.stringify({ delivery: timeout.delivery, trace: await readFile(trace, 'utf8').catch(() => '') }));
-  assert.equal(JSON.parse(await readFile(join(fx.session, 'runtime/orchestrator/state.json'), 'utf8')).stages.correct.status, 'completed');
-  await setControl({ agentSessionId: 'conversation-1', send_fail: true });
-  const pending = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
-  assert.equal(pending.delivery.status, 'pending');
-  await setControl({ agentSessionId: 'conversation-1' });
-  const sent = await publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved });
+  // Without a runnable provider CLI the event stays undelivered and is retried later.
+  const noCodex = join(fx.primary, 'no-codex-bin'); await mkdir(noCodex);
+  await symlink(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(), join(noCodex, 'git'));
+  process.env.PATH = noCodex;
+  const missing = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
+  assert.equal(missing.delivery.status, 'unsupported');
+  assert.equal(missing.delivery.reason, 'wake_unavailable');
+  process.env.PATH = `${bin}:${priorPath}`;
+  process.env.CODEX_THREAD_ID = 'stage-thread';
+  process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
+  const sent = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
-  const delivery = JSON.parse(await readFile(log, 'utf8'));
-  assert.equal(delivery.args[0], 'agents'); assert.equal(delivery.args[1], 'send'); assert.equal(delivery.args.includes('--queue'), true);
-  assert.equal(delivery.args[delivery.args.indexOf('--request-id') + 1], sent.delivery.request_id);
-  await Promise.all([publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved }), publishStageResultEvent({ root: fx.root, input: fx.input, envelope: saved })]);
-  const sends = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(sends.length, 1);
+  await Promise.all([installedPublish({ root: fx.root, input: fx.input, envelope: saved }), installedPublish({ root: fx.root, input: fx.input, envelope: saved })]);
+  for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'queue_thread');
+  assert.equal(calls[0].arguments.thread, 'conversation-1');
+  assert.equal(calls[0].arguments.resume, true);
+  assert.match(calls[0].arguments.message_template, /runtime\/executions\/host\/result.json/);
+  const eventPath = join(fx.session, 'runtime/orchestrator/stage-results/host.json');
+  const uncertain = JSON.parse(await readFile(eventPath, 'utf8'));
+  uncertain.delivery.status = 'sending';
+  await writeFile(eventPath, JSON.stringify(uncertain));
+  assert.equal((await installedPublish({ root: fx.root, input: fx.input, envelope: saved })).delivery.status, 'sending');
+  assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1);
+  const interrupted = await fixture(t, 'interrupted', { orchestrator_session_id: 'conversation-1' });
+  const interruptedResult = envelope('interrupted');
+  await saveResult(interrupted, 'interrupted', interruptedResult);
+  await writeFile(server, `const readline = require('node:readline'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); if(m.id===2) process.exit(0); });`);
+  const unknown = await installedPublish({ root: interrupted.root, input: interrupted.input, envelope: interruptedResult });
+  assert.equal(unknown.delivery.status, 'uncertain');
+  assert.equal((await installedPublish({ root: interrupted.root, input: interrupted.input, envelope: interruptedResult })).delivery.status, 'uncertain');
+  await writeFile(join(fx.root, 'user-change.txt'), 'preserve');
+  const status = execFileSync('git', ['status', '--short'], { cwd: fx.root, encoding: 'utf8' });
+  assert.match(status, /user-change\.txt/);
+  assert.doesNotMatch(status, /\.harness\/src\/workflow\/stage-result-events/);
+  const { orchestratorResumeCommand } = await import('../.harness/src/workflow/stage-result-events.mjs');
+  // The resumed orchestrator turn keeps the workflow model binding, not the user's CLI default.
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', binding: { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' } }).args, ['exec', 'resume', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort="medium"', 's', 'm']);
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', sandbox: 'danger-full-access' }).args, ['exec', 'resume', '-c', 'sandbox_mode="danger-full-access"', 's', 'm']);
+  assert.deepEqual(orchestratorResumeCommand({ provider: 'codex', sessionId: 's', root: '/w', message: 'm', lastMessagePath: '/w/.io/runtime/orchestrator/last-turn.txt' }).args, ['exec', 'resume', '-o', '/w/.io/runtime/orchestrator/last-turn.txt', 's', 'm']);
+  // The sandbox comes from the user's last orchestrator turn; runner-driven delivery turns are ignored.
+  const { orchestratorSandbox } = await import('../.harness/src/workflow/providers/codex.mjs');
+  const home = join(fx.primary, 'codex-home'), sessionId = '01a1ba5e-b967-7c30-8e90-97af4ffd9b02';
+  await mkdir(join(home, 'sessions/2026/11/08'), { recursive: true });
+  const turn = (mode, text) => [{ type: 'turn_context', payload: { sandbox_policy: { type: mode } } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text: '<environment_context>x' }] } }, { type: 'response_item', payload: { role: 'user', content: [{ type: 'input_text', text }] } }];
+  await writeFile(join(home, `sessions/2026/11/08/rollout-2026-11-08T17-55-32-${sessionId}.jsonl`), [...turn('danger-full-access', '$orchestrator 계속 진행해'), ...turn('workspace-write', 'Harness stage result for execution spec-me-1: completed/OK.')].map((entry) => JSON.stringify(entry)).join('\n'));
+  assert.equal(await orchestratorSandbox(sessionId, { CODEX_HOME: home }), 'danger-full-access');
+  assert.match(calls[0].arguments.message_template, /Harness stage result for execution host: completed\/OK/);
+  const hostReferences = spawnSync('git', ['grep', '-n', '-i', 'ghostex', '--', '.harness', '.codex', ':!.codex/harness-lock.json'], { cwd: source, encoding: 'utf8' });
+  assert.equal(hostReferences.stdout, '', 'Harness must not depend on a host app');
 });
 
 test('listener wakes when result.json arrives after it starts watching', async (t) => {
@@ -194,4 +362,32 @@ test('listener wakes when result.json arrives after it starts watching', async (
   assert.equal(JSON.parse(stdout).status, 'completed');
   await readFile(join(fx.session, 'runtime/orchestrator/stage-results/late.json'));
   await assert.rejects(readFile(join(fx.taskSession, 'runtime/orchestrator/stage-results/late.json')), { code: 'ENOENT' });
+});
+
+test('the session prompting the orchestrator inside the worktree becomes the result delivery target', async (t) => {
+  const fx = await fixture(t, 'rebind', { orchestrator_session_id: 'conversation-1' });
+  const { bindOrchestratorSession } = await import('../.harness/src/workflow/startup-state.mjs');
+  const worktreeSession = '01a1b9df-ba77-7d72-a16b-4cdf2e52426f';
+  await bindOrchestratorSession({ root: fx.root, provider: 'codex', sessionId: worktreeSession });
+  const record = JSON.parse(await readFile(fx.worktree_ref, 'utf8'));
+  assert.deepEqual({ provider: record.agent_sessions.orchestrator.provider, session_id: record.agent_sessions.orchestrator.session_id }, { provider: 'codex', session_id: worktreeSession });
+  // A repeated prompt from the same session leaves the record untouched.
+  const before = record.agent_sessions.orchestrator.updated_at;
+  await bindOrchestratorSession({ root: fx.root, provider: 'codex', sessionId: worktreeSession });
+  assert.equal(JSON.parse(await readFile(fx.worktree_ref, 'utf8')).agent_sessions.orchestrator.updated_at, before);
+  // Outside a Harness worktree nothing is recorded.
+  assert.equal(await bindOrchestratorSession({ root: fx.primary, provider: 'codex', sessionId: worktreeSession }), null);
+});
+
+test('the startup hook tells a resumed orchestrator session when Harness was updated', async (t) => {
+  const fx = await fixture(t, 'notice', { orchestrator_session_id: 'conversation-1' });
+  const { harnessUpdateNotice } = await import('../.harness/src/workflow/startup-state.mjs');
+  const { writeFile: write } = await import('node:fs/promises');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'first prompt only records the installed version');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'unchanged install stays silent');
+  await write(join(fx.root, '.codex/harness-lock.json'), `${await readFile(join(fx.root, '.codex/harness-lock.json'), 'utf8')}\n`);
+  const notice = await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' });
+  assert.match(notice, /Harness was updated since this conversation last ran .* re-read the relevant GUIDE or reference/);
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'conversation-1' }), null, 'told once per update');
+  assert.equal(await harnessUpdateNotice({ root: fx.root, sessionId: 'another-conversation' }), null, 'a new conversation has nothing outdated');
 });

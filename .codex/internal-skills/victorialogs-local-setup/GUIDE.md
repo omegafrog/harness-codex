@@ -1,9 +1,8 @@
+---
+model_tier: execution
+---
 
 # 로컬 OpenTelemetry 관측성 설정
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `execution`이며 `agents.execution_model`와 `agents.execution_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 setup CLI의 `observability.victorialogs.local.enabled: true` 선택에 따라 실행한다. 설정값은 CLI가 수집하며 agent가 채팅으로 재질문하지 않는다. **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**가 기본 구성이다. Vector·Fluent Bit·Grafana·trace 저장소는 설치하지 않는다.
 

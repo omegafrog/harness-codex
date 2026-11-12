@@ -1,13 +1,10 @@
 ---
 name: eli5
 description: Explain a topic to a complete beginner with a visual-first, low-text explanation. Use when the user invokes eli5, asks to explain something like they are five, or asks for a dead-simple picture-style explanation of how something works.
+model_tier: low_performance
 ---
 
 # eli5
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `low`이며 `agents.low_performance_model`와 `agents.low_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 Explain the topic for someone with no prior knowledge. Preserve the original skill's core idea: **big-picture visuals, very few words, immediate understanding**.
 

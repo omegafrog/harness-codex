@@ -4,12 +4,16 @@ import { createWorkflowWorktree, recordWorktreeOutcome, parseWorktreeRecord } fr
 import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
+import { assertSingleProvider, parseWorkflowBinding } from './providers/index.mjs';
+import { parseYaml } from '../eval/yaml.mjs';
 
 export async function createComposerWorkspace({ root, plan_set_id, request, execution_id, orchestrator_session_id = null, orchestrator_provider = null, workflow_binding = null }) {
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id || '')) throw new Error('Execution ID is required');
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
   if ((orchestrator_session_id !== null && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestrator_session_id)) || (orchestrator_provider !== null && !['codex', 'claude-code'].includes(orchestrator_provider)) || Boolean(orchestrator_session_id) !== Boolean(orchestrator_provider)) throw new Error('Invalid orchestrator provider session');
+  // Refuse before creating a worktree when the request would run a different provider than setup chose.
+  assertSingleProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')), workflow_binding ? parseWorkflowBinding(workflow_binding) : null);
   // Keep repeated feature requests readable without reusing tracker identity.
   const record = await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id, workflow_binding });
   try {

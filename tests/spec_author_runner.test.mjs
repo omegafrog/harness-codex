@@ -21,7 +21,7 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  high_performance_model: parent-model\n  high_performance_reasoning_effort: low\n');
+    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: low\n');
     const session = join(root, '.io'), ref = join(session, 'worktree.json'), id = 'spec-me-runner-test';
     await mkdir(join(session, 'runtime/executions', id), { recursive: true });
     await writeFile(ref, JSON.stringify({ schema_version: 1, worktree_id: 'a77aaa03-329c-4d59-b4c5-269746a893f2', workspace: root, common: await realpath(join(primary, '.git')), git_dir: await realpath(git(root, 'rev-parse', '--absolute-git-dir')), return_root: primary, session_directory: session, branch: 'spec-test', state: 'active', plan_set_id: 'example' }));
@@ -39,6 +39,12 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     assert.ok(commands[0].at(-1).includes(join(session, 'runtime/executions', id)));
     assert.ok(commands[0].at(-1).includes(join(root, 'docs/specs/example')));
     assert.ok(commands[0].at(-1).includes(join(root, 'docs/plans/example')));
+    // The stage receives the GUIDEs without the runner's model declaration, which they carry in their frontmatter.
+    assert.match(await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8'), /^---\nmodel_tier: high_performance\n---\n/);
+    assert.match(await readFile(join(root, '.codex/internal-skills/product-spec/GUIDE.md'), 'utf8'), /^---\nmodel_tier: low_performance\n---\n/);
+    assert.match(commands[0].at(-1), /# spec-me/);
+    assert.match(commands[0].at(-1), /# Product Spec/);
+    assert.doesNotMatch(commands[0].at(-1), /model_tier|main_session/);
     const returned = JSON.parse(await readFile(join(session, 'runtime/executions', id, 'return.json'), 'utf8'));
     assert.equal(returned.code, 'USER_DECISION_REQUIRED');
     assert.equal(returned.result_ref, `runtime/executions/${id}/result.json`);

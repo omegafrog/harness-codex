@@ -12,12 +12,12 @@ stages:
   - id: product
     role: spec_document_writer
     skill: product-spec
-    model_tier: low
+    model_tier: low_performance
     needs: []
   - id: product_diagram
     role: diagram_creator
     skill: plantuml-diagrams
-    model_tier: low
+    model_tier: low_performance
     needs: [architecture-review]
     condition: product_diagram_required
     gates: [product_diagram_completion]
@@ -30,12 +30,12 @@ stages:
   - id: domain-baseline
     role: code_researcher
     skill: code-research
-    model_tier: low
+    model_tier: low_performance
     needs: [product]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
-    model_tier: low
+    model_tier: low_performance
     needs: [product, define-system-targets, domain-baseline]
   - id: review-architecture-decisions
     role: architecture_review_lead
@@ -47,13 +47,13 @@ stages:
   - id: verify-architecture-decisions
     role: spec_document_writer
     skill: spec-me
-    model_tier: low
+    model_tier: low_performance
     needs: [architecture, review-architecture-decisions]
     gates: [decision_evidence_complete, decision_review_complete]
   - id: architecture_diagram
     role: diagram_creator
     skill: plantuml-diagrams
-    model_tier: low
+    model_tier: low_performance
     needs: [architecture-review]
     condition: architecture_diagram_required
     gates: [architecture_diagram_completion]

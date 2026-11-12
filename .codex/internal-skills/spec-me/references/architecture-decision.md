@@ -2,7 +2,7 @@
 
 Product Spec 이후 Architecture Spec을 작성하기 전까지의 결정 순서를 정한다.
 
-1. 적용되는 System Targets를 확정하고 `docs/specs/<plan-set-id>/system-targets.yaml`에 기록한다.
+1. 기술 선택 전 적용 가능한 기능·구축 시간·운영·비용·데이터 제어·성능·변경 가능성 기준을 필수와 선호, 우선순위로 정한다. 기존 사용자 답변과 명시적 위임을 재사용하고 독립 질문을 묶는다. 적용되는 System Targets를 확정하고 `docs/specs/<plan-set-id>/system-targets.yaml`에 기록한다.
 2. material technology choice가 있으면 System Targets에 `decision_metadata.decision_layer_version: 2`를 기록하고 Architecture Decision ID를 부여한다.
 3. 중요한 기술 선택이 미완료이거나 기존 결정이 요구·제약을 충족하지 못할 때만 [기술 선택](../../../../.codex/internal-skills/technology-selection/GUIDE.md)을 읽고 수행한다. 유효한 기존 결정은 재사용한다.
 4. 합의된 Architecture 결정을 [Architecture Spec 절차](../../../internal-skills/architecture-spec/GUIDE.md)에 넘긴다.

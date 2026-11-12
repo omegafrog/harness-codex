@@ -1,9 +1,8 @@
+---
+model_tier: high_performance
+---
 
 # Harness 복구
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업의 내부 위임은 공통 실행 조율에 따라 서브에이전트로 수행한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 설치된 프로젝트에서 Harness를 실행·재개할 수 없는 원인을 진단하고 사용 가능한 상태로 복구한다. 일반 업데이트 요청은 `harness-maintenance`, 업무 구현은 해당 구현 스킬을 사용한다.
 
@@ -17,9 +16,10 @@
 |---|---|---|
 | 설치 누락·손상·버전/관리 파일 충돌 | lock의 inventory·hash·로컬 수정과 doctor 결과. `npx --yes --package github:omegafrog/harness-codex harness-codex-doctor --project <workspace_root>` | [harness-maintenance](../harness-maintenance/GUIDE.md). lock이 없으면 설치 이력·백업으로 누락과 미설치를 구분한다. |
 | workspace/preflight 실패 | 대상 worktree를 `cwd`로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` | 실제 Git root·등록 worktree·설정과 오류에 표시된 gate를 대조한다. |
-| 준비 문서·실행 프로필·계약 문제 | `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/`와 doctor의 readiness 상세. 계약은 `node .codex/scripts/harness-contracts.mjs check --root <workspace_root>` | [setup의 준비 복구](../../skills/setup/SKILL.md#설치업데이트-및-구현-전-준비-복구). 계약 수정이 필요할 때 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md). |
+| 준비 문서·실행 프로필·계약 문제 | `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/`와 doctor의 readiness 상세. 계약은 `node .codex/scripts/harness-contracts.mjs check --root <workspace_root>` | [setup의 준비 복구](../../../.codex/skills/setup/SKILL.md). 계약 수정이 필요할 때 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md). |
 | ticket 상태·mirror 불일치 | `node .codex/scripts/harness-tracker.mjs read --root <workspace_root> --ticket <ref>` 및 `check --root <workspace_root>`. 설정된 tracker의 실제 ticket·의존성과 Beads mirror를 대조한다. | [beads](../beads/GUIDE.md). canonical 상태·mirror 상태·동기화 실패를 구분한다. |
 | workflow 재개·완료 기록·review budget 문제 | 해당 `.codex/workflows/*.yaml`, 기존 session의 completion receipt·`runtime/plans/` journal/checkpoint·`runtime/reviews/` 기록과 현재 commit·Spec·plan·검증 증거 | 해당 공개 스킬의 재개 절차와 오류를 낸 CLI의 지원 복구 기능. journal의 권위 기록과 projection을 구분한다. |
+| plan review가 active로 남음 | 오류의 attempt·execution ID, 해당 리뷰 기록의 native reviewer, 소유 execution의 종료 증거와 reviewer 결과를 대조한다. | 종료된 Codex execution의 미완료 리뷰는 다음 plan review begin에서 이력을 보존하며 복구한다. 종료 여부가 불명확하거나 다른 provider면 자동 중단하지 않는다. |
 | worktree 경로·소유권·정리 실패 | Git 등록 목록·branch·HEAD·변경 파일·실행 중 writer와 Git common directory 아래 기존 `harness-workflows/sessions/`의 `worktree.json`·legacy `receipt.json`을 직접 읽는다. | [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md), [worktree CLI](../../../.codex/internal-skills/session-worktree/references/worktree-cli.md). 소유권과 실제 실행 종료를 확인한다. `list`도 session 디렉터리 생성·legacy receipt migration을 할 수 있으므로 승인 후 호출한다. |
 | 정리 후 준비 문서 손실·ignore 불일치 | Git 추적 여부·diff·기존 backup/recovery와 `git check-ignore -v <path>` | installer의 ignore 동기화. Harness 관리 산출물과 프로젝트 소유 문서를 경로별로 분류한다. |
 

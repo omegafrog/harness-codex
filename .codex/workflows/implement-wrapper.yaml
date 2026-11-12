@@ -1,12 +1,12 @@
 schema_version: 1
 id: implement-wrapper
 orchestrator: orchestrator
-roles: [implementation_agent, e2e_test_runner, standards_reviewer, spec_reviewer, plan_reviewer]
-skills: [orchestrator, setup, sync-contracts, beads, implement-wrapper, implement, e2e-test, code-review]
+roles: [implementation_agent, e2e_test_runner, standards_reviewer, spec_reviewer, plan_reviewer, contract_reviewer, pr_author]
+skills: [orchestrator, setup, sync-contracts, contract-review, beads, implement-wrapper, implement, e2e-test, code-review, gh-open-pr]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, project_readiness, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [tracker_sync, contract_docs, required_outcome, tests, retirement, review, evidence, plan_review]
+  before_complete: [tracker_sync, contract_docs, contract_review, required_outcome, tests, retirement, review, evidence, plan_review]
   after_merge: [tracker_reconciliation]
 stages:
   - id: implementation
@@ -24,3 +24,7 @@ stages:
     skill: code-review
     model_tier: implementation
     needs: [implementation]
+  - id: integration-pr
+    role: pr_author
+    skill: gh-open-pr
+    needs: []

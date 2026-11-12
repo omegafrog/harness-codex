@@ -20,7 +20,7 @@ test("new technology decisions require comparable evaluations and a recorded cho
     requirement_ids: ["R1"], target_ids: ["T1"], options: [{ id: "a", description: "관리형" }, { id: "b", description: "직접 운영" }],
     selected_option: "a", rejected_alternatives: [{ option_id: "b", reason: "운영 부담" }], rationale: "운영 부담", tradeoffs: ["비용"], boundary: "초기 규모",
     criteria: [{ id: "operations", requirement_id: "R1", condition: "백업 책임", kind: "required", priority: "high" }],
-    evaluations: ["a", "b"].map((option_id) => ({ option_id, criterion_id: "operations", result: "met", reason: "백업 제공", evidence_kind: "documented", source: "https://example.com/docs", condition: "현재 버전", checked_at: "2026-11-05T00:00:00Z" })),
+    evaluations: ["a", "b"].map((option_id) => ({ option_id, criterion_id: "operations", result: "met", reason: "백업 제공", evidence_kind: "documented", source: "https://example.com/docs", claim_ids: ["docs-backup"], condition: "현재 버전", checked_at: "2026-11-05T00:00:00Z" })),
     selection: { decision: "관리형 선택", accepted_tradeoffs: "비용", uncertainty: "규모별 비용", revisit_when: "성장 시", user_choice: "사용자가 선택" },
   };
   decision.approval = { approver: "user", approved_at: "2026-11-05T00:00:00Z", subject_hash: computeApprovalHash(decision) };
@@ -28,6 +28,15 @@ test("new technology decisions require comparable evaluations and a recorded cho
   assert.equal(validateArchitectureDecision(decision).valid, true);
   assert.equal(evaluateDecisionGate(decision, targets).decision_review_complete.status, "pass");
   assert.ok(validateArchitectureDecision({ ...decision, schema_version: 1 }).errors.some(({ code }) => code === "invalid_schema_version"));
+  // Gate errors name the exact field and accepted values so authors fix the YAML in one pass.
+  const broken = validateArchitectureDecision({ ...decision, criteria: [{ ...decision.criteria[0], requirement_id: "R9", kind: "must" }], evaluations: [{ ...decision.evaluations[0], evidence_kind: "guess", note: "x" }, decision.evaluations[1]], selection: { ...decision.selection, uncertainty: "" } }, {}, { checkApproval: false });
+  const message = (code) => broken.errors.find((error) => error.code === code)?.message || "";
+  assert.match(message("invalid_criterion"), /requirement_id "R9" must be one of \$\.requirement_ids \(R1\)/);
+  assert.match(message("invalid_criterion"), /kind must be required or preferred/);
+  assert.match(message("invalid_evaluation"), /unsupported field note/);
+  assert.match(message("invalid_evaluation"), /evidence_kind must be one of measured, external_measurement, documented, estimated, unknown/);
+  assert.equal(broken.errors.find((error) => error.code === "invalid_evaluation").path, "$.evaluations[0]");
+  assert.match(message("invalid_selection"), /uncertainty must be a non-empty string/);
   const learningDecision = { ...decision, review_mode: 'Learning', review_id: 'learning-review' };
   learningDecision.approval = { ...decision.approval, subject_hash: computeApprovalHash(learningDecision) };
   assert.equal(evaluateDecisionGate(learningDecision, targets).decision_review_complete.status, 'blocked');
@@ -98,10 +107,14 @@ test("installed review gate rejects missing and stale reviews and accepts the cu
     await writeFile(join(root, "CONTEXT.md"), "# Changed glossary\n");
     assert.equal((await requireCurrentSpecReview({ root, ticketId: "example" })).status, "pass");
     const targets = { schema_version: 1, id: 'system-targets', system_characteristics: Object.fromEntries(['interaction', 'workload', 'state', 'consistency', 'availability', 'growth'].map((name) => [name, '기준'])), initial: [{ id: 'T1', metric: 'mau', status: 'resolved', value: 10, unit: 'users', provenance: 'user_supplied', confidence: 'high', rationale: '예상 사용자' }], expected_growth: [], architecture_boundary: [], decision_metadata: { decision_layer_version: 2, decision_ids: ['db'] } };
-    const decision = { schema_version: 2, id: 'db', status: 'proposed', review_mode: 'Normal', category: 'infrastructure', problem: '저장', constraints: ['운영'], requirement_ids: ['R1'], target_ids: ['T1'], options: [{ id: 'a', description: '관리형' }], selected_option: 'a', single_option_reason: '유일한 허용 옵션', rationale: '운영', tradeoffs: ['비용'], boundary: '초기', criteria: [{ id: 'ops', requirement_id: 'R1', condition: '백업', kind: 'required', priority: 'high' }], evaluations: [{ option_id: 'a', criterion_id: 'ops', result: 'met', reason: '백업 제공', evidence_kind: 'documented', source: 'https://example.com/docs', condition: '현재 버전', checked_at: '2026-11-05T00:00:00Z' }], selection: { decision: '선택', accepted_tradeoffs: '비용', uncertainty: '가격', revisit_when: '성장 시', user_choice: '관리형' } };
+    const decision = { schema_version: 2, id: 'db', status: 'proposed', review_mode: 'Normal', category: 'infrastructure', problem: '저장', constraints: ['운영'], requirement_ids: ['R1'], target_ids: ['T1'], options: [{ id: 'a', description: '관리형' }], selected_option: 'a', single_option_reason: '유일한 허용 옵션', rationale: '운영', tradeoffs: ['비용'], boundary: '초기', criteria: [{ id: 'ops', requirement_id: 'R1', condition: '백업', kind: 'required', priority: 'high' }], evaluations: [{ option_id: 'a', criterion_id: 'ops', result: 'met', reason: '백업 제공', evidence_kind: 'documented', source: 'https://example.com/docs', claim_ids: ['docs-backup'], condition: '현재 버전', checked_at: '2026-11-05T00:00:00Z' }], selection: { decision: '선택', accepted_tradeoffs: '비용', uncertainty: '가격', revisit_when: '성장 시', user_choice: '관리형' } };
     await mkdir(join(dir, 'architecture-decisions'), { recursive: true });
     await writeFile(join(dir, 'system-targets.yaml'), JSON.stringify(targets));
     await writeFile(join(dir, 'architecture-decisions/db.yaml'), JSON.stringify(decision));
+    // The documented evaluation cites a Claim stored in the project's knowledge registry.
+    const { writeSource, writeClaim } = await import(`file://${join(root, '.harness/src/knowledge/registry.mjs')}`);
+    await writeSource({ root, source: { schema_version: 1, id: 'example-docs', title: 'Docs', uri: 'https://example.com/docs', publisher: 'Example', tier: 'primary_technical', authority: 'Example', independent_authority_id: 'example', recency: 'high', relevance: 'high', commercial_bias: 'low', primary_source: true, preference: 'preferred', domain_metadata: {}, discovered_at: '2026-11-05T00:00:00Z', collection_status: 'not_collected' } });
+    await writeClaim({ root, claim: { schema_version: 1, id: 'docs-backup', source_id: 'example-docs', statement: 'Backups are provided', locator: { section: 'Backup', excerpt: 'backups' }, retrieved_at: '2026-11-05T00:00:00Z', context: 'operations', qualifiers: [] } });
     await mkdir(join(root, '.io/runtime/executions/ask'), { recursive: true });
     await writeFile(join(root, '.io/runtime/executions/ask/decision-answers.json'), JSON.stringify([{ question_id: 'ask:1', answer: '관리형' }]));
     const decisionCli = join(root, '.codex/scripts/harness-decision-gate.mjs');

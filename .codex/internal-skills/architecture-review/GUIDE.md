@@ -1,10 +1,9 @@
+---
+model_tier: high_performance
+---
 <!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
 
 # Architecture Review
-
-## 실행 모델과 반환
-
-기본 `model_tier`는 `high_performance`이며 `agents.high_performance_model`와 `agents.high_performance_reasoning_effort`를 함께 사용한다. workflow stage가 지정된 호출은 그 stage의 tier를 우선한다. [실행 조율](../skill-execution/GUIDE.md)에 따라 `harness-skill-execution.mjs binding`이 스킬의 binding과 setup 설정에서 model·effort를 해석한다. 지정된 작업을 수행하고 필요한 내부 작업은 [실행 조율](../skill-execution/GUIDE.md)에 따라 서브에이전트에 위임한다. 사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다.
 
 ## 역할
 
@@ -29,3 +28,4 @@ Learning 검토 결과는 `docs/specs/<plan-set-id>/architecture-reviews/<review
 - 사용자의 제안을 사용자의 승인으로 간주하지 않는다.
 - Reviewer가 사용자 선택이나 답변을 만들어내지 않는다. 위임된 선택과 구현 세부사항은 작성자가 정하고 reviewer가 근거와 영향을 평가한다.
 - 새 Source/Claim을 project Knowledge registry에 게시하지 않는다.
+- source code, schema, workflow manifest와 사용자의 decision 기록을 수정하지 않는다.

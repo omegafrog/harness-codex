@@ -1,8 +1,8 @@
 schema_version: 1
 id: to-ticket
 orchestrator: orchestrator
-roles: [to_ticket, tracker_publisher]
-skills: [orchestrator, worktree-create, to-ticket, plan-review, tracker-publish]
+roles: [to_ticket, tracker_publisher, pr_author]
+skills: [orchestrator, worktree-create, to-ticket, plan-review, tracker-publish, gh-open-pr]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight, spec_reviews]
   before_handoff: [checkpoint_completeness]
@@ -17,3 +17,7 @@ stages:
     role: tracker_publisher
     skill: tracker-publish
     needs: [to-ticket]
+  - id: plan-pr
+    role: pr_author
+    skill: gh-open-pr
+    needs: [tracker-publish]

@@ -143,11 +143,12 @@ test('scoped rules need intent, sufficient level and source while plain rules do
   assert.deepEqual(intentIssues('- BR-3: 숨김·삭제된 콘텐츠는 일반 열람 결과에 포함하지 않는다.'), ['제품 의도 INT-* 필요']);
 });
 
-test('an unrecorded value may be unknown but an inferred source needs approval', () => {
+test('unknown reasons and sourced interpretations do not force a separate user approval', () => {
   const intent = 'INT-A\n- 목적: x\n- 충분한 수준: y\n- 출처: 사용자 답변\n';
-  assert.deepEqual(intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 미확인\n- 충분한 수준: 플랫폼 기본 동작\n- 출처: 사용자 답변\n`), []);
-  const inferred = intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 남용 억제\n- 충분한 수준: 대략적 상한\n- 출처: 추정\n`);
-  assert.match(inferred[0], /추정/);
+  assert.deepEqual(intentIssues(`${intent}BR-1: 최대 10건이다.\n- 의도: 미확인\n- 충분한 수준: 플랫폼 기본 동작\n- 출처: request.md의 상한 요구\n`), []);
+  const inferred = `${intent}BR-1: 최대 10건이다.\n- 의도: INT-A 참조\n- 충분한 수준: 10건 이하를 허용하고 초과를 거부한다(AC-1).\n- 출처: 요청 해석(에이전트 추정, request.md의 상한 요구)\n`;
+  assert.deepEqual(intentIssues(inferred), []);
+  assert.match(intentIssues(inferred.replace(/- 출처: 요청 해석.*\n/, ''))[0], /출처/);
 });
 
 test('a delegated decision needs a recorded user answer', () => {
@@ -221,19 +222,6 @@ test('an exhausted budget asks about remaining findings instead of escalating th
   assert.equal(planRepairRound({ reviews, round: 1, maxRounds: 1, scopeDecisions: [{ finding_id: 'STD-1', choice: 'reject' }] }).action, 'complete');
 });
 
-test('the repair cycle limit needs a recorded answer to continue', async () => {
-  const { updateReviewAttempt, MAX_REPAIR_CYCLES } = await import('../.harness/src/workflow/review-attempts.mjs');
-  const root = await consumer();
-  const scope = { root, scope: 'implementation-cycle' };
-  const snapshot = (n) => String(n).repeat(64);
-  const reserve = (n) => updateReviewAttempt({ ...scope, action: 'repair', maxRounds: 1, findings: [], inputs: { fixed_point: 'base', implementation_commit_sha: `c${n}`, reviewer_ids: [`r${n}`], plan_set_id: 'p', planning_snapshot_sha256: snapshot(n) } });
-  const resolveCycle = (n, extra = {}) => updateReviewAttempt({ ...scope, action: 'resolve-repair', resolution: { reason: 'scope changed', previous_snapshot_sha256: snapshot(n), current_snapshot_sha256: snapshot(n + 1), ...extra } });
-  for (let n = 1; n < MAX_REPAIR_CYCLES; n += 1) { await reserve(n); await resolveCycle(n); }
-  await reserve(MAX_REPAIR_CYCLES);
-  await assert.rejects(resolveCycle(MAX_REPAIR_CYCLES), { code: 'repair_cycle_limit' });
-  assert.equal((await resolveCycle(MAX_REPAIR_CYCLES, { user_cycle_approval: { choice: 'adopt' } })).status, 'pass');
-});
-
 test('the runner commits only requested paths in a linked worktree', async () => {
   const { commitStageRequest } = await import('../.harness/src/workflow/stage-commit.mjs');
   await mkdir('.io/runtime', { recursive: true });
@@ -269,14 +257,45 @@ test('the runner commits only requested paths in a linked worktree', async () =>
   await assert.rejects(commitStageRequest({ root, rawPath }), /outside the commit request/);
 });
 
-test('a quote absent from the approved Spec is treated as an invented requirement', async () => {
+test('a quote absent from the approved Spec is preserved for basis recheck without a user question or repair reservation', async () => {
   const root = await consumer();
   const { reviews, reviewInput } = evidence({ findings: [{ ...defect, basis: { source: 'product_spec', quote: '입력을 NFC 정규화한 뒤 코드 포인트를 센다' } }] });
   const input = { ...reviewInput, repository: root };
   const local = reviews.map((review) => ({ ...review, review_input: input }));
   const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
-  assert.equal(result.reason, 'unbacked_requirement');
-  assert.equal(result.next_action, 'user-decision');
+  assert.equal(result.reason, 'basis_unverified');
+  assert.equal(result.next_action, 'review-coordination');
+  assert.equal(result.classification.basis_unverified[0].id, defect.id);
+  assert.equal(result.classification.basis_unverified[0].basis.quote, '입력을 NFC 정규화한 뒤 코드 포인트를 센다');
+  assert.equal(Object.hasOwn(result, 'user_questions'), false);
+  const history = await (await import('../.harness/src/workflow/review-attempts.mjs')).inspectReviewHistory({ root, scope: 'implementation-community' });
+  assert.equal(history.budget.used, 0);
+});
+
+test('validated basis rechecks dismiss without budget, resume implementation repair, or route plan/spec work', () => {
+  const { reviews } = evidence({ findings: [defect] });
+  const unverifiedBasis = new Set(['standards:0']);
+  const dismiss = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'dismiss' }] });
+  assert.equal(dismiss.action, 'complete');
+  assert.equal(dismiss.classification.dismissed[0].basis_recheck.route, 'dismiss');
+  const implementation = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'implementation' }] });
+  assert.equal(implementation.action, 'repair');
+  assert.equal(implementation.round, 1);
+  const spec = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'spec-me' }] });
+  assert.equal(spec.action, 'block');
+  assert.equal(spec.next_action, 'spec-me');
+  assert.equal(spec.reason, 'basis_recheck_routed');
+});
+
+test('a quote that omits the Markdown emphasis of the approved Spec still counts as verified', async () => {
+  const root = await consumer();
+  await writeFile(resolve(root, 'docs/specs/p/architecture-spec.md'), '# Architecture\n\n- **UC-03**: public browser request → render content and `author` identity; no session required.\n');
+  const { reviews, reviewInput } = evidence({ findings: [{ ...defect, basis: { source: 'architecture_spec', quote: 'UC-03: public browser request → render content and author identity; no session required.' } }] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.status, 'pass', JSON.stringify(result).slice(0, 300));
+  assert.equal(result.round, 1);
 });
 
 test('a verified quote reserves the ordinary repair budget', async () => {
@@ -287,6 +306,50 @@ test('a verified quote reserves the ordinary repair budget', async () => {
   const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
   assert.equal(result.status, 'pass');
   assert.equal(result.round, 1);
+});
+
+test('five automatic repair rounds run, then each remaining finding goes to the user', async () => {
+  const { updateReviewAttempt } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const { AUTO_REPAIR_ROUNDS } = await import('../.harness/src/wrapper/repair.mjs');
+  const root = await consumer();
+  const { reviews, reviewInput } = evidence({ findings: [defect] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  for (let n = 1; n <= AUTO_REPAIR_ROUNDS; n += 1) {
+    await updateReviewAttempt({ root, scope: 'implementation-community', action: 'repair', findings: [], inputs: { fixed_point: input.fixed_point, implementation_commit_sha: `old${n}`, reviewer_ids: [`old-r${n}`] } });
+  }
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.reason, 'auto_repair_rounds_used');
+  assert.equal(result.next_action, 'user-decision');
+  assert.equal(result.rounds, AUTO_REPAIR_ROUNDS);
+  assert.match(result.user_questions[0].question.title, /자동 수정을 5회/);
+  assert.deepEqual(result.user_questions[0].question.options.map((option) => option.label), ['지원 안 함', '수정 계속']);
+});
+
+// A finding no repair can remove (a missing prerequisite) came back unchanged, so a third identical repair is not run.
+test('the same finding after a repair goes to the user instead of another repair', async () => {
+  const { updateReviewAttempt } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const root = await consumer();
+  const { reviews, reviewInput } = evidence({ findings: [defect] });
+  const input = { ...reviewInput, repository: root };
+  const local = reviews.map((review) => ({ ...review, review_input: input }));
+  await updateReviewAttempt({ root, scope: 'implementation-community', action: 'repair', findings: [defect], inputs: { fixed_point: input.fixed_point, implementation_commit_sha: 'old1', reviewer_ids: ['old-r1'] } });
+  const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
+  assert.equal(result.reason, 'repeated_finding');
+  assert.equal(result.next_action, 'user-decision');
+  assert.ok(result.user_questions.length > 0);
+});
+
+test('minor findings are reported but do not open a repair round', async () => {
+  const { classifyReviewFindings } = await import('../.harness/src/wrapper/repair.mjs');
+  const { reviews } = evidence({ findings: [{ ...defect, severity: 'minor' }] });
+  const routes = classifyReviewFindings(reviews);
+  assert.equal(routes.repairable.length, 0);
+  assert.equal(routes.advisory.length, 1);
+  assert.equal(routes.advisory[0].advisory_reason, 'minor');
+  assert.equal(routes.has_findings, false);
+  const major = classifyReviewFindings(evidence({ findings: [{ ...defect, severity: 'major' }] }).reviews);
+  assert.equal(major.repairable.length, 1);
 });
 
 test('malformed scope groups are rejected before any reservation', async () => {

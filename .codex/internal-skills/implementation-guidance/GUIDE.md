@@ -14,4 +14,4 @@ When a new instruction conflicts with an existing entry, compare scope and sourc
 
 Every implementation worker reads `<workspace_root>/docs/agents/implementation-guidance.md` before planning edits. Apply only entries whose scope matches the current project and change. If an entry conflicts with approved ticket requirements or design, report the conflict and stop for resolution; do not silently override either source.
 
-For scoped Spring Boot diagnostic logging changes, use the project-owned `docs/observability/victorialogs/diagnostic-log-schema.md` and JSON schema. The installed `victorialogs-local-setup` assets supply the v1 contract; its setup helper records the matching reusable guidance in the active workspace documents. Keep general framework logs distinct from diagnostic events. Do not claim source schema validation proves runtime context propagation, redaction or live ingestion.
+For scoped Spring Boot diagnostic logging changes, follow the project-owned schema in `docs/observability/victorialogs/` and the `spring-boot-diagnostic-log-v1` entry that `victorialogs-local-setup` records in the workspace guidance.

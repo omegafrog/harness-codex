@@ -56,8 +56,11 @@ Codex에서 직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrat
 
 - `CONTEXT.md`, `CONTEXT-MAP.md` 초기화
 - 역할별 model / reasoning 설정
+- workflow worktree를 만들 상위 디렉터리의 절대 경로 선택 (기본값: 프로젝트 옆 `<프로젝트명>-worktrees`)
 - GitHub 또는 local-markdown tracker 설정
 - `.codex/harness.yaml` 관리
+
+선택한 위치는 `worktrees.directory`에 저장하며 새 workflow부터 적용한다. 기존 worktree는 Git에 등록된 위치에 그대로 남는다. 경로를 바꾸려면 `$setup`에서 새로 설정을 선택한다.
 
 ### 2. `spec-me`
 
@@ -334,7 +337,21 @@ npx --yes github:omegafrog/harness-codex install
 npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 ```
 
-설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 반환하는 다음 질문을 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
+설치할 agent provider를 고를 수 있다. 기본값 `all`은 Codex와 Claude Code를 모두 설치한다.
+
+Codex를 포함한 전체 설치와 업데이트는 사용자 계정에 Codex Wake 플러그인도 설치한다. Wake의 현재 알파 릴리스는 Linux x86_64와 사용자 systemd가 필요하다. 설치 후 Codex를 다시 열고 Wake 훅을 검토·승인해야 한다. Wake와 Harness의 연결은 stage 결과를 검증한 뒤 해당 orchestrator 대화에 알림을 큐에 넣는다. 큐 수락은 실제 대화 실행을 보장하지 않으며 Wake를 사용할 수 없으면 결과는 보존되고 자동 전달은 실패한다. Claude Code만 설치할 때는 Wake를 설치하지 않는다.
+
+```bash
+npx --yes github:omegafrog/harness-codex install --provider codex        # .agents/skills, Codex hook, 공용 .codex 자산
+npx --yes github:omegafrog/harness-codex install --provider claude-code  # .claude/** (skills, agents, provider 코드, hook), 공용 .codex 자산
+```
+
+Claude Code provider 코드(adapter, orchestrator launcher·시작 hook, hook 설치기)는 소스의 `.claude/harness/`에 있고 설치 대상의 같은 경로에 설치된다. `update`는 설치된 provider를 유지하며, `update --provider <값>`을 주면 설치 구성을 바꾸고 빠진 provider의 관리 파일은 백업 후 제거한다. `$setup`은 설치된 provider만 선택지로 보여 주고, workflow binding은 setup이 정한 provider와 같아야 한다.
+
+
+**메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.codex/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `docs/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
+
+설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 한 번에 반환하는 질문 전체를 한 화면에서 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 선행 답이 바뀌어 맞지 않게 된 질문만 다시 묻는다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
 
 로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/internal-skills/victorialogs-local-setup/assets/README.md)를 따른다.
 
@@ -351,7 +368,7 @@ Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데�
 .codex/harness-lock.json         설치 기준선과 파일 hash
 ```
 
-필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update --force`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.codex/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
+필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.codex/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
 
 ### 업데이트
 
@@ -406,6 +423,17 @@ git rm --cached .codex/agents/<managed-profile>.toml
 
 공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
 
-설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. 기본 업데이트의 충돌은 보존하고 명시적인 `update --force`로 일괄 교체할 수 있다. upstream에서 사라진 자산의 lock 항목은 정리하되 기존 파일은 보존한다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
+설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. `update`는 Harness 관리 경로를 항상 최신 릴리스와 같게 맞춘다. 로컬에서 수정한 관리 파일은 백업한 뒤 최신본으로 교체하고, upstream에서 사라진 관리 자산은 수정 여부와 관계없이 백업한 뒤 삭제하며 lock 항목과 빈 디렉터리(구 `.codex/harness-runtime` 포함)도 정리한다. `--no-backup`이면 백업하지 않는다. `install`은 `--force` 없이는 로컬 수정을 보존한다. 이전 업데이트가 남긴 빈 Harness skill 디렉터리도 함께 지우며, Harness가 모르는 이름의 skill 디렉터리는 건드리지 않는다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 
 설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 setup의 준비 복구와 내부 `sync-contracts` 절차로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.
+
+## 진행 상황 보기
+
+agent 없이 실행 기록만 읽는 읽기 전용 명령이다. 작업 worktree(또는 프로젝트) 디렉터리에서 실행한다.
+
+```bash
+node .codex/scripts/harness-progress.mjs            # 한 번 출력
+node .codex/scripts/harness-progress.mjs --watch    # 3초마다 갱신 (--watch 5 처럼 초 지정)
+```
+
+단계별 상태·경과 시간·회차·대기 사유를 보여 주고, 실행 중인 stage 아래에 하위 agent(reviewer)와 그 stage agent의 마지막 명령·메시지를 한 줄로 보여 주며(Codex 대화 기록을 읽음), `running`인데 실행기 프로세스가 없으면 "정지됨"으로 표시한다. 기록된 단계만 집계하므로 전체 진행률(%)은 계산하지 않는다.

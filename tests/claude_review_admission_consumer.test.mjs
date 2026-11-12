@@ -36,11 +36,15 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await updateProject({ sourceRoot, targetRoot: root });
     for (const path of ['.codex/agents/plan_reviewer.toml', '.claude/agents/plan_reviewer.md']) {
       const instructions = await readFile(join(root, path), 'utf8');
-      assert.match(instructions, /Do not require workspace_root, session_directory or review_delta fields/);
-      assert.match(instructions, /changed files in full/);
-      assert.match(instructions, /unchanged, review the full snapshot/);
+      // The profile only points at the GUIDE, which owns the admission and re-review rules.
+      assert.match(instructions, /\.codex\/internal-skills\/plan-review\/GUIDE\.md/);
+      assert.match(instructions, /"verdict":"pass"\|"revise"/);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
+    const planReviewGuide = await readFile(join(root, '.codex/internal-skills/plan-review/GUIDE.md'), 'utf8');
+    assert.match(planReviewGuide, /JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나/);
+    assert.match(planReviewGuide, /변경된 파일 전체/);
+    assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 전체 snapshot/);
     const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
     const retryInputs = { plan: 'snapshot' };
     const rejected = await installedReviewAttempt({ root, scope: 'plan-retry', action: 'begin', inputs: retryInputs });
@@ -56,7 +60,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/owned.md'), 'Project-owned contract.\n');
 
-    const provider = await import(`file://${join(root, '.harness/src/workflow/providers/claude-code.mjs')}`);
+    const provider = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
     const command = provider.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'claude-sonnet', reasoning_effort: 'medium' }, schema: {}, resume: 'resume-id', role: null, skill: 'spec-me', workerBase: 'Compact worker base.' });
     const settings = JSON.parse(command[command.indexOf('--settings') + 1]);
     assert.equal(settings.hooks.PreToolUse[0].matcher, 'Agent');
@@ -93,7 +97,9 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     callEvent(root, { hook_event_name: 'SubagentStop', session_id: 'claude-session', agent_id: 'native-agent-1', agent_type: 'spec_adversarial_reviewer', last_assistant_message: nativeResult });
     await assert.rejects(assertNoUnrecordedNativeReview({ root, scope: 'spec-ticket-one-architecture' }), /record/i);
     const history = await inspectReviewHistory({ root, scope: 'spec-ticket-one-architecture' });
-    await updateReviewAttempt({ root, scope: 'spec-ticket-one-architecture', action: 'record', attemptId: admitted.attempt_id, inputs: admitted.inputs, review: { axis: 'architecture', ticket_id: 'ticket-one', reviewer_id: `claude-review-stage-${admitted.attempt_id}`, author_ids: ['spec-author'], fork_turns: 'none', verdict: 'pass', findings: [] } });
+    await updateReviewAttempt({ root, scope: 'spec-ticket-one-architecture', action: 'record', attemptId: admitted.attempt_id, inputs: admitted.inputs, review: { axis: 'architecture', ticket_id: 'ticket-one' }, requireNative: true });
+    // Identity is the hook-bound reviewer; the caller's session is the author.
+    assert.deepEqual((await inspectReviewHistory({ root, scope: 'spec-ticket-one-architecture' })).last_review.author_ids, ['claude-session']);
     assert.equal(history.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: 'spec-ticket-one-architecture' });
 
@@ -138,7 +144,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     const planNativeResult = JSON.stringify({ verdict: 'pass', findings: [] });
     callEvent(root, { hook_event_name: 'SubagentStop', session_id: 'claude-session', agent_id: 'native-plan-agent', agent_type: 'plan_reviewer', last_assistant_message: planNativeResult });
     planHistory = await inspectReviewHistory({ root, scope: planScope });
-    const planReview = { reviewer_id: `claude-review-stage-${planAttempt.attempt_id}`, author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] };
+    // The stage names only the attempt; the hook-bound reviewer supplies identity and verdict.
+    const planReview = { schema_version: 1, attempt_id: planAttempt.attempt_id, plan_set_id: 'ticket-one' };
     process.env.HARNESS_SKILL_EXECUTION_ID = 'resumed-author';
     await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
     await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission contents/);
@@ -166,7 +173,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
       const findings = [{ severity: 'minor', description: 'Clarify a detail.', evidence: `Revision ${round}.` }];
       const nativeReview = { verdict: 'revise', findings };
       await updateReviewAttempt({ root, scope, action: 'stop-native', attemptId: roundAdmission.attempt_id, nativeAgentId: agentId, parentSessionId: 'budget-session', nativeResult: JSON.stringify(nativeReview), nativeReview });
-      await updateReviewAttempt({ root, scope, action: 'record', attemptId: roundAdmission.attempt_id, inputs: roundAdmission.inputs, review: { axis: 'architecture', ticket_id: 'budget-ticket', reviewer_id: reviewerId, author_ids: [`author-${round}`], fork_turns: 'none', ...nativeReview } });
+      await updateReviewAttempt({ root, scope, action: 'record', attemptId: roundAdmission.attempt_id, inputs: roundAdmission.inputs, review: { axis: 'architecture', ticket_id: 'budget-ticket' }, requireNative: true });
     }
     await writeFile(budgetSpec, 'Status: approved\nArchitecture revision after budget.\n');
     await assert.rejects(updateReviewAttempt({ root, scope: 'spec-budget-ticket-architecture', action: 'begin', inputs: await snapshotSpecReview({ root, ticketId: 'budget-ticket' }) }), /retry budget exhausted/i);
@@ -175,7 +182,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.match(status, /docs\/contracts\/owned\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/workflow\/providers\/claude-code\.mjs/);
-    execFileSync('git', ['check-ignore', '-v', '.harness/src/workflow/providers/claude-code.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
     execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-admission.mjs'], { cwd: root });
   } finally {
     await rm(root, { recursive: true, force: true });
