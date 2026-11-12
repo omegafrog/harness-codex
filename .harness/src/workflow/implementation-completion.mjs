@@ -22,6 +22,7 @@ export const DERIVED_STATE_KEYS = Object.freeze(['required_outcome', 'tests', 'r
 // tests, build files, migrations) invalidates the receipt. Files the receipt itself fingerprints (config_hashes) are
 // compared by content whatever their path, so docs/agents/execution.json stays covered even though it lives in docs/.
 const DOCUMENTATION_FILES = new Set(['CONTEXT.md', 'CONTEXT-MAP.md', '.harness/contracts.mjs']);
+const isRepositoryIgnorePath = (path) => path === '.gitignore' || path.endsWith('/.gitignore');
 export const isDocumentationPath = (path) => path.startsWith('docs/') || DOCUMENTATION_FILES.has(path);
 const isGeneratedPythonCache = (path) => path.split('/').includes('__pycache__') || /\.(?:pyc|pyo)$/i.test(path);
 
@@ -183,7 +184,7 @@ async function deriveTests({ root, plans, head }) {
     if (uncommitted.length || receipt.uncommitted_truncated) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_ran_on_uncommitted_changes', receipt: latest.ref, paths: uncommitted.slice(0, MAX_LISTED) }); continue; }
     const configuration = await changedConfiguration(root, receipt);
     if (configuration.length) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_config_changed', receipt: latest.ref, files: configuration.slice(0, MAX_LISTED) }); continue; }
-    const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path));
+    const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path) && !isRepositoryIgnorePath(path));
     if (changed.length) problems.push({ profile_id: profileId, reason: 'e2e_receipt_stale', receipt: latest.ref, receipt_commit: receipt.head, head, paths: changed.slice(0, MAX_LISTED), path_count: changed.length });
   }
   const learning = e2eLearningComplete({ e2e_failures: failures }) ? 'complete' : 'pending';
