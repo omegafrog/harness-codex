@@ -8,14 +8,14 @@ import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
-test('installed tracker sync projects Workflow Status to GitHub board Status and keeps generated files ignored', async () => {
+test('installed tracker marks execution in progress but leaves Done until PR merge', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tracker-project-status-'));
   const sourceRoot = resolve('.');
   const fields = [
     { id: 'workflow', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: `workflow-${name}`, name })) },
     { id: 'status', name: 'Status', type: 'ProjectV2SingleSelectField', options: ['Todo', 'In Progress', 'Done'].map((name) => ({ id: `status-${name}`, name })) },
   ];
-  const values = new Map([['workflow', 'Done'], ['status', 'In Progress']]);
+  const values = new Map([['workflow', 'Planned'], ['status', 'Todo']]);
   const edits = [];
   const run = async (command, args) => {
     if (command === 'gh' && args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project-id' });
@@ -41,12 +41,16 @@ test('installed tracker sync projects Workflow Status to GitHub board Status and
     await writeFile(join(root, 'consumer-change.txt'), 'preserve');
     const lifecycleUrl = pathToFileURL(join(root, '.harness/src/tracker/lifecycle.mjs')).href;
     const { readTrackerStatus, syncTrackerStatus } = await import(lifecycleUrl);
-    const result = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run });
-    assert.equal(result.status, 'pass', JSON.stringify(result));
-    assert.deepEqual(edits, [['status', 'Done']], 'repair only the stale board field while preserving the canonical Workflow Status');
+    const started = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', status: 'in-progress', run });
+    assert.equal(started.status, 'pass', JSON.stringify(started));
+    assert.deepEqual(edits, [['workflow', 'In Progress'], ['status', 'In Progress']]);
+    const completed = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', status: 'completed', run });
+    assert.equal(completed.status, 'pass', JSON.stringify(completed));
+    assert.deepEqual(edits, [['workflow', 'In Progress'], ['status', 'In Progress'], ['workflow', 'Done']], 'completion updates only canonical Workflow Status before PR merge');
     const current = await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run });
     assert.equal(current.canonical_status, 'completed');
-    assert.equal(current.project_status, 'Done');
+    assert.equal(current.project_status, 'In Progress');
+    assert.equal(current.issue_state, 'OPEN');
     const gitStatus = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
     assert.match(gitStatus, /consumer-change\.txt/);
     assert.doesNotMatch(gitStatus, /\.harness\/src\//);

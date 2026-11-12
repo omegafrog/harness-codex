@@ -10,7 +10,7 @@ import { JsonlEventWriter } from '../eval/journal.mjs';
 
 const exec = promisify(execFile);
 export const TRACKER_STATES = Object.freeze({ planned: ['Planned', 'open'], 'in-progress': ['In Progress', 'in_progress'], blocked: ['Blocked', 'blocked'], completed: ['Done', 'closed'] });
-const githubBoardStatus = Object.freeze({ planned: 'Todo', 'in-progress': 'In Progress', blocked: 'In Progress', completed: 'Done' });
+const githubBoardStatus = Object.freeze({ planned: 'Todo', 'in-progress': 'In Progress', blocked: 'In Progress' });
 const PHASES = new Set(['planning', 'implementation', 'test', 'review']);
 const CLASSIFICATIONS = new Set(['backlog', 'committed']);
 const canonical = (value) => Object.keys(TRACKER_STATES).find((key) => key === value || TRACKER_STATES[key][0] === value);
@@ -240,7 +240,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     for (const ref of refs) {
       if (beadsDisabled) {
         const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
-        if (tracker.statusField && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
+        if (tracker.statusField && githubBoardStatus[tracker.status] && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
         tickets.push({ ref, status: tracker.status });
         continue;
       }
@@ -248,7 +248,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       assertTicketPlan(bead, expected_plan_id, ref);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
-      if (tracker.statusField && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
+      if (tracker.statusField && githubBoardStatus[tracker.status] && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
       tickets.push({ ref, bead_id: bead.id, status: tracker.status });
@@ -303,25 +303,25 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
       }
       if (tracker.statusField) {
         const optionName = githubBoardStatus[desired];
-        if (tracker.default_status !== optionName) {
+        if (optionName && tracker.default_status !== optionName) {
           const option = single(tracker.statusField.options.filter((o) => o.name === optionName), 'Project Status option');
           await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.statusField.id, '--single-select-option-id', option.id], root);
           tracker_updated = true;
         }
       }
     } else if (tracker.status !== desired) {
-        const updated = tracker.frontmatter.replace(/^status:[ \t]*[^\r\n]+/m, `status: ${desired}`);
-        if (await readFile(tracker.path, 'utf8') !== tracker.content) throw new Error('Local ticket changed concurrently; retry from the latest state');
-        const temp = `${tracker.path}.${randomUUID()}.tmp`;
-        try {
-          await writeFile(temp, tracker.content.replace(tracker.frontmatter, updated), { flag: 'wx', mode: (await lstat(tracker.path)).mode });
-          await rename(temp, tracker.path);
-        } finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
-        tracker_updated = true;
+      const updated = tracker.frontmatter.replace(/^status:[ \t]*[^\r\n]+/m, `status: ${desired}`);
+      if (await readFile(tracker.path, 'utf8') !== tracker.content) throw new Error('Local ticket changed concurrently; retry from the latest state');
+      const temp = `${tracker.path}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temp, tracker.content.replace(tracker.frontmatter, updated), { flag: 'wx', mode: (await lstat(tracker.path)).mode });
+        await rename(temp, tracker.path);
+      } finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+      tracker_updated = true;
     }
     tracker = await readTracker(root, config, ref, run, context);
     if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
-    if (tracker.statusField && tracker.default_status !== githubBoardStatus[desired]) throw new Error('GitHub Project Status write did not verify');
+    if (tracker.statusField && githubBoardStatus[desired] && tracker.default_status !== githubBoardStatus[desired]) throw new Error('GitHub Project Status write did not verify');
     if (!bead) {
       const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
       await writer.append('tracker_sync', result, { critical: true });
