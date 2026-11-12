@@ -48,7 +48,7 @@ export async function resolveStageSkill({ root, stageId }) {
   for (const file of workflows) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
     const manifest = await loadNamedWorkflow(file.name, { root });
-    matches.push(...manifest.stages.filter((stage) => stage.id === stageId));
+    matches.push(...manifest.stages.filter((stage) => stage.id === stageId && stage.role === 'pr_author'));
   }
   if (matches.length > 1) throw new Error(`Workflow stage is ambiguous: ${stageId}`);
   return matches[0] || { id: stageId, skill: stageId };
