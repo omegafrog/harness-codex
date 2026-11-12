@@ -233,6 +233,13 @@ export async function reviewAdmissionPreviousInputs({ root, scope, attemptId }) 
   return history.attempts.slice(0, index).findLast((item) => item.review && ['pass', 'revise'].includes(item.status))?.inputs || null;
 }
 
+export async function passedReviewInputs({ root, scope, snapshot }) {
+  const { createHash } = await import('node:crypto');
+  const history = await readHistory(historyPath(root, scope, { create: false }), roundLimit(scope));
+  return history.attempts.findLast((item) => item.status === 'pass' && item.review?.verdict === 'pass' &&
+    createHash('sha256').update(JSON.stringify(Object.keys(item.inputs || {}).sort().map((key) => [key, item.inputs[key]]))).digest('hex') === snapshot)?.inputs || null;
+}
+
 export async function inspectActiveReviewAttempt({ root, scope }) {
   const history = await readHistory(historyPath(root, scope, { create: false }), roundLimit(scope));
   const last = history.attempts.at(-1);

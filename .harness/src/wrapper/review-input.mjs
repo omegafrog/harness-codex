@@ -5,7 +5,8 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { userSaidAfter } from '../workflow/user-inputs.mjs';
 import { dirname, join } from 'node:path';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
-import { inspectPlanSet } from '../workflow/plan-review.mjs';
+import { inspectPlanSet, snapshotPlanSet } from '../workflow/plan-review.mjs';
+import { passedReviewInputs } from '../workflow/review-attempts.mjs';
 import { parseWorktreeRecord } from '../workflow/worktrees.mjs';
 import { assertSpecCoverage } from './spec-items.mjs';
 
@@ -225,6 +226,11 @@ export async function recordPassedReview({ root, planId, evidence }) {
   await writeFile(path, JSON.stringify(current, null, 2) + '\n', { mode: 0o600 });
 }
 
+export function unchangedReviewScope(prior, snapshot, plan, reviewedPlan) {
+  if (!prior || !plan?.reference || !plan.sha256 || plan.sha256 !== reviewedPlan?.sha256 || !Array.isArray(snapshot.spec_paths) || snapshot.spec_paths.length !== 2) return false;
+  return [...snapshot.spec_paths, plan.reference].every((path) => prior[path] && prior[path] === snapshot.inputs[path]);
+}
+
 export async function reviewedCommit({ root, planId, commit }) {
   const head = (await git(root, 'rev-parse', commit || 'HEAD')).trim();
   let evidence;
@@ -235,7 +241,13 @@ export async function reviewedCommit({ root, planId, commit }) {
   const record = parseWorktreeRecord(await readFile(join(root, '.io/worktree.json'), 'utf8'));
   const current = await inspectPlanSet({ root, planSetId: record.plan_set_id, planId, phase: 'dispatch' });
   if (current.status !== 'pass') return { status: 'review_required', reason: `plan_review_${current.reason}`, commit: head };
-  if (current.details.review_snapshot_sha256 !== passed.planning_snapshot_sha256) return { status: 'review_required', reason: 'plan_changed_since_review', commit: head };
+  if (current.details.review_snapshot_sha256 !== passed.planning_snapshot_sha256) {
+    const prior = await passedReviewInputs({ root, scope: `plan-${record.plan_set_id}`, snapshot: passed.planning_snapshot_sha256 });
+    const snapshot = await snapshotPlanSet({ root, planSetId: record.plan_set_id });
+    const plan = current.details.canonical_plan;
+    const digest = createHash('sha256').update(JSON.stringify(Object.keys(snapshot.inputs).sort().map((key) => [key, snapshot.inputs[key]]))).digest('hex');
+    if (digest !== current.details.review_snapshot_sha256 || !unchangedReviewScope(prior, snapshot, plan, evidence.review_input.canonical_plan)) return { status: 'review_required', reason: 'plan_changed_since_review', commit: head };
+  }
   return { status: 'reviewed', commit: head, fixed_point: passed.fixed_point, recorded_at: passed.recorded_at };
 }
 

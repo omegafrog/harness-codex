@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
@@ -259,5 +260,36 @@ test('reviewed reports when HEAD still needs a review, and the CLI accepts --fla
     const run = spawnSync(process.execPath, [cli, 'record-decision', `--root=${root}`, '--plan=P', '--finding=F', '--choice=reject', '--answer=지적 기각'], { encoding: 'utf8' });
     assert.match(run.stderr, /not a question the latest repair asked/, 'inline values are parsed');
     assert.match(spawnSync(process.execPath, [cli, 'repair', '--bogus', 'x'], { encoding: 'utf8' }).stderr, /Invalid code-review argument --bogus/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a review can survive unrelated plan changes, but not changed or missing plan and spec inputs', async () => {
+  const { unchangedReviewScope } = await import('../.harness/src/wrapper/review-input.mjs');
+  const prior = { product: 'p', architecture: 'a', plan: 'x', other: 'before' };
+  const snapshot = { spec_paths: ['product', 'architecture'], inputs: { ...prior, other: 'after' } };
+  const plan = { reference: 'plan', sha256: 'x' };
+  assert.equal(unchangedReviewScope(prior, snapshot, plan, plan), true);
+  for (const path of ['product', 'architecture', 'plan']) {
+    assert.equal(unchangedReviewScope(prior, { ...snapshot, inputs: { ...snapshot.inputs, [path]: 'changed' } }, plan, plan), false);
+  }
+  assert.equal(unchangedReviewScope(null, snapshot, plan, plan), false);
+  assert.equal(unchangedReviewScope(prior, snapshot, plan, { sha256: 'changed' }), false);
+});
+
+test('review input lookup only accepts a passing historical snapshot', async () => {
+  const { passedReviewInputs } = await import('../.harness/src/workflow/review-attempts.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-passed-inputs-'));
+  try {
+    const inputs = { plan: 'a', spec: 'b' };
+    const hash = createHash('sha256').update(JSON.stringify(Object.keys(inputs).sort().map((key) => [key, inputs[key]]))).digest('hex');
+    await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
+    const file = join(root, '.io/runtime/reviews/plan-p.json');
+    const attempt = { round: 1, status: 'pass', inputs, review: { verdict: 'pass', findings: [] } };
+    await writeFile(file, JSON.stringify({ attempts: [attempt] }));
+    assert.deepEqual(await passedReviewInputs({ root, scope: 'plan-p', snapshot: hash }), inputs);
+    assert.equal(await passedReviewInputs({ root, scope: 'plan-p', snapshot: '0'.repeat(64) }), null);
+    attempt.status = 'stale';
+    await writeFile(file, JSON.stringify({ attempts: [attempt] }));
+    assert.equal(await passedReviewInputs({ root, scope: 'plan-p', snapshot: hash }), null);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
