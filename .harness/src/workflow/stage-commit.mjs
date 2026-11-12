@@ -37,6 +37,7 @@ export async function commitStageRequest({ root, rawPath }) {
 const WORKFLOW_DOCUMENTS = {
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
+  'sync-contracts': () => ['docs/contracts'],
 };
 
 export async function commitWorkflowDocuments({ root, input, rawPath }) {

@@ -31,6 +31,8 @@
 
 각 plan의 검증·리뷰·commit이 끝나면 순차 workspace에서 통합하고 canonical tracker 완료 상태를 재조회한 뒤 의존성을 재평가한다. tracker 조회 실패나 mirror 불일치는 완료로 간주하지 않는다.
 
+모든 split plan이 terminal 상태가 되고 통합 리뷰·최종 E2E·계약 동기화가 통과하면 `harness-workflow-complete.mjs`를 `--final-workflow` 없이 실행한다. pass가 기록된 뒤 GitHub mode에서만 `integration-pr` stage를 실행해 단일 plan-set PR을 갱신하고 ready 상태로 만든다. 이 stage는 현재 HEAD와 일치하는 `implement-wrapper` 완료 journal의 passing non-final receipt를 요구한다. PR 단계가 끝난 뒤 같은 시작 commit으로 `--final-workflow` 완료 gate를 실행한다. local-markdown mode는 PR 단계를 건너뛴다.
+
 모든 split plan의 구현이 끝나면 기존 `code-review`를 전체 누적 diff에 대해 다시 수행한다. 기준점은 첫 split plan 구현 직전 HEAD이며, 마지막 통합 commit·전체 canonical plan·Product/Architecture Specs·요구별 구현/검증 근거를 두 독립 reviewer에게 전달한다. Standards는 Product의 UC/BR/AC 누락·오동작을, Spec은 Architecture의 규칙 owner·경계·통신·저장 계약을 실제 코드와 대조한다. plan별 pass로 통합 리뷰를 대체하지 않는다. blocking finding 또는 누락·stale Spec/리뷰가 있으면 E2E로 넘어가지 않는다. 수정은 기존 code-review의 수정/설계 인계·횟수 제한을 유지한다.
 
 ## 최종 E2E 승인과 실패 처리

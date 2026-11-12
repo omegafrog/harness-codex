@@ -13,7 +13,7 @@ import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
 const CODEX = ['.agents/skills/orchestrator/SKILL.md', '.codex/hooks.json', '.harness/src/workflow/providers/codex.mjs'];
-const SHARED = ['.codex/internal-skills/implement/GUIDE.md', '.codex/scripts/harness-agent-run.mjs', '.codex/agents/implementation_agent.toml', '.harness/src/workflow/providers/index.mjs'];
+const SHARED = ['.codex/internal-skills/implement/GUIDE.md', '.codex/scripts/harness-agent-run.mjs', '.codex/agents/implementation_agent.toml', '.codex/agents/pr_author.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs'];
 
 async function install(provider) {
   const root = await mkdtemp(join(tmpdir(), `harness-provider-${provider || 'default'}-`));
@@ -29,11 +29,16 @@ test('install --provider codex carries no Claude Code files and the Claude provi
   try {
     assert.deepEqual(present(root, CLAUDE), []);
     assert.deepEqual(present(root, [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]), [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]);
+    assert.match(await readFile(join(root, '.codex/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
+    assert.match(await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8'), /id: integration-pr[\s\S]*skill: gh-open-pr/);
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
     assert.equal(Object.keys(lock.files).some((path) => path.startsWith('.claude/')), false);
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     await assert.rejects(loadProvider('claude-code'), /claude-code provider is not installed/);
     assert.equal((await loadProvider('codex')).id, 'codex');
+    const { resolveAgentSandbox } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } }, workflow: 'to-ticket', stage: 'plan-pr' }), { profile: 'pr_author', sandbox: 'workspace-write' });
+    await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } } }), /only at its gated/);
     // A plain update keeps what is installed instead of adding the other provider.
     await updateProject({ sourceRoot, targetRoot: root });
     assert.deepEqual(present(root, CLAUDE), []);
@@ -69,7 +74,7 @@ test('the default install carries both providers and an explicit provider on upd
     const expectedCodex = await codexUserOrchestratorHookInstalled() ? CODEX.filter((path) => path !== '.codex/hooks.json') : CODEX;
     assert.deepEqual(present(root, expectedCodex), expectedCodex);
     const doctor = await runDoctor({ root, sourceRoot });
-    assert.deepEqual(doctor.diagnostics.filter((item) => item.code === 'installer_stale_lock_entry' || item.code === 'execution_asset_missing'), [], 'Doctor recognizes the .claude/harness files as installed Harness files');
+    assert.deepEqual(doctor.diagnostics.filter((item) => item.code === 'installer_stale_lock_entry' || item.code === 'execution_asset_missing' || item.code.startsWith('plan_pr_template_')), [], 'Doctor recognizes the PR author profile and managed plan template');
     const result = await updateProject({ sourceRoot, targetRoot: root, provider: 'codex' });
     assert.ok(result.retired.some((path) => path.startsWith('.claude/')), 'Claude files are retired when the provider is switched');
     assert.deepEqual(present(root, CLAUDE), []);

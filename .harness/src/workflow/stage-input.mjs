@@ -14,10 +14,32 @@ import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
+import { replayJsonlStream } from '../eval/journal.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['spec-me', 'to-ticket', 'implement-wrapper']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+
+async function hasPassingImplementationGate(root) {
+  const directory = join(root, '.io/runtime/workflow-completion');
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  for (const name of await readdir(directory).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
+    const match = /^implement-wrapper-([a-f0-9]{40})\.jsonl$/.exec(name);
+    if (!match) continue;
+    const stream = await replayJsonlStream(join(directory, name), { streamId: `implement-wrapper:${match[1]}` });
+    if (!stream.valid) continue;
+    if (stream.events.some((event) => event.type === 'workflow_completion' && event.payload?.workflow_id === 'implement-wrapper' && event.payload?.completion_kind === 'feature_implemented' && event.payload?.state === 'completed' && event.payload?.final_workflow === false && event.payload?.head === head)) return true;
+  }
+  return false;
+}
+
+export async function assertPrStageReadiness({ root, state, stageId }) {
+  if (!['plan-pr', 'integration-pr'].includes(stageId)) return;
+  const trackerMode = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker?.mode;
+  if (trackerMode !== 'github') throw new Error('Pull request authoring requires GitHub tracker mode');
+  if (stageId === 'plan-pr' && (state.stages?.['tracker-publish']?.status !== 'completed' || state.stages?.['tracker-publish']?.code !== 'OK')) throw new Error('Plan PR requires completed approved tracker publication');
+  if (stageId === 'integration-pr' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK' || state.stages?.['sync-contracts']?.status !== 'completed' || state.stages?.['sync-contracts']?.code !== 'OK' || !(await hasPassingImplementationGate(root)))) throw new Error('Integration PR requires passing non-final implementation and contract completion gates');
+}
 
 async function archiveToTicket({ root, session, planSetId, previousExecutionId, restartExecutionId }) {
   const restartRoot = join(session, 'runtime/restarts');
@@ -179,6 +201,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
+  await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   // The shared contract describes the integrated result, so it is written only after every plan is implemented.
   if (stageId === 'sync-contracts' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK')) throw new Error('sync-contracts starts only after implement-wrapper completed every plan and the final E2E passed');

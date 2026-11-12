@@ -98,7 +98,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry, eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();
-    result = { workflow_id: workflow.id, completion_kind, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(ignoredStateKeys.length ? { ignored_state_keys: ignoredStateKeys } : {}), ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
+    result = { workflow_id: workflow.id, completion_kind, final_workflow, state: verdict.status === 'pass' ? 'completed' : 'in-progress', session_directory: sessionDirectory(workspace_root), base_ref, head, verdict, evidence_path, ...(ignoredStateKeys.length ? { ignored_state_keys: ignoredStateKeys } : {}), ...(worktreeRecord ? { worktree_retained: { state: 'preserved', workspace_root: worktreeRecord.workspace } } : {}) };
     await writer.append('workflow_completion', result, { critical: true });
     if (final_workflow && verdict.status === 'pass') await completeExecutionState({ root: workspace_root, session_directory: result.session_directory });
   } catch (error) { failure = error; }

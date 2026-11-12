@@ -169,7 +169,7 @@ test('the test-defect fast path keeps the orchestrator from editing files itself
 test('the implementation stage does not skip a fix requested through feedback because the plan is already done', async () => {
   const { readFile } = await import('node:fs/promises');
   const text = await readFile(new URL('../.codex/internal-skills/implement-wrapper/GUIDE.md', import.meta.url), 'utf8');
-  assert.match(text, /`feedback\.json`이 있으면 이 규칙을 적용하지 않는다/);
+  assert.match(text, /`feedback\.json`이 있으면 이 종료 규칙을 적용하지 않는다/);
   assert.match(text, /파일을 하나도 바꾸지 않은 채 `completed\/OK`로 끝내지 않는다/);
 });
 

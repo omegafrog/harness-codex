@@ -32,8 +32,9 @@ export function allowedToolsForRole(role, skill = null, requiredSkill = null) {
   return tools;
 }
 
-export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, requiredSkill, workerBase }) {
+export function buildCommand({ root, sandbox, binding, schema, resume, role, skill, stageId, requiredSkill, workerBase }) {
   const githubTracker = skill === 'implement-wrapper' && parseYaml(readFileSync(join(root, '.codex/harness.yaml'), 'utf8')).tracker?.mode === 'github';
+  const githubPr = skill === 'gh-open-pr' && role === 'pr_author' && ['plan-pr', 'integration-pr'].includes(stageId);
   const agentEventHook = { type: 'command', command: `node "${join(root, '.codex/scripts/harness-agent-event.mjs')}"` };
   const admissionScript = join(root, '.codex/scripts/harness-agent-admission.mjs');
   const agentAdmissionHook = { type: 'command', command: `node "${admissionScript}" || printf '%s\\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Harness admission hook failed"}}'` };
@@ -43,7 +44,7 @@ export function buildCommand({ root, sandbox, binding, schema, resume, role, ski
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       ...(sandbox === 'read-only' ? { filesystem: { denyWrite: [root] } } : {}),
-      ...(sandbox === 'danger-full-access' || githubTracker ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : skill === 'e2e-test' ? { network: { allowedDomains: ['localhost', '127.0.0.1'] } } : {}),
+      ...(sandbox === 'danger-full-access' || githubTracker || githubPr ? { network: { allowedDomains: ['api.github.com', 'github.com'] } } : skill === 'e2e-test' ? { network: { allowedDomains: ['localhost', '127.0.0.1'] } } : {}),
     },
     hooks: {
       PreToolUse: [{ matcher: 'Agent', hooks: [agentAdmissionHook] }],

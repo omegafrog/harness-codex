@@ -473,7 +473,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish' }), /user publication approval are required/);
     await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /Completed to-ticket/);
     const workflow = await loadNamedWorkflow('to-ticket', { root });
-    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish']);
+    assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish', 'plan-pr']);
     assert.deepEqual(workflow.stages[1].needs, ['to-ticket']);
     assert.ok(workflow.stages.every((stage) => !Object.hasOwn(stage, 'model_tier')));
     assert.equal((await resolveSkillBinding({ root, skill: 'to-ticket', workflow: 'to-ticket', stage: 'to-ticket' })).model_tier, 'high_performance');

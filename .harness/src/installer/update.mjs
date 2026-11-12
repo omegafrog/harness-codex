@@ -117,6 +117,7 @@ async function discoverSourceDescriptors(sourceRoot) {
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github", (entry) => entry.isFile() && entry.name === "pull_request_template.md")) {
     if (sourcePath === ".github/pull_request_template.md") descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   }
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/PULL_REQUEST_TEMPLATE", (entry) => entry.isFile() && entry.name.endsWith(".md"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   const skillsRoot = resolve(sourceRoot, ".codex/skills");
   let skills;
   try {

@@ -169,6 +169,7 @@ export async function resolveAgentSandbox({ root, input, workflow = null, stage 
     profile = selected.role;
   } else requireValue(!stage, 'workflow and stage must be supplied together');
   if (input.skill === 'tracker-publish') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'Tracker publishing is available only as the to-ticket workflow stage');
+  if (input.skill === 'gh-open-pr') requireValue(profile === 'pr_author' && (workflow === 'to-ticket' && stage === 'plan-pr' || workflow === 'implement-wrapper' && stage === 'integration-pr'), 'PR authoring is available only at its gated to-ticket or implement-wrapper workflow stage');
   const mode = profile ? /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8'))?.[1] : 'workspace-write';
   requireValue(['read-only', 'workspace-write', 'danger-full-access'].includes(mode), 'Agent profile requires a supported sandbox_mode');
   if (mode === 'danger-full-access') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'danger-full-access is reserved for the to-ticket tracker-publish stage');

@@ -94,6 +94,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     const args = [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];
     const intermediate = JSON.parse(execFileSync(process.execPath, args, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(intermediate.state, 'completed');
+    assert.equal(intermediate.final_workflow, false);
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
     const planBefore = await readFile(join(tree.workspace, ticket), 'utf8');
     await writeFile(join(tree.workspace, ticket), `${planBefore}\nChanged requirement\n`);
@@ -103,6 +104,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     const completed = JSON.parse(execFileSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace, encoding: 'utf8' }));
 
     assert.equal(completed.state, 'completed', JSON.stringify(completed.verdict));
+    assert.equal(completed.final_workflow, true);
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'completed');
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).current_stage, 'tracker-publish');
     const progress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));

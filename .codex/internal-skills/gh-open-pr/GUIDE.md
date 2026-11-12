@@ -30,6 +30,7 @@ or the implementation workflow has completed its verification gates.
 ## Core Rules
 
 - Use `gh pr create` for a new PR and `gh pr edit` for an existing PR.
+- Query PRs for the exact head branch before creation. If one exists, update it; never create a second PR for that head/plan set. The runner-supplied canonical plan-set ID and issue IDs are authoritative; never generate them.
 - Never merge or close a PR. The user owns the final merge or close decision.
 - Prefer `--draft` for a plan-set PR.
 - Use `--body-file` for multi-section bodies; do not place long Markdown in shell quoting.
@@ -62,6 +63,8 @@ For a plan-set PR, use this order:
 5. Record the planning validation performed.
 6. State that implementation and completion gates remain pending.
 7. State the captured session base branch.
+
+Use `.github/PULL_REQUEST_TEMPLATE/plan-set.md` as the managed plan PR structure. Populate parent and child Issue links, reviewed plan-set identifier, exact Product and Architecture Spec paths, all available non-empty ticket-scoped diagrams, plan-review approval, tracker publication completion, and tracker status evidence from runner context and canonical artifacts. Do not infer these from titles or branch names.
 
 ```md
 ## Plan Set
@@ -100,6 +103,8 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
 8. Put one closing line at the bottom for the parent Issue and every child Issue. These Issues close only after the implementation PR merges.
 9. Confirm that each closing phrase targets the intended Issue and that the single PR scope matches the complete plan set.
+
+Use `.github/pull_request_template.md` as the managed structure and populate it from the existing `implementation-pr` schema and renderer contract. Preserve its canonical sections and list `Implemented Plans` in canonical execution order. Carry implementation verification and independent review evidence in their named sections, and parent plus every child closing reference only for this implementation PR. Do not copy runtime checkpoints, events, or raw runner evidence into the PR.
 
 ## Body Example
 

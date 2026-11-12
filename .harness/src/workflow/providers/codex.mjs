@@ -32,7 +32,7 @@ export async function resumeWriteDirs(sessionId, env) {
   return [...dirs];
 }
 
-export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, binding, schemaPath, output, resume, role, skill, env = process.env }) {
+export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, binding, schemaPath, output, resume, role, skill, stageId, env = process.env }) {
   const config = ['implement-wrapper', 'implement'].includes(skill) ? parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')) : {};
   const githubTracker = skill === 'implement-wrapper' && config.tracker?.mode === 'github';
   if (sandbox === 'workspace-write' && config.beads?.enabled === true) {
@@ -41,7 +41,7 @@ export async function buildCommand({ root, sandbox, resumeWriteDirs: dirs, bindi
     dirs = [...new Set([...dirs, dirname(gitCommonDir), gitCommonDir])];
   }
   return ['exec', '--sandbox', sandbox, ...dirs.flatMap((path) => ['--add-dir', path]), '--cd', root, '--model', binding.model,
-    ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), ...((githubTracker || skill === 'e2e-test') && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : []), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
+    ...await stageConfigArgs(env, [join(root, '.codex/config.toml')], role, skill), ...((githubTracker || skill === 'e2e-test' || skill === 'gh-open-pr' && role === 'pr_author' && ['plan-pr', 'integration-pr'].includes(stageId)) && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : []), '-c', `model_reasoning_effort=${JSON.stringify(binding.reasoning_effort)}`, '-c', 'approval_policy="never"', '--enable', 'multi_agent', '--json',
     '--output-schema', schemaPath, '--output-last-message', output, ...(resume ? ['resume', resume, '-'] : ['-'])];
 }
 

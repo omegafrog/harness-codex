@@ -83,6 +83,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
     '.codex/internal-skills/e2e-test/references/failure-learning.md',
     '.codex/agents/tracker_publisher.toml',
+    '.codex/agents/pr_author.toml',
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/internal-skills/skill-execution/references/input.md',
@@ -444,6 +445,15 @@ async function inspectAuthoring(root, diagnostics) {
   if (headingPositions.some((position, index) => position < 0 || (index > 0 && position <= headingPositions[index - 1]))) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template canonical sections must remain in order inside the managed section", templatePath));
   if (!managed.includes("Closes #<PARENT-ISSUE-NUMBER>") || !managed.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
   if (!managed.includes("Single integration PR: required")) diagnostics.push(diagnostic("authoring_single_pr_invariant", "error", "Pull request template must declare one integration PR per plan set", templatePath));
+  const planTemplatePath = join(githubDirectory, "PULL_REQUEST_TEMPLATE/plan-set.md");
+  const planTemplate = await readFile(planTemplatePath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (planTemplate === null) diagnostics.push(diagnostic('plan_pr_template_missing', 'error', 'Managed plan-set pull request template is missing', planTemplatePath));
+  else {
+    for (const heading of ['Plan Set', 'Execution Order', 'Specifications', 'Planning Validation', 'Remaining Work']) {
+      if (!new RegExp(`^## ${heading}$`, 'm').test(planTemplate)) diagnostics.push(diagnostic('plan_pr_template_invalid', 'error', `Plan-set pull request template is missing section: ${heading}`, planTemplatePath));
+    }
+    if (/^\s*(?:Closes|Fixes|Resolves) #/mi.test(planTemplate)) diagnostics.push(diagnostic('plan_pr_template_invalid', 'error', 'Plan-set pull request template cannot close issues', planTemplatePath));
+  }
 }
 
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {

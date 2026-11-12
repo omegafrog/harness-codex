@@ -54,17 +54,27 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     const claude = await import(`file://${resolve(root, '.claude/harness/providers/claude-code.mjs')}`);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
     assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
+    const claudePrArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.deepEqual(JSON.parse(claudePrArgs[claudePrArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     const otherArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'to-ticket' });
     assert.ok(!otherArgs.includes('sandbox_workspace_write.network_access=true'));
     const e2eArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'e2e-test' });
     assert.ok(e2eArgs.includes('sandbox_workspace_write.network_access=true'));
+    const prArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.ok(prArgs.includes('sandbox_workspace_write.network_access=true'), 'only the dedicated PR author skill gets GitHub network access outside tracker publication');
+    const unboundPrArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'gh-open-pr' });
+    assert.ok(!unboundPrArgs.includes('sandbox_workspace_write.network_access=true'));
     const e2eClaudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'e2e-test' });
     assert.deepEqual(JSON.parse(e2eClaudeArgs[e2eClaudeArgs.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['localhost', '127.0.0.1']);
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
     const localArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', skill: 'implement-wrapper' });
     assert.ok(!localArgs.includes('sandbox_workspace_write.network_access=true'));
+    const localPrArgs = await provider.buildCommand({ root, sandbox: 'workspace-write', resumeWriteDirs: [], binding: { model: 'example', reasoning_effort: 'medium' }, schemaPath: '/tmp/schema', output: '/tmp/output', role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.ok(localPrArgs.includes('sandbox_workspace_write.network_access=true'), 'PR author can reach GitHub; stage-input rejects local-markdown PR dispatch');
     const localClaude = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, skill: 'implement-wrapper' });
     assert.equal(JSON.parse(localClaude[localClaude.indexOf('--settings') + 1]).sandbox.network, undefined);
+    const localClaudePr = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'example', reasoning_effort: 'medium' }, schema: {}, role: 'pr_author', skill: 'gh-open-pr', stageId: 'plan-pr' });
+    assert.deepEqual(JSON.parse(localClaudePr[localClaudePr.indexOf('--settings') + 1]).sandbox.network.allowedDomains, ['api.github.com', 'github.com']);
     if (harnessConfig === null) await unlink(resolve(root, '.codex/harness.yaml'));
     else await writeFile(resolve(root, '.codex/harness.yaml'), harnessConfig);
     for (const match of wrapper.matchAll(/\]\(([^)]+\.md)\)/g)) {
