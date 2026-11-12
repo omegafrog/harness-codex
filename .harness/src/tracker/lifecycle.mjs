@@ -240,7 +240,6 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     for (const ref of refs) {
       if (beadsDisabled) {
         const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
-        if (tracker.statusField && githubBoardStatus[tracker.status] && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
         tickets.push({ ref, status: tracker.status });
         continue;
       }
@@ -248,7 +247,6 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       assertTicketPlan(bead, expected_plan_id, ref);
       const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
       metadataValid(bead);
-      if (tracker.statusField && githubBoardStatus[tracker.status] && tracker.default_status !== githubBoardStatus[tracker.status]) throw new Error(`Project Status mismatch: ${ref}; workflow=${tracker.status}, project=${tracker.default_status}`);
       if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
       if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
       tickets.push({ ref, bead_id: bead.id, status: tracker.status });

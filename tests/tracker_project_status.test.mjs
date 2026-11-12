@@ -40,7 +40,7 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\nbeads:\n  enabled: false\n');
     await writeFile(join(root, 'consumer-change.txt'), 'preserve');
     const lifecycleUrl = pathToFileURL(join(root, '.harness/src/tracker/lifecycle.mjs')).href;
-    const { readTrackerStatus, syncTrackerStatus } = await import(lifecycleUrl);
+    const { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } = await import(lifecycleUrl);
     const started = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', status: 'in-progress', run });
     assert.equal(started.status, 'pass', JSON.stringify(started));
     assert.deepEqual(edits, [['workflow', 'In Progress'], ['status', 'In Progress']]);
@@ -51,6 +51,7 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     assert.equal(current.canonical_status, 'completed');
     assert.equal(current.project_status, 'In Progress');
     assert.equal(current.issue_state, 'OPEN');
+    assert.equal((await inspectTrackerSync({ workspace_root: root, ticket_refs: ['owner/repo#1'], run })).status, 'pass');
     const gitStatus = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
     assert.match(gitStatus, /consumer-change\.txt/);
     assert.doesNotMatch(gitStatus, /\.harness\/src\//);
