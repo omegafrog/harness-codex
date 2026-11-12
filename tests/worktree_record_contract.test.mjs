@@ -563,6 +563,13 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(resultDir, 'return.json'), JSON.stringify(answerEnvelope));
     const resultCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--return', `runtime/executions/${next.input.execution_id}/return.json`];
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
+    const rawResultPath = `runtime/executions/${next.input.execution_id}/codex-last-message.json`;
+    await writeFile(join(resultDir, 'codex-last-message.json'), JSON.stringify({ ...answerEnvelope, execution_id: 'mistyped', result: { ...questionResult, execution_id: 'mistyped' } }));
+    await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...questionWithoutReview, execution_id: 'mistyped' }));
+    const rawCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--source', rawResultPath];
+    const normalizedResult = JSON.parse(execFileSync(process.execPath, rawCommand, { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(normalizedResult.execution_id, next.input.execution_id);
+    assert.equal(normalizedResult.result.execution_id, next.input.execution_id);
     assert.equal(validated.result.summary, '파일 정본');
     assert.equal(validated.result.artifacts[0].path, `${canonicalSpecDir}/architecture-reviews/review.yaml`);
     // The runner fingerprints the returned file itself instead of trusting the model-typed hash.

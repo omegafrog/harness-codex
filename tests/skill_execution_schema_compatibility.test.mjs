@@ -34,6 +34,8 @@ test('generated output schemas expose questions without a singular result field'
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
+      assert.equal(Object.hasOwn(schema.properties, 'execution_id'), false);
+      assert.equal(Object.hasOwn(schema.properties.result.properties, 'execution_id'), false);
       assert.equal(Object.hasOwn(schema, 'anyOf'), false);
       assert.equal(Object.hasOwn(schema.properties.status, 'description'), false);
       assert.equal(Object.hasOwn(schema.properties.result.properties, 'question'), false);

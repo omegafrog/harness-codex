@@ -33,6 +33,11 @@ try {
   if (opts.return && opts.return !== returnPath) throw new Error('Return must belong to the requested execution');
   const envelope = await readSkillSessionJson({ root: opts.root, session_directory: session, path: sourcePath });
   if (!envelope.result || typeof envelope.result !== 'object' || Array.isArray(envelope.result)) throw new Error('Structured result is required');
+  // Only the raw output bound to this execution may receive runner-owned identity.
+  if (opts.source) {
+    envelope.execution_id = input.execution_id;
+    envelope.result.execution_id = input.execution_id;
+  }
   if (opts.source) envelope.result_ref = envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED' ? null : paths.refs.result;
   if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = paths.refs.result;
   if (envelope.result_ref) {
@@ -40,6 +45,7 @@ try {
     try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
+  if (opts.source) envelope.result.execution_id = input.execution_id;
   if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;
   if (input.skill === 'spec-me' && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
     const record = parseWorktreeRecord(await readFile(input.context.worktree_ref, 'utf8'));

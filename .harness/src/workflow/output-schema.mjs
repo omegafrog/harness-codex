@@ -9,7 +9,8 @@ const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
 export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {
   const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
   const schema = JSON.parse(await readFile(join(directory, 'return.schema.json'), 'utf8'));
-  schema.properties.execution_id = { const: input.execution_id };
+  delete schema.properties.execution_id;
+  schema.required = schema.required.filter((key) => key !== 'execution_id');
   schema.properties.skill = { const: input.skill };
   delete schema.properties.result_ref;
   schema.required = schema.required.filter((key) => key !== 'result_ref');
@@ -17,6 +18,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const resultSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   schema.properties.result = JSON.parse(await readFile(join(directory, resultSchema), 'utf8'));
   const result = schema.properties.result.properties;
+  delete result.execution_id;
+  schema.properties.result.required = schema.properties.result.required.filter((key) => key !== 'execution_id');
   delete result.commit_sha;
   if (IMPLEMENTATION_FLOWS.has(flow)) {
     schema.properties.result.required.push('unplanned_additions', 'commit_request');

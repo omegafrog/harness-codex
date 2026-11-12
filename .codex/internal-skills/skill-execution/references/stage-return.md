@@ -1,6 +1,6 @@
 # Stage 반환 계약
 
-각 stage 실행은 실행기가 제공한 출력 schema에 맞는 JSON 객체 하나를 마지막 응답으로 반환한다. 최상위 `schema_version`, `execution_id`, `skill`, `status`, `code`, `result`를 채운다. ID와 skill은 실행 입력을 그대로 사용하고, `result` 안의 같은 필드와 최상위 `status`, `code`를 일치시킨다. `result`에는 schema가 요구하는 `summary`, `artifacts`, `questions`와 해당 stage의 추가 필드도 넣는다. 해당 사항이 없으면 배열은 `[]`, schema에 `review_request`가 있으면 리뷰 요청이 없을 때 `null`이다. 실제 필수 필드와 stage별 추가 제약은 실행기가 제공한 schema와 해당 GUIDE를 따른다.
+각 stage 실행은 실행기가 제공한 출력 schema에 맞는 JSON 객체 하나를 마지막 응답으로 반환한다. 실행 ID는 작성하지 않는다. 실행기가 정본 입력의 ID를 최상위와 `result`에 채운다. `skill`, `status`, `code`는 `result`와 일치시킨다. `result`에는 schema가 요구하는 `summary`, `artifacts`, `questions`와 해당 stage의 추가 필드도 넣는다. 해당 사항이 없으면 배열은 `[]`, schema에 `review_request`가 있으면 리뷰 요청이 없을 때 `null`이다. 실제 필수 필드와 stage별 추가 제약은 실행기가 제공한 schema와 해당 GUIDE를 따른다.
 
 | status | 허용 code | 의미 |
 |---|---|---|
