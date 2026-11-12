@@ -112,7 +112,7 @@ Planned
 - parent와 child 본문을 서로 바꾸지 않는다.
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 split plan만 표현한다.
-- 상태는 `Planned`로 고정한다. tracker 상태가 아닌 임의 상태/label을 쓰지 않는다.
+- 상태는 `Planned`로 고정한다. 분류 label은 `activate`가 Issue 변환 뒤 적용하는 `harness:plan-set` 또는 `harness:plan`만 사용하며, tracker 상태와 label을 혼동하지 않는다.
 - Project draft 상태는 `Planned`로 설정한다. 저장소 Issue 상태는 이 단계에서 만들지 않는다.
 - 의존성은 canonical plan ID를 사용한다. Issue 번호·URL을 추측하지 않는다.
 - parent의 Product/Architecture Spec 경로는 실제 존재하는 non-empty 파일이어야 한다.

@@ -46,10 +46,13 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     const items = [];
     for (const [index, draft] of prepared.entries()) items.push({ id: `item-${index}`, status: 'Planned', content: { __typename: 'DraftIssue', title: draft.plan_id, body: (await readFile(join(root, '.io', draft.body_path), 'utf8')).replace(/\n+$/, '') } });
     const issues = new Map(); // number -> { id, subIssues: Set }
-    const beads = []; const calls = { convert: 0, subIssue: 0, beadsCreate: 0, dep: [] };
+    const beads = []; const calls = { convert: 0, subIssue: 0, beadsCreate: 0, dep: [], labels: new Set(), appliedLabels: [] };
     const fields = { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: name, name })) }] };
     const run = async (command, args) => {
       if (command === 'gh') {
+        if (args[0] === 'label' && args[1] === 'list') return JSON.stringify([...calls.labels].map((name) => ({ name })));
+        if (args[0] === 'label' && args[1] === 'create') { calls.labels.add(args[2]); return ''; }
+        if (args[0] === 'issue' && args[1] === 'edit') { calls.appliedLabels.push([args[2], args[args.indexOf('--add-label') + 1]]); return ''; }
         if (args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project' });
         if (args[0] === 'project' && args[1] === 'field-list') return JSON.stringify(fields);
         if (args[0] === 'repo') return JSON.stringify({ id: 'repo-id' });
@@ -95,6 +98,8 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     assert.equal(result.status, 'activated');
     assert.deepEqual(result.issues.map((issue) => issue.number), [100, 101, 102]);
     assert.equal(calls.convert, 3);
+    assert.deepEqual([...calls.labels].sort(), ['harness:intake', 'harness:plan', 'harness:plan-set']);
+    assert.deepEqual(calls.appliedLabels, [['100', 'harness:plan-set'], ['101', 'harness:plan'], ['102', 'harness:plan']]);
     assert.deepEqual([...issues.get(100).subIssues].sort(), ['issue-101', 'issue-102']);
     const byPlan = Object.fromEntries(beads.map((bead) => [bead.metadata.harness_plan_id, bead]));
     assert.equal(byPlan['example:parent'].parent, null);
@@ -108,6 +113,8 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     assert.equal(calls.convert, 3);
     assert.equal(calls.subIssue, 2);
     assert.equal(calls.beadsCreate, 3);
+    assert.equal(calls.labels.size, 3, 'reruns do not recreate taxonomy labels');
+    assert.equal(calls.appliedLabels.length, 6, 'reruns safely reapply labels');
     assert.equal(calls.dep.length, 1);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

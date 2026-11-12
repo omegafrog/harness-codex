@@ -25,7 +25,7 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const { resolveExecutionWorkspace } = await import(runtime('workflow/worktrees.mjs'));
   const { snapshotPlanSet } = await import(runtime('workflow/plan-review.mjs'));
   const { updateReviewAttempt } = await import(runtime('workflow/review-attempts.mjs'));
-  const { preparePublicationDrafts, updatePublication, verifyDraftPublication } = await import(runtime('tracker/publication.mjs'));
+  const { preparePublicationDrafts, publicationTitle, updatePublication, verifyDraftPublication } = await import(runtime('tracker/publication.mjs'));
   const { writeExecutionInput } = await import(runtime('workflow/execution-input.mjs'));
   const { readExecutionInput } = await import(runtime('workflow/skill-execution.mjs'));
   const { buildImplementPrompt } = await import(runtime('wrapper/scheduler.mjs'));
@@ -50,6 +50,11 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const legacy = `# Slice\n- workspace_root: \`${primary}\`\n- workspace_branch: \`main\`\nDo business work.\n`;
   await writeFile(join(plans, 'slice.md'), legacy);
   await writeFile(join(plans, 'plans.md'), '# Plans\n');
+  assert.equal(await publicationTitle(root, 'example', '@parent'), '[Harness Plan Set] Plans');
+  assert.equal(await publicationTitle(root, 'example', 'slice'), '[Harness Plan] Slice');
+  await writeFile(join(plans, 'slice.md'), 'No title heading\n');
+  await assert.rejects(publicationTitle(root, 'example', 'slice'), /title heading is missing/);
+  await writeFile(join(plans, 'slice.md'), legacy);
   for (const name of ['product', 'architecture']) await writeFile(join(specs, `${name}-spec.md`), `# ${name}\n`);
   for (const name of ['parent', 'slice']) await writeFile(join(drafts, `${name}.md`), `${name === 'parent' ? 'example' : 'slice'}\n\`${primary}\`, branch \`main\`\n<details><summary>실행 정보</summary>\n- workspace_root: \`${primary}\`\n- workspace_branch: \`main\`\n</details>\n`);
   await writeFile(ref, JSON.stringify({ ...record, common: join(directory, 'missing-common') }));
@@ -74,18 +79,32 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const nodes = [];
   let projectMutations = 0;
   const run = async (args) => {
-    if (args[0] === 'api' && args[3]?.startsWith('query=mutation')) projectMutations++;
+    const query = args.find((arg) => arg.startsWith('query='))?.slice(6) || '';
+    if (args[0] === 'api' && query.startsWith('mutation')) {
+      projectMutations++;
+      if (query.includes('addProjectV2DraftIssue')) {
+        const title = JSON.parse(query.match(/title:("(?:\\.|[^"\\])*")/)[1]);
+        const body = JSON.parse(query.match(/body:("(?:\\.|[^"\\])*")/)[1]);
+        const id = `item-${nodes.length}`;
+        nodes.push({ id, content: { __typename: 'DraftIssue', title, body }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'status' } }] } });
+        return JSON.stringify({ data: { addProjectV2DraftIssue: { projectItem: { id } } } });
+      }
+      return JSON.stringify({ data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: JSON.parse(query.match(/itemId:("(?:\\.|[^"\\])*")/)[1]) } } } });
+    }
     return JSON.stringify(args[0] === 'api'
     ? { data: { node: { items: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } }
     : args[1] === 'view' ? { id: 'project' }
     : { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: [{ id: 'planned', name: 'Planned' }, { id: 'in-progress', name: 'In Progress' }, { id: 'blocked', name: 'Blocked' }, { id: 'done', name: 'Done' }] }] });
   };
   await writeFile(join(root, '.io/runtime/to-ticket/publish-state.json'), '{"items":[{"plan_id":"@parent","item_id":"fabricated"}]}');
+  const expectedTitles = ['[Harness Plan Set] Plans', '[Harness Plan] Slice'];
   for (const [index, item] of prepared.entries()) {
     const begun = await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin', run });
     assert.equal(begun.status, 'pending');
     assert.equal(begun.body_path, item.body_path);
-    nodes.push({ id: `item-${index}`, content: { __typename: 'DraftIssue', title: item.plan_id, body: (await readFile(join(root, '.io', item.body_path), 'utf8')).replace(/\n+$/, '') }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'status' } }] } });
+    const published = await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'publish', run });
+    assert.equal(nodes[index].content.title, expectedTitles[index]);
+    assert.equal(published.status, 'published');
     await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'record', itemId: `item-${index}`, run });
     assert.equal((await updatePublication({ root, planSetId: 'example', planId: item.plan_id, action: 'begin', run })).status, 'already_created');
   }

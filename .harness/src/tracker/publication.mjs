@@ -119,7 +119,7 @@ export async function updatePublication({ root, planSetId, planId, action, itemI
     let id = item.item_id;
     if (!id) {
       const body = await readFile(sessionOutputPath(root, item.body_path, { create: false }), 'utf8');
-      const title = `${planSetId} / ${planId}`;
+      const title = await publicationTitle(root, planSetId, planId);
       const mutation = `mutation { addProjectV2DraftIssue(input:{projectId:${JSON.stringify(state.project_id)},title:${JSON.stringify(title)},body:${JSON.stringify(body)}}) { projectItem { id } } }`;
       const response = JSON.parse(await run(['api', 'graphql', '-f', `query=${mutation}`], root));
       id = response.data?.addProjectV2DraftIssue?.projectItem?.id;
@@ -132,6 +132,14 @@ export async function updatePublication({ root, planSetId, planId, action, itemI
     if (verified.item_id !== id || !verified.body_matches || verified.status !== 'Planned') throw new Error('Published Project item verification failed');
     return { ...verified, status: 'published' };
   } finally { await rm(lock, { recursive: true }); }
+}
+
+export async function publicationTitle(root, planSetId, planId) {
+  const path = planId === '@parent' ? `docs/plans/${planSetId}/plans.md` : `docs/plans/${planSetId}/${planId}.md`;
+  const source = await readFile(join(root, path), 'utf8');
+  const title = source.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]?.trim();
+  if (!title) throw new Error(`Publication title heading is missing: ${path}`);
+  return `${planId === '@parent' ? '[Harness Plan Set]' : '[Harness Plan]'} ${title}`;
 }
 
 export async function verifyDraftPublication({ root, planSetId, run = defaultRun }) {
@@ -209,6 +217,21 @@ export async function activatePublication({ root, planSetId, run = defaultComman
     }
   }
   const [owner, name] = repository.split('/');
+  const taxonomyLabels = [
+    ['harness:plan-set', 'Harness generated plan set'],
+    ['harness:plan', 'Harness generated plan'],
+    ['harness:intake', 'Human-created Harness intake'],
+  ];
+  const labels = JSON.parse(await gh(['label', 'list', '--repo', repository, '--limit', '1000', '--json', 'name']));
+  if (!Array.isArray(labels) || labels.some((label) => typeof label?.name !== 'string')) throw new Error('Repository labels response is incomplete');
+  const existingLabels = new Set(labels.map((label) => label.name));
+  for (const [label, description] of taxonomyLabels) {
+    if (!existingLabels.has(label)) await gh(['label', 'create', label, '--repo', repository, '--color', '5319e7', '--description', description]);
+  }
+  for (const item of state.items) {
+    const label = item.plan_id === '@parent' ? 'harness:plan-set' : 'harness:plan';
+    await gh(['issue', 'edit', String(item.content.number), '--repo', repository, '--add-label', label]);
+  }
   const parent = byPlan.get('@parent');
   const children = state.items.filter((item) => item.plan_id !== '@parent');
   const issueQuery = (number) => `query { repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}) { issue(number:${number}) { id subIssues(first:100) { nodes { id } } } } }`;
