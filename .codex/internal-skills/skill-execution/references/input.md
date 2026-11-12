@@ -1,5 +1,7 @@
 # 실행 입력 준비
 
+아래 compose 명령에는 현재 메인 대화의 실제 `--orchestrator-provider <provider>`와 `--orchestrator-session-id <session-id>`를 함께 전달한다. 생성 성공 후 사용자 CLI를 이동시키지 않고 같은 대화에서 첫 stage를 실행한다. 대상 worktree를 `workdir`로 지정하거나 main에서 지원 진입점에 `--worktree-ref`를 명시한다. `harness-context.mjs --worktree-ref <ref>`로 해당 작업만 조회할 수 있다. main의 사용자 입력이 여러 workflow 중 어디에 속하는지 모호하면 작업 branch/plan_set_id와 실제 답을 확인하고 한 입력을 여러 승인으로 복제하지 않는다.
+
 1. `node "<workspace_root>/.codex/scripts/harness-prepare-input.mjs" --worktree-ref <절대 worktree.json 경로> --stage-id <선택한 stage ID>`로 선택한 단계의 입력 파일을 준비한다.
    보통 `--stage-id`에는 선택한 skill 이름을 그대로 사용한다. 단, manifest가 `pr_author`로 선언한 `plan-pr`와 `integration-pr`는 stage ID를 전달한다. 준비기는 이 두 ID를 등록된 `gh-open-pr` skill로 해석하고 `context.stage_id`는 유지한다. Spec 내부 phase ID(예: `product`, `architecture`)는 독립 실행 stage가 아니므로 전달하지 않는다. stage 재개에 필요한 session ID는 실행 기록에서 읽는다.
 2. 최초 workflow 구성은 메인 workspace에서 `node "<source_workspace>/.codex/scripts/harness-compose-workspace.mjs" --root "<source_workspace>" --execution-id <execution_id> --plan-set-id <feature_slug> --request <사용자 요청 원문>`로 준비한다. `feature_slug`는 읽기 쉬운 이름이며 실제 고유 `plan_set_id`는 실행기가 UUID를 붙여 만든다. 이후 단계는 반환된 `worktree_ref`의 정본 ID를 읽는다. 요청 인자는 shell quoting을 적용한다. 이 명령은 worktree를 만들고 입력·검증된 결과·완료 상태를 그 worktree에 기록한다. 반환된 `execution_id`가 이번 입력과 일치하고 반환된 `worktree_ref`가 생성 전 Git worktree 목록에 없음을 확인한다. 지정된 workflow binding과 정본 기록도 대조한다. 이전 실행의 결과를 이번 생성 결과로 사용하지 않는다. setup 출력은 원본 workspace의 `.io`에 둘 수 있다.

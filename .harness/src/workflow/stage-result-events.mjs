@@ -80,6 +80,7 @@ function eventPayload(input, envelope) {
 function deliveryMessage(event, session) {
   return [
     `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}.`,
+    `Worktree reference: ${event.worktree_ref}. Run workflow commands in ${join(session, '..')}; keep the main conversation here.`,
     `Summary: ${event.summary}`,
     event.result_ref ? `Validated result: ${join(session, event.result_ref)}` : null,
     event.questions.length ? `Questions to present to the user verbatim (title and option labels unchanged): ${JSON.stringify(event.questions)}` : null,
@@ -109,7 +110,7 @@ async function wakeDelivery(input, event, session) {
     config = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout);
   } catch { return { status: 'unsupported', reason: 'wake_unavailable' }; }
   if (!config.enabled || config.transport?.type !== 'stdio' || !config.transport.command || !config.transport.cwd) return { status: 'unsupported', reason: 'wake_unavailable' };
-  const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} Verify the canonical worktree state and continue the workflow using the orchestrator skill; present any questions verbatim.`;
+  const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} Verify this worktree and execution, then continue from the same main conversation with commands scoped to that workspace; present any questions verbatim. Never route by the newest workflow.`;
   return new Promise((resolve) => {
     const child = spawn(config.transport.command, config.transport.args || [], { cwd: config.transport.cwd, env: { ...orchestratorEnvironment(session), ...config.transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buffer = '', submitted = false, finished = false;

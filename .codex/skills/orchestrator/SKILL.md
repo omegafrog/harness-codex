@@ -33,6 +33,12 @@ main에서 초기 기능 요청을 받으면 `worktree_candidates`의 검증된 
 
 `workflow-compose`가 `completed/OK`이면 worktree 준비가 끝난 상태다. `workflow_ref`가 null이고 미래 단계가 기록되지 않은 것은 정상이며, 정본 원 요청과 완료 결과를 기준으로 첫 skill을 선택한다.
 
+생성 결과를 검증한 뒤 같은 메인 대화에서 첫 stage까지 바로 dispatch한다. 사용자 CLI는 main에 유지하고 각 명령의 `workdir`를 대상 worktree로 지정한다. main에서 `harness-context`·`harness-prepare-input`·`harness-agent-run`을 호출할 때는 `--worktree-ref`로 대상을 지정할 수도 있다. 사용자에게 cd·새 메인 세션·orchestrator 재호출을 요구하지 않는다. 여러 `session_worktrees`는 독립 workflow이며 각자의 정본 상태·실행·결과를 사용한다. 새 전역 선택 파일이나 세션당 worktree 하나 제한은 만들지 않는다.
+
+hook의 `input_worktree_ref`는 이번 실제 사용자 입력이 기록된 대상이다. `input_routing: ambiguous`이면 승인이 어떤 workflow에도 기록되지 않았으므로 작업 branch 또는 plan_set_id와 실제 결정을 함께 답하도록 확인한다. 한 입력을 여러 workflow의 승인으로 복사하거나 최근 workflow로 추측하지 않는다. 결과 알림은 자신의 `worktree_ref`·execution ID를 기준으로 처리한다. compact 뒤에도 기존 worktree 정본을 다시 조회하며 대화 요약의 경로를 정본으로 쓰지 않는다.
+
+다른 메인 세션이 소유한 기존 worktree를 사용자가 명시적으로 이어가기로 선택했으면, 검증 후 `harness-workflow-session.mjs --workspace-root <대상> --repository-root <main> --key orchestrator --session-id <현재 실제 session ID> --execution-id orchestrator-prompt --provider <실제 provider>`로 결과 수신 대화만 연결한다. stage의 기존 provider/session과 실행 이력은 유지한다. 이 연결 전의 입력을 승인으로 소급 복제하지 않는다.
+
 사용자 요청의 범위, 승인된 산출물과 완료 상태를 함께 판단한다. 요청된 종료 단계가 이미 완료됐으면 불필요한 다음 skill을 실행하지 않는다. 구현 도중 Spec 또는 계획 변경이 필요하다는 결과가 나오면 해당 산출물의 소유 skill로 돌아간다.
 
 ## 실행과 단계 전환

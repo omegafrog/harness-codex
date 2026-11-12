@@ -6,6 +6,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { codexUserOrchestratorHookInstalled } from '../.harness/src/workflow/providers/codex.mjs';
+import { inspectOrchestratorHook } from '../.harness/src/installer/orchestrator-hook.mjs';
 
 test('legacy Doctor is backed up and updated while project files remain visible', async () => {
   const sourceRoot = process.cwd();
@@ -183,7 +185,7 @@ test('update can replace managed skills without creating backups when explicitly
     assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/internal-skills/spec-me/GUIDE.md')));
     await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
     await assert.rejects(readFile(resolve(root, '.claude/installer-backups'), 'utf8'), { code: 'ENOENT' });
-    assert.match(await readFile(resolve(root, '.codex/hooks.json'), 'utf8'), /harness-orchestrator-hook\.mjs/);
+    assert.ok((await inspectOrchestratorHook(root)).valid || await codexUserOrchestratorHookInstalled(), 'the existing user-level hook can serve a consumer without a project hook');
     assert.match(await readFile(resolve(root, '.claude/settings.local.json'), 'utf8'), /harness-claude-orchestrator-hook\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

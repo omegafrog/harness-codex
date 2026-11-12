@@ -43,9 +43,8 @@ function gitWorktrees(text) {
   return rows;
 }
 
-// Codex cannot move a session into another workspace, so after compose the user continues in a new
-// session opened inside the worktree. The session that last prompted the orchestrator there is the one
-// stage results are delivered to; record it instead of keeping the compose session.
+// A main conversation can coordinate several worktrees. Local prompts can still explicitly take over
+// a worktree; compose records the original main conversation before its first stage is dispatched.
 export async function bindOrchestratorSession({ root, provider, sessionId }) {
   if (!sessionId || !['codex', 'claude-code'].includes(provider)) return null;
   const path = join(root, '.io/worktree.json');
@@ -115,7 +114,7 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
         const present = await lstat(record.workspace).then((info) => info.isDirectory(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
         const matches = Boolean(actual && actual.branch === record.branch);
         const status = record.state === 'active' && present && matches ? 'verified_active' : record.state === 'removed' && !present && !actual ? 'closed' : 'recovery_required';
-        records.push({ record_path: join(session, 'worktree.json'), workspace_root: record.workspace, record_state: record.state, outcome: record.outcome || null, git_registered: Boolean(actual), path_exists: present, branch_matches: matches, current: resolve(record.workspace) === root, status });
+        records.push({ record_path: join(session, 'worktree.json'), workspace_root: record.workspace, worktree_id: record.worktree_id, plan_set_id: record.plan_set_id || null, branch: record.branch, orchestrator: record.agent_sessions?.orchestrator || null, record_state: record.state, outcome: record.outcome || null, git_registered: Boolean(actual), path_exists: present, branch_matches: matches, current: resolve(record.workspace) === root, status });
       }
     } catch (error) { issues.push({ path: join(session, 'worktree.json'), reason: error.message }); }
     try {
@@ -190,14 +189,23 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
     }
     worktreeCandidates.push({ workspace_root: record.workspace_root, worktree_ref: record.record_path, request, status: state.status, current_stage: state.current_stage });
   }
-  const selectedStates = activeStates.length ? activeStates : states.slice(-1);
+  for (const state of states) {
+    const record = records.find((item) => dirname(item.record_path) === state.session_directory);
+    state.worktree_ref = record?.record_path || null;
+    state.workspace_root = record?.workspace_root || null;
+  }
+  const ownedRecords = records.filter((record) => record.orchestrator?.session_id === sessionId && (record.orchestrator.provider || 'codex') === provider);
+  const ownedStates = states.filter((state) => ownedRecords.some((record) => record.record_path === state.worktree_ref));
+  const relevantStates = ownedStates.length ? ownedStates : states;
+  const relevantActive = relevantStates.filter((state) => ACTIVE.has(state.recorded_status || state.status));
+  const selectedStates = relevantActive.length ? relevantActive : relevantStates;
   const associatedRecord = selectedStates.length === 1 ? records.find((record) => dirname(record.record_path) === selectedStates[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || activeStates.length > 1 || currentRecord?.status === 'recovery_required' || (activeStates.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || (relevantActive.length > 1 && !ownedStates.length) || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (activeStates.length === 1) {
-    hint = 'resume_candidate'; reason = 'Current repository has a persisted active workflow';
+  } else if (relevantActive.length) {
+    hint = 'resume_candidate'; reason = relevantActive.length > 1 ? 'Main conversation coordinates independent worktree workflows; route each action by worktree and execution' : 'Current repository has a persisted active workflow';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = `Matching ${provider} session workflow is terminal`;
@@ -205,13 +213,38 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
     schema_version: 1, provider, session_id: sessionId || null, ...(provider === 'codex' ? { codex_session_id: sessionId || null } : {}), workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
+    session_worktrees: ownedRecords.filter((record) => record.status === 'verified_active'),
     worktree_candidates: worktreeCandidates.slice(0, 8), omitted_worktree_candidate_count: Math.max(0, worktreeCandidates.length - 8),
     issues: issues.slice(0, 8), omitted_issue_count: Math.max(0, issues.length - 8), decision_hint: hint, reason,
   };
 }
 
+// Resolve user evidence conservatively: never broadcast an approval to all workflows owned by a chat.
+export function orchestratorInputTarget(observed, event) {
+  if (observed.issues?.length) return null;
+  const owned = observed.session_worktrees || [];
+  const liveRefs = new Set((observed.matching_workflows || []).filter((workflow) => ACTIVE.has(workflow.recorded_status || workflow.status)).map((workflow) => workflow.worktree_ref));
+  const live = owned.filter((record) => liveRefs.has(record.record_path));
+  const local = owned.find((record) => record.workspace_root === observed.workspace_root);
+  const text = event.prompt ?? event.last_assistant_message ?? JSON.stringify({ input: event.tool_input, output: event.tool_response ?? event.tool_output });
+  const mentions = owned.filter((record) => [record.worktree_id, record.plan_set_id, record.branch, record.workspace_root, record.record_path].filter(Boolean).some((value) => {
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?<![A-Za-z0-9_.:/-])${escaped}(?![A-Za-z0-9_.:/-])`).test(text);
+  }));
+  if (mentions.length === 1) return mentions[0];
+  if (mentions.length > 1) return null;
+  if (local) return local;
+  if (live.length === 1) return live[0];
+  if (live.length > 1) return null;
+  return owned.length === 1 ? owned[0] : null;
+}
+
 // Progress is a projection of orchestrator decisions, never a workflow transition.
 export async function refreshWorkflowProgress(observed, event) {
+  if (observed.matching_workflow_count > 1 && !observed.issues.length) {
+    const workflows = await Promise.all(observed.matching_workflows.map((workflow) => refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [workflow], issues: [] }, event)));
+    return { workflows };
+  }
   if (observed.matching_workflow_count !== 1 || observed.issues.length) return null;
   const match = observed.matching_workflows[0];
   const session = match.session_directory;

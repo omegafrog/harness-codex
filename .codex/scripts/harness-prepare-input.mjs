@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 const base = new URL('../../.harness/src/workflow/', import.meta.url);
 const { prepareStageInput, resolveStageSkill } = await import(new URL('stage-input.mjs', base));
@@ -16,9 +14,10 @@ try {
     if (!process.argv[i]?.startsWith('--') || !allowed.has(key) || !process.argv[i + 1] || Object.hasOwn(options, key)) throw new Error(`Invalid argument: ${process.argv[i]}`);
     options[key] = process.argv[i + 1];
   }
-  options['worktree-ref'] = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: options['worktree-ref'] }).worktree_ref ?? options['worktree-ref'];
+  const commandContext = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: options['worktree-ref'] });
+  options['worktree-ref'] = commandContext.worktree_ref ?? options['worktree-ref'];
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
-  const repository = await realpath((await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })).stdout.trim());
+  const repository = await realpath(commandContext.root);
   const stage = await resolveStageSkill({ root: repository, stageId: options['stage-id'] });
   const stageSkill = await readSkillDeclaration({ root: repository, skill: stage.skill }).catch((error) => { throw new Error(`${error.message}; --stage-id must select a registered sub-agent skill`); });
   if (stageSkill.main_session) throw new Error(`${stage.skill} runs in the main session; --stage-id must select a sub-agent skill`);

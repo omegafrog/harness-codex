@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkflowWorktree, recordWorktreeOutcome, parseWorktreeRecord } from './worktrees.mjs';
+import { createWorkflowWorktree, recordWorktreeOutcome, parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
 import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
@@ -25,6 +25,7 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     const input = await readExecutionInput({ root: record.workspace, execution_id });
     await validateSkillInput({ root: record.workspace, input });
     await prepareComposerWorkspace({ root: record.workspace, session: record.session_directory, input, inputPath: input_path });
+    if (orchestrator_session_id) await recordWorkflowSession({ workspace_root: record.workspace, repository_root: root, key: 'orchestrator', session_id: orchestrator_session_id, execution_id, provider: orchestrator_provider });
     const result_ref = `runtime/executions/${execution_id}/result.json`;
     const result = { schema_version: 1, execution_id, skill: 'workflow-compose', status: 'completed', code: 'OK', summary: '작업 workspace 준비 완료', artifacts: [], worktree_ref: storedInput.context.worktree_ref, questions: [] };
     const envelope = { schema_version: 1, execution_id, skill: 'workflow-compose', status: 'completed', code: 'OK', result_ref, result };

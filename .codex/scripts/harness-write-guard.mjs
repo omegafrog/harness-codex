@@ -219,14 +219,24 @@ function canonical(path) {
   }
 }
 
-function activeWorkflow(cwd) {
+function activeWorkflows(cwd, sessionId) {
   let root;
-  try { root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
-  try {
-    if (JSON.parse(readFileSync(join(root, '.io/worktree.json'), 'utf8'))?.state !== 'active') return null;
-    const real = realpathSync(root);
-    return { root: real, session: join(real, '.io') };
-  } catch { return null; }
+  try { root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return []; }
+  let roots = [root];
+  try { roots = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9)); } catch { /* keep local guard */ }
+  const workflows = [];
+  let ownsWorkflow = false;
+  for (const workspace of roots) {
+    try {
+      const record = JSON.parse(readFileSync(join(workspace, '.io/worktree.json'), 'utf8'));
+      if (record.state !== 'active') continue;
+      const real = realpathSync(workspace);
+      workflows.push({ root: real, session: join(real, '.io') });
+      if (sessionId && record.agent_sessions?.orchestrator?.session_id === sessionId) ownsWorkflow = true;
+    } catch { /* no managed workflow in this checkout */ }
+  }
+  if (ownsWorkflow && !workflows.some((item) => item.root === realpathSync(root))) workflows.push({ root: realpathSync(root), session: join(realpathSync(root), '.io') });
+  return workflows;
 }
 
 const inside = (directory, path) => { const rel = relative(directory, path); return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)); };
@@ -240,24 +250,27 @@ export function writeGuardDecision(event, env = process.env) {
   if (event?.hook_event_name !== 'PreToolUse' || env.HARNESS_SKILL_EXECUTION_ID || event.agent_id) return null;
   const tool = event.tool_name, input = event.tool_input && typeof event.tool_input === 'object' ? event.tool_input : {};
   const isFileTool = FILE_TOOLS.includes(tool);
-  if (!isFileTool && tool !== 'Bash') return null;
+  if (!isFileTool && !['Bash', 'exec_command', 'shell_command'].includes(tool)) return null;
   const cwd = typeof event.cwd === 'string' && isAbsolute(event.cwd) ? event.cwd : process.cwd();
-  const workflow = activeWorkflow(cwd);
-  if (!workflow) return null;
+  const workflows = activeWorkflows(cwd, event.session_id);
+  if (!workflows.length) return null;
+  const executionCwd = typeof (input.workdir ?? input.cwd) === 'string' ? resolve(cwd, input.workdir ?? input.cwd) : cwd;
   const writes = [];
   if (tool === 'apply_patch') {
     for (const raw of patchFiles(input.command)) writes.push({ raw, cwd, how: 'apply_patch' });
   } else if (isFileTool) {
     for (const raw of [input.file_path, input.notebook_path]) if (typeof raw === 'string' && raw) writes.push({ raw, cwd, how: tool });
-  } else if (typeof input.command === 'string') {
-    writes.push(...shellWrites(input.command, { cwd }));
+  } else if (typeof (input.command ?? input.cmd) === 'string') {
+    const command = input.command ?? input.cmd;
+    writes.push(...shellWrites(command, { cwd: executionCwd }));
     // `apply_patch <<'EOF' ... EOF` run through the shell tool names its files the same way.
-    for (const raw of patchFiles(input.command)) writes.push({ raw, cwd, how: 'apply_patch' });
+    for (const raw of patchFiles(command)) writes.push({ raw, cwd: executionCwd, how: 'apply_patch' });
   }
   for (const { raw, cwd: base, how } of writes) {
     if (!base && !isAbsolute(raw)) continue;
     const path = canonical(resolveHome(raw, base || cwd));
-    if (!inside(workflow.root, path) || inside(workflow.session, path)) continue;
+    const workflow = workflows.find((item) => inside(item.root, path));
+    if (!workflow || inside(workflow.session, path)) continue;
     if (ORCHESTRATOR_DOCUMENTS.some((document) => path === join(workflow.root, document))) continue;
     return message(path, workflow.root, how);
   }

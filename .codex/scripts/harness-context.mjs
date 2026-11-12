@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 // One read of the current workflow: worktree, plan set, stage states, plans with their Issues, and the latest
 // result of each stage. Use it instead of reading worktree.json, state.json or result files one by one.
-//   node .codex/scripts/harness-context.mjs [--root DIR]
+//   node .codex/scripts/harness-context.mjs [--root DIR | --worktree-ref FILE]
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 try {
   const args = process.argv.slice(2);
-  if (args.length && (args[0] !== '--root' || !args[1] || args.length > 2)) throw new Error('Usage: harness-context.mjs [--root DIR]');
-  const ctx = resolveCommandContext({ root: args[1] });
+  if (args.length && (!['--root', '--worktree-ref'].includes(args[0]) || !args[1] || args.length > 2)) throw new Error('Usage: harness-context.mjs [--root DIR | --worktree-ref FILE]');
+  const ctx = resolveCommandContext(args[0] === '--worktree-ref' ? { worktreeRef: args[1] } : { root: args[1] });
+  // A compacted main conversation can recover its worktree inventory without remembering a path.
+  let worktrees = {};
+  if (!ctx.worktree_ref) {
+    const { inspectStartupState } = await import(new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url));
+    const observed = await inspectStartupState({ workspaceRoot: ctx.root, sessionId: process.env.CODEX_THREAD_ID || null, provider: process.env.HARNESS_PROVIDER_ID || 'codex' });
+    worktrees = { session_worktrees: observed.session_worktrees, workflows: observed.matching_workflows, worktree_candidates: observed.worktree_candidates, issues: observed.issues, decision_hint: observed.decision_hint, omitted_workflow_count: observed.omitted_workflow_count, omitted_worktree_candidate_count: observed.omitted_worktree_candidate_count };
+  }
   const state = orchestratorState(ctx.root);
   const stages = Object.fromEntries(Object.entries(state?.stages || {}).map(([id, stage]) => {
     const result = stage.result_ref ? read(join(ctx.root, '.io', stage.result_ref)) : null;
@@ -31,5 +38,6 @@ try {
     // Take a plan's ticket from here: Issue numbers do not follow the plan order.
     plan_tickets: planTickets,
     plans, implementation_reviews: reviews,
+    ...worktrees,
   }, null, 2)}\n`);
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

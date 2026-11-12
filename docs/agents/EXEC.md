@@ -45,6 +45,14 @@ E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 �
 
 ## Harness 검증 경로 실행
 
+main 대화에서 worktree별 독립 실행의 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/main_worktree_workflows.test.mjs tests/cli_context.test.mjs tests/codex_orchestrator_user_hook.test.mjs tests/stage_result_events.test.mjs tests/orchestrator_write_guard.test.mjs`로 실행한다. 임시 installed-consumer에서 실제 Git worktree A/B를 만들고 main cwd에서 입력 준비·background runner 실행·역순 결과·단일 승인 기록·업데이트·Doctor·Git 가시성을 검사한다. 모델과 Wake는 이 검사에서 결정론적 test double을 사용하며 실제 Codex E2E로 보고하지 않는다.
+
+운영 시 compose에 실제 `--orchestrator-provider`·`--orchestrator-session-id`를 전달하고 생성 검증 후 같은 대화에서 첫 stage를 시작한다. 사용자 CLI는 main에 둔다. 각 도구의 `workdir`를 대상 worktree로 지정하거나 main에서 `harness-context.mjs --worktree-ref <ref>`, `harness-prepare-input.mjs --worktree-ref <ref> --stage-id <stage>`, `harness-agent-run.mjs --worktree-ref <ref> --execution-id <id> --background true`를 사용한다. 다른 worktree 내부에서 잘못된 `--worktree-ref`로 우회하거나 다른 Git common directory의 대상을 실행하는 것은 거부한다. 기존 stage 대화와 결과 수신 메인 대화는 구분한다.
+
+같은 메인 세션에 여러 workflow가 있으면 branch·plan_set_id·worktree ID/경로 중 하나로 작업을 지정한 실제 사용자 입력만 해당 로그에 기록한다. 식별자가 없는 모호한 승인에는 `input_routing: ambiguous`를 반환하며 원래 main이나 모든 worktree에 승인을 복사하지 않는다. 기록되지 않은 답은 작업 식별자와 실제 결정을 함께 다시 받아야 한다. worktree가 하나면 일반 후속 입력을 사용할 수 있다. Codex 사용자 수준 write-guard hook 명령이 갱신되었으므로 실제 consumer 업데이트 후 Doctor에서 신뢰 상태를 확인하며 필요한 경우 `/hooks`에서 변경된 hook을 검토·신뢰한다.
+
+아래 기존 계산기 E2E의 두 CLI 호출은 호환 경로로 보존한다. 새 기본 경로를 실제 검증할 때는 같은 첫 요청을 main에서 실행해 생성 후 바로 첫 stage에 진입하는지 관찰하고, 실제 사용자 답변만 같은 메인 thread로 resume한다. 사용자에게 worktree 이동이나 두 번째 orchestrator 호출을 요구하지 않는다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 소스 push 후 실제 consumer 갱신 순서를 유지한다.
+
 - 용어/구형 경로의 작은 Luna 검증 결과와 한계는 `docs/verification/luna-workflow-check.md`에 기록했다. 임시 프로젝트는 세션 디렉터리의 tmp/에서 실행하며 별도 서버/인프라가 필요하지 않다. 프로젝트를 재사용할 때 실제 존재와 Git root를 확인하고 `npm test`를 실행한다. 이름만으로 이전 결과나 현재 상태를 신뢰하지 않는다.
 
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.

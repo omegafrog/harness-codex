@@ -100,13 +100,13 @@ export function codexFreshAgentHook() {
   };
 }
 // Denies the orchestrator main session's own writes to product code, tests and contracts (see harness-write-guard.mjs).
-// Stage runners set HARNESS_SKILL_EXECUTION_ID and workspaces without an active workflow have no `.io/worktree.json`, so
-// the shell filter stops there without starting node; Codex matchers are not relied on, the script checks the tool.
+// Main may coordinate sibling worktrees without its own record; the script checks registered write targets.
+// Stage runners set HARNESS_SKILL_EXECUTION_ID. Codex matchers are not relied on, the script checks the tool.
 const WRITE_GUARD_STATUS = 'Guarding Harness orchestrator writes';
 export function codexWriteGuardHook() {
   return {
     type: 'command',
-    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && exit 0; r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f "$r/.io/worktree.json" ] || exit 0; f="$r/.codex/scripts/harness-write-guard.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *apply_patch*|*Bash*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
+    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && exit 0; r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; f="$r/.codex/scripts/harness-write-guard.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *apply_patch*|*Bash*|*exec_command*|*shell_command*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
     statusMessage: WRITE_GUARD_STATUS,
     timeout: 10,
   };
