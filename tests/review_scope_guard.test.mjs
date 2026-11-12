@@ -257,14 +257,34 @@ test('the runner commits only requested paths in a linked worktree', async () =>
   await assert.rejects(commitStageRequest({ root, rawPath }), /outside the commit request/);
 });
 
-test('a quote absent from the approved Spec is treated as an invented requirement', async () => {
+test('a quote absent from the approved Spec is preserved for basis recheck without a user question or repair reservation', async () => {
   const root = await consumer();
   const { reviews, reviewInput } = evidence({ findings: [{ ...defect, basis: { source: 'product_spec', quote: '입력을 NFC 정규화한 뒤 코드 포인트를 센다' } }] });
   const input = { ...reviewInput, repository: root };
   const local = reviews.map((review) => ({ ...review, review_input: input }));
   const result = await reserveImplementationRepair({ root, planId: 'community', reviewInput: input, reviews: local });
-  assert.equal(result.reason, 'unbacked_requirement');
-  assert.equal(result.next_action, 'user-decision');
+  assert.equal(result.reason, 'basis_unverified');
+  assert.equal(result.next_action, 'review-coordination');
+  assert.equal(result.classification.basis_unverified[0].id, defect.id);
+  assert.equal(result.classification.basis_unverified[0].basis.quote, '입력을 NFC 정규화한 뒤 코드 포인트를 센다');
+  assert.equal(Object.hasOwn(result, 'user_questions'), false);
+  const history = await (await import('../.harness/src/workflow/review-attempts.mjs')).inspectReviewHistory({ root, scope: 'implementation-community' });
+  assert.equal(history.budget.used, 0);
+});
+
+test('validated basis rechecks dismiss without budget, resume implementation repair, or route plan/spec work', () => {
+  const { reviews } = evidence({ findings: [defect] });
+  const unverifiedBasis = new Set(['standards:0']);
+  const dismiss = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'dismiss' }] });
+  assert.equal(dismiss.action, 'complete');
+  assert.equal(dismiss.classification.dismissed[0].basis_recheck.route, 'dismiss');
+  const implementation = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'implementation' }] });
+  assert.equal(implementation.action, 'repair');
+  assert.equal(implementation.round, 1);
+  const spec = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'spec-me' }] });
+  assert.equal(spec.action, 'block');
+  assert.equal(spec.next_action, 'spec-me');
+  assert.equal(spec.reason, 'basis_recheck_routed');
 });
 
 test('a quote that omits the Markdown emphasis of the approved Spec still counts as verified', async () => {

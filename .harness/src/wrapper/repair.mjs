@@ -237,7 +237,7 @@ export function validReviewProvenance(reviews, implementationCommitSha = null, e
     && (!expectedReviewInput || validReviewInput(review.review_input, implementationCommitSha, expectedReviewInput)));
 }
 
-export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
+export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set(), basisRechecks = [] } = {}) {
   if (!Array.isArray(reviews)) throw new TypeError("reviews must be an array");
   const repairable = [];
   const blockers = [];
@@ -245,6 +245,8 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
   const advisory = [];
   const dismissed = [];
   const accepted = [];
+  const basisUnverified = [];
+  const basisRoutes = [];
   const routes = { repairable, blockers, dismissed, accepted };
   const groups = scopeGroupIndex(scopeGroups);
   const decisions = new Map(scopeDecisions.map((decision) => [decision.finding_id, decision]));
@@ -277,6 +279,13 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
           if (decided?.choice === "reject") dismissed.push({ ...finding, scope_decision: decided });
           else repairable.push(finding);
         }
+        else if (unverifiedBasis.has(`${review?.role}:${index}`)) {
+          const recheck = basisRechecks.find((item) => item.reviewer_role === review?.role && item.finding_index === index);
+          if (recheck?.route === 'implementation') repairable.push({ ...finding, basis_recheck: recheck });
+          else if (recheck?.route === 'dismiss') dismissed.push({ ...finding, basis_recheck: recheck });
+          else if (recheck) basisRoutes.push({ ...finding, basis_recheck: recheck });
+          else basisUnverified.push({ ...finding, verification: "basis_unverified" });
+        }
         else routeScopeFinding({ ...finding, kind: "unbacked_requirement", original_kind: finding.kind }, decisions, routes, groups);
       }
       else if (finding.kind === "in_scope_spec_mismatch" && finding.in_scope !== true) blockers.push({ ...finding, kind: "in_scope_required" });
@@ -284,7 +293,7 @@ export function classifyReviewFindings(reviews = [], { scopeDecisions = [], scop
       else blockers.push({ ...finding, kind: "unclassified_review_finding", original_kind: finding.kind });
     });
   }
-  return { repairable, blockers, deferred, advisory, dismissed, accepted, has_findings: repairable.length > 0 || blockers.length > 0 };
+  return { repairable, blockers, basis_unverified: basisUnverified, basis_routes: basisRoutes, deferred, advisory, dismissed, accepted, has_findings: repairable.length > 0 || blockers.length > 0 || basisUnverified.length > 0 || basisRoutes.length > 0 };
 }
 
 export async function implementationReviewRoot(root) {
@@ -383,7 +392,7 @@ export function repeatedFindings(previous = [], current = []) {
   return current.filter((finding) => finding.kind !== 'advisory' && before.has(findingSignature(finding)));
 }
 
-export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null }) {
+export async function reserveImplementationRepair({ root, planId, reviewInput, reviews, trackerPort = null, scopeDecisions = [], scopeGroups = [], specHandoff = null, basisRechecks = [] }) {
   const scope = { root, scope: `implementation-${planId}` };
   // These findings already went to the Spec owner. Sending them again would loop; the revised Spec and plan are
   // judged by fresh reviewers of the current commit instead.
@@ -395,7 +404,7 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   if (!validReviewInput(reviewInput, reviewInput?.implementation_commit_sha) || !validReviewProvenance(reviews, reviewInput.implementation_commit_sha, reviewInput)) throw new TypeError('Repair requires both fresh reviewers for the fixed-point input');
   const decisions = await verifiedScopeDecisions(root, scopeDecisions);
   const unverifiedBasis = await unverifiedFindingBasis(root, reviewInput, reviews);
-  const decision = planRepairRound({ reviews, scopeDecisions: decisions, scopeGroups: validScopeGroups(scopeGroups), unverifiedBasis });
+  const decision = planRepairRound({ reviews, scopeDecisions: decisions, scopeGroups: validScopeGroups(scopeGroups), unverifiedBasis, basisRechecks });
   if (decision.action !== 'repair') return decision;
   await assertPlanningReviewSnapshot({ root, planId, reviewInput, trackerPort });
   const inputs = { ...reviewInput, reviewer_ids: reviews.map((item) => item.context_id) };
@@ -429,11 +438,20 @@ export async function reserveImplementationRepair({ root, planId, reviewInput, r
   return updateReviewAttempt({ ...scope, action: 'repair', inputs, findings: decision.classification.repairable });
 }
 
-export function planRepairRound({ reviews = [], round = 0, maxRounds = Infinity, scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set() } = {}) {
+export function planRepairRound({ reviews = [], round = 0, maxRounds = Infinity, scopeDecisions = [], scopeGroups = [], unverifiedBasis = new Set(), basisRechecks = [] } = {}) {
   if (!Number.isInteger(round) || round < 0) throw new TypeError("round must be a non-negative integer");
   if (maxRounds !== Infinity && (!Number.isInteger(maxRounds) || maxRounds < 0)) throw new TypeError("maxRounds must be a non-negative integer or omitted");
-  const classification = classifyReviewFindings(reviews, { scopeDecisions, scopeGroups, unverifiedBasis });
+  const classification = classifyReviewFindings(reviews, { scopeDecisions, scopeGroups, unverifiedBasis, basisRechecks });
   if (!classification.has_findings) return { action: "complete", state: "passed", round, classification };
+  if (classification.basis_routes.length) {
+    const { basis_recheck: recheck } = classification.basis_routes[0];
+    return { action: 'block', state: 'blocked', reason: 'basis_recheck_routed', round, classification, next_action: recheck.route, basis_recheck: recheck };
+  }
+  if (classification.basis_unverified.length) return {
+    action: "block", state: "blocked", reason: "basis_unverified", round, classification,
+    next_action: "review-coordination",
+    resume_condition: "Recheck each finding against its review-time and current Spec, implementation, and plan; then route using the evidence.",
+  };
   if (classification.blockers.length > 0) {
     const pendingScope = classification.blockers.filter((finding) => (SCOPE_DECISION_KINDS.has(finding.kind) || BLOCKER_KINDS.has(finding.kind)) && !finding.scope_decision);
     return {

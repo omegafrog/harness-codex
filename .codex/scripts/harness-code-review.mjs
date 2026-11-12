@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
 const { reserveImplementationRepair } = await import(installed.href);
+const { prepareBasisRecheck, recordBasisRecheck, verifiedBasisRecheckResults } = await import(new URL('../../.harness/src/wrapper/basis-recheck.mjs', import.meta.url).href);
 const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, recordPassedReview, reviewedCommit, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
 const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
@@ -13,7 +14,7 @@ try {
     // Accept both `--flag value` and `--flag=value`.
     const [flag, inline] = args[i].includes('=') && args[i].startsWith('--') ? [args[i].slice(0, args[i].indexOf('=')), args[i].slice(args[i].indexOf('=') + 1)] : [args[i], undefined];
     const value = inline !== undefined ? inline : args[++i];
-    if (!['--root', '--plan', '--reviews', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
+    if (!['--root', '--plan', '--reviews', '--fixed-point', '--commit', '--implementation-result', '--standards-agent', '--spec-agent', '--reuse-axis', '--finding', '--choice', '--answer', '--artifact', '--result'].includes(flag) || !value) throw new Error(`Invalid code-review argument ${flag}${value === undefined ? ' (missing value)' : ''}`);
     options[flag.slice(2)] = value;
   }
   options.root = resolveCommandContext({ root: options.root }).root;
@@ -43,7 +44,20 @@ try {
     result = { status: 'pass', ...await recordScopeDecision({ root: options.root, planId: options.plan, findingId: options.finding, choice: options.choice, answer: options.answer, labels: SCOPE_OPTION_LABELS }) };
   } else if (action === 'repair') {
     const evidence = JSON.parse(await readFile(sessionOutputPath(options.root, options.reviews), 'utf8'));
-    result = await reserveImplementationRepair({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], specHandoff: evidence.spec_handoff ?? null });
+    const repairArgs = { root: options.root, planId: options.plan, reviewInput: evidence.review_input, reviews: evidence.reviews, scopeDecisions: evidence.scope_decisions ?? [], scopeGroups: evidence.scope_groups ?? [], specHandoff: evidence.spec_handoff ?? null };
+    result = await reserveImplementationRepair(repairArgs);
+    if (result.reason === 'basis_unverified' && evidence.basis_recheck_results?.length) {
+      const decisions = await verifiedBasisRecheckResults({ root: options.root, planId: options.plan, findings: result.classification.basis_unverified, results: evidence.basis_recheck_results });
+      result = await reserveImplementationRepair({ ...repairArgs, basisRechecks: decisions });
+    }
+    if (result.reason === 'basis_unverified') {
+      result.basis_rechecks = [];
+      for (const finding of result.classification.basis_unverified) {
+        try { result.basis_rechecks.push({ finding_id: finding.id, artifact_ref: await prepareBasisRecheck({ root: options.root, planId: options.plan, reviewInput: evidence.review_input, finding }) }); }
+        catch (error) { result.basis_rechecks.push({ finding_id: finding.id, status: 'blocked', reason: 'basis_snapshot_unavailable', message: error.message }); }
+      }
+      if (result.basis_rechecks.some((item) => item.status === 'blocked')) result.next_action = 'blocked';
+    }
     // Remember the hand-off so the next repair of these same reviews asks for a fresh review instead of spec-me again.
     if (result.next_action === 'spec-me' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) {
       evidence.spec_handoff = { at: new Date().toISOString(), reviewer_ids: evidence.reviews.map((item) => item.context_id) };
@@ -62,8 +76,11 @@ try {
     result = { status: 'pass', plan_set_id: planSetId, spec_path: specPath, items: extractSpecContractItems(await readFile(resolve(options.root, specPath), 'utf8')) };
   } else if (action === 'reviewed') {
     result = await reviewedCommit({ root: options.root, planId: options.plan, commit: options.commit });
+  } else if (action === 'record-basis-result') {
+    if (!options.artifact || !options.result) throw new Error('record-basis-result needs --artifact and --result');
+    result = await recordBasisRecheck({ root: options.root, planId: options.plan, artifactRef: options.artifact, result: JSON.parse(await readFile(sessionOutputPath(options.root, options.result), 'utf8')) });
   }
-  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|reviewed|spec-items [--root DIR] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
+  else throw new Error('Usage: harness-code-review.mjs assemble|record-decision|repair|record-basis-result|reviewed|spec-items [--root DIR] [--plan ID] [--reviews SESSION-RELATIVE-JSON]');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status !== 'pass' && result.state !== 'passed') process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

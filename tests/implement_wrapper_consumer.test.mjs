@@ -72,6 +72,12 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     }
     assert.match(await read('.codex/internal-skills/implement-wrapper/references/tracker/local-markdown.md'), /GitHub Issue\/Project 조회나 갱신을 하지 않는다/);
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /missing or stale Product\/Architecture Specs block completion/);
+    assert.match(await read('.codex/internal-skills/review-coordination/GUIDE.md'), /record-basis-result/);
+    assert.match(await read('.codex/internal-skills/code-review/references/repair.md'), /basis_unverified/);
+    const installedBasis = await import(`file://${resolve(root, '.harness/src/wrapper/basis-recheck.mjs')}?scope=${Date.now()}`);
+    assert.equal(typeof installedBasis.prepareBasisRecheck, 'function');
+    assert.equal(typeof installedBasis.recordBasisRecheck, 'function');
+    assert.match(await read('.codex/scripts/harness-code-review.mjs'), /record-basis-result/);
     assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
     for (const path of ['.codex/agents/e2e_test_runner.toml', '.claude/agents/e2e_test_runner.md']) {
       const runner = await read(path);
@@ -147,6 +153,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     '.agents/skills/orchestrator/references/implementation.md',
     '.claude/skills/orchestrator/references/implementation.md',
     '.codex/agents/e2e_test_runner.toml',
+    '.codex/internal-skills/review-coordination/GUIDE.md',
   ];
   const lock = JSON.parse(await read('.codex/harness-lock.json'));
   for (const path of stalePaths) {

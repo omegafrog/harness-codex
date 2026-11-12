@@ -14,6 +14,8 @@ The main orchestrator spawns the two reviewers as fresh native subagents (`stand
 5. Wait for both to finish (a running reviewer is pending, not failed). Preserve their actual return files, execution and thread IDs; never invent reviewer IDs.
 6. Aggregate without merging, reranking or letting one axis mask the other, then route the next action with the repair decision below. Do not auto-fix, auto-rerun or auto-close issues.
 
+인용 검증 실패가 `basis_unverified`로 반환되면 질문·repair 예약을 만들지 않는다. 원본 finding과 `review_input`의 commit·Spec 경로·plan metadata·planning snapshot 참조를 유지하고, [공통 리뷰 조정의 근거 재확인 절차](../../../../.codex/internal-skills/review-coordination/GUIDE.md#구현-리뷰-근거-재확인)에 따라 처리한다.
+
 수정이나 사용자 결정 요청 전에 orchestrator가 [공통 리뷰 조정](../../../../.codex/internal-skills/review-coordination/GUIDE.md)의 구현 리뷰 절차를 적용한다. 두 축의 결과를 모두 받은 뒤 수정표를 정하고, 계획된 구현의 review_input에는 plan-review check가 반환한 plan_set_id와 review_snapshot_sha256을 각각 plan_set_id·planning_snapshot_sha256으로 보존한다. repair 예약과 최종 완료는 같은 planning snapshot을 기준으로 판정한다.
 
 ## 판정과 수정 절차
