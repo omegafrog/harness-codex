@@ -6,9 +6,11 @@ import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
 import { assertSingleProvider, parseWorkflowBinding } from './providers/index.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
+import { isHarnessUpdateRequest } from './request-routing.mjs';
 
 export async function createComposerWorkspace({ root, plan_set_id, request, execution_id, orchestrator_session_id = null, orchestrator_provider = null, workflow_binding = null }) {
   if (typeof request !== 'string' || !request.trim()) throw new Error('Initial request is required');
+  if (isHarnessUpdateRequest(request)) throw new Error('Harness update is maintenance: use .codex/internal-skills/harness-maintenance/GUIDE.md; do not create a workflow');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution_id || '')) throw new Error('Execution ID is required');
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
   if ((orchestrator_session_id !== null && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestrator_session_id)) || (orchestrator_provider !== null && !['codex', 'claude-code'].includes(orchestrator_provider)) || Boolean(orchestrator_session_id) !== Boolean(orchestrator_provider)) throw new Error('Invalid orchestrator provider session');

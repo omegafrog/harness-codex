@@ -12,10 +12,13 @@ main_session: true
 
 workflow 외의 직접 요청은 [기능 라우팅](references/capability-routing.md)에서 담당 GUIDE를 찾아 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
 
+Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. 다른 workflow 후보나 `compose_candidate`보다 먼저 [Harness Maintenance](../../../.codex/internal-skills/harness-maintenance/GUIDE.md)를 현재 checkout에서 실행한다. 설치 업데이트만 요청한 경우 `workflow-compose`, worktree 생성, `spec-me`를 실행하지 않는다.
+
 ## Skill 선택
 
 | 조건 | 선택 |
 |---|---|
+| Harness 설치 업데이트·진단 요청 | `harness-maintenance` |
 | 저장소에 Harness setup이 필요함 | `setup` |
 | setup이 끝났고 새 사용자 작업을 시작함 | `workflow-compose` |
 | 새 기능의 요구사항이나 승인이 정리되지 않음 | `spec-me` |

@@ -25,8 +25,10 @@ try {
   let observed;
   try { observed = uninitialized ? { decision_hint: 'setup_candidate', reason: 'Git repository not initialized', codex_session_id: event.session_id || null } : await inspectStartupState({ workspaceRoot: root, codexSessionId: event.session_id }); }
   catch (error) { observed = { decision_hint: 'inspect_required', reason: error.message, codex_session_id: event.session_id || null }; }
+  const { isHarnessUpdateRequest } = await import(new URL('../../.harness/src/workflow/request-routing.mjs', import.meta.url));
+  const maintenance = event.hook_event_name === 'UserPromptSubmit' && isHarnessUpdateRequest(event.prompt);
   const inputState = observed;
-  const target = orchestratorInputTarget(inputState);
+  const target = maintenance ? null : orchestratorInputTarget(inputState);
   const inputRoot = target?.workspace_root || null;
   inputState.input_worktree_ref = target?.record_path || null;
   inputState.input_routing = target ? 'local' : 'unbound';
@@ -40,13 +42,14 @@ try {
     }
   }
   // Bind only to the worktree containing the current working directory.
-  if (!uninitialized && event.hook_event_name === 'UserPromptSubmit') {
+  if (!uninitialized && !maintenance && event.hook_event_name === 'UserPromptSubmit') {
     await bindOrchestratorSession({ root, provider: 'codex', sessionId: event.session_id });
     try { observed = await inspectStartupState({ workspaceRoot: root, codexSessionId: event.session_id }); }
     catch (error) { observed = { ...inputState, decision_hint: 'inspect_required', reason: error.message }; }
     observed.input_worktree_ref = inputState.input_worktree_ref;
     observed.input_routing = inputState.input_routing;
   }
+  if (maintenance) { observed.decision_hint = 'maintenance_candidate'; observed.reason = 'Harness update requested; use harness-maintenance in the current workspace'; }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
     const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
     observed.setup_configuration = await inspectSetupConfiguration({ workspace_root: root, provider: 'codex' });
@@ -55,7 +58,7 @@ try {
   const progress = uninitialized ? null : await refreshWorkflowProgress(observed, event.hook_event_name);
   if (event.hook_event_name !== 'UserPromptSubmit') process.exit(0);
   const updateNotice = uninitialized ? null : await harnessUpdateNotice({ root, sessionId: event.session_id }).catch(() => null);
-  const context = `Harness workflow startup hook. Read ${orchestrator}. Observed state (read-only worktree.json/orchestrator files and Git CLI): ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. A linked worktree can be orchestrated only while the current working directory is inside that worktree. Never route prompts, answers or stage commands from the primary checkout to a linked worktree using --root or --worktree-ref. If decision_hint is worktree_required, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. For a new request from the primary checkout, compose and verify the worktree, then stop and give its absolute path; the user enters that directory and invokes the orchestrator to start the first stage. In a linked worktree, route decisions only locally. For a new workflow in a linked worktree without existing workflow state, compose in that same worktree and continue there; never create another worktree. Never select by newest record. For a new workflow, invoke compose with a fresh execution ID and verify that invocation's result, workspace and binding. A new worktree is required only from the primary checkout. For setup_candidate use setup when needed; for inspect_required report or resolve the record mismatch. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Do not edit workflow state manually or spawn an orchestrator agent. Child executions perform only their assigned stage. The hook records input only in the current worktree; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
+  const context = `Harness workflow startup hook. Read ${orchestrator}. Observed state (read-only worktree.json/orchestrator files and Git CLI): ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. For maintenance_candidate follow .codex/internal-skills/harness-maintenance/GUIDE.md in the current checkout; never create a workflow or worktree for an update request. A linked worktree can be orchestrated only while the current working directory is inside that worktree. Never route prompts, answers or stage commands from the primary checkout to a linked worktree using --root or --worktree-ref. If decision_hint is worktree_required, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. For a new request from the primary checkout, compose and verify the worktree, then stop and give its absolute path; the user enters that directory and invokes the orchestrator to start the first stage. In a linked worktree, route decisions only locally. For a new workflow in a linked worktree without existing workflow state, compose in that same worktree and continue there; never create another worktree. Never select by newest record. For a new workflow, invoke compose with a fresh execution ID and verify that invocation's result, workspace and binding. A new worktree is required only from the primary checkout. For setup_candidate use setup when needed; for inspect_required report or resolve the record mismatch. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Do not edit workflow state manually or spawn an orchestrator agent. Child executions perform only their assigned stage. The hook records input only in the current worktree; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } })}\n`);
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

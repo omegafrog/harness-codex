@@ -1415,3 +1415,41 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.equal(next.input.context.execution_workspace.workspace_root, await realpath(workspace));
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
+
+test('installed hooks route a Harness update to maintenance without composing a workflow', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-update-routing-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+    git('init', '-q', '-b', 'main');
+    git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'base');
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await rm(join(root, '.harness/src/workflow/request-routing.mjs'));
+    assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith('request-routing.mjs')));
+    await updateProject({ sourceRoot, targetRoot: root });
+    await writeFile(join(root, 'app.mjs'), 'application owned\n');
+    await mkdir(join(root, 'docs/contracts'), { recursive: true });
+    await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
+    const before = git('worktree', 'list', '--porcelain');
+    for (const path of ['.codex/scripts/harness-orchestrator-hook.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs']) {
+      const response = JSON.parse(execFileSync(process.execPath, [join(root, path)], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id, prompt: '하네스 업데이트해' }), encoding: 'utf8' }));
+      assert.match(response.hookSpecificOutput.additionalContext, /maintenance_candidate/);
+      assert.match(response.hookSpecificOutput.additionalContext, /never create a workflow or worktree for an update request/);
+    }
+    const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'harness-update', '--request', '하네스 업데이트해', '--execution-id', 'update-attempt'], { cwd: root, encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Harness update is maintenance/);
+    assert.equal(git('worktree', 'list', '--porcelain'), before);
+    assert.equal(await readFile(join(root, 'app.mjs'), 'utf8'), 'application owned\n');
+    const status = git('status', '--short', '--untracked-files=all');
+    assert.match(status, /app\.mjs/);
+    assert.match(status, /docs\/contracts\/project\.md/);
+    assert.doesNotMatch(status, /request-routing\.mjs/);
+    git('check-ignore', '-v', '.harness/src/workflow/request-routing.mjs');
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith('request-routing.mjs')), false);
+    const { isHarnessUpdateRequest } = await import('../.harness/src/workflow/request-routing.mjs');
+    for (const request of ['하네스 업데이트해', 'Harness 업데이트 해줘', 'update the harness', 'refresh harness runtime']) assert.equal(isHarnessUpdateRequest(request), true, request);
+    assert.equal(isHarnessUpdateRequest('하네스 업데이트 기능을 구현해'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
