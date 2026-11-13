@@ -57,13 +57,14 @@ class PendingQuestion extends Error {
 // An answer that cannot be right whatever the other answers are; it is reported at once, never treated as a provisional gap.
 class InvalidAnswer extends Error {}
 const occurrences = new Map();
-// Native mode asks every unanswered question in one round. An unanswered question joins `batch` and setup carries on with
-// its current value (or the first option) as a provisional answer, so the questions that follow from it are discovered too.
+// Native mode returns only questions whose controlling choices have already been answered. Dependent questions wait
+// for a later round, so a GitHub or disabled-observability choice never asks for irrelevant local settings.
 // Nothing is written or created while `batch` has a question in it: requireComplete() stops before any such step.
 const batch = [];
 const unanswered = new Set();
 let lastQuestionId = null;
 let baseDependencies = [];
+let questionContext = '';
 // `dependsOn` lists earlier question IDs this question's existence or options come from. A selection that no longer fits
 // because such an answer changed is asked again; one with no dependency that does not fit is an error. A `revisit`
 // question is the final confirmation: it is consumed only when nothing else is pending, otherwise it is asked again.
@@ -72,12 +73,14 @@ function nativeAnswer(prompt, current = '', choices = null, context = null, { de
   occurrences.set(prompt, count);
   const id = `${prompt}#${count}`;
   lastQuestionId = id;
+  const parents = [...new Set([...baseDependencies, ...dependsOn])].filter((parent) => unanswered.has(parent));
   const given = Object.hasOwn(document.answers, id) ? document.answers[id] : undefined;
   const fits = given !== undefined && (!choices || choices.some((option) => option.value === given));
+  if (parents.length) return fits ? (choices ? given : given || current) : choices ? (choices.some((option) => option.value === current) ? current : choices[0]?.value ?? '') : current;
   if (given !== undefined && !fits && !dependsOn.length) throw new InvalidAnswer(`Invalid or stale selection for ${id}`);
   if (fits && !(revisit && batch.length)) return choices ? given : given || current;
-  const parents = [...new Set([...baseDependencies, ...dependsOn])].filter((parent) => unanswered.has(parent));
-  batch.push({ id, prompt, type: choices ? 'select' : 'text', current, ...(choices ? { options: choices } : {}), ...(context ? { context } : {}), ...(parents.length ? { depends_on: parents } : {}), ...(given !== undefined ? { previous_answer: given } : {}) });
+  const details = [questionContext, context === null ? '' : typeof context === 'string' ? context : JSON.stringify(context)].filter(Boolean).join('\n');
+  batch.push({ id, prompt, type: choices ? 'select' : 'text', current, ...(choices ? { options: choices } : {}), ...(details ? { context: details } : {}), ...(parents.length ? { depends_on: parents } : []), ...(given !== undefined ? { previous_answer: given } : {}) });
   unanswered.add(id);
   return choices ? (choices.some((option) => option.value === current) ? current : choices[0]?.value ?? '') : current;
 }
@@ -275,6 +278,14 @@ async function main() {
   const config = parseYaml(migrateAgentsText(oldConfig).text);
   const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   const existing = await inspectSetupConfiguration({ workspace_root: root });
+  const worktreeResult = await commandResult('git', ['worktree', 'list', '--porcelain']);
+  if (worktreeResult.status !== 0) throw new Error(`Git worktree 목록 확인 실패: ${worktreeResult.stderr || worktreeResult.error?.message}`);
+  const registeredWorktrees = [...worktreeResult.stdout.matchAll(/^worktree (.+)$/gm)].map((match) => resolve(match[1]));
+  const isExistingWorktree = registeredWorktrees.includes(root) && registeredWorktrees[0] !== root;
+  const branchResult = await commandResult('git', ['branch', '--show-current']);
+  const branch = branchResult.status === 0 ? branchResult.stdout.trim() : '';
+  const runtimeProvider = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID ? 'Codex CLI' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'Claude Code' : null;
+  questionContext = [runtimeProvider && `현재 실행 환경: ${runtimeProvider}.`, isExistingWorktree ? `현재 위치: 이미 생성된 linked worktree${branch ? ` (${branch})` : ''}. 이 setup은 현재 worktree를 유지합니다.` : `현재 위치: ${branch || '기본 저장소'}.`].filter(Boolean).join(' ');
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
     { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
@@ -292,7 +303,9 @@ async function main() {
   // The tier names are shared with the skill declarations and workflow stages that choose among them.
   const tiers = AGENT_TIERS;
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
-  const worktreeDirectory = reuse && hasWorktreeDirectory ? config.worktrees.directory : await ask('워크트리 생성 위치 (절대 경로)', hasWorktreeDirectory ? config.worktrees.directory : join(dirname(root), `${basename(root)}-worktrees`));
+  const projectRoot = registeredWorktrees[0] || root;
+  const defaultWorktreeDirectory = join(dirname(projectRoot), `${basename(projectRoot)}-worktrees`);
+  const worktreeDirectory = hasWorktreeDirectory ? config.worktrees.directory : isExistingWorktree ? defaultWorktreeDirectory : await ask('워크트리 생성 위치 (절대 경로)', defaultWorktreeDirectory);
   if (!isAbsolute(worktreeDirectory) || worktreeDirectory.includes('\0')) throw new Error('워크트리 생성 위치는 절대 경로여야 합니다.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
   const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
@@ -348,16 +361,17 @@ async function main() {
   const { validateContextBudget } = await import(new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url));
   let validBudget = false;
   try { validateContextBudget(previousBudget); validBudget = true; } catch {}
-  const budgetKeys = ['context_window_tokens', 'max_plan_tokens', 'handoff_reserve_tokens'];
-  const missingBudgetField = budgetKeys.some((key) => !Number.isSafeInteger(previousBudget[key]) || previousBudget[key] <= 0);
-  const contextBudget = { schema_version: 1 };
-  for (const [key, prompt] of [['context_window_tokens', '선택 모델 공통 context 한도(tokens)'], ['max_plan_tokens', 'plan 하나의 최대 예상 토큰'], ['handoff_reserve_tokens', 'checkpoint·인계용 예비 토큰']]) {
-    const useCurrent = reuse && (validBudget || missingBudgetField) && Number.isSafeInteger(previousBudget[key]) && previousBudget[key] > 0;
-    const answer = useCurrent ? String(previousBudget[key]) : await ask(prompt, previousBudget[key] === undefined ? '' : String(previousBudget[key]));
-    contextBudget[key] = answer.trim() ? Number(answer) : NaN;
+  const positive = (value) => Number.isSafeInteger(value) && value > 0;
+  const contextWindow = positive(previousBudget.context_window_tokens) ? previousBudget.context_window_tokens : 128000;
+  const maxPlan = positive(previousBudget.max_plan_tokens) ? previousBudget.max_plan_tokens : Math.min(32000, Math.floor(contextWindow * 0.5));
+  const handoffReserve = positive(previousBudget.handoff_reserve_tokens) ? previousBudget.handoff_reserve_tokens : Math.min(16000, Math.floor(contextWindow * 0.2), contextWindow - maxPlan);
+  let contextBudget = { ...previousBudget, schema_version: 1, context_window_tokens: contextWindow, max_plan_tokens: maxPlan, handoff_reserve_tokens: handoffReserve };
+  try { validateContextBudget(contextBudget); }
+  catch {
+    if (validBudget) throw new Error('기존 context budget이 유효하지 않습니다. .codex/context-budget.json을 확인하세요.');
+    contextBudget = { schema_version: 1, context_window_tokens: 128000, max_plan_tokens: 32000, handoff_reserve_tokens: 16000 };
+    validateContextBudget(contextBudget);
   }
-  // A provisional answer is often blank; the numbers are validated once every answer is in.
-  try { validateContextBudget(contextBudget); } catch (error) { if (!batch.length) throw error; }
 
   console.log('\n티켓 추적 방식');
   const reuseTracker = reuse && hasTrackerConfiguration(config.tracker);
@@ -526,12 +540,7 @@ async function main() {
     if (config.observability?.signoz?.local?.enabled) configText = setYamlScalar(configText, ['observability', 'signoz', 'local', 'enabled'], false);
   }
   const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
-  let finalBudget = contextBudget;
-  if (reuse && !validBudget && missingBudgetField && currentBudget) {
-    try { finalBudget = { ...JSON.parse(currentBudget), schema_version: 1 }; } catch { finalBudget = { schema_version: 1 }; }
-    for (const key of budgetKeys) if (!Number.isSafeInteger(previousBudget[key]) || previousBudget[key] <= 0) finalBudget[key] = contextBudget[key];
-    validateContextBudget(finalBudget);
-  }
+  const finalBudget = contextBudget;
   const backup = output.sessionOutputPath(root, `runtime/setup/backups/harness-${Date.now()}.yaml`);
   await mkdir(dirname(backup), { recursive: true });
   if (currentConfig) await writeFile(backup, currentConfig, { mode: 0o600 });
