@@ -58,6 +58,8 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `npm test`. 사용자 경로 live 검증과 별개다.
 
+- workflow 실행 provider는 현재 orchestrator CLI를 따른다. 기존 worktree의 산출물과 gate는 유지하며 각 실행은 시작 시 provider를 고정한다. 다른 provider에서는 이전 CLI의 대화 ID를 재개하지 않고 이전 입력·결과와 답변을 읽는 새 세션을 사용한다. 모델 설정은 `agents.codex`와 `agents.claude-code`에 각각 보존한다. 관련 설치 소비자 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/worktree_record_contract.test.mjs tests/setup_configuration.test.mjs tests/skill_model_tier.test.mjs`로 실행한다. 실제 provider CLI 전환 E2E는 아니다.
+
 - Wake 연동은 이미 설정된 Codex Wake MCP 또는 활성 plugin의 설치된 MCP 설정을 사용한다. 설치·업데이트는 Wake 또는 marketplace를 설치하지 않으며, Claude는 Wake를 사용하지 않는다. Wake가 없으면 결과 전달은 listener 경로를 사용한다. 설치·업데이트, Doctor, provider 구분과 기존 Wake 전송 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/provider_install.test.mjs tests/stage_result_events.test.mjs`로 검사한다.
 
   활성 로컬 marketplace에 등록된 Wake는 plugin 목록에 없어도 기존 패키지의 실행 파일과 checksum을 확인해 사용한다. 실행 파일이 없거나 checksum이 다르면 다운로드하지 않고 listener 경로를 사용한다. 설치된 Doctor는 lock에 없는 Git 추적 프로젝트 스크립트를 Harness 소유로 오인하지 않는다.
@@ -239,7 +241,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## Codex native setup UI
 
-`$setup`은 요청마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. 재사용 시 유효한 설정은 보존하고 누락·오류 항목만 묻는다. `needs_input`은 현재 조건이 확정된 배치만 반환하며 GitHub의 로컬 계획 디렉터리나 관측성 끔의 상세 설정은 생략한다. 스킬은 `ui_questions`를 그대로 표시하고 실제 대화 rollout을 `--bind-ui`로 연결한 뒤 항목별 응답 원문을 `--receive`로 즉시 전달한다. CLI는 setup·배치·호출·항목 대응과 누적 답을 session에 기록하고 누락 ID를 계산한다. `--status`가 `can_continue: true`일 때 추가 입력을 요구하지 않고 다음 배치를 조회하며, 최종 확인 전 프로젝트 설정·준비 파일은 쓰지 않는다. 중단·진행 금지는 `--cancel`로 기록하고 늦은 폼 응답으로 재개하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 수동 terminal CLI는 유지한다. 상세 절차는 [설정 선택](../../.codex/skills/setup/references/native-choices.md)을 따른다.
+`$setup`은 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --start`로 시작한다. CLI가 새 session의 답변 파일을 만들고 `answers_path`를 반환하며, 같은 실행의 후속 명령은 그 경로를 `--answers`로 전달한다. 재사용 시 유효한 설정은 보존하고 누락·오류 항목만 묻는다. `needs_input`은 현재 조건이 확정된 배치만 반환하며 GitHub의 로컬 계획 디렉터리나 관측성 끔의 상세 설정은 생략한다. 스킬은 `ui_questions`를 그대로 표시하고 실제 대화 rollout을 `--bind-ui`로 연결한 뒤 항목별 응답 원문을 `--receive`로 즉시 전달한다. CLI는 setup·배치·호출·항목 대응과 누적 답을 session에 기록하고 누락 ID를 계산한다. `--status`가 `can_continue: true`일 때 추가 입력을 요구하지 않고 다음 배치를 조회하며, 최종 확인 전 프로젝트 설정·준비 파일은 쓰지 않는다. 중단·진행 금지는 `--cancel`로 기록하고 늦은 폼 응답으로 재개하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 수동 terminal CLI는 유지한다. 상세 절차는 [설정 선택](../../.codex/skills/setup/references/native-choices.md)을 따른다.
 
 ## 구현 리뷰 회귀 검사
 

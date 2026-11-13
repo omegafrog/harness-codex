@@ -57,7 +57,7 @@ gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 �
 
 메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `spec-me`, `to-ticket`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 
-stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
+stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
 
 반환 상태에 따라 workflow를 전환한다.
 
@@ -71,7 +71,7 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
 | `running` | (`harness-agent-run.mjs --background true`로 시작한 stage에만 적용한다. reviewer 같은 native 하위 agent는 결과를 받을 때까지 이 턴에서 기다린다.) 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. E2E도 별도 백그라운드 stage로 실행한다. stage가 끝나면 runner가 Codex Wake 큐 또는 Claude 재개를 통해 검증된 결과를 전달한다. 큐 수락만으로 실행 완료를 추정하지 않는다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
-| `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고, 같은 stage를 `--feedback`으로 재개해 같은 대화에서 이어간다(사용자가 업데이트 등으로 중단한 경우 포함). |
+| `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고 같은 stage를 `--feedback`으로 이어간다. 같은 provider는 기존 대화를 재개하고 다른 provider는 이전 입력·결과를 읽는 새 대화를 사용한다. |
 
 `e2e-test` 결과는 일반 stage 재시작 규칙보다 [구현 workflow 조율](references/implementation.md)의 최종 E2E 실패 처리가 우선한다. `completed/OK`는 receipt와 cleanup을 확인하고 `sync-contracts`로 이어간다. 실패·차단·취소는 같은 stage를 자동 재실행하지 않고 실패 증거를 읽어 테스트 코드 결함 빠른 경로 또는 사용자 결정을 적용한다. 정본 execution ID와 worktree가 다르거나 결과가 이미 처리됐으면 중복 처리하지 않는다.
 

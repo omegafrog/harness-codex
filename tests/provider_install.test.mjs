@@ -142,7 +142,7 @@ test('install and update never install Wake and Doctor checks only the configure
     assert.equal(result.status, 0, result.stderr);
   }
   await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
-  assert.equal(doctor({ ...env, WAKE_TEST_DISABLED: '1' }).some((item) => item.code === 'codex_wake_unavailable'), false);
+  assert.equal(doctor({ ...env, HARNESS_PROVIDER_ID: 'claude-code', WAKE_TEST_DISABLED: '1' }).some((item) => item.code === 'codex_wake_unavailable'), false);
   assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).filter((args) => args[0] === 'mcp' && args[1] === 'get').length, 2);
   assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).some((args) => args[0] === 'plugin' && args.some((arg) => /codex-wake/.test(arg))), false);
   execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/src/workflow/stage-result-events.mjs']);

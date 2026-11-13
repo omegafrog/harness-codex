@@ -107,11 +107,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
 
 // Native setup returns only currently resolvable questions; `pending` is the first question for callers that ask one at a time.
 const SETUP_ID = '4a11857b-60f0-4b0c-a3e6-3fea42eb45d2';
-const MODELS = [
-  ['복잡한 설계·최종 검토 모델', 'high_performance'], ['일반 구현 모델', 'implementation'], ['서버·E2E 실행과 polling 모델', 'execution'], ['문서·제한된 조사 모델', 'low_performance'],
-];
-
-async function freshProject({ linked = false } = {}) {
+async function freshProject({ linked = false, provider = 'codex' } = {}) {
   const workspaceDir = await mkdtemp(join(tmpdir(), 'harness-setup-batch-'));
   const primary = linked ? join(workspaceDir, 'project') : workspaceDir;
   const root = linked ? join(workspaceDir, 'linked worktree') : workspaceDir;
@@ -134,7 +130,7 @@ async function freshProject({ linked = false } = {}) {
   await mkdir(directory, { recursive: true });
   const answers = join(directory, 'answers.json');
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-  const command = (...args) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, ...args], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  const command = (...args) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, ...args], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: provider, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   const run = async (map) => {
     await writeFile(answers, JSON.stringify({ answers: map }));
     return command();
@@ -155,6 +151,48 @@ const BATCH_CHOICES = {
   'Tracker 선택': 'local-markdown', '로컬 계획 디렉터리': 'docs/plans', 'Beads를': 'n', '로컬 관측성': 'n', '이 설정으로 계속할까요?': 'y',
 };
 
+test('installed setup starts isolated sessions without preparing answer files or shared pointers', async () => {
+  const project = await freshProject();
+  const { root, sourceRoot, bin, git } = project;
+  try {
+    const cli = join(root, '.codex/scripts/harness-setup.mjs');
+    const call = (...args) => JSON.parse(execFileSync(process.execPath, [cli, '--root', root, ...args], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    await writeFile(join(root, 'app.mjs'), 'project owned\n');
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await mkdir(join(root, 'docs/contracts'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project instructions\n');
+    await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
+    const first = call('--start');
+    assert.equal(first.status, 'needs_input');
+    assert.match(first.answers_path, new RegExp(`/runtime/setup/${first.setup_id}/answers\\.json$`));
+    assert.deepEqual(JSON.parse(await readFile(first.answers_path, 'utf8')).answers, {});
+    const session = { ...project, answers: first.answers_path, command: (...args) => call('--answers', first.answers_path, ...args) };
+    const replies = await showBatch(session, first);
+    const received = await receive(session, [replies[0]]);
+    assert.equal(received.missing_question_ids.length, first.questions.length - 1);
+    const saved = await readFile(first.answers_path, 'utf8');
+    await updateProject({ sourceRoot, targetRoot: root });
+    const second = call('--start');
+    assert.equal(second.status, 'needs_input');
+    assert.notEqual(second.setup_id, first.setup_id);
+    assert.notEqual(second.answers_path, first.answers_path);
+    assert.equal(await readFile(first.answers_path, 'utf8'), saved);
+    assert.deepEqual(JSON.parse(await readFile(second.answers_path, 'utf8')).answers, {});
+    assert.equal(call('--answers', first.answers_path, '--status').batch_id, first.batch_id);
+    assert.throws(() => call('--start', '--answers', first.answers_path), /--start cannot be combined/);
+    assert.throws(() => call('--start', '--check'), /--start cannot be combined/);
+    assert.equal(await exists(join(root, '.io/runtime/setup/current-setup-path.txt')), false);
+    for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md']) assert.equal(await exists(join(root, path)), false);
+    assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project instructions\n');
+    assert.equal(await readFile(join(root, 'docs/contracts/project.md'), 'utf8'), 'project contract\n');
+    const status = git('status', '--short', '--untracked-files=all');
+    for (const path of ['app.mjs', 'docs/agents/EXEC.md', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
+    assert.doesNotMatch(status, /\.io\/|\.codex\/scripts\/|\.harness\/src\//);
+    for (const path of ['.codex/scripts/harness-setup.mjs', '.harness/src/workflow/setup-answers.mjs', '.io/runtime/setup']) git('check-ignore', '-v', path);
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('setup asks only questions whose conditions are known and carries runtime context without budget questions', async () => {
   const { root, run, git } = await freshProject();
   try {
@@ -162,10 +200,10 @@ test('setup asks only questions whose conditions are known and carries runtime c
     assert.equal(first.status, 'needs_input');
     assert.deepEqual(first.pending, first.questions[0]);
     const prompts = first.questions.map(({ prompt }) => prompt);
-    assert.ok(prompts.some((prompt) => prompt.startsWith('실행 provider 선택')));
+    assert.ok(!prompts.some((prompt) => prompt.startsWith('실행 provider 선택')));
     assert.ok(prompts.some((prompt) => prompt.startsWith('Tracker 선택')));
     assert.ok(prompts.some((prompt) => prompt.startsWith('로컬 관측성')));
-    assert.doesNotMatch(JSON.stringify(first.questions), /복잡한 설계·최종 검토 모델|일반 구현 모델|서버·E2E 실행과 polling 모델|문서·제한된 조사 모델|로컬 계획 디렉터리|VictoriaLogs localhost port|인계용 예비 토큰|context 한도|최대 예상 토큰/);
+    assert.doesNotMatch(JSON.stringify(first.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|인계용 예비 토큰|context 한도|최대 예상 토큰/);
     assert.ok(first.questions.every(({ context }) => context.includes('Codex CLI')));
     assert.equal(first.questions.some(({ prompt }) => prompt.startsWith('이 설정으로 계속할까요?')), false, 'confirmation waits until conditional questions have been resolved');
     // Nothing was written while answers were missing.
@@ -190,7 +228,7 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
     assert.equal(answered.status, 'configured');
     const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
     assert.ok(config.includes(`directory: ${JSON.stringify(selected)}`));
-    assert.match(config, /provider: "codex"/);
+    assert.doesNotMatch(config, /provider: "codex"/);
     assert.match(config, /high_performance_model: "example-a"/);
     assert.match(config, /high_performance_reasoning_effort: "xhigh"/);
     assert.match(config, /low_performance_model: "example-b"/);
@@ -240,44 +278,37 @@ test('setup rejects a relative worktree location', async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('changing the provider asks only the model choices and effort values that no longer fit', async () => {
-  const { root, run } = await freshProject();
+test('setup uses the current CLI and preserves the other provider model settings', async () => {
+  const { root, run, answers, bin } = await freshProject({ provider: 'claude-code' });
   try {
-    const first = await run({});
-    const provider = first.questions.find(({ prompt }) => prompt === '실행 provider 선택');
-    const batchAnswers = { ...answerBatch(first.questions, BATCH_CHOICES), [provider.id]: 'codex' };
-    const models = await run(batchAnswers);
-    const answeredModels = { ...batchAnswers, ...answerBatch(models.questions, BATCH_CHOICES) };
-    const efforts = await run(answeredModels);
-    const completeCodexChoices = { ...answeredModels, ...answerBatch(efforts.questions, BATCH_CHOICES) };
-    const followUp = await run({ ...completeCodexChoices, [provider.id]: 'claude-code' });
-    assert.equal(followUp.status, 'needs_input');
-    const asked = followUp.questions.map(({ prompt }) => prompt);
-    assert.deepEqual(asked, MODELS.map(([title]) => `${title} 모델 선택`));
-    assert.doesNotMatch(JSON.stringify(followUp.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|context 한도|최대 예상 토큰|인계용 예비 토큰/);
-    for (const question of followUp.questions.filter(({ prompt }) => prompt.endsWith('모델 선택'))) {
-      assert.deepEqual(question.options.map(({ value }) => value), ['opus', 'sonnet', 'haiku']);
-      assert.equal(question.previous_answer, completeCodexChoices[question.id]);
+    const choices = { ...BATCH_CHOICES, '복잡한 설계·최종 검토 모델 모델': 'opus', '일반 구현 모델 모델': 'sonnet', '서버·E2E 실행과 polling 모델 모델': 'sonnet', '문서·제한된 조사 모델 모델': 'haiku', '복잡한 설계·최종 검토 모델 추론': 'high' };
+    let batch = await run({}), values = {};
+    assert.ok(!batch.questions.some(({ prompt }) => prompt === '실행 provider 선택'));
+    assert.ok(batch.questions.some(({ prompt, options }) => prompt.endsWith('모델 선택') && options.some(({ value }) => value === 'opus')));
+    for (let round = 0; round < 8 && batch.status !== 'configured'; round++) {
+      values = { ...values, ...answerBatch(batch.questions, choices) };
+      batch = await run(values);
     }
-    const claudeModels = { ...completeCodexChoices, [provider.id]: 'claude-code', ...answerBatch(followUp.questions, { '복잡한 설계·최종 검토 모델 모델': 'opus', '일반 구현 모델 모델': 'sonnet', '서버·E2E 실행과 polling 모델 모델': 'sonnet', '문서·제한된 조사 모델 모델': 'haiku' }) };
-    const effortBatch = await run(claudeModels);
-    const effortsAsked = effortBatch.questions.map(({ prompt }) => prompt);
-    assert.deepEqual(effortsAsked, ['복잡한 설계·최종 검토 모델 추론 강도 선택']);
-    const effort = effortBatch.questions[0];
-    assert.equal(effort.previous_answer, 'xhigh');
-    assert.deepEqual(effort.options.map(({ value }) => value), ['low', 'medium', 'high']);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
-
-    const confirmed = await run({ ...claudeModels, [effort.id]: 'high' });
-    assert.deepEqual(confirmed.questions.map(({ prompt }) => prompt), ['이 설정으로 계속할까요?']);
-    const resolved = await run({ ...claudeModels, [effort.id]: 'high', [confirmed.questions[0].id]: 'y' });
-    assert.equal(resolved.status, 'configured');
+    assert.equal(batch.status, 'configured');
+    const claude = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    assert.match(claude, /claude-code:\s+high_performance_model: "opus"/);
+    assert.doesNotMatch(claude, /provider: "claude-code"/);
+    const runCodex = async (map) => {
+      await writeFile(answers, JSON.stringify({ answers: map }));
+      return JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    };
+    batch = await runCodex({});
+    values = { [batch.pending.id]: 'reuse' };
+    batch = await runCodex(values);
+    for (let round = 0; round < 8 && batch.status !== 'configured'; round++) {
+      assert.ok(!batch.questions.some(({ prompt }) => prompt === '실행 provider 선택'));
+      values = { ...values, ...answerBatch(batch.questions, BATCH_CHOICES) };
+      batch = await runCodex(values);
+    }
+    assert.equal(batch.status, 'configured');
     const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
-    assert.match(config, /provider: "claude-code"/);
-    assert.match(config, /claude-code:\s+high_performance_model: "opus"\s+high_performance_reasoning_effort: "high"/);
-    assert.match(config, /implementation_reasoning_effort: "medium"/);
-    assert.match(config, /low_performance_model: "haiku"/);
-    assert.doesNotMatch(config, /example-a/);
+    assert.match(config, /claude-code:[\s\S]*high_performance_model: "opus"/);
+    assert.match(config, /codex:[\s\S]*high_performance_model: "example-a"/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -300,7 +331,6 @@ test('choosing GitHub omits local plan storage and disabled observability omits 
     assert.equal(github.status, 'needs_input');
     const prompts = github.questions.map(({ prompt }) => prompt);
     assert.ok(prompts.includes('GitHub repository (owner/repo)'));
-    assert.ok(prompts.some((prompt) => prompt.endsWith('모델 선택')));
     assert.doesNotMatch(JSON.stringify(github.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|보존 일수|Actuator|service 이름|프로젝트 Git root|context 한도|최대 예상 토큰|인계용 예비 토큰/);
     assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -485,5 +515,51 @@ test('setup binds the actual call and accepts answers by item ID even when the t
     assert.deepEqual(result.missing_question_ids, []);
     assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
     assert.equal(command('--bind-ui', transcript).status, 'ready', 'rebinding the same accepted call preserves answers');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('installed setup can revise a mistaken Project owner and select its current value', async () => {
+  const project = await freshProject();
+  const { root, run, command, bin, answers, sourceRoot, git } = project;
+  try {
+    await writeFile(join(root, 'app.mjs'), 'project owned\n');
+    await rm(join(root, '.harness/src/workflow/setup-answers.mjs'));
+    await updateProject({ sourceRoot, targetRoot: root });
+    git('check-ignore', '-v', '.harness/src/workflow/setup-answers.mjs');
+    assert.match(git('status', '--short', '--untracked-files=all'), /app\.mjs/);
+    assert.equal(await readFile(join(root, 'app.mjs'), 'utf8'), 'project owned\n');
+    await writeFile(join(bin, 'gh'), '#!/usr/bin/env node\nconst a=process.argv.slice(2);if(a[0]==="project"&&a[1]==="list"){if(a[a.indexOf("--owner")+1]!=="example")process.exit(8);console.log(JSON.stringify({projects:[{number:8,title:"Workflow"}]}));}else if(a[0]==="project"&&a[1]==="field-list")console.log(JSON.stringify({fields:[{name:"Workflow Status",type:"ProjectV2SingleSelectField",options:["Planned","In Progress","Blocked","Done"].map(name=>({name}))}]}));else if(!["auth","api","repo"].includes(a[0]))process.exit(9);\n');
+    await chmod(join(bin, 'gh'), 0o755);
+    let batch = await run({});
+    let ownerReply;
+    for (let round = 0; round < 8; round++) {
+      const replies = await showBatch(project, batch);
+      const ownerIndex = batch.questions.findIndex(({ prompt }) => prompt === 'Project owner');
+      if (ownerIndex >= 0) {
+        assert.deepEqual(batch.ui_questions[ownerIndex].options, ['현재 값 사용: example']);
+        ownerReply = { ...replies[ownerIndex], answer: '그걸로 해' };
+        replies[ownerIndex] = ownerReply;
+      }
+      await receive(project, replies);
+      if (ownerReply) break;
+      batch = command();
+    }
+    assert.ok(ownerReply);
+    assert.throws(() => command(), /Project owner는 GitHub/);
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(command('--revise', 'Project owner#1').status, 'revised');
+    assert.throws(() => command('--revise', 'Project owner#1'), /recorded Project owner/);
+    batch = command();
+    const index = batch.questions.findIndex(({ prompt }) => prompt === 'Project owner');
+    assert.ok(index >= 0);
+    const replies = await showBatch(project, batch);
+    replies[index].answer = '현재 값 사용: example';
+    assert.equal((await receive(project, [ownerReply])).ignored, 1);
+    await receive(project, replies);
+    assert.equal(JSON.parse(await readFile(answers, 'utf8')).answers['Project owner#1'], 'example');
+    assert.equal(command().status, 'needs_input');
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    command('--cancel');
+    assert.throws(() => command('--revise', 'Project owner#1'), /cancelled or configured/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

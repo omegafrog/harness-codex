@@ -6,4 +6,4 @@
 
 정본은 `worktree.json`, 프로젝트 Spec·계획, session의 stage result·review history와 configured tracker의 발행 상태이다. runner는 실행 식별자와 현재성 기록을 관리하고 작성자는 제품 산출물을 작성한다. 추가 ledger를 만들지 않는다. stage 결과·미해결 findings와 gate, 사용자 질문별 답변·승인·위임, provider/session과 실제 process 상태를 확인해 다음 단계를 고른다. 요약이 부족하면 해당 정본을 읽는다. 완료된 조사는 재실행하지 않고 독립 질문은 묶으며 수정 요청은 소유 단계로 반환한다.
 
-필수 독립 리뷰, 실제 승인, 실행 전제와 중복 process 방지는 생략하지 않는다. 같은 provider/session을 재개하고 진행 중 process의 생존 여부를 확인한다. 실패·취소 시 기록을 보존하며 worktree 삭제나 상태 수작업 변경으로 복구하지 않는다. 각 실행 절차는 [실행 조율](../GUIDE.md), 리뷰와 발행의 해당 GUIDE가 소유한다.
+필수 독립 리뷰, 실제 승인, 실행 전제와 중복 process 방지는 생략하지 않는다. 같은 provider는 session을 재개하고 다른 provider는 이전 입력과 결과를 읽는 새 session을 사용한다. 진행 중 process의 생존 여부를 확인한다. 실패·취소 시 기록을 보존하며 worktree 삭제나 상태 수작업 변경으로 복구하지 않는다. 각 실행 절차는 [실행 조율](../GUIDE.md), 리뷰와 발행의 해당 GUIDE가 소유한다.

@@ -662,6 +662,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const liveProgress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(liveProgress.status, 'running');
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'spec-me'], { cwd: tree.workspace, stdio: 'pipe' }), /Stage already running/);
+    await assert.rejects(prepareStageInput({ root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, stageId: 'spec-me', orchestratorSession: { provider: 'claude-code', session_id: '4c1483d6-c69d-4df3-a6c1-481c7ac4ff44' } }), /Stage already running/);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: stopped, child: stopped });
     const progress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(progress.status, 'stopped');
@@ -691,6 +692,31 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.deepEqual(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'), 'utf8')), continued.answer);
     assert.equal((await stat(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'))).mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'answers.json'), 'utf8')), earlierAnswers);
+    const configPath = join(tree.workspace, '.codex/harness.yaml');
+    const existingConfig = await readFile(configPath, 'utf8');
+    await writeFile(configPath, existingConfig.replace('agents:\n', 'agents:\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: high\n'));
+    const { bindOrchestratorSession } = await import(`file://${join(tree.workspace, '.harness/src/workflow/startup-state.mjs')}`);
+    const claudeSession = '4c1483d6-c69d-4df3-a6c1-481c7ac4ff44';
+    await bindOrchestratorSession({ root: tree.workspace, provider: 'claude-code', sessionId: claudeSession });
+    const switched = JSON.parse(execFileSync(process.execPath, [...prepare, '--answer', secondAnswer], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.equal(switched.input.context.provider, 'claude-code');
+    assert.equal(switched.input.context.orchestrator_provider, 'claude-code');
+    assert.equal(switched.input.context.resume_session_id, undefined, 'a Codex conversation is never resumed in Claude');
+    assert.equal(switched.input.context.previous_result_ref, `runtime/executions/${next.input.execution_id}/result.json`);
+    assert.deepEqual(switched.answer, continued.answer);
+    const { resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    assert.equal((await resolveSkillBinding({ root: tree.workspace, skill: 'spec-me', executionProvider: 'claude-code' })).model, 'opus');
+    const sessions = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).agent_sessions;
+    assert.equal(sessions['orchestrator.claude-code'].session_id, claudeSession);
+    assert.equal(sessions['orchestrator.codex'].session_id, record.worktree_id);
+    const { recordWorkflowSession: recordProviderSession } = await import(`file://${join(tree.workspace, '.harness/src/workflow/worktrees.mjs')}`);
+    await recordProviderSession({ workspace_root: tree.workspace, repository_root: root, key: 'test-stage', session_id: record.worktree_id, execution_id: 'prior-codex', provider: 'codex' });
+    await recordProviderSession({ workspace_root: tree.workspace, repository_root: root, key: 'test-stage', session_id: claudeSession, execution_id: 'prior-claude', provider: 'claude-code' });
+    const savedSessions = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).agent_sessions;
+    assert.equal(savedSessions['test-stage.codex'].session_id, record.worktree_id);
+    assert.equal(savedSessions['test-stage.claude-code'].session_id, claudeSession);
+    await bindOrchestratorSession({ root: tree.workspace, provider: 'codex', sessionId: record.worktree_id });
+    await writeFile(configPath, existingConfig);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: `runtime/executions/${next.input.execution_id}/result.json` });
     const state = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
@@ -1030,12 +1056,12 @@ test('compose creates input only in the worktree and leaves main without .io', a
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
-    // A binding for another provider than setup chose is refused before any worktree exists.
+    // A binding for a different provider than the current orchestrator is refused before creating a worktree.
     const claudeConfig = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
     await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: haiku\n    high_performance_reasoning_effort: medium\n    low_performance_model: haiku\n    low_performance_reasoning_effort: medium\n');
-    const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
+    const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'claude-code', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
     assert.notEqual(mixed.status, 0);
-    assert.match(mixed.stderr, /Workflow binding provider codex differs from the setup provider claude-code; run setup with codex first/);
+    assert.match(mixed.stderr, /Workflow binding provider must match the current orchestrator provider/);
     assert.equal(execFileSync('git', ['worktree', 'list'], { cwd: root, encoding: 'utf8' }).trim().split('\n').length, 1);
     await writeFile(join(root, '.codex/harness.yaml'), claudeConfig);
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));

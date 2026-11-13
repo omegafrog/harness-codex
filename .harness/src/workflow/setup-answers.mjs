@@ -16,7 +16,7 @@ export function publishSetupBatch(document, questions) {
       id: randomUUID(), created_at: new Date().toISOString(), questions, call_id: null, received: {},
       ui_questions: questions.map((question) => ({
         title: [question.prompt, question.type === 'text' && question.current ? `현재 값: ${question.current}` : '', question.context].filter(Boolean).join('\n'),
-        ...(question.options ? { options: question.options.map(({ label }) => label) } : {}),
+        ...(question.options ? { options: question.options.map(({ label }) => label) } : question.type === 'text' && question.current ? { options: [`현재 값 사용: ${question.current}`] } : {}),
       })),
     };
   }
@@ -68,7 +68,7 @@ export function recordSetupReplies(document, input) {
     if (identity[1] !== batch.call_id) { ignored += 1; continue; }
     const item = batch.ui_items[identity[2]], question = batch.questions[identity[2]];
     if (!item || !question || typeof reply.answer !== 'string') throw new Error('Reply does not match the displayed setup question');
-    const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : reply.answer;
+    const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
     if (value === undefined) throw new Error(`Answer is not an offered label for ${question.id}; address the user message before continuing setup`);
     if (Object.hasOwn(received, question.id) && received[question.id] !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
     received[question.id] = value;

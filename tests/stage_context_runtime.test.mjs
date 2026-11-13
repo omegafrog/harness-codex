@@ -106,7 +106,7 @@ test('spec-me pastes the Product phase guide only until the Product Spec exists'
   assert.match(runner, /phaseInstructionPaths\(\{ skill: input\.skill, productSpecExists: Boolean\(artifactDirectories && existsSync\(join\(artifactDirectories\.specs, 'product-spec\.md'\)\)\) \}\)/);
 });
 
-test('one provider per setup: models and workflow bindings from another provider are refused', async () => {
+test('execution provider selects its own models and validates bindings', async () => {
   const { assertSingleProvider, modelBelongsToProvider } = await import('../.harness/src/workflow/providers/index.mjs');
   assert.equal(modelBelongsToProvider('claude-code', 'haiku'), true);
   assert.equal(modelBelongsToProvider('claude-code', 'claude-sonnet-5-5'), true);
@@ -114,11 +114,11 @@ test('one provider per setup: models and workflow bindings from another provider
   assert.equal(modelBelongsToProvider('codex', 'gpt-6-luna'), true);
   const claude = { agents: { provider: 'claude-code', 'claude-code': { high_performance_model: 'opus', low_performance_model: 'haiku' } } };
   assert.equal(assertSingleProvider(claude), 'claude-code');
-  assert.throws(() => assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /differs from the setup provider claude-code/);
+  assert.equal(assertSingleProvider(claude, { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' }), 'codex');
   assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'haiku' } } }), /agents\.codex\.low_performance_model is haiku, which is not a codex model/);
-  // Each provider keeps its own section; an inactive provider's models are checked against that provider.
+  // Each provider keeps its own section; only the selected provider is validated.
   assert.equal(assertSingleProvider({ agents: { provider: 'codex', codex: { low_performance_model: 'gpt-6-luna' }, 'claude-code': { low_performance_model: 'haiku' } } }), 'codex');
-  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', 'claude-code': { low_performance_model: 'gpt-6-luna' } } }), /agents\.claude-code\.low_performance_model is gpt-6-luna, which is not a claude-code model/);
+  assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', 'claude-code': { low_performance_model: 'gpt-6-luna' } } }, null, 'claude-code'), /agents\.claude-code\.low_performance_model is gpt-6-luna, which is not a claude-code model/);
   assert.throws(() => assertSingleProvider({ agents: { provider: 'codex', low_performance_model: 'gpt-6-luna' } }), /flat key; run harness-codex update/);
   assert.throws(() => assertSingleProvider(claude, { provider: 'claude-code', model: 'gpt-6-luna', reasoning_effort: 'medium' }), /not a claude-code model/);
 });

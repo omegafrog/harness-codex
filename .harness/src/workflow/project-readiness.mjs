@@ -13,7 +13,7 @@ export function hasTrackerConfiguration(tracker) {
   return tracker?.mode === 'local-markdown' && typeof directory === 'string' && Boolean(directory.trim()) && !isAbsolute(directory) && !directory.split(/[\\/]/).some((part) => !part || part === '.' || part === '..');
 }
 
-export async function inspectSetupConfiguration({ workspace_root: root } = {}) {
+export async function inspectSetupConfiguration({ workspace_root: root, provider: requestedProvider = null } = {}) {
   if (!isAbsolute(root || '')) throw new Error('Absolute workspace_root is required');
   const violations = [];
   let config = {};
@@ -24,7 +24,7 @@ export async function inspectSetupConfiguration({ workspace_root: root } = {}) {
   catch (error) { if (error.code && error.code !== 'ENOENT') throw error; config = {}; violations.push('Missing or invalid .codex/harness.yaml'); }
   if (config.worktrees?.directory !== undefined && (typeof config.worktrees.directory !== 'string' || !isAbsolute(config.worktrees.directory) || config.worktrees.directory.includes('\0'))) violations.push('Invalid worktrees.directory');
   if (config.agents?.provider !== undefined && !['codex', 'claude-code'].includes(config.agents.provider)) violations.push('Invalid agents.provider');
-  const provider = activeAgentProvider(config), agents = providerAgents(config, provider);
+  const provider = requestedProvider || activeAgentProvider(config), agents = providerAgents(config, provider);
   for (const flat of legacyAgentKeys(config)) violations.push(`agents.${flat} must move under agents.${provider} (run harness-codex update)`);
   for (const tier of AGENT_TIERS) {
     for (const suffix of ['model', 'reasoning_effort']) {

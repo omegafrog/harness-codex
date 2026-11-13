@@ -187,7 +187,7 @@ async function executionSession({ root, session, executionId, worktreeRef }) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session_id || '')) {
     if (!worktreeRef) throw new Error(`${provider} session ID missing from execution log`);
     const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
-    const matches = Object.values(record.agent_sessions || {}).filter((entry) => entry.execution_id === executionId);
+    const matches = [...new Map(Object.values(record.agent_sessions || {}).filter((entry) => entry.execution_id === executionId).map((entry) => [`${entry.provider || 'codex'}:${entry.session_id}`, entry])).values()];
     if (matches.length !== 1) throw new Error(`${provider} session ID missing or ambiguous in canonical worktree record`);
     session_id = matches[0].session_id;
     if (matches[0].provider && matches[0].provider !== provider) throw new Error('Canonical provider does not match execution log');
@@ -209,8 +209,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (planId !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan ID');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
-  let provider = configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
+  let provider = orchestratorSession?.provider || configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
   let workflowBinding = null;
+  let historicalBinding = null;
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
@@ -317,11 +318,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     taskSession = await resolveSkillSession(root, record.session_directory);
     plan_set_id = record.plan_set_id;
     executionWorkspace = await resolveExecutionWorkspace(root, plan_set_id || null);
-    workflowBinding = record.workflow_binding || null;
-    if (workflowBinding) {
-      if (orchestratorSession && workflowBinding.provider !== orchestratorSession.provider) throw new Error('Workflow binding provider must match the orchestrator provider');
-      provider = workflowBinding.provider;
-    }
+    historicalBinding = record.workflow_binding || null;
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
   }
   if (restart) {
@@ -455,11 +452,18 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
-    const sessionInfo = neverStarted ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
+    const switchedProvider = Boolean(orchestratorSession && previousProvider !== provider);
+    const sessionInfo = neverStarted || switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
     if (sessionInfo) provider = sessionInfo.provider;
-    else if (previousInput.context?.provider) provider = previousInput.context.provider;
+    else if (!switchedProvider && previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
+    if (switchedProvider) {
+      const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
+      input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
+      if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
+    }
     conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting) || answer !== null) {
@@ -473,15 +477,21 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
-    const sessionInfo = await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
-    provider = sessionInfo.provider;
+    const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
+    const switchedProvider = Boolean(orchestratorSession && previousProvider !== provider);
+    const sessionInfo = switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
+    if (sessionInfo) provider = sessionInfo.provider;
     const result = previousReturn.result || await readSkillSessionJson({ root, session_directory: previousSession, path: previous.result_ref });
+    if (switchedProvider) {
+      const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
+      input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
+    }
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     answer = batchAnswers.answers;
-    conversation = { previous_result_ref: previous.result_ref, resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
+    conversation = { previous_result_ref: previous.result_ref, ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
   }
-  if (workflowBinding && provider !== workflowBinding.provider) throw new Error('Workflow binding provider must match the resumed session');
+  workflowBinding = historicalBinding?.provider === provider ? historicalBinding : null;
   if (e2eRequest) {
     if (!/^runtime\/e2e\/requests\/[A-Za-z0-9._-]+\.json$/.test(e2eRequest)) throw new Error('Invalid E2E request reference');
     const request = await readSkillSessionJson({ root, session_directory: taskSession, path: e2eRequest });

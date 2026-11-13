@@ -1,6 +1,6 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { parseYaml } from "../eval/yaml.mjs";
-import { legacyAgentKeys } from '../workflow/agent-config.mjs';
+import { legacyAgentKeys, runtimeAgentProvider } from '../workflow/agent-config.mjs';
 import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -489,7 +489,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   const agentConfig = await readFile(join(repositoryRoot, '.codex/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
   const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
-  if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
+  if (await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
       if (!await existingCodexWake(repositoryRoot)) throw new Error('Wake MCP is not enabled');
     } catch {

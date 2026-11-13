@@ -20,8 +20,7 @@ export function configuredProvider(config) {
   return provider;
 }
 
-// Claude Code model aliases and IDs; every other model ID belongs to Codex. Setup picks one provider
-// and only that provider's models may run, so a workflow never mixes providers.
+// Claude Code model aliases and IDs; every other model ID belongs to Codex.
 const CLAUDE_MODEL = /^(opus|sonnet|haiku|claude-[A-Za-z0-9._-]+)(\[[A-Za-z0-9]+\])?$/i;
 const MODEL_KEYS = AGENT_KEYS.filter((key) => key.endsWith('_model'));
 
@@ -29,13 +28,13 @@ export function modelBelongsToProvider(provider, model) {
   return provider === 'claude-code' ? CLAUDE_MODEL.test(model) : !CLAUDE_MODEL.test(model);
 }
 
-export function assertSingleProvider(config, binding = null) {
-  const provider = configuredProvider(config);
-  if (binding && binding.provider !== provider) throw new Error(`Workflow binding provider ${binding.provider} differs from the setup provider ${provider}; run setup with ${binding.provider} first. Providers are never mixed in one workflow.`);
-  if (binding && !modelBelongsToProvider(provider, binding.model)) throw new Error(`Workflow binding model ${binding.model} is not a ${provider} model.`);
+export function assertSingleProvider(config, binding = null, executionProvider = null) {
+  const provider = executionProvider || binding?.provider || configuredProvider(config);
+  if (!AGENT_PROVIDERS.includes(provider)) throw new Error(`Unsupported agent provider: ${provider}`);
+  if (binding && !modelBelongsToProvider(binding.provider, binding.model)) throw new Error(`Workflow binding model ${binding.model} is not a ${binding.provider} model.`);
   const [flat] = legacyAgentKeys(config);
   if (flat) throw new Error(`agents.${flat} is a flat key; run harness-codex update to move the model settings under agents.${provider}`);
-  for (const section of AGENT_PROVIDERS) for (const key of MODEL_KEYS) {
+  for (const section of [provider]) for (const key of MODEL_KEYS) {
     const model = config.agents?.[section]?.[key];
     if (typeof model === 'string' && model.trim() && !model.startsWith('agents.') && !modelBelongsToProvider(section, model)) throw new Error(`agents.${section}.${key} is ${model}, which is not a ${section} model; rerun setup so each provider keeps its own models.`);
   }

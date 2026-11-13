@@ -81,7 +81,7 @@ function validate(value, schema, path = '$') {
 
 // A skill's tier comes from its own document (see skill-declaration.mjs) and a workflow stage may override it with another
 // setup tier; the model and effort are always the active provider's agents.<provider>.<tier>_* values written by setup.
-export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null }) {
+export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null }) {
   const declaration = await readSkillDeclaration({ root, skill });
   requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
   let tier = declaration.model_tier;
@@ -95,10 +95,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
   const keys = tierSettingKeys(tier);
   // Model settings live under agents.<provider>; only the active provider's section is read.
-  const provider = configuredProvider(config);
-  const settings = providerAgents(config, provider);
-  const model = settings[keys.model], effort = settings[keys.reasoning_effort];
-  let recordedBinding = null;
+  let recordedBinding = null, orchestratorProvider = null;
   let session;
   try { session = sessionDirectory(root, { create: false }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -112,18 +109,24 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
       requireValue(await realpath(record.workspace) === await realpath(root) && record.session_directory === session, 'Canonical worktree record does not match binding workspace');
       requireValue(record.state === 'active', 'Workflow binding requires an active worktree');
       recordedBinding = record.workflow_binding || null;
+      orchestratorProvider = record.agent_sessions?.orchestrator?.provider || null;
     }
   }
-  const override = recordedBinding ? parseWorkflowBinding(recordedBinding) : workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
-  assertSingleProvider(config, override);
-  if (recordedBinding && workflowBinding) {
-    const supplied = parseWorkflowBinding(workflowBinding);
-    requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === override[key]), 'Workflow binding conflicts with canonical worktree record');
+  const supplied = workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
+  const provider = executionProvider || supplied?.provider || (process.env.HARNESS_SKILL_EXECUTION_ID ? process.env.HARNESS_PROVIDER_ID : null) || orchestratorProvider || recordedBinding?.provider || configuredProvider(config);
+  requireValue(['codex', 'claude-code'].includes(provider), 'Invalid execution provider');
+  const settings = providerAgents(config, provider);
+  const model = settings[keys.model], effort = settings[keys.reasoning_effort];
+  const override = supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);
+  requireValue(!override || override.provider === provider, 'Execution binding provider mismatch');
+  assertSingleProvider(config, override, provider);
+  if (recordedBinding && supplied && recordedBinding.provider === supplied.provider) {
+    requireValue(['provider', 'model', 'reasoning_effort'].every((key) => supplied[key] === recordedBinding[key]), 'Workflow binding conflicts with canonical worktree record');
   }
   if (!override) for (const [key, value] of [[keys.model, model], [keys.reasoning_effort, effort]]) {
     requireValue(typeof value === 'string' && value.trim() && !value.startsWith('agents.'), `Missing or invalid model binding: agents.${provider}.${key}`);
   }
-  return { skill, provider: override?.provider || configuredProvider(config), model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
+  return { skill, provider, model_tier: tier, model: override?.model || model, reasoning_effort: override?.reasoning_effort || effort };
 }
 
 // The subagent hook logs every reviewer a stage starts. A reviewer outside an admitted attempt, or forked
@@ -224,7 +227,9 @@ async function resolveInputWorktree(root, input) {
   const { parseWorktreeRecord } = await import('./worktrees.mjs');
   const record = parseWorktreeRecord(await readFile(ref, 'utf8'));
   requireValue(record.state === 'active' && record.session_directory === directory && await realpath(record.workspace) === await realpath(root), 'Worktree does not match execution workspace');
-  if (input.skill !== 'workflow-compose') requireValue(JSON.stringify(input.context?.workflow_binding ?? null) === JSON.stringify(record.workflow_binding ?? null), 'Input workflow_binding conflicts with canonical worktree record');
+  if (input.skill !== 'workflow-compose' && record.workflow_binding && (!input.context?.provider || record.workflow_binding.provider === input.context.provider)) requireValue(JSON.stringify(input.context?.workflow_binding ?? null) === JSON.stringify(record.workflow_binding), 'Input workflow_binding conflicts with canonical worktree record');
+  if (input.skill !== 'workflow-compose' && record.workflow_binding && input.context?.provider && record.workflow_binding.provider !== input.context.provider) requireValue(input.context.orchestrator_provider === input.context.provider && !input.context.workflow_binding, 'Switched provider must match the execution orchestrator');
+  if (input.skill !== 'workflow-compose' && input.context?.workflow_binding) requireValue(JSON.stringify(input.context.workflow_binding) === JSON.stringify(record.workflow_binding) && (!input.context.provider || input.context.workflow_binding.provider === input.context.provider), 'Input workflow binding provider mismatch');
   await validateSameRepository(root, record.return_root);
   requireValue(!input.context.plan_set_id || input.context.plan_set_id === record.plan_set_id, 'Input plan_set_id conflicts with worktree record');
   for (const [key, value] of Object.entries({ workspace_root: record.workspace, session_directory: record.session_directory })) {

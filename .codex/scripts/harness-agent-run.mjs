@@ -49,7 +49,7 @@ try {
   if (input.skill === 'workflow-compose') throw new Error('Workflow composition is performed by harness-compose-workspace.mjs');
   await validateSkillInput({ root, input });
   const { workflow, stage } = await resolveWorkflowStage({ root, input, workflow: opts.workflow || null, stage: opts.stage || null });
-  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null });
+  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null, executionProvider: input.context?.provider || null });
   activeBinding = binding;
   const providerId = input.context?.provider || binding.provider;
   if (providerId !== binding.provider || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== providerId) || (input.context?.resume_provider && input.context.resume_provider !== providerId)) throw new Error('Execution provider must match the orchestrator, configured model binding, and resumed session');
@@ -150,7 +150,7 @@ try {
   let compactionObserved = false;
   const runParent = async ({ output: parentOutput, prompt: parentPrompt, resume: parentResume }) => {
     const resumeWriteDirs = parentResume && adapter.resumeWriteDirs ? await adapter.resumeWriteDirs(parentResume, process.env) : [];
-    const invocationSkill = parentRuns++ === 0 && !input.context?.interrupted_execution_id ? requiredSkill : null;
+    const invocationSkill = parentRuns++ === 0 && (!input.context?.interrupted_execution_id || input.input_refs?.some((ref) => ref.kind === 'previous_execution_input')) ? requiredSkill : null;
     const command = await adapter.buildCommand({ root, sandbox, resumeWriteDirs, binding, schema: outputSchema, schemaPath: schema, output: parentOutput, resume: parentResume, role: profile, skill: input.skill, stageId: input.context?.stage_id, requiredSkill: invocationSkill, workerBase, env: process.env });
     return adapter.run({ root, args: command, prompt: parentPrompt, requiredSkill: invocationSkill, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'], HARNESS_WORKSPACE_ROOT: root, HARNESS_PROVIDER_ID: providerId, HARNESS_REVIEW_EXECUTION_ID: opts['execution-id'], HARNESS_REVIEW_TICKET_ID: input.context?.plan_set_id || '' }, onEvent: (event) => { recordEvent(event); if (event.event === 'runner_signal') cancelRequested = true; if (isCompactionEvent(event)) compactionObserved = true; }, onStdout: (data) => { if (stdoutFd !== null) appendFileSync(stdoutFd, data); }, onStderr: (data) => { appendFileSync(stderrFd, data); recordEvent({ event: 'codex_stderr', bytes: data.length }); }, onCodexError: (event) => appendFileSync(errorsFd, JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + '\n'), onStart: async (pid) => {
     const child = await processIdentity(pid);

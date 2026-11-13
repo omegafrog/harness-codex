@@ -7,27 +7,32 @@ import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { bindSetupUi, publishSetupBatch, recordSetupReplies, setupAnswerStatus } from '../../.harness/src/workflow/setup-answers.mjs';
+import { runtimeAgentProvider } from '../../.harness/src/workflow/agent-config.mjs';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE]]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --revise QUESTION_ID]]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
-  if (['--check', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
-  if (!['--root', '--answers', '--bind-ui', '--receive'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
+  if (['--check', '--start', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
+  if (!['--root', '--answers', '--bind-ui', '--receive', '--revise'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
-const actions = ['--status', '--cancel', '--bind-ui', '--receive'].filter((key) => options[key]);
+const runtimeProviderId = runtimeAgentProvider();
+if (runtimeProviderId && !['codex', 'claude-code'].includes(runtimeProviderId)) throw new Error('Invalid runtime provider');
+const actions = ['--status', '--cancel', '--bind-ui', '--receive', '--revise'].filter((key) => options[key]);
 if (actions.length > 1 || (actions.length && !options['--answers'])) throw new Error('Use one answer action with --answers');
+if (options['--start'] && (options['--answers'] || options['--check'] || actions.length)) throw new Error('--start cannot be combined with other setup actions');
 if (options['--check']) {
   if (options['--answers']) throw new Error('--check cannot be combined with --answers');
   const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
-  process.stdout.write(`${JSON.stringify(await inspectSetupConfiguration({ workspace_root: root }))}\n`);
+  process.stdout.write(`${JSON.stringify(await inspectSetupConfiguration({ workspace_root: root, provider: runtimeProviderId }))}\n`);
   process.exit(0);
 }
 const execFileAsync = promisify(execFile);
@@ -42,6 +47,11 @@ if (gitRoot.status !== 0) {
   gitRoot = await commandResult('git', ['rev-parse', '--show-toplevel']);
 }
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
+if (options['--start']) {
+  const { sessionOutputPath } = await import('../../.harness/src/workflow/session-output.mjs');
+  options['--answers'] = sessionOutputPath(root, `runtime/setup/${randomUUID()}/answers.json`);
+  await writeFile(options['--answers'], '{"answers":{}}\n', { flag: 'wx', mode: 0o600 });
+}
 const native = Boolean(options['--answers']);
 let document, answerPath;
 const saveAnswers = async () => {
@@ -68,6 +78,13 @@ if (native) {
   if (actions.length) {
     let result;
     if (options['--cancel']) { document.status = 'cancelled'; result = setupAnswerStatus(document); }
+    else if (options['--revise']) {
+      if (['cancelled', 'configured'].includes(document.status)) throw new Error('Cannot revise a cancelled or configured setup');
+      if (options['--revise'] !== 'Project owner#1' || !Object.hasOwn(document.answers, options['--revise'])) throw new Error('Only a recorded Project owner answer can be revised');
+      for (const id of Object.keys(document.answers)) if (id === options['--revise'] || /^(GitHub Project 선택|Project가 없습니다\.|Workflow Status 필드|이 설정으로 계속할까요\?)/.test(id)) delete document.answers[id];
+      document.batch = null;
+      result = { status: 'revised', setup_id: document.setup_id, question_id: options['--revise'], can_continue: true };
+    }
     else if (options['--bind-ui']) result = bindSetupUi(document, await readFile(options['--bind-ui'], 'utf8'), root);
     else if (options['--receive']) {
       const replyRef = relative(output.sessionDirectory(root), resolve(root, options['--receive'])).split(sep).join('/');
@@ -310,17 +327,17 @@ async function main() {
   const { AGENT_TIERS, migrateAgentsText, providerAgents } = await import(new URL('../../.harness/src/workflow/agent-config.mjs', import.meta.url).href);
   const config = parseYaml(migrateAgentsText(oldConfig).text);
   const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
-  const existing = await inspectSetupConfiguration({ workspace_root: root });
+  const existing = await inspectSetupConfiguration({ workspace_root: root, provider: runtimeProviderId });
   const worktreeResult = await commandResult('git', ['worktree', 'list', '--porcelain']);
   if (worktreeResult.status !== 0) throw new Error(`Git worktree 목록 확인 실패: ${worktreeResult.stderr || worktreeResult.error?.message}`);
   const registeredWorktrees = [...worktreeResult.stdout.matchAll(/^worktree (.+)$/gm)].map((match) => resolve(match[1]));
   const isExistingWorktree = registeredWorktrees.includes(root) && registeredWorktrees[0] !== root;
   const branchResult = await commandResult('git', ['branch', '--show-current']);
   const branch = branchResult.status === 0 ? branchResult.stdout.trim() : '';
-  const runtimeProvider = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID ? 'Codex CLI' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'Claude Code' : null;
+  const runtimeProvider = runtimeProviderId === 'codex' ? 'Codex CLI' : runtimeProviderId === 'claude-code' ? 'Claude Code' : null;
   questionContext = [runtimeProvider && `현재 실행 환경: ${runtimeProvider}.`, isExistingWorktree ? `현재 위치: 이미 생성된 linked worktree${branch ? ` (${branch})` : ''}. 이 setup은 현재 worktree를 유지합니다.` : `현재 위치: ${branch || '기본 저장소'}.`].filter(Boolean).join(' ');
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
-  const existingProvider = currentProviderOf(config), existingModels = providerAgents(config, existingProvider);
+  const existingProvider = runtimeProviderId || currentProviderOf(config), existingModels = providerAgents(config, existingProvider);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
     { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
   ], 'reuse', `현재 설정: provider ${existingProvider}, 모델 ${Object.entries(existingModels).filter(([key]) => key.endsWith('_model') && key !== 'default_model').map(([key, value]) => `${key}=${value}/${existingModels[key.replace('_model', '_reasoning_effort')] || '?'}`).join(', ') || '없음'}, tracker ${config.tracker?.mode || '미설정'}${config.tracker?.github?.repository ? ` (${config.tracker.github.repository} #${config.tracker.github.project_number || '?'})` : ''}, Beads ${config.beads?.enabled === true ? '사용' : config.beads?.enabled === false ? '끔' : '미설정'}, 관측성 ${config.observability?.victorialogs?.local?.enabled === true ? '사용' : config.observability?.victorialogs?.local?.enabled === false ? '끔' : '미설정'}`) === 'reuse';
@@ -330,7 +347,7 @@ async function main() {
   if (reuse && hasWorktreeDirectory && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
     requireComplete();
     await prepareProjectFiles();
-    await prepareCodexSubagentHook(currentProviderOf(config));
+    await prepareCodexSubagentHook(existingProvider);
     console.log('기존 설정을 유지했습니다.');
     return;
   }
@@ -342,7 +359,7 @@ async function main() {
   const worktreeDirectory = hasWorktreeDirectory ? config.worktrees.directory : isExistingWorktree ? defaultWorktreeDirectory : await ask('워크트리 생성 위치 (절대 경로)', defaultWorktreeDirectory);
   if (!isAbsolute(worktreeDirectory) || worktreeDirectory.includes('\0')) throw new Error('워크트리 생성 위치는 절대 경로여야 합니다.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
-  const currentProvider = ['codex', 'claude-code'].includes(config.agents?.provider) ? config.agents.provider : 'codex';
+  const currentProvider = runtimeProviderId || currentProviderOf(config);
   // Only providers this installation carries can be chosen (install --provider codex|claude-code|all).
   const exists = (path) => existsSync(join(root, path));
   const offered = [
@@ -350,10 +367,10 @@ async function main() {
     ...(exists('.claude/harness/providers/claude-code.mjs') ? [{ value: 'claude-code', label: 'Claude Code CLI' }] : []),
   ];
   if (!offered.length) throw new Error('No agent provider is installed; run harness-codex install --provider codex|claude-code|all');
-  if (reuse && !offered.some((item) => item.value === currentProvider)) throw new Error(`agents.provider is ${currentProvider}, which is not installed; install it or choose a new setup`);
-  const provider = reuse ? currentProvider : await choose('실행 provider 선택', offered, offered.some((item) => item.value === currentProvider) ? currentProvider : offered[0].value, { agents: config.agents || {} });
+  if (!offered.some((item) => item.value === currentProvider)) throw new Error(`Runtime provider ${currentProvider} is not installed`);
+  const provider = currentProvider;
   // The provider decides the model list, and each model decides its effort list.
-  const providerDeps = !reuse && native ? [lastQuestionId] : [];
+  const providerDeps = [];
   const validProviderEffort = (value) => provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) : validEffort(value);
   const claudeModels = [
     { id: 'opus', description: '복잡한 설계·최종 검토' },
@@ -441,6 +458,7 @@ async function main() {
     }
     const reuseOwner = reuse && hasText(existingGithub.project_owner);
     const owner = reuseOwner ? existingGithub.project_owner : await ask('Project owner', existingGithub.project_owner || repository.split('/')[0], { dependsOn: repositoryDeps });
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner)) throw new Error('Project owner는 GitHub 사용자 또는 조직 이름이어야 합니다. 답변을 수정하려면 --revise \"Project owner#1\"를 사용하세요.');
     const ownerDeps = [...repositoryDeps, ...idOfLast(!reuseOwner)];
     let chosen;
     if (reuse && Number.isSafeInteger(existingGithub.project_number) && existingGithub.project_number > 0) chosen = String(existingGithub.project_number);
@@ -550,7 +568,6 @@ async function main() {
   const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   let configText = migrateAgentsText(currentConfig).text;
   if (!reuse || !hasWorktreeDirectory) configText = setYamlScalar(configText, ['worktrees', 'directory'], worktreeDirectory);
-  if (!reuse || !hasText(config.agents?.provider)) configText = setYamlScalar(configText, ['agents', 'provider'], provider);
   // Each provider keeps its own section, so choosing another provider later leaves these models in place.
   for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(providerSettings[key]) : hasText(providerSettings[key]))) configText = setYamlScalar(configText, ['agents', provider, key], value);
   if (!reuse || !['local-markdown', 'github'].includes(config.tracker?.mode)) configText = setYamlScalar(configText, ['tracker', 'mode'], mode);
@@ -605,14 +622,14 @@ main().then(async () => {
   if (native) {
     document.status = 'configured';
     await saveAnswers();
-    process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
+    process.stdout.write(JSON.stringify({ status: 'configured', root, ...(options['--start'] ? { answers_path: answerPath } : {}) }) + '\n');
   }
 }).catch(async (error) => {
   // `pending` stays the first question for callers that still ask one at a time; `questions` is the whole batch.
   const needsInput = async () => {
     const result = publishSetupBatch(document, batch);
     await saveAnswers();
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...result, ...(options['--start'] ? { answers_path: answerPath } : {}) })}\n`);
   };
   if (error instanceof PendingQuestion) await needsInput();
   // An error reached only through provisional answers ends the discovery; it is raised for real once they are answered.

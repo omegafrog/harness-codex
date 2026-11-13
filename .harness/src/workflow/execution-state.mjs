@@ -63,7 +63,7 @@ export async function completeExecutionState({ root, session_directory }) {
 
 export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
-  const codexSessionId = input.context?.codex_session_id || process.env.CODEX_THREAD_ID || null;
+  const codexSessionId = input.context?.codex_session_id || (input.context?.orchestrator_provider === 'claude-code' ? null : process.env.CODEX_THREAD_ID || null);
   const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
   const orchestratorProvider = input.context?.orchestrator_provider || (codexSessionId ? 'codex' : null);
   const stage = input.context?.stage_id || input.skill;

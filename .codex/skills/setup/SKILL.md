@@ -10,6 +10,10 @@ model_tier: execution
 
 질문 접수는 답변이 아니다. [설정 선택](references/native-choices.md)의 배치 연결·즉시 수신 기록·`can_continue` 판정을 사용한다. 사용자의 중단·설명 요청에 먼저 응답하며, 중단 상태는 늦은 폼 답변으로 재개하지 않는다.
 
+새 설정은 `harness-setup.mjs --start`로 시작한다. 세션 파일 생성과 경로 반환은 실행기가 맡는다.
+
+provider는 현재 실행 중인 CLI에서 결정한다. 별도 provider 선택은 묻지 않으며, 각 CLI의 모델 설정은 `agents.<provider>`에 따로 보존한다.
+
 1. 프로젝트의 `.codex/harness-lock.json`과 `.codex/scripts/harness-setup.mjs`가 있으면 설치된 Harness로 판단하고 [설정 선택](references/native-choices.md)에 따라 프로젝트의 `node .codex/scripts/harness-setup.mjs`를 직접 실행한다. CLI는 현재 실행 환경과 기존 worktree 여부를 질문 context에 표시한다. 이미 linked worktree에서 실행 중이면 그 workspace를 유지하고 새 workflow worktree를 만들지 않는다. 기존 설정이 있으면 CLI가 재사용 또는 재설정을 묻는다. 각 배치에서는 현재 선택으로 조건이 확정된 질문만 한 화면에서 묻고, 선택에 따라 필요한 다음 질문만 후속 배치로 묻는다. 별도 중복 질문이나 이전 실행의 답변 재사용을 하지 않는다. 설치가 필요한 경우 [초기 setup](references/initial-setup.md)을 따른다.
 2. [초기 setup과 기준 commit](references/initial-setup.md)에 따라 결과를 확인하고 기준 commit을 준비한다.
 3. 관측성을 선택한 경우 `victorialogs-local-setup`을 호출한다. Beads 준비와 상태 확인은 setup CLI의 완료 결과에 포함된다.

@@ -22,6 +22,6 @@ try {
   const prefix = `runtime/executions/${input.execution_id}`;
   const path = `${input.session_directory}/${prefix}/return.schema.json`;
   const config = parseYaml(await readFile(join(opts.root, '.codex/harness.yaml'), 'utf8'));
-  await writeOutputSchema({ root: opts.root, input, prefix, path, provider: input.context?.workflow_binding?.provider || configuredProvider(config) });
+  await writeOutputSchema({ root: opts.root, input, prefix, path, provider: input.context?.provider || input.context?.workflow_binding?.provider || configuredProvider(config) });
   process.stdout.write(`${JSON.stringify({ path })}\n`);
 } catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }

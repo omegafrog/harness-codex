@@ -118,6 +118,7 @@ test("a skill's tier comes from its own declaration and maps to agents.<provider
     }
     assert.deepEqual(tierSettingKeys('low_performance'), { model: 'low_performance_model', reasoning_effort: 'low_performance_reasoning_effort' });
     assert.throws(() => tierSettingKeys('low'), /Unknown model tier: low/);
+    assert.deepEqual(await resolveSkillBinding({ root, skill: 'light', executionProvider: 'claude-code' }), { skill: 'light', provider: 'claude-code', model_tier: 'low_performance', model: 'haiku', reasoning_effort: 'low' });
     // The active provider's section is the one that is read.
     await writeFile(join(root, '.codex/harness.yaml'), SETUP.replace('provider: codex', 'provider: claude-code'));
     assert.deepEqual(await resolveSkillBinding({ root, skill: 'light' }), { skill: 'light', provider: 'claude-code', model_tier: 'low_performance', model: 'haiku', reasoning_effort: 'low' });

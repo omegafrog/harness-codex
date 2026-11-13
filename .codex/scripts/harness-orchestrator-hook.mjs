@@ -49,7 +49,7 @@ try {
   }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
     const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
-    observed.setup_configuration = await inspectSetupConfiguration({ workspace_root: root });
+    observed.setup_configuration = await inspectSetupConfiguration({ workspace_root: root, provider: 'codex' });
     if (observed.setup_configuration.status === 'setup_required') { observed.decision_hint = 'setup_candidate'; observed.reason = 'Required setup configuration is missing or invalid'; }
   }
   const progress = uninitialized ? null : await refreshWorkflowProgress(observed, event.hook_event_name);

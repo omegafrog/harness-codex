@@ -10,7 +10,7 @@ For assigned headless stages, the runner supplies the selected internal GUIDE an
 
 비대화식 Claude 메인 orchestrator의 시작과 재개는 대상 workspace를 cwd로 `node .claude/harness/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .claude/harness/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<요청>'`으로 실행한다. 이 호출은 사용자 요청 범위의 메인 Claude에 `bypassPermissions`를 명시한다. 각 stage의 권한은 아래 profile 규칙을 따른다.
 
-orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행한다. 입력 검증·상태 기록·gate는 공통 runner가 소유하고 명령 실행·결과 해석·세션 재개는 `.harness/src/workflow/providers/`의 선택된 adapter가 소유한다. `agents.provider`의 기본값은 `codex`다. 같은 단계 재개는 `worktree.json`에 기록된 provider를 유지하며 단계 경계에서는 설정된 provider를 사용한다. Codex는 native subagent를, Claude Code는 `.claude/agents/<role>.md`에 설치된 동일 role의 native subagent를 사용한다. Claude subagent의 시작·종료 ID와 결과는 `runtime/executions/<execution-id>/subagents.jsonl`에 기록한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
+orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행한다. 입력 검증·상태 기록·gate는 공통 runner가 소유하고 명령 실행·결과 해석·세션 재개는 `.harness/src/workflow/providers/`의 선택된 adapter가 소유한다. 각 실행은 현재 orchestrator CLI의 provider를 사용하며 시작한 실행의 provider는 바뀌지 않는다. 같은 provider의 대화는 재개하고 다른 provider로 전환하면 이전 대화 ID를 넘기지 않은 새 세션에서 정본 산출물·이전 결과·답변을 이어받는다. 기존 `agents.provider`는 CLI 정보가 없는 구형 실행의 기본값으로 보존한다. Codex는 native subagent를, Claude Code는 `.claude/agents/<role>.md`에 설치된 동일 role의 native subagent를 사용한다. Claude subagent의 시작·종료 ID와 결과는 `runtime/executions/<execution-id>/subagents.jsonl`에 기록한다. 저장되지 않은 subagent 식별자나 결과는 추정하지 않는다. 사용자 질문은 부모가 공통 질문 계약으로 반환한다.
 
 실행기는 정본 worktree와 Git 등록을 확인하고 입력·답변·피드백 및 실행 디렉터리의 실제 절대 경로를 결정해 전달한다. 실행기와 결과 검증기·listener는 같은 경로 계산을 사용하며 모델이 결과 파일 위치를 선택하지 않는다. 리뷰 대상은 정본 workspace와 admission snapshot을 기준으로 지정한다. 결과 artifact는 기존 `base`와 상대 경로를 사용한다. Claude의 파일 권한 거부 경로와 workspace 포함 여부는 해당 실행의 process-events에 기록한다.
 
@@ -18,7 +18,7 @@ orchestrator가 직접 시작하는 단계는 `harness-agent-run.mjs`로 실행�
 
 Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<role>.toml` or the installed Claude equivalent `.claude/agents/<role>.md` and applies that profile's sandbox/permission mode. `danger-full-access` is permitted only for an explicitly designated workflow stage; in this repository it is reserved for `tracker-publish` in the `to-ticket` workflow and is not inherited by the plan author or other stages.
 
-부모 stage 프로세스가 중단되면 [실행과 결과](references/dispatch.md)의 중단 복구 절차로 같은 provider의 부모 대화를 재개한다. 재개된 대화의 native subagent 기록과 현재 작업 context를 이어 쓰며, Harness `agent_sessions`와 provider runtime 기록에 없는 subagent ID를 만들거나 완료되지 않은 위임을 완료로 추정하지 않는다.
+부모 stage 프로세스가 중단되면 [실행과 결과](references/dispatch.md)의 중단 복구 절차로 프로세스 종료를 확인한다. 같은 provider는 부모 대화를 재개하고 다른 provider는 기존 입력·산출물을 확인하는 새 대화를 시작한다. Harness `agent_sessions`와 provider runtime 기록에 없는 subagent ID를 만들거나 완료되지 않은 위임을 완료로 추정하지 않는다.
 
 - 입력 준비와 최초 worktree 생성: [입력 준비](references/input.md)
 - 출력 계약과 실행 상태: [스키마와 실행 상태](references/state.md)

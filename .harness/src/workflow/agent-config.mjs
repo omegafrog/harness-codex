@@ -1,10 +1,11 @@
-// Model settings are kept per provider under `agents.<provider>`, so each provider has its own models and switching
-// the active `agents.provider` never needs them to be entered again. Only the active provider's section is used to run.
+// Model settings are kept per provider under `agents.<provider>`. `agents.provider` is a legacy fallback when the
+// current execution has no provider identity; switching CLI does not change either provider's settings.
 export const AGENT_PROVIDERS = ['codex', 'claude-code'];
 export const AGENT_TIERS = ['high_performance', 'implementation', 'execution', 'low_performance'];
 export const AGENT_KEYS = [...AGENT_TIERS.flatMap((tier) => [`${tier}_model`, `${tier}_reasoning_effort`]), 'default_model'];
 
 export const activeAgentProvider = (config) => config?.agents?.provider || 'codex';
+export const runtimeAgentProvider = (env = process.env) => env.HARNESS_PROVIDER_ID || (env.CLAUDECODE || env.CLAUDE_CODE_SESSION_ID || env.CLAUDE_SESSION_ID ? 'claude-code' : env.CODEX_THREAD_ID || env.CODEX_SESSION_ID ? 'codex' : null);
 
 // The only place a tier is turned into settings: agents.<provider>.<tier>_model and agents.<provider>.<tier>_reasoning_effort.
 export const tierSettingKeys = (tier) => {

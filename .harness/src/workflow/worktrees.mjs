@@ -203,7 +203,11 @@ export async function recordWorkflowSession({ workspace_root, repository_root = 
     const current = await describe(place.workspace);
     if (current.common !== record.common || current.branch !== record.branch || current.git_dir !== record.git_dir) throw new Error('Worktree changed while recording an agent session');
     const entry = { provider, session_id, execution_id, updated_at: new Date().toISOString() };
-    const updated = { ...record, agent_sessions: { ...(record.agent_sessions || {}), [key]: entry } };
+    const sessions = { ...(record.agent_sessions || {}) };
+    const previous = sessions[key];
+    if (previous) sessions[`${key}.${previous.provider || 'codex'}`] = previous;
+    sessions[`${key}.${provider}`] = entry;
+    const updated = { ...record, agent_sessions: { ...sessions, [key]: entry } };
     await writeWorktreeRecord(place, updated);
     return entry;
   });
