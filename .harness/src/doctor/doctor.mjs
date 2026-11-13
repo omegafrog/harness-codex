@@ -4,6 +4,7 @@ import { legacyAgentKeys, runtimeAgentProvider } from '../workflow/agent-config.
 import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { homedir } from "node:os";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFile } from "../installer/lock.mjs";
@@ -16,7 +17,7 @@ import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
-import { existingCodexWake } from '../workflow/codex-wake.mjs';
+import { inspectCodexWake } from '../workflow/codex-wake.mjs';
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
@@ -491,9 +492,10 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
-      if (!await existingCodexWake(repositoryRoot)) throw new Error('Wake MCP is not enabled');
-    } catch {
-      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', 'Existing Codex Wake MCP is unavailable; use harness-stage-listen to retrieve stage results.', null));
+      const wake = await inspectCodexWake(repositoryRoot);
+      if (wake.status !== 'available') diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', `Codex Wake MCP unavailable in active CODEX_HOME (${wake.codex_home}): ${wake.reason}; use harness-stage-listen to retrieve stage results.`, null));
+    } catch (error) {
+      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', `Codex Wake check failed in active CODEX_HOME (${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}): ${safeMessage(error, 'unknown error')}`, null));
     }
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');

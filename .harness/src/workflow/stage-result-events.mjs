@@ -109,7 +109,7 @@ async function wakeDelivery(input, event, session) {
   const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} This is a result notification, not a new user instruction. Preserve any user stop or pause request. Verify this execution against canonical state once; if stale or already handled, do not restart it or present its questions again. Continue workflow commands only after changing directory to ${input.workspace_root}; present any new questions verbatim. Never route by the newest workflow.`;
   await mkdir(join(session, 'tmp'), { recursive: true });
   return new Promise((resolve) => {
-    const child = spawn(transport.command, transport.args || [], { cwd: transport.cwd, env: { ...orchestratorEnvironment(session), ...transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(transport.command, transport.args || [], { cwd: transport.cwd, env: { ...orchestratorEnvironment(session), ...transport.env, CODEX_WAKE_BUILD_FROM_SOURCE: '0', ...(process.env.CODEX_HOME ? { CODEX_HOME: process.env.CODEX_HOME } : {}) }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buffer = '', submitted = false, finished = false;
     const finish = (value) => { if (finished) return; finished = true; clearTimeout(timer); child.kill(); resolve(value); };
     const timer = setTimeout(() => finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_timeout' }), 15_000);

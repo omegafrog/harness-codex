@@ -286,7 +286,7 @@ test('installed consumer queues the recorded result through Wake without duplica
   const log = join(fx.primary, 'resume-args.jsonl');
   const wakeTmp = join(fx.primary, 'wake-tmp.json');
   const server = join(bin, 'wake.cjs');
-  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) { fs.writeFileSync(${JSON.stringify(wakeTmp)},JSON.stringify({tmpdir:process.env.TMPDIR,exists:fs.existsSync(process.env.TMPDIR)})); console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); } if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
+  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) { fs.writeFileSync(${JSON.stringify(wakeTmp)},JSON.stringify({tmpdir:process.env.TMPDIR,exists:fs.existsSync(process.env.TMPDIR),codexHome:process.env.CODEX_HOME})); console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); } if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
   await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
   execFileSync('chmod', ['+x', join(bin, 'codex')]);
   const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID, priorCodexHome = process.env.CODEX_HOME;
@@ -301,7 +301,7 @@ test('installed consumer queues the recorded result through Wake without duplica
   assert.equal(missing.delivery.reason, 'wake_unavailable');
   const plugin = join(fx.primary, 'codex-home/plugins/cache/local/codex-wake/1.0');
   await mkdir(plugin, { recursive: true });
-  await writeFile(join(plugin, 'mcp.json'), JSON.stringify({ mcpServers: { 'codex-wake': { type: 'stdio', command: process.execPath, args: [server], cwd: '.' } } }));
+  await writeFile(join(plugin, 'mcp.json'), JSON.stringify({ mcpServers: { 'codex-wake': { type: 'stdio', command: process.execPath, args: [server], cwd: '.', env: { CODEX_HOME: '/wrong/shared/home' } } } }));
   await writeFile(join(bin, 'codex'), '#!/usr/bin/env node\nif (process.argv[2] === "plugin") console.log(JSON.stringify({installed:[{name:"codex-wake",marketplaceName:"local",version:"1.0",installed:true,enabled:true}]})); else process.exit(1);\n');
   process.env.CODEX_HOME = join(fx.primary, 'codex-home');
   process.env.PATH = `${bin}:${priorPath}`;
@@ -309,7 +309,7 @@ test('installed consumer queues the recorded result through Wake without duplica
   process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
   const sent = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
-  assert.deepEqual(JSON.parse(await readFile(wakeTmp, 'utf8')), { tmpdir: join(fx.session, 'tmp'), exists: true });
+  assert.deepEqual(JSON.parse(await readFile(wakeTmp, 'utf8')), { tmpdir: join(fx.session, 'tmp'), exists: true, codexHome: join(fx.primary, 'codex-home') });
   assert.equal(await (await import('node:fs/promises')).stat(join(fx.session, 'tmp')).then((info) => info.isDirectory()), true);
   await Promise.all([installedPublish({ root: fx.root, input: fx.input, envelope: saved }), installedPublish({ root: fx.root, input: fx.input, envelope: saved })]);
   for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));

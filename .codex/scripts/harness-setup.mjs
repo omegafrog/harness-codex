@@ -14,13 +14,13 @@ import { runtimeAgentProvider } from '../../.harness/src/workflow/agent-config.m
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout [ROLLOUT_JSONL] | --revise QUESTION_ID]]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --check-wake | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout [ROLLOUT_JSONL] | --revise QUESTION_ID]]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
   if (args[i] === '--receive-rollout' && (!args[i + 1] || args[i + 1].startsWith('--'))) { options[args[i]] = true; i -= 1; continue; }
-  if (['--check', '--start', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
+  if (['--check', '--check-wake', '--start', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
   if (!['--root', '--answers', '--bind-ui', '--receive', '--receive-rollout', '--revise'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
   options[args[i]] = args[i + 1];
 }
@@ -30,6 +30,15 @@ if (runtimeProviderId && !['codex', 'claude-code'].includes(runtimeProviderId)) 
 const actions = ['--status', '--cancel', '--bind-ui', '--receive', '--receive-rollout', '--revise'].filter((key) => options[key]);
 if (actions.length > 1 || (actions.length && !options['--answers'])) throw new Error('Use one answer action with --answers');
 if (options['--start'] && (options['--answers'] || options['--check'] || actions.length)) throw new Error('--start cannot be combined with other setup actions');
+if (options['--check-wake']) {
+  if (options['--check'] || options['--start'] || options['--answers'] || actions.length) throw new Error('--check-wake cannot be combined with setup actions');
+  if (runtimeProviderId && runtimeProviderId !== 'codex') process.stdout.write(`${JSON.stringify({ status: 'skipped', reason: 'not_codex' })}\n`);
+  else {
+    const { inspectCodexWake } = await import('../../.harness/src/workflow/codex-wake.mjs');
+    process.stdout.write(`${JSON.stringify(await inspectCodexWake(root))}\n`);
+  }
+  process.exit(0);
+}
 if (options['--check']) {
   if (options['--answers']) throw new Error('--check cannot be combined with --answers');
   const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
