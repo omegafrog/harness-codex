@@ -136,6 +136,11 @@ test('install and update never install Wake and Doctor checks only the configure
     assert.doesNotMatch(await readFile(join(root, path), 'utf8'), /harness-stage-listen|codex_wake_unavailable/);
   }
   await assert.rejects(readFile(join(root, '.codex/scripts/harness-stage-listen.mjs')), { code: 'ENOENT' });
+  const maintenance = await readFile(join(root, '.codex/internal-skills/harness-maintenance/GUIDE.md'), 'utf8');
+  assert.match(maintenance, /harness-doctor\.mjs --project <repository-root> --json/);
+  assert.match(maintenance, /only the diagnostics returned by that invocation/);
+  const installedReport = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8', env });
+  assert.ok(JSON.parse(installedReport.stdout).diagnostics.every(({ code, message }) => !/wake/i.test(code) && !/harness-stage-listen/i.test(message)));
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.some((args) => args.some((arg) => /codex-wake/.test(arg))), false);
   assert.equal(await readFile(join(root, 'user-file.txt'), 'utf8'), 'preserve');

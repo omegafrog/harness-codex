@@ -18,10 +18,10 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
    Run the installed version's diagnostic command:
 
    ```bash
-   node .codex/scripts/harness-doctor.mjs --project <repository-root>
+   node .codex/scripts/harness-doctor.mjs --project <repository-root> --json
    ```
 
-5. Report updated and added files, any `Preserved` files, and the diagnostic result. Never run `harness-codex lock` for preserved files automatically: it accepts the current local content as the new baseline, so the user must review and merge those files first.
+5. Report updated and added files, any `Preserved` files, and only the diagnostics returned by that invocation for this root. Do not carry warnings, counts, or recovery instructions from earlier conversation turns or another worktree into the current report. If Doctor cannot run or its JSON is invalid, report that failure instead of guessing. Never run `harness-codex lock` for preserved files automatically: it accepts the current local content as the new baseline, so the user must review and merge those files first.
 
 The updater backs up and replaces managed internal instructions under `.codex/internal-skills/` and the three public skills under `.agents/skills/` by default. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. Other managed assets preserve local changes by default. If the user explicitly requests force install/update or replacing local Harness modifications, run the same install/update command with `--force`; this backs up and replaces all selected managed assets. Do not hand-copy individual skills or run lock to hide conflicts. Report any backup directory.
 
