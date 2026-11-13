@@ -8,7 +8,7 @@ import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validate
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { PlanCheckpointStore } from '../wrapper/checkpoint.mjs';
-import { existingCodexWake } from './codex-wake.mjs';
+import { checkWakeService, existingCodexWake } from './codex-wake.mjs';
 
 const directory = 'runtime/orchestrator/stage-results';
 const deliveryRequestId = (input) => createHash('sha256').update(`${input.context?.worktree_ref || ''}:${input.execution_id}`).digest('hex');
@@ -104,8 +104,12 @@ function orchestratorEnvironment(session) {
 }
 
 async function wakeDelivery(input, event, session) {
+  const account = await checkWakeService(input.workspace_root);
+  if (account.status !== 'available') return { status: 'unsupported', reason: account.reason };
   const transport = await existingCodexWake(input.workspace_root);
   if (!transport) return { status: 'unsupported', reason: 'wake_unavailable' };
+  const service = await checkWakeService(input.workspace_root, transport);
+  if (service.status !== 'available') return { status: 'unsupported', reason: service.reason };
   const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} This is a result notification, not a new user instruction. Preserve any user stop or pause request. Verify this execution against canonical state once; if stale or already handled, do not restart it or present its questions again. Continue workflow commands only after changing directory to ${input.workspace_root}; present any new questions verbatim. Never route by the newest workflow.`;
   await mkdir(join(session, 'tmp'), { recursive: true });
   return new Promise((resolve) => {

@@ -56,13 +56,42 @@ export async function existingCodexWake(cwd, { verifyBinary = true } = {}) {
   } catch { return null; }
 }
 
+// Wake owns one shared service. Check its account before launching the MCP, which can start or alter that service.
+export async function checkWakeService(cwd, transport = null) {
+  const codex_home = resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
+  try {
+    const service = (await exec('systemctl', ['--user', 'show', 'codex-wake.service', '--property=Environment', '--value'], { cwd, timeout: 3000 })).stdout;
+    const value = (key) => {
+      const match = new RegExp(`(?:^|\\s)${key}=(?:"([^"]+)"|(\\S+))`).exec(service);
+      return match?.[1] || match?.[2] || null;
+    };
+    const { realpath } = await import('node:fs/promises');
+    const canonical = async (path) => realpath(path).catch(() => path);
+    const serviceHome = value('CODEX_HOME');
+    if (serviceHome && await canonical(resolve(serviceHome)) !== await canonical(codex_home)) return { status: 'unavailable', reason: 'service_codex_home_mismatch', codex_home, service_codex_home: resolve(serviceHome) };
+    const pluginBase = value('CODEX_WAKE_PLUGIN_BASE');
+    const wrapper = transport && [transport.command, ...(transport.args || [])].find((arg) => typeof arg === 'string' && /(?:^|\/)run-mcp\.sh$/.test(arg));
+    if (pluginBase && wrapper) {
+      const base = await canonical(resolve(pluginBase));
+      const plugin = await canonical(resolve(transport.cwd, wrapper, '../..'));
+      const rel = relative(base, plugin);
+      if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { status: 'unavailable', reason: 'service_plugin_path_mismatch', codex_home, service_plugin_base: base, plugin_path: plugin };
+    }
+    return { status: 'available', codex_home, service_check: serviceHome ? 'matched' : 'not_detected' };
+  } catch { return { status: 'available', codex_home, service_check: 'not_detected' }; }
+}
+
 // A tools/list handshake checks the configured MCP without queuing a message or resuming a thread.
 export async function inspectCodexWake(cwd) {
   const codex_home = resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
+  const account = await checkWakeService(cwd);
+  if (account.status !== 'available') return account;
   const transport = await existingCodexWake(cwd, { verifyBinary: false });
   if (!transport) return { status: 'unavailable', reason: 'not_configured_for_active_codex_home', codex_home };
   if (typeof transport.command !== 'string' || typeof transport.cwd !== 'string' || (transport.args !== undefined && (!Array.isArray(transport.args) || transport.args.some((arg) => typeof arg !== 'string'))) || (transport.env != null && (typeof transport.env !== 'object' || Array.isArray(transport.env)))) return { status: 'unavailable', reason: 'invalid_mcp_transport', codex_home };
   if (!await hasExistingWakeBinary(transport)) return { status: 'unavailable', reason: 'existing_wake_binary_missing_or_invalid', codex_home };
+  const service = await checkWakeService(cwd, transport);
+  if (service.status !== 'available') return service;
   const result = await new Promise((resolveResult) => {
     let finished = false, buffer = '';
     const child = spawn(transport.command, transport.args || [], { cwd: transport.cwd, env: { ...process.env, ...transport.env, CODEX_HOME: codex_home, CODEX_WAKE_BUILD_FROM_SOURCE: '0' }, stdio: ['pipe', 'pipe', 'ignore'] });
@@ -92,25 +121,5 @@ export async function inspectCodexWake(cwd) {
     send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-setup', version: '1' } } });
   });
   if (result.status !== 'available') return result;
-  try {
-    const service = (await exec('systemctl', ['--user', 'show', 'codex-wake.service', '--property=Environment', '--value'], { cwd, timeout: 3000 })).stdout;
-    const value = (key) => {
-      const match = new RegExp(`(?:^|\\s)${key}=(?:"([^"]+)"|(\\S+))`).exec(service);
-      return match?.[1] || match?.[2] || null;
-    };
-    const { realpath } = await import('node:fs/promises');
-    const canonical = async (path) => realpath(path).catch(() => path);
-    const serviceHome = value('CODEX_HOME');
-    if (serviceHome && await canonical(resolve(serviceHome)) !== await canonical(codex_home)) return { status: 'unavailable', reason: 'service_codex_home_mismatch', codex_home, service_codex_home: resolve(serviceHome) };
-    const pluginBase = value('CODEX_WAKE_PLUGIN_BASE');
-    const wrapper = [transport.command, ...(transport.args || [])].find((arg) => /(?:^|\/)run-mcp\.sh$/.test(arg));
-    if (pluginBase && wrapper) {
-      const base = await canonical(resolve(pluginBase));
-      const plugin = await canonical(resolve(transport.cwd, wrapper, '../..'));
-      const rel = relative(base, plugin);
-      if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { status: 'unavailable', reason: 'service_plugin_path_mismatch', codex_home, service_plugin_base: base, plugin_path: plugin };
-    }
-    if (serviceHome) return { ...result, service_check: 'matched' };
-  } catch {}
-  return { ...result, service_check: 'not_detected' };
+  return { ...result, service_check: service.service_check };
 }

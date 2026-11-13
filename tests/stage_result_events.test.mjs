@@ -289,8 +289,11 @@ test('installed consumer queues the recorded result through Wake without duplica
   await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) { fs.writeFileSync(${JSON.stringify(wakeTmp)},JSON.stringify({tmpdir:process.env.TMPDIR,exists:fs.existsSync(process.env.TMPDIR),codexHome:process.env.CODEX_HOME})); console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); } if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
   await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
   execFileSync('chmod', ['+x', join(bin, 'codex')]);
+  await writeFile(join(bin, 'systemctl'), '#!/bin/sh\n[ -n "$WAKE_TEST_SERVICE_HOME" ] || exit 1\nprintf "CODEX_HOME=%s\\n" "$WAKE_TEST_SERVICE_HOME"\n');
+  execFileSync('chmod', ['+x', join(bin, 'systemctl')]);
+  const priorServiceHome = process.env.WAKE_TEST_SERVICE_HOME;
   const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID, priorCodexHome = process.env.CODEX_HOME;
-  t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; if (priorCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = priorCodexHome; });
+  t.after(() => { if (priorServiceHome === undefined) delete process.env.WAKE_TEST_SERVICE_HOME; else process.env.WAKE_TEST_SERVICE_HOME = priorServiceHome; process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; if (priorCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = priorCodexHome; });
   const saved = envelope('host'); await saveResult(fx, 'host', saved);
   // Without a runnable provider CLI the event stays undelivered and is retried later.
   const noCodex = join(fx.primary, 'no-codex-bin'); await mkdir(noCodex);
@@ -307,6 +310,11 @@ test('installed consumer queues the recorded result through Wake without duplica
   process.env.PATH = `${bin}:${priorPath}`;
   process.env.CODEX_THREAD_ID = 'stage-thread';
   process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
+  process.env.WAKE_TEST_SERVICE_HOME = '/wrong/shared/home';
+  const mismatched = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
+  assert.equal(mismatched.delivery.reason, 'service_codex_home_mismatch');
+  assert.equal(await readFile(log, 'utf8').then(() => true, () => false), false);
+  delete process.env.WAKE_TEST_SERVICE_HOME;
   const sent = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
   assert.deepEqual(JSON.parse(await readFile(wakeTmp, 'utf8')), { tmpdir: join(fx.session, 'tmp'), exists: true, codexHome: join(fx.primary, 'codex-home') });

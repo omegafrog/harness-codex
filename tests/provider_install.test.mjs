@@ -236,7 +236,10 @@ test('installed setup checks existing Wake in the active Codex home without inst
   assert.ok(messages.every(({ home: actual }) => actual === home));
   assert.equal(call({ WAKE_NULL_ENV: '1' }).status, 'available');
   assert.equal(call({ WAKE_SERVICE_HOME: home }).service_check, 'matched');
+  const beforeMismatch = await readFile(log, 'utf8');
   assert.deepEqual(call({ WAKE_SERVICE_HOME: '/wrong/shared/home' }), { status: 'unavailable', reason: 'service_codex_home_mismatch', codex_home: home, service_codex_home: '/wrong/shared/home' });
+  assert.equal(await readFile(log, 'utf8'), beforeMismatch, 'do not launch Wake when the shared service belongs to another account');
+  assert.equal(call({ WAKE_ABSENT: '1', WAKE_SERVICE_HOME: '/wrong/shared/home' }).reason, 'service_codex_home_mismatch');
   assert.equal(call({ WAKE_ABSENT: '1' }).reason, 'not_configured_for_active_codex_home');
   assert.equal(call({ WAKE_CLOSED: '1' }).reason, 'mcp_closed');
   await mkdir(join(root, 'scripts'));
