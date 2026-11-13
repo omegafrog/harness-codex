@@ -358,12 +358,15 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   try {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
     const installedFiles = new Set(await discoverHarnessOwnedFiles(root));
+    // Project-owned scripts may live beside Harness scripts; Git tracking does not make them managed assets.
+    const trackedScripts = new Set((await execFileAsync('git', ['-C', root, 'ls-files', '-z', '--', '.codex/scripts'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.split('\0').filter(Boolean));
     const managedPaths = sourceRoot ? new Set(await discoverManagedAssetPaths(sourceRoot)) : installedFiles;
     const currentAssets = sourceRoot ? (await buildHarnessLock({ sourceRoot, targetRoot: root })).files : {};
     // A divergent, unregistered agent profile was preserved as consumer-owned during install.
     const preservedAgentProfile = (file) => file.startsWith(".codex/agents/") && !lock.files[file]
       && currentAssets[file] && currentAssets[file].installed_sha256 !== currentAssets[file].upstream_sha256;
     const ownedFiles = new Set([...installedFiles].filter((file) => file !== '.codex/harness.yaml' && managedPaths.has(file)
+      && (lock.files[file] || !trackedScripts.has(file))
       && !preservedAgentProfile(file)));
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
