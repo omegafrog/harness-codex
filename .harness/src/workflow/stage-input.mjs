@@ -453,7 +453,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
     const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
-    const switchedProvider = Boolean(orchestratorSession && previousProvider !== provider);
+    const switchedProvider = Boolean(previous.native_managed || (orchestratorSession && previousProvider !== provider));
     const sessionInfo = neverStarted || switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
     if (sessionInfo) provider = sessionInfo.provider;
     else if (!switchedProvider && previousInput.context?.provider) provider = previousInput.context.provider;
@@ -478,7 +478,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
     const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
-    const switchedProvider = Boolean(orchestratorSession && previousProvider !== provider);
+    const switchedProvider = Boolean(previous.native_managed || (orchestratorSession && previousProvider !== provider));
     const sessionInfo = switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
     if (sessionInfo) provider = sessionInfo.provider;
     const result = previousReturn.result || await readSkillSessionJson({ root, session_directory: previousSession, path: previous.result_ref });

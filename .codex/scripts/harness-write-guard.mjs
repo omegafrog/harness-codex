@@ -242,7 +242,7 @@ function activeWorkflows(cwd, sessionId) {
 const inside = (directory, path) => { const rel = relative(directory, path); return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)); };
 
 function message(path, root, how) {
-  return `Harness: the orchestrator main session does not write ${relative(root, path) || path} (${how}). Product code, tests, plans, Specs and docs/contracts are written by the stage that owns them. Dispatch that stage with harness-prepare-input.mjs and harness-agent-run.mjs --background true instead: implement-wrapper (add --feedback for a fix, including E2E test files), sync-contracts for docs/contracts, spec-me for Specs, to-ticket for plans. Only files under .io/ and the project guidance documents (docs/agents/implementation-guidance.md, docs/agents/testing-guidance.md, docs/agents/EXEC.md, docs/agents/execution.json, docs/verification/e2e-lessons.md) are written from this session.`;
+  return `Harness: the orchestrator main session does not write ${relative(root, path) || path} (${how}). Product code, tests, plans, Specs and docs/contracts are written by the stage that owns them. Dispatch that stage with harness-prepare-input.mjs and harness-native-stage.mjs start, then invoke a native subagent instead: implement-wrapper (add --feedback for a fix, including E2E test files), sync-contracts for docs/contracts, spec-me for Specs, to-ticket for plans. Only files under .io/ and the project guidance documents (docs/agents/implementation-guidance.md, docs/agents/testing-guidance.md, docs/agents/EXEC.md, docs/agents/execution.json, docs/verification/e2e-lessons.md) are written from this session.`;
 }
 
 // Returns the deny reason, or null when the call is allowed.

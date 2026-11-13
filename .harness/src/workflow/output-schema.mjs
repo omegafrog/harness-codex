@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { loadProvider } from './providers/index.mjs';
 import { listDeclaredSkills } from './skill-declaration.mjs';
 
@@ -58,5 +59,55 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   const adapter = await loadProvider(provider);
   const providerSchema = adapter.prepareOutputSchema ? adapter.prepareOutputSchema(schema) : schema;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, JSON.stringify(providerSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  try { await writeFile(path, JSON.stringify(providerSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
+  catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('Output schema must be a regular unshared file');
+    if (!isDeepStrictEqual(JSON.parse(await readFile(path, 'utf8')), providerSchema)) throw new Error('Existing output schema does not match the execution');
+  }
+}
+
+// Validate only JSON shape; execution identity, artifacts and lifecycle remain separate checks.
+export function validateOutputFormat(value, schema) {
+  const check = (item, shape, path) => {
+    const errors = [];
+    const add = (rule, expected, actual = item) => errors.push({ path, rule, expected, value: actual === undefined ? null : actual, ...(actual === undefined ? { missing: true } : {}) });
+    const allowed = new Set(['$schema', 'type', 'const', 'enum', 'required', 'properties', 'additionalProperties', 'items', 'minLength', 'pattern', 'oneOf', 'anyOf', 'minItems', 'maxItems', 'uniqueItems', 'description', 'title']);
+    for (const key of Object.keys(shape)) if (!allowed.has(key)) throw new Error(`Unsupported schema constraint: ${key}`);
+    for (const key of ['anyOf', 'oneOf']) if (shape[key]) {
+      const branches = shape[key].map((branch) => check(item, branch, path));
+      const matches = branches.filter((branch) => branch.length === 0).length;
+      if (key === 'anyOf' ? matches === 0 : matches !== 1) {
+        const currentType = item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item;
+        const typed = shape[key].map((branch, index) => ({ branch, errors: branches[index] })).filter(({ branch }) => !branch.type || [branch.type].flat().includes(currentType));
+        const best = (typed.length ? typed.map(({ errors }) => errors) : branches).slice().sort((a, b) => a.length - b.length)[0];
+        if (best?.length) errors.push(...best); else add(key, key === 'oneOf' ? 'exactly one matching shape' : 'a matching shape');
+      }
+    }
+    if ('const' in shape && item !== shape.const) add('const', shape.const);
+    if (shape.enum && !shape.enum.includes(item)) add('enum', shape.enum);
+    const type = item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item;
+    if (shape.type && ![shape.type].flat().includes(type)) { add('type', shape.type); return errors; }
+    if (type === 'string') {
+      if (shape.minLength && item.length < shape.minLength) add('minLength', shape.minLength);
+      if (shape.pattern && !new RegExp(shape.pattern).test(item)) add('pattern', shape.pattern);
+    }
+    if (type === 'object') {
+      for (const key of shape.required || []) if (!Object.hasOwn(item, key)) errors.push({ path: `${path}.${key}`, rule: 'required', expected: true, value: null, missing: true });
+      for (const [key, value] of Object.entries(item)) {
+        if (shape.properties?.[key]) errors.push(...check(value, shape.properties[key], `${path}.${key}`));
+        else if (shape.additionalProperties === false) errors.push({ path: `${path}.${key}`, rule: 'additionalProperties', expected: false, value });
+      }
+    }
+    if (type === 'array') {
+      if (shape.minItems !== undefined && item.length < shape.minItems) add('minItems', shape.minItems);
+      if (shape.maxItems !== undefined && item.length > shape.maxItems) add('maxItems', shape.maxItems);
+      if (shape.uniqueItems && new Set(item.map((entry) => JSON.stringify(entry))).size !== item.length) add('uniqueItems', true);
+      if (shape.items) item.forEach((entry, index) => errors.push(...check(entry, shape.items, `${path}[${index}]`)));
+    }
+    return errors;
+  };
+  const errors = check(value, schema, '$');
+  return { valid: errors.length === 0, errors };
 }

@@ -29,6 +29,10 @@ async function processAlive(identity) {
 }
 
 export async function assertExecutionStopped(entry, { root, session } = {}) {
+  if (entry?.native_managed) {
+    if (entry.status !== 'running' && entry.native_finished === true) return;
+    throw new Error('Native subagent status is not confirmed; inspect the original session before retrying');
+  }
   const identities = [entry?.owner, ...(entry?.runner_managed && !entry?.child ? [] : [entry?.child])];
   for (const identity of identities.filter(Boolean)) if (await processAlive(identity)) throw new Error('Stage already running');
   if (identities.some((identity) => !identity)) {
@@ -61,7 +65,8 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, nativeClaim = false, nativeAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
+  if (nativeAgentId !== null && (typeof nativeAgentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,255}$/.test(nativeAgentId))) throw new Error('Invalid native subagent ID');
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || (input.context?.orchestrator_provider === 'claude-code' ? null : process.env.CODEX_THREAD_ID || null);
   const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
@@ -94,6 +99,8 @@ export async function recordExecutionState({ root, input, binding, status, code 
     else if (codexSessionId) state.codex_session_id = codexSessionId;
     if (orchestratorSessionId) { state.orchestrator_session_id = orchestratorSessionId; state.orchestrator_provider = orchestratorProvider; }
     const previous = state.stages?.[stage];
+    if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId))) throw new Error('Native subagent binding mismatch');
+    if (nativeClaim && previous?.status === 'running') throw new Error('Stage already running; check the native subagent before retrying');
     if (runnerClaim && previous?.status === 'running' && previous.execution_id === input.execution_id) {
       if (!previous.owner) throw new Error('Stage process identity unavailable; inspection required');
       if (await processAlive(previous.owner) || (previous.child && await processAlive(previous.child))) throw new Error('Stage runner already active');
@@ -124,13 +131,15 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.owner; delete entry.child; delete entry.runner_managed; delete entry.finished_at; }
+      if (previous?.execution_id !== input.execution_id) { delete entry.owner; delete entry.child; delete entry.runner_managed; delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; }
       if (runnerClaim) entry.runner_managed = true;
+      if (nativeClaim) entry.native_managed = true;
+      if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
       if (owner) entry.owner = owner;
       if (child) entry.child = child;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];
     }
-    else entry.finished_at = now;
+    else { entry.finished_at = now; if (entry.native_managed) entry.native_finished = true; }
     state.stages = { ...state.stages, [stage]: entry };
     state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';

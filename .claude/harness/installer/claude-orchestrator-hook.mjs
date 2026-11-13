@@ -14,8 +14,10 @@ const EVENTS = [...PROMPT_EVENTS, ...SUBAGENT_EVENTS, ...GUARD_EVENTS];
 const SCRIPT = 'harness-claude-orchestrator-hook.mjs';
 const SUBAGENT_SCRIPT = 'harness-agent-event.mjs';
 const GUARD_SCRIPT = 'harness-write-guard.mjs';
+const ADMISSION_SCRIPT = 'harness-agent-admission.mjs';
 export const WRITE_GUARD_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash';
-const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && (hook.command.includes(SCRIPT) || hook.command.includes(SUBAGENT_SCRIPT) || hook.command.includes(GUARD_SCRIPT));
+const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && (hook.command.includes(SCRIPT) || hook.command.includes(SUBAGENT_SCRIPT) || hook.command.includes(GUARD_SCRIPT) || hook.command.includes(ADMISSION_SCRIPT));
+const admissionHook = () => ({ type: 'command', command: `HARNESS_NATIVE_ADMISSION=1 node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${ADMISSION_SCRIPT}"`, timeout: 10 });
 
 export function claudeOrchestratorHook() {
   return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/${SCRIPT}"`, timeout: 10 };
@@ -50,7 +52,8 @@ export async function inspectClaudeOrchestratorHook(root) {
   const valid = EVENTS.every((event) => {
     const groups = (config.hooks[event] || []).filter((group) => group.hooks.some(owned));
     const handlers = groups.flatMap((group) => group.hooks).filter(owned);
-    return handlers.length === 1 && groups[0].matcher === expectedMatcher(event) && Object.entries(expectedHook(event)).every(([key, value]) => handlers[0][key] === value);
+    const expected = [{ matcher: expectedMatcher(event), hook: expectedHook(event) }, ...(event === 'PreToolUse' ? [{ matcher: 'Agent', hook: admissionHook() }] : [])];
+    return handlers.length === expected.length && expected.every(({ matcher, hook }) => groups.some((group) => group.matcher === matcher && group.hooks.some((candidate) => Object.entries(hook).every(([key, value]) => candidate[key] === value))));
   });
   return { valid, path, reason: valid ? 'claude_orchestrator_hook_registered' : 'claude_orchestrator_hook_missing_or_stale' };
 }
@@ -67,6 +70,7 @@ export async function syncClaudeOrchestratorHook(root, { noBackup = false } = {}
       return hooks.length || !group.hooks.some(owned) ? [{ ...group, hooks }] : [];
     });
     config.hooks[event] = [...groups, { ...(expectedMatcher(event) ? { matcher: expectedMatcher(event) } : {}), hooks: [expectedHook(event)] }];
+    if (event === 'PreToolUse') config.hooks[event].push({ matcher: 'Agent', hooks: [admissionHook()] });
   }
   if (text !== null && !noBackup) {
     const backup = `.claude/installer-backups/${randomUUID()}/settings.local.json`;

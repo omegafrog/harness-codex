@@ -98,7 +98,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     // The runner profile points at the GUIDE, which owns approval, no-auto-fix and rerun rules.
     const e2eGuide = await read('.codex/internal-skills/e2e-test/GUIDE.md');
     // Final E2E always runs in a fresh runner, and dispatch checks call real CLIs.
-    assert.match(e2eGuide, /백그라운드 `e2e-test` stage/);
+    assert.match(e2eGuide, /fresh native 서브에이전트/);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
     assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
     assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);

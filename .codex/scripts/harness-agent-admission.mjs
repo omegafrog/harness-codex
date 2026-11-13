@@ -24,9 +24,12 @@ try {
   const isPlanReviewer = type === 'plan_reviewer';
   const isContractReviewer = type === 'contract_reviewer';
   const isReviewer = isSpecReviewer || isPlanReviewer || isContractReviewer;
-  const root = process.env.HARNESS_WORKSPACE_ROOT;
-  const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID;
-  const ticketId = process.env.HARNESS_REVIEW_TICKET_ID;
+  const { nativeHookContext } = await import('../../.harness/src/workflow/native-context.mjs');
+  const native = process.env.HARNESS_REVIEW_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.agent_id, event.parent_agent_id, event.session_id].filter(Boolean));
+  if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_SKILL_EXECUTION_ID || !native)) process.exit(0);
+  const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
+  const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;
+  const ticketId = process.env.HARNESS_REVIEW_TICKET_ID || native?.planSetId;
   if (!root || root !== process.cwd() || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticketId || '')) {
     if (!isReviewer) process.exit(0);
     throw new Error('Canonical review execution context is unavailable');

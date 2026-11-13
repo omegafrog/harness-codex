@@ -344,3 +344,20 @@ test('Doctor reports a malformed declaration and a workflow stage skill that dec
     assert.equal(doctor.passed, false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('output format validator returns the invalid key and value without interpreting content', async () => {
+  const { validateOutputFormat } = await import('../.harness/src/workflow/output-schema.mjs');
+  const schema = { type: 'object', additionalProperties: false, required: ['status', 'result'], properties: { status: { enum: ['completed', 'failed'] }, result: { type: 'object', required: ['summary', 'questions'], properties: { summary: { type: 'string' }, questions: { type: 'array', maxItems: 0 } }, additionalProperties: false } } };
+  assert.deepEqual(validateOutputFormat({ status: 'completed', result: { summary: 'anything', questions: [] } }, schema), { valid: true, errors: [] });
+  const invalid = validateOutputFormat({ status: 'wrong', result: { summary: 7, questions: [1] }, extra: true }, schema);
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.some((item) => item.path === '$.status' && item.value === 'wrong'));
+  assert.ok(invalid.errors.some((item) => item.path === '$.result.summary' && item.value === 7));
+  assert.ok(invalid.errors.some((item) => item.path === '$.result.questions' && item.rule === 'maxItems'));
+  assert.ok(invalid.errors.some((item) => item.path === '$.extra' && item.value === true));
+  assert.equal(validateOutputFormat({ status: 'completed', result: { questions: [] } }, schema).errors[0].missing, true);
+  const union = { anyOf: [{ type: 'null' }, { type: 'object', required: ['title', 'count'], properties: { title: { type: 'string' }, count: { type: 'string' } } }] };
+  const unionErrors = validateOutputFormat({ title: 4, count: false }, union).errors;
+  assert.ok(unionErrors.some(({ path, value }) => path === '$.title' && value === 4));
+  assert.ok(unionErrors.some(({ path, value }) => path === '$.count' && value === false));
+});

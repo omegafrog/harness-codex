@@ -34,6 +34,8 @@ test('generated output schemas expose questions without a singular result field'
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
+      await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
+      assert.deepEqual(await readJson(path), schema);
       assert.equal(Object.hasOwn(schema.properties, 'execution_id'), false);
       assert.equal(Object.hasOwn(schema.properties.result.properties, 'execution_id'), false);
       assert.equal(Object.hasOwn(schema, 'anyOf'), false);
@@ -49,6 +51,20 @@ test('generated output schemas expose questions without a singular result field'
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('reusing an execution schema refuses altered and linked files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-schema-reuse-'));
+  const path = join(directory, 'schema.json');
+  const options = { root: process.cwd(), input: { execution_id: 'check', skill: 'spec-me' }, prefix: 'runtime/executions/check', path };
+  try {
+    await writeOutputSchema(options);
+    await writeFile(path, '{}');
+    await assert.rejects(writeOutputSchema(options), /does not match/);
+    await rm(path);
+    await symlink(join(directory, 'target.json'), path);
+    await assert.rejects(writeOutputSchema(options), /regular unshared file/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('implementation stages must declare unplanned additions in their structured result', async () => {

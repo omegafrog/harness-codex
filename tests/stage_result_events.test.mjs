@@ -90,6 +90,8 @@ test('background E2E publishes only a verified receipt and cleanup for the appro
   result.artifacts[0].sha256 = receiptHash;
   await saveResult(fx, id, out);
   const bin = join(fx.primary, 'e2e-bin'); await mkdir(bin);
+  await writeFile(join(bin, 'systemctl'), '#!/bin/sh\nexit 1\n');
+  execFileSync('chmod', ['+x', join(bin, 'systemctl')]);
   const wakeLog = join(fx.primary, 'e2e-wake.jsonl'), wake = join(bin, 'wake.cjs');
   await writeFile(wake, `const rl=require('node:readline').createInterface({input:process.stdin}),fs=require('node:fs');rl.on('line',line=>{const m=JSON.parse(line);if(m.id===1)console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));if(m.id===2){fs.appendFileSync(${JSON.stringify(wakeLog)},JSON.stringify(m.params)+'\\n');console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}}));}});`);
   await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(wake)}],cwd:${JSON.stringify(bin)}}}));\n`);

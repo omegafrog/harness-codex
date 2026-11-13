@@ -204,7 +204,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
   try {
     const settingsPath = join(root, '.claude/settings.local.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.codex/scripts/harness-write-guard.mjs"', timeout: 10 }] }]);
+    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.codex/scripts/harness-write-guard.mjs"', timeout: 10 }] }, { matcher: 'Agent', hooks: [{ type: 'command', command: 'HARNESS_NATIVE_ADMISSION=1 node "${CLAUDE_PROJECT_DIR}/.codex/scripts/harness-agent-admission.mjs"', timeout: 10 }] }]);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
     const codes = async () => (await runDoctor({ root, sourceRoot })).diagnostics.map((item) => item.code);
     assert.equal((await codes()).includes('claude_orchestrator_hook_missing'), false);
@@ -227,7 +227,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
     await syncClaudeOrchestratorHook(root, { noBackup: true });
     const repaired = JSON.parse(await readFile(settingsPath, 'utf8')).hooks.PreToolUse;
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
-    assert.deepEqual(repaired.map((group) => group.matcher), ['Read', 'Edit|Write|MultiEdit|NotebookEdit|Bash'], 'the user hook is preserved');
+    assert.deepEqual(repaired.map((group) => group.matcher), ['Read', 'Edit|Write|MultiEdit|NotebookEdit|Bash', 'Agent'], 'the user hook is preserved');
 
     // The installed script blocks the orchestrator session of an active worktree, and nothing Harness owns shows in git status.
     await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, state: 'active', workspace: root, session_directory: join(root, '.io') }));

@@ -38,7 +38,7 @@ primary checkout에서 활성 worktree가 발견되면 해당 workflow의 답변
 
 `workflow-compose`가 `completed/OK`이면 worktree 준비가 끝난 상태다. `workflow_ref`가 null이고 미래 단계가 기록되지 않은 것은 정상이며, 정본 원 요청과 완료 결과를 기준으로 첫 skill을 선택한다.
 
-기존 worktree workflow를 진행·재개하려면 사용자가 먼저 해당 workspace로 이동한 다음 orchestrator를 호출해야 한다. `harness-context`·`harness-prepare-input`·`harness-agent-run`은 현재 worktree를 자동 탐색한다. `--root`나 `--worktree-ref`로 primary checkout에서 다른 worktree를 지정하지 않는다. Harness는 primary checkout에서 worktree를 만들 수 있지만, workflow 답변·stage 준비·실행은 target worktree 안에서만 허용한다. 새 전역 선택 파일은 만들지 않는다.
+기존 worktree workflow를 진행·재개하려면 사용자가 먼저 해당 workspace로 이동한 다음 orchestrator를 호출해야 한다. `harness-context`·`harness-prepare-input`·`harness-native-stage`은 현재 worktree를 자동 탐색한다. `--root`나 `--worktree-ref`로 primary checkout에서 다른 worktree를 지정하지 않는다. Harness는 primary checkout에서 worktree를 만들 수 있지만, workflow 답변·stage 준비·실행은 target worktree 안에서만 허용한다. 새 전역 선택 파일은 만들지 않는다.
 
 hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리킨다. primary checkout에서 입력은 workflow에 기록되지 않는다. 결과 알림을 받아도 해당 알림의 `worktree_ref`가 현재 workspace와 다르면 stage·질문·승인을 처리하지 말고 그 경로로 이동하라고 안내한다. compact 뒤에는 현재 worktree의 정본을 다시 조회한다.
 
@@ -62,8 +62,7 @@ gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 �
 
 메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `spec-me`, `to-ticket`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 
-stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 시작한다. foreground로 시작하면 실행기가 이 턴과 함께 종료되어 stage가 사라진다. Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다. `running`으로 기록된 stage의 프로세스가 없으면 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)의 중단 복구 절차(`harness-prepare-input.mjs --stage-id <skill> --feedback '중단된 부모 작업을 이어가세요'` 뒤 `--background true`로 실행)만 쓰고, 그것으로 풀리지 않으면 상태를 보고하고 멈춘다.
-
+모든 stage는 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)에 따라 현재 CLI의 native 서브에이전트로 호출한다. 실행 ID를 예약한 뒤 실제 에이전트 결과를 기다리고 정적 형식 검증을 수행한다. 형식 오류는 그 에이전트에게 키·값과 함께 돌려 재작성하게 한다.
 반환 상태에 따라 workflow를 전환한다.
 
 | 반환 | 처리 |
@@ -75,7 +74,7 @@ stage 실행기는 항상 `harness-agent-run.mjs ... --background true`로만 �
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
 | `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
-| `running` | (`harness-agent-run.mjs --background true`로 시작한 stage에만 적용한다. reviewer 같은 native 하위 agent는 결과를 받을 때까지 이 턴에서 기다린다.) 결과를 기다리지 않고 stage를 시작했다고 보고한 뒤 턴을 끝낸다. E2E도 별도 백그라운드 stage로 실행한다. stage가 끝나면 runner가 Codex Wake 큐 또는 Claude 재개를 통해 검증된 결과를 전달한다. 큐 수락만으로 실행 완료를 추정하지 않는다. 실행 중복이나 log polling을 만들지 않고, 결과 전달 없이 완료로 추정하지 않는다. |
+| `running` | 실제 서브에이전트의 결과를 기다린다. 상태가 불명확한 실행은 중복으로 시작하거나 완료를 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고 같은 stage를 `--feedback`으로 이어간다. 같은 provider는 기존 대화를 재개하고 다른 provider는 이전 입력·결과를 읽는 새 대화를 사용한다. |
 
 `e2e-test` 결과는 일반 stage 재시작 규칙보다 [구현 workflow 조율](references/implementation.md)의 최종 E2E 실패 처리가 우선한다. `completed/OK`는 receipt와 cleanup을 확인하고 `sync-contracts`로 이어간다. 실패·차단·취소는 같은 stage를 자동 재실행하지 않고 실패 증거를 읽어 테스트 코드 결함 빠른 경로 또는 사용자 결정을 적용한다. 정본 execution ID와 worktree가 다르거나 결과가 이미 처리됐으면 중복 처리하지 않는다.

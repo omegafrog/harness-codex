@@ -1,4 +1,5 @@
 # 스키마와 실행 상태
 
-1. 출력 스키마는 `harness-agent-run.mjs`가 입력 검증 뒤 선택한 provider를 시작하기 전에 실행 session에 생성한다. 기존 스키마가 있으면 JSON으로 읽을 수 있는지 확인한 뒤 재사용한다. worktree 작업의 schema·반환·실행 로그는 정본이 지정한 session에 저장한다. `waiting_for_answers`가 반환되면 실행하지 않고 답변을 기다린다.
-2. 실행 시작과 프로세스 식별은 `harness-agent-run.mjs`가 기록한다. 종료·실패는 `node "<workspace_root>/.codex/scripts/harness-execution-state.mjs" --root "<workspace_root>" --worktree-ref <worktree_ref> --execution-id <execution_id> --status <completed|action_required|blocked|failed|cancelled>`로 실제 `--code`, `--result-ref` 또는 `--reason`을 전달한다. 입력 준비기가 `context.stage_id`를 기록한다. 단계별 model binding을 지정할 때 `--workflow`, `--stage`를 함께 전달한다. 상태 파일을 직접 수정하지 않는다.
+`harness-native-stage.mjs start`가 stage의 정본 입력을 검증하고 그 실행의 `return.schema.json`을 생성 또는 검증한 뒤 실행을 예약한다. 서브에이전트는 schema 파일을 직접 읽고 지정된 출력 파일을 작성한다. `waiting_for_answers`이면 stage를 실행하지 않고 실제 답을 기다린다.
+
+`harness-native-stage.mjs finish`는 출력의 JSON 형식과 schema만 먼저 검사한다. 형식 오류는 잘못된 필드 경로·규칙·기대값·실제값을 반환하며 stage를 종료하지 않는다. 호출자는 오류를 같은 서브에이전트에 돌려 수정하게 한다. 성공하면 정본 결과와 상태를 기록한다. 실행 ID, worktree, 안전한 파일 경로와 실제 승인 등 신뢰 경계는 별도로 유지한다. 실제 서브에이전트 실패는 `fail`로 기록한다. 상태 파일을 직접 수정하지 않는다.

@@ -126,11 +126,11 @@ test('the orchestrator and the E2E guide point at the test-defect fast path', as
 });
 
 // Ending the orchestrator's turn aborts the sub-agents it started, so the E2E runner reported nothing.
-test('the orchestrator uses a background E2E stage while waiting for native reviewers', async () => {
+test('the orchestrator waits for native stage agents including E2E', async () => {
   const { readFile } = await import('node:fs/promises');
   const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
   assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /하위 agent는 결과를 받을 때까지 이 턴에서 기다린다/);
+  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /실제 에이전트 결과를 기다리고/);
 });
 
 // The stage reads prerequisite completion from Harness, so it cannot take its own ticket for a prerequisite.

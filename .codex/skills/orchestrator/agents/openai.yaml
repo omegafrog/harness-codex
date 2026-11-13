@@ -2,3 +2,6 @@ interface:
   display_name: "Workflow 오케스트레이터"
   short_description: "모델을 지정한 subagent로 skill을 실행하고 결과 파일과 상태 코드로 workflow를 조율합니다."
   default_prompt: "Run the orchestrator only from the target workflow worktree. From the primary checkout, create and verify a new worktree, return its absolute path, and stop; the user will change directory there and call the orchestrator again. Never route an answer or stage to another worktree from the primary checkout."
+
+policy:
+  allow_implicit_invocation: false

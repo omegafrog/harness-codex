@@ -95,10 +95,11 @@ test('agent profiles only name their role and point at the GUIDE that owns the r
   }
 });
 
-test('the orchestrator is told to start stage runners in the background and not to read Harness source', async () => {
+test('the orchestrator dispatches stages to native subagents and returns format errors', async () => {
   const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
-  assert.match(skill, /harness-agent-run\.mjs \.\.\. --background true`로만 시작한다/);
-  assert.match(skill, /Harness 소스를 읽어 상태를 해석하거나 고치려 하지 않는다/);
+  assert.match(skill, /native 서브에이전트로 호출한다/);
+  assert.match(skill, /형식 오류는 그 에이전트에게 키·값과 함께/);
+  assert.doesNotMatch(skill, /harness-agent-run\.mjs/);
 });
 
 test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {

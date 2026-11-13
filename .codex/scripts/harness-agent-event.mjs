@@ -25,7 +25,10 @@ try {
   if (text.length > 1024 * 1024) throw new Error('Subagent event is too large');
   const event = JSON.parse(text);
   if (!['SubagentStart', 'SubagentStop'].includes(event.hook_event_name) || typeof event.session_id !== 'string' || typeof event.agent_id !== 'string' || !event.agent_id || typeof event.agent_type !== 'string') throw new Error('Invalid Claude subagent event');
-  const session = process.env.HARNESS_SESSION_DIR, executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+  const { nativeHookContext } = await import('../../.harness/src/workflow/native-context.mjs');
+  const native = process.env.HARNESS_SKILL_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean));
+  const session = process.env.HARNESS_SESSION_DIR || native?.session, executionId = process.env.HARNESS_SKILL_EXECUTION_ID || native?.executionId;
+  if (native && !process.env.HARNESS_REVIEW_TICKET_ID && native.planSetId) process.env.HARNESS_REVIEW_TICKET_ID = native.planSetId;
   if (!executionId) {
     // The main orchestrator spawns the code reviewers itself. Record only those, in the worktree's own session,
     // so `harness-code-review.mjs assemble` takes reviewer identity and answers from the hook, not from the caller.
@@ -69,7 +72,7 @@ try {
   const reviewScopes = { spec_adversarial_reviewer: (id) => `spec-${id}-architecture`, plan_reviewer: (id) => `plan-${id}`, contract_reviewer: (id) => `contracts-${id}` };
   if (Object.hasOwn(reviewScopes, event.agent_type)) {
     const ticketId = process.env.HARNESS_REVIEW_TICKET_ID;
-    const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID;
+    const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticketId || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) throw new Error('Canonical review ticket or execution is unavailable');
     const scope = reviewScopes[event.agent_type](ticketId);
     record.review_scope = scope;

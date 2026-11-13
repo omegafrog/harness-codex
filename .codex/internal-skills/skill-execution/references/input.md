@@ -15,7 +15,7 @@ compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestra
 node .codex/scripts/harness-prepare-input.mjs --stage-id <stage-id> --answer '[{"question_id":"<현재-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"}]'
 ```
 
-한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 반환된 새 `execution_id`의 `answers.json`을 확인하고 `harness-agent-run.mjs`로 실행한다. 같은 provider면 기존 대화를 재개하고, 다른 provider면 새 대화에서 이전 결과와 답변을 읽는다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
+한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 반환된 새 `execution_id`의 `answers.json`을 확인하고 `harness-native-stage.mjs start`로 예약하고 native 서브에이전트를 호출한다. 같은 provider면 기존 대화를 재개하고, 다른 provider면 새 대화에서 이전 결과와 답변을 읽는다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
 
 “모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다. 이후 새 결과의 질문에는 새 사용자 답변이 필요하다. 단, 사용자가 앞으로의 질문에도 적용하도록 명시적으로 위임한 경우에는 그 범위에 따른다.
 

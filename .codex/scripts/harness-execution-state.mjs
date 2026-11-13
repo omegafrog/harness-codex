@@ -13,7 +13,7 @@ try {
   }
   if (!isAbsolute(opts.root || '') || (!opts['recover-from-execution-id'] && !['running', 'completed', 'action_required', 'blocked', 'failed', 'cancelled'].includes(opts.status))) throw new Error('Absolute root, execution-id and valid status are required');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Valid execution-id is required');
-  if (opts.status === 'running') throw new Error('Runner records running state; invoke harness-agent-run.mjs directly');
+  if (opts.status === 'running') throw new Error('Native stage start records running state; use harness-native-stage.mjs start');
   const session = await cliSession(opts.root, opts['worktree-ref']);
   if (opts['recover-from-execution-id']) {
     const currentInput = await readExecutionInput({ root: opts.root, execution_id: opts['execution-id'] });

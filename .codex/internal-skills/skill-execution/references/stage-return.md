@@ -1,6 +1,6 @@
 # Stage 반환 계약
 
-각 stage 실행은 실행기가 제공한 출력 schema에 맞는 JSON 객체 하나를 마지막 응답으로 반환한다. 실행 ID는 작성하지 않는다. 실행기가 정본 입력의 ID를 최상위와 `result`에 채운다. `skill`, `status`, `code`는 `result`와 일치시킨다. `result`에는 schema가 요구하는 `summary`, `artifacts`, `questions`와 해당 stage의 추가 필드도 넣는다. 해당 사항이 없으면 배열은 `[]`, schema에 `review_request`가 있으면 리뷰 요청이 없을 때 `null`이다. 실제 필수 필드와 stage별 추가 제약은 실행기가 제공한 schema와 해당 GUIDE를 따른다.
+각 stage 서브에이전트는 전달받은 schema 파일을 직접 읽고 지정된 출력 파일에 schema에 맞는 JSON 객체 하나를 작성한다. 형식 오류를 전달받으면 해당 키와 값을 고쳐 같은 파일에 다시 작성한다. 실행 ID는 작성하지 않는다. 실행기가 정본 입력의 ID를 최상위와 `result`에 채운다. `skill`, `status`, `code`는 `result`와 일치시킨다. `result`에는 schema가 요구하는 `summary`, `artifacts`, `questions`와 해당 stage의 추가 필드도 넣는다. 해당 사항이 없으면 배열은 `[]`, schema에 `review_request`가 있으면 리뷰 요청이 없을 때 `null`이다. 실제 필수 필드와 stage별 추가 제약은 실행기가 제공한 schema와 해당 GUIDE를 따른다.
 
 | status | 허용 code | 의미 |
 |---|---|---|
@@ -14,4 +14,4 @@ Spec 수정이 필요하면 반드시 `action_required` / `SPEC_REVISION_REQUIRE
 
 지금 답할 수 있는 질문은 최대한 모아 한 번에 반환하고, 앞선 답에 따라 달라지는 질문만 다음으로 미룬다. 사용자 결정이 필요하면 `result.questions`에 [질문 스키마](../schemas/question.schema.json)의 질문을 넣고 `action_required` / `USER_DECISION_REQUIRED`로 반환한다. 질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다. 질문이 없으면 빈 배열로 두고, 결과 최상위에 단수 `question` 필드는 쓰지 않는다. stage 안에서 사용자 질문 도구를 직접 호출하지 않는다. orchestrator가 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어가며, checkpoint와 이미 확정된 답변을 결과 파일에 보존한다. 리뷰 요청이나 산출물은 해당 stage의 계약과 제공된 schema에 맞게 기록한다. 읽기 전용 reviewer의 새 보고서는 schema가 요구하는 `result.artifact_contents`로 반환한다.
 
-모델은 `result_ref`를 만들지 않는다. runner가 마지막 응답을 검증하고 결과 위치를 정해 `result.json`과 `return.json`을 기록한다. 실행 상태나 결과 파일을 직접 고쳐 검증을 우회하지 않는다.
+모델은 `result_ref`를 만들지 않는다. 호출자가 출력 파일의 형식을 검증하고 결과 위치를 정해 `result.json`과 `return.json`을 기록한다. 실행 상태나 결과 파일을 직접 고쳐 검증을 우회하지 않는다.
