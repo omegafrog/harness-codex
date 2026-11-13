@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -70,6 +70,14 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.codex/internal-skills/product-spec/references/template.md',
     '.codex/internal-skills/spec-review/references/review-criteria.md',
     '.harness/src/workflow/spec-review.mjs',
+    '.harness/src/workflow/plan-review.mjs',
+    '.harness/src/workflow/skill-execution.mjs',
+    '.harness/src/workflow/stage-result-events.mjs',
+    '.codex/scripts/harness-spec-review.mjs',
+    '.codex/scripts/harness-stage-listen.mjs',
+    '.agents/skills/orchestrator/SKILL.md',
+    '.codex/internal-skills/skill-execution/references/dispatch.md',
+    '.codex/internal-skills/spec-me/references/adversarial-spec-review.md',
   ];
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
@@ -79,13 +87,43 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     const lock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
     for (const path of managedPaths) {
       assert.ok(lock.files[path], `${phase} inventory: ${path}`);
-      const expected = transformSourceContent(await readFile(resolve(sourceRoot, path), 'utf8'), lock.files[path].source_transform);
+      const expected = transformSourceContent(await readFile(resolve(sourceRoot, lock.files[path].source_path || path), 'utf8'), lock.files[path].source_transform);
       assert.equal(await readFile(resolve(root, path), 'utf8'), expected, `${phase}: ${path}`);
       assert.match(git('check-ignore', '-v', path), /info\/exclude/);
     }
     const { intentIssues } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/spec-review.mjs'))}?${phase}`);
     assert.deepEqual(intentIssues(spec), []);
     assert.match(intentIssues(spec.replace('- 의도: INT-A 참조\n', ''))[0], /BR-1/);
+    const inline = '- **INT-A** — 목적(에이전트 제안): 작성물 관리. 충분한 수준: 본인 글을 삭제한다(AC-1). 출처: 요청 해석(request.md)\n';
+    assert.deepEqual(intentIssues(inline), []);
+    assert.match(intentIssues(inline.replace('출처:', '근거:'))[0], /INT-A/);
+    const specDirectory = resolve(root, 'docs/specs/efficiency');
+    await mkdir(specDirectory, { recursive: true });
+    await writeFile(resolve(specDirectory, 'architecture-spec.md'), '# Architecture\n');
+    await writeFile(resolve(specDirectory, 'product-spec.md'), inline.replace('출처:', '근거:'));
+    const rejected = spawnSync(process.execPath, [resolve(root, '.codex/scripts/harness-spec-review.mjs'), 'begin', '--root', root, '--ticket', 'efficiency', '--axis', 'architecture'], { encoding: 'utf8' });
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /Product Spec intent is incomplete/, 'invalid input must fail before admitting a reviewer');
+    await writeFile(resolve(specDirectory, 'product-spec.md'), inline);
+    const { assertSpecReadyForReview } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/spec-review.mjs'))}?ready-${phase}`);
+    await assertSpecReadyForReview({ root, ticketId: 'efficiency' });
+    const { assertPlanIssueDrafts } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/plan-review.mjs'))}?${phase}`);
+    const configPath = resolve(root, '.codex/harness.yaml');
+    const originalConfig = await readFile(configPath, 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    await writeFile(configPath, 'tracker:\n  mode: github\n');
+    const planInput = { root, plans: [{ id: 'calc' }] };
+    await assert.rejects(assertPlanIssueDrafts(planInput), /parent.md.*calc.md/);
+    const drafts = resolve(root, '.io/runtime/to-ticket/drafts');
+    await mkdir(drafts, { recursive: true });
+    await writeFile(resolve(drafts, 'parent.md'), 'Parent issue\n');
+    await writeFile(resolve(drafts, 'calc.md'), ' \n');
+    await assert.rejects(assertPlanIssueDrafts(planInput), /calc.md/);
+    await writeFile(resolve(drafts, 'calc.md'), 'Calculation issue\n');
+    await assertPlanIssueDrafts(planInput);
+    await writeFile(resolve(drafts, 'parent.md'), '');
+    await writeFile(resolve(drafts, 'calc.md'), '');
+    if (originalConfig === null) await unlink(configPath);
+    else await writeFile(configPath, originalConfig);
     for (const [path, content] of Object.entries(projectFiles)) {
       assert.equal(await readFile(resolve(root, path), 'utf8'), content);
       assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '--', path], { encoding: 'utf8' }).startsWith('??'), true, path);
@@ -94,6 +132,8 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, / M app\.txt/);
     assert.ok(managedPaths.every((path) => !status.includes(path)), status);
+    assert.doesNotMatch(status, /(?:^|\n).. \.io\//);
+    assert.match(git('check-ignore', '-v', '.io/runtime/to-ticket/drafts/parent.md'), /info\/exclude/);
     const diagnostics = (await runDoctor({ root, sourceRoot })).diagnostics;
     assert.deepEqual(diagnostics.filter((item) => item.code.startsWith('installer_') && managedPaths.some((path) => item.path === resolve(root, path))), []);
     if (phase === 'updated') break;

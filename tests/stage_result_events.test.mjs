@@ -236,7 +236,9 @@ test('uses state.json and reconciles a result already saved before listener star
   await saveResult(fx, 'startup', saved);
   const received = await waitForStageResult({ root: fx.root, worktree_ref: fx.worktree_ref, execution_id: 'startup' });
   assert.equal(received.status, 'completed');
-  assert.equal(JSON.parse(await readFile(join(fx.session, 'runtime/orchestrator/stage-results/startup.json'), 'utf8')).delivery.status, 'unsupported');
+  const event = JSON.parse(await readFile(join(fx.session, 'runtime/orchestrator/stage-results/startup.json'), 'utf8'));
+  assert.equal(event.delivery.status, 'pending');
+  assert.ok(event.delivery.observed_at);
   await assert.rejects(readFile(join(fx.taskSession, 'runtime/orchestrator/stage-results/startup.json')), { code: 'ENOENT' });
 });
 
@@ -282,8 +284,9 @@ test('installed consumer queues the recorded result through Wake without duplica
   const installedPublish = (await import(pathToFileURL(join(fx.root, '.harness/src/workflow/stage-result-events.mjs')))).publishStageResultEvent;
   const bin = join(fx.primary, 'bin'); await mkdir(bin);
   const log = join(fx.primary, 'resume-args.jsonl');
+  const wakeTmp = join(fx.primary, 'wake-tmp.json');
   const server = join(bin, 'wake.cjs');
-  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
+  await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) { fs.writeFileSync(${JSON.stringify(wakeTmp)},JSON.stringify({tmpdir:process.env.TMPDIR,exists:fs.existsSync(process.env.TMPDIR)})); console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); } if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
   await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
   execFileSync('chmod', ['+x', join(bin, 'codex')]);
   const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID;
@@ -301,6 +304,8 @@ test('installed consumer queues the recorded result through Wake without duplica
   process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';
   const sent = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(sent.delivery.status, 'sent');
+  assert.deepEqual(JSON.parse(await readFile(wakeTmp, 'utf8')), { tmpdir: join(fx.session, 'tmp'), exists: true });
+  assert.equal(await (await import('node:fs/promises')).stat(join(fx.session, 'tmp')).then((info) => info.isDirectory()), true);
   await Promise.all([installedPublish({ root: fx.root, input: fx.input, envelope: saved }), installedPublish({ root: fx.root, input: fx.input, envelope: saved })]);
   for (let i = 0; i < 50 && !(await readFile(log, 'utf8').catch(() => '')); i++) await new Promise((resolve) => setTimeout(resolve, 50));
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
@@ -309,6 +314,16 @@ test('installed consumer queues the recorded result through Wake without duplica
   assert.equal(calls[0].arguments.thread, 'conversation-1');
   assert.equal(calls[0].arguments.resume, true);
   assert.match(calls[0].arguments.message_template, /runtime\/executions\/host\/result.json/);
+  assert.match(calls[0].arguments.message_template, /Preserve any user stop or pause request/);
+  const direct = await fixture(t, 'direct', { orchestrator_session_id: 'conversation-1' });
+  const directResult = envelope('direct');
+  await saveResult(direct, 'direct', directResult);
+  const installedDirect = await import(pathToFileURL(join(direct.root, '.harness/src/workflow/stage-result-events.mjs')));
+  assert.equal((await installedDirect.waitForStageResult({ root: direct.root, worktree_ref: direct.worktree_ref, execution_id: 'direct' })).status, 'completed');
+  const observed = await installedDirect.publishStageResultEvent({ root: direct.root, input: direct.input, envelope: directResult });
+  assert.ok(observed.delivery.observed_at);
+  assert.equal(observed.delivery.status, 'pending');
+  assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1, 'direct observation must not enqueue another Wake turn, including a late runner publication');
   const eventPath = join(fx.session, 'runtime/orchestrator/stage-results/host.json');
   const uncertain = JSON.parse(await readFile(eventPath, 'utf8'));
   uncertain.delivery.status = 'sending';

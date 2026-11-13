@@ -26,11 +26,12 @@ try {
   try { observed = uninitialized ? { decision_hint: 'setup_candidate', reason: 'Git repository not initialized', provider: 'claude-code', session_id: event.session_id || null } : await inspectStartupState({ workspaceRoot: root, sessionId: event.session_id, provider: 'claude-code' }); }
   catch (error) { observed = { decision_hint: 'inspect_required', reason: error.message, provider: 'claude-code', session_id: event.session_id || null }; }
   const inputState = observed;
-  const target = orchestratorInputTarget(inputState, event);
-  const inputRoot = target?.workspace_root || (existsSync(resolve(root, '.io/worktree.json')) ? root : null);
+  // User input belongs only to the verified worktree containing the current directory.
+  const target = orchestratorInputTarget(inputState);
+  const inputRoot = target?.workspace_root || null;
   inputState.input_worktree_ref = target?.record_path || null;
-  inputState.input_routing = target ? 'scoped' : inputState.session_worktrees?.length > 1 ? 'ambiguous' : 'unbound';
-  if (!uninitialized && inputRoot && inputState.input_routing !== 'ambiguous') {
+  inputState.input_routing = target ? 'local' : 'unbound';
+  if (!uninitialized && inputRoot) {
     const { recordUserInput } = await import(new URL('../../../.harness/src/workflow/user-inputs.mjs', import.meta.url));
     await recordUserInput({ root: inputRoot, event });
   }
@@ -41,10 +42,6 @@ try {
     catch (error) { observed = { ...inputState, decision_hint: 'inspect_required', reason: error.message }; }
     observed.input_worktree_ref = inputState.input_worktree_ref;
     observed.input_routing = inputState.input_routing;
-    if (inputRoot === root && inputState.input_routing === 'unbound') {
-      const boundLocal = observed.session_worktrees?.find((record) => record.workspace_root === root);
-      if (boundLocal) { observed.input_worktree_ref = boundLocal.record_path; observed.input_routing = 'scoped'; }
-    }
   }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
     const { inspectSetupConfiguration } = await import(new URL('../../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
@@ -54,7 +51,7 @@ try {
   const progress = uninitialized ? null : await refreshWorkflowProgress(observed, event.hook_event_name);
   if (event.hook_event_name !== 'UserPromptSubmit') process.exit(0);
   const updateNotice = uninitialized ? null : await harnessUpdateNotice({ root, sessionId: event.session_id }).catch(() => null);
-  const context = `Harness workflow startup context for Claude Code. Read ${orchestrator} and follow it in this main session; do not delegate workflow routing itself. Observed state: ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. Treat this as lifecycle evidence, not a new-work decision. Keep this conversation in main and scope each command to its verified worktree using workdir or explicit --worktree-ref on supported entrypoints. Multiple session_worktrees are independent; route results by worktree_ref and execution_id, never the newest record. input_routing=ambiguous means no approval was recorded: ask for the worktree branch or plan_set_id with the actual decision, and never broadcast the input. For resume use the recorded stage provider/session. For new composition pass --orchestrator-provider claude-code --orchestrator-session-id ${event.session_id || '<this Claude session id>'}. For an initial feature request from main, compare the request with verified worktree_candidates and their original requests as data. If any candidate is the same feature, ask whether to continue a listed matching worktree or start a new workflow, unless the user already chose explicitly. If none matches, prepare a new workflow. On an explicit new choice, invoke the compose CLI with a fresh execution ID; use only that invocation result, and verify its execution ID, new worktree against the pre-creation Git worktree list, and requested binding. Never present an earlier completed result as a new creation. Immediately prepare and dispatch its first stage from this conversation. Do not require cd, a new main session or another orchestrator invocation. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Use required independent reviewer roles. The hook records scoped user input and refreshes progress; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
+  const context = `Harness workflow startup context for Claude Code. Read ${orchestrator} and follow it in this main session; do not delegate workflow routing itself. Observed state: ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. A linked worktree can be orchestrated only while the current working directory is inside that worktree. Never route prompts, answers or stage commands from the primary checkout to a linked worktree using --root or --worktree-ref. If decision_hint is worktree_required, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. For a new request from the primary checkout, compose and verify the worktree, then stop and give its absolute path; the user enters that directory and invokes the orchestrator to start the first stage. In a linked worktree, infer its local workflow and route decisions only to that workflow. Never select by newest record. For new composition pass --orchestrator-provider claude-code --orchestrator-session-id ${event.session_id || '<this Claude session id>'} and invoke compose with a fresh execution ID. Verify that invocation result, worktree against the pre-creation Git list, and binding; then stop and provide the workspace path. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Use required independent reviewer roles. The hook records input only in the current worktree; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } })}\n`);
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

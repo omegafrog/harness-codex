@@ -46,11 +46,13 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.equal(await readFile(join(root, '.codex/context-budget.json'), 'utf8'), budget);
     assert.equal(await readFile(join(root, 'CONTEXT.md'), 'utf8'), 'project context');
     await writeFile(join(root, '.codex/harness.yaml'), config);
+    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const migrateWorktrees = run('--answers', answers);
     assert.equal(migrateWorktrees.pending.id, '워크트리 생성 위치 (절대 경로)#1');
     assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
     await writeFile(join(root, '.codex/harness.yaml'), configured);
     await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600}\n');
+    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     assert.equal(run('--check').status, 'setup_required');
     const partial = run('--answers', answers);
     assert.equal(partial.status, 'needs_input');
@@ -90,6 +92,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     const missingModel = runWithModels();
     assert.equal(missingModel.pending.id, '서버·E2E 실행과 polling 모델 모델 선택#1');
     await writeFile(join(root, '.codex/harness.yaml'), configured.replace('  execution_reasoning_effort: low', '  execution_reasoning_effort: invalid'));
+    await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const invalidEffort = runWithModels();
     assert.equal(invalidEffort.pending.id, '서버·E2E 실행과 polling 모델 추론 강도 선택#1');
     assert.equal(run('--check').status, 'setup_required');
@@ -131,11 +134,12 @@ async function freshProject({ linked = false } = {}) {
   await mkdir(directory, { recursive: true });
   const answers = join(directory, 'answers.json');
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const command = (...args) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, ...args], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   const run = async (map) => {
     await writeFile(answers, JSON.stringify({ answers: map }));
-    return JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    return command();
   };
-  return { root, primary, cleanupRoot: linked ? workspaceDir : root, sourceRoot, run, git };
+  return { root, primary, cleanupRoot: linked ? workspaceDir : root, sourceRoot, run, git, answers, bin, command };
 }
 
 const exists = (path) => readFile(path).then(() => true, () => false);
@@ -298,6 +302,153 @@ test('choosing GitHub omits local plan storage and disabled observability omits 
     assert.ok(prompts.includes('GitHub repository (owner/repo)'));
     assert.ok(prompts.some((prompt) => prompt.endsWith('모델 선택')));
     assert.doesNotMatch(JSON.stringify(github.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|보존 일수|Actuator|service 이름|프로젝트 Git root|context 한도|최대 예상 토큰|인계용 예비 토큰/);
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// These use the observed async UI wire format, through the installed CLI rather than overwriting its answer map.
+async function showBatch(project, batch, callId = `call_${batch.batch_id}`) {
+  const { root, answers, command } = project;
+  const timestamp = new Date().toISOString();
+  const events = [
+    { type: 'session_meta', payload: { id: 'setup-test-session', cwd: root } },
+    { timestamp, type: 'response_item', payload: { type: 'function_call', name: 'request_user_input_async', call_id: callId, arguments: JSON.stringify({ questions: batch.ui_questions }) } },
+    { timestamp, type: 'response_item', payload: { type: 'function_call_output', call_id: callId, output: '{"accepted":true}' } },
+  ];
+  const transcript = join(answers, '..', 'rollout.jsonl');
+  await writeFile(transcript, events.map((event) => JSON.stringify(event)).join('\n'));
+  const status = command('--bind-ui', transcript);
+  assert.equal(status.can_continue, false);
+  assert.deepEqual(status.missing_question_ids, batch.questions.map(({ id }) => id));
+  const selected = answerBatch(batch.questions, { ...BATCH_CHOICES, 'Tracker 선택': 'github', 'GitHub repository': 'example/project', 'Project owner': 'example', 'GitHub Project 선택': '8' });
+  return batch.questions.map((question, index) => ({
+    questionItemId: JSON.stringify(['request_user_input_async', callId, index]),
+    question: batch.ui_questions[index].title.replace(/\s+/g, ' '),
+    answer: question.options ? question.options.find(({ value }) => value === selected[question.id]).label : selected[question.id],
+  }));
+}
+
+async function receive(project, replies) {
+  const file = join(project.answers, '..', 'reply.txt');
+  await writeFile(file, `<send_user_message_question_reply>\n${JSON.stringify(replies)}\n</send_user_message_question_reply>`);
+  return project.command('--receive', file);
+}
+
+test('installed setup collects individual reordered answers, advances on the last, and applies only after final confirmation', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers, bin, git, sourceRoot } = project;
+  try {
+    // GitHub discovery stays deterministic and offline; no remote writes are allowed in this check.
+    await writeFile(join(bin, 'gh'), '#!/usr/bin/env node\nconst a=process.argv.slice(2);if(a[0]==="project"&&a[1]==="list")console.log(JSON.stringify({projects:[{number:8,title:"Workflow"}]}));else if(a[0]==="project"&&a[1]==="field-list")console.log(JSON.stringify({fields:[{name:"Workflow Status",type:"ProjectV2SingleSelectField",options:["Planned","In Progress","Blocked","Done"].map(name=>({name}))}]}));else if(!["auth","api","repo"].includes(a[0]))process.exit(9);\n');
+    await chmod(join(bin, 'gh'), 0o755);
+    let batch = await run({});
+    const initial = await readFile(answers, 'utf8');
+    assert.equal(command('--status').can_continue, false);
+    assert.equal(await readFile(answers, 'utf8'), initial, 'status is read-only');
+    assert.deepEqual(command().ui_questions, batch.ui_questions, 'an unbound retry keeps the same form');
+    let oldReply;
+    const batches = [];
+    for (let round = 0; round < 12; round += 1) {
+      assert.equal(batch.status, 'needs_input');
+      batches.push(batch);
+      assert.doesNotMatch(JSON.stringify(batch.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|로그 보존 일수|Actuator|Spring service/);
+      const replies = await showBatch(project, batch);
+      if (oldReply) {
+        const ignored = await receive(project, [oldReply]);
+        assert.equal(ignored.ignored, 1);
+        assert.equal(ignored.missing_question_ids.length, replies.length);
+      }
+      const reversed = [...replies].reverse();
+      for (const [index, reply] of reversed.entries()) {
+        const status = await receive(project, [reply]);
+        assert.equal(status.can_continue, index === reversed.length - 1);
+        assert.equal(status.missing_question_ids.length, reversed.length - index - 1);
+        assert.deepEqual(await receive(project, [reply]), status, 'duplicate delivery is idempotent');
+        if (index !== reversed.length - 1) assert.equal(command().status, 'waiting', 'partial replies cannot run discovery/application');
+      }
+      for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
+      assert.equal(command('--status').status, 'ready');
+      oldReply = replies[0];
+      batch = command();
+      if (batch.status === 'configured') break;
+    }
+    assert.equal(batch.status, 'configured');
+    assert.deepEqual(batches.at(-1).questions.map(({ prompt }) => prompt), ['이 설정으로 계속할까요?']);
+    assert.equal(command('--status').can_continue, false);
+    assert.match(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), /mode: "github"/);
+    const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    await receive(project, [oldReply]);
+    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+
+    // Update preserves app-owned changes and restores the newly required managed runtime.
+    await mkdir(join(root, 'docs/contracts'), { recursive: true });
+    await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
+    await writeFile(join(root, 'app.mjs'), 'export const owned = true;\n');
+    git('add', 'app.mjs');
+    git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'app');
+    await writeFile(join(root, 'app.mjs'), 'export const owned = false;\n');
+    const helper = '.harness/src/workflow/setup-answers.mjs';
+    await rm(join(root, helper));
+    assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith(helper)));
+    await updateProject({ sourceRoot, targetRoot: root });
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
+    assert.match(await readFile(join(root, '.agents/skills/setup/references/native-choices.md'), 'utf8'), /--receive|--bind-ui|--cancel/);
+    assert.equal(command('--status').status, 'configured');
+    for (const path of [helper, '.codex/scripts/harness-setup.mjs', '.agents/skills/setup/references/answer-delivery.md', '.io/runtime/setup']) git('check-ignore', '-v', path);
+    const status = git('status', '--short', '--untracked-files=all');
+    assert.match(status, / M app\.mjs/);
+    for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
+    assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\/|\.io\//);
+    assert.equal(await readFile(join(root, 'app.mjs'), 'utf8'), 'export const owned = false;\n');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('cancelled setup ignores late form answers and cannot resume or change existing configuration', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers } = project;
+  try {
+    const config = 'custom: original\n', budget = '{"original":true}\n';
+    await writeFile(join(root, '.codex/harness.yaml'), config);
+    await writeFile(join(root, '.codex/context-budget.json'), budget);
+    const batch = await run({});
+    const replies = await showBatch(project, batch);
+    command('--cancel');
+    const snapshot = await readFile(answers, 'utf8');
+    const result = await receive(project, replies);
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.can_continue, false);
+    assert.equal(await readFile(answers, 'utf8'), snapshot);
+    assert.equal(command().status, 'cancelled');
+    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(await readFile(join(root, '.codex/context-budget.json'), 'utf8'), budget);
+    assert.equal(await exists(join(root, 'CONTEXT.md')), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('setup refuses unverified calls, acceptance payloads, mismatched items and conflicting duplicates', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers } = project;
+  try {
+    const batch = await run({});
+    const replies = await showBatch(project, batch);
+    const snapshot = await readFile(answers, 'utf8');
+    const transcript = join(answers, '..', 'rollout.jsonl');
+    const valid = await readFile(transcript, 'utf8');
+    await writeFile(transcript, valid.replace('setup-test-session', 'another-session'));
+    assert.throws(() => command('--bind-ui', transcript), /does not match/);
+    await writeFile(transcript, valid.replace('accepted\\\":true', 'accepted\\\":false'));
+    assert.throws(() => command('--bind-ui', transcript), /exactly one accepted/);
+    await writeFile(transcript, valid + '\n' + valid.split('\n').slice(1).join('\n'));
+    assert.throws(() => command('--bind-ui', transcript), /exactly one accepted/);
+    await writeFile(join(answers, '..', 'reply.txt'), '{"accepted":true}');
+    assert.throws(() => command('--receive', join(answers, '..', 'reply.txt')), /actual UI reply/);
+    await assert.rejects(receive(project, [{ ...replies[0], question: 'another title' }]), /does not match/);
+    await assert.rejects(receive(project, [{ ...replies[0], questionItemId: JSON.stringify(['request_user_input_async', JSON.parse(replies[0].questionItemId)[1], 999]) }]), /does not match/);
+    assert.equal(await readFile(answers, 'utf8'), snapshot, 'invalid messages leave all answers unchanged');
+    const index = batch.questions.findIndex(({ options }) => options?.length > 1);
+    await receive(project, [replies[index]]);
+    const other = batch.questions[index].options.find(({ label }) => label !== replies[index].answer).label;
+    await assert.rejects(receive(project, [{ ...replies[index], answer: other }]), /Conflicting duplicate/);
     assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

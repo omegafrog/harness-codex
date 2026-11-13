@@ -13,6 +13,6 @@ setup이 준비한 main의 기준 commit에서 `harness-compose-workspace.mjs`�
 
 compose에는 현재 메인 대화의 실제 provider/session을 `--orchestrator-provider`와 `--orchestrator-session-id`로 전달한다. 실행기는 그 worktree의 기존 `agent_sessions.orchestrator`에 결과 수신 세션을 기록한다. ID를 추측하거나 별도 연결 파일을 만들지 않는다.
 
-명령이 `completed / OK`와 유효한 `worktree_ref`를 반환하면 같은 메인 대화에서 즉시 다음 stage를 선택·준비·실행한다. CLI의 cwd는 main에 유지할 수 있다. 각 실행의 `workdir`를 검증된 worktree로 지정하거나 main에서 `harness-context`·`harness-prepare-input`·`harness-agent-run`에 해당 `--worktree-ref`를 명시한다. 사용자에게 `/cd`, 새 세션 또는 orchestrator 재호출을 요구하지 않는다.
+명령이 `completed / OK`와 유효한 `worktree_ref`를 반환하면 정본 worktree와 binding을 검증하고 절대 workspace 경로를 사용자에게 돌려준다. primary checkout에서는 첫 stage를 준비·실행하지 않는다. 사용자가 해당 workspace로 이동해 같은 대화에서 orchestrator를 다시 호출하면 그 안에서 첫 stage를 선택·준비·실행한다. 사용자가 cd나 orchestrator 재호출을 하지 않고 main에서 답을 보내면 해당 workflow에는 기록하지 말고 workspace 이동을 안내한다.
 
-여러 worktree의 workflow는 각자의 `.io` 상태·stage 대화·검증을 사용한다. main 대화는 여러 결과를 받을 수 있으나 각 입력·결과는 `worktree_ref`와 execution ID로 해당 workflow에만 연결한다. compact 후에는 Git 등록과 기존 정본 목록을 다시 읽는다. 세션당 worktree 하나 제한이나 전역 current-worktree 선택은 두지 않는다.
+여러 worktree는 각자의 `.io` 상태·stage 대화·검증을 사용한다. 결과 알림은 `worktree_ref`와 execution ID로 대상을 식별하지만, 해당 workflow의 답변·재개·다음 stage는 그 worktree를 현재 디렉터리로 둔 대화에서만 처리한다. compact 후에는 현재 디렉터리의 Git 등록과 정본을 다시 읽는다. 전역 current-worktree 선택은 두지 않는다.

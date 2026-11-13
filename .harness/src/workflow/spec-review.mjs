@@ -30,7 +30,7 @@ const blockAfter = (lines, index) => {
   return block.join('\n');
 };
 const fieldIssue = (id, block, fields) => {
-  if (fields.some((field) => !new RegExp(`${field}\\s*:`).test(block))) return `${id}: ${fields.join(', ')} 필요`;
+  if (fields.some((field) => !new RegExp(`${field}(?:\\([^\\n)]*\\))?\\s*:`).test(block))) return `${id}: ${fields.join(', ')} 필요`;
   return null;
 };
 
@@ -72,6 +72,15 @@ async function assertSpecDiscipline(root, ticketId) {
   const decisions = await readFile(join(root, `docs/specs/${ticketId}/product-decisions.md`), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
   const unbacked = decisionsWithoutDelegation(decisions);
   requireValue(!unbacked.length, `Delegated product decisions need a recorded answers.json source; ask the user instead: ${unbacked.join(', ')}`);
+}
+
+export async function assertSpecReadyForReview({ root, ticketId }) {
+  requireValue(ID.test(ticketId || ''), 'Valid ticketId is required');
+  for (const name of ['product-spec.md', 'architecture-spec.md', 'product-decisions.md']) {
+    await assertWorkspaceTarget(root, `docs/specs/${ticketId}/${name}`);
+  }
+  await assertSpecFinalized(root, ticketId);
+  await assertSpecDiscipline(root, ticketId);
 }
 
 async function hash(root, path) {

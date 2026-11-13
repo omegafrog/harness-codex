@@ -43,8 +43,7 @@ function gitWorktrees(text) {
   return rows;
 }
 
-// A main conversation can coordinate several worktrees. Local prompts can still explicitly take over
-// a worktree; compose records the original main conversation before its first stage is dispatched.
+// The active worktree owns its orchestration; the primary checkout only creates worktrees.
 export async function bindOrchestratorSession({ root, provider, sessionId }) {
   if (!sessionId || !['codex', 'claude-code'].includes(provider)) return null;
   const path = join(root, '.io/worktree.json');
@@ -194,18 +193,25 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
     state.worktree_ref = record?.record_path || null;
     state.workspace_root = record?.workspace_root || null;
   }
-  const ownedRecords = records.filter((record) => record.orchestrator?.session_id === sessionId && (record.orchestrator.provider || 'codex') === provider);
-  const ownedStates = states.filter((state) => ownedRecords.some((record) => record.record_path === state.worktree_ref));
-  const relevantStates = ownedStates.length ? ownedStates : states;
-  const relevantActive = relevantStates.filter((state) => ACTIVE.has(state.recorded_status || state.status));
-  const selectedStates = relevantActive.length ? relevantActive : relevantStates;
+  for (const record of records.filter((item) => !item.current && item.status === 'verified_active')) {
+    if (!worktreeCandidates.some((candidate) => candidate.worktree_ref === record.record_path)) {
+      worktreeCandidates.push({ workspace_root: record.workspace_root, worktree_ref: record.record_path, request: null, status: 'active', current_stage: null });
+    }
+  }
+  const localStates = states.filter((state) => state.session_directory === currentSession);
+  const relevantActive = localStates.filter((state) => ACTIVE.has(state.recorded_status || state.status));
+  const selectedStates = localStates;
   const associatedRecord = selectedStates.length === 1 ? records.find((record) => dirname(record.record_path) === selectedStates[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || (relevantActive.length > 1 && !ownedStates.length) || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
+  } else if (registered[0]?.workspace === root && records.some((record) => !record.current && record.status === 'verified_active')) {
+    hint = 'worktree_required'; reason = 'A linked worktree is active; change directory to that worktree before invoking the orchestrator';
   } else if (relevantActive.length) {
-    hint = 'resume_candidate'; reason = relevantActive.length > 1 ? 'Main conversation coordinates independent worktree workflows; route each action by worktree and execution' : 'Current repository has a persisted active workflow';
+    hint = 'resume_candidate'; reason = 'The current worktree has a persisted active workflow';
+  } else if (registered[0]?.workspace === root && activeStates.length) {
+    hint = 'worktree_required'; reason = 'An active workflow exists in a linked worktree; change directory to that worktree before invoking the orchestrator';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = `Matching ${provider} session workflow is terminal`;
@@ -213,30 +219,16 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
     schema_version: 1, provider, session_id: sessionId || null, ...(provider === 'codex' ? { codex_session_id: sessionId || null } : {}), workspace_root: root,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
-    session_worktrees: ownedRecords.filter((record) => record.status === 'verified_active'),
+    session_worktrees: currentRecord?.status === 'verified_active' ? [currentRecord] : [],
     worktree_candidates: worktreeCandidates.slice(0, 8), omitted_worktree_candidate_count: Math.max(0, worktreeCandidates.length - 8),
     issues: issues.slice(0, 8), omitted_issue_count: Math.max(0, issues.length - 8), decision_hint: hint, reason,
   };
 }
 
-// Resolve user evidence conservatively: never broadcast an approval to all workflows owned by a chat.
-export function orchestratorInputTarget(observed, event) {
+// Inputs belong only to the worktree whose directory is the current workspace.
+export function orchestratorInputTarget(observed) {
   if (observed.issues?.length) return null;
-  const owned = observed.session_worktrees || [];
-  const liveRefs = new Set((observed.matching_workflows || []).filter((workflow) => ACTIVE.has(workflow.recorded_status || workflow.status)).map((workflow) => workflow.worktree_ref));
-  const live = owned.filter((record) => liveRefs.has(record.record_path));
-  const local = owned.find((record) => record.workspace_root === observed.workspace_root);
-  const text = event.prompt ?? event.last_assistant_message ?? JSON.stringify({ input: event.tool_input, output: event.tool_response ?? event.tool_output });
-  const mentions = owned.filter((record) => [record.worktree_id, record.plan_set_id, record.branch, record.workspace_root, record.record_path].filter(Boolean).some((value) => {
-    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?<![A-Za-z0-9_.:/-])${escaped}(?![A-Za-z0-9_.:/-])`).test(text);
-  }));
-  if (mentions.length === 1) return mentions[0];
-  if (mentions.length > 1) return null;
-  if (local) return local;
-  if (live.length === 1) return live[0];
-  if (live.length > 1) return null;
-  return owned.length === 1 ? owned[0] : null;
+  return (observed.session_worktrees || []).find((record) => record.workspace_root === observed.workspace_root) || null;
 }
 
 // Progress is a projection of orchestrator decisions, never a workflow transition.

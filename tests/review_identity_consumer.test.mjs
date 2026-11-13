@@ -155,14 +155,18 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
 });
 
 test('orchestrator-relayed scope decisions answer only a question the latest repair asked, with words the user said after it', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'harness-scope-decision-'));
+  const parent = await mkdtemp(join(tmpdir(), 'harness-scope-decision-'));
+  const primary = join(parent, 'primary'), root = join(parent, 'worktree');
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
   try {
-    execFileSync('git', ['init', '-q', root]);
+    await mkdir(primary);
+    execFileSync('git', ['init', '-q', '-b', 'main', primary]);
+    execFileSync('git', ['-C', primary, '-c', 'user.name=Harness Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'base']);
+    execFileSync('git', ['-C', primary, 'worktree', 'add', '-qb', 'feature/decision', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
-    await writeFile(join(root, '.io/worktree.json'), '{}');
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/decision', state: 'active', plan_set_id: 'sample' }));
     await writeFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), JSON.stringify({ review_input: {}, reviews: [] }));
     const cli = join(root, '.codex/scripts/harness-code-review.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
@@ -191,7 +195,7 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: question.question_id, answers_ref: 'runtime/reviews/implementation-A-answers.json', fingerprints: [findingFingerprint(today)] }]);
     assert.equal((await readFile(join(root, '.io/runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').length, 2);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(parent, { recursive: true, force: true });
   }
 });
 

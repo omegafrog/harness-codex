@@ -10,7 +10,7 @@ try {
   const args = process.argv.slice(2);
   if (args.length && (!['--root', '--worktree-ref'].includes(args[0]) || !args[1] || args.length > 2)) throw new Error('Usage: harness-context.mjs [--root DIR | --worktree-ref FILE]');
   const ctx = resolveCommandContext(args[0] === '--worktree-ref' ? { worktreeRef: args[1] } : { root: args[1] });
-  // A compacted main conversation can recover its worktree inventory without remembering a path.
+  // The primary checkout exposes active worktree paths so the user can change directories, not route commands.
   let worktrees = {};
   if (!ctx.worktree_ref) {
     const { inspectStartupState } = await import(new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url));

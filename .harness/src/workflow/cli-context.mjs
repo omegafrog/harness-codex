@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync, lstatSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve } from 'node:path';
-import { parseWorktreeRecord } from './worktrees.mjs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 // Harness commands find their own workspace context so an agent does not read worktree.json or state files just to
 // copy IDs into arguments (that cost hundreds of calls per run and caused truncated SHAs and mistyped UUIDs).
@@ -12,7 +11,15 @@ export function cliContext(cwd = process.cwd()) {
   const worktreeRef = join(root, '.io/worktree.json');
   let record = null;
   if (existsSync(worktreeRef)) { try { record = JSON.parse(readFileSync(worktreeRef, 'utf8')); } catch { record = null; } }
-  return { root, worktree_ref: record ? worktreeRef : null, plan_set_id: record?.plan_set_id || null, execution_id: process.env.HARNESS_SKILL_EXECUTION_ID || null, record };
+  let isPrimaryWorktree = false, isLinkedWorktree = false;
+  if (record) {
+    try {
+      const worktrees = [...execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).matchAll(/^worktree (.+)$/gm)].map((match) => resolve(match[1]));
+      isPrimaryWorktree = worktrees[0] === root;
+      isLinkedWorktree = worktrees.includes(root) && !isPrimaryWorktree;
+    } catch { /* command validation below reports the missing repository context */ }
+  }
+  return { root, worktree_ref: record ? worktreeRef : null, plan_set_id: record?.plan_set_id || null, execution_id: process.env.HARNESS_SKILL_EXECUTION_ID || null, record, is_primary_worktree: isPrimaryWorktree, is_linked_worktree: isLinkedWorktree };
 }
 
 export function pick(name, explicit, inferred, same = (a, b) => a === b) {
@@ -76,25 +83,11 @@ export function reviewFixedPoint(root, planId) {
 
 // Resolves a command's workspace from an explicit --root (or the cwd) and fills the plan set and worktree from it.
 export function resolveCommandContext({ root, planSetId, worktreeRef } = {}) {
-  let ctx = cliContext(root ? resolve(root) : process.cwd());
-  // Main may explicitly address a registered sibling worktree. Never silently redirect an already
-  // selected worktree, an explicit --root, or a path belonging to another repository.
-  if (worktreeRef && !samePath(worktreeRef, ctx.worktree_ref || join(ctx.root, '.io/worktree.json')) && !ctx.worktree_ref && !root) {
-    if (!isAbsolute(worktreeRef) || basename(worktreeRef) !== 'worktree.json') throw new Error('Absolute canonical worktree-ref is required');
-    const info = lstatSync(worktreeRef);
-    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('Worktree record must be a regular file');
-    const record = parseWorktreeRecord(readFileSync(worktreeRef, 'utf8'));
-    const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
-    const common = realpathSync(resolve(ctx.root, git(ctx.root, ['rev-parse', '--git-common-dir'])));
-    const listing = git(ctx.root, ['worktree', 'list', '--porcelain', '-z']).split('\0');
-    const target = realpathSync(record.workspace);
-    if (listing.find((line) => line.startsWith('worktree ')) !== `worktree ${realpathSync(ctx.root)}` || record.state !== 'active'
-      || realpathSync(record.common) !== common || realpathSync(resolve(target, git(target, ['rev-parse', '--git-common-dir']))) !== common
-      || !listing.includes(`worktree ${target}`) || realpathSync(git(target, ['rev-parse', '--show-toplevel'])) !== target
-      || git(target, ['branch', '--show-current']) !== record.branch || record.session_directory !== join(target, '.io')
-      || resolve(worktreeRef) !== join(target, '.io/worktree.json') || realpathSync(worktreeRef) !== resolve(worktreeRef)) throw new Error('Worktree reference does not match a registered worktree in this repository');
-    ctx = cliContext(target);
-  }
+  const caller = cliContext(process.cwd());
+  const ctx = cliContext(root ? resolve(root) : caller.root);
+  if (ctx.worktree_ref && !ctx.is_linked_worktree) throw new Error(`Workflow commands require a registered linked worktree; change directory to the target worktree (${ctx.root})`);
+  if (ctx.worktree_ref && !samePath(caller.root, ctx.root)) throw new Error(`Run this command from the target worktree (${ctx.root}); change directory first`);
+  if (worktreeRef && (!ctx.worktree_ref || !samePath(worktreeRef, ctx.worktree_ref))) throw new Error('A worktree-ref cannot select another workspace; change directory into the target worktree');
   return {
     ...ctx,
     root: root ? resolve(root) : ctx.root,

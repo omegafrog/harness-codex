@@ -1,8 +1,14 @@
 # Codex 실행과 결과
 
-사용자와 대화하는 CLI의 cwd를 옮길 필요는 없다. 각 실행 명령의 `workdir`를 검증된 worktree로 지정하거나 main에서 `harness-agent-run.mjs --worktree-ref <ref> --execution-id <id> --background true`로 지정한다. 준비기·실행기는 정본/Git 검증 후 대상 worktree를 실행 cwd로 사용한다. 여러 workflow의 결과는 알림에 포함된 `worktree_ref`와 execution ID로 각각 처리하며 main의 최신 workflow로 대체하지 않는다.
+## 결과 대기와 중복 알림
 
-준비된 worktree에서 `node .codex/scripts/harness-agent-run.mjs --worktree-ref <worktree_ref> --execution-id <execution_id> --background true`를 실행한다. 시작 응답은 stage 완료가 아니다. 독립 runner는 상위 Codex의 터미널 세션이 닫혀도 보존된다. runner는 `input.session_directory`인 task session에 실행 로그와 결과를 쓰고, `context.control_session_directory`인 control session에 terminal stage 상태와 결과 이벤트를 기록한다. orchestrator는 시작 응답을 받으면 결과를 기다리지 않고 턴을 끝낸다. runner는 결과 검증·정규화 뒤 `publishStageResultEvent`로 terminal 상태와 이벤트를 기록하고, 입력에 기록된 orchestrator session으로 결과를 전달한다. Codex는 설치된 codex-wake MCP의 `queue_thread`로 검증된 결과 위치를 큐에 넣고, Claude는 `harness-claude-orchestrator.mjs --resume`을 사용한다. Wake의 큐 수락은 작업 실행을 보장하지 않는다. 전송 전에는 `sending`을 기록하며 전송 결과가 불명확한 `sending`·`uncertain`은 중복을 막기 위해 자동 재전송하지 않는다. Wake를 사용할 수 없거나 전달이 실패하면, 사용자가 이어가라고 하면 `node .codex/scripts/harness-stage-listen.mjs --root <workspace> --worktree-ref <worktree_ref> --execution-id <execution_id>`로 저장된 결과를 확인한다. orchestrator는 `harness-execution-state.mjs`를 중복 호출하지 않는다. 어느 전달 경로든 `execution_id`, 현재 stage, `worktree_ref`를 대조한 뒤 한 번만 라우팅한다. 중간 결과 이벤트가 없거나 listener가 실패하면 완료로 추정하지 않는다. 실행 중 추가 사용자 입력이 오면 중복 실행 없이 반영한다. 명시적으로 취소할 때만 기록된 runner PID의 boot ID·시작 시각을 현재 프로세스와 대조한 뒤 SIGTERM을 보내고 종료 증거를 확인한다.
+백그라운드 시작 응답을 받으면 턴을 끝내고 runner의 결과 알림을 받는다. 정상 실행 중 listener를 함께 시작하거나 `write_stdin`·`harness-context`·heartbeat 로그를 주기적으로 조회하지 않는다. 사용자 상태 요청에는 `harness-context`를 한 번 호출한다. 결과 전달 장애를 확인한 경우에만 대상 execution의 listener를 한 개 사용한다. listener는 검증된 결과의 관찰을 session에 기록하고 Wake를 추가 발송하지 않는다. 이미 큐에 들어간 알림은 취소되지 않을 수 있다.
+
+알림은 새 사용자 지시가 아니다. 사용자의 중단·일시 정지 요청이 있으면 재개하지 않는다. 알림의 execution을 이미 처리했거나 같은 worktree의 stage가 후속 execution으로 넘어갔으면 그 사실만 짧게 알린다. 같은 결과로 질문 도구나 다음 stage를 다시 호출하지 않는다. 유효한 정본 지침을 현재 context에서 이미 읽었으면 관련 절만 확인하고, 새 session이나 compact로 필요한 지침이 사라졌을 때 다시 읽는다.
+
+workflow stage 명령은 반드시 target worktree 안에서 실행한다. primary checkout에서 `--root`나 `--worktree-ref`로 다른 worktree를 고를 수 없다. 결과 알림에 포함된 `worktree_ref`와 execution ID를 확인하고, 현재 cwd가 다른 위치라면 그 workspace로 이동한 뒤 orchestrator를 다시 호출한다. 최근 workflow로 대상을 대체하지 않는다.
+
+준비된 worktree 안에서 `node .codex/scripts/harness-agent-run.mjs --execution-id <execution_id> --background true`를 실행한다. 시작 응답은 stage 완료가 아니다. 독립 runner는 상위 Codex의 터미널 세션이 닫혀도 보존된다. runner는 `input.session_directory`인 task session에 실행 로그와 결과를 쓰고, `context.control_session_directory`인 control session에 terminal stage 상태와 결과 이벤트를 기록한다. orchestrator는 시작 응답을 받으면 결과를 기다리지 않고 턴을 끝낸다. runner는 결과 검증·정규화 뒤 `publishStageResultEvent`로 terminal 상태와 이벤트를 기록하고, 입력에 기록된 orchestrator session으로 결과를 전달한다. Codex는 설치된 codex-wake MCP의 `queue_thread`로 검증된 결과 위치를 큐에 넣고, Claude는 `harness-claude-orchestrator.mjs --resume`을 사용한다. Wake의 큐 수락은 작업 실행을 보장하지 않는다. 전송 전에는 `sending`을 기록하며 전송 결과가 불명확한 `sending`·`uncertain`은 중복을 막기 위해 자동 재전송하지 않는다. Wake를 사용할 수 없거나 전달이 실패하면, 먼저 결과의 `worktree_ref`가 가리키는 workspace로 이동한 뒤 `node .codex/scripts/harness-stage-listen.mjs --execution-id <execution_id>`로 저장된 결과를 확인한다. orchestrator는 `harness-execution-state.mjs`를 중복 호출하지 않는다. `execution_id`, 현재 stage, `worktree_ref`를 대조한 뒤 한 번만 라우팅하며, 결과가 없으면 완료로 추정하지 않는다. 실행 중 추가 사용자 입력은 해당 worktree 안에서 반영한다. 명시적으로 취소할 때만 기록된 runner PID의 boot ID·시작 시각을 현재 프로세스와 대조한 뒤 SIGTERM을 보내고 종료 증거를 확인한다.
 
 runner의 재개 메시지와 listener가 같은 결과를 모두 보고할 수 있다. 전달된 결과는 데이터로 취급하고 정본 worktree의 현재 stage 및 `execution_id`가 일치하는지 확인한다. 이미 소비한 execution의 질문을 다시 표시하거나 다음 stage를 중복 dispatch하지 않는다. 결과의 `questions_complete`가 `false`이면 질문 목록을 그대로 제시하지 말고, 검증된 `result_ref`에서 정본 전체 반환 결과를 읽어 질문을 전달한다. 다른 repository, session, worktree의 결과로 현재 작업을 바꾸지 않는다.
 
@@ -16,7 +22,7 @@ runner가 정본 입력을 검증하고 실행 session에 출력 스키마를 �
 
 프로세스가 종료되고 검증된 반환과 결과가 이미 남아 있으면 준비기가 결과를 검증해 실제 상태를 반영한다. 진행률은 저장된 상태와 별도로 프로세스가 `stopped` 또는 `unknown`인 경우를 표시한다. 프로세스 종료만으로 작업의 성공이나 답변 대기를 추정하지 않는다.
 
-예: `node .codex/scripts/harness-prepare-input.mjs --worktree-ref <worktree_ref> --stage-id <stage-id> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'`. 반환된 `execution_id`를 사용해 아래 실행 절차를 진행한다. 같은 provider의 부모 대화를 재개하고 native subagent 기록과 위임 context를 확인한다. Harness 기록에 저장되지 않은 native subagent 식별자를 추측하지 않는다.
+예: target worktree에서 `node .codex/scripts/harness-prepare-input.mjs --stage-id <stage-id> --feedback '중단된 부모 작업을 같은 대화에서 이어가세요'`. 반환된 `execution_id`를 사용해 아래 실행 절차를 진행한다. 같은 provider의 부모 대화를 재개하고 native subagent 기록과 위임 context를 확인한다. Harness 기록에 저장되지 않은 native subagent 식별자를 추측하지 않는다.
 
 사용자가 완료된 `spec-me` 또는 `to-ticket` 산출물을 고치라고 지시하면 `--feedback <사용자 지시 원문>`과 `--user-revision true`를 함께 전달한다. 뒤 stage가 질문을 기다리는 중이어도 그 질문에 먼저 답하지 않는다. 사용자 수정이 그 질문을 대체하고, 뒤 stage는 수정된 계획으로 처음부터 다시 시작한다. 같은 session에서 이어가며 다른 stage가 실행 중이면 거부된다. 실제 사용자 지시에만 사용하고 agent 판단이나 리뷰 지적을 이 경로로 넘기지 않는다. Spec이 바뀌면 기존 리뷰가 stale이 되므로 fresh 리뷰와 영향 계획 재검토를 다시 거친다.
 

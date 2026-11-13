@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { snapshotPlanSet } from '../.harness/src/workflow/plan-review.mjs';
+import { snapshotPlanSet, updatePlanReview, inspectPlanSet } from '../.harness/src/workflow/plan-review.mjs';
 
 // A plan index line can mention "Architecture Spec" next to another document; the review inputs still are the two
 // Specs spec-me wrote, so a plan reviewer always receives the Architecture Spec.
@@ -22,5 +22,12 @@ test('plan review inputs are the fixed Spec paths even when the index mentions o
     assert.deepEqual(snapshot.spec_paths, ['docs/specs/set/product-spec.md', 'docs/specs/set/architecture-spec.md']);
     assert.ok(Object.keys(snapshot.inputs).includes('docs/specs/set/architecture-spec.md'));
     assert.ok(!Object.keys(snapshot.inputs).includes('docs/agents/EXEC.md'));
+    await mkdir(join(root, '.codex'));
+    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    await mkdir(join(root, '.io'));
+    await assert.rejects(updatePlanReview({ root, planSetId: 'set', action: 'begin' }), /missing or empty:.*parent.md.*e2e.md/);
+    const blocked = await inspectPlanSet({ root, planSetId: 'set', phase: 'planning' });
+    assert.equal(blocked.status, 'blocked');
+    assert.match(blocked.reason, /missing or empty:/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

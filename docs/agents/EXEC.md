@@ -45,18 +45,22 @@ E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 �
 
 ## Harness 검증 경로 실행
 
-main 대화에서 worktree별 독립 실행의 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/main_worktree_workflows.test.mjs tests/cli_context.test.mjs tests/codex_orchestrator_user_hook.test.mjs tests/stage_result_events.test.mjs tests/orchestrator_write_guard.test.mjs`로 실행한다. 임시 installed-consumer에서 실제 Git worktree A/B를 만들고 main cwd에서 입력 준비·background runner 실행·역순 결과·단일 승인 기록·업데이트·Doctor·Git 가시성을 검사한다. 모델과 Wake는 이 검사에서 결정론적 test double을 사용하며 실제 Codex E2E로 보고하지 않는다.
+worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/worktree_cwd_enforcement.test.mjs tests/cli_context.test.mjs tests/codex_orchestrator_user_hook.test.mjs tests/stage_result_events.test.mjs tests/orchestrator_write_guard.test.mjs`로 실행한다. 임시 installed-consumer에서 main의 `--root`·`--worktree-ref` 우회가 거부되고, worktree 내부의 입력 준비·실행·사용자 입력 기록은 성공하는지, update·Doctor·Git 가시성을 검사한다. 모델과 Wake는 test double을 사용하며 실제 Codex E2E로 보고하지 않는다.
 
-운영 시 compose에 실제 `--orchestrator-provider`·`--orchestrator-session-id`를 전달하고 생성 검증 후 같은 대화에서 첫 stage를 시작한다. 사용자 CLI는 main에 둔다. 각 도구의 `workdir`를 대상 worktree로 지정하거나 main에서 `harness-context.mjs --worktree-ref <ref>`, `harness-prepare-input.mjs --worktree-ref <ref> --stage-id <stage>`, `harness-agent-run.mjs --worktree-ref <ref> --execution-id <id> --background true`를 사용한다. 다른 worktree 내부에서 잘못된 `--worktree-ref`로 우회하거나 다른 Git common directory의 대상을 실행하는 것은 거부한다. 기존 stage 대화와 결과 수신 메인 대화는 구분한다.
+운영 시 primary checkout에서 compose에 실제 `--orchestrator-provider`·`--orchestrator-session-id`를 전달한다. 생성 검증 후 절대 workspace 경로를 사용자에게 보여 주고 멈춘다. 사용자가 그 worktree로 이동해 같은 대화에서 orchestrator를 다시 호출한 뒤 첫 stage를 시작한다. workflow 명령은 현재 worktree에서 실행하며 primary checkout에서 `--root`·`--worktree-ref`로 다른 worktree를 지정하면 거부한다. 결과를 다른 cwd에서 받으면 결과의 worktree로 이동한 다음 이어 간다.
 
-같은 메인 세션에 여러 workflow가 있으면 branch·plan_set_id·worktree ID/경로 중 하나로 작업을 지정한 실제 사용자 입력만 해당 로그에 기록한다. 식별자가 없는 모호한 승인에는 `input_routing: ambiguous`를 반환하며 원래 main이나 모든 worktree에 승인을 복사하지 않는다. 기록되지 않은 답은 작업 식별자와 실제 결정을 함께 다시 받아야 한다. worktree가 하나면 일반 후속 입력을 사용할 수 있다. Codex 사용자 수준 write-guard hook 명령이 갱신되었으므로 실제 consumer 업데이트 후 Doctor에서 신뢰 상태를 확인하며 필요한 경우 `/hooks`에서 변경된 hook을 검토·신뢰한다.
+사용자 입력은 hook을 실행한 현재 worktree에만 기록한다. primary checkout에서는 다른 workflow로 입력을 전달하지 않으며, 답변·재개는 target worktree로 이동해 orchestrator를 호출한다. Codex 사용자 수준 write-guard hook 명령이 갱신되었으므로 실제 consumer 업데이트 후 Doctor에서 신뢰 상태를 확인하며 필요한 경우 `/hooks`에서 변경된 hook을 검토·신뢰한다.
 
-아래 기존 계산기 E2E의 두 CLI 호출은 호환 경로로 보존한다. 새 기본 경로를 실제 검증할 때는 같은 첫 요청을 main에서 실행해 생성 후 바로 첫 stage에 진입하는지 관찰하고, 실제 사용자 답변만 같은 메인 thread로 resume한다. 사용자에게 worktree 이동이나 두 번째 orchestrator 호출을 요구하지 않는다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 소스 push 후 실제 consumer 갱신 순서를 유지한다.
+아래 계산기 E2E는 primary checkout에서 첫 요청으로 worktree를 만들고, 첫 호출이 stage를 실행하지 않은 채 검증된 경로를 반환하는지 확인한다. 그 경로에서 두 번째 `codex exec`를 시작해 `spec-me`로 진입하는지 관찰한다. 실제 사용자 답변은 해당 worktree orchestrator 대화에서만 전달한다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 source push 후 실제 consumer 갱신 순서를 유지한다.
 
 - 용어/구형 경로의 작은 Luna 검증 결과와 한계는 `docs/verification/luna-workflow-check.md`에 기록했다. 임시 프로젝트는 세션 디렉터리의 tmp/에서 실행하며 별도 서버/인프라가 필요하지 않다. 프로젝트를 재사용할 때 실제 존재와 Git root를 확인하고 `npm test`를 실행한다. 이름만으로 이전 결과나 현재 상태를 신뢰하지 않는다.
 
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `npm test`. 사용자 경로 live 검증과 별개다.
+
+- setup 질문 배치·부분/역순/중복 응답·호출 ID 연결·취소 후 늦은 응답·GitHub/관측성 조건부 생략·최종 확인 전 파일 보존·설치/업데이트/Doctor/Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/setup_configuration.test.mjs`로 검증한다. 실제 관측한 async UI 메시지 형식의 fixture와 로컬 Git/외부 명령 stub을 사용한다. 서버·인프라는 필요 없고 live UI 검증을 대신하지 않는다. 로그와 TMPDIR은 source session의 `runtime/setup-answer-check/` 아래에 둔다. 수신 경로와 rollout 대조의 근거는 [setup 답변 전달](../../.codex/skills/setup/references/answer-delivery.md)에 있다.
+
+  저장소 내부 session을 TMPDIR로 사용할 때는 임시 루트에 `package.json`으로 `{"type":"commonjs"}`를 기록한다. 확장자 없는 fake CLI의 `require`가 source 저장소의 `type: module`을 상속하지 않게 하기 위한 테스트 실행 전제다. 제품 package.json이나 fixture 코드를 바꾸지 않는다.
 - 완료된 Spec·계획의 사용자 수정 재개 경로는 `tests/worktree_record_contract.test.mjs`에서 함께 검사한다.
 - Spec 밖 동작의 사용자 결정 분기와 `basis` 인용 대조 검사는 `node --test tests/review_scope_guard.test.mjs`로 실행한다.
 - implement-wrapper 최종 완료 gate가 정본 기록(리뷰 evidence·E2E receipt·tracker·제거 목록·checkpoint)에서 도출되는지는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/implement_wrapper_completion.test.mjs`로 검사한다. 임시 consumer에 설치하고 계획 리뷰·plan별 코드 리뷰·`harness-exec.mjs` receipt·계약 seal을 실제 코드로 만든 뒤 상태 파일 없이 통과, 기록별 누락 차단, 직접 쓴 `passed: true` 무시, 설치·갱신·Doctor·Git 가시성을 확인한다. 서버·인프라를 띄우지 않는다.
@@ -82,6 +86,8 @@ node .codex/scripts/harness-contracts.mjs check --root /absolute/project --base-
 `Harness contracts / contracts` Actions job은 PR head를 base commit과 비교하고 push에서도 직전 commit과 비교한다. secrets·쓰기 권한·외부 package 다운로드 없이 검사한다. Actions 비활성화나 필수 check 미설정은 코드가 강제할 수 없으므로 보호 브랜치에서 이 job을 required status check로 지정해야 merge 차단이 보장된다. workflow 완료 gate는 로컬에서도 별도로 적용된다. CI 버전은 [checkout](https://github.com/actions/checkout), [setup-node](https://github.com/actions/setup-node)의 공식 사용법을 기준으로 한다.
 
 모든 실행은 시작 시 캡처한 `git rev-parse HEAD`의 SHA를 보존하고, 정상 종료 직전에 `node .codex/scripts/harness-workflow-complete.mjs --root /absolute/project --workflow spec-me --base-ref <starting-commit-sha>`를 실행한다. 소유 worktree의 ID와 원본 경로는 `<session_directory>/worktree.json`에서 읽는다. `spec-me`·`to-ticket`·`implement-wrapper`의 완료 evidence는 gate가 정본 기록(리뷰 history, 계획 snapshot, plan별 리뷰 evidence, E2E receipt, tracker 상태)에서 직접 읽으므로 상태 파일을 넘기지 않는다. `implement-wrapper`에서는 `--state`로 넘긴 `required_outcome`·`tests`·`reviews`·`retirement`·`evidence`·`plan_review`·`plan_set_id` 값을 무시하고 결과의 `ignored_state_keys`에 남긴다. 이 명령은 선언된 `before_complete` hook과 적용되는 `contract_docs`를 실행하고 `<session_directory>/runtime/workflow-completion/` journal에 verdict를 보존한다. 시작 SHA와 필수 evidence를 완료 입력에 포함한다.
+
+워크플로우 조율 효율 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/stage_result_events.test.mjs tests/intent_and_excess_guidance.test.mjs tests/plan_review_spec_paths.test.mjs tests/spec_author_runner.test.mjs`로 검사한다. 임시 consumer의 신규 설치·갱신, Doctor, Git 가시성, listener의 관찰 기록과 Wake 재전달 억제, reviewer 생성 전 필수 기록 검사를 포함한다. 실제 모델 workflow E2E를 대신하지 않는다.
 
 ## Tracker/Beads 공통 lifecycle 명령
 
@@ -227,7 +233,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ## Codex native setup UI
 
-`$setup`은 실행마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. CLI는 기존 설정이 있으면 재사용 또는 재설정을 질문하고, 재사용 시 유효한 값은 보존하며 누락 항목만 묻는다. 아직 답이 없는 질문은 한 번의 `needs_input`(`questions`)으로 모두 돌려주고, 뒤 질문은 앞 질문의 current 값을 임시 답으로 삼아 만든 뒤 `depends_on`으로 표시한다. 모든 답이 있기 전에는 어떤 설정도 쓰지 않으며, 답을 돌려받으면 아직 없거나 선행 답이 바뀌어 맞지 않게 된 질문만 다시 돌려준다. 질문과 제출된 답만 해당 실행 파일에 보관하며 이전 설정 해시를 사용하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 스킬은 native 선택 도구에서 실제 제출된 value만 저장한다. 잘못된 option과 session 밖 답 파일은 거부한다. 수동 CLI는 유지한다.
+`$setup`은 요청마다 session 내부 `runtime/setup/<setup-id>/answers.json`을 새로 만들고 `node .codex/scripts/harness-setup.mjs --root <workspace_root> --answers <절대 session JSON 경로>`를 실행한다. 재사용 시 유효한 설정은 보존하고 누락·오류 항목만 묻는다. `needs_input`은 현재 조건이 확정된 배치만 반환하며 GitHub의 로컬 계획 디렉터리나 관측성 끔의 상세 설정은 생략한다. 스킬은 `ui_questions`를 그대로 표시하고 실제 대화 rollout을 `--bind-ui`로 연결한 뒤 항목별 응답 원문을 `--receive`로 즉시 전달한다. CLI는 setup·배치·호출·항목 대응과 누적 답을 session에 기록하고 누락 ID를 계산한다. `--status`가 `can_continue: true`일 때 추가 입력을 요구하지 않고 다음 배치를 조회하며, 최종 확인 전 프로젝트 설정·준비 파일은 쓰지 않는다. 중단·진행 금지는 `--cancel`로 기록하고 늦은 폼 응답으로 재개하지 않는다. 일반 workflow는 `--check`로 현재 설정을 읽기 전용 검사해 유효하면 setup 없이 계속한다. 수동 terminal CLI는 유지한다. 상세 절차는 [설정 선택](../../.codex/skills/setup/references/native-choices.md)을 따른다.
 
 ## 구현 리뷰 회귀 검사
 

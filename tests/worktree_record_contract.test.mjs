@@ -484,13 +484,14 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const hook = join(root, '.codex/scripts/harness-orchestrator-hook.mjs');
     const context = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' })).hookSpecificOutput.additionalContext;
     const claudeHook = join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs');
+    assert.equal(await readFile(claudeHook, 'utf8'), await readFile(join(sourceRoot, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs'), 'utf8'));
     const claudeContext = JSON.parse(execFileSync(process.execPath, [claudeHook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id }), encoding: 'utf8' })).hookSpecificOutput.additionalContext;
     for (const startupContext of [context, claudeContext]) {
-      assert.match(startupContext, /same feature.*continue a listed matching worktree or start a new workflow/);
-      assert.match(startupContext, /If none matches, prepare a new workflow/);
+      assert.match(startupContext, /change directory to that worktree before invoking the orchestrator/);
+      assert.match(startupContext, /change directory to its workspace_root/);
       assert.match(startupContext, /fresh execution ID/);
-      assert.match(startupContext, /verify its execution ID, new worktree against the pre-creation Git worktree list/);
-      assert.match(startupContext, /Never present an earlier completed result as a new creation/);
+      assert.match(startupContext, /compose with a fresh execution ID/i);
+      assert.match(startupContext, /Never select by newest record/);
     }
     assert.ok(context.includes('계산기'));
     assert.ok(context.includes(tree.worktree_ref));
@@ -502,9 +503,9 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const sourceOrchestrator = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
     const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
     assert.equal(installedOrchestrator, sourceOrchestrator);
-    assert.match(installedOrchestrator, /같은 기능의 후보가 하나라도 있으면.*기존 작업을 이어갈지 새 workflow를 시작할지 묻는다/);
-    assert.match(installedOrchestrator, /서로 다른 기능이면.*새 workflow를 준비한다/);
-    assert.match(installedOrchestrator, /사용자가 이미 특정 worktree의 재개 또는 새 시작을 명시했다면 그 선택을 다시 묻지 않는다/);
+    assert.match(installedOrchestrator, /workflow 명령은 현재 working directory가 소유 worktree일 때만 실행한다/);
+    assert.match(installedOrchestrator, /여러 후보가 있거나 원래 요청을 확인할 수 없으면 후보 경로를 제시하고 사용할 worktree를 선택하게 한다/);
+    assert.match(installedOrchestrator, /사용자가 그 디렉터리로 이동한 뒤 orchestrator를 다시 호출하도록 한다/);
     const sourceComposerGuide = await readFile(join(sourceRoot, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
     const installedComposerGuide = await readFile(join(root, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
     assert.equal(installedComposerGuide, sourceComposerGuide);

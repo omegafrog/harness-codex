@@ -384,14 +384,9 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch(() => '')).tracker;
       // A completed result being reopened for a user revision is re-validated only to be replaced; it may predate this check.
       if (tracker?.mode === 'github' && !reopening) {
-        const snapshot = await (await import('./plan-review.mjs')).snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
-        const missing = [];
-        for (const planId of ['@parent', ...snapshot.plans.map((plan) => plan.id)]) {
-          const name = planId === '@parent' ? 'parent' : planId;
-          const body = await readFile(join(session, 'runtime/to-ticket/drafts', `${name}.md`), 'utf8').catch(() => '');
-          if (!body.trim()) missing.push(`runtime/to-ticket/drafts/${name}.md`);
-        }
-        requireValue(!missing.length, `to-ticket must save a GitHub Issue draft for the plan set and every plan in the session directory before completing; missing or empty: ${missing.join(', ')}`);
+        const { snapshotPlanSet, assertPlanIssueDrafts } = await import('./plan-review.mjs');
+        const snapshot = await snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
+        await assertPlanIssueDrafts({ root, plans: snapshot.plans, session });
       }
     }
     for (const output of input.context?.outputs ?? []) {

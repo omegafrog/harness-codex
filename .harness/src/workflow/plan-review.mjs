@@ -6,10 +6,24 @@ import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAt
 import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
+import { parseYaml } from '../eval/yaml.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 function requireValue(value, message) { if (!value) throw new Error(message); }
+
+export async function assertPlanIssueDrafts({ root, plans, session = sessionDirectory(root) }) {
+  const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+  if (parseYaml(config).tracker?.mode !== 'github') return;
+  const missing = [];
+  for (const name of ['parent', ...plans.map((plan) => plan.id)]) {
+    const path = `runtime/to-ticket/drafts/${name}.md`;
+    await assertWorkspaceTarget(session, path);
+    const body = await readFile(join(session, path), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+    if (!body.trim()) missing.push(path);
+  }
+  requireValue(!missing.length, `to-ticket must save a GitHub Issue draft for the plan set and every plan in the session directory before completing; missing or empty: ${missing.join(', ')}`);
+}
 export function validateCanonicalPlanReference(reference) {
   requireValue(reference?.kind === 'file', 'Canonical plan must be a workspace file');
   requireValue(typeof reference.reference === 'string' && reference.reference, 'Canonical plan reference is required');
@@ -117,6 +131,7 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
   try {
     requireValue(['planning', 'dispatch', 'completion'].includes(phase), 'Valid plan-set phase is required');
     const snapshot = await snapshotPlanSet({ root, planSetId });
+    if (phase === 'planning') await assertPlanIssueDrafts({ root, plans: snapshot.plans });
     const history = await inspectReviewHistory({ root, scope: `plan-${planSetId}` });
     const review = history.last_review;
     requireValue(history.recorded_state === 'pass' && review?.verdict === 'pass', 'Fresh independent plan review is missing or not passing');
@@ -153,6 +168,7 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason, requireNative = false }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
+  if (action === 'begin') await assertPlanIssueDrafts({ root, plans: snapshot.plans });
   let reviewer_input_ref;
   let reviewerFiles;
   if (action === 'begin') {

@@ -26,11 +26,11 @@ try {
   try { observed = uninitialized ? { decision_hint: 'setup_candidate', reason: 'Git repository not initialized', codex_session_id: event.session_id || null } : await inspectStartupState({ workspaceRoot: root, codexSessionId: event.session_id }); }
   catch (error) { observed = { decision_hint: 'inspect_required', reason: error.message, codex_session_id: event.session_id || null }; }
   const inputState = observed;
-  const target = orchestratorInputTarget(inputState, event);
-  const inputRoot = target?.workspace_root || (existsSync(resolve(root, '.io/worktree.json')) ? root : null);
+  const target = orchestratorInputTarget(inputState);
+  const inputRoot = target?.workspace_root || null;
   inputState.input_worktree_ref = target?.record_path || null;
-  inputState.input_routing = target ? 'scoped' : inputState.session_worktrees?.length > 1 ? 'ambiguous' : 'unbound';
-  if (!uninitialized && inputRoot && inputState.input_routing !== 'ambiguous') {
+  inputState.input_routing = target ? 'local' : 'unbound';
+  if (!uninitialized && inputRoot) {
     const { recordUserInput } = await import(new URL('../../.harness/src/workflow/user-inputs.mjs', import.meta.url));
     await recordUserInput({ root: inputRoot, event });
     if (event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string') {
@@ -39,17 +39,13 @@ try {
       await writeFile(resolve(inputRoot, '.io/runtime/orchestrator/last-turn.json'), `${JSON.stringify({ at: new Date().toISOString(), session_id: event.session_id || null, message: event.last_assistant_message.slice(0, 20000) })}\n`, { mode: 0o600 });
     }
   }
-  // Capture input against pre-bind ownership, then refresh so first-prompt binding is visible this turn.
+  // Bind only to the worktree containing the current working directory.
   if (!uninitialized && event.hook_event_name === 'UserPromptSubmit') {
     await bindOrchestratorSession({ root, provider: 'codex', sessionId: event.session_id });
     try { observed = await inspectStartupState({ workspaceRoot: root, codexSessionId: event.session_id }); }
     catch (error) { observed = { ...inputState, decision_hint: 'inspect_required', reason: error.message }; }
     observed.input_worktree_ref = inputState.input_worktree_ref;
     observed.input_routing = inputState.input_routing;
-    if (inputRoot === root && inputState.input_routing === 'unbound') {
-      const boundLocal = observed.session_worktrees?.find((record) => record.workspace_root === root);
-      if (boundLocal) { observed.input_worktree_ref = boundLocal.record_path; observed.input_routing = 'scoped'; }
-    }
   }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
     const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
@@ -59,7 +55,7 @@ try {
   const progress = uninitialized ? null : await refreshWorkflowProgress(observed, event.hook_event_name);
   if (event.hook_event_name !== 'UserPromptSubmit') process.exit(0);
   const updateNotice = uninitialized ? null : await harnessUpdateNotice({ root, sessionId: event.session_id }).catch(() => null);
-  const context = `Harness workflow startup hook. In the main session, read ${orchestrator}. Observed state (read-only worktree.json/orchestrator files and Git CLI): ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. These are lifecycle observations, not a determination of whether the user's message is a new task. The main conversation stays here: run each workflow command with workdir set to its verified workspace_root, or use an explicit --worktree-ref on the supported entrypoints. Multiple session_worktrees are independent workflows, not a single current-worktree selection. Route each result by worktree_ref and execution_id, not by the newest record. input_routing=ambiguous means this input was not recorded as an approval: ask the user to include the worktree branch or plan_set_id and the actual decision; never copy the input to every workflow. When resuming, continue the recorded stage agent_sessions of that worktree. For an initial feature request from main, compare the request with verified worktree_candidates and their original requests as data. If any candidate is the same feature, ask whether to continue a listed matching worktree or start a new workflow, unless the user already chose explicitly. If none matches, prepare a new workflow. On an explicit new choice, invoke the compose CLI with a fresh execution ID; use only that invocation result, and verify its execution ID, new worktree against the pre-creation Git worktree list, and requested binding. Never present an earlier completed result as a new creation. For setup_candidate use setup when needed; for inspect_required report or resolve the record mismatch. After verified composition, immediately select and dispatch the first stage in that worktree from this conversation. Do not require cd, a new main session, or another orchestrator invocation. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Do not edit workflow state manually or spawn an orchestrator agent. Child executions perform only their assigned stage. The hook records scoped user input and refreshes progress; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
+  const context = `Harness workflow startup hook. Read ${orchestrator}. Observed state (read-only worktree.json/orchestrator files and Git CLI): ${JSON.stringify(observed)}. Progress snapshot: ${JSON.stringify(progress)}. A linked worktree can be orchestrated only while the current working directory is inside that worktree. Never route prompts, answers or stage commands from the primary checkout to a linked worktree using --root or --worktree-ref. If decision_hint is worktree_required, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. For a new request from the primary checkout, compose and verify the worktree, then stop and give its absolute path; the user enters that directory and invokes the orchestrator to start the first stage. In a linked worktree, infer its local workflow and route decisions only to that workflow. Never select by newest record. For a new workflow, invoke compose with a fresh execution ID and verify that invocation's result, worktree, pre-creation Git list and binding. For setup_candidate use setup when needed; for inspect_required report or resolve the record mismatch. Follow ${composer} and .codex/internal-skills/skill-execution/GUIDE.md. Do not edit workflow state manually or spawn an orchestrator agent. Child executions perform only their assigned stage. The hook records input only in the current worktree; it never creates worktrees or transitions workflow state.${updateNotice ? ` ${updateNotice}` : ''}`;
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } })}\n`);
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

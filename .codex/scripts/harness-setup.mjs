@@ -7,20 +7,23 @@ import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bindSetupUi, publishSetupBatch, recordSetupReplies, setupAnswerStatus } from '../../.harness/src/workflow/setup-answers.mjs';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --answers SESSION_JSON]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE]]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
-  if (args[i] === '--check' && !options['--check']) { options['--check'] = true; i -= 1; continue; }
-  if (!['--root', '--answers'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Usage: harness-setup.mjs [--root PROJECT_ROOT] [--answers SESSION_JSON]');
+  if (['--check', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
+  if (!['--root', '--answers', '--bind-ui', '--receive'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
+const actions = ['--status', '--cancel', '--bind-ui', '--receive'].filter((key) => options[key]);
+if (actions.length > 1 || (actions.length && !options['--answers'])) throw new Error('Use one answer action with --answers');
 if (options['--check']) {
   if (options['--answers']) throw new Error('--check cannot be combined with --answers');
   const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
@@ -40,15 +43,45 @@ if (gitRoot.status !== 0) {
 }
 if (gitRoot.status !== 0 || resolve(gitRoot.stdout.trim()) !== root) throw new Error(`--root must be the repository root: ${root}`);
 const native = Boolean(options['--answers']);
-let document;
+let document, answerPath;
+const saveAnswers = async () => {
+  const temporary = `${answerPath}.tmp`;
+  const { sessionOutputPath } = await import('../../.harness/src/workflow/session-output.mjs');
+  sessionOutputPath(root, relative(join(root, '.io'), temporary).split(sep).join('/'));
+  await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, answerPath);
+};
 if (native) {
   const output = await import(new URL('../../.harness/src/workflow/session-output.mjs', import.meta.url).href);
   const input = resolve(root, options['--answers']);
   const answerRef = relative(output.sessionDirectory(root), input).split(sep).join('/');
   if (!/^runtime\/setup\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/answers\.json$/i.test(answerRef)) throw new Error('Setup answers must belong to a unique setup session');
   output.sessionOutputPath(root, answerRef);
+  answerPath = input;
   document = JSON.parse(await readFile(input, 'utf8'));
   if (!document.answers || typeof document.answers !== 'object' || Array.isArray(document.answers) || Object.values(document.answers).some((value) => typeof value !== 'string')) throw new Error('answers must be a map of question IDs to selected string values');
+  const setupId = basename(dirname(input));
+  if (document.setup_id && document.setup_id !== setupId) throw new Error('Setup execution ID does not match the answers path');
+  document.setup_id = setupId;
+  document.session_id ??= process.env.CODEX_THREAD_ID || null;
+  if (document.session_id && process.env.CODEX_THREAD_ID && document.session_id !== process.env.CODEX_THREAD_ID) throw new Error('Setup answers belong to another Codex session');
+  if (actions.length) {
+    let result;
+    if (options['--cancel']) { document.status = 'cancelled'; result = setupAnswerStatus(document); }
+    else if (options['--bind-ui']) result = bindSetupUi(document, await readFile(options['--bind-ui'], 'utf8'), root);
+    else if (options['--receive']) {
+      const replyRef = relative(output.sessionDirectory(root), resolve(root, options['--receive'])).split(sep).join('/');
+      if (!replyRef.startsWith(`runtime/setup/${setupId}/`)) throw new Error('Reply files must belong to this setup session');
+      result = recordSetupReplies(document, await readFile(output.sessionOutputPath(root, replyRef, { create: false }), 'utf8'));
+    } else result = setupAnswerStatus(document);
+    if (!options['--status']) await saveAnswers();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(0);
+  }
+  if (['cancelled', 'configured'].includes(document.status) || (document.batch && !setupAnswerStatus(document).can_continue)) {
+    process.stdout.write(`${JSON.stringify(document.batch && !document.batch.call_id && !document.status ? publishSetupBatch(document, document.batch.questions) : setupAnswerStatus(document))}\n`);
+    process.exit(0);
+  }
   console.log = (...values) => process.stderr.write(values.join(' ') + '\n');
 } else if (!stdin.isTTY || !stdout.isTTY) throw new Error('Setup requires an interactive terminal; Codex native choices use --answers SESSION_JSON.');
 class PendingQuestion extends Error {
@@ -567,13 +600,21 @@ async function main() {
   console.log('다음 단계: 필수 파일 존재 여부를 확인하고 workflow 구성을 진행하세요.');
 }
 
-main().then(() => {
-  if (native) process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
-}).catch((error) => {
+main().then(async () => {
+  if (native) {
+    document.status = 'configured';
+    await saveAnswers();
+    process.stdout.write(JSON.stringify({ status: 'configured', root }) + '\n');
+  }
+}).catch(async (error) => {
   // `pending` stays the first question for callers that still ask one at a time; `questions` is the whole batch.
-  const needsInput = () => process.stdout.write(JSON.stringify({ status: 'needs_input', pending: batch[0], questions: batch }) + '\n');
-  if (error instanceof PendingQuestion) needsInput();
+  const needsInput = async () => {
+    const result = publishSetupBatch(document, batch);
+    await saveAnswers();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+  };
+  if (error instanceof PendingQuestion) await needsInput();
   // An error reached only through provisional answers ends the discovery; it is raised for real once they are answered.
-  else if (native && batch.length && !(error instanceof InvalidAnswer)) needsInput();
+  else if (native && batch.length && !(error instanceof InvalidAnswer)) await needsInput();
   else { console.error(error.message); process.exitCode = 1; }
 }).finally(() => rl?.close());

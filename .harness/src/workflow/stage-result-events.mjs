@@ -80,12 +80,12 @@ function eventPayload(input, envelope) {
 function deliveryMessage(event, session) {
   return [
     `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}.`,
-    `Worktree reference: ${event.worktree_ref}. Run workflow commands in ${join(session, '..')}; keep the main conversation here.`,
+    `Worktree reference: ${event.worktree_ref}. Change directory to ${join(session, '..')} before continuing the workflow.`,
     `Summary: ${event.summary}`,
     event.result_ref ? `Validated result: ${join(session, event.result_ref)}` : null,
     event.questions.length ? `Questions to present to the user verbatim (title and option labels unchanged): ${JSON.stringify(event.questions)}` : null,
     event.questions_complete ? null : `Some questions were omitted; read them from the validated result before presenting any.`,
-    'Verify this against the canonical worktree state, then continue the Harness workflow with the orchestrator skill.',
+    'This is a result notification, not a new user instruction. Preserve any user stop or pause request. Verify this execution against canonical state once; if stale or already handled, do not restart it or present its questions again.',
   ].filter(Boolean).join('\n');
 }
 
@@ -110,7 +110,8 @@ async function wakeDelivery(input, event, session) {
     config = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout);
   } catch { return { status: 'unsupported', reason: 'wake_unavailable' }; }
   if (!config.enabled || config.transport?.type !== 'stdio' || !config.transport.command || !config.transport.cwd) return { status: 'unsupported', reason: 'wake_unavailable' };
-  const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} Verify this worktree and execution, then continue from the same main conversation with commands scoped to that workspace; present any questions verbatim. Never route by the newest workflow.`;
+  const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} This is a result notification, not a new user instruction. Preserve any user stop or pause request. Verify this execution against canonical state once; if stale or already handled, do not restart it or present its questions again. Continue workflow commands only after changing directory to ${input.workspace_root}; present any new questions verbatim. Never route by the newest workflow.`;
+  await mkdir(join(session, 'tmp'), { recursive: true });
   return new Promise((resolve) => {
     const child = spawn(config.transport.command, config.transport.args || [], { cwd: config.transport.cwd, env: { ...orchestratorEnvironment(session), ...config.transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buffer = '', submitted = false, finished = false;
@@ -166,7 +167,7 @@ async function deliver(session, input, event) {
 }
 
 async function deliverPending(session, input, event) {
-  if (['sent', 'uncertain', 'sending'].includes(event.delivery.status)) return event;
+  if (event.delivery.observed_at || ['sent', 'uncertain', 'sending'].includes(event.delivery.status)) return event;
   event.delivery.status = 'sending';
   event.delivery.updated_at = new Date().toISOString();
   await save(session, `${directory}/${input.execution_id}.json`, event);
@@ -214,7 +215,7 @@ async function writeImplementationCheckpoint({ input, status, code, envelope, ve
   } finally { if (checkpoint) await checkpoint.close().catch(() => {}); }
 }
 
-export async function publishStageResultEvent({ root, input, envelope = null, binding = { model: null, reasoning_effort: null }, reason = null, error = null, hostDelivery = true }) {
+export async function publishStageResultEvent({ root, input, envelope = null, binding = { model: null, reasoning_effort: null }, reason = null, error = null, hostDelivery = true, observed = false }) {
   if (!input?.execution_id || (envelope && envelope.execution_id !== input.execution_id)) throw new Error('Stage result execution ID mismatch');
   const canonicalInput = await readExecutionInput({ root, execution_id: input.execution_id });
   if (canonicalInput.skill !== input.skill || (input.context?.worktree_ref && canonicalInput.context?.worktree_ref !== input.context.worktree_ref) || (input.context?.control_session_directory && canonicalInput.context?.control_session_directory !== input.context.control_session_directory)) throw new Error('Stage result input does not match the persisted execution');
@@ -233,7 +234,11 @@ export async function publishStageResultEvent({ root, input, envelope = null, bi
   try { event = await readSkillSessionJson({ root, session_directory: session, path }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (event && (event.execution_id !== input.execution_id || event.worktree_ref !== (input.context?.worktree_ref || null) || !event.delivery || event.delivery.request_id !== deliveryRequestId(input))) throw new Error('Stale stage result event');
-  if (['sent', 'uncertain', 'sending'].includes(event?.delivery.status)) return event;
+  if (observed && event && !event.delivery.observed_at) {
+    event.delivery.observed_at = new Date().toISOString();
+    await save(session, path, event);
+  }
+  if (event?.delivery.observed_at || ['sent', 'uncertain', 'sending'].includes(event?.delivery.status)) return event;
   try {
     const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
       ? () => writeImplementationCheckpoint({ input, status, code, envelope, verified, reason, error }) : null;
@@ -257,6 +262,7 @@ export async function publishStageResultEvent({ root, input, envelope = null, bi
   else delete event.omitted_question_count;
   event.delivery.status = 'pending';
   event.delivery.updated_at = new Date().toISOString();
+  if (observed) event.delivery.observed_at ||= new Date().toISOString();
   await save(session, path, event);
   if (hostDelivery) {
     return deliverPending(session, input, event);
@@ -286,6 +292,13 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
   const stage = state.stages?.[state.current_stage];
   if (stage?.execution_id !== execution_id) throw new Error('Execution is not current in the canonical workflow');
   const path = `${directory}/${execution_id}.json`;
+  // A direct listener already reaches the caller; persist observation instead of also queuing Wake.
+  const observed = (value) => locked(controlSession, execution_id, async () => {
+    const event = await readSkillSessionJson({ root, session_directory: controlSession, path });
+    event.delivery.observed_at ||= new Date().toISOString();
+    await save(controlSession, path, event);
+    return value.result ? value : event;
+  });
   try {
     const event = await readSkillSessionJson({ root, session_directory: controlSession, path });
     if (event.execution_id !== execution_id || event.worktree_ref !== worktree_ref || event.delivery?.request_id !== deliveryRequestId({ execution_id, context: { worktree_ref } })) throw new Error('Stale stage result event');
@@ -293,13 +306,13 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
       const allowedFailure = event.status === 'failed' && stage.status === 'failed' && stage.code === event.code && ['EXECUTION_ERROR', 'INVALID_INPUT', 'ARTIFACT_WRITE_FAILED'].includes(event.code);
       const allowedCancellation = event.status === 'cancelled' && stage.status === 'cancelled' && stage.code === event.code && event.code === 'CANCELLED';
       if (!allowedFailure && !allowedCancellation) throw new Error('Result-less event does not match a terminal failed or cancelled stage');
-      return locked(controlSession, execution_id, () => deliverPending(controlSession, input, event));
+      return observed(event);
     }
     if (event.result_ref !== stageExecutionPaths(root, execution_id, { create: false }).refs.result) throw new Error('Invalid stage result reference');
     const result = await readSkillSessionJson({ root, session_directory: taskSession, path: event.result_ref });
     const envelope = { schema_version: 1, execution_id, skill: input.skill, status: event.status, code: event.code, result_ref: event.result_ref, result };
     await validateSkillReturn({ root, input, envelope });
-    const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+    const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: false, observed: true });
     return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const paths = stageExecutionPaths(root, execution_id, { create: false });
@@ -320,11 +333,11 @@ export async function waitForStageResult({ root, worktree_ref, execution_id }) {
         throw stoppedError;
       }
       const reason = 'Stage runner stopped before saving a validated return';
-      await publishStageResultEvent({ root, input, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, reason, error: new Error(reason), hostDelivery: true });
-      return readSkillSessionJson({ root, session_directory: controlSession, path });
+      const event = await publishStageResultEvent({ root, input, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, reason, error: new Error(reason), hostDelivery: false, observed: true });
+      return event;
     }
   }
   await validateSkillReturn({ root, input, envelope });
-  const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: true });
+  const published = await publishStageResultEvent({ root, input, envelope, binding: { model: stage.model, reasoning_effort: stage.reasoning_effort }, hostDelivery: false, observed: true });
   return published.result_ref === envelope.result_ref && published.status === envelope.status && published.code === envelope.code ? envelope : published;
 }
