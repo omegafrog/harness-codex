@@ -339,7 +339,7 @@ npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 
 설치할 agent provider를 고를 수 있다. 기본값 `all`은 Codex와 Claude Code를 모두 설치한다.
 
-Codex를 포함한 전체 설치와 업데이트는 사용자 계정에 Codex Wake 플러그인도 설치한다. Wake의 현재 알파 릴리스는 Linux x86_64와 사용자 systemd가 필요하다. 설치 후 Codex를 다시 열고 Wake 훅을 검토·승인해야 한다. Wake와 Harness의 연결은 stage 결과를 검증한 뒤 해당 orchestrator 대화에 알림을 큐에 넣는다. 큐 수락은 실제 대화 실행을 보장하지 않으며 Wake를 사용할 수 없으면 결과는 보존되고 자동 전달은 실패한다. Claude Code만 설치할 때는 Wake를 설치하지 않는다.
+워크플로 stage는 현재 CLI의 서브에이전트로 실행하고 해당 도구에서 완료를 기다린다. Harness 설치와 업데이트는 Codex Wake를 설치하거나 stage 결과 전달에 사용하지 않는다.
 
 ```bash
 npx --yes github:omegafrog/harness-codex install --provider codex        # .agents/skills, Codex hook, 공용 .codex 자산

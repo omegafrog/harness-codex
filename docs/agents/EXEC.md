@@ -60,9 +60,7 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 
 - workflow 실행 provider는 현재 orchestrator CLI를 따른다. 기존 worktree의 산출물과 gate는 유지하며 각 실행은 시작 시 provider를 고정한다. 다른 provider에서는 이전 CLI의 대화 ID를 재개하지 않고 이전 입력·결과와 답변을 읽는 새 세션을 사용한다. 모델 설정은 `agents.codex`와 `agents.claude-code`에 각각 보존한다. 관련 설치 소비자 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/worktree_record_contract.test.mjs tests/setup_configuration.test.mjs tests/skill_model_tier.test.mjs`로 실행한다. 실제 provider CLI 전환 E2E는 아니다.
 
-- Wake 연동은 이미 설정된 Codex Wake MCP 또는 활성 plugin의 설치된 MCP 설정을 사용한다. 설치·업데이트는 Wake 또는 marketplace를 설치하지 않으며, Claude는 Wake를 사용하지 않는다. Wake가 없으면 결과 전달은 listener 경로를 사용한다. 설치·업데이트, Doctor, provider 구분과 기존 Wake 전송 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/provider_install.test.mjs tests/stage_result_events.test.mjs`로 검사한다.
-
-  활성 로컬 marketplace에 등록된 Wake는 plugin 목록에 없어도 기존 패키지의 실행 파일과 checksum을 확인해 사용한다. 실행 파일이 없거나 checksum이 다르면 다운로드하지 않고 listener 경로를 사용한다. 설치된 Doctor는 lock에 없는 Git 추적 프로젝트 스크립트를 Harness 소유로 오인하지 않는다.
+- stage 실행은 현재 CLI의 native 서브에이전트를 사용하고 도구에서 완료를 기다린다. 설치·업데이트 및 Doctor는 Wake 연결을 확인하지 않는다. 관련 소비자 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/provider_install.test.mjs tests/stage_checkpoint.test.mjs`로 검사한다.
 
 - setup 질문 배치·부분/역순/중복 응답·호출 ID 연결·취소 후 늦은 응답·GitHub/관측성 조건부 생략·최종 확인 전 파일 보존·설치/업데이트/Doctor/Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/setup_configuration.test.mjs`로 검증한다. 실제 관측한 async UI 메시지 형식의 fixture와 로컬 Git/외부 명령 stub을 사용한다. 서버·인프라는 필요 없고 live UI 검증을 대신하지 않는다. 로그와 TMPDIR은 source session의 `runtime/setup-answer-check/` 아래에 둔다. 수신 경로와 rollout 대조의 근거는 [setup 답변 전달](../../.codex/skills/setup/references/answer-delivery.md)에 있다.
 

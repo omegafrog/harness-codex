@@ -125,9 +125,17 @@ test('install and update never install Wake and Doctor checks only the configure
   const cli = join(sourceRoot, 'bin/harness-install.mjs');
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
   for (const command of ['install', 'update']) {
+    if (command === 'update') {
+      const oldDoctor = join(root, '.harness/src/doctor/doctor.mjs');
+      await writeFile(oldDoctor, 'export const obsolete = "codex_wake_unavailable: use harness-stage-listen";\n');
+    }
     const result = spawnSync(process.execPath, [cli, command, '--project', root, '--provider', 'codex'], { encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr);
   }
+  for (const path of ['.harness/src/doctor/doctor.mjs', '.agents/skills/setup/references/initial-setup.md', '.agents/skills/orchestrator/SKILL.md']) {
+    assert.doesNotMatch(await readFile(join(root, path), 'utf8'), /harness-stage-listen|codex_wake_unavailable/);
+  }
+  await assert.rejects(readFile(join(root, '.codex/scripts/harness-stage-listen.mjs')), { code: 'ENOENT' });
   const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.some((args) => args.some((arg) => /codex-wake/.test(arg))), false);
   assert.equal(await readFile(join(root, 'user-file.txt'), 'utf8'), 'preserve');
