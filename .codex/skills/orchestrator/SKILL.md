@@ -31,6 +31,8 @@ primary checkout에서 활성 worktree가 발견되면 해당 workflow의 답변
 
 새 workflow를 primary checkout에서 시작할 때는 선택 시점에 등록된 worktree를 보존하고 `workflow-compose`의 생성 명령을 새 execution ID로 호출한다. **그 호출이 반환한** `worktree_ref`와 execution ID만 새 workflow의 근거로 쓴다. 생성 결과를 검증하면 절대 workspace 경로를 사용자에게 알려 주고 멈춘다. 사용자가 그 경로로 이동해 orchestrator를 다시 호출하기 전에는 첫 stage를 준비하거나 실행하지 않는다. 반환된 참조가 기존 worktree나 생성 전 Git 목록에 있거나 execution ID·binding이 정본 기록과 다르면 성공으로 보고하지 않는다.
 
+현재 linked worktree에서 새 workflow를 시작할 때는 현재 경로에서 `workflow-compose`를 실행한다. 실행기가 현재 worktree를 workflow에 연결하며 새 worktree를 만들지 않는다. 반환된 workspace가 현재 경로와 같은지 확인하고 첫 stage를 여기서 이어간다. 이미 workflow 기록이 있으면 덮어쓰거나 다른 worktree를 만들지 말고 현재 기록을 확인한다.
+
 `workflow-compose`가 `completed/OK`이면 worktree 준비가 끝난 상태다. `workflow_ref`가 null이고 미래 단계가 기록되지 않은 것은 정상이며, 정본 원 요청과 완료 결과를 기준으로 첫 skill을 선택한다.
 
 기존 worktree workflow를 진행·재개하려면 사용자가 먼저 해당 workspace로 이동한 다음 orchestrator를 호출해야 한다. `harness-context`·`harness-prepare-input`·`harness-agent-run`은 현재 worktree를 자동 탐색한다. `--root`나 `--worktree-ref`로 primary checkout에서 다른 worktree를 지정하지 않는다. Harness는 primary checkout에서 worktree를 만들 수 있지만, workflow 답변·stage 준비·실행은 target worktree 안에서만 허용한다. 새 전역 선택 파일은 만들지 않는다.

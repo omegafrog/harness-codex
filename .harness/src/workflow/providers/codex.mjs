@@ -207,7 +207,7 @@ export async function inspectCodexHookTrust(env = process.env) {
 
 const DELIVERY_PREFIX = 'Harness stage result for execution';
 
-async function findRollout(directory, sessionId) {
+export async function findRollout(directory, sessionId) {
   const entries = await readdir(directory, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
   for (const entry of entries.sort((a, b) => b.name.localeCompare(a.name))) {
     const path = join(directory, entry.name);

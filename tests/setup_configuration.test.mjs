@@ -594,3 +594,33 @@ test('installed setup collects all individual form replies directly from its con
     assert.equal(await readFile(answers, 'utf8'), snapshot);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('setup finds its conversation and accepts a direct answer to one displayed choice', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers, bin, sourceRoot, git } = project;
+  try {
+    await writeFile(join(root, 'app.mjs'), 'application owned\n');
+    await updateProject({ sourceRoot, targetRoot: root });
+    git('check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs');
+    assert.match(git('status', '--short', '--untracked-files=all'), /app\.mjs/);
+    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    const batch = await run({});
+    assert.equal(batch.questions.length, 1);
+    await showBatch(project, batch);
+    const transcript = join(answers, '..', 'rollout.jsonl');
+    const home = join(root, '.io/codex-home');
+    const sessions = join(home, 'sessions', '2026', '11', '13');
+    await mkdir(sessions, { recursive: true });
+    await writeFile(join(sessions, 'rollout-2026-11-13T00-00-00-setup-test-session.jsonl'), await readFile(transcript));
+    const call = () => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, '--receive-rollout'], { cwd: root, env: { ...process.env, CODEX_HOME: home, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const rollout = join(sessions, 'rollout-2026-11-13T00-00-00-setup-test-session.jsonl');
+    const message = (text) => '\n' + JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
+    await appendFile(rollout, message('설명해 주세요'));
+    assert.equal(call().can_continue, false);
+    await appendFile(rollout, message('새로 설정'));
+    assert.equal(call().can_continue, true);
+    assert.equal(JSON.parse(await readFile(answers, 'utf8')).answers[batch.questions[0].id], 'reconfigure');
+    assert.equal(command().status, 'needs_input');
+    assert.match(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), /mode: github/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

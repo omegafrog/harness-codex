@@ -14,11 +14,12 @@ import { runtimeAgentProvider } from '../../.harness/src/workflow/agent-config.m
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout ROLLOUT_JSONL | --revise QUESTION_ID]]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout [ROLLOUT_JSONL] | --revise QUESTION_ID]]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
+  if (args[i] === '--receive-rollout' && (!args[i + 1] || args[i + 1].startsWith('--'))) { options[args[i]] = true; i -= 1; continue; }
   if (['--check', '--start', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
   if (!['--root', '--answers', '--bind-ui', '--receive', '--receive-rollout', '--revise'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
   options[args[i]] = args[i + 1];
@@ -85,7 +86,16 @@ if (native) {
       document.batch = null;
       result = { status: 'revised', setup_id: document.setup_id, question_id: options['--revise'], can_continue: true };
     }
-    else if (options['--receive-rollout']) result = receiveSetupTranscript(document, await readFile(options['--receive-rollout'], 'utf8'), root);
+    else if (options['--receive-rollout']) {
+      let rollout = options['--receive-rollout'];
+      if (rollout === true) {
+        if (!/^[a-z0-9-]{1,100}$/i.test(document.session_id || '')) throw new Error('Current Codex session ID is unavailable');
+        const { findRollout } = await import('../../.harness/src/workflow/providers/codex.mjs');
+        rollout = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), document.session_id);
+        if (!rollout) throw new Error('Current Codex conversation record not found');
+      }
+      result = receiveSetupTranscript(document, await readFile(rollout, 'utf8'), root);
+    }
     else if (options['--bind-ui']) result = bindSetupUi(document, await readFile(options['--bind-ui'], 'utf8'), root);
     else if (options['--receive']) {
       const replyRef = relative(output.sessionDirectory(root), resolve(root, options['--receive'])).split(sep).join('/');

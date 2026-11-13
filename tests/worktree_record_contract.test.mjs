@@ -1370,3 +1370,48 @@ test('workspace preparation records completion without selecting a workflow stag
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('installed compose starts in an existing linked worktree without replacing project changes', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'compose-existing-worktree-'));
+  const root = join(parent, 'project'), workspace = join(parent, 'existing');
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  try {
+    await mkdir(root);
+    const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(root, 'init', '-q', '-b', 'main');
+    git(root, 'config', 'user.name', 'Contract');
+    git(root, 'config', 'user.email', 'contract@example.test');
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    await seedSetup(root);
+    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+    git(root, 'commit', '-qm', 'setup baseline');
+    git(root, 'worktree', 'add', '-qb', 'existing', workspace);
+    await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });
+    await seedSetup(workspace);
+    await writeFile(join(workspace, 'app.mjs'), 'project change\n');
+    await writeFile(join(workspace, 'docs/contracts/project.md'), 'project-owned contract\n');
+    assert.equal((await runDoctor({ root: workspace, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
+    const before = git(root, 'worktree', 'list', '--porcelain');
+    const { inspectStartupState } = await import('../.harness/src/workflow/startup-state.mjs');
+    assert.equal((await inspectStartupState({ workspaceRoot: workspace })).decision_hint, 'compose_candidate');
+    const remote = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', 'remote-compose'], { cwd: root, encoding: 'utf8' });
+    assert.notEqual(remote.status, 0);
+    assert.match(remote.stderr, /inside the current linked worktree/);
+    const compose = (id) => JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', id], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const result = compose('compose-existing');
+    assert.equal(result.workspace, await realpath(workspace));
+    assert.equal(result.workspace_ownership, 'existing');
+    assert.equal(git(root, 'worktree', 'list', '--porcelain'), before);
+    assert.equal(await readFile(join(workspace, 'app.mjs'), 'utf8'), 'project change\n');
+    const visible = git(workspace, 'status', '--short', '--untracked-files=all');
+    assert.match(visible, /app\.mjs/);
+    assert.match(visible, /docs\/contracts\/project\.md/);
+    git(workspace, 'check-ignore', '-v', '.io/worktree.json');
+    assert.throws(() => compose('compose-again'), /already has workflow state/);
+    assert.equal((await finishWorkflowWorktree({ workspace_root: workspace, repository_root: root, worktree_id: result.worktree_id })).state, 'preserved');
+    assert.equal(await readFile(join(workspace, 'app.mjs'), 'utf8'), 'project change\n');
+    const next = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    assert.equal(next.input.context.execution_workspace.workspace_root, await realpath(workspace));
+  } finally { await rm(parent, { recursive: true, force: true }); }
+});

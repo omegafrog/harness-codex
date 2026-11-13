@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkflowWorktree, recordWorktreeOutcome, parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
+import { createWorkflowWorktree, adoptWorkflowWorktree, isLinkedWorktree, recordWorktreeOutcome, parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
 import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
@@ -15,7 +15,11 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
   if (workflow_binding && orchestrator_provider && workflow_binding.provider !== orchestrator_provider) throw new Error('Workflow binding provider must match the current orchestrator provider');
   assertSingleProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')), workflow_binding ? parseWorkflowBinding(workflow_binding) : null, orchestrator_provider);
   // Keep repeated feature requests readable without reusing tracker identity.
-  const record = await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id, workflow_binding });
+  const linked = await isLinkedWorktree(root);
+  if (linked && await realpath(process.cwd()) !== await realpath(root)) throw new Error('Run compose inside the current linked worktree');
+  const record = linked
+    ? await adoptWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id, workflow_binding })
+    : await createWorkflowWorktree({ workspace_root: root, feature_name: plan_set_id, workflow_binding });
   try {
     const storedInput = {
       schema_version: 1, execution_id, skill: 'workflow-compose', scope: request, input_refs: [],

@@ -84,9 +84,21 @@ export function receiveSetupTranscript(document, transcript, root) {
   const events = transcript.split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const start = events.findIndex(({ type, payload }) => type === 'response_item' && payload.type === 'function_call' && payload.call_id === document.batch.call_id);
   for (const event of events.slice(start + 1)) {
+    if (event.type === 'response_item' && event.payload?.type === 'function_call' && /(?:^|\.)request_user_input_async$/.test(event.payload.name)) break;
     if (event.type !== 'response_item' || event.payload?.type !== 'message' || event.payload.role !== 'user') continue;
     for (const item of event.payload.content || []) {
-      if (item.type === 'input_text' && /^<send_user_message_question_reply>/.test(item.text || '')) recordSetupReplies(document, item.text);
+      if (item.type !== 'input_text') continue;
+      if (/^<send_user_message_question_reply>/.test(item.text || '')) recordSetupReplies(document, item.text);
+      else if (document.batch.questions.length === 1) {
+        const question = document.batch.questions[0];
+        const option = question.options?.find(({ label }) => label === item.text.trim());
+        if (option) {
+          const previous = document.batch.received[question.id];
+          if (previous !== undefined && previous !== option.value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
+          document.batch.received[question.id] = option.value;
+          document.answers[question.id] = option.value;
+        }
+      }
     }
   }
   return setupAnswerStatus(document);

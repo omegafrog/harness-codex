@@ -204,7 +204,7 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
   const associatedRecord = selectedStates.length === 1 ? records.find((record) => dirname(record.record_path) === selectedStates[0].session_directory) : null;
   const relevantIssues = issues.filter((issue) => issue.path.startsWith(`${currentSession}/`) || issue.reason !== 'unassigned_codex_session');
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
-  if (!current || relevantIssues.length || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active') || (registered[0]?.workspace !== root && !currentRecord)) {
+  if (!current || relevantIssues.length || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active')) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
   } else if (registered[0]?.workspace === root && records.some((record) => !record.current && record.status === 'verified_active')) {
     hint = 'worktree_required'; reason = 'A linked worktree is active; change directory to that worktree before invoking the orchestrator';
@@ -212,7 +212,7 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
     hint = 'resume_candidate'; reason = 'The current worktree has a persisted active workflow';
   } else if (registered[0]?.workspace === root && activeStates.length) {
     hint = 'worktree_required'; reason = 'An active workflow exists in a linked worktree; change directory to that worktree before invoking the orchestrator';
-  } else if (currentRecord?.status === 'verified_active' || currentOrphan || registered[0]?.workspace !== root) {
+  } else if (currentRecord?.status === 'verified_active' || currentOrphan) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = `Matching ${provider} session workflow is terminal`;
   return {

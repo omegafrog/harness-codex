@@ -48,6 +48,7 @@ export function parseWorktreeRecord(text) {
     || typeof record.branch !== 'string' || !record.branch) throw new Error('Invalid worktree.json');
   validatePlanSetId(record.plan_set_id);
   if (record.workflow_binding !== undefined) parseWorkflowBinding(record.workflow_binding);
+  if (record.workspace_ownership !== undefined && record.workspace_ownership !== 'existing') throw new Error('Invalid workspace ownership');
   if (record.current_stage !== undefined && !Object.values(WORKTREE_STAGE).includes(record.current_stage)) throw new Error('Invalid worktree current_stage');
   if (record.agent_sessions !== undefined) {
     if (!record.agent_sessions || typeof record.agent_sessions !== 'object' || Array.isArray(record.agent_sessions)) throw new Error('Invalid worktree agent_sessions');
@@ -137,7 +138,7 @@ export async function reserveWorkflowWorktree({ workspace_root, repository_root,
   });
 }
 
-async function registerWorktree({ workspace_root, return_root, plan_set_id } = {}) {
+async function registerWorktree({ workspace_root, return_root, plan_set_id, workspace_ownership = null, workflow_binding = null } = {}) {
   validatePlanSetId(plan_set_id);
   const details = await describe(workspace_root);
   const target = await realpath(return_root || await primaryRoot(workspace_root));
@@ -165,7 +166,7 @@ async function registerWorktree({ workspace_root, return_root, plan_set_id } = {
     }
     if (existing.state !== 'removed') throw new Error('Finish the pending cleanup before registering another worktree');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), state: 'active', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, registered_at: new Date().toISOString() };
+  const record = { schema_version: 1, worktree_id: randomUUID(), ...details, source_workspace: target, return_root: target, session_directory: place.session_directory, ...(plan_set_id ? { plan_set_id } : {}), ...(workspace_ownership ? { workspace_ownership } : {}), ...(workflow_binding ? { workflow_binding } : {}), state: 'active', current_stage: WORKTREE_STAGE.WORKFLOW_COMPOSE, registered_at: new Date().toISOString() };
   await writeWorktreeRecord(place, record);
   return record;
 }
@@ -173,6 +174,27 @@ async function registerWorktree({ workspace_root, return_root, plan_set_id } = {
 export async function registerWorkflowWorktree(options = {}) {
   const place = await location(options.workspace_root, options.return_root || options.workspace_root);
   return withWorktreeLock(place, () => registerWorktree(options));
+}
+
+export async function isLinkedWorktree(root) {
+  const workspace = await realpath(root);
+  if (await realpath(await git(root, ['rev-parse', '--show-toplevel'])) !== workspace) throw new Error('Expected a Git worktree root');
+  const [common, gitDir] = await Promise.all([git(root, ['rev-parse', '--git-common-dir']), git(root, ['rev-parse', '--git-dir'])]);
+  return await realpath(resolve(root, gitDir)) !== await realpath(resolve(root, common));
+}
+
+export async function adoptWorkflowWorktree({ workspace_root, feature_name, workflow_binding = null }) {
+  if (!await isLinkedWorktree(workspace_root)) throw new Error('Existing workflow workspace must be a linked worktree');
+  const root = await realpath(workspace_root);
+  const returnRoot = await realpath(await primaryRoot(root));
+  const place = await location(root, returnRoot);
+  return withWorktreeLock(place, async () => {
+    for (const path of [place.worktree_file, join(place.directory, 'runtime/orchestrator/state.json'), join(place.directory, 'runtime/orchestrator/workflow.json')]) {
+      if (await lstat(path).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; })) throw new Error('Current worktree already has workflow state; existing state preserved');
+    }
+    const plan_set_id = uniquePlanSetId(feature_name, randomUUID());
+    return registerWorktree({ workspace_root: root, return_root: returnRoot, plan_set_id, workspace_ownership: 'existing', workflow_binding });
+  });
 }
 
 export async function bindWorkflowPlanSetId({ workspace_root, repository_root = workspace_root, plan_set_id, feature_name } = {}) {
@@ -279,6 +301,7 @@ async function finishRegisteredWorktree({ workspace_root, repository_root = work
   try { record = await readWorktreeRecord(place); }
   catch (error) { if (error.code === 'ENOENT') return { state: 'not-owned', workspace_root, reason: 'No worktree.json; workspace preserved' }; throw error; }
   if (record.workspace !== place.workspace || record.common !== place.common || (worktree_id && record.worktree_id !== worktree_id)) throw new Error('Worktree ownership mismatch');
+  if (record.workspace_ownership === 'existing') return { state: 'preserved', workspace_root, return_root: record.return_root, outcome, reason: 'Existing worktree is user-owned' };
   const exists = await lstat(place.workspace).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
   if (exists) {
     const current = await describe(place.workspace);
