@@ -8,7 +8,9 @@
 </send_user_message_question_reply>
 ```
 
-`questionItemId`를 JSON으로 해석하면 `[도구 이름, 호출 ID, 0부터 시작하는 항목 번호]`다. rollout의 `response_item/function_call`은 `name`, `call_id`, `arguments`를 담고, `function_call_output`은 같은 `call_id`와 접수 결과를 담는다. 첫 응답의 ID만 보고 현재 폼이라고 추정하지 않는다. `--bind-ui`가 이번 배치 생성 이후의 실제 질문 인자와 접수 결과를 대조해야 한다.
+`questionItemId`를 JSON으로 해석하면 `[도구 이름, 호출 ID, 0부터 시작하는 항목 번호]`다. rollout의 `response_item/function_call`은 `name`, `call_id`, `arguments`를 담고, `function_call_output`은 같은 `call_id`와 접수 결과를 담는다. `--bind-ui`는 이번 배치 이후 접수된 호출의 질문 개수와 항목별 선택지를 대조한다. 최종 확인에서는 승인 대상인 설정 요약 전체를 검증한다. 호출이 유일하지 않으면 추측하지 않는다.
+
+2026-11-13 재현에서는 답변의 `question`이 UTF-8 기준 512바이트에서 잘렸다. 답변은 이 제목을 비교하지 않고, 연결된 호출 ID와 항목 번호로만 해당 질문에 연결한다. 다른 호출의 답변은 무시한다.
 
 같은 기록에서 provider·tracker·Beads·관측성의 실제 4개 개별 응답을 새 수집 함수에 읽기 전용으로 전달해 호출 연결과 마지막 답 이후 `can_continue: true`를 확인했다. 이 확인은 실제 과거 메시지의 해석 검증이며 새 setup의 live UI 실행은 아니다.
 

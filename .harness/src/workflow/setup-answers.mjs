@@ -2,8 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { resolve } from 'node:path';
 
-const normalized = (text) => text.replace(/\s+/g, ' ').trim();
-
 export function setupAnswerStatus(document) {
   const batch = document.batch;
   const missing = batch?.questions.filter(({ id }) => !Object.hasOwn(batch.received, id)).map(({ id }) => id) || [];
@@ -34,16 +32,23 @@ export function bindSetupUi(document, transcript, root) {
   const events = transcript.split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const meta = events.find(({ type }) => type === 'session_meta')?.payload;
   if (!meta || resolve(meta.cwd || '') !== root || (document.session_id && (meta.id || meta.session_id) !== document.session_id)) throw new Error('UI transcript does not match this setup session/workspace');
-  const calls = events.filter(({ timestamp, type, payload }) => type === 'response_item' && payload.type === 'function_call'
-    && /(?:^|\.)request_user_input_async$/.test(payload.name) && Date.parse(timestamp) >= Date.parse(batch.created_at)
-    && isDeepStrictEqual(JSON.parse(payload.arguments), { questions: batch.ui_questions }));
+  const calls = events.filter(({ timestamp, type, payload }) => {
+    if (type !== 'response_item' || payload.type !== 'function_call' || !/(?:^|\.)request_user_input_async$/.test(payload.name) || !(Date.parse(timestamp) >= Date.parse(batch.created_at))) return false;
+    const shown = JSON.parse(payload.arguments).questions;
+    return Array.isArray(shown) && shown.length === batch.questions.length && shown.every((item, index) => {
+      const question = batch.questions[index];
+      return typeof item.title === 'string' && isDeepStrictEqual(item.options, batch.ui_questions[index].options)
+        && (question.prompt !== '이 설정으로 계속할까요?' || item.title === batch.ui_questions[index].title);
+    });
+  });
   const accepted = calls.filter(({ payload: call }) => events.some(({ type, payload }) => type === 'response_item'
     && payload.type === 'function_call_output' && payload.call_id === call.call_id && JSON.parse(payload.output).accepted === true));
-  if (accepted.length !== 1) throw new Error('Expected exactly one accepted UI call for this setup batch; do not guess or redisplay it');
+  if (!accepted.length) throw new Error('No accepted UI call matches this setup batch');
+  if (accepted.length !== 1) throw new Error('Multiple accepted UI calls match this setup batch; do not guess');
   const callId = accepted[0].payload.call_id;
   if (typeof callId !== 'string' || !callId || (batch.call_id && batch.call_id !== callId)) throw new Error('UI call ID does not match the bound setup batch');
   batch.call_id = callId;
-  batch.ui_items = batch.questions.map(({ id }, index) => ({ question_id: id, questionItemId: JSON.stringify(['request_user_input_async', callId, index]), title: batch.ui_questions[index].title }));
+  batch.ui_items = batch.questions.map(({ id }, index) => ({ question_id: id, questionItemId: JSON.stringify(['request_user_input_async', callId, index]) }));
   return setupAnswerStatus(document);
 }
 
@@ -62,7 +67,7 @@ export function recordSetupReplies(document, input) {
     if (!Array.isArray(identity) || identity.length !== 3 || identity[0] !== 'request_user_input_async' || typeof identity[1] !== 'string' || !Number.isInteger(identity[2]) || identity[2] < 0) throw new Error('Invalid UI questionItemId');
     if (identity[1] !== batch.call_id) { ignored += 1; continue; }
     const item = batch.ui_items[identity[2]], question = batch.questions[identity[2]];
-    if (!item || typeof reply.question !== 'string' || normalized(reply.question) !== normalized(item.title) || typeof reply.answer !== 'string') throw new Error('Reply does not match the displayed setup question');
+    if (!item || !question || typeof reply.answer !== 'string') throw new Error('Reply does not match the displayed setup question');
     const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : reply.answer;
     if (value === undefined) throw new Error(`Answer is not an offered label for ${question.id}; address the user message before continuing setup`);
     if (Object.hasOwn(received, question.id) && received[question.id] !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);

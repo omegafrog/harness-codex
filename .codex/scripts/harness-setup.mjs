@@ -320,9 +320,10 @@ async function main() {
   const runtimeProvider = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID ? 'Codex CLI' : process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_SESSION_ID ? 'Claude Code' : null;
   questionContext = [runtimeProvider && `현재 실행 환경: ${runtimeProvider}.`, isExistingWorktree ? `현재 위치: 이미 생성된 linked worktree${branch ? ` (${branch})` : ''}. 이 setup은 현재 worktree를 유지합니다.` : `현재 위치: ${branch || '기본 저장소'}.`].filter(Boolean).join(' ');
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
+  const existingProvider = currentProviderOf(config), existingModels = providerAgents(config, existingProvider);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
     { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
-  ], 'reuse', { agents: config.agents || {}, tracker: config.tracker || {}, beads: config.beads || {}, observability: config.observability || {} }) === 'reuse';
+  ], 'reuse', `현재 설정: provider ${existingProvider}, 모델 ${Object.entries(existingModels).filter(([key]) => key.endsWith('_model') && key !== 'default_model').map(([key, value]) => `${key}=${value}/${existingModels[key.replace('_model', '_reasoning_effort')] || '?'}`).join(', ') || '없음'}, tracker ${config.tracker?.mode || '미설정'}${config.tracker?.github?.repository ? ` (${config.tracker.github.repository} #${config.tracker.github.project_number || '?'})` : ''}, Beads ${config.beads?.enabled === true ? '사용' : config.beads?.enabled === false ? '끔' : '미설정'}, 관측성 ${config.observability?.victorialogs?.local?.enabled === true ? '사용' : config.observability?.victorialogs?.local?.enabled === false ? '끔' : '미설정'}`) === 'reuse';
   // Reusing or reconfiguring decides which of the later questions exist, so each of them is marked as depending on it.
   if (hasExisting && native) baseDependencies = [lastQuestionId];
   const hasWorktreeDirectory = typeof config.worktrees?.directory === 'string' && isAbsolute(config.worktrees.directory) && !config.worktrees.directory.includes('\0');

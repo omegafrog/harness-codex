@@ -62,6 +62,8 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 
 - setup 질문 배치·부분/역순/중복 응답·호출 ID 연결·취소 후 늦은 응답·GitHub/관측성 조건부 생략·최종 확인 전 파일 보존·설치/업데이트/Doctor/Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/setup_configuration.test.mjs`로 검증한다. 실제 관측한 async UI 메시지 형식의 fixture와 로컬 Git/외부 명령 stub을 사용한다. 서버·인프라는 필요 없고 live UI 검증을 대신하지 않는다. 로그와 TMPDIR은 source session의 `runtime/setup-answer-check/` 아래에 둔다. 수신 경로와 rollout 대조의 근거는 [setup 답변 전달](../../.codex/skills/setup/references/answer-delivery.md)에 있다.
 
+  UI 응답의 제목이 바뀌거나 잘려도 연결된 호출 ID와 항목 번호로 답변을 수신한다. 다른 폼의 늦은 답은 무시하며, 최종 확인은 표시된 설정 요약 전체를 검증한다.
+
   저장소 내부 session을 TMPDIR로 사용할 때는 임시 루트에 `package.json`으로 `{"type":"commonjs"}`를 기록한다. 확장자 없는 fake CLI의 `require`가 source 저장소의 `type: module`을 상속하지 않게 하기 위한 테스트 실행 전제다. 제품 package.json이나 fixture 코드를 바꾸지 않는다.
 - 완료된 Spec·계획의 사용자 수정 재개 경로는 `tests/worktree_record_contract.test.mjs`에서 함께 검사한다.
 - Spec 밖 동작의 사용자 결정 분기와 `basis` 인용 대조 검사는 `node --test tests/review_scope_guard.test.mjs`로 실행한다.

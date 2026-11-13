@@ -352,6 +352,12 @@ test('installed setup collects individual reordered answers, advances on the las
       assert.equal(batch.status, 'needs_input');
       batches.push(batch);
       assert.doesNotMatch(JSON.stringify(batch.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|로그 보존 일수|Actuator|Spring service/);
+      if (batch.questions.some(({ prompt }) => prompt === '이 설정으로 계속할까요?')) {
+        const transcript = join(answers, '..', 'rollout.jsonl'), timestamp = new Date().toISOString();
+        const changed = batch.ui_questions.map((item) => ({ ...item, title: item.title.split('\n')[0] }));
+        await writeFile(transcript, [JSON.stringify({ type: 'session_meta', payload: { id: 'setup-test-session', cwd: root } }), JSON.stringify({ type: 'response_item', timestamp, payload: { type: 'function_call', name: 'request_user_input_async', call_id: 'unreviewed', arguments: JSON.stringify({ questions: changed }) } }), JSON.stringify({ type: 'response_item', timestamp, payload: { type: 'function_call_output', call_id: 'unreviewed', output: '{"accepted":true}' } })].join('\n'));
+        assert.throws(() => command('--bind-ui', transcript), /No accepted UI call/, 'final approval must include the complete summary');
+      }
       const replies = await showBatch(project, batch);
       if (oldReply) {
         const ignored = await receive(project, [oldReply]);
@@ -425,7 +431,7 @@ test('cancelled setup ignores late form answers and cannot resume or change exis
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('setup refuses unverified calls, acceptance payloads, mismatched items and conflicting duplicates', async () => {
+test('setup refuses unverified calls, acceptance payloads, invalid item IDs and conflicting duplicates', async () => {
   const project = await freshProject();
   const { root, run, command, answers } = project;
   try {
@@ -436,13 +442,15 @@ test('setup refuses unverified calls, acceptance payloads, mismatched items and 
     const valid = await readFile(transcript, 'utf8');
     await writeFile(transcript, valid.replace('setup-test-session', 'another-session'));
     assert.throws(() => command('--bind-ui', transcript), /does not match/);
+    const withoutTime = valid.split('\n').map((line) => { const event = JSON.parse(line); if (event.payload.type === 'function_call') delete event.timestamp; return JSON.stringify(event); }).join('\n');
+    await writeFile(transcript, withoutTime);
+    assert.throws(() => command('--bind-ui', transcript), /No accepted UI call/);
     await writeFile(transcript, valid.replace('accepted\\\":true', 'accepted\\\":false'));
-    assert.throws(() => command('--bind-ui', transcript), /exactly one accepted/);
+    assert.throws(() => command('--bind-ui', transcript), /No accepted UI call/);
     await writeFile(transcript, valid + '\n' + valid.split('\n').slice(1).join('\n'));
-    assert.throws(() => command('--bind-ui', transcript), /exactly one accepted/);
+    assert.throws(() => command('--bind-ui', transcript), /Multiple accepted UI calls/);
     await writeFile(join(answers, '..', 'reply.txt'), '{"accepted":true}');
     assert.throws(() => command('--receive', join(answers, '..', 'reply.txt')), /actual UI reply/);
-    await assert.rejects(receive(project, [{ ...replies[0], question: 'another title' }]), /does not match/);
     await assert.rejects(receive(project, [{ ...replies[0], questionItemId: JSON.stringify(['request_user_input_async', JSON.parse(replies[0].questionItemId)[1], 999]) }]), /does not match/);
     assert.equal(await readFile(answers, 'utf8'), snapshot, 'invalid messages leave all answers unchanged');
     const index = batch.questions.findIndex(({ options }) => options?.length > 1);
@@ -450,5 +458,32 @@ test('setup refuses unverified calls, acceptance payloads, mismatched items and 
     const other = batch.questions[index].options.find(({ label }) => label !== replies[index].answer).label;
     await assert.rejects(receive(project, [{ ...replies[index], answer: other }]), /Conflicting duplicate/);
     assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('setup binds the actual call and accepts answers by item ID even when the title changes', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers } = project;
+  try {
+    const config = `agents:\n  codex:\n    high_performance_model: ${'model'.repeat(70)}\ntracker:\n  mode: github\n`;
+    await writeFile(join(root, '.codex/harness.yaml'), config);
+    const batch = await run({});
+    assert.equal(batch.questions.length, 1);
+    const title = batch.ui_questions[0].title;
+    assert.ok(Buffer.byteLength(title) > 512);
+    const transcript = join(answers, '..', 'rollout.jsonl');
+    const timestamp = new Date().toISOString();
+    const wrongCall = { type: 'response_item', timestamp, payload: { type: 'function_call', name: 'request_user_input_async', call_id: 'call_correct', arguments: JSON.stringify({ questions: [{ ...batch.ui_questions[0], title: '다르게 표시된 질문' }] }) } };
+    const wrongOutput = { type: 'response_item', timestamp, payload: { type: 'function_call_output', call_id: 'call_correct', output: '{"accepted":true}' } };
+    await writeFile(transcript, [JSON.stringify({ type: 'session_meta', payload: { id: 'setup-test-session', cwd: root } }), JSON.stringify(wrongCall), JSON.stringify(wrongOutput)].join('\n'));
+    assert.equal(command('--bind-ui', transcript).status, 'waiting');
+    const reply = { questionItemId: JSON.stringify(['request_user_input_async', 'call_correct', 0]), question: '변경되거나 잘린 제목', answer: '새로 설정' };
+    const oldReply = { ...reply, questionItemId: JSON.stringify(['request_user_input_async', 'call_old', 0]) };
+    assert.equal((await receive(project, [oldReply])).ignored, 1);
+    const result = await receive(project, [reply]);
+    assert.equal(result.can_continue, true);
+    assert.deepEqual(result.missing_question_ids, []);
+    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(command('--bind-ui', transcript).status, 'ready', 'rebinding the same accepted call preserves answers');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
