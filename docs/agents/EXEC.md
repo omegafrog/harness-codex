@@ -312,10 +312,10 @@ codex exec resume --json --model gpt-6-luna \
 
 메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, `codex exec`, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
 
-장기 stage는 `harness-agent-run.mjs --background true`로 독립 runner를 시작한다. `harness-prepare-input.mjs`가 guide/profile/phase instruction hash를 기록하며 same-session 재개는 unchanged instruction을 생략하고 delta만 전달한다. Compaction 감지 시 최신 instruction을 다시 읽어 필요한 규칙을 복구한다. task session은 결과 상세를, control session은 terminal 상태와 stage result event를 보유한다. `harness-stage-listen.mjs`가 두 session을 대조한다. 결과 이벤트 알림은 선택 기능이며 정확한 host agent session 일치 시 queued delivery를 시도한다. `runtime/executions/<execution_id>/process-events.jsonl`은 시작·heartbeat·Codex 이벤트 종류·수신 signal·종료 코드/신호를, `codex.stderr.log`와 `codex.errors.jsonl`은 하위 Codex stderr와 오류 이벤트를 실시간으로 기록한다. `runner.stdout.log`, `runner.stderr.log`, 완료 시 `exec.stderr.json`과 함께 확인한다. 종료 이벤트 없이 PID가 사라지면 원인 미상이며 SIGKILL이나 timeout이라고 추정하지 않는다. 상위 `codex exec`의 stderr는 별도 session 파일로 보존한다. 로그에는 오류 상세가 포함될 수 있으므로 session 내부에만 둔다.
+stage 실행은 `.codex/internal-skills/skill-execution/references/dispatch.md`에 따라 native 서브에이전트를 시작하고 종료를 기다린다. `harness-native-stage.mjs`가 출력 형식과 실행 상태를 확인하고 결과를 기록한다.
 
 
-runner는 task session의 결과 검증·정규화와 control session의 terminal stage 상태·결과 이벤트 기록을 소유한다. Orchestrator는 실행 상태 CLI를 중복 호출하지 않고 `harness-stage-listen.mjs --root <workspace> --worktree-ref <worktree_ref> --execution-id <execution_id>`로 task/control session 결과를 대조해 기다린다. Listener는 execution·stage·worktree identity를 검증하며 실패/누락을 완료로 추정하지 않는다. 선택적 host queue 알림은 정확히 일치한 현재 agent session에서만 요청하며 listener 연결 대기도 지원한다. 입력 준비기는 stage와 제어 session 경로를 기록한다.
+결과는 `harness-native-stage.mjs finish`의 반환값과 정본 실행 상태에서 확인한다. 실패나 중단이 확인되기 전에는 같은 stage를 다시 시작하지 않는다.
 
 
 구성된 workflow의 입력과 실행 ID는 `harness-prepare-input.mjs`가 생성한다. 최초 workflow-compose의 worktree는 `harness-compose-workspace.mjs`가 준비한다.

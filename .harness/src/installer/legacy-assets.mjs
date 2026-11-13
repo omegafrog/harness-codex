@@ -1,6 +1,13 @@
 // Harness files that nothing reads any more. An update removes them (backing up the content) even when they were edited
 // or lost their lock entry, because no setting in them can take effect after the change that retired them.
 export const RETIRED_ASSET_PATHS = new Set([
+  '.codex/scripts/harness-stage-listen.mjs',
+  '.codex/scripts/harness-agent-run.mjs',
+  '.codex/scripts/harness-codex-run.mjs',
+  '.harness/src/workflow/stage-result-events.mjs',
+  '.harness/src/workflow/codex-wake.mjs',
+  '.harness/src/workflow/codex-process.mjs',
+  '.harness/src/workflow/execution-context.mjs',
   // Skill tiers moved into each skill's own document (`model_tier` frontmatter); setup's agents.<provider> values are the only models.
   '.codex/internal-skills/skill-execution/bindings.json',
 ]);

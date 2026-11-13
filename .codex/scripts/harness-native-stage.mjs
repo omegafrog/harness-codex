@@ -11,7 +11,7 @@ import { recordExecutionState } from '../../.harness/src/workflow/execution-stat
 import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/skill-execution.mjs';
 import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
-import { publishStageResultEvent } from '../../.harness/src/workflow/stage-result-events.mjs';
+import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 
 try {
   const [action, ...args] = process.argv.slice(2), opts = {};
@@ -52,7 +52,15 @@ try {
     }
     if (action === 'fail' || action === 'cancel') {
       const status = action === 'cancel' ? 'cancelled' : 'failed';
-      await recordExecutionState({ root, input, binding, status, code: status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR', reason: opts.reason });
+      const code = status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
+      const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
+        ? () => writeImplementationCheckpoint({ input, status, code, verified: false, reason: opts.reason }) : null;
+      try { await recordExecutionState({ root, input, binding, status, code, reason: opts.reason, beforeTransition }); }
+      catch (error) {
+        if (!error.checkpointFailure) throw error;
+        await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message });
+        throw error;
+      }
       process.stdout.write(`${JSON.stringify({ status, execution_id: id, reason: opts.reason })}\n`);
       process.exit(0);
     }
@@ -93,7 +101,14 @@ try {
     execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' });
     await commitWorkflowDocuments({ root, input, rawPath: paths.files.raw });
     const envelope = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.returned });
-    const event = await publishStageResultEvent({ root, input, envelope, binding, hostDelivery: false, observed: true });
-    process.stdout.write(`${JSON.stringify({ status: event.status, code: event.code, result_ref: event.result_ref, result: envelope.result })}\n`);
+    const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
+      ? () => writeImplementationCheckpoint({ input, status: envelope.status, code: envelope.code, envelope, verified: true }) : null;
+    try { await recordExecutionState({ root, input, binding, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, beforeTransition }); }
+    catch (error) {
+      if (!error.checkpointFailure) throw error;
+      await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message });
+      throw error;
+    }
+    process.stdout.write(`${JSON.stringify({ status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result })}\n`);
   }
 } catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 2; }

@@ -85,23 +85,12 @@ test('installed workflow commands require cwd inside the target worktree', async
     const prepared = ok(a.workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
     assert.equal(prepared.input.context.worktree_ref, a.worktree_ref);
     assert.equal(prepared.session_directory, a.session_directory);
-    assert.match(failed(primary, 'harness-agent-run.mjs', ['--worktree-ref', a.worktree_ref, '--execution-id', prepared.input.execution_id, '--background', 'true']), /change directory into the target worktree/);
+    const args = ['start', '--root', a.workspace, '--worktree-ref', a.worktree_ref, '--execution-id', prepared.input.execution_id];
+    assert.match(failed(primary, 'harness-native-stage.mjs', args), /change directory first/);
+    const started = ok(a.workspace, 'harness-native-stage.mjs', args);
+    assert.equal(started.workspace, a.workspace);
+    assert.equal(started.execution_id, prepared.input.execution_id);
 
-    const fakeCodex = join(bin, 'codex');
-    const cwdFile = join(directory, 'stage-cwd.txt');
-    await writeFile(fakeCodex, `#!/usr/bin/env node\nconst fs=require('node:fs');if(process.argv[2]==='mcp'){process.stdout.write('{"enabled":false}');process.exit(0);}fs.writeFileSync(${JSON.stringify(cwdFile)},process.cwd());process.exit(1);\n`);
-    await chmod(fakeCodex, 0o755);
-    const launched = ok(a.workspace, 'harness-agent-run.mjs', ['--execution-id', prepared.input.execution_id, '--background', 'true'], { PATH: `${bin}:${process.env.PATH}` });
-    assert.equal(launched.status, 'started');
-    const deadline = Date.now() + 10000;
-    while (!existsSync(cwdFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(await readFile(cwdFile, 'utf8'), a.workspace);
-    const events = join(prepared.session_directory, 'runtime/executions', prepared.input.execution_id, 'process-events.jsonl');
-    while (Date.now() < deadline) {
-      try { if ((await readFile(events, 'utf8')).includes('"event":"runner_completed"')) break; } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    assert.match(await readFile(events, 'utf8'), /"event":"runner_completed"/);
   });
 
   await t.test('fresh install, update, Doctor and Git visibility keep managed files out of commits', async () => {

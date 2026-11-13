@@ -57,7 +57,9 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     execFileSync('git', ['-C', root, 'check-ignore', '-q', specPathScript]);
     assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-doctor.mjs')), legacy);
     assert.ok(result.updated.includes('.harness/src/workflow/project-readiness.mjs'));
-    assert.ok(result.updated.includes('.codex/scripts/harness-codex-run.mjs'));
+    assert.ok(result.retired.includes('.codex/scripts/harness-codex-run.mjs'));
+    await assert.rejects(readFile(resolve(root, '.codex/scripts/harness-codex-run.mjs')), { code: 'ENOENT' });
+    assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-codex-run.mjs')), await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/harness-codex-run.mjs')));
     assert.match(await readFile(resolve(root, '.harness/src/workflow/project-readiness.mjs'), 'utf8'), /export async function inspectSetupConfiguration/);
     assert.deepEqual(await readFile(resolve(result.backup_directory, schemaPath)), schema);
     await assert.rejects(readFile(resolve(root, schemaPath)), { code: 'ENOENT' });

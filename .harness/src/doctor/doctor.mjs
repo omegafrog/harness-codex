@@ -17,7 +17,6 @@ import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
-import { inspectCodexWake } from '../workflow/codex-wake.mjs';
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
@@ -99,13 +98,13 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'agent-run', 'orchestrator-hook', 'codex-run', 'result', 'workflow-session', 'stage-listen'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-result-events', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
-    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/workflow/codex-wake.mjs');
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
@@ -372,7 +371,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-run.mjs', '.codex/scripts/harness-agent-admission.mjs', '.codex/scripts/harness-codex-run.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {
@@ -491,12 +490,6 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
-    try {
-      const wake = await inspectCodexWake(repositoryRoot);
-      if (wake.status !== 'available') diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', `Codex Wake MCP unavailable in active CODEX_HOME (${wake.codex_home}): ${wake.reason}; use harness-stage-listen to retrieve stage results.`, null));
-    } catch (error) {
-      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', `Codex Wake check failed in active CODEX_HOME (${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}): ${safeMessage(error, 'unknown error')}`, null));
-    }
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();

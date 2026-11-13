@@ -85,7 +85,6 @@ stage가 Git 작업(add·commit)에 막혀도 orchestrator가 대신하지 않�
 
 Harness workflow 명령은 target worktree 안에서 실행한다. 현재 workspace의 `--root`·`--plan-set`·`--worktree-ref`를 자동 탐색하며 primary checkout에서 다른 worktree로 이 값을 지정하면 거부한다. 값을 복사하려고 `worktree.json`·`state.json`·결과 파일을 읽지 말고 상태는 `node .codex/scripts/harness-context.mjs` 한 번으로 확인한다. `harness-code-review.mjs assemble --plan <plan-id>`도 최신 리뷰 요청 결과와 기존 fixed point를 찾는다.
 
-Queued result events are hints, not a new workflow authority. Verify `worktree_ref`, current stage, and `execution_id` against canonical state before acting; consume each execution once even if the runner resume and a manual `harness-stage-listen.mjs` check both report it. If an event sets `questions_complete: false`, load the full validated result from its `result_ref` before presenting questions. Never route from an unrelated repository or session.
 
 사용자가 중단·일시 정지를 요청했으면 결과 알림으로 재개하지 않는다. 이미 처리한 execution은 질문 도구나 stage를 다시 호출하지 않고 짧게 알린다. 백그라운드 실행 뒤 반복 상태 조회 없이 턴을 끝내고, 전달 장애 때만 공통 실행 조율의 listener 경로를 사용한다.
 

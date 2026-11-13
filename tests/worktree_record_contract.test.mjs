@@ -47,13 +47,16 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
 
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
     assert.ok(lock.files[policyPath], 'explicit-only invocation policy is managed');
-    for (const path of ['.harness/src/workflow/stage-result-events.mjs', '.codex/scripts/harness-stage-listen.mjs', '.codex/internal-skills/skill-execution/worker-base.md']) {
+    for (const path of ['.harness/src/workflow/stage-checkpoint.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/internal-skills/skill-execution/worker-base.md']) {
       assert.ok(lock.files[path], `installer lock includes ${path}`);
       assert.ok((await readFile(join(root, path), 'utf8')).length > 0);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     const lockPath = join(root, '.codex/harness-lock.json');
     const retired = [
+      ['.codex/scripts/harness-stage-listen.mjs', 'old listener'],
+      ['.codex/scripts/harness-agent-run.mjs', 'old runner'],
+      ['.harness/src/workflow/codex-wake.mjs', 'old wake'],
       ['.agents/skills/e2e-test/SKILL.md', 'old e2e public guide'],
       ['.claude/skills/e2e-test/SKILL.md', 'old claude e2e public guide'],
       ['.agents/skills/spec-me/SKILL.md', 'modified local public guide'],
@@ -62,7 +65,7 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
       await mkdir(join(root, path, '..'), { recursive: true });
       await writeFile(join(root, path), content);
       const hash = createHash('sha256').update(content).digest('hex');
-      lock.files[path] = { source_path: `.codex/skills/${path.split('/')[2]}/SKILL.md`, installed_sha256: hash, upstream_sha256: hash };
+      lock.files[path] = { source_path: path.includes('/skills/') ? `.codex/skills/${path.split('/')[2]}/SKILL.md` : path, installed_sha256: hash, upstream_sha256: hash };
     }
     const localPath = '.agents/skills/spec-me/SKILL.md';
     lock.files[localPath].installed_sha256 = createHash('sha256').update('old public guide').digest('hex');
@@ -81,6 +84,11 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
     assert.ok(result.retired.includes('.agents/skills/e2e-test/SKILL.md'));
     assert.ok(result.retired.includes('.claude/skills/e2e-test/SKILL.md'));
     assert.ok(result.retired.includes(localPath));
+    for (const [path, content] of retired.slice(0, 3)) {
+      assert.ok(result.retired.includes(path));
+      await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
+      assert.equal(await readFile(join(result.backup_directory, path), 'utf8'), content);
+    }
     await assert.rejects(readFile(join(root, '.agents/skills/e2e-test/SKILL.md')), { code: 'ENOENT' });
     await assert.rejects(readFile(join(root, '.claude/skills/e2e-test/SKILL.md')), { code: 'ENOENT' });
     assert.equal(await readFile(join(result.backup_directory, '.agents/skills/e2e-test/SKILL.md'), 'utf8'), 'old e2e public guide');
@@ -178,8 +186,8 @@ test('consumer update retires writer receipt runtime and preserves project files
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.harness\/src\//);
-    assert.match(execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-run.mjs'], { cwd: root, encoding: 'utf8' }), /harness-agent-run/);
-    const runner = await readFile(join(root, '.codex/scripts/harness-agent-run.mjs'), 'utf8');
+    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-native-stage.mjs'], { cwd: root });
+    const runner = await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'), 'utf8');
     const stageInput = await readFile(join(root, '.harness/src/workflow/stage-input.mjs'), 'utf8');
     const skill = await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8');
     const claudeSkill = await readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md'), 'utf8');
@@ -267,7 +275,7 @@ test('installed readiness checks required files without validating their content
       await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
       assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), 'legacy managed asset');
     }
-    await readFile(join(root, '.codex/scripts/harness-codex-run.mjs'));
+    await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'));
     await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     const installedDoctor = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' }));
     assert.equal(installedDoctor.passed, true);
@@ -1118,208 +1126,9 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(roleBinding.reasoning_effort, 'medium');
     assert.equal(next.input.context.orchestrator_session_id, record.worktree_id);
     assert.equal(next.input.shared_guidance_root, undefined);
-    const runId = next.input.execution_id;
     const mismatched = { ...next.input, execution_id: 'provider-mismatch', context: { ...next.input.context, orchestrator_provider: 'claude-code' } };
     await writeExecutionInput(tree.workspace, mismatched, tree.plan_set_id);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-agent-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--status', 'running'], { cwd: tree.workspace, stdio: 'pipe' }));
-    const beforeRunner = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
-    assert.equal(beforeRunner.stages['spec-me'], undefined);
-    const bin = join(parent, 'bin');
-    await mkdir(bin);
-    await writeFile(join(bin, 'package.json'), '{"type":"commonjs"}');
-    const fakeCodex = join(bin, 'codex');
-    await writeFile(fakeCodex, '#!/usr/bin/env node\nconst fs=require("fs");const path=require("path");const a=process.argv;const schema=a[a.indexOf("--output-schema")+1];if(!fs.existsSync(schema)||Object.hasOwn(JSON.parse(fs.readFileSync(schema,"utf8")).properties,"execution_id"))process.exit(41);let p="";process.stdin.on("data",x=>p+=x);process.stdin.on("end",()=>{console.log(JSON.stringify({type:"thread.started",thread_id:process.env.TEST_CODEX_THREAD}));console.log(JSON.stringify({type:"item.started",item:{type:"command_execution"}}));console.error("fake Codex diagnostic");const done=()=>{const expected=JSON.parse(fs.readFileSync(schema,"utf8")).properties;const envelope=JSON.parse(process.env.TEST_CODEX_RETURN);const result=JSON.parse(process.env.TEST_CODEX_STORED_RESULT||JSON.stringify(envelope.result));const id=process.env.TEST_CODEX_EXECUTION_ID;envelope.execution_id=id;envelope.skill=expected.skill.const;envelope.result_ref=`runtime/executions/${id}/result.json`;result.execution_id=id;result.skill=expected.skill.const;envelope.result=result;fs.writeFileSync(path.join(path.dirname(schema),"result.json"),JSON.stringify(result));fs.writeFileSync(a[a.indexOf("--output-last-message")+1],JSON.stringify(envelope));fs.writeFileSync(process.env.TEST_CODEX_PROMPT,p);fs.writeFileSync(process.env.TEST_CODEX_ARGS,JSON.stringify(a));};if(process.env.TEST_CODEX_GATE){const t=setInterval(()=>{if(fs.existsSync(process.env.TEST_CODEX_GATE)){clearInterval(t);done();}},20);}else done();});\n');
-    await chmod(fakeCodex, 0o755);
-    const promptPath = join(tree.session_directory, 'runtime/executions', runId, 'test-prompt');
-    const codexHome = join(parent, 'codex-home');
-    const codexSessionDir = join(codexHome, 'sessions/2026/11/01');
-    await mkdir(codexSessionDir, { recursive: true });
-    for (const path of ['thread-writer-locks', 'shell_snapshots', 'tmp/arg0', 'tmp/arg0-linux']) await mkdir(join(codexHome, path), { recursive: true });
-    await writeFile(join(codexSessionDir, `rollout-test-${record.worktree_id}.jsonl`), '');
-    const contextPath = 'runtime/to-ticket/plan-review-context.json';
-    await mkdir(join(tree.session_directory, 'runtime/to-ticket'), { recursive: true });
-    await writeFile(join(tree.session_directory, contextPath), 'current review context\n');
-    const currentContextHash = createHash('sha256').update('current review context\n').digest('hex');
-    const canonicalResult = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', summary: 'review pending', artifacts: [{ base: 'session', path: contextPath, kind: 'plan_review_context', sha256: currentContextHash }], questions: [], review_request: null };
-    const staleResult = { ...canonicalResult, artifacts: [{ ...canonicalResult.artifacts[0], sha256: '0'.repeat(64) }] };
-    const codexEnvelope = { schema_version: 1, execution_id: runId, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: `runtime/executions/${runId}/result.json`, result: staleResult };
-    const environment = { ...process.env, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH}`, TEST_CODEX_RETURN: JSON.stringify(codexEnvelope), TEST_CODEX_STORED_RESULT: JSON.stringify(canonicalResult), TEST_CODEX_PROMPT: promptPath, TEST_CODEX_ARGS: join(tree.session_directory, 'runtime/executions', runId, 'test-args'), TEST_CODEX_THREAD: record.worktree_id, TEST_CODEX_EXECUTION_ID: runId };
-    const prefix = join(tree.session_directory, 'runtime/executions', runId);
-    const gate = join(parent, 'release-codex');
-    environment.TEST_CODEX_GATE = gate;
-    const launch = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--background', 'true'], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-    assert.equal(launch.status, 'started');
-    const waitFor = async (path, predicate = () => true) => {
-      const deadline = Date.now() + 10000;
-      while (Date.now() < deadline) {
-        try { const value = await readFile(path, 'utf8'); if (predicate(value)) return value; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      const runnerError = await readFile(join(prefix, 'runner.stderr.log'), 'utf8').catch(() => '');
-      throw new Error(`Timed out waiting for ${path}: ${runnerError}`);
-    };
-    const eventsPath = join(prefix, 'process-events.jsonl');
-    const liveEvents = await waitFor(eventsPath, (value) => value.includes('item.started'));
-    assert.match(liveEvents, /runner_started/);
-    assert.match(await waitFor(join(prefix, 'codex.stderr.log'), (value) => value.includes('fake Codex diagnostic')), /fake Codex diagnostic/);
-    assert.doesNotMatch(liveEvents, /child_exited/);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', runId, '--background', 'true'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
-    await writeFile(gate, 'release');
-    const terminal = JSON.parse(await waitFor(join(prefix, 'exec.stderr.json')));
-    await waitFor(eventsPath, (value) => value.includes('runner_completed'));
-    const execution = JSON.parse(await waitFor(join(prefix, 'runner.stdout.log'), (value) => value.includes('threadId')));
-    delete environment.TEST_CODEX_GATE;
-    assert.equal(terminal.exit_signal, null);
-    assert.equal(execution.code, 0);
-    assert.equal(execution.threadId, record.worktree_id);
-    assert.equal(execution.binding.model, 'gpt-6-luna');
-    assert.equal(execution.binding.reasoning_effort, 'medium');
-    const finalizedReturn = JSON.parse(await readFile(join(prefix, 'return.json'), 'utf8'));
-    assert.equal(finalizedReturn.result.artifacts[0].sha256, currentContextHash);
-    assert.deepEqual(JSON.parse(await readFile(join(prefix, 'result.json'), 'utf8')), finalizedReturn.result);
-    const stageArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
-    assert.equal(stageArgs[stageArgs.indexOf('--model') + 1], 'gpt-6-luna');
-    assert.ok(stageArgs.some((value, index) => value === '-c' && stageArgs[index + 1] === 'model_reasoning_effort="medium"'));
-    assert.match(stageArgs[stageArgs.indexOf('--output-last-message') + 1], /codex-last-message\.json$/);
-    assert.notEqual(stageArgs[stageArgs.indexOf('--output-last-message') + 1], join(prefix, 'return.json'));
-    const recordedRun = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8')).stages['spec-me'];
-    const orchestratorState = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/state.json'), 'utf8'));
-    assert.equal(orchestratorState.orchestrator_provider, 'codex');
-    assert.equal(orchestratorState.orchestrator_session_id, record.worktree_id);
-    assert.equal(recordedRun.runner_managed, true);
-    assert.ok(recordedRun.owner?.pid && recordedRun.owner?.start);
-    assert.ok(recordedRun.child?.pid && recordedRun.child?.start);
-    const recordedSession = JSON.parse(await readFile(result.worktree_ref, 'utf8')).agent_sessions['spec-me'];
-    assert.equal(recordedSession.provider, 'codex');
-    assert.equal(recordedSession.session_id, record.worktree_id);
-    const schemaPath = join(tree.session_directory, 'runtime/executions', runId, 'return.schema.json');
-    assert.equal(Object.hasOwn(JSON.parse(await readFile(schemaPath, 'utf8')).properties, 'execution_id'), false);
-    assert.match(execFileSync('git', ['check-ignore', '-v', `.io/runtime/executions/${runId}/return.schema.json`], { cwd: tree.workspace, encoding: 'utf8' }), /\.io/);
-    await writeFile(join(root, 'consumer-change.txt'), 'visible application change');
-    const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(consumerStatus, /consumer-change\.txt/);
-    assert.doesNotMatch(consumerStatus, /\.io\/runtime\/executions/);
-    assert.equal(stageArgs[stageArgs.indexOf('--enable') + 1], 'multi_agent');
-    assert.equal(stageArgs.includes('--add-dir'), false);
-    await mkdir(join(tree.workspace, 'docs/agents'), { recursive: true });
-    await writeFile(join(tree.workspace, 'docs/agents/implementation-guidance.md'), '# Active worktree memory\n');
-    const workspaceMemoryStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: tree.workspace, encoding: 'utf8' });
-    const originalCheckoutStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(workspaceMemoryStatus, /docs\/agents\/implementation-guidance\.md/);
-    assert.doesNotMatch(originalCheckoutStatus, /implementation-guidance\.md/);
-    const nested = { ...next.input, execution_id: 'nested-child', context: { ...next.input.context, parent_execution_id: runId } };
-    await writeExecutionInput(tree.workspace, nested, tree.plan_set_id);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'nested-child'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
-    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', runId, 'exec.stderr.json'), 'utf8')).thread_id, record.worktree_id);
-    assert.match(await readFile(promptPath, 'utf8'), /spec-me\/GUIDE.md/);
-    assert.match(await readFile(promptPath, 'utf8'), /`action_required` \/ `SPEC_REVISION_REQUIRED`/);
-    assert.ok(recordedRun.instruction_delivery.instruction_versions.some(([path]) => path.endsWith('/stage-return.md')));
-    const reviewer = { ...next.input, execution_id: 'spec-reviewer', context: { ...next.input.context, agent_profile: 'spec_adversarial_reviewer' } };
-    await writeExecutionInput(tree.workspace, reviewer, tree.plan_set_id);
-    environment.TEST_CODEX_EXECUTION_ID = 'spec-reviewer';
-    execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'spec-reviewer'], { cwd: tree.workspace, env: environment, stdio: 'pipe' });
-    const args = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
-    assert.equal(args[args.indexOf('--sandbox') + 1], 'read-only');
-    assert.equal(args.includes('--add-dir'), false);
-    assert.match(await readFile(promptPath, 'utf8'), /artifact_contents/);
-    assert.match(await readFile(promptPath, 'utf8'), /`action_required` \/ `SPEC_REVISION_REQUIRED`/);
-    const reviewResult = { schema_version: 1, execution_id: 'spec-reviewer', skill: 'spec-me', status: 'completed', code: 'OK', summary: '검토 완료', artifacts: [], questions: [], review_request: null, artifact_contents: [{ name: 'review.md', kind: 'architecture_review', content: '검토 내용' }] };
-    await writeFile(join(tree.session_directory, 'runtime/executions/spec-reviewer/result.json'), JSON.stringify(reviewResult));
-    await writeFile(join(tree.session_directory, 'runtime/executions/spec-reviewer/return.json'), JSON.stringify({ schema_version: 1, execution_id: 'spec-reviewer', skill: 'spec-me', status: 'completed', code: 'OK', result_ref: 'runtime/executions/spec-reviewer/result.json', result: reviewResult }));
-    const reviewEnvelope = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'spec-reviewer', '--return', 'runtime/executions/spec-reviewer/return.json'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.equal(await readFile(join(tree.session_directory, reviewEnvelope.result.artifacts[0].path), 'utf8'), '검토 내용');
-    assert.equal(reviewEnvelope.result.artifact_contents, undefined);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'compose-1'], { cwd: tree.workspace, env: environment, stdio: 'pipe' }));
-    const resumed = { ...next.input, execution_id: 'spec-resume', context: { ...next.input.context, resume_session_id: record.worktree_id } };
-    await writeExecutionInput(tree.workspace, resumed, tree.plan_set_id);
-    const answersPath = join(tree.session_directory, 'runtime/executions/spec-resume/answers.json');
-    await mkdir(join(tree.session_directory, 'runtime/executions/spec-resume'), { recursive: true });
-    await writeFile(answersPath, '{"answer":"예"}');
-    environment.TEST_CODEX_EXECUTION_ID = 'spec-resume';
-    const resumedRun = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', 'spec-resume'], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-    assert.equal(resumedRun.threadId, record.worktree_id);
-    const resumedArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
-    const addDirs = resumedArgs.flatMap((value, index) => value === '--add-dir' ? [resumedArgs[index + 1]] : []);
-    assert.ok(addDirs.includes(await realpath(codexSessionDir)));
-    assert.ok(addDirs.includes(await realpath(join(codexHome, 'thread-writer-locks'))));
-    assert.ok(addDirs.includes(await realpath(join(codexHome, 'tmp/arg0'))));
-    assert.ok(!addDirs.includes(codexHome));
-    assert.match(await readFile(promptPath, 'utf8'), /answers\.json/);
-    assert.doesNotMatch(await readFile(promptPath, 'utf8'), /# Stage 반환 계약/);
-    const interruptedInput = { ...next.input, execution_id: 'interrupted-parent' };
-    await writeExecutionInput(tree.workspace, interruptedInput, tree.plan_set_id);
-    const interruptedStoredInput = await readExecutionInput({ root: tree.workspace, execution_id: interruptedInput.execution_id });
-    const runtime = `file://${join(tree.workspace, '.harness/src/workflow')}`;
-    const { recordExecutionState: recordInstalledState } = await import(`${runtime}/execution-state.mjs`);
-    const { recordWorkflowSession: recordInstalledSession } = await import(`${runtime}/worktrees.mjs`);
-    const liveIdentity = await processIdentity(process.pid);
-    const deadIdentity = { ...liveIdentity, pid: 2147483647, start: 'not-this-process' };
-    const { assertExecutionStopped } = await import(`${runtime}/execution-state.mjs`);
-    await assertExecutionStopped({ runner_managed: true, owner: deadIdentity });
-    await assert.rejects(assertExecutionStopped({ runner_managed: true, owner: liveIdentity }), /Stage already running/);
-    await assert.rejects(assertExecutionStopped({ runner_managed: true, owner: deadIdentity, child: liveIdentity }), /Stage already running/);
-    await recordInstalledState({ root: tree.workspace, input: interruptedStoredInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: deadIdentity, runnerClaim: true });
-    const unstartedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Start after launcher stopped'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.equal(unstartedResume.input.context.resume_session_id, undefined);
-    const legacyDir = join(tree.session_directory, 'runtime/executions', interruptedInput.execution_id);
-    await mkdir(legacyDir, { recursive: true });
-    await writeFile(join(legacyDir, 'exec.stderr.json'), JSON.stringify({ exit_code: 1, thread_id: record.worktree_id }));
-    await writeFile(join(legacyDir, 'answers.json'), JSON.stringify([{ question_id: 'q1', answer: 'keyboard' }]));
-    const legacyStatePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
-    const legacyState = JSON.parse(await readFile(legacyStatePath, 'utf8'));
-    delete legacyState.stages['spec-me'].owner;
-    delete legacyState.stages['spec-me'].runner_managed;
-    await writeFile(legacyStatePath, JSON.stringify(legacyState));
-    const legacyResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Resume after terminal log'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.equal(legacyResume.input.context.resume_session_id, record.worktree_id);
-    assert.deepEqual(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', legacyResume.input.execution_id, 'answers.json'), 'utf8')), [{ question_id: 'q1', answer: 'keyboard' }]);
-    await recordInstalledState({ root: tree.workspace, input: interruptedStoredInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: deadIdentity, child: deadIdentity });
-    await recordInstalledSession({ workspace_root: tree.workspace, repository_root: root, key: 'spec-me', session_id: record.worktree_id, execution_id: interruptedInput.execution_id });
-    const interruptedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Continue the interrupted parent stage'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.equal(interruptedResume.input.context.resume_session_id, record.worktree_id);
-    assert.equal(interruptedResume.input.context.previous_result_ref, undefined);
-    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', interruptedResume.input.execution_id, 'feedback.json'), 'utf8')).feedback, 'Continue the interrupted parent stage');
-    await mkdir(join(tree.session_directory, 'runtime/executions', interruptedInput.execution_id), { recursive: true });
-    await writeFile(join(tree.session_directory, 'runtime/executions', interruptedInput.execution_id, 'exec.stderr.json'), JSON.stringify({ exit_code: 1, thread_id: record.worktree_id }));
-    await assertExecutionStopped({ execution_id: interruptedInput.execution_id }, { root: tree.workspace, session: tree.session_directory });
-    await assert.rejects(assertExecutionStopped({ execution_id: interruptedInput.execution_id, owner: liveIdentity }, { root: tree.workspace, session: tree.session_directory }), /Stage already running/);
-    const interruptedResumeInput = await readExecutionInput({ root: tree.workspace, execution_id: interruptedResume.input.execution_id });
-    environment.TEST_CODEX_EXECUTION_ID = interruptedResume.input.execution_id;
-    const resumedParentRun = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-codex-run.mjs'), '--worktree-ref', result.worktree_ref, '--execution-id', interruptedResume.input.execution_id], { cwd: tree.workspace, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-    assert.equal(resumedParentRun.threadId, record.worktree_id);
-    const resumedParentArgs = JSON.parse(await readFile(environment.TEST_CODEX_ARGS, 'utf8'));
-    assert.equal(resumedParentArgs[resumedParentArgs.indexOf('resume') + 1], record.worktree_id);
-    assert.equal(resumedParentArgs[resumedParentArgs.indexOf('--enable') + 1], 'multi_agent');
-    const ownerIdentity = await processIdentity(process.pid);
-    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: ownerIdentity, child: ownerIdentity });
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Do not dispatch a duplicate'], { cwd: tree.workspace, stdio: 'pipe' }), /Command failed/);
-    // A stage the user cancelled resumes in the same conversation once its processes are gone.
-    await recordInstalledSession({ workspace_root: tree.workspace, repository_root: root, key: 'spec-me', session_id: record.worktree_id, execution_id: interruptedResume.input.execution_id });
-    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: deadIdentity, child: deadIdentity });
-    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'cancelled', code: 'CANCELLED' });
-    const cancelledResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me', '--feedback', 'Resume after the Harness update'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.equal(cancelledResume.input.context.resume_session_id, record.worktree_id);
-    assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', cancelledResume.input.execution_id, 'feedback.json'), 'utf8')).feedback, 'Resume after the Harness update');
-    await recordInstalledState({ root: tree.workspace, input: interruptedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'failed', code: 'EXECUTION_ERROR' });
-    const recoveryInput = { ...next.input, execution_id: 'recoverable-result' };
-    await writeExecutionInput(tree.workspace, recoveryInput, tree.plan_set_id);
-    await recordInstalledState({ root: tree.workspace, input: recoveryInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', owner: deadIdentity, child: deadIdentity, runnerClaim: true });
-    await recordInstalledSession({ workspace_root: tree.workspace, repository_root: root, key: 'spec-me', session_id: record.worktree_id, execution_id: recoveryInput.execution_id });
-    const recoveryDir = join(tree.session_directory, 'runtime/executions', recoveryInput.execution_id);
-    const recoveryArtifactPath = 'runtime/to-ticket/plan-review-context.json';
-    const recoveryArtifact = join(tree.session_directory, recoveryArtifactPath);
-    await mkdir(recoveryDir, { recursive: true });
-    await mkdir(join(tree.session_directory, 'runtime/to-ticket'), { recursive: true });
-    await writeFile(recoveryArtifact, 'current plan review\n');
-    const recoveryHash = createHash('sha256').update('current plan review\n').digest('hex');
-    const recoveredResult = { schema_version: 1, execution_id: recoveryInput.execution_id, skill: 'spec-me', status: 'action_required', code: 'REVIEW_REQUIRED', summary: 'Review pending', artifacts: [{ base: 'session', path: recoveryArtifactPath, kind: 'plan_review_context', sha256: recoveryHash }], questions: [], review_request: null };
-    await writeFile(join(recoveryDir, 'result.json'), JSON.stringify(recoveredResult));
-    await writeFile(join(recoveryDir, 'exec.stderr.json'), JSON.stringify({ exit_code: 0, thread_id: record.worktree_id, binding: { model: 'example', reasoning_effort: 'low' } }));
-    execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', result.worktree_ref, '--stage-id', 'spec-me'], { cwd: tree.workspace, encoding: 'utf8' });
-    const recoveredEnvelope = JSON.parse(await readFile(join(recoveryDir, 'return.json'), 'utf8'));
-    assert.equal(recoveredEnvelope.result.artifacts[0].sha256, recoveryHash);
-    assert.equal((await validateSkillReturn({ root: tree.workspace, input: recoveryInput, envelope: recoveredEnvelope })).valid, true);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-native-stage.mjs'), 'start', '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
     await rm(join(tree.workspace, 'docs/agents/EXEC.md'));
     await assert.rejects(validateSkillReturn({ root: tree.workspace, input: found.input, envelope }), /Project preparation incomplete/);
     await assert.rejects(readFile(join(root, '.io', 'runtime', 'orchestrator', 'workflow.json')), { code: 'ENOENT' });
