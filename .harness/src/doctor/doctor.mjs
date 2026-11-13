@@ -16,6 +16,7 @@ import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
+import { existingCodexWake } from '../workflow/codex-wake.mjs';
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
@@ -103,7 +104,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['composer-workspace', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'execution-context', 'codex-process', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'stage-result-events', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
-    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs');
+    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/workflow/codex-wake.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
@@ -487,10 +488,9 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'codex', () => false)) {
     try {
-      const wake = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: repositoryRoot, timeout: 5_000 })).stdout);
-      if (!wake.enabled || wake.transport?.type !== 'stdio') throw new Error('Wake MCP is not enabled');
+      if (!await existingCodexWake(repositoryRoot)) throw new Error('Wake MCP is not enabled');
     } catch {
-      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', 'Codex Wake MCP is unavailable; install or enable codex-wake and restart Codex to deliver stage results automatically.', null));
+      diagnostics.push(diagnostic('codex_wake_unavailable', 'warning', 'Existing Codex Wake MCP is unavailable; use harness-stage-listen to retrieve stage results.', null));
     }
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');

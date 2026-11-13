@@ -289,8 +289,8 @@ test('installed consumer queues the recorded result through Wake without duplica
   await writeFile(server, `const readline = require('node:readline'); const fs = require('node:fs'); readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id===1) { fs.writeFileSync(${JSON.stringify(wakeTmp)},JSON.stringify({tmpdir:process.env.TMPDIR,exists:fs.existsSync(process.env.TMPDIR)})); console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}})); } if(m.id===2) { fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m.params)+'\\n'); console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{structuredContent:{state:'queued'}}})); } });`);
   await writeFile(join(bin, 'codex'), `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({enabled:true,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:${JSON.stringify(bin)}}}));\n`);
   execFileSync('chmod', ['+x', join(bin, 'codex')]);
-  const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID;
-  t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; });
+  const priorPath = process.env.PATH, priorThread = process.env.CODEX_THREAD_ID, priorExecution = process.env.HARNESS_SKILL_EXECUTION_ID, priorCodexHome = process.env.CODEX_HOME;
+  t.after(() => { process.env.PATH = priorPath; if (priorThread === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = priorThread; if (priorExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = priorExecution; if (priorCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = priorCodexHome; });
   const saved = envelope('host'); await saveResult(fx, 'host', saved);
   // Without a runnable provider CLI the event stays undelivered and is retried later.
   const noCodex = join(fx.primary, 'no-codex-bin'); await mkdir(noCodex);
@@ -299,6 +299,11 @@ test('installed consumer queues the recorded result through Wake without duplica
   const missing = await installedPublish({ root: fx.root, input: fx.input, envelope: saved });
   assert.equal(missing.delivery.status, 'unsupported');
   assert.equal(missing.delivery.reason, 'wake_unavailable');
+  const plugin = join(fx.primary, 'codex-home/plugins/cache/local/codex-wake/1.0');
+  await mkdir(plugin, { recursive: true });
+  await writeFile(join(plugin, 'mcp.json'), JSON.stringify({ mcpServers: { 'codex-wake': { type: 'stdio', command: process.execPath, args: [server], cwd: '.' } } }));
+  await writeFile(join(bin, 'codex'), '#!/usr/bin/env node\nif (process.argv[2] === "plugin") console.log(JSON.stringify({installed:[{name:"codex-wake",marketplaceName:"local",version:"1.0",installed:true,enabled:true}]})); else process.exit(1);\n');
+  process.env.CODEX_HOME = join(fx.primary, 'codex-home');
   process.env.PATH = `${bin}:${priorPath}`;
   process.env.CODEX_THREAD_ID = 'stage-thread';
   process.env.HARNESS_SKILL_EXECUTION_ID = 'stage-execution';

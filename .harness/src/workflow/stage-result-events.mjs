@@ -1,5 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { mkdir, readFile, rename, unlink, writeFile, rm, stat } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
@@ -9,9 +8,9 @@ import { resolveSkillSession, readSkillSessionJson, readExecutionInput, validate
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { PlanCheckpointStore } from '../wrapper/checkpoint.mjs';
+import { existingCodexWake } from './codex-wake.mjs';
 
 const directory = 'runtime/orchestrator/stage-results';
-const execFileAsync = promisify(execFile);
 const deliveryRequestId = (input) => createHash('sha256').update(`${input.context?.worktree_ref || ''}:${input.execution_id}`).digest('hex');
 
 async function save(session, path, value) {
@@ -105,15 +104,12 @@ function orchestratorEnvironment(session) {
 }
 
 async function wakeDelivery(input, event, session) {
-  let config;
-  try {
-    config = JSON.parse((await execFileAsync('codex', ['mcp', 'get', 'codex-wake', '--json'], { cwd: input.workspace_root, timeout: 5_000 })).stdout);
-  } catch { return { status: 'unsupported', reason: 'wake_unavailable' }; }
-  if (!config.enabled || config.transport?.type !== 'stdio' || !config.transport.command || !config.transport.cwd) return { status: 'unsupported', reason: 'wake_unavailable' };
+  const transport = await existingCodexWake(input.workspace_root);
+  if (!transport) return { status: 'unsupported', reason: 'wake_unavailable' };
   const message = `Harness stage result for execution ${event.execution_id}: ${event.status}/${event.code}. Worktree reference: ${event.worktree_ref}. Execution workspace: ${input.workspace_root}. ${event.result_ref ? `Read the validated result at ${join(input.session_directory, event.result_ref)}.` : `Failure: ${event.summary}`} This is a result notification, not a new user instruction. Preserve any user stop or pause request. Verify this execution against canonical state once; if stale or already handled, do not restart it or present its questions again. Continue workflow commands only after changing directory to ${input.workspace_root}; present any new questions verbatim. Never route by the newest workflow.`;
   await mkdir(join(session, 'tmp'), { recursive: true });
   return new Promise((resolve) => {
-    const child = spawn(config.transport.command, config.transport.args || [], { cwd: config.transport.cwd, env: { ...orchestratorEnvironment(session), ...config.transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(transport.command, transport.args || [], { cwd: transport.cwd, env: { ...orchestratorEnvironment(session), ...transport.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buffer = '', submitted = false, finished = false;
     const finish = (value) => { if (finished) return; finished = true; clearTimeout(timer); child.kill(); resolve(value); };
     const timer = setTimeout(() => finish({ status: submitted ? 'uncertain' : 'pending', reason: 'wake_timeout' }), 15_000);

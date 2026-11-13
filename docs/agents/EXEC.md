@@ -58,6 +58,8 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 - 기준 Node.js 버전은 `package.json`의 `engines`를 따른다. 저장소에는 상시 실행하는 server/DB가 없다.
 - 계약 회귀 검사: 저장소 루트를 cwd로 `npm test`. 사용자 경로 live 검증과 별개다.
 
+- Wake 연동은 이미 설정된 Codex Wake MCP 또는 활성 plugin의 설치된 MCP 설정을 사용한다. 설치·업데이트는 Wake 또는 marketplace를 설치하지 않으며, Claude는 Wake를 사용하지 않는다. Wake가 없으면 결과 전달은 listener 경로를 사용한다. 설치·업데이트, Doctor, provider 구분과 기존 Wake 전송 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/provider_install.test.mjs tests/stage_result_events.test.mjs`로 검사한다.
+
 - setup 질문 배치·부분/역순/중복 응답·호출 ID 연결·취소 후 늦은 응답·GitHub/관측성 조건부 생략·최종 확인 전 파일 보존·설치/업데이트/Doctor/Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/setup_configuration.test.mjs`로 검증한다. 실제 관측한 async UI 메시지 형식의 fixture와 로컬 Git/외부 명령 stub을 사용한다. 서버·인프라는 필요 없고 live UI 검증을 대신하지 않는다. 로그와 TMPDIR은 source session의 `runtime/setup-answer-check/` 아래에 둔다. 수신 경로와 rollout 대조의 근거는 [setup 답변 전달](../../.codex/skills/setup/references/answer-delivery.md)에 있다.
 
   저장소 내부 session을 TMPDIR로 사용할 때는 임시 루트에 `package.json`으로 `{"type":"commonjs"}`를 기록한다. 확장자 없는 fake CLI의 `require`가 source 저장소의 `type: module`을 상속하지 않게 하기 위한 테스트 실행 전제다. 제품 package.json이나 fixture 코드를 바꾸지 않는다.
