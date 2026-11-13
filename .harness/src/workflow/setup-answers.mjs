@@ -77,3 +77,17 @@ export function recordSetupReplies(document, input) {
   Object.assign(document.answers, received);
   return { ...setupAnswerStatus(document), ignored };
 }
+
+export function receiveSetupTranscript(document, transcript, root) {
+  if (['cancelled', 'configured'].includes(document.status)) return { ...setupAnswerStatus(document), ignored: true };
+  bindSetupUi(document, transcript, root);
+  const events = transcript.split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const start = events.findIndex(({ type, payload }) => type === 'response_item' && payload.type === 'function_call' && payload.call_id === document.batch.call_id);
+  for (const event of events.slice(start + 1)) {
+    if (event.type !== 'response_item' || event.payload?.type !== 'message' || event.payload.role !== 'user') continue;
+    for (const item of event.payload.content || []) {
+      if (item.type === 'input_text' && /^<send_user_message_question_reply>/.test(item.text || '')) recordSetupReplies(document, item.text);
+    }
+  }
+  return setupAnswerStatus(document);
+}

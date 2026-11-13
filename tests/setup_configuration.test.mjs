@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -561,5 +561,36 @@ test('installed setup can revise a mistaken Project owner and select its current
     assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
     command('--cancel');
     assert.throws(() => command('--revise', 'Project owner#1'), /cancelled or configured/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('installed setup collects all individual form replies directly from its conversation', async () => {
+  const project = await freshProject();
+  const { root, run, command, answers, sourceRoot, git } = project;
+  try {
+    await writeFile(join(root, 'app.mjs'), 'application owned\n');
+    await rm(join(root, '.harness/src/workflow/setup-answers.mjs'));
+    await updateProject({ sourceRoot, targetRoot: root });
+    git('check-ignore', '-v', '.harness/src/workflow/setup-answers.mjs');
+    assert.match(git('status', '--short', '--untracked-files=all'), /app\.mjs/);
+    assert.equal(await readFile(join(root, 'app.mjs'), 'utf8'), 'application owned\n');
+    const batch = await run({});
+    const replies = await showBatch(project, batch);
+    const transcript = join(answers, '..', 'rollout.jsonl');
+    const message = (reply) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `<send_user_message_question_reply>\n${JSON.stringify([reply])}\n</send_user_message_question_reply>` }] } });
+    const reversed = [...replies].reverse();
+    await appendFile(transcript, '\n' + message(reversed[0]));
+    assert.equal(command('--receive-rollout', transcript).missing_question_ids.length, replies.length - 1);
+    await appendFile(transcript, '\n' + reversed.slice(1).map(message).join('\n'));
+    const received = command('--receive-rollout', transcript);
+    assert.equal(received.can_continue, true);
+    assert.deepEqual(received.missing_question_ids, []);
+    assert.equal(command('--receive-rollout', transcript).can_continue, true);
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(command().status, 'needs_input');
+    command('--cancel');
+    const snapshot = await readFile(answers, 'utf8');
+    assert.equal(command('--receive-rollout', transcript).status, 'cancelled');
+    assert.equal(await readFile(answers, 'utf8'), snapshot);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
