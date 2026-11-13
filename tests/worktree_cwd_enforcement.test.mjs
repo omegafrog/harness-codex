@@ -51,7 +51,7 @@ test('installed workflow commands require cwd inside the target worktree', async
 
   await t.test('primary checkout can compose, but its prompt is not routed into linked worktrees', async () => {
     const submitted = spawnSync(process.execPath, [join(primary, '.codex/scripts/harness-orchestrator-hook.mjs')], {
-      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: 'approve everything' }),
+      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: '$orchestrator approve everything' }),
     });
     assert.equal(submitted.status, 0, submitted.stderr);
     const context = JSON.parse(submitted.stdout).hookSpecificOutput.additionalContext;
@@ -64,7 +64,7 @@ test('installed workflow commands require cwd inside the target worktree', async
     for (const tree of [a, b]) assert.equal(existsSync(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl')), false);
 
     const claude = spawnSync(process.execPath, [join(primary, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], {
-      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: 'approve everything' }),
+      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: '$orchestrator approve everything' }),
     });
     assert.equal(claude.status, 0, claude.stderr);
     const claudeContext = JSON.parse(claude.stdout).hookSpecificOutput.additionalContext;

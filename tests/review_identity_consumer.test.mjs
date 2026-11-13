@@ -166,13 +166,13 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
-    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/decision', state: 'active', plan_set_id: 'sample' }));
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/decision', state: 'active', plan_set_id: 'sample', agent_sessions: { orchestrator: { provider: 'codex', session_id: 'c5c669a2-2967-4831-98db-63a24954e857', execution_id: 'compose-1' } } }));
     await writeFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), JSON.stringify({ review_input: {}, reviews: [] }));
     const cli = join(root, '.codex/scripts/harness-code-review.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
     const { recordPendingQuestions } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
     const { findingFingerprint } = await import(`file://${join(root, '.harness/src/wrapper/repair.mjs')}`);
-    const userSays = (prompt) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: 's-1', prompt }) });
+    const userSays = (prompt) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: 'c5c669a2-2967-4831-98db-63a24954e857', prompt }) });
 
     // An earlier round's user answer exists, but nothing was asked in this round yet.
     userSays('Spec에 추가');

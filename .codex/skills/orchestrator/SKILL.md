@@ -1,12 +1,12 @@
 ---
 name: orchestrator
-description: Select workflow skills from the request and current workflow state, dispatch them, and route their structured results.
+description: Coordinate a Harness workflow when the user explicitly invokes $orchestrator or /orchestrator, or continues that already-invoked workflow in the same conversation. Do not invoke for unrelated requests or Harness installation and updates.
 main_session: true
 ---
 
 # orchestrator
 
-메인 세션에서 사용자 요청과 현재 workflow 상태를 읽고 다음에 실행할 skill을 고른다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다. 실행 호출은 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+사용자가 명시적으로 `$orchestrator` 또는 `/orchestrator`를 호출하거나 같은 대화의 이미 시작된 workflow를 계속할 때 메인 세션에서 요청과 현재 상태를 읽고 다음에 실행할 skill을 고른다. 그 밖의 일반 요청은 자동으로 이 skill을 시작하지 않는다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다. 실행 호출은 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
 
 전체 단계와 정본·판단 경계는 [workflow 지도](../../../.codex/internal-skills/skill-execution/references/workflow-map.md)를 읽는다. 현재 목표·요청 종료 단계·산출물·미해결 gate·사용자 선택 및 provider/session 실행 상태를 정본에서 확인하고 다음 단계를 선택한다. 불충분하면 관련 stage result 또는 산출물을 읽는다. 이미 완료된 절차를 반복하지 않으며 실제 승인·독립 리뷰·실행 전제는 생략하지 않는다.
 

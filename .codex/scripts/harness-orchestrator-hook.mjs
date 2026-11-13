@@ -12,6 +12,7 @@ try {
   const event = JSON.parse(input);
   if (!['UserPromptSubmit', 'PostToolUse', 'Stop'].includes(event.hook_event_name) || event.agent_id || process.env.HARNESS_SKILL_EXECUTION_ID) process.exit(0);
   if (typeof event.cwd !== 'string') throw new Error('Hook cwd is required');
+  const explicitlyInvoked = typeof event.prompt === 'string' && /(?:^|[\s[(])(?:\$|\/)orchestrator(?=$|[\s)\]])/i.test(event.prompt);
   let root, uninitialized = false;
   try { root = (await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { cwd: event.cwd, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })).stdout.trim(); }
   catch (error) {
@@ -28,7 +29,9 @@ try {
   const { isHarnessUpdateRequest } = await import(new URL('../../.harness/src/workflow/request-routing.mjs', import.meta.url));
   const maintenance = event.hook_event_name === 'UserPromptSubmit' && isHarnessUpdateRequest(event.prompt);
   const inputState = observed;
-  const target = maintenance ? null : orchestratorInputTarget(inputState);
+  const otherSkill = event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked && /^\s*(?:\$[a-z][\w-]*|\/(?:setup|eli5)\b)/i.test(event.prompt || '');
+  const candidate = maintenance || otherSkill ? null : orchestratorInputTarget(inputState);
+  const target = event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked && (!event.session_id || !candidate?.orchestrator?.session_id || candidate.orchestrator.session_id !== event.session_id || (candidate?.orchestrator?.provider || 'codex') !== 'codex') ? null : candidate;
   const inputRoot = target?.workspace_root || null;
   inputState.input_worktree_ref = target?.record_path || null;
   inputState.input_routing = target ? 'local' : 'unbound';
@@ -42,13 +45,14 @@ try {
     }
   }
   // Bind only to the worktree containing the current working directory.
-  if (!uninitialized && !maintenance && event.hook_event_name === 'UserPromptSubmit') {
+  if (!uninitialized && !maintenance && explicitlyInvoked && event.hook_event_name === 'UserPromptSubmit') {
     await bindOrchestratorSession({ root, provider: 'codex', sessionId: event.session_id });
     try { observed = await inspectStartupState({ workspaceRoot: root, codexSessionId: event.session_id }); }
     catch (error) { observed = { ...inputState, decision_hint: 'inspect_required', reason: error.message }; }
     observed.input_worktree_ref = inputState.input_worktree_ref;
     observed.input_routing = inputState.input_routing;
   }
+  if (event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked) process.exit(0);
   if (maintenance) { observed.decision_hint = 'maintenance_candidate'; observed.reason = 'Harness update requested; use harness-maintenance in the current workspace'; }
   if (event.hook_event_name === 'UserPromptSubmit' && observed.decision_hint === 'compose_candidate') {
     const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));

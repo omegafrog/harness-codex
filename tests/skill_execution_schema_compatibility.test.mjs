@@ -191,7 +191,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(claudeAgent, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
     assert.match(claudeAgent, /You are the spec_reviewer agent/);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
-    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000' }), encoding: 'utf8' }));
+    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000', prompt: '$orchestrator' }), encoding: 'utf8' }));
     assert.match(claudeHook.hookSpecificOutput.additionalContext, /"provider":"claude-code"/);
     const claudeArgs = claude.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'sonnet', reasoning_effort: 'medium' }, schema: { type: 'object' }, resume: null });
     assert.ok(claudeArgs.includes('--json-schema'));

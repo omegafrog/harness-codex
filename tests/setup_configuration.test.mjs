@@ -32,7 +32,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     const run = (...args) => JSON.parse(execFileSync(process.execPath, [setup, '--root', root, ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.deepEqual(run('--check'), { status: 'configured', violations: [] });
     const hook = join(root, '.codex/scripts/harness-orchestrator-hook.mjs');
-    const observed = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '4a11857b-60f0-4b0c-a3e6-3fea42eb45d2' }), encoding: 'utf8' }));
+    const observed = JSON.parse(execFileSync(process.execPath, [hook], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '4a11857b-60f0-4b0c-a3e6-3fea42eb45d2', prompt: '$orchestrator' }), encoding: 'utf8' }));
     assert.match(observed.hookSpecificOutput.additionalContext, /"setup_configuration":\{"status":"configured"/);
     assert.throws(() => run('--answers', join(root, '.io/runtime/setup/answers.json')), /unique setup session/);
     const first = run('--answers', answers);
