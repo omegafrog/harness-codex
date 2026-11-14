@@ -476,7 +476,10 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     if (inputIgnored.status !== 0) diagnostics.push(diagnostic('execution_input_not_ignored', 'error', 'Harness execution inputs are not ignored by Git', join(repositoryRoot, '.io')));
   }
   const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');
-  if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+  // The Codex project hook only matters when Codex is the active provider; Claude Code registers its own hook in .claude/settings.local.json.
+  // setup does not persist agents.provider (the running CLI decides), so a Claude-only installation is recognised by its own hook file.
+  const claudeProvider = await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider) === 'claude-code' || (!config.agents?.provider && Boolean(config.agents?.['claude-code']) && !config.agents?.codex), () => false);
+  if (!claudeProvider && await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     try {
       const hook = await inspectOrchestratorHook(repositoryRoot);
       const userHook = !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
@@ -489,7 +492,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   const agentConfig = await readFile(join(repositoryRoot, '.harness/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
   const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.harness/harness.yaml')));
-  if (await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
+  if (!claudeProvider && await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
@@ -501,7 +504,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       diagnostics.push(diagnostic('codex_subagent_hook_invalid', 'warning', safeMessage(error, 'Invalid Codex user hooks'), null));
     }
   }
-  if (await loadHarnessConfig(repositoryRoot).then((config) => config.agents?.provider === 'claude-code', () => false)) {
+  if (claudeProvider) {
     try {
       const { inspectClaudeOrchestratorHook } = await import('../../../.claude/harness/installer/claude-orchestrator-hook.mjs').catch((error) => { throw error.code === 'ERR_MODULE_NOT_FOUND' ? new Error('agents.provider is claude-code but the Claude provider is not installed; install with --provider claude-code or all') : error; });
       const hook = await inspectClaudeOrchestratorHook(repositoryRoot);

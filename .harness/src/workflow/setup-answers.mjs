@@ -52,6 +52,29 @@ export function bindSetupUi(document, transcript, root) {
   return setupAnswerStatus(document);
 }
 
+// Claude Code has no accepted-call transcript to bind to. The skill asks the displayed batch with its native question
+// tool and passes the chosen labels here; each reply names the batch question it answers, so no call ID is guessed.
+export function recordClaudeSetupReplies(document, input) {
+  if (['cancelled', 'configured'].includes(document.status)) return { ...setupAnswerStatus(document), ignored: true };
+  const batch = document.batch;
+  if (!batch) throw new Error('No setup batch to answer');
+  const replies = JSON.parse(input);
+  if (!Array.isArray(replies) || !replies.length) throw new Error('Expected a non-empty list of {question_id, answer} replies');
+  const received = { ...batch.received };
+  for (const reply of replies) {
+    const question = batch.questions.find(({ id }) => id === reply?.question_id);
+    if (!question || typeof reply.answer !== 'string') throw new Error('Reply does not match a question of the current setup batch');
+    const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
+    if (value === undefined || value === '') throw new Error(`Answer is not an offered label for ${question.id}; address the user message before continuing setup`);
+    if (Object.hasOwn(received, question.id) && received[question.id] !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
+    received[question.id] = value;
+  }
+  batch.call_id ??= 'claude-code-native';
+  batch.received = received;
+  Object.assign(document.answers, received);
+  return setupAnswerStatus(document);
+}
+
 export function recordSetupReplies(document, input) {
   if (['cancelled', 'configured'].includes(document.status)) return { ...setupAnswerStatus(document), ignored: true };
   const batch = document.batch;

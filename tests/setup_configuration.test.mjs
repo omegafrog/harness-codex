@@ -633,3 +633,61 @@ test('setup finds its conversation and accepts a direct answer to one displayed 
     assert.match(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), /mode: github/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// Installed Claude Code consumer: setup answers arrive through --reply (there is no Codex rollout to bind to), the
+// shared configuration lands at .harness/harness.yaml, Doctor passes for a Claude-only installation, and git status
+// shows only application-owned files plus the intentionally visible contract runner.
+test('installed Claude Code consumer completes setup through --reply and passes Doctor', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { parseYaml } = await import('../.harness/src/eval/yaml.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-setup-claude-'));
+  const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  try {
+    execFileSync('git', ['init', '-q', '-b', 'main', root]);
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'initial'], { cwd: root });
+    await writeFile(join(root, 'app.txt'), 'application file');
+    const install = spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-install.mjs'), 'install', '--project', root, '--provider', 'claude-code'], { encoding: 'utf8' });
+    assert.equal(install.status, 0, install.stdout + install.stderr);
+    const env = { ...process.env, HARNESS_PROVIDER_ID: 'claude-code' };
+    delete env.CODEX_THREAD_ID;
+    const cli = join(root, '.codex/scripts/harness-setup.mjs');
+    const run = (...args) => spawnSync(process.execPath, [cli, '--root', root, ...args], { cwd: root, env, encoding: 'utf8' });
+    const last = (result) => JSON.parse(result.stdout.trim().split('\n').at(-1));
+    const started = last(run('--start'));
+    assert.equal(started.status, 'needs_input');
+    // Codex-only delivery is refused for Claude Code, and the reverse is refused for Codex.
+    assert.match(run('--answers', started.answers_path, '--receive-rollout').stderr, /Current Codex session ID is unavailable|Codex/);
+    const choose = ({ id, options, current }) => {
+      if (/Tracker/.test(id)) return 'local-markdown';
+      if (/Beads/.test(id) || /관측성/.test(id)) return '아니요';
+      if (/이 설정으로 계속할까요/.test(id)) return '예';
+      if (/추론 강도/.test(id)) return 'low';
+      if (/모델 선택/.test(id)) return 'sonnet';
+      return options?.length ? options[0].label : `현재 값 사용: ${current}`;
+    };
+    let state = started, rounds = 0;
+    while (state.status === 'needs_input') {
+      assert.ok(++rounds < 8, 'setup did not converge');
+      const reply = join(started.answers_path, '..', `reply-${rounds}.json`);
+      await writeFile(reply, JSON.stringify(state.questions.map((question) => ({ question_id: question.id, answer: choose(question) }))));
+      assert.equal(last(run('--answers', started.answers_path, '--reply', reply)).can_continue, true);
+      const next = run('--answers', started.answers_path);
+      assert.equal(next.status, 0, next.stdout + next.stderr);
+      state = last(next);
+    }
+    assert.equal(state.status, 'configured');
+    const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
+    assert.equal(config.agents['claude-code'].implementation_model, 'sonnet');
+    assert.equal(config.agents['claude-code'].implementation_reasoning_effort, 'low');
+    assert.equal(config.tracker.mode, 'local-markdown');
+    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, 'CONTEXT.md')), true, 'setup templates come from the Claude skill directory');
+    git('check-ignore', '-q', '.harness/harness.yaml');
+    const doctor = await runDoctor({ root, sourceRoot });
+    assert.deepEqual(doctor.diagnostics.filter(({ severity }) => severity === 'error'), []);
+    const status = git('status', '--short', '--untracked-files=all').split('\n').filter(Boolean);
+    assert.ok(status.includes('?? app.txt') && status.includes('?? .harness/contracts.mjs'));
+    assert.ok(!status.some((line) => /\.claude\/|\.codex\/|\.harness\/(?:src|harness\.yaml)/.test(line)), status.join('\n'));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

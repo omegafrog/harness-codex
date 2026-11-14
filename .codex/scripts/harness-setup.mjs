@@ -8,26 +8,26 @@ import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'no
 import { basename, dirname, isAbsolute, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { bindSetupUi, publishSetupBatch, recordSetupReplies, receiveSetupTranscript, setupAnswerStatus } from '../../.harness/src/workflow/setup-answers.mjs';
+import { bindSetupUi, publishSetupBatch, recordClaudeSetupReplies, recordSetupReplies, receiveSetupTranscript, setupAnswerStatus } from '../../.harness/src/workflow/setup-answers.mjs';
 import { runtimeAgentProvider } from '../../.harness/src/workflow/agent-config.mjs';
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout [ROLLOUT_JSONL] | --revise QUESTION_ID]]');
+  console.log('Usage: node .codex/scripts/harness-setup.mjs [--root PROJECT_ROOT] [--check | --start | --answers SESSION_JSON [--status | --cancel | --bind-ui ROLLOUT_JSONL | --receive REPLY_FILE | --receive-rollout [ROLLOUT_JSONL] | --reply REPLY_JSON | --revise QUESTION_ID]]');
   process.exit(0);
 }
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
   if (args[i] === '--receive-rollout' && (!args[i + 1] || args[i + 1].startsWith('--'))) { options[args[i]] = true; i -= 1; continue; }
   if (['--check', '--start', '--status', '--cancel'].includes(args[i]) && !options[args[i]]) { options[args[i]] = true; i -= 1; continue; }
-  if (!['--root', '--answers', '--bind-ui', '--receive', '--receive-rollout', '--revise'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
+  if (!['--root', '--answers', '--bind-ui', '--receive', '--receive-rollout', '--reply', '--revise'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid setup arguments; see --help');
   options[args[i]] = args[i + 1];
 }
 const root = resolve(options['--root'] || process.cwd());
 const runtimeProviderId = runtimeAgentProvider();
 if (runtimeProviderId && !['codex', 'claude-code'].includes(runtimeProviderId)) throw new Error('Invalid runtime provider');
-const actions = ['--status', '--cancel', '--bind-ui', '--receive', '--receive-rollout', '--revise'].filter((key) => options[key]);
+const actions = ['--status', '--cancel', '--bind-ui', '--receive', '--receive-rollout', '--reply', '--revise'].filter((key) => options[key]);
 if (actions.length > 1 || (actions.length && !options['--answers'])) throw new Error('Use one answer action with --answers');
 if (options['--start'] && (options['--answers'] || options['--check'] || actions.length)) throw new Error('--start cannot be combined with other setup actions');
 if (options['--check']) {
@@ -95,6 +95,12 @@ if (native) {
         if (!rollout) throw new Error('Current Codex conversation record not found');
       }
       result = receiveSetupTranscript(document, await readFile(rollout, 'utf8'), root);
+    }
+    else if (options['--reply']) {
+      if (runtimeProviderId !== 'claude-code') throw new Error('--reply is the Claude Code answer path; Codex uses --receive-rollout');
+      const replyRef = relative(output.sessionDirectory(root), resolve(root, options['--reply'])).split(sep).join('/');
+      if (!replyRef.startsWith(`runtime/setup/${setupId}/`)) throw new Error('Reply files must belong to this setup session');
+      result = recordClaudeSetupReplies(document, await readFile(output.sessionOutputPath(root, replyRef, { create: false }), 'utf8'));
     }
     else if (options['--bind-ui']) result = bindSetupUi(document, await readFile(options['--bind-ui'], 'utf8'), root);
     else if (options['--receive']) {
@@ -258,7 +264,7 @@ async function setupBeads() {
   }
 
   const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
-  if (origin.error) throw origin.error;
+  if (origin.error && origin.status === null) throw origin.error;
   if (origin.status !== 0 && !/No such remote/i.test(origin.stderr || '')) throw new Error(`Git origin 확인 실패: ${origin.stderr || `exit ${origin.status}`}`);
   const remote = origin.status === 0 ? await commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']) : { status: 0, stdout: '' };
   if (remote.status !== 0) throw new Error(`Beads 원격 workspace 확인 실패: ${remote.stderr || remote.error?.message || `exit ${remote.status}`}`);
@@ -288,7 +294,8 @@ async function prepareProjectFiles() {
     const targetPath = join(root, target);
     if (await lstat(targetPath).catch(() => null)) { console.log(`Preserved ${target}`); continue; }
     const installedSource = source.replace('.codex/skills/', '.agents/skills/');
-    const sourcePath = [join(root, installedSource), join(root, source), join(scriptRoot, source)].find(existsSync);
+    const claudeSource = source.replace('.codex/skills/', '.claude/skills/');
+    const sourcePath = [join(root, installedSource), join(root, claudeSource), join(root, source), join(scriptRoot, source)].find(existsSync);
     if (!sourcePath) throw new Error(`Missing setup template: ${source}`);
     await mkdir(dirname(targetPath), { recursive: true });
     await copyFile(sourcePath, targetPath);

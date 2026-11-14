@@ -17,3 +17,12 @@ CLI는 선택지 발견·검증·설정 적용을 소유하고 스킬은 native 
 같은 setup의 수신·연결·중단·다음 배치 실행은 한 번에 하나씩 직렬로 호출한다. 여러 응답을 받았으면 원본 대화 기록에서 모두 수집한다.
 
 Project owner 답변을 잘못 기록했거나 유효하지 않아 조회에 실패하면 사용자의 정정 요청을 먼저 확인하고 `node .codex/scripts/harness-setup.mjs --root <root> --answers <answers.json> --revise "Project owner#1"`를 실행한다. CLI는 해당 답변과 그에 의존하는 Project 선택·최종 확인을 지우고 현재 배치를 폐기한다. 같은 setup의 2부터 다시 진행해 새 폼에서 사용자가 값을 고르게 한다. 의미가 모호한 자유 입력은 추측하지 않고 뜻을 확인한다. 취소·완료된 setup은 수정하지 못한다.
+
+## Claude Code에서의 전달
+
+Claude Code에는 `request_user_input_async`와 Codex rollout이 없으므로 3~7단계를 다음으로 대체한다. 1·2·8단계(`--start`, `--answers`, `--cancel`)와 `--revise`는 같다.
+
+1. `needs_input`의 `questions`를 순서대로 `AskUserQuestion`으로 묻는다. 한 번에 4개까지 가능하므로 4개씩 나눠 호출하고, 제목·선택지 label은 `ui_questions`와 같게 둔다. 텍스트 질문은 `현재 값 사용: ...` 선택지와 Other 입력을 쓴다. 질문을 추가·생략·재배열하거나 기본값으로 대신 답하지 않는다.
+2. 사용자의 답을 `<session>/runtime/setup/<setup-id>/reply-N.json`에 `[{"question_id": "<questions[i].id>", "answer": "<선택한 label 또는 입력값>"}]`로 쓴다. 이 파일은 사용자가 실제로 고른 값만 담으며 추정값을 넣지 않는다.
+3. `node .codex/scripts/harness-setup.mjs --root <root> --answers <answers.json> --reply <reply-N.json>`을 실행한다. CLI가 각 답을 현재 배치의 질문·선택지와 대조하고, 배치의 모든 질문이 답을 받으면 `can_continue: true`를 반환한다. 선택지에 없는 label은 오류로 거부한다. `--reply`는 Claude Code 전용이고 Codex는 `--receive-rollout`만 쓴다.
+4. `can_continue: true`이면 2단계의 `--answers`를 다시 실행해 다음 배치나 `configured`를 받는다.

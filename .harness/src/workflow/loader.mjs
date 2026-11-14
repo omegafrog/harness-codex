@@ -230,7 +230,9 @@ async function resolveReferences(workflow, { root, agentDir, skillDir, legacySki
       skills[skill] = canonicalPath;
       continue;
     }
-    const legacyPath = await resolveRegularFile(root, join(directories[1], skill, "SKILL.md"), `Skill ${skill}`);
+    // A Claude Code installation carries its public skills under .claude/skills instead of .agents/skills.
+    const legacyPath = await resolveRegularFile(root, join(directories[1], skill, "SKILL.md"), `Skill ${skill}`)
+      ?? await resolveRegularFile(root, join(".claude/skills", skill, "SKILL.md"), `Skill ${skill}`);
     if (!legacyPath) throw new WorkflowManifestError(`Missing skill: ${skill}`, { path: resolve(root, join(skillDir, skill, "SKILL.md")) });
     skills[skill] = legacyPath;
   }
