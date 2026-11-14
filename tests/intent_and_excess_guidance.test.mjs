@@ -108,7 +108,7 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     const { assertSpecReadyForReview } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/spec-review.mjs'))}?ready-${phase}`);
     await assertSpecReadyForReview({ root, ticketId: 'efficiency' });
     const { assertPlanIssueDrafts } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/plan-review.mjs'))}?${phase}`);
-    const configPath = resolve(root, '.codex/harness.yaml');
+    const configPath = resolve(root, '.harness/harness.yaml');
     const originalConfig = await readFile(configPath, 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     await writeFile(configPath, 'tracker:\n  mode: github\n');
     const planInput = { root, plans: [{ id: 'calc' }] };

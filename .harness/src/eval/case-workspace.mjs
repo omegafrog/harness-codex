@@ -122,12 +122,12 @@ async function installHarnessRuntime({ root, workspace }) {
   }
 
   // Eval cases need a deterministic Harness configuration, while the normal installer
-  // intentionally leaves project-specific .codex/harness.yaml creation to $setup.
-  const sourceConfig = resolve(root, ".codex/harness.yaml");
+  // intentionally leaves project-specific .harness/harness.yaml creation to $setup.
+  const sourceConfig = resolve(root, ".harness/harness.yaml");
   try {
     await access(sourceConfig);
     await assertNoSymlinks(sourceConfig, "Harness eval configuration", "environment_provisioning_failure");
-    const targetConfig = join(workspace, ".codex", "harness.yaml");
+    const targetConfig = join(workspace, ".harness", "harness.yaml");
     const existing = await lstat(targetConfig).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
     if (!existing) {
       await ensureDir(dirname(targetConfig));

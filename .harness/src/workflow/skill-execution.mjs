@@ -92,7 +92,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     requireValue(selected?.skill === skill, 'Workflow stage does not match the requested skill');
     tier = selected.model_tier || tier;
   }
-  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   const keys = tierSettingKeys(tier);
   // Model settings live under agents.<provider>; only the active provider's section is read.
   let recordedBinding = null, orchestratorProvider = null;
@@ -386,7 +386,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       // new run, whose own completion needs a fresh review; the stale review of the old plan must not block the reopening.
       requireValue(reopening || review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
       // GitHub publication later reads these drafts; a plan set without them can never be published.
-      const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch(() => '')).tracker;
+      const tracker = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch(() => '')).tracker;
       // A completed result being reopened for a user revision is re-validated only to be replaced; it may predate this check.
       if (tracker?.mode === 'github' && !reopening) {
         const { snapshotPlanSet, assertPlanIssueDrafts } = await import('./plan-review.mjs');

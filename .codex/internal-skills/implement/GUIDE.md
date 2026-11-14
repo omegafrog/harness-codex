@@ -24,7 +24,7 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 ## Flow
 
-1. `.codex/harness.yaml`에서 tracker mode를 확인한다. 구현 dispatch 전에는 실제 `agents.<provider>.implementation_model` 값이, runtime/E2E 검증 전에는 `agents.<provider>.execution_model`과 `agents.<provider>.execution_reasoning_effort` 값이 있어야 한다. 값이 없으면 workflow를 멈추고 `setup`이 필요하다고 보고하며 부모 모델을 상속하지 않는다.
+1. `.harness/harness.yaml`에서 tracker mode를 확인한다. 구현 dispatch 전에는 실제 `agents.<provider>.implementation_model` 값이, runtime/E2E 검증 전에는 `agents.<provider>.execution_model`과 `agents.<provider>.execution_reasoning_effort` 값이 있어야 한다. 값이 없으면 workflow를 멈추고 `setup`이 필요하다고 보고하며 부모 모델을 상속하지 않는다.
 2. 승인되어 실행 가능한 split plan 하나를 정하고 [Tracker 상태](#tracker-상태)에 따라 `in-progress`로 전환한다.
    - GitHub Issues: parent plan-set Issue의 child Issue는 상태 추적에만 쓴다. plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다.
    - local-markdown: `docs/plans/<plan-set-id>/<plan-id>.md`를 ticket으로 읽고 `docs/plans/<plan-set-id>/plans.md`가 링크하는지 확인한다.
@@ -47,7 +47,7 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 - 상태 이름: GitHub Project `Planned`·`In Progress`·`Blocked`·`Done`, local-markdown `planned`·`in-progress`·`blocked`·`completed`.
 - 모든 전이는 `beads` 스킬의 공통 `node .codex/scripts/harness-tracker.mjs sync --root "$WORKSPACE_ROOT" --ticket <ref> --status <in-progress|blocked|completed> [--phase implementation|test|review] [--classification committed]`로 수행한다. 구현자는 `in-progress`·`blocked`만 전이하고 `completed`는 orchestrator가 전이한다. canonical을 먼저 갱신하고 Beads mirror를 반영·재조회한다. 개별 gh/bd 상태 명령을 조립하지 않는다. 테스트·리뷰 시작은 lifecycle `in-progress`를 유지한 채 `--phase test`·`--phase review`로 기록한다. version marker가 없는 기존 데이터는 이전·자동 연결하지 않는다.
-- GitHub mode는 `.codex/harness.yaml`의 `tracker.github.status_field`를 canonical로 사용하고, GitHub 기본 `Status`도 실행 시작 시 `In Progress`로 갱신한다 (`Planned` 대기는 `Todo`). 완료 시 canonical field만 `Done`으로 바꾸며, 기본 `Status`와 child Issue는 PR merge 전까지 완료 처리하지 않는다. local plan Markdown은 갱신하지 않는다. orchestrator는 `completed` 전이 뒤 `harness-tracker.mjs read --root "$WORKSPACE_ROOT" --ticket "$REPOSITORY#$ISSUE_NUMBER"`에서 `status: pass`, `canonical_status: completed`, `issue_state: OPEN`을 확인하고, 다르거나 읽기에 실패하면 완료 보고·dependent 재계산을 중단한다.
+- GitHub mode는 `.harness/harness.yaml`의 `tracker.github.status_field`를 canonical로 사용하고, GitHub 기본 `Status`도 실행 시작 시 `In Progress`로 갱신한다 (`Planned` 대기는 `Todo`). 완료 시 canonical field만 `Done`으로 바꾸며, 기본 `Status`와 child Issue는 PR merge 전까지 완료 처리하지 않는다. local plan Markdown은 갱신하지 않는다. orchestrator는 `completed` 전이 뒤 `harness-tracker.mjs read --root "$WORKSPACE_ROOT" --ticket "$REPOSITORY#$ISSUE_NUMBER"`에서 `status: pass`, `canonical_status: completed`, `issue_state: OPEN`을 확인하고, 다르거나 읽기에 실패하면 완료 보고·dependent 재계산을 중단한다.
 - local-markdown mode는 `gh`를 호출하거나 GitHub Project를 갱신하지 않는다.
 - Beads sync 실패는 업무 실패와 구분하고 canonical 상태를 되돌리지 않는다. mirror sync blocker로 보고해 재시도할 수 있게 한다.
 - GitHub mode에서 테스트·개발 중 새 Issue가 필요하면 `tracker.github.assignees.codex`를 `CODEX_ASSIGNEE`로 해석해 `--assignee "$CODEX_ASSIGNEE"`로 만든다. 기본값은 `@copilot`이다. 기존 Issue의 assignee는 명시적 요청 없이 바꾸지 않는다.

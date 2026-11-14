@@ -9,7 +9,7 @@ model_tier: high_performance
 ## 1. 읽기 전용 진단
 
 1. 사용자에게 받은 오류와 재개하려는 작업을 확인한다. 각 명령의 `cwd`를 대상 프로젝트의 절대 경로로 지정하고 `git rev-parse --show-toplevel`, `git rev-parse --git-common-dir`, `git worktree list --porcelain`로 원본 workspace와 실행 worktree를 구분한다. 경로가 불명확하면 대상부터 질문한다.
-2. `GIT_OPTIONAL_LOCKS=0 git status --short --untracked-files=all`과 필요한 diff를 읽고 기존 변경을 분류한다. `.codex/harness-lock.json`, `.codex/harness.yaml`, 오류에 연결된 설치 파일·ticket·plan·Spec·실행 기록을 읽는다. 진단 결과는 대화에 제시한다. 파일 출력·백업 생성·task 생성 등 쓰기가 필요한 진단은 아래 확인 절차를 먼저 거친다.
+2. `GIT_OPTIONAL_LOCKS=0 git status --short --untracked-files=all`과 필요한 diff를 읽고 기존 변경을 분류한다. `.codex/harness-lock.json`, `.harness/harness.yaml`, 오류에 연결된 설치 파일·ticket·plan·Spec·실행 기록을 읽는다. 진단 결과는 대화에 제시한다. 파일 출력·백업 생성·task 생성 등 쓰기가 필요한 진단은 아래 확인 절차를 먼저 거친다.
 3. 아래에서 증상에 해당하는 검사만 수행한다. 설치된 CLI가 없거나 손상됐으면 그 사실을 진단 근거로 남기고 사용 가능한 Git·파일·tracker 조회로 범위를 좁힌다. 외부 조회 실패는 권한·네트워크 실패와 실제 데이터 누락을 구분한다. 조회 CLI도 설치된 버전의 부수 효과를 확인해, session 생성·legacy migration·DB 초기화가 발생하면 승인 후 실행한다.
 
 | 증상 | 읽을 근거와 검사 | 복구 시 참고할 절차 |

@@ -20,7 +20,7 @@ const single = (items, label) => { if (!Array.isArray(items) || items.length !==
 
 async function projectConfig(root) {
   if (!isAbsolute(root || '')) throw new Error('Absolute workspace_root is required');
-  return parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).tracker;
+  return parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).tracker;
 }
 async function localTicket(root, config, ref) {
   if (isAbsolute(ref) || ref.split(/[\\/]/).includes('..') || !/^docs\/plans\/[^/]+\/[^/]+\.md$/.test(ref)) throw new Error('Invalid local plan path');
@@ -206,7 +206,7 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     let config = null;
     let beadsDisabled = false;
     if (isAbsolute(root || '')) {
-      try { beadsDisabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled === false; }
+      try { beadsDisabled = parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).beads?.enabled === false; }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     if (refs === null) {
@@ -281,7 +281,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');
   if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
   const config = await projectConfig(root);
-  const beadsEnabled = parseYaml(await readFile(resolve(root, '.codex/harness.yaml'), 'utf8')).beads?.enabled !== false;
+  const beadsEnabled = parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).beads?.enabled !== false;
   const bead = beadsEnabled ? await mirror(root, ref, run, config) : null;
   if (bead) assertTicketPlan(bead, expected_plan_id, ref);
   if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });

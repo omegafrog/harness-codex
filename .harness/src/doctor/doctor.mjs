@@ -234,7 +234,7 @@ async function inspectWorkflows(root, diagnostics, stageSkills) {
 }
 
 async function inspectPermissions(root, diagnostics, nativePermissionProfiles = null) {
-  const configPath = resolve(root, ".codex/harness.yaml");
+  const configPath = resolve(root, ".harness/harness.yaml");
   let config;
   try {
     config = await loadHarnessConfig(root);
@@ -365,10 +365,10 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     // A divergent, unregistered agent profile was preserved as consumer-owned during install.
     const preservedAgentProfile = (file) => file.startsWith(".codex/agents/") && !lock.files[file]
       && currentAssets[file] && currentAssets[file].installed_sha256 !== currentAssets[file].upstream_sha256;
-    const ownedFiles = new Set([...installedFiles].filter((file) => file !== '.codex/harness.yaml' && managedPaths.has(file)
+    const ownedFiles = new Set([...installedFiles].filter((file) => file !== '.harness/harness.yaml' && managedPaths.has(file)
       && (lock.files[file] || !trackedScripts.has(file))
       && !preservedAgentProfile(file)));
-    const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
+    const lockEntries = entries.filter((entry) => entry.path !== ".harness/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
       const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
@@ -486,9 +486,9 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     }
   }
   // Model settings live under agents.<provider>; older flat keys must be moved by update or setup.
-  const agentConfig = await readFile(join(repositoryRoot, '.codex/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
+  const agentConfig = await readFile(join(repositoryRoot, '.harness/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
   const flatAgentKeys = agentConfig ? legacyAgentKeys(agentConfig) : [];
-  if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.codex/harness.yaml')));
+  if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.harness/harness.yaml')));
   if (await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { updateProject, writeHarnessLock } from "../.harness/src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
+import { migrateLegacyHarnessConfig } from "../.harness/src/installer/config-location.mjs";
 import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -242,6 +243,8 @@ async function main() {
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
   if (options.command === "install" || options.command === "update") {
+    const moved = await migrateLegacyHarnessConfig(projectRoot);
+    if (moved.migrated) console.log(`Moved ${moved.from} to ${moved.to}`);
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
   }
   if (await isHarnessSourceCheckout(packageRoot, projectRoot)) {
@@ -295,7 +298,7 @@ async function main() {
 // Codex user-level hooks live in ~/.codex, which an update never edits; setup registers them and /hooks trusts them.
 async function noteCodexUserHooks(projectRoot, options) {
   try {
-    const config = await readFile(join(projectRoot, ".codex", "harness.yaml"), "utf8").catch(() => "");
+    const config = await readFile(join(projectRoot, ".harness", "harness.yaml"), "utf8").catch(() => "");
     if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
     const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
     const trust = await inspectCodexHookTrust();

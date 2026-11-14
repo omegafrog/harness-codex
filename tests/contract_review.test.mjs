@@ -204,7 +204,7 @@ test('installed consumer: the reviewer profile, GUIDE, CLI and hook handling shi
     const profile = await readFile(join(c.root, '.claude/agents/contract_reviewer.md'), 'utf8');
     assert.match(profile, /permissionMode: plan/);
     assert.match(profile, /contract-review\/GUIDE\.md/);
-    await writeFile(join(c.root, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: codex-high\n    high_performance_reasoning_effort: high\n    implementation_model: codex-implementation\n    implementation_reasoning_effort: medium\n    execution_model: codex-execution\n    execution_reasoning_effort: low\n    low_performance_model: codex-light\n    low_performance_reasoning_effort: minimal\n');
+    await writeFile(join(c.root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: codex-high\n    high_performance_reasoning_effort: high\n    implementation_model: codex-implementation\n    implementation_reasoning_effort: medium\n    execution_model: codex-execution\n    execution_reasoning_effort: low\n    low_performance_model: codex-light\n    low_performance_reasoning_effort: minimal\n');
     const binding = JSON.parse(execFileSync(process.execPath, [join(c.root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', c.root, '--skill', 'contract-review'], { cwd: c.root, encoding: 'utf8' }));
     assert.deepEqual([binding.model_tier, binding.model, binding.reasoning_effort], ['high_performance', 'codex-high', 'high']);
     // Harness-generated files stay out of git status; the application-owned files stay visible.

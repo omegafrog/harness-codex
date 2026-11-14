@@ -15,7 +15,7 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
   if (typeof plan_set_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(plan_set_id)) throw new Error('Explicit plan_set_id is required');
   if ((orchestrator_session_id !== null && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestrator_session_id)) || (orchestrator_provider !== null && !['codex', 'claude-code'].includes(orchestrator_provider)) || Boolean(orchestrator_session_id) !== Boolean(orchestrator_provider)) throw new Error('Invalid orchestrator provider session');
   if (workflow_binding && orchestrator_provider && workflow_binding.provider !== orchestrator_provider) throw new Error('Workflow binding provider must match the current orchestrator provider');
-  assertSingleProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')), workflow_binding ? parseWorkflowBinding(workflow_binding) : null, orchestrator_provider);
+  assertSingleProvider(parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')), workflow_binding ? parseWorkflowBinding(workflow_binding) : null, orchestrator_provider);
   // Keep repeated feature requests readable without reusing tracker identity.
   const linked = await isLinkedWorktree(root);
   if (linked && await realpath(process.cwd()) !== await realpath(root)) throw new Error('Run compose inside the current linked worktree');

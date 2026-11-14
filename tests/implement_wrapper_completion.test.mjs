@@ -72,7 +72,7 @@ async function buildConsumer() {
   const write = async (path, content) => { await mkdir(join(ws, path, '..'), { recursive: true }); await writeFile(join(ws, path), content); };
   const here = (path) => import(pathToFileURL(join(ws, path)).href);
 
-  await write('.codex/harness.yaml', 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+  await write('.harness/harness.yaml', 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
   for (const name of ['request', 'product-spec', 'architecture-spec']) await write(`docs/specs/${PLAN_SET}/${name}.md`, `# ${name}\n`);
   await write(`docs/plans/${PLAN_SET}/plans.md`, `# Plan set\nProduct Spec: \`docs/specs/${PLAN_SET}/product-spec.md\`\nArchitecture Spec: \`docs/specs/${PLAN_SET}/architecture-spec.md\`\n`);
   await write(`docs/plans/${PLAN_SET}/calculator.md`, planBody('calculator'));

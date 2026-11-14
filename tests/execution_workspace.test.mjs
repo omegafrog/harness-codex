@@ -75,7 +75,8 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   assert.deepEqual((await snapshotPlanSet({ root, planSetId: 'example' })).inputs, snapshot.inputs);
   assert.throws(() => buildImplementPrompt({ repository: root, workspaceRoot: primary, planSetId: 'example', planId: 'slice', planReviewRefs: { execution_workspace: expected } }), /conflicts with runner/);
 
-  await writeFile(join(root, '.codex/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const nodes = [];
   let projectMutations = 0;
   const run = async (args) => {

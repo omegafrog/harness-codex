@@ -29,7 +29,8 @@ test('PR stages require publication and current passing non-final implementation
     execFileSync('git', ['-C', root, 'config', 'user.name', 'Harness Test']);
     execFileSync('git', ['-C', root, 'config', 'user.email', 'harness@example.test']);
     await mkdir(join(root, '.codex'), { recursive: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n');
     await writeFile(join(root, 'tracked'), 'initial\n');
     execFileSync('git', ['-C', root, 'add', '.']);
     execFileSync('git', ['-C', root, 'commit', '-qm', 'baseline']);

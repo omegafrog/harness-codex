@@ -44,7 +44,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     execFileSync('git', ['commit', '-m', 'Consumer setup baseline'], { cwd: root });
     tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: 'calculator' });
 
-    await writeFile(join(tree.workspace, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await writeFile(join(tree.workspace, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
     for (const path of ['docs/specs/calculator/request.md', 'docs/specs/calculator/product-spec.md', 'docs/specs/calculator/architecture-spec.md']) {
       await mkdir(join(tree.workspace, path, '..'), { recursive: true });
       await writeFile(join(tree.workspace, path), `# ${path}\n`);

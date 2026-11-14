@@ -1,6 +1,6 @@
 # 이슈 트래커
 
-이 저장소의 이슈 트래커는 setup이 `.codex/harness.yaml`의 `tracker.mode`으로 선택한다.
+이 저장소의 이슈 트래커는 setup이 `.harness/harness.yaml`의 `tracker.mode`으로 선택한다.
 
 ## 역할
 
@@ -11,25 +11,25 @@
 ## 관리 규칙
 
 - GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. split plan은 검증 완료 시 `Done`이지만, child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
-- GitHub mode에서 split plan 완료 상태는 `.codex/harness.yaml`의 `tracker.github.status_field`에 해당하는 Project field를 `gh project item-edit`로 `Done`으로 갱신한 뒤 검증한다. 기본 Project `Status` field 갱신은 유효한 상태 전이가 아니다. child Issue 상태는 `OPEN`이어야 한다.
+- GitHub mode에서 split plan 완료 상태는 `.harness/harness.yaml`의 `tracker.github.status_field`에 해당하는 Project field를 `gh project item-edit`로 `Done`으로 갱신한 뒤 검증한다. 기본 Project `Status` field 갱신은 유효한 상태 전이가 아니다. child Issue 상태는 `OPEN`이어야 한다.
 - local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
 - `to-ticket`은 선택한 tracker와 관계없이 생성하는 parent/child ticket을 Beads에도 기록한다. `implement`는 시작·차단·완료 상태를 Beads에 mirror한다. 상태의 기준은 계속 선택된 tracker이며 Beads는 공유 보드 표시용이다.
 - 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 
 ## 이 저장소 기준
 
-- GitHub mode는 repository마다 `repository`, `project_owner`, `project_number`를 `.codex/harness.yaml`에 기록한다. 다른 repository의 Project를 추측·공유하지 않는다.
+- GitHub mode는 repository마다 `repository`, `project_owner`, `project_number`를 `.harness/harness.yaml`에 기록한다. 다른 repository의 Project를 추측·공유하지 않는다.
 
 ## Assignee 규칙
 
-- GitHub mode의 assignee 설정은 `.codex/harness.yaml`의 `tracker.github.assignees`를 사용한다.
+- GitHub mode의 assignee 설정은 `.harness/harness.yaml`의 `tracker.github.assignees`를 사용한다.
 - `spec-me → to-ticket` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다.
 - Codex가 테스트·개발 중 추가로 만든 Issue는 `codex` 값(`@copilot`)을 assignee로 지정한다.
 - 기존 Issue의 assignee는 별도 요청 없이는 변경하지 않는다.
 
 ## Pull Request 연계
 
-- GitHub mode에서 생성·갱신하는 모든 PR은 `.codex/harness.yaml`의 `tracker.github.project_owner`와 `tracker.github.project_number` Project에 item으로 연결한다.
+- GitHub mode에서 생성·갱신하는 모든 PR은 `.harness/harness.yaml`의 `tracker.github.project_owner`와 `tracker.github.project_number` Project에 item으로 연결한다.
 - 구현 PR은 대상 parent/child Issue를 PR 본문의 `Closes #<ISSUE-NUMBER>` closing keyword로 연결한다. 본문 단순 참조, 제목 참조, Project item 연결은 Linked Issue를 대신하지 않는다.
 - 구현 PR 생성·갱신 후 `gh pr view <PR-NUMBER> --json closingIssuesReferences`로 모든 대상 Issue 연결을 검증한다. 누락 시 본문을 보정하고 `gh pr edit` 후 재검증한다.
 - plan PR은 draft로 유지한다.

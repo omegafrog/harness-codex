@@ -16,7 +16,7 @@
 
 ## Tracker
 
-`.codex/harness.yaml`의 `tracker.mode`를 한 번 읽고 해당 절차만 적용한다.
+`.harness/harness.yaml`의 `tracker.mode`를 한 번 읽고 해당 절차만 적용한다.
 
 - `github`: [GitHub tracker](../../../../.codex/internal-skills/implement-wrapper/references/tracker/github.md)
 - `local-markdown`: [local-markdown tracker](../../../../.codex/internal-skills/implement-wrapper/references/tracker/local-markdown.md)

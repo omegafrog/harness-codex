@@ -37,7 +37,8 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     await updateProject({ sourceRoot, targetRoot: root });
     await mkdir(join(root, '.codex'), { recursive: true });
     await mkdir(join(root, '.io/runtime'), { recursive: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\nbeads:\n  enabled: false\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\nbeads:\n  enabled: false\n');
     await writeFile(join(root, 'consumer-change.txt'), 'preserve');
     const lifecycleUrl = pathToFileURL(join(root, '.harness/src/tracker/lifecycle.mjs')).href;
     const { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } = await import(lifecycleUrl);

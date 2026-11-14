@@ -30,7 +30,8 @@ test('install --provider codex carries no Claude Code files and the Claude provi
   try {
     assert.deepEqual(present(root, CLAUDE), []);
     assert.deepEqual(present(root, [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]), [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]);
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: gpt-6.1-sol\n    low_performance_reasoning_effort: medium\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: gpt-6.1-sol\n    low_performance_reasoning_effort: medium\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
     assert.match(await readFile(join(root, '.codex/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
     assert.match(await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8'), /id: integration-pr[\s\S]*skill: gh-open-pr/);
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
@@ -147,7 +148,8 @@ test('install and update never install Wake and Doctor checks only the configure
   const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
   assert.match(status, /user-file\.txt/);
   assert.doesNotMatch(status, /stage-result-events/);
-  await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: codex\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
   const doctor = (doctorEnv) => {
     const result = spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', env: doctorEnv });
     return JSON.parse(result.stdout).diagnostics;
@@ -158,7 +160,8 @@ test('install and update never install Wake and Doctor checks only the configure
     const result = spawnSync(process.execPath, [cli, command, '--project', root, '--provider', 'claude-code'], { encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr);
   }
-  await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: claude-code\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
   assert.equal(doctor({ ...env, HARNESS_PROVIDER_ID: 'claude-code', WAKE_TEST_DISABLED: '1' }).some((item) => item.code === 'codex_wake_unavailable'), false);
   assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).filter((args) => args[0] === 'mcp' && args[1] === 'get').length, 0);
   assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).some((args) => args[0] === 'plugin' && args.some((arg) => /codex-wake/.test(arg))), false);

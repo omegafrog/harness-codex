@@ -180,7 +180,7 @@ AGENTS.md는 설치되지 않는 소스 저장소 전용 파일이지만 이 저
 검증:
 - `node --test tests/*.test.mjs`: 103개 중 102개 통과. 실패 1개(`installed to-ticket uses skill binding …`의 `/dedicated workflow executor stage/` 단언)는 176b7c3e에서도 같은 이유로 실패하며 `npm test` 목록 밖이다.
 - `npm test`: 45/45 통과(신규 `tests/prompt_budget.test.mjs` 포함). 신규 테스트 두 개는 176b7c3e에서 실패하고 현재 통과한다.
-- 임시 consumer의 fresh install과 176b7c3e 설치 후 update: 신규 `runtime-artifact-paths.md`가 설치되고 `.git/info/exclude`로 ignore되며 앱 변경(`M app.txt`)은 그대로 보인다. Doctor의 `permission_conflict .codex/harness.yaml`과 untracked `.harness/`는 setup 없이 설치한 176b7c3e에서도 동일하게 나타난다.
+- 임시 consumer의 fresh install과 176b7c3e 설치 후 update: 신규 `runtime-artifact-paths.md`가 설치되고 `.git/info/exclude`로 ignore되며 앱 변경(`M app.txt`)은 그대로 보인다. Doctor의 `permission_conflict .harness/harness.yaml`과 untracked `.harness/`는 setup 없이 설치한 176b7c3e에서도 동일하게 나타난다.
 
 남은 사항:
 - 해결: 구현 리뷰 소유권은 fresh reviewer stage와 orchestrator로 정했다(`627a5c76`). `implement` GUIDE는 `REVIEW_REQUIRED`로 반환한다.

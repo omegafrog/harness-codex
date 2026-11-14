@@ -128,7 +128,8 @@ test('spec paths use the canonical plan set and reject traversal', async () => {
 });
 
 async function seedSetup(root) {
-  await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
   await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n');
   for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(root, path, '..'), { recursive: true });
@@ -276,10 +277,11 @@ test('installed readiness checks required files without validating their content
       assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), 'legacy managed asset');
     }
     await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'));
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     const installedDoctor = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' }));
     assert.equal(installedDoctor.passed, true);
-    assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.codex/harness.yaml')), false);
+    assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.harness/harness.yaml')), false);
     const { runDoctor } = await import('../.harness/src/doctor/doctor.mjs');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
@@ -373,7 +375,8 @@ test('installed local tracker progresses split plans without Beads', async () =>
     }
     assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
     await mkdir(join(root, 'docs/plans/calculator'), { recursive: true });
     await writeFile(join(root, 'docs/plans/calculator/calculator.md'), '---\nstatus: planned\n---\n# 계산기\n');
     const { syncTrackerStatus, readTrackerStatus } = await import(`file://${join(root, '.harness/src/tracker/lifecycle.mjs')}`);
@@ -429,16 +432,19 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const selectedLink = join(parent, 'worktrees link');
     await mkdir(selectedWorktrees);
     await symlink(selectedWorktrees, selectedLink, 'dir');
-    await writeFile(join(root, '.codex/harness.yaml'), `${await readFile(join(root, '.codex/harness.yaml'), 'utf8')}\nworktrees:\n  directory: ${JSON.stringify(selectedLink)}\n`);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), `${await readFile(join(root, '.harness/harness.yaml'), 'utf8')}\nworktrees:\n  directory: ${JSON.stringify(selectedLink)}\n`);
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('commit', '-m', 'setup baseline');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     const compose = (executionId) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', executionId], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
-    const validConfig = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
-    await writeFile(join(root, '.codex/harness.yaml'), validConfig.replace(JSON.stringify(selectedLink), '"relative/path"'));
+    const validConfig = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), validConfig.replace(JSON.stringify(selectedLink), '"relative/path"'));
     assert.throws(() => compose('compose-invalid'), /absolute directory path/);
     assert.equal(git('worktree', 'list', '--porcelain').match(/^worktree /gm).length, 1);
-    await writeFile(join(root, '.codex/harness.yaml'), validConfig);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), validConfig);
     tree = compose('compose-1');
     secondTree = compose('compose-2');
     assert.equal(join(selectedWorktrees, tree.workspace.split('/').at(-1)), tree.workspace);
@@ -717,7 +723,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.deepEqual(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'), 'utf8')), continued.answer);
     assert.equal((await stat(join(tree.session_directory, 'runtime/executions', continued.input.execution_id, 'answers.json'))).mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(join(resultDir, 'answers.json'), 'utf8')), earlierAnswers);
-    const configPath = join(tree.workspace, '.codex/harness.yaml');
+    const configPath = join(tree.workspace, '.harness/harness.yaml');
     const existingConfig = await readFile(configPath, 'utf8');
     await writeFile(configPath, existingConfig.replace('agents:\n', 'agents:\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: high\n'));
     const { bindOrchestratorSession } = await import(`file://${join(tree.workspace, '.harness/src/workflow/startup-state.mjs')}`);
@@ -861,7 +867,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, `runtime/executions/${authorInput.execution_id}/return.json`), JSON.stringify(reviewedEnvelope));
     assert.equal((await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope })).valid, true);
     // In GitHub mode the same reviewed result cannot complete without the saved Issue drafts.
-    const yamlPath = join(tree.workspace, '.codex/harness.yaml');
+    const yamlPath = join(tree.workspace, '.harness/harness.yaml');
     const originalYaml = await readFile(yamlPath, 'utf8');
     await writeFile(yamlPath, `${originalYaml}\ntracker:\n  mode: github\n`);
     await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /must save a GitHub Issue draft.*runtime\/to-ticket\/drafts\/parent\.md/);
@@ -1077,18 +1083,21 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await updateProject({ sourceRoot, targetRoot: root });
     await seedSetup(root);
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
     git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     // A binding for a different provider than the current orchestrator is refused before creating a worktree.
-    const claudeConfig = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: haiku\n    high_performance_reasoning_effort: medium\n    low_performance_model: haiku\n    low_performance_reasoning_effort: medium\n');
+    const claudeConfig = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: haiku\n    high_performance_reasoning_effort: medium\n    low_performance_model: haiku\n    low_performance_reasoning_effort: medium\n');
     const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'claude-code', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
     assert.notEqual(mixed.status, 0);
     assert.match(mixed.stderr, /Workflow binding provider must match the current orchestrator provider/);
     assert.equal(execFileSync('git', ['worktree', 'list'], { cwd: root, encoding: 'utf8' }).trim().split('\n').length, 1);
-    await writeFile(join(root, '.codex/harness.yaml'), claudeConfig);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), claudeConfig);
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
     assert.deepEqual(tree.workflow_binding, workflowBinding);
     const found = await findExecutionInput(tree.workspace, 'compose-1');
@@ -1287,7 +1296,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.equal(failure.status, 'failed');
     const afterFailure = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me', '--feedback', 'retry after tool failure'], { cwd: workspace, encoding: 'utf8' }));
     assert.ok(afterFailure.input.input_refs.some(({ kind }) => kind === 'previous_execution_input'));
-    const configPath = join(workspace, '.codex/harness.yaml');
+    const configPath = join(workspace, '.harness/harness.yaml');
     const originalConfig = await readFile(configPath, 'utf8');
     await writeFile(configPath, originalConfig.replace('agents:\n', 'agents:\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: high\n'));
     const { bindOrchestratorSession } = await import(`file://${join(workspace, '.harness/src/workflow/startup-state.mjs')}`);

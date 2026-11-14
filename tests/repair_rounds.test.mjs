@@ -31,11 +31,13 @@ test('the implementer records an implementation-only fix on the ticket, not in t
   const root = await mkdtemp(join(tmpdir(), 'tracker-comment-'));
   try {
     await mkdir(join(root, '.codex'), { recursive: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
     const calls = [];
     await commentTracker({ workspace_root: root, ticket_ref: 'owner/repo#7', body: 'Fixed duplicate sign-up error handling', run: async (command, args) => { calls.push([command, ...args]); return ''; } });
     assert.deepEqual(calls, [['gh', 'issue', 'comment', '7', '--repo', 'owner/repo', '--body', 'Fixed duplicate sign-up error handling']]);
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     await mkdir(join(root, 'docs/plans/set'), { recursive: true });
     await writeFile(join(root, 'docs/plans/set/p.md'), '---\nstatus: in-progress\n---\n# P\n');
     await commentTracker({ workspace_root: root, ticket_ref: 'docs/plans/set/p.md', body: 'Fixed it' });

@@ -58,7 +58,7 @@ Codex에서 직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrat
 - 역할별 model / reasoning 설정
 - workflow worktree를 만들 상위 디렉터리의 절대 경로 선택 (기본값: 프로젝트 옆 `<프로젝트명>-worktrees`)
 - GitHub 또는 local-markdown tracker 설정
-- `.codex/harness.yaml` 관리
+- `.harness/harness.yaml` 관리
 
 선택한 위치는 `worktrees.directory`에 저장하며 새 workflow부터 적용한다. 기존 worktree는 Git에 등록된 위치에 그대로 남는다. 경로를 바꾸려면 `$setup`에서 새로 설정을 선택한다.
 
@@ -351,7 +351,7 @@ Claude Code provider 코드(adapter, orchestrator launcher·시작 hook, hook �
 
 **메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.codex/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `docs/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
 
-설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 한 번에 반환하는 질문 전체를 한 화면에서 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 선행 답이 바뀌어 맞지 않게 된 질문만 다시 묻는다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
+설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 한 번에 반환하는 질문 전체를 한 화면에서 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 선행 답이 바뀌어 맞지 않게 된 질문만 다시 묻는다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.harness/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
 
 로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/internal-skills/victorialogs-local-setup/assets/README.md)를 따른다.
 
@@ -368,7 +368,7 @@ Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데�
 .codex/harness-lock.json         설치 기준선과 파일 hash
 ```
 
-필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.codex/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
+필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.harness/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
 
 ### 업데이트
 
@@ -391,7 +391,7 @@ npx --yes github:omegafrog/harness-codex update --project /path/to/your-project
 - Harness가 설치한 뒤 프로젝트에서 바꾸지 않은 관리 파일은 최신 버전으로 갱신한다.
 - 새로 추가된 관리 파일은 추가한다.
 - 프로젝트에서 수정한 파일은 덮어쓰지 않고 `Preserved`로 보고한다. `locally_modified`는 로컬 변경만, `conflict`는 로컬과 Harness 양쪽에 변경이 있다는 뜻이다.
-- `$setup`이 소유하는 `.codex/harness.yaml`은 자동으로 추가·교체하지 않는다.
+- `$setup`이 소유하는 `.harness/harness.yaml`은 자동으로 추가·교체하지 않는다.
 
 `Preserved` 파일에는 새 Harness 변경을 자동으로 적용하지 않는다. 출력된 경로를 비교해 필요한 변경을 수동으로 병합한 뒤, 현재 상태를 다음 기준선으로 기록한다.
 

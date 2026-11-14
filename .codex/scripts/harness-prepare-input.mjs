@@ -39,7 +39,7 @@ try {
   await resolveSkillSession(root, session);
   // Codex stages need the trusted Harness subagent hook to record native reviewer identity.
   const { parseYaml } = await import(new URL('../eval/yaml.mjs', base));
-  const stageProvider = record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).agents?.provider || 'codex';
+  const stageProvider = record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).agents?.provider || 'codex';
   if (stageProvider === 'codex') {
     const { inspectCodexHookTrust } = await import(new URL('providers/codex.mjs', base));
     const trust = await inspectCodexHookTrust();

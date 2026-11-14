@@ -178,7 +178,7 @@ async function assertNoSymlinks(path, label) {
   }
 }
 
-export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml") {
+export async function loadHarnessConfig(root, configPath = ".harness/harness.yaml") {
   const path = resolvePortablePath(root, configPath);
   if (!path || !isWithin(root, path)) throw new ManifestValidationError(`Config escapes repository root: ${configPath}`);
   try {

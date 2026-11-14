@@ -36,7 +36,7 @@ async function hasPassingImplementationGate(root) {
 
 export async function assertPrStageReadiness({ root, state, stageId }) {
   if (!['plan-pr', 'integration-pr'].includes(stageId)) return;
-  const trackerMode = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker?.mode;
+  const trackerMode = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker?.mode;
   if (trackerMode !== 'github') throw new Error('Pull request authoring requires GitHub tracker mode');
   if (stageId === 'plan-pr' && (state.stages?.['tracker-publish']?.status !== 'completed' || state.stages?.['tracker-publish']?.code !== 'OK')) throw new Error('Plan PR requires completed approved tracker publication');
   if (stageId === 'integration-pr' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK' || state.stages?.['sync-contracts']?.status !== 'completed' || state.stages?.['sync-contracts']?.code !== 'OK' || !(await hasPassingImplementationGate(root)))) throw new Error('Integration PR requires passing non-final implementation and contract completion gates');
@@ -209,7 +209,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (planId !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan ID');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
   if (feedback !== null && (typeof feedback !== 'string' || !feedback.trim() || answer !== null || reviewAdmissionRef)) throw new Error('Invalid execution feedback');
-  let provider = orchestratorSession?.provider || configuredProvider(parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')));
+  let provider = orchestratorSession?.provider || configuredProvider(parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')));
   let workflowBinding = null;
   let historicalBinding = null;
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });

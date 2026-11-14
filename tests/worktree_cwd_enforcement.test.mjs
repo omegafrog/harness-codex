@@ -26,7 +26,8 @@ test('installed workflow commands require cwd inside the target worktree', async
   git(primary, 'config', 'user.name', 'Workflow test'); git(primary, 'config', 'user.email', 'test@example.test');
   await protectLocalInstallArtifacts(primary, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
-  await writeFile(join(primary, '.codex/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
+  await (await import('node:fs/promises')).mkdir(join(primary, '.harness'), { recursive: true });
+  await writeFile(join(primary, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
   await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
   for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');

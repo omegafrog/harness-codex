@@ -1,6 +1,6 @@
 # GitHub batch publish
 
-이 절차는 canonical plan 전체가 작성되고 fresh plan reviewer와 plan-review/spec-review gate가 통과한 뒤 별도 `tracker-publish` workflow stage에서 실행한다. 그 전에는 GitHub Issue/Project 조회·수정 API를 호출하지 않는다. repository, Project 설정은 `.codex/harness.yaml`에서 읽는다. 이 단계는 저장소 Issue를 만들지 않고 Project draft item만 만든다. 저장소 Issue 변환은 구현을 처음 시작할 때 수행한다.
+이 절차는 canonical plan 전체가 작성되고 fresh plan reviewer와 plan-review/spec-review gate가 통과한 뒤 별도 `tracker-publish` workflow stage에서 실행한다. 그 전에는 GitHub Issue/Project 조회·수정 API를 호출하지 않는다. repository, Project 설정은 `.harness/harness.yaml`에서 읽는다. 이 단계는 저장소 Issue를 만들지 않고 Project draft item만 만든다. 저장소 Issue 변환은 구현을 처음 시작할 때 수행한다.
 
 ## 발행
 

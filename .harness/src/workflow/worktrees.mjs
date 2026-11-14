@@ -269,7 +269,7 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   const [sourceStore, returnStore] = await Promise.all([storage(sourceWorkspace), storage(returnRoot)]);
   if (sourceStore.common !== returnStore.common) throw new Error('Source and return roots must share a Git common directory');
   const worktreeId = randomUUID();
-  const configText = await readFile(join(returnRoot, '.codex/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+  const configText = await readFile(join(returnRoot, '.harness/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
   const configured = parseYaml(configText).worktrees?.directory;
   if (configured !== undefined && (typeof configured !== 'string' || !isAbsolute(configured) || configured.includes('\0'))) throw new Error('worktrees.directory must be an absolute directory path');
   const worktreesDirectory = configured || join(dirname(returnRoot), `${basename(returnRoot)}-worktrees`);

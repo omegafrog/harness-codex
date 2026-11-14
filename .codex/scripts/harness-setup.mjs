@@ -330,7 +330,7 @@ async function main() {
   const parserUrl = new URL('../../.harness/src/eval/yaml.mjs', import.meta.url);
   const { parseYaml } = await import(parserUrl.href);
   const { modelBelongsToProvider } = await import(new URL('../../.harness/src/workflow/providers/index.mjs', import.meta.url).href);
-  const configPath = join(root, '.codex/harness.yaml');
+  const configPath = join(root, '.harness/harness.yaml');
   const oldConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const budgetPath = join(root, '.codex/context-budget.json');
   const oldBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
@@ -618,7 +618,7 @@ async function main() {
   }
 
   await prepareProjectFiles();
-  console.log(`Updated .codex/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
+  console.log(`Updated .harness/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
   console.log(`Tracker configured: ${mode}`);
   if (useBeads) console.log('Beads workspace 상태를 확인했습니다.');
   if (configureObservability) {

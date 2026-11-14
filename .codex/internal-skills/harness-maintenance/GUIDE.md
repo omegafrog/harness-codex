@@ -31,4 +31,4 @@ The updater backs up and replaces managed internal instructions under `.codex/in
 
 ## 설치·진단 정합성
 
-install/update는 같은 native asset synchronizer를 사용하며 PR 템플릿도 관리한다. 프로젝트 설정 .codex/harness.yaml과 업무 문서는 force 대상이 아니다. retired lock 항목은 원장만 제거하며 과거 파일은 보존한다. doctor는 최신 upstream inventory의 skill supporting files·tools·contracts·CI·PR을 stale로 오인하지 않아야 한다. eval의 permission_profile은 event label이며 실제 sandbox/network 설정을 검사한다. 명시적 native permission-profile 참조가 있을 때만 실제 inventory 확인이 필요하다. 오류를 없애기 위해 권한 이름을 임의로 승인하거나 안전 검사를 약화하지 않는다.
+install/update는 같은 native asset synchronizer를 사용하며 PR 템플릿도 관리한다. 프로젝트 설정 .harness/harness.yaml과 업무 문서는 force 대상이 아니다. retired lock 항목은 원장만 제거하며 과거 파일은 보존한다. doctor는 최신 upstream inventory의 skill supporting files·tools·contracts·CI·PR을 stale로 오인하지 않아야 한다. eval의 permission_profile은 event label이며 실제 sandbox/network 설정을 검사한다. 명시적 native permission-profile 참조가 있을 때만 실제 inventory 확인이 필요하다. 오류를 없애기 위해 권한 이름을 임의로 승인하거나 안전 검사를 약화하지 않는다.

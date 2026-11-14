@@ -4,7 +4,7 @@
 
 ## Publisher stage 준비
 
-현재 plan-review gate pass 뒤 별도 `tracker-publish` stage가 `workspace_root`에서 `bd version`, `bd where`, `bd status`를 실행해 CLI와 workspace 상태를 확인한다. 초기화가 필요한 경우 `$setup`으로 준비를 완료한 뒤 이어간다. `.codex/harness.yaml`에서 configured tracker mode를 읽는다. GitHub mode에서는 이 단계에서 Beads tracker mirror를 만들지 않는다. Project draft는 구현 시작 시 실제 Issue로 변환한 뒤 mirror한다.
+현재 plan-review gate pass 뒤 별도 `tracker-publish` stage가 `workspace_root`에서 `bd version`, `bd where`, `bd status`를 실행해 CLI와 workspace 상태를 확인한다. 초기화가 필요한 경우 `$setup`으로 준비를 완료한 뒤 이어간다. `.harness/harness.yaml`에서 configured tracker mode를 읽는다. GitHub mode에서는 이 단계에서 Beads tracker mirror를 만들지 않는다. Project draft는 구현 시작 시 실제 Issue로 변환한 뒤 mirror한다.
 
 ## 계획 티켓 작성
 

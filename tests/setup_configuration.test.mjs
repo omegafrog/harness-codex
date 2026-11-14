@@ -20,7 +20,8 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await updateProject({ sourceRoot, targetRoot: root });
     const config = 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: high\n    implementation_model: example\n    implementation_reasoning_effort: medium\n    execution_model: example\n    execution_reasoning_effort: low\n    low_performance_model: example\n    low_performance_reasoning_effort: low\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\nobservability:\n  victorialogs:\n    local:\n      enabled: false\n';
     const configured = `${config}worktrees:\n  directory: ${JSON.stringify(join(root, '..', 'chosen worktrees'))}\n`;
-    await writeFile(join(root, '.codex/harness.yaml'), configured);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), configured);
     const budget = '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n';
     await writeFile(join(root, '.codex/context-budget.json'), budget);
     await writeFile(join(root, 'CONTEXT.md'), 'project context');
@@ -42,15 +43,17 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.equal(Object.hasOwn(first, 'configuration_hash'), false);
     await writeFile(answers, JSON.stringify({ configuration_hash: 'obsolete', answers: { [first.pending.id]: 'reuse' } }));
     assert.equal(run('--answers', answers).status, 'configured');
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), configured);
+    assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), configured);
     assert.equal(await readFile(join(root, '.codex/context-budget.json'), 'utf8'), budget);
     assert.equal(await readFile(join(root, 'CONTEXT.md'), 'utf8'), 'project context');
-    await writeFile(join(root, '.codex/harness.yaml'), config);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), config);
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const migrateWorktrees = run('--answers', answers);
     assert.equal(migrateWorktrees.pending.id, '워크트리 생성 위치 (절대 경로)#1');
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
-    await writeFile(join(root, '.codex/harness.yaml'), configured);
+    assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), config);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), configured);
     await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600}\n');
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     assert.equal(run('--check').status, 'setup_required');
@@ -63,11 +66,12 @@ test('installed setup reuses current configuration and ignores old answer hashes
     const confirmation = run('--answers', answers);
     assert.equal(confirmation.status, 'configured');
     assert.equal(JSON.parse(await readFile(join(root, '.codex/context-budget.json'), 'utf8')).handoff_reserve_tokens, 200);
-    await writeFile(join(root, '.codex/harness.yaml'), `${configured}custom:\n  preserved: yes\n`);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), `${configured}custom:\n  preserved: yes\n`);
     await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1100,"max_plan_tokens":600}\n');
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse', [partial.pending.id]: 'y' } }));
     assert.equal(run('--answers', answers).status, 'configured');
-    assert.match(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), /custom:\n  preserved: yes/);
+    assert.match(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), /custom:\n  preserved: yes/);
     assert.equal(JSON.parse(await readFile(join(root, '.codex/context-budget.json'), 'utf8')).context_window_tokens, 1100);
     const fakeBin = join(root, '.io/fake-bin');
     await mkdir(fakeBin, { recursive: true });
@@ -87,11 +91,13 @@ test('installed setup reuses current configuration and ignores old answer hashes
     const reconfigure = batch;
     assert.equal(reconfigure.pending.id, '복잡한 설계·최종 검토 모델 모델 선택#1');
     assert.equal(reconfigure.pending.current, 'example');
-    await writeFile(join(root, '.codex/harness.yaml'), configured.replace('    execution_model: example\n', ''));
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), configured.replace('    execution_model: example\n', ''));
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const missingModel = runWithModels();
     assert.equal(missingModel.pending.id, '서버·E2E 실행과 polling 모델 모델 선택#1');
-    await writeFile(join(root, '.codex/harness.yaml'), configured.replace('  execution_reasoning_effort: low', '  execution_reasoning_effort: invalid'));
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), configured.replace('  execution_reasoning_effort: low', '  execution_reasoning_effort: invalid'));
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const invalidEffort = runWithModels();
     assert.equal(invalidEffort.pending.id, '서버·E2E 실행과 polling 모델 추론 강도 선택#1');
@@ -182,7 +188,7 @@ test('installed setup starts isolated sessions without preparing answer files or
     assert.throws(() => call('--start', '--answers', first.answers_path), /--start cannot be combined/);
     assert.throws(() => call('--start', '--check'), /--start cannot be combined/);
     assert.equal(await exists(join(root, '.io/runtime/setup/current-setup-path.txt')), false);
-    for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md']) assert.equal(await exists(join(root, path)), false);
+    for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md']) assert.equal(await exists(join(root, path)), false);
     assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project instructions\n');
     assert.equal(await readFile(join(root, 'docs/contracts/project.md'), 'utf8'), 'project contract\n');
     const status = git('status', '--short', '--untracked-files=all');
@@ -207,7 +213,7 @@ test('setup asks only questions whose conditions are known and carries runtime c
     assert.ok(first.questions.every(({ context }) => context.includes('Codex CLI')));
     assert.equal(first.questions.some(({ prompt }) => prompt.startsWith('이 설정으로 계속할까요?')), false, 'confirmation waits until conditional questions have been resolved');
     // Nothing was written while answers were missing.
-    for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
+    for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
     assert.doesNotMatch(git('status', '--short', '--untracked-files=all'), /CONTEXT\.md|docs\//);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -226,7 +232,7 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
       first = answered;
     }
     assert.equal(answered.status, 'configured');
-    const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     assert.ok(config.includes(`directory: ${JSON.stringify(selected)}`));
     assert.doesNotMatch(config, /provider: "codex"/);
     assert.match(config, /high_performance_model: "example-a"/);
@@ -241,7 +247,7 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
     assert.match(status, /CONTEXT\.md/);
     assert.match(status, /docs\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
-    git('check-ignore', '-v', '.codex/harness.yaml');
+    git('check-ignore', '-v', '.harness/harness.yaml');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -264,7 +270,7 @@ test('setup in an existing linked worktree shows Codex/worktree context and keep
     }
     assert.equal(batch.status, 'configured');
     assert.equal(git('worktree', 'list', '--porcelain'), before);
-    const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     assert.ok(config.includes(`directory: ${JSON.stringify(join(primary, '..', 'project-worktrees'))}`));
   } finally { await rm(cleanupRoot, { recursive: true, force: true }); }
 });
@@ -274,7 +280,7 @@ test('setup rejects a relative worktree location', async () => {
   try {
     const first = await run({});
     await assert.rejects(run(answerBatch(first.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': 'relative/path' })), /절대 경로/);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -290,7 +296,7 @@ test('setup uses the current CLI and preserves the other provider model settings
       batch = await run(values);
     }
     assert.equal(batch.status, 'configured');
-    const claude = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    const claude = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     assert.match(claude, /claude-code:\s+high_performance_model: "opus"/);
     assert.doesNotMatch(claude, /provider: "claude-code"/);
     const runCodex = async (map) => {
@@ -306,7 +312,7 @@ test('setup uses the current CLI and preserves the other provider model settings
       batch = await runCodex(values);
     }
     assert.equal(batch.status, 'configured');
-    const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     assert.match(config, /claude-code:[\s\S]*high_performance_model: "opus"/);
     assert.match(config, /codex:[\s\S]*high_performance_model: "example-a"/);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -332,7 +338,7 @@ test('choosing GitHub omits local plan storage and disabled observability omits 
     const prompts = github.questions.map(({ prompt }) => prompt);
     assert.ok(prompts.includes('GitHub repository (owner/repo)'));
     assert.doesNotMatch(JSON.stringify(github.questions), /로컬 계획 디렉터리|VictoriaLogs localhost port|보존 일수|Actuator|service 이름|프로젝트 Git root|context 한도|최대 예상 토큰|인계용 예비 토큰/);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -402,7 +408,7 @@ test('installed setup collects individual reordered answers, advances on the las
         assert.deepEqual(await receive(project, [reply]), status, 'duplicate delivery is idempotent');
         if (index !== reversed.length - 1) assert.equal(command().status, 'waiting', 'partial replies cannot run discovery/application');
       }
-      for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
+      for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
       assert.equal(command('--status').status, 'ready');
       oldReply = replies[0];
       batch = command();
@@ -411,10 +417,10 @@ test('installed setup collects individual reordered answers, advances on the las
     assert.equal(batch.status, 'configured');
     assert.deepEqual(batches.at(-1).questions.map(({ prompt }) => prompt), ['이 설정으로 계속할까요?']);
     assert.equal(command('--status').can_continue, false);
-    assert.match(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), /mode: "github"/);
-    const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8');
+    assert.match(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), /mode: "github"/);
+    const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     await receive(project, [oldReply]);
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), config);
 
     // Update preserves app-owned changes and restores the newly required managed runtime.
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
@@ -444,7 +450,8 @@ test('cancelled setup ignores late form answers and cannot resume or change exis
   const { root, run, command, answers } = project;
   try {
     const config = 'custom: original\n', budget = '{"original":true}\n';
-    await writeFile(join(root, '.codex/harness.yaml'), config);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), config);
     await writeFile(join(root, '.codex/context-budget.json'), budget);
     const batch = await run({});
     const replies = await showBatch(project, batch);
@@ -455,7 +462,7 @@ test('cancelled setup ignores late form answers and cannot resume or change exis
     assert.equal(result.can_continue, false);
     assert.equal(await readFile(answers, 'utf8'), snapshot);
     assert.equal(command().status, 'cancelled');
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), config);
     assert.equal(await readFile(join(root, '.codex/context-budget.json'), 'utf8'), budget);
     assert.equal(await exists(join(root, 'CONTEXT.md')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -487,7 +494,7 @@ test('setup refuses unverified calls, acceptance payloads, invalid item IDs and 
     await receive(project, [replies[index]]);
     const other = batch.questions[index].options.find(({ label }) => label !== replies[index].answer).label;
     await assert.rejects(receive(project, [{ ...replies[index], answer: other }]), /Conflicting duplicate/);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -496,7 +503,8 @@ test('setup binds the actual call and accepts answers by item ID even when the t
   const { root, run, command, answers } = project;
   try {
     const config = `agents:\n  codex:\n    high_performance_model: ${'model'.repeat(70)}\ntracker:\n  mode: github\n`;
-    await writeFile(join(root, '.codex/harness.yaml'), config);
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), config);
     const batch = await run({});
     assert.equal(batch.questions.length, 1);
     const title = batch.ui_questions[0].title;
@@ -513,7 +521,7 @@ test('setup binds the actual call and accepts answers by item ID even when the t
     const result = await receive(project, [reply]);
     assert.equal(result.can_continue, true);
     assert.deepEqual(result.missing_question_ids, []);
-    assert.equal(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), config);
+    assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), config);
     assert.equal(command('--bind-ui', transcript).status, 'ready', 'rebinding the same accepted call preserves answers');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -546,7 +554,7 @@ test('installed setup can revise a mistaken Project owner and select its current
     }
     assert.ok(ownerReply);
     assert.throws(() => command(), /Project owner는 GitHub/);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
     assert.equal(command('--revise', 'Project owner#1').status, 'revised');
     assert.throws(() => command('--revise', 'Project owner#1'), /recorded Project owner/);
     batch = command();
@@ -558,7 +566,7 @@ test('installed setup can revise a mistaken Project owner and select its current
     await receive(project, replies);
     assert.equal(JSON.parse(await readFile(answers, 'utf8')).answers['Project owner#1'], 'example');
     assert.equal(command().status, 'needs_input');
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
     command('--cancel');
     assert.throws(() => command('--revise', 'Project owner#1'), /cancelled or configured/);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -586,7 +594,7 @@ test('installed setup collects all individual form replies directly from its con
     assert.equal(received.can_continue, true);
     assert.deepEqual(received.missing_question_ids, []);
     assert.equal(command('--receive-rollout', transcript).can_continue, true);
-    assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
+    assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
     assert.equal(command().status, 'needs_input');
     command('--cancel');
     const snapshot = await readFile(answers, 'utf8');
@@ -603,7 +611,8 @@ test('setup finds its conversation and accepts a direct answer to one displayed 
     await updateProject({ sourceRoot, targetRoot: root });
     git('check-ignore', '-v', '.harness/src/workflow/providers/codex.mjs');
     assert.match(git('status', '--short', '--untracked-files=all'), /app\.mjs/);
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n');
     const batch = await run({});
     assert.equal(batch.questions.length, 1);
     await showBatch(project, batch);
@@ -621,6 +630,6 @@ test('setup finds its conversation and accepts a direct answer to one displayed 
     assert.equal(call().can_continue, true);
     assert.equal(JSON.parse(await readFile(answers, 'utf8')).answers[batch.questions[0].id], 'reconfigure');
     assert.equal(command().status, 'needs_input');
-    assert.match(await readFile(join(root, '.codex/harness.yaml'), 'utf8'), /mode: github/);
+    assert.match(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), /mode: github/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -207,7 +207,7 @@ export async function discoverHarnessOwnedFiles(root) {
   for (const [directory, predicate] of patterns) {
     for (const relativePath of await walkOwnedDirectory(root, rootPath, directory, predicate)) files.add(relativePath);
   }
-  if (await assertOwnedFile(".codex/harness.yaml")) files.add(".codex/harness.yaml");
+  if (await assertOwnedFile(".harness/harness.yaml")) files.add(".harness/harness.yaml");
   for (const file of [".harness/contracts.mjs", ".github/workflows/harness-contracts.yml", ".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE/plan-set.md"]) {
     if (await assertOwnedFile(file)) files.add(file);
   }

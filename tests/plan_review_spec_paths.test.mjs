@@ -23,7 +23,8 @@ test('plan review inputs are the fixed Spec paths even when the index mentions o
     assert.ok(Object.keys(snapshot.inputs).includes('docs/specs/set/architecture-spec.md'));
     assert.ok(!Object.keys(snapshot.inputs).includes('docs/agents/EXEC.md'));
     await mkdir(join(root, '.codex'));
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n');
     await mkdir(join(root, '.io'));
     await assert.rejects(updatePlanReview({ root, planSetId: 'set', action: 'begin' }), /missing or empty:.*parent.md.*e2e.md/);
     const blocked = await inspectPlanSet({ root, planSetId: 'set', phase: 'planning' });

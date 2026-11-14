@@ -24,7 +24,7 @@ or the implementation workflow has completed its verification gates.
 - For every implementation PR, resolve the intended Issue number(s) from the selected plan before composing the body. A bare `#123` mention, title reference, or Project item does not establish a linked Issue.
 - Do not create a PR in `local-markdown` tracker mode.
 - If the head branch has no commits beyond the base branch, report that GitHub cannot create the PR yet.
-- In `github` tracker mode, read `tracker.github.project_owner` and `tracker.github.project_number` from `.codex/harness.yaml`; every created or updated PR must be present as an item in that configured GitHub Project.
+- In `github` tracker mode, read `tracker.github.project_owner` and `tracker.github.project_number` from `.harness/harness.yaml`; every created or updated PR must be present as an item in that configured GitHub Project.
 - The caller must identify whether this is a `plan PR` or `implementation PR` and whether implementation verification is complete. A plan PR remains draft. A completed implementation PR must be ready for review: create it without `--draft`, or run `gh pr ready <PR-NUMBER>` after updating an existing draft.
 
 ## Core Rules

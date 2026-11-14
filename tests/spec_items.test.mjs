@@ -143,7 +143,8 @@ test('plan dependencies come from the plan text and Beads status, not from ticke
   try {
     await mkdir(join(root, '.codex'), { recursive: true });
     await mkdir(join(root, 'docs/plans/set'), { recursive: true });
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
     await writeFile(join(root, 'docs/plans/set/comment.md'), '## 의존성 및 인계\n`auth`, `post` 선행. Cascade는 `e2e`에서 검증한다.\n\n## 다음\n`other` 선행\n');
     await writeFile(join(root, 'docs/plans/set/e2e.md'), '## 의존성 및 인계\n`auth`, `post`, `comment` 모두 선행한다.\n');
     const bead = (plan, status) => ({ id: `b-${plan}`, status, external_ref: `docs/plans/set/${plan}.md`, metadata: { harness_plan_id: `set:${plan}` } });

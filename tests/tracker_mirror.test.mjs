@@ -12,7 +12,8 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'tracker-mirror-'));
   await mkdir(join(root, '.codex'), { recursive: true });
   await mkdir(join(root, '.beads'));
-  await writeFile(join(root, '.codex/harness.yaml'), `tracker:\n  mode: github\n  github:\n    repository: ${repository}\n    project_owner: omegafrog\n    project_number: 1\n    status_field: Workflow Status\n`);
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), `tracker:\n  mode: github\n  github:\n    repository: ${repository}\n    project_owner: omegafrog\n    project_number: 1\n    status_field: Workflow Status\n`);
   const calls = [];
   const run = async (command, args) => {
     if (command === 'bd' && args.includes('--metadata-field')) return JSON.stringify([1, 2].map((number) => ({ id: `harness-${number}`, status: 'open', external_ref: `https://github.com/${repository}/issues/${number}`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed' } })));

@@ -13,7 +13,7 @@ const hash = (value) => createHash('sha256').update(value).digest('hex');
 function requireValue(value, message) { if (!value) throw new Error(message); }
 
 export async function assertPlanIssueDrafts({ root, plans, session = sessionDirectory(root) }) {
-  const config = await readFile(join(root, '.codex/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+  const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
   if (parseYaml(config).tracker?.mode !== 'github') return;
   const missing = [];
   for (const name of ['parent', ...plans.map((plan) => plan.id)]) {

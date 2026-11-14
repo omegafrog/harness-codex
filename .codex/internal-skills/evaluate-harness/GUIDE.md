@@ -23,7 +23,7 @@ Support both source checkout and installed-consumer usage.
 If the current repository contains all of the following, evaluate that local checkout:
 
 ```text
-.codex/harness.yaml
+.harness/harness.yaml
 evals/suites/
 evals/cases/
 bin/harness-eval.mjs
@@ -39,7 +39,7 @@ This evaluates the current Harness checkout, including local Harness changes.
 
 ### Installed mode
 
-If the current repository only contains installed Harness assets such as `.codex/internal-skills/*`, `.agents/skills/*`, `.codex/agents/*`, and `.codex/harness.yaml`, do **not** fail merely because `evals/` or `bin/harness-eval.mjs` is absent.
+If the current repository only contains installed Harness assets such as `.codex/internal-skills/*`, `.agents/skills/*`, `.codex/agents/*`, and `.harness/harness.yaml`, do **not** fail merely because `evals/` or `bin/harness-eval.mjs` is absent.
 
 Run the Harness package-backed evaluator instead:
 
@@ -66,7 +66,7 @@ Use, in priority order:
 2. A user-supplied base ref or comparison range in source checkout mode.
 3. Otherwise, the current Harness source diff when available and the package's available suite manifests.
 
-In source checkout mode, read `.codex/harness.yaml`, `evals/suites/*.yaml`, and the referenced case manifests before running an eval.
+In source checkout mode, read `.harness/harness.yaml`, `evals/suites/*.yaml`, and the referenced case manifests before running an eval.
 
 In installed mode, obtain suite/case information from the package-backed evaluator or package source; do not require those files in the consumer project.
 

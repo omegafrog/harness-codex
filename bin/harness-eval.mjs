@@ -37,7 +37,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         throw new Error("retry-evidence requires safe --run-id and --case-id values");
       }
       const attempt = Number.isInteger(args.attempt) && args.attempt > 0 ? args.attempt : 1;
-      const config = await loadHarnessConfig(packageRoot, args.config || ".codex/harness.yaml");
+      const config = await loadHarnessConfig(packageRoot, args.config || ".harness/harness.yaml");
       const runtimeRoot = sessionOutputPath(packageRoot, config.eval.runtime_path);
       const caseDir = attempt === 1
         ? join(runtimeRoot, args.runId, "cases", args.caseId)

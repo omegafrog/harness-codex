@@ -1,6 +1,6 @@
 # GitHub tracker
 
-이 파일은 `.codex/harness.yaml`의 `tracker.mode: github`일 때만 읽는다. GitHub Issue와 configured GitHub Project가 ticket 상태·승인·의존성의 기준이다. `.codex/harness.yaml`의 repository, project owner/number, status field를 사용한다.
+이 파일은 `.harness/harness.yaml`의 `tracker.mode: github`일 때만 읽는다. GitHub Issue와 configured GitHub Project가 ticket 상태·승인·의존성의 기준이다. `.harness/harness.yaml`의 repository, project owner/number, status field를 사용한다.
 
 ## 구현 시작 전 확인
 

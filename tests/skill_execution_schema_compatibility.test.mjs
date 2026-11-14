@@ -156,12 +156,13 @@ test('installed stage accepts changed documents while preserving review snapshot
     await mkdir(join(root, '.beads'), { recursive: true });
     await mkdir(join(linked, '.beads'), { recursive: true });
     await mkdir(join(linked, '.codex'), { recursive: true });
-    await writeFile(join(linked, '.codex/harness.yaml'), 'beads:\n  enabled: true\ntracker:\n  mode: github\n');
+    await (await import('node:fs/promises')).mkdir(join(linked, '.harness'), { recursive: true });
+    await writeFile(join(linked, '.harness/harness.yaml'), 'beads:\n  enabled: true\ntracker:\n  mode: github\n');
     await writeFile(join(linked, 'app.txt'), 'application change');
     const linkedStatus = execFileSync('git', ['status', '--short'], { cwd: linked, encoding: 'utf8' });
     assert.match(linkedStatus, /app\.txt/);
     assert.doesNotMatch(linkedStatus, /\.codex/);
-    execFileSync('git', ['check-ignore', '.codex/harness.yaml'], { cwd: linked });
+    execFileSync('git', ['check-ignore', '.harness/harness.yaml'], { cwd: linked });
     const claude = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
     const providers = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     const { writeOutputSchema: writeInstalledOutputSchema } = await import(`file://${join(root, '.harness/src/workflow/output-schema.mjs')}`);
@@ -412,7 +413,8 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
 
     const installedRuntime = `file://${join(root, '.harness/src/workflow')}`;
     const { loadNamedWorkflow } = await import(`${installedRuntime}/loader.mjs`);
@@ -493,7 +495,8 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const currentReview = JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' }));
     assert.equal(currentReview.status, 'pass');
     assert.equal(currentReview.details.review_attempt_id, begin.attempt_id);
-    await writeFile(join(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
     const { updatePublication, verifyDraftPublication } = await import(`${installedRuntime}/../tracker/publication.mjs`);
     assert.equal((await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'begin' })).status, 'pending');
     await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'record', itemId: 'parent' });

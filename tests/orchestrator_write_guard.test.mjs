@@ -194,7 +194,8 @@ async function installConsumer(config) {
   execFileSync('git', ['init', '-q', root]);
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  await writeFile(join(root, '.codex/harness.yaml'), config);
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), config);
   return root;
 }
 const agents = (provider) => `agents:\n  provider: ${provider}\n  ${provider}:\n    high_performance_model: ${provider === 'codex' ? 'gpt-6.1-sol' : 'opus'}\n    high_performance_reasoning_effort: high\n    implementation_model: ${provider === 'codex' ? 'gpt-6-luna' : 'sonnet'}\n    implementation_reasoning_effort: medium\n    execution_model: ${provider === 'codex' ? 'gpt-6-luna' : 'sonnet'}\n    execution_reasoning_effort: low\n    low_performance_model: ${provider === 'codex' ? 'gpt-6-luna' : 'haiku'}\n    low_performance_reasoning_effort: low\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n`;

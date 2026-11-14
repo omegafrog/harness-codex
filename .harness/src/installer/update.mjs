@@ -414,7 +414,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   // harness.yaml belongs to the project, so it is only rewritten to move older flat model keys under agents.<provider>.
-  const configPath = resolve(targetRoot, '.codex/harness.yaml');
+  const configPath = resolve(targetRoot, '.harness/harness.yaml');
   const configText = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   const migrated = configText === null ? null : migrateAgentsText(configText);
   if (migrated?.moved.length) {

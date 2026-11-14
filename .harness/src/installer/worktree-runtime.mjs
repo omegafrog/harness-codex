@@ -34,7 +34,7 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
     for (const [path, entry] of Object.entries(lock.files)) await copy(path, entry.installed_sha256);
     await copy(lockPath);
   }
-  for (const path of ['.codex/harness.yaml', '.codex/context-budget.json', 'docs/agents/EXEC.md', 'docs/agents/execution.json']) {
+  for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'docs/agents/EXEC.md', 'docs/agents/execution.json']) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (lock) {

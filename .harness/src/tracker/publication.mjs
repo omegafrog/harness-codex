@@ -51,7 +51,7 @@ const normalizeBody = (body) => body.replace(/<!-- harness-plan [^\n]* -->/g, ''
 const marker = (set, plan) => `<!-- harness-plan ${JSON.stringify({ plan_set_id: set, plan_id: plan })} -->`;
 
 export async function inspectPublication({ root, planSetId, run = defaultRun }) {
-  const tracker = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker;
+  const tracker = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker;
   if (tracker?.mode !== 'github') throw new Error('Project publication requires GitHub tracker mode');
   const settings = tracker.github;
   if (!/^[\w-]+$/.test(settings?.project_owner || '') || !Number.isInteger(settings.project_number) || settings.project_number <= 0 || !settings.status_field || settings.status_field === 'Status') throw new Error('Invalid configured GitHub project');
@@ -143,7 +143,7 @@ export async function publicationTitle(root, planSetId, planId) {
 }
 
 export async function verifyDraftPublication({ root, planSetId, run = defaultRun }) {
-  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8')).tracker;
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker;
   if (config?.mode !== 'github') return;
   const state = await inspectPublication({ root, planSetId, run });
   const issueStatuses = new Set(Object.values(TRACKER_STATES).map(([label]) => label));
@@ -185,7 +185,7 @@ async function planDependencies(root, planSetId, planIds) {
 export async function activatePublication({ root, planSetId, run = defaultCommand }) {
   const gh = (args, cwd) => run('gh', args, cwd);
   const ghJson = async (args) => JSON.parse(await gh(args, root));
-  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   const repository = config.tracker?.github?.repository;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Configured GitHub repository is required to activate the plan set');
   let state = await inspectPublication({ root, planSetId, run: gh });
@@ -282,7 +282,7 @@ export async function activatePublication({ root, planSetId, run = defaultComman
 // tracker-publish is complete only when implementation can start: every plan is an Issue in the Project and the
 // tracker check (Issue status and Beads mirror) passes.
 export async function verifyActivatedPublication({ root, planSetId, run = defaultCommand }) {
-  const config = parseYaml(await readFile(join(root, '.codex/harness.yaml'), 'utf8'));
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   if (config.tracker?.mode !== 'github') return;
   const state = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) });
   const pending = state.items.filter((item) => item.content?.__typename !== 'Issue').map((item) => item.plan_id);

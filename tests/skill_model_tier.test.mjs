@@ -60,7 +60,8 @@ const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${bo
 async function fixture(skills, setup = SETUP) {
   const root = await mkdtemp(join(tmpdir(), 'skill-tier-'));
   await mkdir(join(root, '.codex'), { recursive: true });
-  await writeFile(join(root, '.codex/harness.yaml'), setup);
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), setup);
   for (const [name, text] of Object.entries(skills)) {
     await mkdir(join(root, '.codex/internal-skills', name), { recursive: true });
     await writeFile(join(root, '.codex/internal-skills', name, 'GUIDE.md'), text);
@@ -74,7 +75,8 @@ async function install() {
   git('init', '-q');
   await protectLocalInstallArtifacts(root, sourceRoot);
   const installed = await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  await writeFile(join(root, '.codex/harness.yaml'), SETUP);
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), SETUP);
   return { root, git, installed };
 }
 
@@ -120,7 +122,8 @@ test("a skill's tier comes from its own declaration and maps to agents.<provider
     assert.throws(() => tierSettingKeys('low'), /Unknown model tier: low/);
     assert.deepEqual(await resolveSkillBinding({ root, skill: 'light', executionProvider: 'claude-code' }), { skill: 'light', provider: 'claude-code', model_tier: 'low_performance', model: 'haiku', reasoning_effort: 'low' });
     // The active provider's section is the one that is read.
-    await writeFile(join(root, '.codex/harness.yaml'), SETUP.replace('provider: codex', 'provider: claude-code'));
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), SETUP.replace('provider: codex', 'provider: claude-code'));
     assert.deepEqual(await resolveSkillBinding({ root, skill: 'light' }), { skill: 'light', provider: 'claude-code', model_tier: 'low_performance', model: 'haiku', reasoning_effort: 'low' });
     // Editing the declaration changes the tier and nothing else does.
     await writeFile(join(root, '.codex/internal-skills/light/GUIDE.md'), guide('high_performance'));
@@ -147,7 +150,8 @@ test('a skill whose document declares no usable tier fails resolution with a cle
     await assert.rejects(resolveSkillBinding({ root, skill: 'nothing' }), /Unregistered skill: nothing/);
     await assert.rejects(resolveSkillBinding({ root, skill: '../escape' }), /Unregistered skill: \.\.\/escape/);
     // The tier is known but setup never wrote its values: that is an error, not a default.
-    await writeFile(join(root, '.codex/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: codex-high\n');
+    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: codex-high\n');
     await assert.rejects(resolveSkillBinding({ root, skill: 'ok' }), /Missing or invalid model binding: agents\.codex\.execution_model/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

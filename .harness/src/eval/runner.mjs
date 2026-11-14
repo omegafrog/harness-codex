@@ -499,7 +499,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
   return result;
 }
 
-async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
+async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".harness/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
   // suite 설정과 case 목록을 고정하고 각 case를 순서대로 실행해 하나의 run report를 만든다.
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   // 재시도는 새 run directory를 사용해 이전 실행의 결과·기록을 덮어쓰지 않는다.
