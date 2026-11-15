@@ -48,7 +48,7 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 ## 실행과 단계 전환
 
-선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 공통 절차를 사용한다.
+선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 `finish` 출력(status·code·요약·artifact 참조)으로만 진행한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 공통 절차를 사용한다.
 
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
 

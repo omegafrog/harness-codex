@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -108,4 +109,24 @@ test('the code-review caller procedure assembles review evidence with the CLI in
   assert.match(repair, /reviewer ID는 넘기지 않는다/);
   assert.match(repair, /reviewer 판정을 구현 stage에 직접 넘기거나 repair를 건너뛰지 않는다/);
   assert.match(repair, /review JSON을 직접 조립하지 말고/);
+});
+
+// The main orchestrator session must not read stage guides, output schemas or stage products: whatever it reads is
+// re-read on every later turn. The rule has to reach installed projects, and the installed files stay out of commits.
+test('installed orchestrator guidance keeps stage guides, schemas and products out of the main session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-read-boundary-'));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    const dispatch = await readFile(join(root, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+    assert.match(dispatch, /메인 세션\)는 이 값을 서브에이전트에 전달만 한다/);
+    assert.match(dispatch, /`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다|`guide`·`input_path`·`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다/);
+    for (const skill of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
+      const text = await readFile(join(root, skill), 'utf8').catch(() => null);
+      if (text !== null) assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);
+    }
+    execFileSync('git', ['check-ignore', '-q', '.codex/internal-skills/skill-execution/references/dispatch.md'], { cwd: root });
+    assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).filter((line) => !line.includes('.harness/contracts.mjs')).length, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
