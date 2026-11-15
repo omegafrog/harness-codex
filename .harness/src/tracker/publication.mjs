@@ -23,6 +23,9 @@ export async function preparePublicationDrafts({ root, planSetId }) {
   const snapshot = await snapshotPlanSet({ root, planSetId });
   const review = await inspectPlanSet({ root, planSetId, phase: 'planning' });
   if (review.status !== 'pass' || !snapshot.execution_workspace) throw new Error('Publication bodies require a reviewed plan set and canonical execution workspace');
+  // Only GitHub publication turns plans into Issue drafts; a local-markdown plan file is already its own ticket.
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch(() => ''));
+  if (config.tracker?.mode !== 'github') return [];
   const drafts = [];
   for (const planId of ['@parent', ...snapshot.plans.map((plan) => plan.id)]) {
     const source = sessionOutputPath(root, `runtime/to-ticket/drafts/${planId === '@parent' ? 'parent' : planId}.md`, { create: false });

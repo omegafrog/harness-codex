@@ -38,9 +38,9 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     const snapshot = await snapshotPlanSet({ root, planSetId: 'example' });
     const admission = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs: snapshot.inputs });
     await updateReviewAttempt({ root, scope: 'plan-example', action: 'record', attemptId: admission.attempt_id, inputs: snapshot.inputs, review: { reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', findings: [] } });
-    const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
+    const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
     await mkdir(join(root, '.beads'), { recursive: true });
 
     // A fake GitHub Project, repository and Beads store that change as the commands run.
@@ -118,4 +118,19 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     assert.equal(calls.appliedLabels.length, 6, 'reruns safely reapply labels');
     assert.equal(calls.dep.length, 1);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+// A local-markdown plan file is already its own ticket, so publication prepares no GitHub Issue drafts for it.
+test('local-markdown publication prepares no Issue drafts', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { preparePublicationDrafts } = await import('../.harness/src/tracker/publication.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-local-publish-'));
+  try {
+    await mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
+    // Without a reviewed plan set the preparation still refuses; the mode only decides whether drafts are read afterwards.
+    await assert.rejects(preparePublicationDrafts({ root, planSetId: 'example' }));
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
