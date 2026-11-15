@@ -27,3 +27,5 @@
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 Product/Architecture Spec 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 split plan을 표현한다.
 
 Canonical plan과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical plans 작성 뒤 같은 `to-ticket` execution이 독립 fresh reviewer를 호출하고 plan-review gate를 통과한다. Beads와 configured tracker 티켓 발행은 후속 `tracker-publish` workflow stage에서 수행한다.
+
+`tracker.mode`가 `local-markdown`이면 각 plan 파일(`docs/plans/<plan-set-id>/<plan-id>.md`)이 곧 ticket이므로 파일 맨 앞에 YAML frontmatter `---\nstatus: planned\n---`를 둔다. 이 frontmatter가 없으면 local tracker가 plan을 읽지 못해 `tracker-publish`와 구현 단계가 시작되지 않는다. 리뷰 snapshot은 frontmatter의 `status`를 제외하므로 이 값은 리뷰 결과에 영향을 주지 않는다.
