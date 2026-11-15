@@ -166,14 +166,24 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
   } catch (error) { return { status: 'blocked', reason: error.message, plan_set_id: planSetId }; }
 }
 
+async function mainSessionExecutionId(root) {
+  const { runtimeAgentProvider } = await import('./agent-config.mjs');
+  if (runtimeAgentProvider() !== 'claude-code' || process.cwd() !== root) return null;
+  const { nativeHookContext } = await import('./native-context.mjs');
+  return (await nativeHookContext(root, [], { mainSession: true }))?.executionId ?? null;
+}
+
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason, requireNative = false }) {
   const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
   if (action === 'begin') await assertPlanIssueDrafts({ root, plans: snapshot.plans });
   let reviewer_input_ref;
   let reviewerFiles;
   if (action === 'begin') {
-    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
-    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
+    // A Claude Code stage subagent cannot start the reviewer, so its caller (the main session) opens the admission for
+    // the current stage execution: the stage returned REVIEW_REQUIRED and is waiting for this review.
+    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID || await mainSessionExecutionId(root);
+    requireValue((process.env.HARNESS_SKILL_EXECUTION_ID ? process.env.HARNESS_WORKSPACE_ROOT === root : Boolean(executionId)) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
+    process.env.HARNESS_SKILL_EXECUTION_ID = executionId;
     reviewerFiles = [];
     for (const path of Object.keys(snapshot.inputs)) {
       const file = await safeFile(root, path);
