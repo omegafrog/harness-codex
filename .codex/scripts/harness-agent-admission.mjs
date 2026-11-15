@@ -25,7 +25,7 @@ try {
   const isContractReviewer = type === 'contract_reviewer';
   const isReviewer = isSpecReviewer || isPlanReviewer || isContractReviewer;
   const { nativeHookContext } = await import('../../.harness/src/workflow/native-context.mjs');
-  const native = process.env.HARNESS_REVIEW_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.agent_id, event.parent_agent_id, event.session_id].filter(Boolean));
+  const native = process.env.HARNESS_REVIEW_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.agent_id, event.parent_agent_id, event.session_id].filter(Boolean), { mainSession: !event.agent_id });
   if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_SKILL_EXECUTION_ID || !native)) process.exit(0);
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;

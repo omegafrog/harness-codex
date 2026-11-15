@@ -4,7 +4,10 @@ import { parseWorktreeRecord } from './worktrees.mjs';
 import { readExecutionInput, validateSkillInput } from './skill-execution.mjs';
 
 // Only an exact parent agent/session identity may supply stage context to native review hooks.
-export async function nativeHookContext(root, parentIds) {
+// The Claude Code stage subagent has no Agent tool, so the main orchestrator session dispatches the independent
+// reviewer on the running stage's behalf. `mainSession` accepts that session (a hook event without an agent_id) when
+// exactly one native stage is running in this workspace; any agent inside a stage still needs its exact identity.
+export async function nativeHookContext(root, parentIds, { mainSession = false } = {}) {
   if (!root || !Array.isArray(parentIds)) return null;
   try {
     const workspace = await realpath(root);
@@ -16,7 +19,7 @@ export async function nativeHookContext(root, parentIds) {
     let state;
     try { const workflow = JSON.parse(await readFile(join(session, 'runtime/orchestrator/workflow.json'), 'utf8')); state = workflow.state || workflow; }
     catch (error) { if (error.code !== 'ENOENT') throw error; state = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')); }
-    const matches = Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id && parentIds.includes(stage.native_agent_id));
+    const matches = Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id && (mainSession || parentIds.includes(stage.native_agent_id)));
     if (matches.length !== 1) return null;
     const input = await readExecutionInput({ root: workspace, execution_id: matches[0].execution_id });
     await validateSkillInput({ root: workspace, input });
