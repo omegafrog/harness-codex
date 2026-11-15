@@ -19,7 +19,12 @@ export async function nativeHookContext(root, parentIds, { mainSession = false }
     let state;
     try { const workflow = JSON.parse(await readFile(join(session, 'runtime/orchestrator/workflow.json'), 'utf8')); state = workflow.state || workflow; }
     catch (error) { if (error.code !== 'ENOENT') throw error; state = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')); }
-    const matches = Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id && (mainSession || parentIds.includes(stage.native_agent_id)));
+    // The main session dispatches a reviewer while the current stage has handed control back (waiting for the review),
+    // so its context is the current stage's execution rather than a running native agent.
+    const current = mainSession ? state.stages?.[state.current_stage] : null;
+    const matches = mainSession
+      ? (current && ['running', 'waiting'].includes(current.status) && current.execution_id ? [current] : [])
+      : Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id && parentIds.includes(stage.native_agent_id));
     if (matches.length !== 1) return null;
     const input = await readExecutionInput({ root: workspace, execution_id: matches[0].execution_id });
     await validateSkillInput({ root: workspace, input });
