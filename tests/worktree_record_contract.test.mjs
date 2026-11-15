@@ -857,7 +857,10 @@ test('installed compose uses the setup baseline and preserves workflow transitio
       ({ validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`));
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
       const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
-      await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff } }), /complete its independent plan-review loop internally/i);
+      const handoffEnvelope = { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff };
+      // A Codex stage runs its own review loop; a Claude Code stage cannot start a reviewer, so its caller dispatches it.
+      await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: { ...authorInput, context: { ...authorInput.context, provider: 'codex' } }, envelope: handoffEnvelope }), /complete its independent plan-review loop internally/i);
+      await validateReviewedPlanReturn({ root: tree.workspace, input: { ...authorInput, context: { ...authorInput.context, provider: 'claude-code' } }, envelope: handoffEnvelope }).catch((error) => assert.doesNotMatch(error.message, /independent plan-review loop internally/i));
       await bindNativeReviewer({ root: tree.workspace, scope: `plan-${ticketId}`, attemptId: planAdmission.attempt_id, executionId: authorInput.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
       await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
     } finally {
