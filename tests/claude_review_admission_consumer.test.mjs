@@ -60,17 +60,12 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/owned.md'), 'Project-owned contract.\n');
 
-    const provider = await import(`file://${join(root, '.claude/harness/providers/claude-code.mjs')}`);
-    const command = provider.buildCommand({ root, sandbox: 'workspace-write', binding: { model: 'claude-sonnet', reasoning_effort: 'medium' }, schema: {}, resume: 'resume-id', role: null, skill: 'spec-me', workerBase: 'Compact worker base.' });
-    const settings = JSON.parse(command[command.indexOf('--settings') + 1]);
-    assert.equal(settings.hooks.PreToolUse[0].matcher, 'Agent');
-    assert.equal(settings.hooks.PreToolUse[0].hooks[0].command.includes('harness-agent-admission.mjs'), true);
-    assert.equal(command[command.indexOf('--system-prompt') + 1].startsWith('Compact worker base.'), true);
-    assert.equal(command[command.indexOf('--system-prompt-snapshot') + 1], 'off');
-    assert.ok(provider.allowedToolsForRole('spec-me', 'spec-me').includes('Agent'));
-    assert.equal(provider.allowedToolsForRole('spec_adversarial_reviewer').includes('Agent'), false);
-    assert.equal(provider.allowedToolsForRole('plan_reviewer').includes('Agent'), false);
-    assert.equal(provider.allowedToolsForRole('plan_reviewer').includes('Write'), false);
+    // Stages run as native subagents now; the reviewer profiles are what keep a reviewer read-only and non-spawning.
+    for (const name of ['spec_adversarial_reviewer', 'plan_reviewer']) {
+      const tools = /^tools: (.*)$/m.exec(await readFile(join(root, `.claude/agents/${name}.md`), 'utf8'))?.[1] || '';
+      assert.equal(/\bAgent\b/.test(tools), false, `${name} cannot start another agent`);
+      assert.equal(/\b(Write|Edit)\b/.test(tools), false, `${name} cannot write`);
+    }
     const installedReviewer = await readFile(join(root, '.claude/agents/spec_adversarial_reviewer.md'), 'utf8');
     assert.match(installedReviewer, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
     assert.match(installedReviewer, /exactly one JSON object with only `verdict` and `findings` keys/);

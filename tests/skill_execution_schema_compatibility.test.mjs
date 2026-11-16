@@ -9,6 +9,7 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { bindNativeReviewer } from './support/native-reviewer.mjs';
 import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
 
 const schemas = '.codex/internal-skills/skill-execution/schemas';
@@ -458,7 +459,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const toTicketInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
     assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
     const publisherInstructions = await readFile(join(root, '.codex/internal-skills/tracker-publish/GUIDE.md'), 'utf8');
-    assert.match(publisherInstructions, /dedicated workflow executor stage/);
+    assert.match(publisherInstructions, /dedicated workflow stage/);
     assert.match(publisherInstructions, /publication journal/);
     const publishInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/references/github-batch-publish.md'), 'utf8');
     assert.match(publishInstructions, /별도 `tracker-publish` workflow stage/);
@@ -476,42 +477,27 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>reviewed</svg>\n');
 
     const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
-    const begin = JSON.parse(execFileSync(process.execPath, [cli, 'begin', '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8' }));
+    // Admission belongs to a running stage execution, so the runner's workspace and execution identity are supplied.
+    const stageEnv = { ...process.env, HARNESS_SKILL_EXECUTION_ID: 'to-ticket-begin-test', HARNESS_WORKSPACE_ROOT: root };
+    const begin = JSON.parse(execFileSync(process.execPath, [cli, 'begin', '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8', env: stageEnv }));
     assert.equal(begin.inputs['docs/specs/sample/diagrams/flow.svg'], undefined);
     const reviewsDirectory = join(root, '.io/runtime/reviews');
     await mkdir(reviewsDirectory, { recursive: true });
     const reviewPath = join(reviewsDirectory, 'result.json');
-    await writeFile(reviewPath, JSON.stringify({
-      schema_version: 1,
-      attempt_id: begin.attempt_id,
-      plan_set_id: 'sample',
-      reviewer_id: 'native-plan-reviewer-1',
-      author_ids: ['plan-split-execution-1'],
-      fork_turns: 'none',
-      verdict: 'pass',
-      findings: [],
-    }));
-    const recorded = JSON.parse(execFileSync(process.execPath, [cli, 'record', '--root', root, '--plan-set', 'sample', '--attempt', begin.attempt_id, '--reviews', 'runtime/reviews/result.json'], { cwd: root, encoding: 'utf8' }));
+    // The reviewer's verdict and identity come from the subagent hook; the stage only names the admitted attempt.
+    await bindNativeReviewer({ root, scope: 'plan-sample', attemptId: begin.attempt_id, executionId: 'to-ticket-begin-test', reviewerId: 'native-plan-reviewer-1', parentSessionId: 'plan-split-execution-1' });
+    await writeFile(reviewPath, JSON.stringify({ schema_version: 1, attempt_id: begin.attempt_id, plan_set_id: 'sample' }));
+    const recorded = JSON.parse(execFileSync(process.execPath, [cli, 'record', '--root', root, '--plan-set', 'sample', '--attempt', begin.attempt_id, '--reviews', 'runtime/reviews/result.json'], { cwd: root, encoding: 'utf8', env: stageEnv }));
     assert.equal(recorded.status, 'pass');
     const currentReview = JSON.parse(execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' }));
     assert.equal(currentReview.status, 'pass');
     assert.equal(currentReview.details.review_attempt_id, begin.attempt_id);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
-    const { updatePublication, verifyDraftPublication } = await import(`${installedRuntime}/../tracker/publication.mjs`);
-    assert.equal((await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'begin' })).status, 'pending');
-    await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'record', itemId: 'parent' });
-    assert.equal((await updatePublication({ root, planSetId: 'sample', planId: '@parent', action: 'begin' })).status, 'already_created');
-    await updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'begin' });
-    await assert.rejects(updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'begin' }), /ambiguous/);
-    await updatePublication({ root, planSetId: 'sample', planId: 'slice', action: 'record', itemId: 'child' });
-    const run = async (args) => {
-      if (args[1] === 'view') return JSON.stringify({ id: 'project' });
-      if (args[1] === 'field-list') return JSON.stringify({ fields: [{ id: 'field', name: 'Workflow Status', type: 'ProjectV2SingleSelectField' }] });
-      return JSON.stringify({ data: { nodes: ['parent', 'child'].map((id, index) => ({ id, project: { id: 'project' }, content: { __typename: 'DraftIssue', title: index ? 'slice' : 'sample', body: '' }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: 'Planned', field: { id: 'field' } }] } })) } });
-    };
-    await verifyDraftPublication({ root, planSetId: 'sample', run });
-    await assert.rejects(verifyDraftPublication({ root, planSetId: 'sample', run: async (args) => args[0] === 'api' ? JSON.stringify({ errors: [{ message: 'missing' }] }) : run(args) }), /Incomplete draft verification/);
+    // Draft publication against the GitHub Project is covered by tracker_activation and execution_workspace, which fake `gh`.
+    // In GitHub mode to-ticket must have saved an Issue draft for the plan set and every plan before the review counts.
+    await mkdir(join(root, '.io/runtime/to-ticket/drafts'), { recursive: true });
+    for (const name of ['parent', 'slice']) await writeFile(join(root, '.io/runtime/to-ticket/drafts', `${name}.md`), `# ${name}\n`);
 
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>changed</svg>\n');
     await writeFile(join(planRoot, 'slice.md'), '---\nstatus: in-progress\n---\n# Slice\n');
