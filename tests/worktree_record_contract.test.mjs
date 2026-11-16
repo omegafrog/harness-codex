@@ -1466,8 +1466,17 @@ test('installed compose starts in an existing linked worktree without replacing 
     await writeFile(join(abandonedLock, 'owner.json'), JSON.stringify({ pid: process.pid, boot: 'old-boot', start: 'old-start' }));
     const recovered = JSON.parse(execFileSync(process.execPath, [prepare, '--stage-id', 'spec-me', '--answer', answer], { cwd: workspace, encoding: 'utf8' }));
     assert.deepEqual(recovered.deferred_question_ids, queued.deferred_question_ids);
+    // No decision exists for a running stage, so a later answer for a queued question corrects it; one batch never repeats an ID.
+    const repeated = JSON.stringify([{ question_id: `${questionNext.input.execution_id}:1`, answer: 'full' }, { question_id: `${questionNext.input.execution_id}:1`, answer: 'basic' }]);
+    assert.throws(() => execFileSync(process.execPath, [prepare, '--stage-id', 'spec-me', '--answer', repeated], { cwd: workspace, stdio: 'pipe' }), /Duplicate question ID in one answer batch/);
+    const deferredPath = join(result.session_directory, 'runtime/executions', questionNext.input.execution_id, 'deferred-answers.json');
+    assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(answer), 'a rejected batch leaves the queue unchanged');
     const conflict = JSON.stringify([{ question_id: `${questionNext.input.execution_id}:1`, answer: 'full' }]);
-    assert.throws(() => execFileSync(process.execPath, [prepare, '--stage-id', 'spec-me', '--answer', conflict], { cwd: workspace, stdio: 'pipe' }), /Conflicting deferred answer/);
+    const corrected = JSON.parse(execFileSync(process.execPath, [prepare, '--stage-id', 'spec-me', '--answer', conflict], { cwd: workspace, encoding: 'utf8' }));
+    assert.deepEqual(corrected.deferred_question_ids, queued.deferred_question_ids);
+    assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(conflict));
+    execFileSync(process.execPath, [prepare, '--stage-id', 'spec-me', '--answer', answer], { cwd: workspace, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(answer));
     const question = { question_id: 'temporary', title: '범위는?', decision_kind: null, options: [{ id: 'basic', label: '기본', consequence: '기본', evidence: [] }, { id: 'full', label: '전체', consequence: '전체', evidence: [] }], recommended_option_id: 'basic', rationale: '기본 범위' };
     const questionResult = { schema_version: 1, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', artifacts: [], questions: [question], review_request: null };
     await writeFile(questionStart.output_path, JSON.stringify({ schema_version: 1, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', result: questionResult }));

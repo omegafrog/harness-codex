@@ -146,10 +146,18 @@ function storedStageInput(input) {
   return { ...rest, context };
 }
 
-async function collectAnswers(session, prefix, questions, answer) {
+// While the batch has no recorded decision, answers stay open: an incoming answer replaces the stored (pending) answer
+// for the same question, so the user can correct one before the last question is answered. `decision-answers.json` is
+// written once, when the batch completes, and is final: after that an answer that differs is rejected.
+// `deferred` holds answers queued while the stage ran. They only fill questions not answered since, because a
+// queued answer is older than any answer stored or sent after the questions were asked.
+export async function collectAnswers(session, prefix, questions, answer, deferred = []) {
   let incoming;
-  try { incoming = JSON.parse(answer); } catch { incoming = questions.length === 1 ? [{ question_id: questions[0].question_id, answer }] : null; }
-  if (!Array.isArray(incoming) && questions.length === 1 && typeof incoming === 'string') incoming = [{ question_id: questions[0].question_id, answer: incoming }];
+  if (answer === null) incoming = [];
+  else {
+    try { incoming = JSON.parse(answer); } catch { incoming = questions.length === 1 ? [{ question_id: questions[0].question_id, answer }] : null; }
+    if (!Array.isArray(incoming) && questions.length === 1 && typeof incoming === 'string') incoming = [{ question_id: questions[0].question_id, answer: incoming }];
+  }
   const path = join(session, prefix, 'pending-answers.json');
   await assertWorkspaceTarget(session, path);
   const info = await lstat(path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
@@ -157,10 +165,26 @@ async function collectAnswers(session, prefix, questions, answer) {
   let previous = [];
   try { previous = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
-  if (previous.length) incoming = incoming.filter((entry) => !previous.some((item) => item.question_id === entry.question_id && item.answer === entry.answer));
-  const merged = mergeAnswers(questions, previous, incoming);
+  const decisionPath = join(session, prefix, 'decision-answers.json');
+  await assertWorkspaceTarget(session, decisionPath);
+  const revisePending = !await lstat(decisionPath).then(() => true, (error) => error.code === 'ENOENT' ? false : Promise.reject(error));
+  if (incoming.some((entry) => !entry || typeof entry !== 'object')) throw new Error('Invalid, duplicate, or stale answer');
+  if (revisePending) {
+    const answered = new Set([...previous, ...incoming].map((entry) => entry?.question_id));
+    incoming = [...deferred.filter((item) => !answered.has(item.question_id)), ...incoming];
+  } else {
+    if (deferred.length) {
+      const queued = new Map(deferred.map((item) => [item.question_id, item.answer]));
+      for (const item of incoming) {
+        if (queued.has(item.question_id) && queued.get(item.question_id) !== item.answer) throw new Error('Conflicting deferred answer');
+        queued.set(item.question_id, item.answer);
+      }
+      incoming = [...queued].map(([question_id, value]) => ({ question_id, answer: value }));
+    }
+    if (previous.length) incoming = incoming.filter((entry) => !previous.some((item) => item?.question_id === entry.question_id && item.answer === entry.answer));
+  }
+  const merged = mergeAnswers(questions, previous, incoming, { revisePending });
   if (merged.complete) {
-    const decisionPath = join(session, prefix, 'decision-answers.json');
     const contents = JSON.stringify(merged.answers, null, 2) + '\n';
     await assertWorkspaceTarget(session, decisionPath);
     try { await writeFile(decisionPath, contents, { flag: 'wx', mode: 0o600 }); }
@@ -211,10 +235,9 @@ async function queueRunningAnswers(session, executionId, answer) {
     const previous = info ? JSON.parse(await readFile(path, 'utf8')) : [];
     if (!Array.isArray(previous) || previous.some((entry) => !entry || Object.keys(entry).sort().join(',') !== 'answer,question_id' || typeof entry.question_id !== 'string' || !entry.question_id.trim() || typeof entry.answer !== 'string' || !entry.answer.trim()) || new Set(previous.map((entry) => entry.question_id)).size !== previous.length) throw new Error('Invalid deferred answers');
     const answers = new Map(previous.map((item) => [item.question_id, item.answer]));
-    for (const item of incoming) {
-      if (answers.has(item.question_id) && answers.get(item.question_id) !== item.answer) throw new Error('Conflicting deferred answer');
-      answers.set(item.question_id, item.answer);
-    }
+    // No decision exists for a running stage, so a queued answer stays open: a later answer for the same question corrects it.
+    if (new Set(incoming.map((item) => item.question_id)).size !== incoming.length) throw new Error('Duplicate question ID in one answer batch');
+    for (const item of incoming) answers.set(item.question_id, item.answer);
     const temporary = join(directory, `.deferred-${randomUUID()}.json`);
     try {
       await writeFile(temporary, JSON.stringify([...answers].map(([question_id, value]) => ({ question_id, answer: value })), null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -502,24 +525,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
     }
+    let deferred = [];
     if (deferredAnswers) {
       const ids = new Set(result.questions.map((question) => question.question_id));
-      const matching = deferredAnswers.filter((item) => ids.has(item.question_id));
-      if (matching.length !== deferredAnswers.length) input_refs.push({ base: 'session', path: `${prefix}/deferred-answers.json`, kind: 'deferred_user_answers_unverified' });
-      let incoming = [];
-      if (answer !== null) {
-        try { incoming = JSON.parse(answer); } catch { incoming = result.questions.length === 1 ? [{ question_id: result.questions[0].question_id, answer }] : null; }
-        if (typeof incoming === 'string' && result.questions.length === 1) incoming = [{ question_id: result.questions[0].question_id, answer: incoming }];
-        if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
-      }
-      const answers = new Map(matching.map((item) => [item.question_id, item.answer]));
-      for (const item of incoming) {
-        if (answers.has(item.question_id) && answers.get(item.question_id) !== item.answer) throw new Error('Conflicting deferred answer');
-        answers.set(item.question_id, item.answer);
-      }
-      answer = JSON.stringify([...answers].map(([question_id, value]) => ({ question_id, answer: value })));
+      deferred = deferredAnswers.filter((item) => ids.has(item.question_id));
+      if (deferred.length !== deferredAnswers.length) input_refs.push({ base: 'session', path: `${prefix}/deferred-answers.json`, kind: 'deferred_user_answers_unverified' });
     }
-    const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
+    const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer, deferred);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     answer = batchAnswers.answers;
     conversation = { previous_result_ref: previous.result_ref, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
