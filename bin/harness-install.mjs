@@ -175,6 +175,8 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-persona", "GUIDE.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -192,6 +194,7 @@ async function verify(projectRoot, options) {
       "frontend_visual_reviewer.toml",
       "plan_reviewer.toml",
       "contract_reviewer.toml",
+      "stakeholder_persona.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
@@ -215,6 +218,8 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/knowledge/evidence.mjs",
     ".codex/scripts/harness-plan-review.mjs",
     ".codex/scripts/harness-contract-review.mjs",
+    ".codex/scripts/harness-stakeholder.mjs",
+    ".harness/src/stakeholders/cards.mjs",
     ".codex/scripts/harness-write-guard.mjs",
     ".harness/src/workflow/contract-review.mjs",
     ".codex/scripts/harness-code-review.mjs",

@@ -34,6 +34,7 @@ export const WORKTREE_STAGE = Object.freeze({
   SETUP: 'setup',
   SPEC_ME: 'spec-me',
   SPEC_REVIEW: 'spec-review',
+  STAKEHOLDER_ANALYSIS: 'stakeholder-analysis',
   SYNC_CONTRACTS: 'sync-contracts',
   TO_TICKET: 'to-ticket',
   TRACKER_PUBLISH: 'tracker-publish',

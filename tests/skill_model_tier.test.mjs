@@ -52,7 +52,7 @@ const FORMER_REGISTRY = [
 ];
 
 // Skills added after the registry was retired; each declares its tier in its own document from the start.
-const DECLARED_SINCE_REGISTRY = ['contract-review', 'harness-update'];
+const DECLARED_SINCE_REGISTRY = ['contract-review', 'harness-update', 'stakeholder-analysis', 'stakeholder-persona'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
@@ -108,6 +108,9 @@ test('every skill the retired registry listed declares its tier in its own docum
   const declared = (await listDeclaredSkills(sourceRoot)).filter((item) => !item.main_session).map((item) => item.skill);
   assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'a skill document declares a tier that neither the retired registry nor the later additions list, or the reverse');
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'contract-review' })).model_tier, 'high_performance');
+  // The facilitator stage runs at the implementation tier; the personas it starts run at the low_performance tier.
+  assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-analysis' })).model_tier, 'implementation');
+  assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-persona' })).model_tier, 'low_performance');
   assert.equal((await readdir(join(sourceRoot, '.codex/internal-skills/skill-execution'))).includes('bindings.json'), false);
 });
 

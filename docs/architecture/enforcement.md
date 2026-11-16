@@ -30,6 +30,7 @@ stage 완료는 서브에이전트 도구가 알리며 정상 실행 중 폴링 
 | blind 실험은 신원과 rubric 누출을 확인한다 | `evaluate-harness/references/blinded-comparison.md` | 기존 suite 실행이 자동 blind가 되지 않으며 coordinator의 사전 확인 필요 |
 | E2E 선택과 dynamic agent oracle은 필요한 경로에만 둔다 | `.codex/internal-skills/e2e-test/references/verification-policy.md`, to-ticket/implement/runner 지침 | 의미적 수동 정책이다. 자동 runtime 판정/집행은 없다. Plan·Spec·oracle·budget을 사전 검토하고 결과 증거를 대조한다 |
 | Harness 갱신 후 정리는 설치 산출물과 프로젝트 변경을 구분하고 미커밋 준비 문서를 보존한다 | `AGENTS.md`, `setup/SKILL.md`, `implement/GUIDE.md`의 정리 절차; 설치형 Harness 경로는 `git check-ignore -v`로 확인 | `.gitignore`/`.git/info/exclude`는 tracked modifications를 보호하지 않으므로 변경·미추적 파일 백업과 소유권 분류는 정리 주체가 확인한다 |
+| stakeholder 후보 요구사항은 요청 원문에 앵커한 것만 사용자가 개별 채택하고, 채택하지 않은 후보는 명세가 되지 않는다 | `.codex/internal-skills/stakeholder-analysis/GUIDE.md`와 `stakeholder-persona/GUIDE.md`의 절차(앵커 부분 문자열 확인, 라운드 1 상호 비공개, 개별 질문), `.codex/scripts/harness-fresh-agent.mjs`가 fork된 persona 시작을 거부, `stage-commit.mjs`가 `docs/specs/<plan-set-id>`만 commit, `harness-stakeholder.mjs`·Doctor `stakeholder_card_invalid`가 카드 형식 검사, `tests/stakeholder_registry.test.mjs`·`tests/workflow_document_commit.test.mjs` | 앵커의 실제 일치, persona 간 비공개와 채택 결과의 반영은 stage 서브에이전트의 수행에 맡기며 자동 판정이 없다. 카드 내용의 사실성과 persona 선택의 적절성은 사용자·리뷰 판단 |
 
 ## 통합 계약 완료 gate
 

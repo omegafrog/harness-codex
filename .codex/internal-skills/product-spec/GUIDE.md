@@ -14,6 +14,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 - User request
 - `CONTEXT.md`
 - Read `CONTEXT-MAP.md` when present
+- `docs/specs/<plan-set-id>/stakeholder-analysis.md` when present: its adopted candidates and confirmed actors are settled user decisions (see [spec-me](../spec-me/GUIDE.md))
 - `references/topics.md`
 - `references/template.md`
 
@@ -32,7 +33,7 @@ This is a phase-local guide. Read it when the Product phase begins; do not prelo
 
 1. MUST read `references/topics.md` before starting the interview.
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.
-3. Use the user request, `CONTEXT.md`, `CONTEXT-MAP.md` when present, and other allowed product documents to mark topics that are already explicitly settled.
+3. Use the user request, `CONTEXT.md`, `CONTEXT-MAP.md` when present, `stakeholder-analysis.md` when present, and other allowed product documents to mark topics that are already explicitly settled.
    Apply [language lifecycle](../domain-modeling/references/language-lifecycle.md) to compare affected glossary definitions with the required business meaning and lifecycle. Surface implied renames, definition corrections or splits/merges without waiting for a naming request. Resolve material meaning choices in the existing interview and update settled terms in the consumer glossary; do not inspect source or retire terms on suspicion alone.
 4. Run [grill-with-docs](../grill-with-docs/GUIDE.md) with that coverage checklist in `spec-me` batch mode. Before the first question and after each response batch, examine every applicable topic and collect all currently answerable independent material decisions; return them together. Only defer questions whose answers depend on an unresolved prerequisite.
    Ask everything the Spec needs in the first batch, because each extra round costs a full stage run and a wait for the user:

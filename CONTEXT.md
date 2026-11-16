@@ -30,6 +30,10 @@
 | Learning Mode | 학습 모드 | Learning Mode | Workflow Mode | 사용자가 설계를 제안·방어하고 Reviewer가 목표·근거에 기반한 이의를 제기하여 승인 조건을 검토하는 방식 | - | Reviewer의 정답 대행 | `docs/specs/506/product-spec.md` |
 | Unrequested Behavior | 요청되지 않은 동작 | Unrequested Behavior | Rule | 승인된 Spec·plan에 근거 없이 구현에 들어간 동작. 사용자가 유지 또는 제거를 정할 때까지 완료를 막는다 | - | 구현 세부 | `docs/architecture/adr-010-bounded-review-repair.md` |
 | Sufficient Level | 충분한 수준 | Sufficient Level | Rule | 제품 의도를 만족하는 관찰 가능한 사용자 흐름·완료 조건. 명시 요구와 해당 조건을 안전하고 온전하게 충족하는 데 필수인 작업을 구현·리뷰의 범위로 정한다 | - | 엄밀도 | `.codex/internal-skills/product-spec/references/template.md` |
+| Stakeholder Card | Stakeholder 카드 | Stakeholder Card | Project Document | 사용자가 `docs/domain/stakeholders/SH-xx.md`에 직접 등록한 이해관계 당사자 또는 제약 출처의 역할·목표·불편·제약·권한·용어·모르는 것. 프로젝트 소유 문서이며 Harness가 만들거나 고치지 않는다 | SH 카드 | 에이전트가 대신 만든 persona | `.codex/internal-skills/stakeholder-analysis/GUIDE.md` |
+| Expert Lens | 전문가 관점 | Expert Lens | Role | Harness가 관리하는 기본 검토자 카드(도메인·보안)로, 원하는 것이 아니라 지식으로 요청을 검토한다. 이해관계 당사자인 stakeholder와 구분한다 | LENS | stakeholder와 동일시 | `.codex/internal-skills/stakeholder-analysis/references/lenses/domain.md` |
+| Candidate Requirement | 후보 요구사항 | Candidate Requirement | Proposal | persona가 요청의 특정 문구에서 제안한 요구사항(CAND). 사용자가 채택하기 전에는 요구사항이 아니며 기각·보류한 후보는 새 결정 없이 되살리지 않는다 | CAND | 채택 전 요구사항 | `.codex/internal-skills/stakeholder-analysis/GUIDE.md` |
+| Request Anchor | 요청 앵커 | Request Anchor | Rule | 후보 요구사항이 근거로 인용하는 요청 원문의 정확한 부분 문자열. 없으면 채택 대상이 아니라 참고용 `요청 범위 밖 관찰`이 된다 | - | 요청 의역 | `.codex/internal-skills/stakeholder-persona/GUIDE.md` |
 
 ## Tracker lifecycle 용어
 

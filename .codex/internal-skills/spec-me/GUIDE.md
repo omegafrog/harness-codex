@@ -23,6 +23,10 @@ model_tier: high_performance
 2. Begin with the [Product Spec procedure](../../../.codex/internal-skills/product-spec/GUIDE.md) only. After Product decisions and the coverage gate are complete, load [Architecture decisions](references/architecture-decision.md); load the [adversarial review procedure](references/adversarial-spec-review.md) only when both Specs are ready for review. Load any diagram instructions only after the Architecture review passes and the inventory is settled. Keep working in this stage and session across phases. The runner pastes the Product guide and topics only until this plan set's `product-spec.md` exists; when you revise Product later, read them from the links.
 3. 리뷰와 완료 gate를 통과한 Specs와 근거를 작업 branch에 보존한다. 신규 Spec 요청은 `completed/OK`로 반환한다. 구현 중 설계 변경은 변경 Spec·결정·영향 요구 ID를 상위 구현 caller에 반환한다. caller는 영향 계획의 갱신과 리뷰를 `to-ticket`에 인계하고 승인 근거를 받은 뒤 보존한 fixed point에서 구현을 재개한다.
 
+## Stakeholder analysis input
+
+When `docs/specs/<plan-set-id>/stakeholder-analysis.md` exists with `판정: 실행`, read it before the Product procedure and do not edit it. A candidate the user adopted (`채택`, `CAND-xx`) is a user-confirmed requirement and a confirmed actor settles `업무 주체`; carry both into `product-decisions.md` with the source `CAND-xx 채택` and the recorded `answers.json` question, and do not ask about them again. Rejected and held candidates, and `요청 범위 밖 관찰`, are not requirements and return only through a new user decision.
+
 ## Documents
 
 - Create `docs/specs/<plan-set-id>/` when missing. Product Spec은 `docs/specs/<plan-set-id>/product-spec.md`, Architecture Spec은 `docs/specs/<plan-set-id>/architecture-spec.md`에 둔다.

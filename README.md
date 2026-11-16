@@ -8,6 +8,7 @@
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
+- `stakeholder-analysis` — 새 기능이면 `spec-me` 전에 요청 범위의 후보 요구사항을 독립 persona에게서 모아 사용자가 하나씩 채택
 - `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
@@ -19,6 +20,8 @@
 
 ```text
 $setup
+  ↓
+stakeholder-analysis → 채택한 요구사항
   ↓
 spec-me → Product Spec → Architecture Spec
   ↓
@@ -63,7 +66,39 @@ gh-open-pr → 사용자 Merge
 
 선택한 위치는 `worktrees.directory`에 저장하며 새 workflow부터 적용한다. 기존 worktree는 Git에 등록된 위치에 그대로 남는다. 경로를 바꾸려면 `$setup`에서 새로 설정을 선택한다.
 
-### 2. `spec-me`
+### 2. `stakeholder-analysis`
+
+새 기능이면 `spec-me` 전에 실행해 요청 범위의 후보 요구사항을 모은다.
+
+```text
+사용자 요청
+  ↓
+전문가 관점 persona(도메인·보안) + 요청과 관련된 등록 stakeholder  (최대 3)
+  ↓ 독립 라운드 1 → 같은 요청 문구에서 충돌할 때만 라운드 2
+후보 요구사항(CAND) → 사용자가 하나씩 채택·기각·보류
+  ↓
+docs/specs/<plan-set-id>/stakeholder-analysis.md
+```
+
+- 논의 대상은 요청 원문뿐이다. 후보마다 `요청 앵커`(요청 원문 인용)가 있어야 하며, 앵커 없는 관찰은 접어서 참고용으로만 보여 준다.
+- 채택한 후보와 확정한 업무 주체만 이후 `spec-me`의 요구사항이 된다. 요청 속 행위자를 자동으로 persona로 만들지 않는다.
+- 요청이 기존 승인된 업무 하나 안의 변경이고 새 행위자·권한이나 규칙 충돌이 없으면 건너뛰고 사유를 기록한다.
+
+#### Stakeholder 등록
+
+이해관계자의 역할·목표·불편·제약·권한·용어·모르는 것은 사용자가 프로젝트 소유 카드 `docs/domain/stakeholders/SH-xx.md`로 직접 등록한다. 카드는 Git에 노출되는 프로젝트 문서이며 Harness가 대신 만들지 않는다.
+
+```bash
+node .codex/scripts/harness-stakeholder.mjs add          # 터미널에서는 대화형, 아니면 --role --goal 같은 플래그
+node .codex/scripts/harness-stakeholder.mjs edit SH-01
+node .codex/scripts/harness-stakeholder.mjs list [--json]
+node .codex/scripts/harness-stakeholder.mjs validate
+node .codex/scripts/harness-stakeholder.mjs remove SH-01
+```
+
+`role`과 목표 하나 이상만 필수이고 나머지는 `UNKNOWN`으로 둘 수 있다. 규제기관이나 외부 시스템처럼 사람이 아닌 제약 출처는 `--kind constraint-source`로 등록한다(persona로 실행하지 않고 제약만 전달). workflow worktree는 커밋된 파일만 보므로 workflow를 시작하기 전에 카드를 커밋한다. 형식 오류는 `harness-codex-doctor`가 `stakeholder_card_invalid`로 경고한다.
+
+### 3. `spec-me`
 
 바로 코드를 작성하지 않고 요구사항과 설계를 먼저 확정한다.
 
@@ -97,7 +132,7 @@ docs/specs/<ticket-id>/
 └─ diagrams/
 ```
 
-### 3. `to-ticket`
+### 4. `to-ticket`
 
 완성된 Spec을 구현 가능한 **vertical slice**로 나눈다.
 
@@ -120,7 +155,7 @@ Parent Issue
 └─ Child Plan C
 ```
 
-### 4. `implement-wrapper`
+### 5. `implement-wrapper`
 
 orchestrator가 Plan의 dependency와 shared resource로 실행 순서를 정하고, 각 worker는 선택된 Plan 하나를 구현한다.
 
@@ -132,7 +167,7 @@ dependency     → 선행 Plan 완료까지 대기
 
 Plan마다 새로운 `implementation_agent`를 사용한다. setup에서 확인한 `.codex/context-budget.json`의 수치로 to-ticket은 계획을 분할하고 orchestrator는 실행 중 인계 여부를 판단한다.
 
-### 5. `implement`
+### 6. `implement`
 
 한 번에 정확히 하나의 승인된 Plan만 실행한다.
 
@@ -150,7 +185,7 @@ Independent Review
 
 실제 server/E2E 실행이 필요하면 `execution_runner`가 별도로 실행과 log 수집을 담당한다.
 
-### 6. `code-review`
+### 7. `code-review`
 
 같은 diff를 두 개의 독립 reviewer가 검증한다.
 
@@ -162,13 +197,13 @@ Implementation Diff
 
 둘 중 하나라도 unresolved이면 Plan을 완료 처리하지 않는다.
 
-### 7. `gh-open-pr`
+### 8. `gh-open-pr`
 
 Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하나**를 사용한다.
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
-### 8. `frontend-design`
+### 9. `frontend-design`
 
 기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다.
 
@@ -190,7 +225,7 @@ Visual acceptance
 
 기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
 
-### 9. `evaluate-harness`
+### 10. `evaluate-harness`
 
 Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
 
@@ -243,6 +278,7 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | Agent | 책임 |
 | --- | --- |
 | `code_researcher` | 코드베이스 조사 |
+| `stakeholder_persona` | 카드 하나(stakeholder 또는 전문가 관점)로 요청의 후보 요구사항 제안 |
 | `spec_document_writer` | 확정된 Spec 문서화 |
 | `diagram_creator` | PlantUML / SVG 생성 |
 | `to_ticket` | vertical plan 작성 |
@@ -423,7 +459,7 @@ git ls-files .agents .codex
 git rm --cached .codex/agents/<managed-profile>.toml
 ```
 
-공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
+공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. stakeholder 카드(`docs/domain/stakeholders/`)는 프로젝트 소유 문서이므로 제외되지 않고 Git에 보이며, 설치·업데이트가 만들거나 고치지 않는다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
 
 설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. `update`는 Harness 관리 경로를 항상 최신 릴리스와 같게 맞춘다. 로컬에서 수정한 관리 파일은 백업한 뒤 최신본으로 교체하고, upstream에서 사라진 관리 자산은 수정 여부와 관계없이 백업한 뒤 삭제하며 lock 항목과 빈 디렉터리(구 `.codex/harness-runtime` 포함)도 정리한다. `--no-backup`이면 백업하지 않는다. `install`은 `--force` 없이는 로컬 수정을 보존한다. 이전 업데이트가 남긴 빈 Harness skill 디렉터리도 함께 지우며, Harness가 모르는 이름의 skill 디렉터리는 건드리지 않는다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 

@@ -8,8 +8,8 @@ import { codexFreshAgentHook } from '../.harness/src/workflow/providers/codex.mj
 const spawn = (input) => ({ hook_event_name: 'PreToolUse', tool_name: 'collaborationspawn_agent', tool_input: input });
 
 // Codex reports spawn_agent to PreToolUse with its fork_turns, so a forked reviewer is refused before it runs.
-test('the fresh-agent hook refuses forked reviewers and E2E runners and lets other agents through', () => {
-  for (const agent of ['standards_reviewer', 'spec_reviewer', 'spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'e2e_test_runner']) {
+test('the fresh-agent hook refuses forked reviewers, E2E runners and stakeholder personas and lets other agents through', () => {
+  for (const agent of ['standards_reviewer', 'spec_reviewer', 'spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'e2e_test_runner', 'stakeholder_persona']) {
     assert.match(freshAgentDecision(spawn({ agent_type: agent, fork_turns: 'all', message: 'x' })), /fork_turns "none"/);
     assert.match(freshAgentDecision(spawn({ agent_type: agent, message: 'x' })), /fresh context/, 'an omitted fork_turns is refused too');
     assert.equal(freshAgentDecision(spawn({ agent_type: agent, fork_turns: 'none', message: 'x' })), null);

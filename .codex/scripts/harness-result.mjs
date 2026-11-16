@@ -47,7 +47,7 @@ try {
   }
   if (opts.source) envelope.result.execution_id = input.execution_id;
   if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;
-  if (input.skill === 'spec-me' && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
+  if (['spec-me', 'stakeholder-analysis'].includes(input.skill) && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
     const record = parseWorktreeRecord(await readFile(input.context.worktree_ref, 'utf8'));
     if (await realpath(opts.root) !== await realpath(record.workspace)) throw new Error('Workspace does not match worktree.json');
     const slug = record.plan_set_id?.replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, '');

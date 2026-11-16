@@ -16,6 +16,7 @@ import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
+import { STAKEHOLDER_DIRECTORY, readRegistry } from "../stakeholders/cards.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
@@ -93,19 +94,25 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/references/stage-return.md',
     '.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
+    '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
+    '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
+    '.codex/internal-skills/stakeholder-analysis/references/lenses/domain.md',
+    '.codex/internal-skills/stakeholder-analysis/references/lenses/security.md',
+    '.codex/internal-skills/stakeholder-persona/GUIDE.md',
+    '.codex/agents/stakeholder_persona.toml',
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
     '.codex/internal-skills/skill-execution/schemas/input.schema.json',
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session', 'stakeholder'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review'].map((name) => `.harness/src/workflow/${name}.mjs`));
-    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs');
+    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
@@ -117,6 +124,16 @@ async function inspectExecutionAssets(root, diagnostics) {
     const fullPath = join(root, path);
     const info = await lstat(fullPath).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     if (!info || !info.isFile() || info.isSymbolicLink()) diagnostics.push(diagnostic('execution_asset_missing', 'error', `Required execution asset is missing or invalid: ${path}`, fullPath));
+  }
+}
+
+// Stakeholder cards are project-owned, so a malformed card is only reported: the user fixes or removes it with harness-stakeholder.mjs.
+async function inspectStakeholderCards(root, diagnostics) {
+  try {
+    const { problems } = await readRegistry(root);
+    for (const problem of problems) diagnostics.push(diagnostic('stakeholder_card_invalid', 'warning', `Invalid stakeholder card ${problem.path}: ${problem.message}; fix it or run node .codex/scripts/harness-stakeholder.mjs remove <SH-id>`, join(root, problem.path)));
+  } catch (error) {
+    diagnostics.push(diagnostic('stakeholder_card_invalid', 'warning', `Unable to inspect ${STAKEHOLDER_DIRECTORY}: ${safeMessage(error, 'unreadable stakeholder cards')}`, join(root, STAKEHOLDER_DIRECTORY)));
   }
 }
 
@@ -529,6 +546,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectLegacyRuntime(repositoryRoot, diagnostics);
   await inspectExecutionAssets(repositoryRoot, diagnostics);
+  await inspectStakeholderCards(repositoryRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;

@@ -21,7 +21,8 @@ Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. �
 | Harness 설치 업데이트·진단 요청 | `harness-maintenance` |
 | 저장소에 Harness setup이 필요함 | `setup` |
 | setup이 끝났고 새 사용자 작업을 시작함 | `workflow-compose` |
-| 새 기능의 요구사항이나 승인이 정리되지 않음 | `spec-me` |
+| `spec-me`를 시작하지 않은 새 기능의 요구사항이 정리되지 않았고 이 plan set에 완료된 `stakeholder-analysis`가 없음 | `stakeholder-analysis` |
+| 새 기능의 요구사항이나 승인이 정리되지 않았고 `stakeholder-analysis`가 완료됐거나 이미 `spec-me`가 시작됨 | `spec-me` |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
 | 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
@@ -35,6 +36,8 @@ primary checkout에서 활성 worktree가 발견되면 해당 workflow의 답변
 새 workflow를 primary checkout에서 시작할 때는 선택 시점에 등록된 worktree를 보존하고 `workflow-compose`의 생성 명령을 새 execution ID로 호출한다. **그 호출이 반환한** `worktree_ref`와 execution ID만 새 workflow의 근거로 쓴다. 생성 결과를 검증하면 절대 workspace 경로를 사용자에게 알려 주고 멈춘다. 사용자가 그 경로로 이동해 orchestrator를 다시 호출하기 전에는 첫 stage를 준비하거나 실행하지 않는다. 반환된 참조가 기존 worktree나 생성 전 Git 목록에 있거나 execution ID·binding이 정본 기록과 다르면 성공으로 보고하지 않는다.
 
 현재 linked worktree에서 새 workflow를 시작할 때는 현재 경로에서 `workflow-compose`를 실행한다. 실행기가 현재 worktree를 workflow에 연결하며 새 worktree를 만들지 않는다. 반환된 workspace가 현재 경로와 같은지 확인하고 첫 stage를 여기서 이어간다. 이미 workflow 기록이 있으면 덮어쓰거나 다른 worktree를 만들지 말고 현재 기록을 확인한다.
+
+`stakeholder-analysis`는 독립 persona가 낸 후보 요구사항을 사용자가 하나씩 채택하게 하고, 요청이 기존 승인 업무 안의 자명한 변경이면 스스로 건너뛴다. 사용자가 이해관계자를 등록하고 싶어 하면 `node .codex/scripts/harness-stakeholder.mjs add`로 `docs/domain/stakeholders/`에 카드를 만들고 커밋하게 안내한다. 카드는 사용자 소유 문서이므로 orchestrator나 stage가 대신 만들지 않으며, worktree에서 쓰려면 커밋되어 있어야 한다.
 
 `workflow-compose`가 `completed/OK`이면 worktree 준비가 끝난 상태다. `workflow_ref`가 null이고 미래 단계가 기록되지 않은 것은 정상이며, 정본 원 요청과 완료 결과를 기준으로 첫 skill을 선택한다.
 

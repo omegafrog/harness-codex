@@ -14,6 +14,14 @@ INT-COMMUNITY
 
 3. **Users and Actors**
 
+`stakeholder-analysis.md`가 있으면 확정된 업무 주체와 참여한 stakeholder를 옮기고 항목마다 근거 `CAND-xx`를 붙인다. 사용자 확정(`answers.json`)과 요청 해석(에이전트 제안)을 출처로 구분한다.
+
+```text
+참여한 stakeholder
+- LENS-DOMAIN 도메인 전문가: CAND-01, CAND-03
+- SH-01 모더레이터: CAND-02
+```
+
 4. **Ubiquitous Language and Terminology**
 
 이 절의 모든 업무 개념·행위자/역할·업무 상태·규칙 용어는 대상 프로젝트의 공유 vocabulary다. 기존 `CONTEXT.md`와 대조하고, 새 용어와 확정된 정의 변경을 같은 workspace의 `CONTEXT.md`에 반영한다. 이 용어들을 현재 plan set에만 한정하지 않는다. UI 문구와 설명 표현, framework/package/API/code 식별자는 도메인 용어가 아니면 제외한다.
