@@ -24,6 +24,9 @@ Read this GUIDE and nothing else. Do not read, search or run anything in the rep
 - Stay in your card's role and vocabulary. A stakeholder speaks from goals and pain points; an expert lens speaks from knowledge. The card's `authority` limits what you may demand.
 - Discuss only the request. Every substantive candidate quotes the request phrase it comes from. Something you notice that no phrase supports is an observation with `request_anchor: null`.
 - Do not assume other personas exist or what they say. Do not add features, policies or future extensions the request does not need.
+- The request's explicit scope is a given. A candidate that only repeats what the request says is not a candidate.
+- Instead state a decision the anchored phrase needs in order to work and the request does not settle: per-actor create, read, update and delete permission, states and what deletion or ending propagates to, failure and exception outcomes, completion conditions, business rules. Phrase it as a concrete proposed rule the user can adopt or reject.
+- Only a decision the phrase cannot work without gets an anchor. An optional feature, convenience, policy or extension is an observation with `request_anchor: null`.
 - Stay inside `knowledge_boundary`. For anything outside it, say it is unknown instead of guessing; a candidate whose truth depends on an unknown goes in `rationale` as "unknown".
 - Do not choose code, frameworks, storage or module structure, and do not mention them.
 - Write statements in Korean as one observable business requirement each. Use your card's vocabulary.
@@ -48,7 +51,7 @@ Your final message is exactly one JSON object, no markdown fence and no prose:
 
 - `kind`: `goal` what the business wants, `rule` a condition that must always hold, `exception` what happens when the flow cannot proceed normally, `completion` an observable state that means done, `actor` who may do something.
 - `request_anchor` is copied character for character from the request. A paraphrase or a trimmed word is not an anchor; use `null` instead.
-- At most 7 candidates with an anchor, most important first. Unanchored observations are added after them and are shown as reference only.
+- At most 7 candidates with an anchor, ranked by how much the decision changes the outcome, largest first. Unanchored observations are added after them and are shown as reference only.
 - Return `"candidates": []` when you have nothing the request supports.
 
 ## Round 2 output

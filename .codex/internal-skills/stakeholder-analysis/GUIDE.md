@@ -7,7 +7,7 @@ model_tier: implementation
 
 ## Purpose
 
-Before `spec-me`, extract candidate requirements for the user's request from independent persona agents, and let the user adopt them one by one. Only adopted candidates enter the requirements. This stage is the facilitator: it selects personas, runs them, checks their output, finds conflicts, asks the user and records the result. It does not write the Product Spec.
+Before `spec-me`, extract candidate requirements for the user's request from independent persona agents, and let the user adopt them one by one. Only adopted candidates enter the requirements. A candidate is a decision the request leaves open, never a restatement of the request. This stage is the facilitator: it selects personas, runs them, checks their output, finds conflicts, asks the user and records the result. It does not write the Product Spec.
 
 ## Inputs
 
@@ -33,16 +33,17 @@ Before `spec-me`, extract candidate requirements for the user's request from ind
 5. Round 1. Run `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill stakeholder-persona` and use the returned model and reasoning effort; if it fails, return `blocked` / `MODEL_BINDING_UNAVAILABLE`. Start one fresh native `stakeholder_persona` subagent per persona in parallel (Codex: `spawn_agent` with `fork_turns: "none"`; Claude Code: `Agent` with `subagent_type: stakeholder_persona`). Send each only its card text, the constraint-source context and the request verbatim. Personas must not see each other's output. Wait for all of them.
 6. Check every candidate:
    - `request_anchor` must be an exact substring of the request. Otherwise move it to `요청 범위 밖 관찰` (reference only, never asked or adopted).
+   - Drop a candidate that only restates the request's explicit scope, meaning it adds no decision beyond the request's words. It gets no `CAND` and no question; step 10 records that scope.
    - Merge candidates that state the same requirement; keep every proposer.
    - Assign `CAND-01…` in proposal order and keep the persona's wording and rationale.
 7. Round 2, only when two anchored candidates on the same anchor contradict each other: give each involved persona the opposing candidate with a `CONF-nn` ID in its own subagent and ask for `keep`, `concede` or `revise`. If that subagent can no longer be continued, start a fresh one with its card, the request, its own round-1 candidates and the opposing candidate. Record the replies. Do not start a group discussion.
 8. Draft the business actors (`업무 주체`) from the request yourself: actor, authority and the request phrase. Mark the source `요청 해석(에이전트 제안)`.
 9. Write `stakeholder-analysis.md` from the template, then ask in one batch: one question per anchored candidate (`채택` / `기각` / `보류`), one per unresolved conflict (each side, or reject both), and one to confirm the business actor draft. Write the questions in Korean, quote the request anchor and name the proposers, and give each a recommended option and a rationale grounded in the request. When no anchored candidate exists, ask only the actor confirmation. Return `action_required` / `USER_DECISION_REQUIRED`.
-10. With the actual answers, record each decision and its `answers.json` source. Fill `요구사항 초안` only from adopted candidates and confirmed actors: `업무 목적`, `업무 주체`, `참여한 stakeholder`, and draft normal and exception scenarios. A free-text answer that changes a candidate is recorded as the user's wording. Ask again only when an answer is ambiguous. Return `completed/OK` with the artifact.
+10. With the actual answers, record each decision and its `answers.json` source. Fill `요구사항 초안` only from adopted candidates, confirmed actors and the request's own scope: write that scope directly in `업무 목적` with the source `요청 원문` (no question), then `업무 주체`, `참여한 stakeholder`, and draft normal and exception scenarios. A free-text answer that changes a candidate is recorded as the user's wording. Ask again only when an answer is ambiguous. Return `completed/OK` with the artifact.
 
 ## Completion
 
 - The artifact exists at the resolved path, lists every participant and selection reason, and every anchored candidate has a user decision with its source.
-- `요구사항 초안` cites only adopted candidates (`CAND-xx`) and confirmed actors.
+- `요구사항 초안` cites only adopted candidates (`CAND-xx`), confirmed actors and `요청 원문`.
 - Rejected and held candidates stay in the table and are not reintroduced by later stages without a new user decision.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `spec-me` reads the artifact as input.
