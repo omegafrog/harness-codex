@@ -9,6 +9,8 @@ compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestra
 
 완료된 요구사항 또는 전술 설계 stage부터 다시 시작하라는 사용자 지시가 있으면 해당 worktree에서 `node .codex/scripts/harness-prepare-input.mjs --stage-id <stage> --restart-requirements true`를 실행한다. 실행기는 깨끗한 worktree, 연속된 해당 plan set의 stage commit과 실행 종료를 확인하고 이전 문서와 상태를 보존한 뒤 선택한 stage 직전으로 되돌린다. 전술 설계 stage를 고르면 `domain-model.md`와 프로젝트 모델 문서만 되돌리고 `requirements.md`에 덧붙은 규칙은 남긴다. 반환된 `backup`을 보존하고 선택한 stage를 일반 절차로 준비한다. 이후 사용자가 지정한 중단 지점에서 멈춘다. 진행 중 agent의 종료가 확인되지 않거나 다른 commit·변경이 있으면 차단하며 수동으로 상태를 고치지 않는다.
 
+요구사항·전술 설계 stage와 `spec-me`는 `PRE_SPEC_STAGES` 순서로만 시작한다. 준비기와 `harness-native-stage.mjs start`는 앞 stage가 모두 `completed/OK`가 아니면 `<stage> cannot start before <앞 stage>`로 거부한다. 오류가 가리킨 앞 stage부터 진행하며 지침이 오래됐다는 이유로 건너뛰지 않는다. 같은 오류가 해당 stage 항목이 결과 없이 `running`·`failed`·`cancelled`로 남았다고 알리면 이전 Harness가 순서를 어기고 시작한 것이다. 그 native 실행이 끝났고 orchestrator Codex session을 닫았다면 해당 worktree에서 `node .codex/scripts/harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`를 단독으로 실행한다. 실행기는 종료 증거(bind된 agent의 interrupted·failed 결과, bind되지 않았으면 그 뒤 시작된 subagent가 없고 session을 연 process가 없음, 또는 native runner가 기록한 failed·cancelled)와 깨끗한 project worktree, 그 stage의 commit 부재를 확인한다. 이전 state를 `runtime/restarts/out-of-order-*`에 보존하고 stage 항목을 지워 직전 완료 stage 대기 상태로 되돌린다. 반환된 `previous_stage` 다음 stage를 일반 절차로 준비한다. 종료를 확인할 수 없거나 결과가 있거나 순서를 따르는 stage는 거부하며 state를 직접 고치지 않는다.
+
 ## 사용자 답변으로 재개
 
 `USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 사용자가 선택지에 조건을 덧붙였거나 직접 설명했으면 선택지 ID 대신 사용자의 답 원문 전체를 `answer`로 넘긴다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.

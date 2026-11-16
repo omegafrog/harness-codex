@@ -7,7 +7,7 @@ const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 try {
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'restart-requirements', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure']);
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i]?.replace(/^--/, '');
@@ -40,6 +40,12 @@ try {
     if (options['restart-requirements'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'restart-requirements'].includes(key))) throw new Error('Requirements restart must be requested alone');
     const { restartRequirements } = await import(new URL('requirements-restart.mjs', base));
     process.stdout.write(`${JSON.stringify(await restartRequirements({ root, session: worktreeSession, stageId: options['stage-id'] }))}\n`);
+    process.exit(0);
+  }
+  if (options['discard-out-of-order'] !== undefined) {
+    if (options['discard-out-of-order'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'discard-out-of-order'].includes(key))) throw new Error('Discarding an out-of-order stage must be requested alone');
+    const { discardOutOfOrderStage } = await import(new URL('requirements-restart.mjs', base));
+    process.stdout.write(`${JSON.stringify(await discardOutOfOrderStage({ root, session: worktreeSession, stageId: options['stage-id'] }))}\n`);
     process.exit(0);
   }
   await resolveSkillSession(root, session);

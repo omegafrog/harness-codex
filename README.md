@@ -131,7 +131,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `integration-design` | 컨텍스트 맵의 관계(판단 소유자)와 일관성 결정에서 명령·응답·이벤트와 통신 방식을 정한다. Saga·Outbox는 최종 일관성으로 기록한 규칙에서만 검토한다 | 업무 결과를 바꾸는 통합 결정만 한 묶음 | 같음 |
 
 - 모든 stage는 반환 전에 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root> --stage <stage>` gate를 통과해야 한다. 지금까지 채운 절을 누적해 모든 업무가 모델 또는 외부 시스템에 대응하는지, 모든 규칙이 소유 모델과 강제하는 행위(root 메서드·Domain Service)에 대응하는지, Aggregate에 걸친 규칙마다 출처가 있는 일관성 결정이 있는지 확인한다.
-- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다.
+- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다. 흐름 순서는 실행기가 확인한다. 앞 stage가 `completed/OK`가 아니면 준비기와 `harness-native-stage.mjs start`가 `spec-me`와 뒤 stage를 거부하며, 이전 Harness가 순서를 어기고 남긴 결과 없는 stage는 종료를 확인한 뒤 `harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`로 되돌린다.
 - `docs/architecture/domain-model.md`와 `CONTEXT.md`는 프로젝트 소유 문서이며 Git에 노출된다. stage가 변경을 artifact로 보고했을 때만 실행기가 plan set 문서와 함께 commit한다.
 - 전술 설계 결과를 `spec-me`가 어떻게 읽는지는 아직 정하지 않았다.
 

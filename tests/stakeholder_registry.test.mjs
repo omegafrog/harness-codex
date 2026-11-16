@@ -213,7 +213,7 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   assert.match(git('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/);
 });
 
-test('stakeholder-analysis runs as a workflow stage that spec-me accepts as its previous stage', async (t) => {
+test('stakeholder-analysis runs as a workflow stage that the next flow stage accepts as its previous stage', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'stakeholder-stage-'));
   const primary = join(directory, 'main');
   const sessionId = randomUUID();
@@ -277,9 +277,12 @@ test('stakeholder-analysis runs as a workflow stage that spec-me accepts as its 
   assert.equal(treeGit('log', '-1', '--format=%s').trim(), `stakeholder-analysis: ${planSetId}`);
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the runner leaves the project-owned card alone');
 
-  // spec-me follows the completed stage and receives the document as an input reference.
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
-  assert.equal(next.input.skill, 'spec-me');
+  // The next flow stage follows the completed stage and receives the document as an input reference; spec-me waits for the whole flow.
+  const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(premature.status, 0);
+  assert.match(premature.stderr, /spec-me cannot start before subdomain-candidates/);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'subdomain-candidates']);
+  assert.equal(next.input.skill, 'subdomain-candidates');
   assert.equal(next.input.context.transition.from_stage, 'stakeholder-analysis');
   assert.equal(next.input.context.transition.code, 'OK');
   assert.ok(next.input.input_refs.some((reference) => reference.base === 'workspace' && reference.path === artifactPath && reference.kind === 'stakeholder_analysis'));

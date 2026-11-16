@@ -12,6 +12,7 @@ import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveS
 import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
+import { preSpecOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
 
 try {
   const [requestedAction, ...args] = process.argv.slice(2), opts = {};
@@ -36,6 +37,10 @@ try {
   if ((input.context?.provider && input.context.provider !== binding.provider) || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== binding.provider) || (input.context?.resume_provider && input.context.resume_provider !== binding.provider)) throw new Error('Execution provider must match the orchestrator and binding');
   const paths = stageExecutionPaths(root, id);
   if (action === 'start') {
+    // An input prepared before the flow was complete (or by an older Harness) still cannot start a stage out of order.
+    const flow = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    const orderViolation = flow ? preSpecOrderViolation((flow.state || flow).stages, input.context?.stage_id || input.skill) : null;
+    if (orderViolation) throw new Error(orderViolation);
     await writeOutputSchema({ root, input, prefix: `runtime/executions/${id}`, path: paths.files.schema, provider: binding.provider });
     const guide = [`.codex/internal-skills/${input.skill}/GUIDE.md`, `.agents/skills/${input.skill}/SKILL.md`, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);

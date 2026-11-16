@@ -16,7 +16,7 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, preSpecOrderViolation } from './worktree-stages.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'spec-me', 'to-ticket', 'implement-wrapper']);
@@ -265,6 +265,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let historicalBinding = null;
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
+  // The flow before spec-me runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
+  const orderViolation = preSpecOrderViolation(state.stages, stageId);
+  if (orderViolation) throw new Error(orderViolation);
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');

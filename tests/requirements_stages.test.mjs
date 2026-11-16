@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
-import { WORKTREE_STAGE, REQUIREMENTS_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
+import { WORKTREE_STAGE, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
 
 const TEMPLATE = '.codex/internal-skills/requirements-fix/references/template.md';
@@ -221,7 +221,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 
-test('the requirements stages run in order as workflow stages and spec-me accepts the last one as its previous stage', async (t) => {
+test('the requirements stages run in order as workflow stages and the tactical design flow accepts the last one as its previous stage', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, treeGit, invoke, runStage, planSetId, specDirectory, specPath } = flow;
   const requirements = specPath('requirements.md');
@@ -304,9 +304,13 @@ test('the requirements stages run in order as workflow stages and spec-me accept
   assert.deepEqual(fixed.files, [requirements]);
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /상태: fixed/);
 
-  // spec-me follows the last requirements stage and receives the fixed document as an input reference.
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
-  assert.equal(next.input.skill, 'spec-me');
+  // The tactical design flow follows the last requirements stage and receives the fixed document as an input reference;
+  // spec-me waits for it, so the requirements flow alone does not reach spec-me.
+  const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(premature.status, 0);
+  assert.match(premature.stderr, /spec-me cannot start before domain-model/);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'domain-model']);
+  assert.equal(next.input.skill, 'domain-model');
   assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
   assert.equal(next.input.context.transition.code, 'OK');
   assert.ok(next.input.input_refs.some((reference) => reference.base === 'workspace' && reference.path === requirements && reference.kind === 'requirements'));
@@ -363,7 +367,7 @@ test('the requirements stages run in order as workflow stages and spec-me accept
   assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
 });
 
-test('a skipped stakeholder-analysis makes the later requirements stages record the skip without writing, and spec-me runs as before', async (t) => {
+test('a skipped stakeholder-analysis makes the later requirements stages record the skip without writing, and spec-me follows the tactical stages', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, treeGit, invoke, runStage, planSetId, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -380,8 +384,12 @@ test('a skipped stakeholder-analysis makes the later requirements stages record 
   }
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(existsSync(join(workspace, `docs/specs/${planSetId}/requirements.md`)), false, 'a skipped analysis leaves no requirements.md');
+  const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(premature.status, 0);
+  assert.match(premature.stderr, /spec-me cannot start before domain-model/);
+  for (const stage of TACTICAL_DESIGN_STAGES) await runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
-  assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
+  assert.equal(next.input.context.transition.from_stage, 'integration-design');
 });
 
 // The event diagrams are rendered by the installed local renderer. The examples in the reference are rendered here, so a

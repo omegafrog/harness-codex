@@ -65,6 +65,8 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
+요구사항·전술 설계 stage와 `spec-me`의 순서는 실행기가 결정한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
+
 구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
 
 요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
