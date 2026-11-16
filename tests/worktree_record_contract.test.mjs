@@ -915,7 +915,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(publisher.input.context.transition.from_stage, 'to-ticket');
     assert.deepEqual(publisher.input.context.execution_workspace, { workspace_root: tree.workspace, workspace_branch: worktreeRecord.branch });
-    assert.equal(publisher.input.context.publication_drafts.length, 2);
+    // This workspace is configured for local-markdown, where a plan file is its own ticket and no Issue drafts are prepared.
+    assert.equal(publisher.input.context.publication_drafts.length, 0);
     const publisherInput = await readExecutionInput({ root: tree.workspace, execution_id: publisher.input.execution_id });
     await recordExecutionState({ root: tree.workspace, input: publisherInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const publishingState = JSON.parse(await readFile(blockedStatePath, 'utf8'));

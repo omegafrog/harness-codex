@@ -34,6 +34,12 @@ async function hasPassingImplementationGate(root) {
   return false;
 }
 
+export async function assertEveryPlanCompleted({ root, planSetId, planIds }) {
+  const { readPlanSetTicketStatuses } = await import('../tracker/lifecycle.mjs');
+  const open = (await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds })).filter((ticket) => ticket.status !== 'completed').map((ticket) => ticket.plan_id);
+  if (open.length) throw new Error(`sync-contracts starts only after every plan is completed in the tracker; still open: ${open.join(', ')}`);
+}
+
 export async function assertPrStageReadiness({ root, state, stageId }) {
   if (!['plan-pr', 'integration-pr'].includes(stageId)) return;
   const trackerMode = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker?.mode;
@@ -320,6 +326,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     executionWorkspace = await resolveExecutionWorkspace(root, plan_set_id || null);
     historicalBinding = record.workflow_binding || null;
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
+    if (stageId === 'sync-contracts') {
+      // implement-wrapper reads completed/OK after every single plan, so the plan set's own tracker decides when it is done.
+      const { snapshotPlanSet } = await import('./plan-review.mjs');
+      await assertEveryPlanCompleted({ root, planSetId: plan_set_id, planIds: (await snapshotPlanSet({ root, planSetId: plan_set_id })).plans.map((plan) => plan.id) });
+    }
   }
   if (restart) {
     if (!worktree_ref || state.current_stage !== 'to-ticket' || !['waiting', 'failed'].includes(state.stages?.['to-ticket']?.status)) throw new Error('Restart requires a waiting or failed to-ticket stage in its active worktree');

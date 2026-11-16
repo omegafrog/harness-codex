@@ -165,3 +165,21 @@ test('local-markdown activation creates one Beads mirror per plan with dependenc
     assert.equal(calls.length, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// implement-wrapper reads completed/OK after every single plan, so sync-contracts must wait for the plan set's own tracker.
+test('sync-contracts waits until every plan of the set is completed in the local tracker', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { assertEveryPlanCompleted } = await import('../.harness/src/workflow/stage-input.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-all-plans-'));
+  try {
+    await mkdir(join(root, '.harness'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    const write = (id, status) => writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: ${status}\n---\n# ${id}\n`);
+    await write('a', 'completed'); await write('b', 'planned');
+    await assert.rejects(assertEveryPlanCompleted({ root, planSetId: 'set', planIds: ['a', 'b'] }), /still open: b/);
+    await write('b', 'completed');
+    await assertEveryPlanCompleted({ root, planSetId: 'set', planIds: ['a', 'b'] });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
