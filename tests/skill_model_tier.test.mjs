@@ -52,7 +52,7 @@ const FORMER_REGISTRY = [
 ];
 
 // Skills added after the registry was retired; each declares its tier in its own document from the start.
-const DECLARED_SINCE_REGISTRY = ['contract-review', 'harness-update', 'stakeholder-analysis', 'stakeholder-persona'];
+const DECLARED_SINCE_REGISTRY = ['bounded-context', 'contract-review', 'harness-update', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'ubiquitous-language'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
@@ -111,6 +111,12 @@ test('every skill the retired registry listed declares its tier in its own docum
   // The facilitator stage runs at the implementation tier; the personas it starts run at the low_performance tier.
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-analysis' })).model_tier, 'implementation');
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-persona' })).model_tier, 'low_performance');
+  // The requirements flow: the facilitator stages run at the implementation tier. The two stages whose result nothing
+  // downstream reviews run at the high performance tier: bounded-context (an expensive-to-reverse boundary that
+  // Architecture takes as settled) and requirements-fix (it fixes the document without an approval question).
+  for (const [skill, tier] of Object.entries({ 'subdomain-candidates': 'implementation', 'event-storming': 'implementation', 'subdomain-classification': 'implementation', 'bounded-context': 'high_performance', 'ubiquitous-language': 'implementation', 'requirements-fix': 'high_performance' })) {
+    assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
+  }
   assert.equal((await readdir(join(sourceRoot, '.codex/internal-skills/skill-execution'))).includes('bindings.json'), false);
 });
 

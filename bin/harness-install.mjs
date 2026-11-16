@@ -177,6 +177,10 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-persona", "GUIDE.md"));
+    for (const name of ["subdomain-candidates", "event-storming", "subdomain-classification", "bounded-context", "ubiquitous-language", "requirements-fix"]) {
+      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+    }
+    await stat(join(projectRoot, ".codex", "internal-skills", "requirements-fix", "references", "template.md"));
   }
   if (options.installAgents) {
     for (const name of [

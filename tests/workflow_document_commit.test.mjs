@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commitWorkflowDocuments } from '../.harness/src/workflow/stage-commit.mjs';
+import { REQUIREMENTS_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 
 // Workflow-owned documents are committed by their stage; unrelated project files stay visible and uncommitted.
 test('spec-me, to-ticket and sync-contracts commit only their own documents when they complete', async () => {
@@ -69,6 +70,78 @@ test('stakeholder-analysis commits only its plan set document and leaves project
     assert.match(status, /\?\? docs\/domain\/stakeholders\/SH-01\.md/);
     assert.match(status, /^M CONTEXT\.md/m);
     assert.equal(await result('completed'), null, 'nothing to commit is not an error');
+    await rm(raw, { force: true });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// Every requirements stage commits the plan set's documents when it completes; only ubiquitous-language also commits the glossary.
+test('each requirements stage commits docs/specs of its plan set, bounded-context also commits CONTEXT-MAP.md, ubiquitous-language CONTEXT.md, and project cards stay visible', async () => {
+  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'event-storming', 'subdomain-classification', 'bounded-context', 'ubiquitous-language', 'requirements-fix']);
+  const root = await mkdtemp(join(tmpdir(), 'requirements-docs-'));
+  const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
+  try {
+    git('init', '-q', '-b', 'main');
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n');
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n');
+    await writeFile(join(root, 'app.txt'), 'app\n');
+    git('add', '.'); git('commit', '-qm', 'base');
+    for (const dir of ['docs/specs/set/diagrams/events', 'docs/domain/stakeholders']) await mkdir(join(root, dir), { recursive: true });
+    await writeFile(join(root, 'docs/domain/stakeholders/SH-01.md'), '---\nid: SH-01\n---\n');
+    const raw = join(root, '..', `${Date.now()}-requirements-raw.json`);
+    const run = async (skill, status = 'completed') => { await writeFile(raw, JSON.stringify({ status })); return commitWorkflowDocuments({ root, input: { skill, context: { plan_set_id: 'set' } }, rawPath: raw }); };
+    const lastFiles = () => git('show', '--name-only', '--format=', 'HEAD').split('\n').sort();
+    const lastSubject = () => git('log', '-1', '--format=%s');
+
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n');
+    await writeFile(join(root, 'docs/specs/set/stakeholder-analysis.md'), '# Stakeholder 분석\n');
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 게시글\n');
+    await writeFile(join(root, 'app.txt'), 'app in progress\n');
+    assert.equal(await run('subdomain-candidates', 'action_required'), null, 'a stage waiting for the user commits nothing');
+    assert.match(await run('stakeholder-analysis'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md', 'docs/specs/set/stakeholder-analysis.md']);
+    assert.equal(lastSubject(), 'stakeholder-analysis: set');
+
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n## 1. 서브도메인 후보\n');
+    assert.match(await run('subdomain-candidates'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'subdomain-candidates: set');
+
+    // Diagrams are plan set documents, so the event stage commits the sources and renders together.
+    await writeFile(join(root, 'docs/specs/set/diagrams/events/SD-01.events.puml'), '@startuml\n@enduml\n');
+    await writeFile(join(root, 'docs/specs/set/diagrams/events/SD-01.events.svg'), '<svg/>\n');
+    assert.match(await run('event-storming'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/diagrams/events/SD-01.events.puml', 'docs/specs/set/diagrams/events/SD-01.events.svg']);
+
+    // The classification and the context decision change the plan set's documents; only the context decision also settles the map.
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 커뮤니티 |\n');
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n## 1. 서브도메인 후보\n\n| SD-01 | 확정 |\n');
+    assert.match(await run('subdomain-classification'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md'], 'a stage that does not own the context map leaves it for the bounded-context stage');
+    assert.equal(lastSubject(), 'subdomain-classification: set');
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n');
+    assert.match(await run('bounded-context'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT-MAP.md', 'docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'bounded-context: set');
+
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n## 3. 용어\n');
+    assert.match(await run('ubiquitous-language'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'ubiquitous-language: set');
+
+    // Other stages leave the glossary and the map to their owners even when they changed.
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 게시글\n- 댓글\n');
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 커뮤니티 |\n| 신고 |\n');
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n');
+    assert.match(await run('requirements-fix'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'requirements-fix: set');
+    assert.equal(await run('requirements-fix'), null, 'nothing to commit is not an error');
+
+    const status = git('status', '--short', '--untracked-files=all');
+    assert.match(status, /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'cards are never committed by a requirements stage');
+    assert.match(status, /M app\.txt$/m, 'application changes stay visible and untouched');
+    assert.match(status, /M CONTEXT\.md$/m, 'the glossary changed after its stage stays visible');
+    assert.match(status, /M CONTEXT-MAP\.md$/m, 'the context map changed after its stage stays visible');
     await rm(raw, { force: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

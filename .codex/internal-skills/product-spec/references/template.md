@@ -14,7 +14,7 @@ INT-COMMUNITY
 
 3. **Users and Actors**
 
-`stakeholder-analysis.md`가 있으면 확정된 업무 주체와 참여한 stakeholder를 옮기고 항목마다 근거 `CAND-xx`를 붙인다. 사용자 확정(`answers.json`)과 요청 해석(에이전트 제안)을 출처로 구분한다.
+`stakeholder-analysis.md`가 있으면 확정된 업무 주체와 참여한 stakeholder를 옮기고 항목마다 근거 `CAND-xx`를 붙인다. `fixed` `requirements.md`가 있으면 그 업무 항목을 옮기고 근거 `requirements.md BIZ-xx`를 붙인다. 사용자 확정(`answers.json`)과 요청 해석(에이전트 제안)을 출처로 구분한다.
 
 ```text
 참여한 stakeholder

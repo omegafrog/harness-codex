@@ -7,7 +7,7 @@ model_tier: low_performance
 
 ## Purpose
 
-Speak as one stakeholder or expert lens about the user's request and return candidate requirements. You are not the facilitator: you do not decide, ask the user, or see other personas. `stakeholder-analysis` collects your output and the user adopts or rejects each candidate.
+Speak as one stakeholder or expert lens about the user's request and return candidate requirements, or, in events mode, the domain events of the given business activities. You are not the facilitator: you do not decide, ask the user, or see other personas. `stakeholder-analysis` collects your candidates and the user adopts or rejects each one; [event-storming](../event-storming/GUIDE.md) validates your events and asks about your hotspots.
 
 ## Inputs
 
@@ -17,7 +17,7 @@ The facilitator gives you only:
 - Constraint context: constraints of non-human sources (regulators, external systems), when any.
 - The user's request, verbatim.
 
-Read this GUIDE and nothing else. Do not read, search or run anything in the repository.
+Read this GUIDE and nothing else. Do not read, search or run anything in the repository. Unless the facilitator names `mode: events`, follow Rules and the Round outputs. In events mode, Events mode replaces the anchor, candidate and round rules; the role, vocabulary, knowledge boundary and no-technology rules still apply.
 
 ## Rules
 
@@ -73,3 +73,41 @@ When the facilitator shows you a conflicting candidate from another persona on t
 ```
 
 `keep` holds your candidate, `concede` drops it, `revise` replaces it with `revised_statement`. Give `revised_statement` only for `revise`. Do not bargain beyond the conflict or add new candidates.
+
+## Events mode
+
+Only when the facilitator names `mode: events`. The facilitator gives you your card, the request verbatim, the adopted candidates (`CAND-xx` with their statements), the subdomain candidates (`SD-xx`) and the business activity skeletons (`BIZ-xx` with purpose, actors, and normal and exception scenario drafts). You return the business flow of each given `BIZ` as events, not new candidates.
+
+- Work only on the given `BIZ`. Every step needs a `basis`: a scenario line of that `BIZ` (for example `BIZ-01 정상 2`), an adopted `CAND-xx`, or an exact phrase of the request. Behavior that no basis supports, or that would add a feature, goes to `out_of_scope_observations`; never into a step.
+- A step is one actor, the command that actor gives, and the domain event that results, in business order. An event is a business fact in Korean past tense, such as `게시글이 작성됨`. Technical facts are not events: clicks, screen changes, API calls, database saves and input checks. Do not model aggregates, entities or classes.
+- `policy` says what must happen next when the event happens (`<event>이면 <next action>`), or is null. `external_system` names a system outside the business that the command or policy uses, or is null.
+- A hotspot is a decision the `BIZ` leaves open that would change an event, policy or exception outcome, such as who may do it, what it propagates to, or what happens on failure. Phrase it as one question with the reason it matters, and do not answer it. At most 3 per `BIZ`, ranked by how much the decision changes the outcome. A fact that the request, an adopted candidate or the scenarios already settle is not a hotspot.
+- At most 12 steps per `BIZ`. Stay inside your card's `knowledge_boundary` and mention no code, framework or storage.
+
+Your final message is exactly one JSON object, no markdown fence and no prose:
+
+```json
+{
+  "persona_id": "<your card id>",
+  "mode": "events",
+  "business_activities": [
+    {
+      "biz_id": "BIZ-01",
+      "steps": [
+        {
+          "actor": "<actor>",
+          "command": "<what the actor asks for>",
+          "event": "<business fact in past tense>",
+          "policy": "<when the event happens, the next action>|null",
+          "external_system": "<system>|null",
+          "basis": "<BIZ scenario line | CAND-xx | exact request phrase>"
+        }
+      ],
+      "hotspots": [{ "question": "<open decision>", "reason": "<what it changes>" }]
+    }
+  ],
+  "out_of_scope_observations": [{ "statement": "<observation>", "rationale": "<why>" }]
+}
+```
+
+Return `"steps": []` for a `BIZ` you cannot ground, and `"out_of_scope_observations": []` when you have none.

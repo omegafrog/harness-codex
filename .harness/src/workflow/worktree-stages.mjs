@@ -3,6 +3,7 @@ export const WORKTREE_STAGE = Object.freeze({
   ARCHITECTURE_SPEC: 'architecture-spec',
   ATTENTION_SPAN: 'attention-span',
   BEADS: 'beads',
+  BOUNDED_CONTEXT: 'bounded-context',
   CODE_RESEARCH: 'code-research',
   CODE_REVIEW: 'code-review',
   CODEBASE_DESIGN: 'codebase-design',
@@ -30,15 +31,31 @@ export const WORKTREE_STAGE = Object.freeze({
   PLAN_REVIEW: 'plan-review',
   PLANTUML_DIAGRAMS: 'plantuml-diagrams',
   PRODUCT_SPEC: 'product-spec',
+  REQUIREMENTS_FIX: 'requirements-fix',
   SESSION_WORKTREE: 'session-worktree',
   SETUP: 'setup',
   SPEC_ME: 'spec-me',
   SPEC_REVIEW: 'spec-review',
   STAKEHOLDER_ANALYSIS: 'stakeholder-analysis',
+  SUBDOMAIN_CANDIDATES: 'subdomain-candidates',
+  SUBDOMAIN_CLASSIFICATION: 'subdomain-classification',
   SYNC_CONTRACTS: 'sync-contracts',
   TO_TICKET: 'to-ticket',
   TRACKER_PUBLISH: 'tracker-publish',
+  UBIQUITOUS_LANGUAGE: 'ubiquitous-language',
   VICTORIALOGS_LOCAL_SETUP: 'victorialogs-local-setup',
   WORKFLOW_COMPOSE: 'workflow-compose',
   WORKTREE_CREATE: 'worktree-create',
 });
+
+// The requirements flow that runs before spec-me, in order. Every stage fills the plan set's living requirements.md, so
+// the runner commits, stores and canonicalizes them alike. A new stage joins the flow by taking its place in this list.
+export const REQUIREMENTS_STAGES = Object.freeze([
+  WORKTREE_STAGE.STAKEHOLDER_ANALYSIS,
+  WORKTREE_STAGE.SUBDOMAIN_CANDIDATES,
+  WORKTREE_STAGE.EVENT_STORMING,
+  WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION,
+  WORKTREE_STAGE.BOUNDED_CONTEXT,
+  WORKTREE_STAGE.UBIQUITOUS_LANGUAGE,
+  WORKTREE_STAGE.REQUIREMENTS_FIX,
+]);

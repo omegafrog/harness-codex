@@ -16,9 +16,10 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
+import { REQUIREMENTS_STAGES } from './worktree-stages.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
-const USER_REVISION_STAGES = new Set(['spec-me', 'to-ticket', 'implement-wrapper']);
+const USER_REVISION_STAGES = new Set(['requirements-fix', 'spec-me', 'to-ticket', 'implement-wrapper']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 
 async function hasPassingImplementationGate(root) {
@@ -139,7 +140,7 @@ async function existingRestartInput({ root, session, planSetId, previousExecutio
 }
 
 function storedStageInput(input) {
-  if (!input.context?.worktree_ref || !['stakeholder-analysis', 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
+  if (!input.context?.worktree_ref || ![...REQUIREMENTS_STAGES, 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
   const { workspace_root, shared_guidance_root, session_directory, ...rest } = input;
   const { plan_set_id, ...context } = rest.context;
   return { ...rest, context };
@@ -226,7 +227,7 @@ async function queueRunningAnswers(session, executionId, answer) {
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
-  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for spec-me, to-ticket or implement-wrapper');
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, spec-me, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
   if ((repairReceipt || approvalAnswer) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');

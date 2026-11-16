@@ -22,7 +22,8 @@ Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. �
 | 저장소에 Harness setup이 필요함 | `setup` |
 | setup이 끝났고 새 사용자 작업을 시작함 | `workflow-compose` |
 | `spec-me`를 시작하지 않은 새 기능의 요구사항이 정리되지 않았고 이 plan set에 완료된 `stakeholder-analysis`가 없음 | `stakeholder-analysis` |
-| 새 기능의 요구사항이나 승인이 정리되지 않았고 `stakeholder-analysis`가 완료됐거나 이미 `spec-me`가 시작됨 | `spec-me` |
+| `spec-me`를 시작하지 않았고 `stakeholder-analysis`가 완료됐지만 요구사항 흐름의 뒤 stage가 남음 | 요구사항 흐름에서 완료되지 않은 첫 stage |
+| 새 기능의 요구사항이나 승인이 정리되지 않았고 요구사항 흐름이 모두 완료됐거나 이미 `spec-me`가 시작됨 | `spec-me` |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
 | 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
@@ -36,6 +37,8 @@ primary checkout에서 활성 worktree가 발견되면 해당 workflow의 답변
 새 workflow를 primary checkout에서 시작할 때는 선택 시점에 등록된 worktree를 보존하고 `workflow-compose`의 생성 명령을 새 execution ID로 호출한다. **그 호출이 반환한** `worktree_ref`와 execution ID만 새 workflow의 근거로 쓴다. 생성 결과를 검증하면 절대 workspace 경로를 사용자에게 알려 주고 멈춘다. 사용자가 그 경로로 이동해 orchestrator를 다시 호출하기 전에는 첫 stage를 준비하거나 실행하지 않는다. 반환된 참조가 기존 worktree나 생성 전 Git 목록에 있거나 execution ID·binding이 정본 기록과 다르면 성공으로 보고하지 않는다.
 
 현재 linked worktree에서 새 workflow를 시작할 때는 현재 경로에서 `workflow-compose`를 실행한다. 실행기가 현재 worktree를 workflow에 연결하며 새 worktree를 만들지 않는다. 반환된 workspace가 현재 경로와 같은지 확인하고 첫 stage를 여기서 이어간다. 이미 workflow 기록이 있으면 덮어쓰거나 다른 worktree를 만들지 말고 현재 기록을 확인한다.
+
+요구사항 흐름은 `stakeholder-analysis` → `subdomain-candidates` → `event-storming` → `subdomain-classification` → `bounded-context` → `ubiquitous-language` → `requirements-fix` 순서이며 `spec-me` 앞에서만 실행한다. 각 stage는 plan set의 `requirements.md`를 이어서 채우고 완료되면 실행기가 그 문서를 commit한다. `bounded-context`는 `CONTEXT-MAP.md`를, `ubiquitous-language`는 `CONTEXT.md`를 같은 stage 안에서 갱신하며 실행기가 함께 commit한다. 질문은 stage가 반환한 `USER_DECISION_REQUIRED`로 전달하고 stage마다 한 묶음이다. `stakeholder-analysis`가 `판정: 생략`이면 뒤 stage들은 문서를 쓰지 않고 생략을 기록한 채 `completed/OK`를 반환하며, `event-storming`·`subdomain-classification`의 다이어그램 렌더가 막히면 `blocked`를 보고하고 환경이 복구된 뒤 같은 stage를 이어간다. `requirements-fix`가 `fixed`로 확정한 `requirements.md`는 사용자의 명시적 수정 지시가 있을 때만 다시 연다.
 
 `stakeholder-analysis`는 독립 persona가 낸 후보 요구사항을 사용자가 하나씩 채택하게 하고, 요청이 기존 승인 업무 안의 자명한 변경이면 스스로 건너뛴다. 사용자가 이해관계자를 등록하고 싶어 하면 `node .codex/scripts/harness-stakeholder.mjs add`로 `docs/domain/stakeholders/`에 카드를 만들고 커밋하게 안내한다. 카드는 사용자 소유 문서이므로 orchestrator나 stage가 대신 만들지 않으며, worktree에서 쓰려면 커밋되어 있어야 한다.
 
@@ -55,7 +58,7 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
 
-완료된 Spec이나 계획을 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+완료된 Spec·계획이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
 
 구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
 

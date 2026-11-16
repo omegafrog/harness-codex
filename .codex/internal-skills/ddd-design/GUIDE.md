@@ -18,12 +18,14 @@ It does not choose packages, modules, persistence, or framework wiring; those ch
 - Product Spec: 전달된 경로를 사용하며, spec-me 기본 경로는 `docs/specs/<plan-set-id>/product-spec.md`다
 - `CONTEXT.md`
 - related ADRs
-- event-storming output
+- event-storming output: the event flow tables and hotspot decisions in `docs/specs/<plan-set-id>/requirements.md` when present
 - Existing affected models, source references, and accepted changes from `CONTEXT-MAP.md` and `docs/architecture/domain-model.md` when present.
 
 Before proposing boundaries, read [model-continuity.md](references/model-continuity.md). It defines existing-model discovery, rule encapsulation, communication/deployment evidence, and the durable model lifecycle. Apply it to affected concepts only; an existing method or function may be the entire design delta.
 
 ## Boundary rule
+
+When `docs/specs/<plan-set-id>/requirements.md` is `fixed`, its bounded-context table and the matching `CONTEXT-MAP.md` entries are settled input from the `bounded-context` stage: reuse them and do not compare the boundaries again.
 
 Aggregate boundaries, domain-service boundaries, feature boundaries, and event-storming clusters do not imply bounded-context boundaries.
 

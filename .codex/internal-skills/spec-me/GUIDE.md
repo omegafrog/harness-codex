@@ -27,6 +27,10 @@ model_tier: high_performance
 
 When `docs/specs/<plan-set-id>/stakeholder-analysis.md` exists with `판정: 실행`, read it before the Product procedure and do not edit it. A candidate the user adopted (`채택`, `CAND-xx`) is a user-confirmed requirement and a confirmed actor settles `업무 주체`; carry both into `product-decisions.md` with the source `CAND-xx 채택` and the recorded `answers.json` question, and do not ask about them again. Rejected and held candidates, and `요청 범위 밖 관찰`, are not requirements and return only through a new user decision.
 
+## Requirements input
+
+When `docs/specs/<plan-set-id>/requirements.md` exists with `상태: fixed`, read it before the Product procedure and do not edit it. Its `BIZ` items (purpose, actors, rules, exceptions, completion conditions, event flow and the common sections) are settled user decisions: do not ask about them again, and carry them into `product-decisions.md` and the Product Spec with the source `requirements.md BIZ-xx`. Reuse the terms it already put into `CONTEXT.md` as they are. A `requirements.md` that is not `fixed` is not settled input. In the Architecture phase, its bounded-context table (`### 1.1`) and the matching `CONTEXT-MAP.md` entries are settled input too: do not compare the context boundaries again, and report a conflict found later to the user instead of overriding it.
+
 ## Documents
 
 - Create `docs/specs/<plan-set-id>/` when missing. Product Spec은 `docs/specs/<plan-set-id>/product-spec.md`, Architecture Spec은 `docs/specs/<plan-set-id>/architecture-spec.md`에 둔다.

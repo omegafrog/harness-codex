@@ -34,6 +34,11 @@
 | Expert Lens | 전문가 관점 | Expert Lens | Role | Harness가 관리하는 기본 검토자 카드(도메인·보안)로, 원하는 것이 아니라 지식으로 요청을 검토한다. 이해관계 당사자인 stakeholder와 구분한다 | LENS | stakeholder와 동일시 | `.codex/internal-skills/stakeholder-analysis/references/lenses/domain.md` |
 | Candidate Requirement | 후보 요구사항 | Candidate Requirement | Proposal | persona가 요청의 특정 문구에서 제안한, 요청이 정하지 않은 결정(CAND). 요청이 이미 말한 범위를 되풀이한 것은 후보가 아니다. 사용자가 채택하기 전에는 요구사항이 아니며 기각·보류한 후보는 새 결정 없이 되살리지 않는다 | CAND | 채택 전 요구사항 | `.codex/internal-skills/stakeholder-analysis/GUIDE.md` |
 | Request Anchor | 요청 앵커 | Request Anchor | Rule | 후보 요구사항이 근거로 인용하는 요청 원문의 정확한 부분 문자열. 없으면 채택 대상이 아니라 참고용 `요청 범위 밖 관찰`이 된다 | - | 요청 의역 | `.codex/internal-skills/stakeholder-persona/GUIDE.md` |
+| Requirements Document | 요구사항 명세 | Requirements Document | Project Document | 새 기능 요청의 요구사항을 `docs/specs/<plan-set-id>/requirements.md` 한 문서에 단계별로 모아 가는 living spec. 상태는 draft와 fixed이며 `requirements-fix`가 coverage gate를 통과하면 승인 질문 없이 fixed로 확정한다. 확정 뒤에는 사용자의 명시적 수정 지시로만 바뀐다 | requirements.md | Product Spec | `.codex/internal-skills/requirements-fix/references/template.md` |
+| Business Activity | 업무 | Business Activity | Unit | 행위자가 한 번에 끝내는 업무 하나(BIZ). 목적·주체·시나리오·규칙·예외·완료 조건·이벤트 흐름을 가지며 서브도메인 하나에 속한다 | BIZ | 기능 | `.codex/internal-skills/requirements-fix/references/template.md` |
+| Subdomain Candidate | 서브도메인 후보 | Subdomain Candidate | Proposal | 업무를 목적·언어·행위자 차이로 묶은 가설(SD). 이벤트 근거로 검증하고 core·supporting·generic으로 분류해 사용자가 확인하면 확정된다. 바운디드 컨텍스트가 아니다 | SD | 바운디드 컨텍스트 | `.codex/internal-skills/subdomain-classification/GUIDE.md` |
+| Domain Event | 도메인 이벤트 | Domain Event | Business Fact | 업무에서 일어난 사실을 한국어 과거형으로 쓴 이름(예: 게시글이 작성됨). 클릭·저장·API 호출 같은 기술 사건은 이벤트가 아니다 | - | 기술 이벤트 | `.codex/internal-skills/event-storming/GUIDE.md` |
+| Hotspot | 핫스팟 | Hotspot | Open Question | 이벤트 흐름에서 이벤트·정책·예외의 결과를 바꾸는데 요청이 정하지 않은 결정(HS). 사용자가 답하면 업무 규칙이나 예외 시나리오로 기록한다 | HS | - | `.codex/internal-skills/event-storming/GUIDE.md` |
 
 ## Tracker lifecycle 용어
 

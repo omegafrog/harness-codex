@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { REQUIREMENTS_STAGES } from './worktree-stages.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 const PROTECTED_PATH = /^(?:\.git|\.io)(?:\/|$)/;
@@ -34,8 +35,11 @@ export async function commitStageRequest({ root, rawPath }) {
 // Specs and plans are the review basis of the implementation, so they are committed when the stage that owns them
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
 // Other staged files are left as they are: the commit names only the stage's own paths.
+// The requirements stages write the plan set's documents; bounded-context also settles the context map and
+// ubiquitous-language the glossary, which belong to the project but change with their stage.
+const REQUIREMENTS_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT-MAP.md'], 'ubiquitous-language': ['CONTEXT.md'] };
 const WORKFLOW_DOCUMENTS = {
-  'stakeholder-analysis': (id) => [`docs/specs/${id}`],
+  ...Object.fromEntries(REQUIREMENTS_STAGES.map((skill) => [skill, (id) => [`docs/specs/${id}`, ...(REQUIREMENTS_PROJECT_DOCUMENTS[skill] || [])]])),
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
   'sync-contracts': () => ['docs/contracts'],

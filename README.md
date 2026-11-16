@@ -8,7 +8,7 @@
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
-- `stakeholder-analysis` — 새 기능이면 `spec-me` 전에 요청 범위의 후보 요구사항을 독립 persona에게서 모아 사용자가 하나씩 채택
+- 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `event-storming` → `subdomain-classification` → `bounded-context` → `ubiquitous-language` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
 - `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
@@ -21,7 +21,9 @@
 ```text
 $setup
   ↓
-stakeholder-analysis → 채택한 요구사항
+stakeholder-analysis → subdomain-candidates → event-storming
+  → subdomain-classification → bounded-context → ubiquitous-language
+  → requirements-fix → 확정된 requirements.md
   ↓
 spec-me → Product Spec → Architecture Spec
   ↓
@@ -66,9 +68,9 @@ gh-open-pr → 사용자 Merge
 
 선택한 위치는 `worktrees.directory`에 저장하며 새 workflow부터 적용한다. 기존 worktree는 Git에 등록된 위치에 그대로 남는다. 경로를 바꾸려면 `$setup`에서 새로 설정을 선택한다.
 
-### 2. `stakeholder-analysis`
+### 2. 요구사항 흐름
 
-새 기능이면 `spec-me` 전에 실행해 요청 범위의 후보 요구사항을 모은다.
+새 기능이면 `spec-me` 전에 아래 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `requirements-fix`가 확정한다. 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다.
 
 ```text
 사용자 요청
@@ -77,7 +79,8 @@ gh-open-pr → 사용자 Merge
   ↓ 독립 라운드 1 → 같은 요청 문구에서 충돌할 때만 라운드 2
 후보 요구사항(CAND) → 사용자가 하나씩 채택·기각·보류
   ↓
-docs/specs/<plan-set-id>/stakeholder-analysis.md
+docs/specs/<plan-set-id>/stakeholder-analysis.md   persona 기록(참여자·후보·충돌·범위 밖 관찰)
+docs/specs/<plan-set-id>/requirements.md           채택·확정한 항목의 초안
 ```
 
 - 논의 대상은 요청 원문뿐이다. 요청이 이미 말한 범위는 후보가 아니라 업무 목적에 `요청 원문`으로 직접 적고, 후보는 요청이 정하지 않은 결정(행위자별 권한, 삭제의 전파, 예외 결과 등)만 구체 규칙으로 제안한다. 후보마다 `요청 앵커`(요청 원문 인용)가 있어야 하며, 앵커 없는 관찰은 접어서 참고용으로만 보여 준다.
@@ -97,6 +100,19 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 ```
 
 `role`과 목표 하나 이상만 필수이고 나머지는 `UNKNOWN`으로 둘 수 있다. 규제기관이나 외부 시스템처럼 사람이 아닌 제약 출처는 `--kind constraint-source`로 등록한다(persona로 실행하지 않고 제약만 전달). workflow worktree는 커밋된 파일만 보므로 workflow를 시작하기 전에 카드를 커밋한다. 형식 오류는 `harness-codex-doctor`가 `stakeholder_card_invalid`로 경고한다.
+
+#### 이어지는 stage
+
+| stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
+|---|---|---|---|
+| `subdomain-candidates` | 업무(BIZ)를 나누고 서브도메인 후보(SD)로 묶는다. 기존 영역에 먼저 넣고 새 후보는 정말 따로 둘 때만 만든다 | 범위가 크게 갈리는 해석일 때만 | |
+| `event-storming` | 도메인 전문가 persona를 다시 실행해 업무별 행위자·명령·도메인 이벤트(과거형 업무 사실)·정책·외부 시스템·hotspot을 낸다. 요청 밖 기능은 범위 밖 관찰로 접는다 | hotspot을 한 묶음으로 | `diagrams/events/`의 SD별·서브도메인 간 PlantUML(`.puml`)과 렌더(`.svg`) |
+| `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고 core·supporting·generic으로 분류한다. 후보가 여기서 확정된다 | 구성과 분류 확인 한 묶음 | |
+| `bounded-context` | 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
+| `ubiquitous-language` | 컨텍스트별로 같은 말이 같은 뜻이 되게 용어 표(용어·뜻·쓰지 않을 말)를 만들고 문장을 통일한다 | 결과를 바꾸는 뜻만 한 묶음 | `CONTEXT.md` |
+| `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate를 통과하면 `상태: fixed`로 확정한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 빈칸만 한 묶음 | |
+
+`stakeholder-analysis`가 생략을 판정하면 뒤 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`는 `spec-me`가 사용자 결정으로 읽으며 Product Spec과 이후 단계는 그대로다. Architecture는 확정된 바운디드 컨텍스트를 다시 비교하지 않는다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
 
 ### 3. `spec-me`
 
@@ -278,7 +294,7 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | Agent | 책임 |
 | --- | --- |
 | `code_researcher` | 코드베이스 조사 |
-| `stakeholder_persona` | 카드 하나(stakeholder 또는 전문가 관점)로 요청의 후보 요구사항 제안 |
+| `stakeholder_persona` | 카드 하나(stakeholder 또는 전문가 관점)로 요청의 후보 요구사항 제안, `event-storming`에서는 도메인 관점으로 업무별 이벤트 추출 |
 | `spec_document_writer` | 확정된 Spec 문서화 |
 | `diagram_creator` | PlantUML / SVG 생성 |
 | `to_ticket` | vertical plan 작성 |
@@ -304,7 +320,7 @@ CONTEXT-MAP.md
   bounded context / ownership / relationship
 
 docs/specs/<ticket-id>/
-  특정 변경의 Product / Architecture 결정
+  특정 변경의 requirements.md(요구사항 흐름) / Product / Architecture 결정
 ```
 
 `CONTEXT.md`는 대화 로그가 아니라 프로젝트에서 계속 유지할 canonical vocabulary를 위한 문서다.
