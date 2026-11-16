@@ -134,3 +134,34 @@ test('local-markdown publication prepares no Issue drafts', async () => {
     await assert.rejects(preparePublicationDrafts({ root, planSetId: 'example' }));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// local-markdown plan files are their own tickets; activation only creates the missing Beads mirrors and their dependencies.
+test('local-markdown activation creates one Beads mirror per plan with dependencies and reruns create nothing', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { activateLocalMirrors } = await import('../.harness/src/tracker/publication.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'harness-local-mirrors-'));
+  try {
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    await writeFile(join(root, 'docs/plans/set/plans.md'), '# Plans\n\n| 순서 | Plan | 범위 | 의존성 |\n|---|---|---|---|\n| 1 | [a](a.md) | A | 없음 |\n| 2 | [b](b.md) | B | a |\n');
+    const beads = []; const calls = [];
+    const run = async (command, args) => {
+      calls.push(args[0]);
+      if (args[0] === 'list') { const ref = args[args.indexOf('--external-ref') + 1]; return JSON.stringify(beads.filter((bead) => bead.external_ref === ref)); }
+      if (args[0] === 'create') { const id = `bead-${beads.length + 1}`; beads.push({ id, external_ref: args[args.indexOf('--external-ref') + 1], dependencies: [] }); return id; }
+      if (args[0] === 'show') return JSON.stringify([beads.find((bead) => bead.id === args[1])]);
+      if (args[0] === 'dep') { beads.find((bead) => bead.id === args[2]).dependencies.push({ id: args[3] }); return ''; }
+      throw new Error(`unexpected ${args[0]}`);
+    };
+    const first = await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a', 'b'], config: { beads: { enabled: true } }, run });
+    assert.equal(first.mirrors.length, 2);
+    assert.deepEqual(beads.map((bead) => bead.external_ref), ['docs/plans/set/a.md', 'docs/plans/set/b.md']);
+    assert.deepEqual(beads[1].dependencies, [{ id: 'bead-1' }]);
+    calls.length = 0;
+    await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a', 'b'], config: { beads: { enabled: true } }, run });
+    assert.equal(calls.filter((call) => ['create', 'dep'].includes(call)).length, 0, 'a rerun creates nothing');
+    calls.length = 0;
+    assert.deepEqual((await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a'], config: { beads: { enabled: false } }, run })).mirrors, []);
+    assert.equal(calls.length, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
