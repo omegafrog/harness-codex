@@ -36,7 +36,7 @@ export async function restartRequirements({ root, session, stageId }) {
     const position = history.findIndex(([, subject]) => subject === target);
     if (position < 0) throw new Error('Restart checkpoint commit not found');
     const later = new Set(REQUIREMENTS_STAGES.slice(index).map((id) => `${id}: ${record.plan_set_id}`));
-    if (history.slice(0, position + 1).some(([, subject]) => !later.has(subject))) throw new Error('Unrelated or later commits prevent requirements restart');
+    if (history.slice(0, position + 1).some(([, subject]) => !later.has(subject))) throw new Error('Unrelated or later commits prevent requirements restart; a workflow created with an earlier stage order must be reviewed before restarting');
     const base = git('rev-parse', `${history[position][0]}^`).trim();
     const paths = [`docs/specs/${record.plan_set_id}`, 'CONTEXT.md', 'CONTEXT-MAP.md'];
     changed = git('diff', '--name-only', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);

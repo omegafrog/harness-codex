@@ -4,7 +4,7 @@
 
 오케스트레이터(메인 세션)는 이 값을 서브에이전트에 전달만 한다. `guide`·`input_path`·`schema_path`의 파일과 stage 산출물(Spec·plan·코드) 본문은 읽지 않는다. 그 파일은 서브에이전트의 컨텍스트에서 읽는 것이고, 메인이 읽으면 이후 모든 턴에 남는다. 메인은 `finish`가 출력하는 `status`·`code`·`result_ref`와 `result`의 요약·artifact 참조·질문만으로 다음 단계를 정한다. 리뷰어에게는 문서 경로만 넘기고 리뷰어가 직접 읽게 한다.
 
-현재 CLI의 native 서브에이전트 도구를 호출한다. Codex는 `spawn_agent`, Claude Code는 `Agent` 도구를 사용한다. 호출이 완료 전에 실제 agent ID를 반환하고 해당 agent에 메시지를 전달할 수 있어야 한다. Claude Code에서는 이를 지원하는 경우 백그라운드로 시작한다. 이 기능이 없으면 agent를 시작하기 전에 실패를 보고한다. 반환된 `agent_profile` role을 지정하고 그 profile의 sandbox 및 권한을 유지한다. profile을 선택할 수 없거나 지정된 권한을 적용할 수 없으면 실행하지 말고 실패를 보고한다. 반환된 `binding`의 model과 reasoning effort를 지원하는 도구에 그대로 지정한다. 독립 리뷰 등 fresh context가 필요한 role의 기존 규칙을 유지한다. 에이전트는 실제 agent ID를 전달받기 전 작업을 시작하지 않는다. 에이전트에 다음을 전달한다.
+현재 CLI의 native 서브에이전트 도구를 호출한다. Codex는 `spawn_agent`에 `fork_turns: "none"`을 명시하고, Claude Code는 상위 대화 이력을 전달하지 않는 fresh `Agent`를 사용한다. 새 stage에는 상위 대화·도구 출력·문서 본문을 복사하지 않고 아래 파일 경로와 실행에 필요한 값만 전달한다. 실제 결정과 답변은 입력에 참조된 파일에서 읽는다. 호출이 완료 전에 실제 agent ID를 반환하고 해당 agent에 메시지를 전달할 수 있어야 한다. Claude Code에서는 이를 지원하는 경우 백그라운드로 시작한다. 이 기능이 없으면 agent를 시작하기 전에 실패를 보고한다. 반환된 `agent_profile` role을 지정하고 그 profile의 sandbox 및 권한을 유지한다. profile을 선택할 수 없거나 지정된 권한을 적용할 수 없으면 실행하지 말고 실패를 보고한다. 반환된 `binding`의 model과 reasoning effort를 지원하는 도구에 그대로 지정한다. 독립 리뷰 등 fresh context가 필요한 role의 기존 규칙을 유지한다. 에이전트는 실제 agent ID를 전달받기 전 작업을 시작하지 않는다. 에이전트에 다음을 전달한다.
 
 - 반환된 `guide`와 `input_path`, `.codex/internal-skills/skill-execution/worker-base.md`를 읽고 입력에 지정된 stage를 수행한다.
 - `schema_path`의 JSON schema를 읽고 그 형식에 맞는 JSON을 `output_path`에 작성한다. 읽기 전용 profile이면 JSON 전체를 마지막 응답으로 반환한다. 실제 경로는 반환값을 그대로 사용한다.

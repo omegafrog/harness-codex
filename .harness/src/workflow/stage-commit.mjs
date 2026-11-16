@@ -35,9 +35,9 @@ export async function commitStageRequest({ root, rawPath }) {
 // Specs and plans are the review basis of the implementation, so they are committed when the stage that owns them
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
 // Other staged files are left as they are: the commit names only the stage's own paths.
-// The requirements stages write the plan set's documents; bounded-context also settles the context map and
-// ubiquitous-language the glossary, which belong to the project but change with their stage.
-const REQUIREMENTS_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT-MAP.md'], 'ubiquitous-language': ['CONTEXT.md'] };
+// The requirements stages write the plan set's documents; bounded-context settles the map and glossary scope,
+// and ubiquitous-language settles the glossary. These documents belong to the project.
+const REQUIREMENTS_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT-MAP.md', 'CONTEXT.md'], 'ubiquitous-language': ['CONTEXT.md'] };
 const WORKFLOW_DOCUMENTS = {
   ...Object.fromEntries(REQUIREMENTS_STAGES.map((skill) => [skill, (id) => [`docs/specs/${id}`, ...(REQUIREMENTS_PROJECT_DOCUMENTS[skill] || [])]])),
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
@@ -51,7 +51,8 @@ export async function commitWorkflowDocuments({ root, input, rawPath }) {
   if (!owned || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return null;
   const envelope = JSON.parse(await readFile(rawPath, 'utf8'));
   if (envelope.status !== 'completed') return null;
-  const paths = owned(planSetId);
+  const paths = owned(planSetId).filter((path) => input.skill !== 'bounded-context' || path !== 'CONTEXT.md'
+    || envelope.result?.artifacts?.some((item) => item.base === 'workspace' && item.path === path));
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
   if (!changed.length) return null;
   const present = [];

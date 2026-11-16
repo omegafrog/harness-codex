@@ -7,7 +7,7 @@ model_tier: implementation
 
 ## Purpose
 
-Second step of the requirements flow, after `stakeholder-analysis` and before `event-storming`. Group the business of the request into subdomain candidates (`SD-xx`) and cut it into business activities (`BIZ-xx`), then write both into `requirements.md`. A candidate is a hypothesis about how the work splits; `subdomain-classification` later checks it against the event flows and has the user confirm it. Nothing here is written to project-wide documents and nothing is decided about bounded contexts, modules or technology. No persona runs and the user is not asked, except for the case under Questions.
+Second step of the requirements flow, after `stakeholder-analysis` and before `ubiquitous-language`. Group the business of the request into subdomain candidates (`SD-xx`) and cut it into business activities (`BIZ-xx`), then write both into `requirements.md`. A candidate is a hypothesis about how the work splits; `subdomain-classification` later checks it against the event flows and has the user confirm it. Nothing here is written to project-wide documents and nothing is decided about bounded contexts, modules or technology. No persona runs and the user is not asked, except for the case under Questions.
 
 ## Inputs
 
@@ -42,4 +42,4 @@ Ask only when two plausible groupings of the same request change which work is i
 
 - `requirements.md` has a complete SD table and a `BIZ` section for every activity, with the draft block gone.
 - Every item keeps its original source; rejected, held and out-of-scope items are absent.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `event-storming` reads the SD table and the `BIZ` sections.
+- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `ubiquitous-language` reads the SD table and the `BIZ` sections.

@@ -7,13 +7,13 @@ model_tier: implementation
 
 ## Purpose
 
-Step of the requirements flow after `bounded-context` and before `requirements-fix`. Make the same word always mean the same thing inside each bounded context: build the `## 3` term table of `requirements.md`, rewrite the document so every sentence uses only those terms, and record the settled terms with their context scope in the project's `CONTEXT.md`. No persona runs. The user is asked only about terms whose meaning would change the outcome.
+Step of the requirements flow after `subdomain-candidates` and before `event-storming`. Settle confusing business terms from the request and candidate activities before event tables and diagrams are written. Record them in `## 3` of `requirements.md` and the project glossary `CONTEXT.md`. Candidate subdomains are not bounded contexts: scope new terms to their BIZ or existing proven context, and mark the scope provisional until `bounded-context` assigns it. No persona runs. Ask only when a meaning changes the outcome.
 
 ## Inputs
 
 - The user request (`scope` of the execution input), read verbatim.
-- `docs/specs/<plan-set-id>/requirements.md` resolved with `harness-spec-path.mjs`. Its event names are the main source of terms; its `BIZ` text, SD table and hotspot decisions are the rest.
-- The bounded-context table `### 1.1` of `requirements.md`, `stakeholder-analysis.md` for the vocabulary of the adopted candidates, and `CONTEXT.md` plus `CONTEXT-MAP.md` for the current canonical and retired terms and the context names.
+- `docs/specs/<plan-set-id>/requirements.md` resolved with `harness-spec-path.mjs`. Its draft `BIZ` text and SD term candidates are the sources; event tables, classifications and new bounded contexts do not exist yet.
+- `stakeholder-analysis.md` for adopted candidates, and existing `CONTEXT.md` plus `CONTEXT-MAP.md` for canonical and retired terms and any already established context names.
 - [Language lifecycle](../domain-modeling/references/language-lifecycle.md) and the [requirements.md template](../requirements-fix/references/template.md).
 
 ## Prohibited
@@ -29,19 +29,19 @@ Step of the requirements flow after `bounded-context` and before `requirements-f
 2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, put the skip and its evidence path in the result summary and return `completed/OK`.
 3. On resume, read the previous result, `requirements.md`, `CONTEXT.md` and the actual answers. Continue at step 6 when answers exist; keep rows and decisions already recorded.
 4. Collect the words the document uses for business concepts, actors, states, rules and events. Group the variants. Keep only the words that are used in more than one form for the same thing, or that one word uses for different things, or that are easily confused with a neighboring term. Plain words that nobody can misread get no row.
-5. Compare with `CONTEXT.md` using the [language lifecycle](../domain-modeling/references/language-lifecycle.md), per context. Reuse the current canonical term of that context when the meaning matches; never use a retired term. A different meaning for an existing term is a definition update or a rename, and it is a question when the choice changes the outcome. Draft the table as `용어 | 뜻 | 쓰지 않을 말` and list the terms whose meaning the user must choose. Ask them in one batch in Korean with concrete options and what each changes, a recommended option and its reason, and return `action_required` / `USER_DECISION_REQUIRED`. With no such term go to step 6.
+5. Compare with `CONTEXT.md` using the [language lifecycle](../domain-modeling/references/language-lifecycle.md), per existing context or provisional BIZ scope. Reuse the current canonical term of that scope when the meaning matches; never use a retired term. A different meaning for an existing term is a definition update or a rename, and it is a question when the choice changes the outcome. Draft the table as `용어 | 뜻 | 쓰지 않을 말` and list the terms whose meaning the user must choose. Ask them in one batch in Korean with concrete options and what each changes, a recommended option and its reason, and return `action_required` / `USER_DECISION_REQUIRED`. With no such term go to step 6.
 6. With the answers, settle the table. A row decided by an answer ends its `뜻` with `(answers.json)`. Write the table into `## 3`.
-7. Rewrite `requirements.md` so every sentence, event name, SD row, hotspot decision and common section uses only table terms: replace each `쓰지 않을 말` and each variant in the text, keeping quotations of the request and the `요청 원문` fields as they are, and the context names exactly as `bounded-context` wrote them. Add the stage to each touched `BIZ`'s `출처·변경 이력`.
-8. Update `CONTEXT.md` in the consumer's own table format. For each table term that names a business concept, actor, state or rule of a context: add the entry with its context scope, update the definition, or record the replacement in the retired-term table, with `docs/specs/<plan-set-id>/requirements.md` as the source. Put `쓰지 않을 말` into the forbidden terms of the entry. Leave plan-set-only wording, UI copy and code identifiers out. Keep the existing table, order and lifecycle records.
-9. Check before returning: the table's rows are the only terms in the document for their concepts; each affected term is classified as kept, definition updated, replaced or unresolved, and the `CONTEXT.md` diff matches that classification; no term is unresolved. Return `completed/OK` with `requirements.md` and `CONTEXT.md`.
+7. Update only draft expressions whose ambiguity or conflict with a settled term changes their meaning; preserve request quotations and sources. Do not rewrite every sentence for stylistic uniformity. Add the stage to each touched `BIZ`'s `출처·변경 이력`. Later stages use the terms when writing new content.
+8. Update `CONTEXT.md` in the consumer's own table format. For each table term that names a business concept, actor, state or rule: add the entry with its established context or provisional BIZ scope, update the definition, or record the replacement in the retired-term table, with `docs/specs/<plan-set-id>/requirements.md` as the source. Put `쓰지 않을 말` into the forbidden terms of the entry. Leave plan-set-only wording, UI copy and code identifiers out. Keep the existing table, order and lifecycle records.
+9. Check before returning: no materially ambiguous or conflicting use remains in the existing draft; each affected term is classified as kept, definition updated, replaced or unresolved, and the `CONTEXT.md` diff matches that classification; no term is unresolved. Return `completed/OK` with `requirements.md` and `CONTEXT.md`.
 
-## Per-context terms
+## Scope before bounded contexts
 
-A term may mean something different in each bounded context. Decide every term's meaning per context of the `### 1.1` table. When a word differs by context, write one row per context with the context in the `용어` cell as `<용어> (<BC 이름>)`, for example `회원 (커뮤니티)`, and one `CONTEXT.md` entry per context that states its context scope as the domain-modeling placement rules describe. The same word with different meanings in two contexts is a legitimate homonym, not a conflict, and is never merged. A word with one meaning across the contexts that use it keeps one row and one project-wide entry. A `BIZ` text uses the term of the context its `BIZ` belongs to; a sentence about the border between contexts names both contexts.
+Reuse established context ownership where evidence exists. Otherwise mark each new scoped entry with its BIZ or candidate SD and `범위 미확정`; these provisional groups are not context decisions. Distinct meanings may have separate entries with their BIZ scopes. Do not assert that candidate SDs are bounded contexts. `bounded-context` later maps these scopes to the selected contexts, reconciles the glossary and asks when a material meaning conflict cannot be resolved from existing evidence.
 
 ## Completion
 
 - `## 3` lists the confusable terms with `용어 | 뜻 | 쓰지 않을 말`, and user-decided rows end with `(answers.json)`.
-- `requirements.md` uses only those terms, and no item gained or lost meaning or source.
+- `requirements.md` has no materially ambiguous or conflicting use, and no item gained or lost meaning or source.
 - `CONTEXT.md` carries the settled terms and any replacement records.
-- The runner commits `docs/specs/<plan-set-id>/` and `CONTEXT.md` when this stage completes. `requirements-fix` and `spec-me` reuse the terms as they are.
+- The runner commits `docs/specs/<plan-set-id>/` and `CONTEXT.md` when this stage completes. `event-storming` uses the terms, and `bounded-context` reconciles their final scope.

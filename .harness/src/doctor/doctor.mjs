@@ -90,6 +90,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/internal-skills/skill-execution/references/input.md',
+    '.codex/internal-skills/skill-execution/references/dispatch.md',
     '.codex/internal-skills/skill-execution/worker-base.md',
     '.codex/internal-skills/skill-execution/references/stage-return.md',
     '.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md',

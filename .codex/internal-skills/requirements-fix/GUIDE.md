@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## Purpose
 
-Last step of the requirements flow, after `ubiquitous-language` and before `spec-me`. Fill what the earlier stages left open in `requirements.md` with one interview batch, then fix the document: when the coverage gate passes, set its `상태` to `fixed` automatically. There is no approval question, so this stage is the only judgment between the draft and a document that `spec-me` treats as settled user decisions; that is why it runs at the high performance tier. After `fixed`, the document changes only on an explicit user revision.
+Last step of the requirements flow, after `bounded-context` and before `spec-me`. Fill what the earlier stages left open in `requirements.md` with one interview batch, then fix the document: when the coverage gate passes, set its `상태` to `fixed` automatically. There is no approval question, so this stage is the only judgment between the draft and a document that `spec-me` treats as settled user decisions; that is why it runs at the high performance tier. After `fixed`, the document changes only on an explicit user revision.
 
 ## Inputs
 

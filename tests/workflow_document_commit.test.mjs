@@ -76,7 +76,7 @@ test('stakeholder-analysis commits only its plan set document and leaves project
 
 // Every requirements stage commits the plan set's documents when it completes; only ubiquitous-language also commits the glossary.
 test('each requirements stage commits docs/specs of its plan set, bounded-context also commits CONTEXT-MAP.md, ubiquitous-language CONTEXT.md, and project cards stay visible', async () => {
-  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'event-storming', 'subdomain-classification', 'bounded-context', 'ubiquitous-language', 'requirements-fix']);
+  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'bounded-context', 'requirements-fix']);
   const root = await mkdtemp(join(tmpdir(), 'requirements-docs-'));
   const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
   try {
@@ -88,7 +88,7 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
     for (const dir of ['docs/specs/set/diagrams/events', 'docs/domain/stakeholders']) await mkdir(join(root, dir), { recursive: true });
     await writeFile(join(root, 'docs/domain/stakeholders/SH-01.md'), '---\nid: SH-01\n---\n');
     const raw = join(root, '..', `${Date.now()}-requirements-raw.json`);
-    const run = async (skill, status = 'completed') => { await writeFile(raw, JSON.stringify({ status })); return commitWorkflowDocuments({ root, input: { skill, context: { plan_set_id: 'set' } }, rawPath: raw }); };
+    const run = async (skill, status = 'completed', artifacts = []) => { await writeFile(raw, JSON.stringify({ status, result: { artifacts } })); return commitWorkflowDocuments({ root, input: { skill, context: { plan_set_id: 'set' } }, rawPath: raw }); };
     const lastFiles = () => git('show', '--name-only', '--format=', 'HEAD').split('\n').sort();
     const lastSubject = () => git('log', '-1', '--format=%s');
 
@@ -106,6 +106,11 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
     assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md']);
     assert.equal(lastSubject(), 'subdomain-candidates: set');
 
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n## 3. 용어\n');
+    assert.match(await run('ubiquitous-language'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'ubiquitous-language: set');
+
     // Diagrams are plan set documents, so the event stage commits the sources and renders together.
     await writeFile(join(root, 'docs/specs/set/diagrams/events/SD-01.events.puml'), '@startuml\n@enduml\n');
     await writeFile(join(root, 'docs/specs/set/diagrams/events/SD-01.events.svg'), '<svg/>\n');
@@ -119,14 +124,15 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
     assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md'], 'a stage that does not own the context map leaves it for the bounded-context stage');
     assert.equal(lastSubject(), 'subdomain-classification: set');
     await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n');
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 게시글 (커뮤니티)\n');
     assert.match(await run('bounded-context'), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['CONTEXT-MAP.md', 'docs/specs/set/requirements.md']);
+    assert.deepEqual(lastFiles(), ['CONTEXT-MAP.md', 'docs/specs/set/requirements.md'], 'an unreferenced project glossary stays uncommitted');
+    assert.match(git('status', '--short'), /M CONTEXT\.md/);
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n\n커뮤니티\n');
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 커뮤니티 확정 |\n');
+    assert.match(await run('bounded-context', 'completed', [{ base: 'workspace', path: 'CONTEXT.md' }]), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT-MAP.md', 'CONTEXT.md', 'docs/specs/set/requirements.md']);
     assert.equal(lastSubject(), 'bounded-context: set');
-
-    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: draft\n\n## 3. 용어\n');
-    assert.match(await run('ubiquitous-language'), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/specs/set/requirements.md']);
-    assert.equal(lastSubject(), 'ubiquitous-language: set');
 
     // Other stages leave the glossary and the map to their owners even when they changed.
     await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 게시글\n- 댓글\n');
