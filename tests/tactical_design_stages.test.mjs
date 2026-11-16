@@ -17,6 +17,8 @@ import { REQUIREMENTS, templateDocument, upTo } from './support/domain-model-fix
 const TEMPLATE = '.codex/internal-skills/domain-model/references/template.md';
 const DEEPENING = '.codex/internal-skills/domain-model/references/deepening.md';
 const GATE = '.codex/scripts/harness-domain-model-check.mjs';
+const GATE_LIBRARY = '.harness/src/workflow/domain-model-gate.mjs';
+const README_PATH = 'README.md';
 const TACTICAL_TIERS = { 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance' };
 const ASKING = ['aggregate-design', 'integration-design'];
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
@@ -45,6 +47,9 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   const exec = await read('docs/agents/EXEC.md');
   assert.ok(exec.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join('→')), 'the E2E procedure names the tactical flow');
   assert.match(await read('docs/architecture/enforcement.md'), /TACTICAL_DESIGN_STAGES[\s\S]*harness-domain-model-check\.mjs/);
+  assert.match(await read('docs/architecture/enforcement.md'), /domain-model-gate\.mjs[\s\S]*`gate_error`[\s\S]*recordExecutionState/, 'the enforcement map names where the runner rejects a failing tactical stage');
+  for (const path of ['.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/internal-skills/skill-execution/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`gate_error`/, `${path} tells what the runner returns for a failing tactical gate`);
+  assert.match(await read('.codex/internal-skills/domain-model/references/deepening.md'), /The runner enforces the gate[\s\S]*`gate_error`/);
   assert.match(await read('CONTEXT.md'), /\| Consistency Decision \| 일관성 결정 \|/);
   assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /요구사항·전술 설계 stage의 문서를 고치라고 지시하면/);
   assert.match(await read('.codex/internal-skills/skill-execution/references/input.md'), /요구사항 또는 전술 설계 stage부터 다시 시작/);
@@ -78,6 +83,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
     assert.match(guide, /`판정: 생략`/, `${stage} records a skip`);
     assert.match(guide, new RegExp(`harness-domain-model-check\\.mjs --workspace-root <workspace_root> --stage ${stage}\``), `${stage} runs its gate before it completes`);
     assert.match(guide, /The runner commits `docs\/specs\/<plan-set-id>\/`/, `${stage} says what the runner commits`);
+    assert.match(guide, /The runner enforces this gate on `completed\/OK` and returns a failing result as `gate_error`/, `${stage} says the runner enforces its gate`);
     assert.match(guide, /`DEPENDENCY_INCOMPLETE`|`INPUT_MISSING`/, `${stage} says how it blocks`);
     assert.match(guide, /requirements\.md/, `${stage} reads the requirements`);
     assert.doesNotMatch(guide, /ddd-design|spec-me\/GUIDE|architecture-spec/, `${stage} does not depend on the older design guides`);
@@ -146,6 +152,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
     '.harness/src/workflow/stage-commit.mjs',
     '.harness/src/workflow/stage-input.mjs',
     '.harness/src/workflow/requirements-restart.mjs',
+    GATE_LIBRARY, '.harness/src/workflow/execution-state.mjs', '.codex/scripts/harness-native-stage.mjs',
     '.codex/scripts/harness-result.mjs',
     '.codex/skills/setup/assets/CONTEXT-MAP.md',
   ].map((path) => path.replace('.codex/skills/setup', '.agents/skills/setup'));
@@ -193,13 +200,18 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   // Doctor accepts the installation, reports a missing tactical asset, and update restores it without touching project documents.
   let doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-  const removed = [TEMPLATE, DEEPENING, GATE, '.codex/internal-skills/aggregate-design/GUIDE.md'];
+  const removed = [TEMPLATE, DEEPENING, GATE, GATE_LIBRARY, '.codex/internal-skills/aggregate-design/GUIDE.md'];
   for (const path of removed) await unlink(join(root, path));
   await writeFile(join(root, '.codex/internal-skills/integration-design/GUIDE.md'), 'outdated guide\n');
   doctor = await runDoctor({ root, sourceRoot });
   for (const path of removed) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === join(root, path)), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
   for (const path of [...removed, '.codex/internal-skills/integration-design/GUIDE.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  // `harness-codex update` replaces a runner from before the gate enforcement, so installed consumers start enforcing it.
+  const outdated = [GATE_LIBRARY, '.codex/scripts/harness-native-stage.mjs', '.harness/src/workflow/execution-state.mjs'];
+  for (const path of outdated) await writeFile(join(root, path), 'outdated\n');
+  await updateProject({ sourceRoot, targetRoot: root, force: true });
+  for (const path of outdated) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `updated: ${path}`);
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/domain-model.md'), 'utf8'), document);
@@ -341,4 +353,106 @@ test('a skipped stakeholder-analysis makes the tactical stages record the skip w
   assert.equal(existsSync(join(workspace, specPath('domain-model.md'))), false, 'a skipped analysis leaves no domain-model.md');
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
   assert.equal(next.input.context.transition.from_stage, 'integration-design');
+});
+
+test('the runner rejects a tactical stage that reports completed/OK with a failing domain-model.md, accepts it once repaired, and keeps Git visibility intact', async (t) => {
+  const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
+  const { workspace, treeGit, invoke, runStage, beginStage, submitStage, finishStage, tree, planSetId, specPath } = flow;
+  const requirements = specPath('requirements.md');
+  const domainModel = specPath('domain-model.md');
+  const art = (path, kind) => ({ path, kind });
+  const document = await templateDocument(sourceRoot);
+  const artifacts = [art(domainModel, 'domain_model')];
+  const stageState = async (stage) => JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8')).stages[stage];
+  const returned = (begun) => join(dirname(begun.started.output_path), 'return.json');
+  // The status of the tree as the user sees it: application changes and plan set documents, never Harness-owned files.
+  const visible = () => treeGit('status', '--short', '--untracked-files=all').split('\n').filter(Boolean).sort();
+  const assertVisibility = (expected, label) => {
+    assert.deepEqual(visible(), expected.sort(), label);
+    assert.doesNotMatch(visible().join('\n'), /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, `${label}: Harness-managed files stay out of the status`);
+  };
+
+  for (const stage of REQUIREMENTS_STAGES) {
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+  }
+  await runStage('domain-model', { files: { [domainModel]: upTo(document, 1) }, artifacts });
+  // Work of the application that the stages never touch.
+  await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
+  assertVisibility([' M app.txt'], 'before the failing stage');
+
+  // 1. finish: the stage reports completed/OK but its consistency decision cites only an agent proposal.
+  const failing = upTo(document, 2).replace(/^(\| CON-01 \|.*\| )answers\.json `<question_id>` \|$/m, '$1에이전트 제안 |');
+  assert.notEqual(failing, upTo(document, 2));
+  const aggregate = await beginStage('aggregate-design');
+  await submitStage(aggregate, { files: { [domainModel]: failing }, artifacts });
+  const head = treeGit('rev-parse', 'HEAD').trim();
+  const rejected = finishStage(aggregate);
+  assert.equal(rejected.status, 1, rejected.stdout);
+  const rejection = JSON.parse(rejected.stdout);
+  assert.equal(rejection.status, 'gate_error');
+  assert.equal(rejection.gate, 'domain_model_check');
+  assert.equal(rejection.stage, 'aggregate-design');
+  assert.equal(rejection.execution_id, aggregate.prepared.input.execution_id);
+  assert.equal(rejection.output_path, aggregate.started.output_path);
+  assert.deepEqual(rejection.errors.map((error) => [error.code, error.id]), [['DECISION_NO_SOURCE', 'CON-01']]);
+  assert.match(rejection.errors[0].message, /an agent proposal alone is not a source/);
+  assert.match(rejection.instruction, /same subagent/);
+  assert.match(rejection.instruction, /Nothing was committed or recorded/);
+  assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'a rejected result is not committed');
+  assert.equal(existsSync(returned(aggregate)), false, 'no canonical return is written');
+  const running = await stageState('aggregate-design');
+  assert.equal(running.status, 'running', 'the stage stays running so the same subagent can repair it');
+  assert.equal(running.execution_id, aggregate.prepared.input.execution_id);
+  assertVisibility([' M app.txt', ` M ${domainModel}`], 'after the rejection the repair target is visible and nothing else changed');
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n', 'application changes stay untouched');
+  assert.equal(await readFile(join(workspace, domainModel), 'utf8'), failing, 'the gate does not edit the stage documents');
+
+  // The same finish rejects again until the documents change, and accepts the repaired documents with the same output file.
+  assert.equal(finishStage(aggregate).status, 1);
+  await writeFile(join(workspace, domainModel), upTo(document, 2));
+  const accepted = finishStage(aggregate);
+  assert.equal(accepted.status, 0, accepted.stdout || accepted.stderr);
+  const result = JSON.parse(accepted.stdout);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.code, 'OK');
+  assert.equal(treeGit('log', '-1', '--format=%s').trim(), `aggregate-design: ${planSetId}`);
+  assert.deepEqual(treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n'), [domainModel]);
+  assert.equal(existsSync(returned(aggregate)), true);
+  assert.equal((await stageState('aggregate-design')).status, 'completed');
+  assertVisibility([' M app.txt'], 'after the accepted stage');
+
+  // 2. The state command cannot record a failing tactical stage as completed either.
+  const failingService = upTo(document, 3).replace(/^\| DS-01 .*\n/m, '');
+  assert.notEqual(failingService, upTo(document, 3));
+  const service = await beginStage('domain-service');
+  await submitStage(service, { files: { [domainModel]: failingService }, artifacts });
+  const recorded = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', service.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });
+  assert.equal(recorded.status, 1);
+  assert.match(JSON.parse(recorded.stderr).error, /^Tactical design gate failed for domain-service: .*DOMAIN_SERVICE_MISSING \(INV-04\)/);
+  assert.equal((await stageState('domain-service')).status, 'running', 'the state command left the stage running');
+  const refused = finishStage(service);
+  assert.equal(refused.status, 1);
+  assert.ok(JSON.parse(refused.stdout).errors.some((error) => error.code === 'DOMAIN_SERVICE_MISSING' && error.id === 'INV-04'));
+  assert.equal(treeGit('log', '-1', '--format=%s').trim(), `aggregate-design: ${planSetId}`, 'the refused stage committed nothing');
+  await writeFile(join(workspace, domainModel), upTo(document, 3));
+  assert.equal(finishStage(service).status, 0);
+  assert.equal(treeGit('log', '-1', '--format=%s').trim(), `domain-service: ${planSetId}`);
+
+  // 3. A user revision of the completed stage is gated like the first run, and the revised documents are committed once they pass.
+  const revisionArgs = ['--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true'];
+  const revision = await beginStage('domain-service', { extraArgs: revisionArgs });
+  assert.equal(revision.prepared.input.context.user_revision, true);
+  await submitStage(revision, { files: { [domainModel]: failingService }, artifacts });
+  assert.equal(finishStage(revision).status, 1, 'the revision with a failing document is rejected');
+  assert.equal((await stageState('domain-service')).status, 'running');
+  const revised = upTo(document, 3).replace(/^(\| DEC-03 \|.*)$/m, '$1\n| DEC-06 | domain-service | DS-01 | 중복 판정 기준을 하루로 바꾼다 | 기존 기준 | 사용자 수정 지시 |');
+  assert.notEqual(revised, upTo(document, 3));
+  await writeFile(join(workspace, domainModel), revised);
+  assert.equal(finishStage(revision).status, 0);
+  assert.equal(treeGit('log', '-1', '--format=%s').trim(), `domain-service: ${planSetId}`);
+  assert.match(await readFile(join(workspace, domainModel), 'utf8'), /DEC-06/);
+  assert.equal(treeGit('log', '--format=%s', '-3').trim().split('\n').filter((subject) => subject === `domain-service: ${planSetId}`).length, 2, 'the revision is a commit of its own');
+  assertVisibility([' M app.txt'], 'after the revision');
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n');
 });

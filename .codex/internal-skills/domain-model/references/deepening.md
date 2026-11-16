@@ -28,6 +28,8 @@ Before returning `completed`, run `node .codex/scripts/harness-domain-model-chec
 
 A failing gate means the stage is not complete: fix the document and run it again. Never return `completed` with a failing gate, and never change `requirements.md` or an earlier section only to make the gate pass.
 
+The runner enforces the gate; running it first is how a stage avoids being sent back. When the runner receives a `completed` / `OK` result of one of these stages, `harness-native-stage.mjs finish` runs the same check on the workspace before it commits or records anything, and the state command and a recovery record refuse to record the stage as completed while it fails. A rejected result is returned as `gate_error` with the findings; the stage stays `running`, the caller hands the findings to the same subagent, and the subagent repairs `domain-model.md` and returns again. A flow whose `stakeholder-analysis.md` says `판정: 생략` passes without documents. `blocked` and `action_required` results are never gated.
+
 ## Iterative deepening
 
 Design work can show that the requirements or an earlier stage missed something. The stage never papers over it.

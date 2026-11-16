@@ -6,6 +6,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
 import { WORKTREE_STAGE } from './worktree-stages.mjs';
+import { assertTacticalDesignGate } from './domain-model-gate.mjs';
 
 const ACTIVE_WORKFLOW_STATES = new Set(['created', 'running', 'waiting', 'blocked']);
 
@@ -58,6 +59,8 @@ export async function recordExecutionState({ root, input, binding, status, code 
   const orchestratorProvider = input.context?.orchestrator_provider || (codexSessionId ? 'codex' : null);
   const stage = input.context?.stage_id || input.skill;
   if ((orchestratorSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestratorSessionId)) || (orchestratorProvider && !['codex', 'claude-code'].includes(orchestratorProvider)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid orchestrator session or stage ID');
+  // Every path that records a stage as completed ends here, so a tactical design stage cannot be accepted without its gate.
+  if (status === 'completed') await assertTacticalDesignGate({ root, input, envelope: { status, code } });
   const directory = 'runtime/orchestrator';
   await assertWorkspaceTarget(session, `${directory}/workflow.json`);
   await mkdir(join(session, directory), { recursive: true });

@@ -159,14 +159,23 @@ try {
       process.exit(0);
     }
     const schema = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.schema });
-    let format;
-    try { format = validateOutputFormat(await readSkillSessionJson({ root, session_directory: session, path: paths.refs.raw }), schema); }
+    let format, raw;
+    try { raw = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.raw }); format = validateOutputFormat(raw, schema); }
     catch (error) {
       if (error.code === 'ENOENT') format = { valid: false, errors: [{ path: '$', rule: 'required', expected: 'output file', value: null, missing: true }] };
       else if (error instanceof SyntaxError) format = { valid: false, errors: [{ path: '$', rule: 'json', expected: 'valid JSON', value: null, message: error.message }] };
       else throw error;
     }
     if (!format.valid) { process.stdout.write(`${JSON.stringify({ status: 'format_error', execution_id: id, errors: format.errors, schema_path: paths.files.schema, output_path: paths.files.raw })}\n`); process.exit(1); }
+    // A tactical design stage that claims completion is accepted only when its documents pass the gate, checked before anything is
+    // committed or recorded. A rejection leaves the stage running; the caller returns the findings to the same subagent, which fixes
+    // the documents and rewrites its output, and the same finish runs again.
+    const { evaluateTacticalDesignGate } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
+    const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
+    if (gate && !gate.ok) {
+      process.stdout.write(`${JSON.stringify({ status: 'gate_error', gate: 'domain_model_check', execution_id: id, stage: gate.stage, errors: gate.errors, instruction: `The runner ran harness-domain-model-check.mjs for ${gate.stage} and it failed. Return these errors to the same subagent so it repairs domain-model.md (never requirements.md or an earlier section only to make the gate pass) and rewrites its output file if its summary or artifacts change, then run finish again. Nothing was committed or recorded, and the stage is still running.`, output_path: paths.files.raw })}\n`);
+      process.exit(1);
+    }
     if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) {
       const { assertNoUnrecordedNativeReview } = await import('../../.harness/src/workflow/review-attempts.mjs');
       const prefix = input.skill === 'spec-me' ? 'spec' : input.skill === 'to-ticket' ? 'plan' : 'contracts';

@@ -37,7 +37,7 @@ First step of the tactical design flow, after `requirements-fix` and before `agg
 7. Map in `### 1.4`: every `BIZ`, `INV` and `EX`, and every event and glossary term of each BC, to the candidates of that BC. An event that reacts in another subdomain maps to the receiving BC's model. A rule that no candidate can own means a model is missing: add the candidate, or block when the evidence does not support one.
 8. Update the project model rows for the models this stage touched, as the shared rules describe.
 9. Append the decisions of this stage to `## 6`: why each model is an Entity, a Value Object or an external system, what was extended and what alternatives were rejected, each with its source. Section 6 needs at least one row.
-10. Run `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root> --stage domain-model` and repair the documents until it passes. Return `completed/OK` with `domain-model.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
+10. Run `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root> --stage domain-model` and repair the documents until it passes. The runner enforces this gate on `completed/OK` and returns a failing result as `gate_error`. Return `completed/OK` with `domain-model.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
 

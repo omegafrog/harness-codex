@@ -65,8 +65,8 @@ export async function consumerWorkflow(t, request) {
   const specDirectory = `docs/specs/${planSetId}`;
   const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
 
-  // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
-  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true }) {
+  // The orchestrator's steps before the stage does its own work: prepare, start and bind.
+  async function beginStage(stage, { extraArgs = [] } = {}) {
     const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', stage, ...extraArgs]);
     assert.equal(prepared.input.skill, stage);
     assert.equal(prepared.input.scope, request);
@@ -81,12 +81,27 @@ export async function consumerWorkflow(t, request) {
     const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
     assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
     invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${stage}-agent`]);
+    return { stage, prepared, started, base };
+  }
+
+  // The stage writes its documents and its output file.
+  async function submitStage({ stage, started }, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [] }) {
     for (const [path, content] of Object.entries(files)) {
       await mkdir(join(workspace, path, '..'), { recursive: true });
       await writeFile(join(workspace, path), content);
     }
     const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
+  }
+
+  // finish as the runner answers it, without asserting, for the tests that expect a rejection.
+  const finishStage = ({ base }) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-native-stage.mjs'), 'finish', ...base], { cwd: workspace, encoding: 'utf8' });
+
+  // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
+  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true }) {
+    const begun = await beginStage(stage, { extraArgs });
+    const { prepared, started, base } = begun;
+    await submitStage(begun, { files, status, code, summary, artifacts, questions });
     const before = treeGit('rev-parse', 'HEAD').trim();
     const finished = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...base]);
     assert.equal(finished.status, status);
@@ -98,5 +113,5 @@ export async function consumerWorkflow(t, request) {
     } else assert.equal(head, before, `${stage} committed nothing`);
     return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
   }
-  return { primary, workspace, tree, treeGit, invoke, runStage, planSetId, specDirectory, specPath, request };
+  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, planSetId, specDirectory, specPath, request };
 }
