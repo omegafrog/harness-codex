@@ -130,3 +130,17 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).filter((line) => !line.includes('.harness/contracts.mjs')).length, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// A Claude Code spec_reviewer has no shell, so it cannot run `spec-items` itself: the caller must hand it the item IDs.
+test('installed guidance has the caller pass spec-items to the shell-less Claude spec reviewer', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-spec-items-'));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    assert.doesNotMatch(await readFile(join(root, '.claude/agents/spec_reviewer.md'), 'utf8'), /tools:[^\n]*Bash/);
+    assert.match(await readFile(join(root, '.codex/internal-skills/code-review/GUIDE.md'), 'utf8'), /셸이 없어 `spec-items`를 실행할 수 없다/);
+    assert.match(await readFile(join(root, '.claude/skills/orchestrator/references/implementation.md'), 'utf8'), /spec-items --plan <plan-id>`를 직접 실행해 그 출력/);
+    execFileSync('git', ['check-ignore', '-q', '.codex/internal-skills/code-review/GUIDE.md'], { cwd: root });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
