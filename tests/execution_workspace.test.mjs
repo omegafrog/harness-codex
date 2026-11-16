@@ -63,6 +63,9 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const snapshot = await snapshotPlanSet({ root, planSetId: 'example' });
   const admission = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs: snapshot.inputs });
   await updateReviewAttempt({ root, scope: 'plan-example', action: 'record', attemptId: admission.attempt_id, inputs: snapshot.inputs, review: { reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', findings: [] } });
+  // Publication drafts exist only for the GitHub tracker, so the mode is configured before they are prepared.
+  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
   for (const item of prepared) {
     const body = await readFile(join(root, '.io', item.body_path), 'utf8');
@@ -75,8 +78,6 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   assert.deepEqual((await snapshotPlanSet({ root, planSetId: 'example' })).inputs, snapshot.inputs);
   assert.throws(() => buildImplementPrompt({ repository: root, workspaceRoot: primary, planSetId: 'example', planId: 'slice', planReviewRefs: { execution_workspace: expected } }), /conflicts with runner/);
 
-  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
-  await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const nodes = [];
   let projectMutations = 0;
   const run = async (args) => {

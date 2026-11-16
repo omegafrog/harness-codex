@@ -151,7 +151,9 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     // The main session dispatches a reviewer while the current stage has handed control back (waiting for the review),
     // so its context is the current stage's execution rather than a running native agent.
     let matches = [];
-    if (mainSession) {
+    // Only a Claude Code orchestrator dispatches reviewers for its stage; a Codex stage starts its own reviewer, and a
+    // reviewer started by the Codex main session is never bound to the stage.
+    if (mainSession && state.orchestrator_provider === 'claude-code') {
       const current = state.stages?.[state.current_stage];
       if (current && ['running', 'waiting'].includes(current.status) && current.execution_id) matches = [current];
     } else {
