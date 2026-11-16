@@ -175,6 +175,48 @@ async function collectAnswers(session, prefix, questions, answer) {
   return merged;
 }
 
+async function queueRunningAnswers(session, executionId, answer) {
+  let incoming;
+  try { incoming = JSON.parse(answer); } catch { throw new Error('Answers for a running stage must include question IDs'); }
+  if (!Array.isArray(incoming) || !incoming.length || incoming.some((entry) => !entry || Object.keys(entry).sort().join(',') !== 'answer,question_id' || typeof entry.question_id !== 'string' || !entry.question_id.trim() || typeof entry.answer !== 'string' || !entry.answer.trim())) throw new Error('Answers for a running stage must include question IDs');
+  const directory = join(session, 'runtime/executions', executionId);
+  const path = join(directory, 'deferred-answers.json');
+  await assertWorkspaceTarget(session, path);
+  const lock = join(directory, '.deferred-answers.lock');
+  try { await mkdir(lock); }
+  catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const lockInfo = await lstat(lock);
+    if (!lockInfo.isDirectory() || lockInfo.isSymbolicLink()) throw new Error('Unsafe deferred answers lock');
+    const owner = await readFile(join(lock, 'owner.json'), 'utf8').then(JSON.parse, () => null);
+    const current = Number.isSafeInteger(owner?.pid) && owner.pid > 0 ? await processIdentity(owner.pid) : null;
+    const stale = owner?.boot && owner?.start && current && (current.boot !== owner.boot || current.start !== owner.start || current.state === 'Z') || !owner && Date.now() - lockInfo.mtimeMs > 5_000;
+    if (!stale) throw new Error('Deferred answers are being recorded; retry after the current operation ends');
+    await rm(lock, { recursive: true });
+    await mkdir(lock);
+  }
+  try {
+    const owner = await processIdentity(process.pid);
+    if (!owner?.boot || !owner?.start) throw new Error('Cannot establish deferred answers lock owner');
+    await writeFile(join(lock, 'owner.json'), JSON.stringify(owner), { flag: 'wx', mode: 0o600 });
+    const info = await lstat(path).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (info && (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)) throw new Error('Deferred answers must be a regular unshared file');
+    const previous = info ? JSON.parse(await readFile(path, 'utf8')) : [];
+    if (!Array.isArray(previous) || previous.some((entry) => !entry || Object.keys(entry).sort().join(',') !== 'answer,question_id' || typeof entry.question_id !== 'string' || !entry.question_id.trim() || typeof entry.answer !== 'string' || !entry.answer.trim()) || new Set(previous.map((entry) => entry.question_id)).size !== previous.length) throw new Error('Invalid deferred answers');
+    const answers = new Map(previous.map((item) => [item.question_id, item.answer]));
+    for (const item of incoming) {
+      if (answers.has(item.question_id) && answers.get(item.question_id) !== item.answer) throw new Error('Conflicting deferred answer');
+      answers.set(item.question_id, item.answer);
+    }
+    const temporary = join(directory, `.deferred-${randomUUID()}.json`);
+    try {
+      await writeFile(temporary, JSON.stringify([...answers].map(([question_id, value]) => ({ question_id, answer: value })), null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+      await rename(temporary, path);
+    } finally { await rm(temporary, { force: true }); }
+    return [...answers.keys()];
+  } finally { await rm(lock, { recursive: true }); }
+}
+
 async function executionSession({ root, session, executionId, worktreeRef }) {
   let log = {};
   try { log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${executionId}/exec.stderr.json` }); }
@@ -223,6 +265,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (restart && (stageId !== 'to-ticket' || answer !== null || feedback !== null)) throw new Error('Restart applies only to to-ticket without an answer or feedback');
   const running = state.stages?.[stageId];
   if (running?.status === 'running' && !running.result_ref) {
+    if (running.native_managed && answer !== null) {
+      const questionIds = await queueRunningAnswers(session, running.execution_id, answer);
+      return { waiting_for_running_stage: true, execution_id: running.execution_id, agent_id: running.native_agent_id || null, deferred_question_ids: questionIds };
+    }
     let stopped = false;
     await assertExecutionStopped(running, { root, session }); stopped = true;
     if (stopped) {
@@ -457,7 +503,15 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const sessionInfo = neverStarted || switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
     if (sessionInfo) provider = sessionInfo.provider;
     else if (!switchedProvider && previousInput.context?.provider) provider = previousInput.context.provider;
-    if (interrupted) interruptedAnswers = join(taskSession, prefix, 'answers.json');
+    if (interrupted) {
+      interruptedAnswers = join(taskSession, prefix, 'answers.json');
+      const deferredPath = `${prefix}/deferred-answers.json`;
+      const deferred = await readSkillSessionJson({ root, session_directory: taskSession, path: deferredPath }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+      if (deferred) {
+        if (!Array.isArray(deferred)) throw new Error('Invalid deferred answers');
+        input_refs.push({ base: 'session', path: deferredPath, kind: 'deferred_user_answers_unverified' });
+      }
+    }
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
     if (switchedProvider) {
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
@@ -466,8 +520,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
+  let deferredAnswers = null;
+  if (!userRevision && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
+    deferredAnswers = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${previous.execution_id}/deferred-answers.json` }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (deferredAnswers && (!Array.isArray(deferredAnswers) || deferredAnswers.some((entry) => !entry || Object.keys(entry).sort().join(',') !== 'answer,question_id' || typeof entry.question_id !== 'string' || !entry.question_id.trim() || typeof entry.answer !== 'string' || !entry.answer.trim()) || new Set(deferredAnswers.map((entry) => entry.question_id)).size !== deferredAnswers.length)) throw new Error('Invalid deferred answers');
+  }
   if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting) || answer !== null) {
-    if (answer === null) throw new Error('User answer required before resuming this stage');
+    if (answer === null && !deferredAnswers) throw new Error('User answer required before resuming this stage');
     if (previous?.status !== 'waiting') throw new Error('Stage is not waiting for a response');
     const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
     if (previousSession !== taskSession) throw new Error('Pending decision belongs to a different worktree session');
@@ -485,6 +544,23 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (switchedProvider) {
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
+    }
+    if (deferredAnswers) {
+      const ids = new Set(result.questions.map((question) => question.question_id));
+      const matching = deferredAnswers.filter((item) => ids.has(item.question_id));
+      if (matching.length !== deferredAnswers.length) input_refs.push({ base: 'session', path: `${prefix}/deferred-answers.json`, kind: 'deferred_user_answers_unverified' });
+      let incoming = [];
+      if (answer !== null) {
+        try { incoming = JSON.parse(answer); } catch { incoming = result.questions.length === 1 ? [{ question_id: result.questions[0].question_id, answer }] : null; }
+        if (typeof incoming === 'string' && result.questions.length === 1) incoming = [{ question_id: result.questions[0].question_id, answer: incoming }];
+        if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
+      }
+      const answers = new Map(matching.map((item) => [item.question_id, item.answer]));
+      for (const item of incoming) {
+        if (answers.has(item.question_id) && answers.get(item.question_id) !== item.answer) throw new Error('Conflicting deferred answer');
+        answers.set(item.question_id, item.answer);
+      }
+      answer = JSON.stringify([...answers].map(([question_id, value]) => ({ question_id, answer: value })));
     }
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };

@@ -14,13 +14,14 @@ import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/work
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 
 try {
-  const [action, ...args] = process.argv.slice(2), opts = {};
+  const [requestedAction, ...args] = process.argv.slice(2), opts = {};
+  let action = requestedAction;
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i]?.replace(/^--/, '');
     if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
     opts[key] = args[i + 1];
   }
-  if (!['start', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs start|bind|receive|finish|fail|cancel --root ROOT --worktree-ref REF --execution-id ID');
+  if (!['start', 'inspect', 'reconcile', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs start|inspect|reconcile|bind|receive|finish|fail|cancel --root ROOT --worktree-ref REF --execution-id ID');
   const root = opts.root, id = opts['execution-id'];
   resolveCommandContext({ root, worktreeRef: opts['worktree-ref'] });
   if (['fail', 'cancel'].includes(action) && !opts.reason?.trim()) throw new Error('A native subagent failure reason is required');
@@ -45,20 +46,91 @@ try {
     const state = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' });
     const current = (state.state || state).stages?.[input.context?.stage_id || input.skill];
     if (current?.status !== 'running' || current.execution_id !== id || !current.native_managed) throw new Error('Native stage is not running for this execution');
+    if (action === 'inspect') {
+      let observation = null;
+      let threadId = null;
+      if (binding.provider === 'codex' && current.native_agent_id) {
+        const { resolveNativeCodexThread } = await import('../../.harness/src/workflow/native-context.mjs');
+        threadId = await resolveNativeCodexThread({ root, parentSessionId: (state.state || state).orchestrator_session_id, stage: current });
+      }
+      const relative = `runtime/executions/${id}/native-observations.jsonl`;
+      await assertWorkspaceTarget(session, relative);
+      let file;
+      try {
+        file = await open(join(session, relative), constants.O_RDONLY | constants.O_NOFOLLOW);
+        const info = await file.stat();
+        if (!info.isFile() || info.nlink !== 1 || info.size > 4 * 1024 * 1024) throw new Error('Unsafe native observation log');
+        const lines = (await file.readFile('utf8')).trim().split('\n').filter(Boolean);
+        const parent = (state.state || state).orchestrator_session_id;
+        for (const line of lines) {
+          const entry = JSON.parse(line);
+          const matchingSession = entry.session_id === parent || threadId && entry.session_id === threadId && entry.agent_id === threadId;
+          if (matchingSession && [current.native_agent_id, `/root/${current.native_agent_id}`, threadId].filter(Boolean).includes(entry.agent_id) && ['SubagentStart', 'SubagentStop'].includes(entry.event)) observation = entry;
+        }
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      finally { if (file) await file.close(); }
+      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, output_path: paths.files.raw, schema_path: paths.files.schema })}\n`);
+      process.exit(0);
+    }
     if (action === 'bind') {
       await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: opts['agent-id'] });
       process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: opts['agent-id'] })}\n`);
       process.exit(0);
+    }
+    if (action === 'reconcile') {
+      if (binding.provider !== 'codex' || !input.context?.orchestrator_session_id || process.env.CODEX_THREAD_ID !== input.context.orchestrator_session_id) throw new Error('Reconciliation requires the original Codex parent session');
+      if (!current.native_agent_id) throw new Error('Native subagent binding is unavailable');
+      let text = '';
+      for await (const chunk of process.stdin) { text += chunk; if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('Native agent status exceeds size limit'); }
+      let report;
+      try { report = JSON.parse(text); } catch { throw new Error('Native agent status must be a JSON object from the current host'); }
+      if (!report || !Array.isArray(report.agents)) throw new Error('Native agent status must contain the current host agent list');
+      const expected = current.native_agent_id.startsWith('/') ? current.native_agent_id : `/root/${current.native_agent_id}`;
+      const matches = report.agents.filter((item) => item?.agent_name === expected);
+      if (matches.length !== 1) {
+        process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'agent_not_uniquely_reported' })}\n`);
+        process.exit(0);
+      }
+      const hostStatus = matches[0].agent_status;
+      if (hostStatus === 'running' || hostStatus === 'pending') {
+        process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: current.native_agent_id })}\n`);
+        process.exit(0);
+      }
+      const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+      const outcome = await readNativeCodexOutcome({ root, parentSessionId: input.context.orchestrator_session_id, stage: current });
+      if (hostStatus && typeof hostStatus === 'object' && !Array.isArray(hostStatus) && Object.keys(hostStatus).length === 1 && Object.hasOwn(hostStatus, 'completed') && typeof hostStatus.completed === 'string') {
+        if (outcome?.status !== 'completed' || outcome.output !== hostStatus.completed) {
+          process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'completed_turn_not_verified' })}\n`);
+          process.exit(0);
+        }
+        action = 'finish';
+        if (!existsSync(paths.files.raw) && hostStatus.completed.trim()) {
+          await assertWorkspaceTarget(session, paths.refs.raw);
+          const file = await open(paths.files.raw, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+          try { await file.writeFile(hostStatus.completed); } finally { await file.close(); }
+        }
+      } else if (hostStatus === 'interrupted' || hostStatus && typeof hostStatus === 'object' && !Array.isArray(hostStatus) && Object.keys(hostStatus).length === 1 && (typeof hostStatus.failed === 'string' || typeof hostStatus.error === 'string')) {
+        if (outcome?.status !== (hostStatus === 'interrupted' ? 'interrupted' : 'failed')) {
+          process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'failed_turn_not_verified' })}\n`);
+          process.exit(0);
+        }
+        action = 'fail';
+        opts.reason = hostStatus === 'interrupted' ? 'Native agent was interrupted by the host' : outcome.error.slice(0, 4000);
+        if (!opts.reason.trim()) throw new Error('Native agent failure reason is empty');
+      } else {
+        process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'unrecognized_host_status' })}\n`);
+        process.exit(0);
+      }
     }
     if (action === 'fail' || action === 'cancel') {
       const status = action === 'cancel' ? 'cancelled' : 'failed';
       const code = status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
       const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
         ? () => writeImplementationCheckpoint({ input, status, code, verified: false, reason: opts.reason }) : null;
-      try { await recordExecutionState({ root, input, binding, status, code, reason: opts.reason, beforeTransition }); }
+      try { await recordExecutionState({ root, input, binding, status, code, reason: opts.reason, nativeTerminalAgentId: current.native_agent_id || null, beforeTransition }); }
       catch (error) {
         if (!error.checkpointFailure) throw error;
-        await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message });
+        await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
         throw error;
       }
       process.stdout.write(`${JSON.stringify({ status, execution_id: id, reason: opts.reason })}\n`);
@@ -103,10 +175,10 @@ try {
     const envelope = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.returned });
     const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
       ? () => writeImplementationCheckpoint({ input, status: envelope.status, code: envelope.code, envelope, verified: true }) : null;
-    try { await recordExecutionState({ root, input, binding, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, beforeTransition }); }
+    try { await recordExecutionState({ root, input, binding, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, nativeTerminalAgentId: current.native_agent_id || null, beforeTransition }); }
     catch (error) {
       if (!error.checkpointFailure) throw error;
-      await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message });
+      await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
       throw error;
     }
     process.stdout.write(`${JSON.stringify({ status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result })}\n`);
