@@ -13,8 +13,9 @@
 | `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고, 사용자 확인을 받아 SD 표의 `분류`·`근거`·`상태`를 `confirmed`로 쓴다. 경계가 바뀌면 BIZ 배치와 이벤트 다이어그램도 고친다 |
 | `bounded-context` | `### 1.1` 바운디드 컨텍스트 표를 쓴다. 같은 stage가 `CONTEXT-MAP.md`와 용어의 최종 BC 소속을 갱신한다 |
 | `requirements-fix` | 남은 빈칸을 인터뷰로 채우고 완료 조건과 `## 6`을 쓴 뒤, coverage gate를 통과하면 `상태`를 `fixed`로 바꾼다 |
+| `domain-model`부터 `integration-design`까지 | 이 문서를 확정 입력으로 읽고 [domain-model.md 템플릿](../../domain-model/references/template.md)의 문서를 채운다. 질문을 하는 stage(`aggregate-design`, `integration-design`)는 사용자의 답에서 새 업무 규칙·예외가 나오면 해당 BIZ에 INV·EX·AC만 덧붙인다 |
 
-`stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다. 뒤의 여섯 stage는 문서를 쓰지 않고 생략을 결과 요약에 기록한 뒤 `completed/OK`를 반환하며, `spec-me`는 이전처럼 실행된다.
+`stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다. 뒤의 여섯 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 결과 요약에 기록한 뒤 `completed/OK`를 반환하며, `spec-me`는 이전처럼 실행된다.
 
 ## 작성 규칙
 
@@ -27,6 +28,7 @@
 - 바운디드 컨텍스트의 비교 기준은 [ddd-design](../../ddd-design/GUIDE.md)의 경계 규칙이 정본이며 이 문서에 다시 적지 않는다.
 - 업무와 전략적 경계만 다룬다. bounded context는 `bounded-context` stage만 정하며, 모듈·저장 방식·프레임워크·통신 방식은 쓰지 않는다.
 - 확정 뒤 변경은 사용자의 명시적 수정 지시로만 한다. 그 지시는 출처 `사용자 수정 지시`로 `출처·변경 이력`에 원문과 함께 남긴다.
+- 전술 설계 stage가 자기 질문에 대한 사용자의 답으로 얻은 새 규칙·예외는 출처 `answers.json`과 `question_id`로 해당 BIZ에 INV·EX와 AC를 덧붙일 수 있다. 기존 항목은 고치지 않으며 번호는 문서 전체에서 이어 쓰고 `출처·변경 이력`에 그 stage 이름과 함께 한 줄을 남긴다.
 
 ## 문서 모양
 

@@ -10,7 +10,7 @@ const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
 const { stageExecutionPaths } = await import(new URL('session-output.mjs', installed));
-const { REQUIREMENTS_STAGES } = await import(new URL('worktree-stages.mjs', installed));
+const { PRE_SPEC_STAGES } = await import(new URL('worktree-stages.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -48,7 +48,7 @@ try {
   }
   if (opts.source) envelope.result.execution_id = input.execution_id;
   if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;
-  if (['spec-me', ...REQUIREMENTS_STAGES].includes(input.skill) && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
+  if (['spec-me', ...PRE_SPEC_STAGES].includes(input.skill) && input.context?.worktree_ref && Array.isArray(envelope.result.artifacts)) {
     const record = parseWorktreeRecord(await readFile(input.context.worktree_ref, 'utf8'));
     if (await realpath(opts.root) !== await realpath(record.workspace)) throw new Error('Workspace does not match worktree.json');
     const slug = record.plan_set_id?.replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, '');

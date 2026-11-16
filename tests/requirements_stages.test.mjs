@@ -2,39 +2,18 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { WORKTREE_STAGE, REQUIREMENTS_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
+import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
 
-const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const SETUP = `agents:
-  provider: codex
-  codex:
-    high_performance_model: codex-high
-    high_performance_reasoning_effort: high
-    implementation_model: codex-implementation
-    implementation_reasoning_effort: medium
-    execution_model: codex-execution
-    execution_reasoning_effort: low
-    low_performance_model: codex-light
-    low_performance_reasoning_effort: minimal
-tracker:
-  mode: local-markdown
-  local_markdown:
-    directory: docs/plans
-`;
 const TEMPLATE = '.codex/internal-skills/requirements-fix/references/template.md';
-const STAGE_TIERS = { 'stakeholder-analysis': 'implementation', 'subdomain-candidates': 'implementation', 'event-storming': 'implementation', 'subdomain-classification': 'implementation', 'bounded-context': 'high_performance', 'ubiquitous-language': 'implementation', 'requirements-fix': 'high_performance' };
-const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high' };
-
-const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 const fenced = (text, language) => [...text.matchAll(new RegExp('```' + language + '\\n([\\s\\S]*?)\\n```', 'g'))].map((match) => match[1]);
 
@@ -112,7 +91,11 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(languageGuide, /not bounded contexts/);
   assert.match(await read('.codex/internal-skills/event-storming/GUIDE.md'), /Use settled terms in events and diagrams/);
   assert.match(await read('.codex/internal-skills/event-storming/GUIDE.md'), /settled `## 3` term table/);
-  assert.match(context, /upstream, downstream, each context's responsibility, and the communication contract/);
+  assert.match(context, /upstream, downstream, each context's responsibility, the communication contract[^`]*and the `판단 소유자`/);
+  assert.match(context, /write `미정` with the reason when the evidence does not say/);
+  assert.match(context, /has no `판단 소유자` column gets the column added/);
+  // The map template every new project gets carries the decision owner next to the contract, and the guide's wording matches it.
+  assert.match(await read('.codex/skills/setup/assets/CONTEXT-MAP.md'), /^\| Upstream \| Downstream \| Upstream 책임 \| Downstream 책임 \| 통신 계약 \| 판단 소유자 \| 상태·근거 \|\n\|---\|---\|---\|---\|---\|---\|---\|$/m);
   assert.match(context, /mark unspecified details as undecided/);
   assert.match(context, /pattern only when supported by evidence/);
   const events = await read('.codex/internal-skills/event-storming/GUIDE.md');
@@ -236,72 +219,6 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   assert.match(git('status', '--short', '--untracked-files=all'), /\?\? docs\/specs\/community\/requirements\.md/);
 });
 
-async function consumerWorkflow(t, request) {
-  const directory = await mkdtemp(join(tmpdir(), 'requirements-stage-'));
-  const primary = join(directory, 'main');
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  await mkdir(primary);
-  const git = gitIn(primary);
-  execFileSync('git', ['init', '-q', '-b', 'main', primary]);
-  git('config', 'user.name', 'Stage test'); git('config', 'user.email', 'test@example.test');
-  await protectLocalInstallArtifacts(primary, sourceRoot);
-  await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
-  await writeFile(join(primary, '.harness/harness.yaml'), SETUP);
-  await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
-    await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
-  }
-  await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
-  git('commit', '-qm', 'baseline');
-  const invoke = (cwd, script, args = [], input) => {
-    const result = spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', input });
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    return JSON.parse(result.stdout);
-  };
-  const tree = invoke(primary, 'harness-compose-workspace.mjs', ['--root', primary, '--execution-id', 'compose-requirements', '--plan-set-id', 'community', '--request', request, '--orchestrator-provider', 'codex', '--orchestrator-session-id', randomUUID()]);
-  const workspace = tree.workspace;
-  const treeGit = gitIn(workspace);
-  const planSetId = tree.plan_set_id;
-  const specDirectory = `docs/specs/${planSetId}`;
-  const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
-
-  // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
-  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true }) {
-    const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', stage, ...extraArgs]);
-    assert.equal(prepared.input.skill, stage);
-    assert.equal(prepared.input.scope, request);
-    assert.equal(prepared.input.context.stage_id, stage);
-    assert.equal(prepared.input.context.plan_set_id, undefined, 'the stored input derives the plan set from worktree.json');
-    const base = ['--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id];
-    const started = invoke(workspace, 'harness-native-stage.mjs', ['start', ...base]);
-    assert.equal(started.agent_profile, 'workflow_stage');
-    assert.equal(started.guide, join(workspace, `.codex/internal-skills/${stage}/GUIDE.md`));
-    assert.equal(started.binding.model_tier, STAGE_TIERS[stage]);
-    assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
-    const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
-    assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
-    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${stage}-agent`]);
-    for (const [path, content] of Object.entries(files)) {
-      await mkdir(join(workspace, path, '..'), { recursive: true });
-      await writeFile(join(workspace, path), content);
-    }
-    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null };
-    await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
-    const before = treeGit('rev-parse', 'HEAD').trim();
-    const finished = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...base]);
-    assert.equal(finished.status, status);
-    assert.equal(finished.code, code);
-    const head = treeGit('rev-parse', 'HEAD').trim();
-    if (expectCommit) {
-      assert.notEqual(head, before, `${stage} committed its documents`);
-      assert.equal(treeGit('log', '-1', '--format=%s').trim(), `${stage}: ${planSetId}`);
-    } else assert.equal(head, before, `${stage} committed nothing`);
-    return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
-  }
-  return { primary, workspace, tree, treeGit, invoke, runStage, planSetId, specDirectory, specPath, request };
-}
-
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 
 test('the requirements stages run in order as workflow stages and spec-me accepts the last one as its previous stage', async (t) => {
@@ -402,7 +319,7 @@ test('the requirements stages run in order as workflow stages and spec-me accept
   assert.equal(revision.input.context.user_revision, true);
   const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, spec-me, to-ticket or implement-wrapper/);
+  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper/);
 
   // Restart preserves the old state and returns to the checkpoint before bounded-context.
   const restartArgs = ['--stage-id', 'bounded-context', '--restart-requirements', 'true'];

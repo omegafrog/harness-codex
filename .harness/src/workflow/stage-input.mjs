@@ -16,10 +16,10 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { REQUIREMENTS_STAGES } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
-const USER_REVISION_STAGES = new Set(['requirements-fix', 'spec-me', 'to-ticket', 'implement-wrapper']);
+const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'spec-me', 'to-ticket', 'implement-wrapper']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 
 async function hasPassingImplementationGate(root) {
@@ -140,7 +140,7 @@ async function existingRestartInput({ root, session, planSetId, previousExecutio
 }
 
 function storedStageInput(input) {
-  if (!input.context?.worktree_ref || ![...REQUIREMENTS_STAGES, 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
+  if (!input.context?.worktree_ref || ![...PRE_SPEC_STAGES, 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
   const { workspace_root, shared_guidance_root, session_directory, ...rest } = input;
   const { plan_set_id, ...context } = rest.context;
   return { ...rest, context };
@@ -250,7 +250,7 @@ async function queueRunningAnswers(session, executionId, answer) {
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
-  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, spec-me, to-ticket or implement-wrapper');
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
   if ((repairReceipt || approvalAnswer) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
@@ -302,8 +302,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // The user may also revise a completed Spec or plan while a later stage waits on a question: the revision replaces
   // that question (the later stage restarts from the revised plan), so it must not have to be answered first.
   const target = state.stages?.[stageId];
+  // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
+  const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
   const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
-    && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
+    && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
   if (!reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
     const allowed = REVISION_TARGETS;

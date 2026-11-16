@@ -8,7 +8,8 @@
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
-- 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `event-storming` → `subdomain-classification` → `bounded-context` → `ubiquitous-language` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
+- 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
+- 전술 설계 흐름 — 확정된 요구사항 뒤, `spec-me` 전에 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design`이 하나의 `domain-model.md`를 단계별로 채우고 stage마다 결정론적 gate를 통과
 - `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
@@ -21,9 +22,12 @@
 ```text
 $setup
   ↓
-stakeholder-analysis → subdomain-candidates → event-storming
-  → subdomain-classification → bounded-context → ubiquitous-language
+stakeholder-analysis → subdomain-candidates → ubiquitous-language
+  → event-storming → subdomain-classification → bounded-context
   → requirements-fix → 확정된 requirements.md
+  ↓
+domain-model → aggregate-design → domain-service
+  → application-service → integration-design → domain-model.md
   ↓
 spec-me → Product Spec → Architecture Spec
   ↓
@@ -106,13 +110,30 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
 |---|---|---|---|
 | `subdomain-candidates` | 업무(BIZ)를 나누고 서브도메인 후보(SD)로 묶는다. 기존 영역에 먼저 넣고 새 후보는 정말 따로 둘 때만 만든다 | 범위가 크게 갈리는 해석일 때만 | |
+| `ubiquitous-language` | 후보 업무별로 혼동되는 말을 먼저 정해 용어 표(용어·뜻·쓰지 않을 말)를 만들고 문장을 통일한다. 최종 컨텍스트 소속은 `bounded-context`가 검증한다 | 결과를 바꾸는 뜻만 한 묶음 | `CONTEXT.md` |
 | `event-storming` | 도메인 전문가 persona를 다시 실행해 업무별 행위자·명령·도메인 이벤트(과거형 업무 사실)·정책·외부 시스템·hotspot을 낸다. 요청 밖 기능은 범위 밖 관찰로 접는다 | hotspot을 한 묶음으로 | `diagrams/events/`의 SD별·서브도메인 간 PlantUML(`.puml`)과 렌더(`.svg`) |
 | `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고 core·supporting·generic으로 분류한다. 후보가 여기서 확정된다 | 구성과 분류 확인 한 묶음 | |
-| `bounded-context` | 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
-| `ubiquitous-language` | 컨텍스트별로 같은 말이 같은 뜻이 되게 용어 표(용어·뜻·쓰지 않을 말)를 만들고 문장을 통일한다 | 결과를 바꾸는 뜻만 한 묶음 | `CONTEXT.md` |
+| `bounded-context` | 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적는다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
 | `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate를 통과하면 `상태: fixed`로 확정한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 빈칸만 한 묶음 | |
 
-`stakeholder-analysis`가 생략을 판정하면 뒤 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`는 `spec-me`가 사용자 결정으로 읽으며 Product Spec과 이후 단계는 그대로다. Architecture는 확정된 바운디드 컨텍스트를 다시 비교하지 않는다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
+`stakeholder-analysis`가 생략을 판정하면 뒤 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`는 `spec-me`가 사용자 결정으로 읽으며 Product Spec과 이후 단계는 그대로다. Architecture는 확정된 바운디드 컨텍스트를 다시 비교하지 않는다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
+
+#### 전술 설계 흐름
+
+`requirements-fix`가 `fixed`로 확정한 뒤 `spec-me` 전에 아래 다섯 stage가 순서대로 `docs/specs/<plan-set-id>/domain-model.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계 절과 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
+
+| stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
+|---|---|---|---|
+| `domain-model` | 바운디드 컨텍스트와 맵을 확정 입력으로 받아 서브도메인 분류별 깊이(core 풍부, supporting 규칙에 필요한 만큼, generic 최소·외부 시스템)로 Entity·Value Object 후보를 정하고 모든 업무·규칙·이벤트를 모델에 대응시킨다. 기존 프로젝트면 이 stage만 `code-research`로 기존 모델을 `file:line`과 commit으로 기록한다 | 없음. 근거가 부족하면 `blocked`로 요구사항 수정을 가리킨다 | `docs/architecture/domain-model.md`(`accepted-target` 행) |
+| `aggregate-design` | 함께 지켜야 하는 불변식으로 Aggregate를 묶고 다른 Aggregate는 ID로만 참조한다. Aggregate에 걸친 규칙은 즉시 일관성이면 병합하고 최종 일관성을 허용하면 분리하며 결정을 출처와 함께 기록한다 | 요구사항이 일관성을 정하지 않을 때 한 묶음(선택지마다 업무 결과) | 같음 |
+| `domain-service` | 어떤 Entity·Value Object도 소유하지 못하는 도메인 판단만 둔다. 조율·transaction·저장·외부 효과는 하지 않는다 | 없음 | 같음 |
+| `application-service` | 호출 순서, transaction 경계(transaction마다 Aggregate 하나), Repository, 외부 효과를 정한다. 도메인 판단은 하지 않는다 | 없음 | 같음 |
+| `integration-design` | 컨텍스트 맵의 관계(판단 소유자)와 일관성 결정에서 명령·응답·이벤트와 통신 방식을 정한다. Saga·Outbox는 최종 일관성으로 기록한 규칙에서만 검토한다 | 업무 결과를 바꾸는 통합 결정만 한 묶음 | 같음 |
+
+- 모든 stage는 반환 전에 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root> --stage <stage>` gate를 통과해야 한다. 지금까지 채운 절을 누적해 모든 업무가 모델 또는 외부 시스템에 대응하는지, 모든 규칙이 소유 모델과 강제하는 행위(root 메서드·Domain Service)에 대응하는지, Aggregate에 걸친 규칙마다 출처가 있는 일관성 결정이 있는지 확인한다.
+- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다.
+- `docs/architecture/domain-model.md`와 `CONTEXT.md`는 프로젝트 소유 문서이며 Git에 노출된다. stage가 변경을 artifact로 보고했을 때만 실행기가 plan set 문서와 함께 commit한다.
+- 전술 설계 결과를 `spec-me`가 어떻게 읽는지는 아직 정하지 않았다.
 
 ### 3. `spec-me`
 

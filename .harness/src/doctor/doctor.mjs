@@ -105,6 +105,9 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/requirements-fix/references/template.md',
     '.codex/internal-skills/requirements-fix/references/coverage.md',
     '.codex/internal-skills/event-storming/references/diagrams.md',
+    ...['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.codex/internal-skills/domain-model/references/template.md',
+    '.codex/internal-skills/domain-model/references/deepening.md',
     ...['bootstrap', 'render'].map((name) => `.codex/tools/plantuml-${name}.mjs`),
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
@@ -112,7 +115,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/schemas/return.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
     '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
-    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session', 'stakeholder'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session', 'stakeholder', 'domain-model-check'].map((name) => `.codex/scripts/harness-${name}.mjs`),
     '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];

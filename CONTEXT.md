@@ -39,6 +39,9 @@
 | Subdomain Candidate | 서브도메인 후보 | Subdomain Candidate | Proposal | 업무를 목적·언어·행위자 차이로 묶은 가설(SD). 이벤트 근거로 검증하고 core·supporting·generic으로 분류해 사용자가 확인하면 확정된다. 바운디드 컨텍스트가 아니다 | SD | 바운디드 컨텍스트 | `.codex/internal-skills/subdomain-classification/GUIDE.md` |
 | Domain Event | 도메인 이벤트 | Domain Event | Business Fact | 업무에서 일어난 사실을 한국어 과거형으로 쓴 이름(예: 게시글이 작성됨). 클릭·저장·API 호출 같은 기술 사건은 이벤트가 아니다 | - | 기술 이벤트 | `.codex/internal-skills/event-storming/GUIDE.md` |
 | Hotspot | 핫스팟 | Hotspot | Open Question | 이벤트 흐름에서 이벤트·정책·예외의 결과를 바꾸는데 요청이 정하지 않은 결정(HS). 사용자가 답하면 업무 규칙이나 예외 시나리오로 기록한다 | HS | - | `.codex/internal-skills/event-storming/GUIDE.md` |
+| Domain Model Document | 도메인 모델 명세 | Domain Model Document | Project Document | 확정된 요구사항을 전술 설계로 옮겨 `docs/specs/<plan-set-id>/domain-model.md` 한 문서에 단계별로 모아 가는 plan set 문서. 다섯 stage가 각자 모델 후보·Aggregate·Domain Service·Application Service·통합 설계 절을 채우고 결정 이력에 출처를 남긴다. 프로젝트의 현재 모델 기준인 `docs/architecture/domain-model.md`와 구분한다 | domain-model.md | requirements.md | `.codex/internal-skills/domain-model/references/template.md` |
+| Consistency Decision | 일관성 결정 | Consistency Decision | Decision | Aggregate에 걸친 규칙(CON)을 즉시 일관성(병합)과 최종 일관성(분리) 중 무엇으로 지킬지 정한 업무 결정. 요구사항이나 사용자 답을 출처로 하며 에이전트 제안만으로 확정하지 않고 Saga·Outbox는 최종 일관성 결정에서만 검토한다 | CON | - | `.codex/internal-skills/aggregate-design/GUIDE.md` |
+| Decision Owner | 판단 소유자 | Decision Owner | Role | 컨텍스트 맵의 관계에서 두 컨텍스트의 규칙이 어긋날 때 결과를 정하는 컨텍스트. 다른 쪽은 그 결과를 받아들이며 근거가 없으면 `미정`이다. upstream·downstream 방향과 같지 않다 | - | upstream과 동일시 | `.codex/internal-skills/bounded-context/GUIDE.md` |
 
 ## Tracker lifecycle 용어
 

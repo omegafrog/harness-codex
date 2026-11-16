@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commitWorkflowDocuments } from '../.harness/src/workflow/stage-commit.mjs';
-import { REQUIREMENTS_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
+import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 
 // Workflow-owned documents are committed by their stage; unrelated project files stay visible and uncommitted.
 test('spec-me, to-ticket and sync-contracts commit only their own documents when they complete', async () => {
@@ -148,6 +148,70 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
     assert.match(status, /M app\.txt$/m, 'application changes stay visible and untouched');
     assert.match(status, /M CONTEXT\.md$/m, 'the glossary changed after its stage stays visible');
     assert.match(status, /M CONTEXT-MAP\.md$/m, 'the context map changed after its stage stays visible');
+    await rm(raw, { force: true });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// The tactical design stages commit the plan set's documents; the project's model rows and glossary only when the stage
+// reports them, so the project's own edits to those files are never swept into a stage commit.
+test('each tactical design stage commits docs/specs of its plan set, project documents only when reported, and a block that kept a rule commits that rule', async () => {
+  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design']);
+  assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES], 'one ordered list covers the flow before spec-me');
+  const root = await mkdtemp(join(tmpdir(), 'tactical-docs-'));
+  const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
+  try {
+    git('init', '-q', '-b', 'main');
+    await mkdir(join(root, 'docs/architecture'), { recursive: true });
+    await mkdir(join(root, 'docs/specs/set'), { recursive: true });
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n');
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n');
+    await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 모델 색인\n');
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n');
+    await writeFile(join(root, 'app.txt'), 'app\n');
+    git('add', '.'); git('commit', '-qm', 'base');
+    const raw = join(root, '..', `${Date.now()}-tactical-raw.json`);
+    const run = async (skill, status = 'completed', artifacts = [], code = 'OK') => { await writeFile(raw, JSON.stringify({ status, code, result: { artifacts } })); return commitWorkflowDocuments({ root, input: { skill, context: { plan_set_id: 'set' } }, rawPath: raw }); };
+    const lastFiles = () => git('show', '--name-only', '--format=', 'HEAD').split('\n').sort();
+    const lastSubject = () => git('log', '-1', '--format=%s');
+    const listed = (...paths) => paths.map((path) => ({ base: 'workspace', path }));
+
+    // The project edits its own model rows and glossary; a stage that did not report them leaves those edits alone.
+    await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 모델 색인\n\n프로젝트가 직접 고친 행\n');
+    await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 프로젝트가 직접 고친 용어\n');
+    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 1. 모델 후보\n');
+    await writeFile(join(root, 'app.txt'), 'app in progress\n');
+    assert.equal(await run('domain-model', 'action_required', [], 'USER_DECISION_REQUIRED'), null, 'a stage waiting for the user commits nothing');
+    assert.equal(await run('domain-model', 'blocked', [], 'INPUT_MISSING'), null, 'a block for missing evidence commits nothing');
+    assert.match(await run('domain-model'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/domain-model.md']);
+    assert.equal(lastSubject(), 'domain-model: set');
+    assert.match(git('status', '--short'), /M docs\/architecture\/domain-model\.md/);
+    assert.match(git('status', '--short'), /M CONTEXT\.md/);
+
+    // Reported project documents join the commit.
+    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 1. 모델 후보\n\n## 2. Aggregate\n');
+    assert.match(await run('aggregate-design', 'completed', listed('docs/architecture/domain-model.md', 'CONTEXT.md')), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/architecture/domain-model.md', 'docs/specs/set/domain-model.md']);
+    assert.equal(lastSubject(), 'aggregate-design: set');
+
+    // A stage never commits the context map: its owner is bounded-context.
+    await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 바뀐 관계 |\n');
+    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 3. Domain Service\n');
+    assert.match(await run('domain-service', 'completed', listed('CONTEXT-MAP.md')), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/domain-model.md']);
+    assert.match(git('status', '--short'), /M CONTEXT-MAP\.md/);
+
+    // A tactical stage that stops on an invalidated earlier decision keeps only the rule it added to requirements.md.
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n\n  - INV-07 신고는 하루 안에 닫힌다 — 출처: answers.json `q-1`\n');
+    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 4. 반쯤 쓴 절\n');
+    assert.match(await run('integration-design', 'blocked', [], 'DEPENDENCY_INCOMPLETE'), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md']);
+    assert.equal(lastSubject(), 'integration-design: set');
+    assert.match(git('status', '--short'), /M docs\/specs\/set\/domain-model\.md/, 'the half-written section is not committed');
+    assert.equal(await run('requirements-fix', 'blocked', [], 'DEPENDENCY_INCOMPLETE'), null, 'only tactical stages keep a rule when they block');
+
+    const status = git('status', '--short', '--untracked-files=all');
+    assert.match(status, /M app\.txt$/m, 'application changes stay visible and untouched');
     await rm(raw, { force: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

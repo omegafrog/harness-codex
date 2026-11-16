@@ -181,6 +181,10 @@ async function verify(projectRoot, options) {
       await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
     }
     await stat(join(projectRoot, ".codex", "internal-skills", "requirements-fix", "references", "template.md"));
+    for (const name of ["domain-model", "aggregate-design", "domain-service", "application-service", "integration-design"]) {
+      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+    }
+    await stat(join(projectRoot, ".codex", "internal-skills", "domain-model", "references", "template.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -223,6 +227,7 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/scripts/harness-plan-review.mjs",
     ".codex/scripts/harness-contract-review.mjs",
     ".codex/scripts/harness-stakeholder.mjs",
+    ".codex/scripts/harness-domain-model-check.mjs",
     ".harness/src/stakeholders/cards.mjs",
     ".codex/scripts/harness-write-guard.mjs",
     ".harness/src/workflow/contract-review.mjs",

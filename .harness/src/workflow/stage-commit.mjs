@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { REQUIREMENTS_STAGES } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 const PROTECTED_PATH = /^(?:\.git|\.io)(?:\/|$)/;
@@ -36,22 +36,41 @@ export async function commitStageRequest({ root, rawPath }) {
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
 // Other staged files are left as they are: the commit names only the stage's own paths.
 // The requirements stages write the plan set's documents; bounded-context settles the map and glossary scope,
-// and ubiquitous-language settles the glossary. These documents belong to the project.
-const REQUIREMENTS_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT-MAP.md', 'CONTEXT.md'], 'ubiquitous-language': ['CONTEXT.md'] };
+// and ubiquitous-language settles the glossary. The tactical design stages also write the project's model rows
+// (docs/architecture/domain-model.md) and may add terms to the glossary. These documents belong to the project.
+const TACTICAL_PROJECT_DOCUMENTS = ['docs/architecture/domain-model.md', 'CONTEXT.md'];
+const PROJECT_DOCUMENTS = {
+  'bounded-context': ['CONTEXT-MAP.md', 'CONTEXT.md'],
+  'ubiquitous-language': ['CONTEXT.md'],
+  ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, TACTICAL_PROJECT_DOCUMENTS])),
+};
+// Project documents a stage commits only when it names them as artifacts of its result. The project edits them for its
+// own reasons too, so a stage that did not report touching one never sweeps its changes into a commit.
+const LISTED_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT.md'], ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, TACTICAL_PROJECT_DOCUMENTS])) };
+const stageDocuments = (skill, id) => [`docs/specs/${id}`, ...(PROJECT_DOCUMENTS[skill] || [])];
 const WORKFLOW_DOCUMENTS = {
-  ...Object.fromEntries(REQUIREMENTS_STAGES.map((skill) => [skill, (id) => [`docs/specs/${id}`, ...(REQUIREMENTS_PROJECT_DOCUMENTS[skill] || [])]])),
+  ...Object.fromEntries(PRE_SPEC_STAGES.map((skill) => [skill, (id) => stageDocuments(skill, id)])),
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
   'sync-contracts': () => ['docs/contracts'],
 };
+
+// What a restart of the stage restores. Requirement stages own the whole plan set. A tactical stage owns only the tactical
+// design documents: the rules that its iterative deepening added to requirements.md are the user's decisions and stay.
+export const restartDocuments = (stageId, planSetId) => TACTICAL_DESIGN_STAGES.includes(stageId)
+  ? [`docs/specs/${planSetId}/domain-model.md`, ...TACTICAL_PROJECT_DOCUMENTS]
+  : [...new Set(PRE_SPEC_STAGES.flatMap((skill) => stageDocuments(skill, planSetId)))];
 
 export async function commitWorkflowDocuments({ root, input, rawPath }) {
   const owned = WORKFLOW_DOCUMENTS[input?.skill];
   const planSetId = input?.context?.plan_set_id;
   if (!owned || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return null;
   const envelope = JSON.parse(await readFile(rawPath, 'utf8'));
-  if (envelope.status !== 'completed') return null;
-  const paths = owned(planSetId).filter((path) => input.skill !== 'bounded-context' || path !== 'CONTEXT.md'
+  // A tactical stage that stops because a rule it added to requirements.md invalidates an earlier stage keeps that rule
+  // committed, so the tree is clean for the restart that reopens the earlier stage and the rule survives it.
+  const deepening = TACTICAL_DESIGN_STAGES.includes(input.skill) && envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE';
+  if (envelope.status !== 'completed' && !deepening) return null;
+  const paths = (deepening ? [`docs/specs/${planSetId}/requirements.md`] : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path)
     || envelope.result?.artifacts?.some((item) => item.base === 'workspace' && item.path === path));
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
   if (!changed.length) return null;

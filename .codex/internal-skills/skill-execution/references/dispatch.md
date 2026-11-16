@@ -28,6 +28,6 @@ Codex에서는 같은 부모 대화의 `collaboration.list_agents` 또는 `wait_
 
 실패나 사용자 답변 뒤 새로운 실행을 준비하면 이전 결과와 입력을 제공받은 새 서브에이전트가 이어간다. 다른 CLI의 세션 ID를 넘기지 않는다. 단계별 독립 리뷰와 실제 E2E의 별도 승인 및 역할 요구사항은 해당 GUIDE를 따른다.
 
-사용자가 완료된 `spec-me` 또는 `to-ticket` 산출물을 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. Spec 변경 뒤 독립 리뷰와 영향 계획을 재검토한다.
+사용자가 완료된 `spec-me`·`to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. Spec 변경 뒤 독립 리뷰와 영향 계획을 재검토한다.
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 준비기가 만든 `answers.json`을 확인한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
