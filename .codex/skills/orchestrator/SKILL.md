@@ -86,7 +86,7 @@ stage가 Git 작업(add·commit)에 막혀도 orchestrator가 대신하지 않�
 Harness workflow 명령은 target worktree 안에서 실행한다. 현재 workspace의 `--root`·`--plan-set`·`--worktree-ref`를 자동 탐색하며 primary checkout에서 다른 worktree로 이 값을 지정하면 거부한다. 값을 복사하려고 `worktree.json`·`state.json`·결과 파일을 읽지 말고 상태는 `node .codex/scripts/harness-context.mjs` 한 번으로 확인한다. `harness-code-review.mjs assemble --plan <plan-id>`도 최신 리뷰 요청 결과와 기존 fixed point를 찾는다.
 
 
-사용자가 중단·일시 정지를 요청했으면 결과 알림으로 재개하지 않는다. 이미 처리한 execution은 질문 도구나 stage를 다시 호출하지 않고 짧게 알린다. 백그라운드 실행 뒤 반복 상태 조회 없이 턴을 끝내고, 전달 장애 때만 공통 실행 조율의 listener 경로를 사용한다.
+사용자가 중단·일시 정지를 요청했으면 작업을 재개하지 않는다. 이미 처리한 execution은 질문 도구나 stage를 다시 호출하지 않는다. 실행 중인 native 서브에이전트는 실제 완료를 기다리고 결과를 검증한 뒤, 사용자 결정이나 해결할 수 없는 차단이 없다면 같은 대화에서 다음 단계를 계속한다.
 
 질문은 `title`과 각 선택지 `label`을 글자 그대로 보여 준다. `decision_kind: "technology"` 질문은 각 선택지 아래에 `evidence`의 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. 문구를 합치거나 조건을 덧붙이지 않고, 보충 설명이 필요하면 질문과 분리해 "참고"로 붙인다. 답을 넘길 때 사용자가 선택지만 골랐으면 그 선택지 ID를, 조건을 덧붙이거나 직접 설명했으면 사용자의 답 원문 전체를 `answer`로 넘긴다. 선택지 ID만 넘겨 사용자가 덧붙인 조건을 잃지 않는다.
 

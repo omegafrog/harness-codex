@@ -65,8 +65,8 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, nativeClaim = false, nativeAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
-  if (nativeAgentId !== null && (typeof nativeAgentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,255}$/.test(nativeAgentId))) throw new Error('Invalid native subagent ID');
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, nativeClaim = false, nativeAgentId = null, nativeTerminalAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
+  if (nativeAgentId !== null && (typeof nativeAgentId !== 'string' || !/^(?:\/root\/)?[A-Za-z0-9][A-Za-z0-9._:\/-]{0,248}$/.test(nativeAgentId))) throw new Error('Invalid native subagent ID');
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || (input.context?.orchestrator_provider === 'claude-code' ? null : process.env.CODEX_THREAD_ID || null);
   const orchestratorSessionId = input.context?.orchestrator_session_id || codexSessionId;
@@ -99,6 +99,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     else if (codexSessionId) state.codex_session_id = codexSessionId;
     if (orchestratorSessionId) { state.orchestrator_session_id = orchestratorSessionId; state.orchestrator_provider = orchestratorProvider; }
     const previous = state.stages?.[stage];
+    if (nativeTerminalAgentId !== null && (status === 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || previous.native_agent_id !== nativeTerminalAgentId)) throw new Error('Native stage changed before terminal transition');
     if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId))) throw new Error('Native subagent binding mismatch');
     if (nativeClaim && previous?.status === 'running') throw new Error('Stage already running; check the native subagent before retrying');
     if (runnerClaim && previous?.status === 'running' && previous.execution_id === input.execution_id) {
@@ -130,7 +131,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (instruction_delivery) { entry.instruction_delivery = instruction_delivery; if (instruction_delivery.phase) entry.phase = instruction_delivery.phase; }
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
-      entry.started_at = now;
+      entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
       if (previous?.execution_id !== input.execution_id) { delete entry.owner; delete entry.child; delete entry.runner_managed; delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; }
       if (runnerClaim) entry.runner_managed = true;
       if (nativeClaim) entry.native_managed = true;

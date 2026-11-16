@@ -101,6 +101,8 @@ test('the orchestrator dispatches stages to native subagents and returns format 
   assert.match(skill, /native 서브에이전트로 호출한다/);
   assert.match(skill, /형식 오류는 그 에이전트에게 키·값과 함께/);
   assert.doesNotMatch(skill, /harness-agent-run\.mjs/);
+  assert.doesNotMatch(skill, /백그라운드 실행 뒤 반복 상태 조회 없이 턴을 끝내고|listener 경로/);
+  assert.match(skill, /실제 완료를 기다리고 결과를 검증한 뒤/);
 });
 
 test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {

@@ -25,8 +25,9 @@ try {
   if (text.length > 1024 * 1024) throw new Error('Subagent event is too large');
   const event = JSON.parse(text);
   if (!['SubagentStart', 'SubagentStop'].includes(event.hook_event_name) || typeof event.session_id !== 'string' || typeof event.agent_id !== 'string' || !event.agent_id || typeof event.agent_type !== 'string') throw new Error('Invalid Claude subagent event');
-  const { nativeHookContext } = await import('../../.harness/src/workflow/native-context.mjs');
-  const native = process.env.HARNESS_SKILL_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer'].includes(event.agent_type) });
+  const { nativeHookContext, recordNativeStageObservation } = await import('../../.harness/src/workflow/native-context.mjs');
+  if (!process.env.HARNESS_SKILL_EXECUTION_ID) await recordNativeStageObservation(typeof event.cwd === 'string' ? event.cwd : process.cwd(), event);
+  const native = process.env.HARNESS_SKILL_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer'].includes(event.agent_type) });
   const session = process.env.HARNESS_SESSION_DIR || native?.session, executionId = process.env.HARNESS_SKILL_EXECUTION_ID || native?.executionId;
   if (native && !process.env.HARNESS_REVIEW_TICKET_ID && native.planSetId) process.env.HARNESS_REVIEW_TICKET_ID = native.planSetId;
   if (!executionId) {

@@ -17,6 +17,8 @@ node .codex/scripts/harness-prepare-input.mjs --stage-id <stage-id> --answer '[{
 
 한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 반환된 새 `execution_id`의 `answers.json`을 확인하고 `harness-native-stage.mjs start`로 예약하고 native 서브에이전트를 호출한다. 같은 provider면 기존 대화를 재개하고, 다른 provider면 새 대화에서 이전 결과와 답변을 읽는다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
 
+실행 중 `--answer`가 도착하면 준비기는 질문 ID와 답을 보존하고 `waiting_for_running_stage: true`를 반환한다. 새 실행을 만들지 않는다. 기존 에이전트의 실제 종료를 확인하고 `finish` 또는 `fail`을 처리한다. `finish` 결과가 질문 대기이면 `harness-prepare-input.mjs --stage-id <stage-id>`를 다시 실행한다. 보존된 답은 해당 질문 ID를 검증해 수집하며 다시 묻지 않는다. 실패 후 재개할 때는 `deferred_user_answers_unverified` 입력으로 보존하며 기존 질문과 대조하기 전에는 적용하지 않는다.
+
 “모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다. 이후 새 결과의 질문에는 새 사용자 답변이 필요하다. 단, 사용자가 앞으로의 질문에도 적용하도록 명시적으로 위임한 경우에는 그 범위에 따른다.
 
 질문을 반환한 실행의 `decision-answers.json`은 그 질문에 대한 확정 답변이다. 재개 실행의 `answers.json`은 그 실행에 전달된 입력 답변이다. 두 경로를 혼동해 존재하지 않는 파일을 근거로 인용하지 않는다. 수정 반환으로 같은 stage를 재개할 때는 `--feedback`에 구체적인 수정 지적을 전달한다. 같은 provider는 session을 재개하고 다른 provider는 새 session에서 이전 결과를 읽는다.
