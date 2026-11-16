@@ -1,3 +1,4 @@
+import { PUBLIC_SKILLS } from './public-skills.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
@@ -136,7 +137,7 @@ async function discoverSourceDescriptors(sourceRoot) {
     else if (error instanceof InstallerUpdateError) throw error;
     else throw new InstallerUpdateError("Unable to inspect harness source skills", { cause: error });
   }
-  for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && ['orchestrator', 'eli5', 'setup'].includes(entry.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+  for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && PUBLIC_SKILLS.includes(entry.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
     const sourcePath = `.codex/skills/${skill.name}/SKILL.md`;
     try {
       const information = await lstat(resolve(sourceRoot, sourcePath));

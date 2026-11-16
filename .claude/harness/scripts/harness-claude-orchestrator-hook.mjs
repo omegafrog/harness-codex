@@ -30,7 +30,7 @@ try {
   const maintenance = event.hook_event_name === 'UserPromptSubmit' && isHarnessUpdateRequest(event.prompt);
   const inputState = observed;
   // User input belongs only to the verified worktree containing the current directory.
-  const otherSkill = event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked && /^\s*(?:\$[a-z][\w-]*|\/(?:setup|eli5)\b)/i.test(event.prompt || '');
+  const otherSkill = event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked && /^\s*(?:\$[a-z][\w-]*|\/(?:setup|eli5|harness-update)\b)/i.test(event.prompt || '');
   const candidate = maintenance || otherSkill ? null : orchestratorInputTarget(inputState);
   const target = event.hook_event_name === 'UserPromptSubmit' && !explicitlyInvoked && (!event.session_id || !candidate?.orchestrator?.session_id || candidate.orchestrator.session_id !== event.session_id || candidate?.orchestrator?.provider !== 'claude-code') ? null : candidate;
   const inputRoot = target?.workspace_root || null;

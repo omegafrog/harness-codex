@@ -38,8 +38,8 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    assert.deepEqual((await readdir(join(root, '.agents/skills'))).sort(), ['eli5', 'orchestrator', 'setup']);
-    assert.deepEqual((await readdir(join(root, '.claude/skills'))).sort(), ['eli5', 'orchestrator', 'setup']);
+    assert.deepEqual((await readdir(join(root, '.agents/skills'))).sort(), ['eli5', 'harness-update', 'orchestrator', 'setup']);
+    assert.deepEqual((await readdir(join(root, '.claude/skills'))).sort(), ['eli5', 'harness-update', 'orchestrator', 'setup']);
     const policyPath = '.agents/skills/orchestrator/agents/openai.yaml';
     const policy = await readFile(join(root, policyPath), 'utf8');
     assert.match(policy, /policy:\s*\n\s+allow_implicit_invocation:\s*false/);

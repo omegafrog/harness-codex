@@ -1,0 +1,7 @@
+interface:
+  display_name: "Harness Update"
+  short_description: "Update the installed Harness runtime in this repository and verify it with Doctor."
+  default_prompt: "Update the Harness runtime installed in this repository to the latest release, run Doctor, and report what changed."
+
+policy:
+  allow_implicit_invocation: false

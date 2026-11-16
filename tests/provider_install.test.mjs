@@ -187,3 +187,26 @@ test('Doctor preserves tracked project files and no longer checks Wake', async (
   assert.match(execFileSync('git', ['-C', root, 'status', '--short'], { encoding: 'utf8' }), /codex-monitor/);
   await assert.rejects(readFile(join(root, '.harness/src/workflow/codex-wake.mjs')), { code: 'ENOENT' });
 });
+
+// A user can start a Harness update from either CLI: the public skill reaches both provider skill roots, points at the
+// maintenance procedure that exists in the consumer, and stays out of commits like every other managed asset.
+test('installed consumer exposes the harness-update skill to Codex and Claude Code', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-update-skill-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q', root]);
+  await protectLocalInstallArtifacts(root, sourceRoot);
+  await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+  for (const directory of ['.agents/skills', '.claude/skills']) {
+    const skill = await readFile(join(root, directory, 'harness-update/SKILL.md'), 'utf8');
+    assert.match(skill, /^---\nname: harness-update\n/);
+    assert.match(skill, /harness-maintenance\/GUIDE\.md/);
+    assert.ok(await readFile(join(root, '.codex/internal-skills/harness-maintenance/GUIDE.md'), 'utf8'), 'the linked procedure exists');
+    execFileSync('git', ['check-ignore', '-q', `${directory}/harness-update/SKILL.md`], { cwd: root });
+  }
+  assert.match(await readFile(join(root, '.agents/skills/harness-update/agents/openai.yaml'), 'utf8'), /display_name: "Harness Update"/);
+  // Doctor reports setup as still missing here; only the skill-exposure and skill-declaration checks matter.
+  const doctor = JSON.parse(spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' }).stdout);
+  assert.equal(doctor.diagnostics.some(({ code }) => /skill_exposed|skill_declaration/.test(code)), false);
+  const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
+  assert.doesNotMatch(status, /harness-update|\.agents\/|\.claude\//);
+});

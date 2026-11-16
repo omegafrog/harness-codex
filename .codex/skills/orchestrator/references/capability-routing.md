@@ -6,7 +6,7 @@ Read the matching internal GUIDE and follow its scope. For work that belongs to 
 |---|---|
 | Diagnose a bug or regression | `.codex/internal-skills/diagnosing-bugs/GUIDE.md` |
 | Prevent recurring agent or workflow mistakes | `.codex/internal-skills/correct/GUIDE.md` |
-| Maintain or recover a Harness installation | `.codex/internal-skills/harness-maintenance/GUIDE.md` or `.codex/internal-skills/harness-recover/GUIDE.md` |
+| Maintain or recover a Harness installation (a plain update is the public `harness-update` skill) | `.codex/internal-skills/harness-maintenance/GUIDE.md` or `.codex/internal-skills/harness-recover/GUIDE.md` |
 | Collect engineering sources or assess Harness evaluations | `.codex/internal-skills/knowledge-harvest/GUIDE.md` or `.codex/internal-skills/evaluate-harness/GUIDE.md` |
 | Design or implement frontend work | `.codex/internal-skills/frontend-design/GUIDE.md` |
 | Review a change or manage its integration pull request | `.codex/internal-skills/code-review/references/repair.md` or `.codex/internal-skills/gh-open-pr/GUIDE.md` |

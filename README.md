@@ -2,7 +2,7 @@
 
 **Codex 개발을 요구사항 → 설계 → 계획 → 구현 → 검증 → PR 흐름으로 구조화하는 project-local workflow harness.**
 
-공개 Harness skill은 `$setup`, `$orchestrator`, `$eli5` 세 개다. 자연어 유지보수·복구, 버그 분석·수정, 지식·평가, 프런트엔드, 리뷰·PR, 검증 요청은 orchestrator가 관련 내부 GUIDE로 라우팅한다.
+공개 Harness skill은 `$setup`, `$orchestrator`, `$eli5`, `$harness-update` 네 개다(Claude Code에서는 `/setup`, `/orchestrator`, `/eli5`, `/harness-update`). 자연어 유지보수·복구, 버그 분석·수정, 지식·평가, 프런트엔드, 리뷰·PR, 검증 요청은 orchestrator가 관련 내부 GUIDE로 라우팅한다.
 
 주요 workflow 단계:
 
@@ -35,13 +35,14 @@ gh-open-pr → 사용자 Merge
 
 ## 주요 명령
 
-Codex에서 직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrator`다. 요청을 `$orchestrator`에 자연어로 전달하면 내부 절차를 선택해 실행한다.
+직접 호출하는 Harness skill은 `$setup`, `$eli5`, `$orchestrator`, `$harness-update`다(Codex 기준, Claude Code는 `/` 접두). 요청을 `$orchestrator`에 자연어로 전달하면 내부 절차를 선택해 실행한다.
 
 | 명령 | 용도 |
 | --- | --- |
 | `$setup` | context, model tier, tracker 초기 설정 |
 | `$orchestrator <요청>` | 요청을 workflow에 연결하고 실행·리뷰·사용자 결정을 조율 |
 | `$eli5 <주제>` | 복잡한 내용을 visual-first 방식으로 간단히 설명 |
+| `$harness-update` | 현재 저장소에 설치된 Harness를 최신 릴리스로 업데이트하고 Doctor로 확인 |
 
 
 내부 절차는 직접 호출하지 않는다. 필요한 단계는 orchestrator가 현재 workflow 상태와 요청 범위에 따라 선택한다.
@@ -231,6 +232,7 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | Skill | 역할 |
 | --- | --- |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
+| [`harness-update`](.codex/skills/harness-update/SKILL.md) | 설치된 Harness 런타임 업데이트 진입점 |
 
 ---
 

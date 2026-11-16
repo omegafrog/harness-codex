@@ -3,7 +3,7 @@ model_tier: execution
 ---
 # Harness Maintenance
 
-Use this skill for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.
+The public `harness-update` skill is the direct entry for this procedure; `$orchestrator` routes the same requests here. Use it for requests such as “하네스 업데이트해”, “Harness 업그레이드해”, or “refresh the Harness runtime”. The target is the Harness runtime in the current consumer repository, not the application’s package dependencies.
 
 1. Resolve the current repository root with `git rev-parse --show-toplevel`. Do not update a parent checkout, another worktree, or the Harness source repository by assumption.
 2. Check that `.codex/harness-lock.json` exists at that root. If it is absent, explain that this checkout is not installed or has no update baseline; do not substitute installation for an update request without the user's direction.
@@ -23,7 +23,7 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
 
 5. Report updated and added files, any `Preserved` files, and only the diagnostics returned by that invocation for this root. Do not report unrequested actions that were not performed, including contract synchronization or sealing, unless the user asks or a current diagnostic requires explaining them. Do not carry warnings, counts, or recovery instructions from earlier conversation turns or another worktree into the current report. If Doctor cannot run or its JSON is invalid, report that failure instead of guessing. Never run `harness-codex lock` for preserved files automatically: it accepts the current local content as the new baseline, so the user must review and merge those files first.
 
-The updater backs up and replaces managed internal instructions under `.codex/internal-skills/` and the three public skills under `.agents/skills/` by default. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. Other managed assets preserve local changes by default. If the user explicitly requests force install/update or replacing local Harness modifications, run the same install/update command with `--force`; this backs up and replaces all selected managed assets. Do not hand-copy individual skills or run lock to hide conflicts. Report any backup directory.
+The updater backs up and replaces managed internal instructions under `.codex/internal-skills/` and the public skills under `.agents/skills/` and `.claude/skills/` by default. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. Other managed assets preserve local changes by default. If the user explicitly requests force install/update or replacing local Harness modifications, run the same install/update command with `--force`; this backs up and replaces all selected managed assets. Do not hand-copy individual skills or run lock to hide conflicts. Report any backup directory.
 
 ## 통합 계약 도구 갱신
 

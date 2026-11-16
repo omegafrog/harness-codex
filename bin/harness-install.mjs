@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { updateProject, writeHarnessLock } from "../.harness/src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { migrateLegacyHarnessConfig } from "../.harness/src/installer/config-location.mjs";
+import { PUBLIC_SKILLS } from "../.harness/src/installer/public-skills.mjs";
 import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -150,7 +151,7 @@ async function verify(projectRoot, options) {
   if (options.installSkills) {
     const providers = options.provider || "all";
     const skillRoots = [...(providers !== "claude-code" ? [".agents/skills"] : []), ...(providers !== "codex" ? [".claude/skills"] : [])];
-    for (const name of ["orchestrator", "eli5", "setup"]) {
+    for (const name of PUBLIC_SKILLS) {
       for (const directory of skillRoots) await stat(join(projectRoot, directory, name, "SKILL.md"));
     }
     if (providers !== "codex") await stat(join(projectRoot, ".claude", "harness", "providers", "claude-code.mjs"));
@@ -158,7 +159,7 @@ async function verify(projectRoot, options) {
     const lock = JSON.parse(await readFile(join(projectRoot, ".codex", "harness-lock.json"), "utf8"));
     for (const directory of skillRoots) {
       const exposed = await readdir(join(projectRoot, directory));
-      const unexpected = exposed.find((name) => internalSkills.has(name) && !["orchestrator", "eli5", "setup"].includes(name)
+      const unexpected = exposed.find((name) => internalSkills.has(name) && !PUBLIC_SKILLS.includes(name)
         && lock.files?.[`${directory}/${name}/SKILL.md`]
         && [`.codex/internal-skills/${name}/GUIDE.md`, `.codex/skills/${name}/SKILL.md`].includes(lock.files[`${directory}/${name}/SKILL.md`].source_path));
       if (unexpected) throw new Error(`Internal Harness skill is publicly exposed: ${directory}/${unexpected}`);

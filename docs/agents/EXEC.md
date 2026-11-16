@@ -28,7 +28,7 @@
 
 ## Harness 원본 저장소의 설치 동작
 
-- 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
+- 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`, `harness-update`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - Spec의 session-worktree 분기·준비 참조 검사는 `python3 -B -m unittest discover -s tests -p test_spec_diagram_workflow.py -k test_spec_me_prepares_the_session_worktree_before_spawning_agents`로 실행한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. `spec-me`는 진입 시 `worktree-create` skill을 실행한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
@@ -37,9 +37,9 @@
 - 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
 - 원본 checkout 판별은 설치 도구와 대상이 같은 실제 경로이거나, 같은 package 이름과 Harness installer·소스·스킬 파일이 있는지를 확인한다.
-- 외부 프로젝트에는 공개 세 skill만 `.agents/skills/`와 `.claude/skills/`에 설치하고 내부 GUIDE·agent profile·workflow/runtime은 `.codex/`에 둔다.
+- 외부 프로젝트에는 공개 skill만 `.agents/skills/`와 `.claude/skills/`에 설치하고 내부 GUIDE·agent profile·workflow/runtime은 `.codex/`에 둔다.
 - update는 공개 SKILL.md, 내부 GUIDE 및 supporting reference/assets/scripts를 lock으로 관리한다. 관리 자산 교체 전 기존 파일을 session/runtime/installer-backups/<id>/에 백업하며 사용자 소유 비관리 파일은 보존한다.
-- workflow skill 탐색은 `.codex/internal-skills/<id>/GUIDE.md`를 우선한다. 공개 세 skill은 native 사용자 목록 진입에만 사용한다. 원본 checkout도 internal GUIDE를 직접 읽고 중복 `.agents/skills` mirror를 두지 않는다.
+- workflow skill 탐색은 `.codex/internal-skills/<id>/GUIDE.md`를 우선한다. 공개 skill은 native 사용자 목록 진입에만 사용한다. 원본 checkout도 internal GUIDE를 직접 읽고 중복 `.agents/skills` mirror를 두지 않는다.
 
 ## E2E 실패 학습 계약
 

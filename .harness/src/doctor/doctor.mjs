@@ -10,6 +10,7 @@ import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFile } from "../installer/lock.mjs";
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
+import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
 import { validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
@@ -22,7 +23,7 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const execFileAsync = promisify(execFile);
-const PUBLIC_HARNESS_SKILLS = new Set(['orchestrator', 'eli5', 'setup']);
+const PUBLIC_HARNESS_SKILLS = new Set(PUBLIC_SKILLS);
 
 async function inspectPublicSkills(root, diagnostics) {
   const lock = await readHarnessLock(join(root, DEFAULT_LOCK_PATH)).catch(() => null);
