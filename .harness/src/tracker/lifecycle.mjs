@@ -228,7 +228,10 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       // In a workflow worktree the check covers that plan set's tickets: tickets of other, finished plan sets are not this
       // workflow's concern, and reading every mirror in the repository took longer each run (about a minute at 44 mirrors).
       const planSetId = await worktreePlanSetId(root);
-      const scoped = planSetId ? items.filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`)) : items;
+      // A stage implements one plan, so without an explicit ticket its check covers only that plan's mirror; the other
+      // plans' mirrors belong to other stages and would always trip the plan assertion below.
+      const planScoped = expected_plan_id ? items.filter((item) => item.metadata?.harness_plan_id === expected_plan_id) : null;
+      const scoped = planScoped ?? (planSetId ? items.filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`)) : items);
       if (scoped.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
       refs = scoped.map((item) => trackerReference(config, item.external_ref));
     }

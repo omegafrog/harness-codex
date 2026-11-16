@@ -117,3 +117,31 @@ test('plan set ticket statuses come from the configured tracker', async () => {
     await assert.rejects(readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', run: withPlans }), /plan IDs are required/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// A stage implements one plan: its check without --ticket must not trip over the mirrors of the plan set's other plans.
+test('a plan-scoped tracker check ignores the other plans of the set', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tracker-plan-scope-'));
+  try {
+    await mkdir(join(root, '.beads'), { recursive: true });
+    await mkdir(join(root, '.harness'), { recursive: true });
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: true\n');
+    const plans = ['P01', 'P02', 'P03'];
+    for (const id of plans) await writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: planned\n---\n# ${id}\n`);
+    const bead = (id) => ({ id: `bead-${id}`, status: 'open', external_ref: `docs/plans/set/${id}.md`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `set:${id}` } });
+    const run = async (command, args) => {
+      if (command === 'bd' && args.includes('--metadata-field')) return JSON.stringify(plans.map(bead));
+      if (command === 'bd' && args.includes('--external-ref')) return JSON.stringify(plans.map(bead).filter((item) => item.external_ref === args[args.indexOf('--external-ref') + 1]));
+      throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
+    };
+    const scoped = await inspectTrackerSync({ workspace_root: root, expected_plan_id: 'set:P02', run });
+    assert.equal(scoped.status, 'pass', JSON.stringify(scoped));
+    assert.deepEqual(scoped.tickets.map((ticket) => ticket.ref), ['docs/plans/set/P02.md']);
+    const all = await inspectTrackerSync({ workspace_root: root, run });
+    assert.equal(all.status, 'pass', JSON.stringify(all));
+    assert.equal(all.tickets.length, 3);
+    // An explicit ticket of another plan is still refused.
+    const wrong = await inspectTrackerSync({ workspace_root: root, ticket_refs: ['docs/plans/set/P03.md'], expected_plan_id: 'set:P02', run });
+    assert.equal(wrong.status, 'fail');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
