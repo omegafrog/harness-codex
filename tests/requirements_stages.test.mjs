@@ -101,6 +101,9 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /\[model-continuity\]\(\.\.\/ddd-design\/references\/model-continuity\.md\)/);
   assert.match(context, /`accepted-target`/);
   assert.match(context, /`CONTEXT-MAP\.md` when this stage completes/);
+  assert.match(context, /upstream, downstream, each context's responsibility, and the communication contract/);
+  assert.match(context, /mark unspecified details as undecided/);
+  assert.match(context, /pattern only when supported by evidence/);
   const events = await read('.codex/internal-skills/event-storming/GUIDE.md');
   assert.match(events, /`mode: events`/);
   assert.match(events, /`stakeholder_persona`/);
@@ -127,7 +130,8 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   execFileSync('git', ['init', '-q', root]);
   await writeFile(join(root, 'app.txt'), 'original application\n');
   await writeFile(join(root, 'CONTEXT.md'), '# 프로젝트 컨텍스트\n');
-  git('add', 'app.txt', 'CONTEXT.md');
+  await writeFile(join(root, 'CONTEXT-MAP.md'), '# 소비자 소유 관계\n');
+  git('add', 'app.txt', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture');
   await writeFile(join(root, 'app.txt'), 'ongoing application change\n');
   await protectLocalInstallArtifacts(root, sourceRoot);
@@ -136,6 +140,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
 
   const managed = [
     ...REQUIREMENTS_STAGES.slice(1).map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.codex/internal-skills/architecture-spec/GUIDE.md',
     TEMPLATE,
     '.codex/internal-skills/requirements-fix/references/coverage.md',
     '.codex/internal-skills/event-storming/references/diagrams.md',
@@ -150,6 +155,10 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
     assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `same content: ${path}`);
   }
+  const setupMap = '.agents/skills/setup/assets/CONTEXT-MAP.md';
+  assert.ok(lock.files[setupMap]);
+  assert.equal(await readFile(join(root, setupMap), 'utf8'), await read('.codex/skills/setup/assets/CONTEXT-MAP.md'));
+  assert.match(git('check-ignore', '-v', setupMap), /info\/exclude/);
 
   // The tiers resolve from the installed documents, and the installed commit wiring is the source wiring.
   const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
@@ -181,17 +190,20 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const template = join(root, TEMPLATE);
   const renderer = join(root, '.codex/tools/plantuml-render.mjs');
   const coverage = join(root, '.codex/internal-skills/requirements-fix/references/coverage.md');
+  const contextGuide = join(root, '.codex/internal-skills/bounded-context/GUIDE.md');
   await unlink(template);
   await unlink(renderer);
   await writeFile(coverage, 'locally edited coverage\n');
+  await writeFile(contextGuide, 'outdated guide\n');
   doctor = await runDoctor({ root, sourceRoot });
   for (const path of [template, renderer]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
-  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/requirements.md'), 'utf8'), '# 요구사항 명세\n');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
+  assert.equal(await readFile(join(root, 'CONTEXT-MAP.md'), 'utf8'), '# 소비자 소유 관계\n');
   assert.match(git('status', '--short', '--untracked-files=all'), /\?\? docs\/specs\/community\/requirements\.md/);
 });
 
