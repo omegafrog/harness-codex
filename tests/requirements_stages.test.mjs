@@ -141,6 +141,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const managed = [
     ...REQUIREMENTS_STAGES.slice(1).map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
     '.codex/internal-skills/architecture-spec/GUIDE.md',
+    '.harness/src/workflow/requirements-restart.mjs',
     TEMPLATE,
     '.codex/internal-skills/requirements-fix/references/coverage.md',
     '.codex/internal-skills/event-storming/references/diagrams.md',
@@ -191,14 +192,16 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const renderer = join(root, '.codex/tools/plantuml-render.mjs');
   const coverage = join(root, '.codex/internal-skills/requirements-fix/references/coverage.md');
   const contextGuide = join(root, '.codex/internal-skills/bounded-context/GUIDE.md');
+  const restartModule = join(root, '.harness/src/workflow/requirements-restart.mjs');
   await unlink(template);
   await unlink(renderer);
   await writeFile(coverage, 'locally edited coverage\n');
   await writeFile(contextGuide, 'outdated guide\n');
+  await unlink(restartModule);
   doctor = await runDoctor({ root, sourceRoot });
-  for (const path of [template, renderer]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
+  for (const path of [template, renderer, restartModule]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
-  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md', '.harness/src/workflow/requirements-restart.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/requirements.md'), 'utf8'), '# 요구사항 명세\n');
@@ -372,6 +375,41 @@ test('the requirements stages run in order as workflow stages and spec-me accept
   const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /User revision requires feedback for requirements-fix, spec-me, to-ticket or implement-wrapper/);
+
+  // Restart preserves the old state and returns to the checkpoint before bounded-context.
+  const restartArgs = ['--stage-id', 'bounded-context', '--restart-requirements', 'true'];
+  const dirty = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), ...restartArgs], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(dirty.status, 0);
+  assert.match(dirty.stderr, /clean project worktree/);
+  await rm(join(workspace, 'docs/domain/stakeholders/SH-01.md'));
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const beforeRestart = await readFile(statePath, 'utf8');
+  const running = JSON.parse(beforeRestart);
+  running.stages['spec-me'] = { status: 'running', execution_id: 'spec-me-running' };
+  await writeFile(statePath, JSON.stringify(running));
+  const active = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), ...restartArgs], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(active.status, 0);
+  assert.match(active.stderr, /cannot be verified stopped/);
+  await writeFile(statePath, beforeRestart);
+  await writeFile(join(workspace, 'app.txt'), 'unrelated committed change\n');
+  treeGit('add', 'app.txt');
+  treeGit('commit', '-qm', 'application change');
+  const laterCommit = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), ...restartArgs], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(laterCommit.status, 0);
+  assert.match(laterCommit.stderr, /Unrelated or later commits/);
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'unrelated committed change\n');
+  treeGit('reset', '--hard', 'HEAD^');
+  const restart = invoke(workspace, 'harness-prepare-input.mjs', restartArgs);
+  assert.equal(restart.previous_stage, 'subdomain-classification');
+  assert.ok(existsSync(join(restart.backup, 'state.json')));
+  const restored = await readFile(join(workspace, requirements), 'utf8');
+  assert.match(restored, /confirmed/);
+  const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
+  assert.equal(state.current_stage, 'subdomain-classification');
+  assert.equal(state.stages['bounded-context'], undefined);
+  assert.equal(state.stages['requirements-fix'], undefined);
+  const fresh = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'bounded-context']);
+  assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
 });
 
 test('a skipped stakeholder-analysis makes the later requirements stages record the skip without writing, and spec-me runs as before', async (t) => {

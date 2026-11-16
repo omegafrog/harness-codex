@@ -7,6 +7,8 @@ compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestra
 2. 최초 workflow 구성은 메인 workspace에서 `node "<source_workspace>/.codex/scripts/harness-compose-workspace.mjs" --root "<source_workspace>" --execution-id <execution_id> --plan-set-id <feature_slug> --request <사용자 요청 원문>`로 준비한다. `feature_slug`는 읽기 쉬운 이름이며 실제 고유 `plan_set_id`는 실행기가 UUID를 붙여 만든다. 이후 단계는 반환된 `worktree_ref`의 정본 ID를 읽는다. 요청 인자는 shell quoting을 적용한다. 이 명령은 worktree를 만들고 입력·검증된 결과·완료 상태를 그 worktree에 기록한다. 반환된 `execution_id`가 이번 입력과 일치하고 반환된 `worktree_ref`가 생성 전 Git worktree 목록에 없음을 확인한다. 지정된 workflow binding과 정본 기록도 대조한다. 이전 실행의 결과를 이번 생성 결과로 사용하지 않는다. setup 출력은 원본 workspace의 `.io`에 둘 수 있다.
 3. 대기 중인 내부 작업 요청은 같은 stage에 `--feedback <서브에이전트 직접 위임 요청>`을 전달해 부모 session에서 이어간다. 차단된 stage도 원인이 해소되면 `--feedback <해소 근거>`로 같은 session을 재개한다. 기존 결과와 session을 보존한다.
 
+완료된 요구사항 stage부터 다시 시작하라는 사용자 지시가 있으면 해당 worktree에서 `node .codex/scripts/harness-prepare-input.mjs --stage-id <stage> --restart-requirements true`를 실행한다. 실행기는 깨끗한 worktree, 연속된 해당 plan set의 stage commit과 실행 종료를 확인하고 이전 문서와 상태를 보존한 뒤 선택한 stage 직전으로 되돌린다. 반환된 `backup`을 보존하고 선택한 stage를 일반 절차로 준비한다. 이후 사용자가 지정한 중단 지점에서 멈춘다. 진행 중 agent의 종료가 확인되지 않거나 다른 commit·변경이 있으면 차단하며 수동으로 상태를 고치지 않는다.
+
 ## 사용자 답변으로 재개
 
 `USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 사용자가 선택지에 조건을 덧붙였거나 직접 설명했으면 선택지 ID 대신 사용자의 답 원문 전체를 `answer`로 넘긴다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.
