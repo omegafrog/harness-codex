@@ -386,9 +386,10 @@ async function main() {
   ];
   if (!offered.length) throw new Error('No agent provider is installed; run harness-codex install --provider codex|claude-code|all');
   if (!offered.some((item) => item.value === currentProvider)) throw new Error(`Runtime provider ${currentProvider} is not installed`);
-  const provider = currentProvider;
+  // With several installed providers the user picks which one this project uses; the running CLI is the default.
+  const provider = offered.length > 1 && !reuse ? await choose('사용할 에이전트 provider 선택', offered, currentProvider) : currentProvider;
   // The provider decides the model list, and each model decides its effort list.
-  const providerDeps = [];
+  const providerDeps = offered.length > 1 && !reuse && native ? [lastQuestionId] : [];
   const validProviderEffort = (value) => provider === 'claude-code' ? ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) : validEffort(value);
   const claudeModels = [
     { id: 'opus', description: '복잡한 설계·최종 검토' },

@@ -288,13 +288,16 @@ test('setup uses the current CLI and preserves the other provider model settings
   const { root, run, answers, bin } = await freshProject({ provider: 'claude-code' });
   try {
     const choices = { ...BATCH_CHOICES, '복잡한 설계·최종 검토 모델 모델': 'opus', '일반 구현 모델 모델': 'sonnet', '서버·E2E 실행과 polling 모델 모델': 'sonnet', '문서·제한된 조사 모델 모델': 'haiku', '복잡한 설계·최종 검토 모델 추론': 'high' };
-    let batch = await run({}), values = {};
-    assert.ok(!batch.questions.some(({ prompt }) => prompt === '실행 provider 선택'));
-    assert.ok(batch.questions.some(({ prompt, options }) => prompt.endsWith('모델 선택') && options.some(({ value }) => value === 'opus')));
+    let batch = await run({}), values = {}, sawClaudeModels = false;
+    const providerQuestion = batch.questions.find(({ prompt }) => prompt === '사용할 에이전트 provider 선택');
+    assert.deepEqual(providerQuestion.options.map(({ value }) => value), ['codex', 'claude-code']);
+    assert.equal(providerQuestion.current, 'claude-code');
     for (let round = 0; round < 8 && batch.status !== 'configured'; round++) {
       values = { ...values, ...answerBatch(batch.questions, choices) };
       batch = await run(values);
+      if (batch.questions?.some(({ prompt }) => prompt.endsWith('모델 선택'))) sawClaudeModels ||= batch.questions.some(({ options }) => options?.some(({ value }) => value === 'opus'));
     }
+    assert.ok(sawClaudeModels);
     assert.equal(batch.status, 'configured');
     const claude = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     assert.match(claude, /claude-code:\s+high_performance_model: "opus"/);
@@ -307,8 +310,7 @@ test('setup uses the current CLI and preserves the other provider model settings
     values = { [batch.pending.id]: 'reuse' };
     batch = await runCodex(values);
     for (let round = 0; round < 8 && batch.status !== 'configured'; round++) {
-      assert.ok(!batch.questions.some(({ prompt }) => prompt === '실행 provider 선택'));
-      values = { ...values, ...answerBatch(batch.questions, BATCH_CHOICES) };
+      values = { ...values, ...answerBatch(batch.questions, { ...BATCH_CHOICES, '사용할 에이전트 provider 선택': 'codex' }) };
       batch = await runCodex(values);
     }
     assert.equal(batch.status, 'configured');
