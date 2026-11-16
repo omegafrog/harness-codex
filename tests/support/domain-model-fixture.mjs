@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { TACTICAL_STAGE_LEVEL } from '../../.codex/scripts/harness-domain-model-check.mjs';
+import { TACTICAL_DESIGN_STAGES } from '../../.harness/src/workflow/worktree-stages.mjs';
 
 // The requirements the template's example document answers to.
 export const REQUIREMENTS = `# 요구사항 명세
@@ -46,9 +46,109 @@ export async function templateDocument(sourceRoot) {
 }
 
 // The document as the stage at `level` leaves it: its own section and the earlier ones, and the decision rows of those stages only.
+const levelOf = (stage) => TACTICAL_DESIGN_STAGES.indexOf(stage) + 1;
 export const upTo = (document, level) => document.split(/^(?=## \d+\.)/m)
   .filter((part) => !/^## \d+\./.test(part) || Number(part.match(/^## (\d+)\./)[1]) <= level || part.startsWith('## 6.'))
   .join('')
   .split('\n')
-  .filter((line) => !/^\| DEC-\d+ \|/.test(line) || TACTICAL_STAGE_LEVEL[line.split('|')[2].trim()] <= level)
+  .filter((line) => !/^\| DEC-\d+ \|/.test(line) || levelOf(line.split('|')[2].trim()) <= level)
   .join('\n');
+
+// A bounded context without a state lifecycle: the calculation request and result are Value Objects, so no Aggregate exists
+// and the Value Object enforces both rules.
+export const STATELESS_REQUIREMENTS = `# 요구사항 명세
+
+- 상태: fixed
+
+## 2. 업무
+
+### BIZ-01 사칙연산 계산 (SD-01)
+
+- 상태: fixed
+- 업무 규칙:
+  - INV-01 더하기, 빼기, 곱하기, 나누기 네 가지만 지원한다 — 출처: 요청 원문
+- 예외 시나리오:
+  - EX-02 0으로 나누면 계산이 거절된다 — 출처: 요청 원문
+- 완료 조건:
+  - AC-01 계산 결과가 화면에 보인다 — 출처: 요청 원문
+`;
+
+export const STATELESS_DOCUMENT = `# 도메인 모델
+
+- plan set: \`calculator\`
+- requirements: \`requirements.md\` (같은 디렉터리, \`상태: fixed\`)
+
+## 1. 모델 후보
+
+### 1.1 기존 모델 조사
+
+기존 모델 없음 — docs/architecture/domain-model.md가 없다
+
+### 1.2 모델링 깊이
+
+| BC | SD | 분류 | 모델링 깊이 | 근거 |
+|---|---|---|---|---|
+| 계산기 | SD-01 | supporting | 규칙에 필요한 것만 | 사칙연산 규칙(INV-01, EX-02)만 모델이 필요하다 |
+
+### 1.3 모델
+
+| 모델 | 종류 | BC | 정체성·생애주기 또는 값의 의미 | 현재 상태 | 근거 |
+|---|---|---|---|---|---|
+| 계산 요청 | Value Object | 계산기 | 피연산자와 연산자의 조합이다. 같은 조합이면 같은 요청이다 | accepted-target | BIZ-01, INV-01, EX-02 |
+| 계산 결과 | Value Object | 계산기 | 계산해 낸 숫자다. 같은 숫자면 같은 결과다 | accepted-target | BIZ-01 |
+
+### 1.4 요구 매핑
+
+| 요구 | BC | 소유 모델 | 근거 |
+|---|---|---|---|
+| BIZ-01 | 계산기 | 계산 요청, 계산 결과 | 요청을 만들어 결과를 낸다 |
+| INV-01 | 계산기 | 계산 요청 | 지원하는 연산자는 요청의 값이 정한다 |
+| EX-02 | 계산기 | 계산 요청 | 0으로 나누는 요청은 값이 만들어질 때 거절된다 |
+
+## 2. Aggregate
+
+### 2.1 Aggregate
+
+| Aggregate | BC | Root | 정체성 | 구성원 | 주요 행위 | 다른 Aggregate 참조 |
+|---|---|---|---|---|---|---|
+
+| BC | Aggregate 없음 사유 |
+|---|---|
+| 계산기 | 상태와 생애주기가 없다. 계산 요청과 결과는 값으로만 존재한다 |
+
+### 2.2 규칙 강제
+
+| 요구 | Aggregate | 강제 행위 | 일관성 범위 |
+|---|---|---|---|
+| INV-01 | - | Value Object: 계산 요청.생성() | 값 안 |
+| EX-02 | - | Value Object: 계산 요청.생성() | 값 안 |
+
+### 2.3 일관성 결정
+
+| CON | 규칙 | 걸친 Aggregate | 일관성 | 결정 | 근거·출처 |
+|---|---|---|---|---|---|
+
+## 3. Domain Service
+
+해당 없음 — 두 규칙을 모두 계산 요청 값이 강제한다
+
+## 4. Application Service
+
+| AS | 이름 | BC | 업무 | 호출 순서 | 트랜잭션 경계 | Repository | 외부 효과 |
+|---|---|---|---|---|---|---|---|
+| AS-01 | 계산 | 계산기 | BIZ-01 | 계산 요청 만들기 → 계산 결과 만들기 | 없음 — 저장하지 않고 Aggregate를 바꾸지 않는다 | 없음 | 없음 |
+
+## 5. 통합 설계
+
+해당 없음 — 컨텍스트 하나다
+
+## 6. 결정 이력
+
+| DEC | stage | 대상 | 결정 | 비교한 대안 | 출처 |
+|---|---|---|---|---|---|
+| DEC-01 | domain-model | 계산 요청 | Value Object로 둔다 | Entity | BIZ-01, INV-01 |
+| DEC-02 | aggregate-design | 계산기 | Aggregate를 만들지 않고 Value Object가 규칙을 강제한다 | 계산 Aggregate | INV-01, EX-02 |
+| DEC-03 | domain-service | - | 해당 없음으로 둔다 | - | INV-01, EX-02 |
+| DEC-04 | application-service | AS-01 | 저장 없는 사용 사례로 둔다 | 계산 기록 저장 | BIZ-01 |
+| DEC-05 | integration-design | - | 컨텍스트가 하나라 통합이 없다 | - | BIZ-01 |
+`;

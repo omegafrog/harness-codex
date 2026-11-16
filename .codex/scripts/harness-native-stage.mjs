@@ -167,13 +167,14 @@ try {
       else throw error;
     }
     if (!format.valid) { process.stdout.write(`${JSON.stringify({ status: 'format_error', execution_id: id, errors: format.errors, schema_path: paths.files.schema, output_path: paths.files.raw })}\n`); process.exit(1); }
-    // A tactical design stage that claims completion is accepted only when its documents pass the gate, checked before anything is
-    // committed or recorded. A rejection leaves the stage running; the caller returns the findings to the same subagent, which fixes
-    // the documents and rewrites its output, and the same finish runs again.
-    const { evaluateTacticalDesignGate } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
+    // The last tactical design stage (integration-design) is accepted as completed only when the whole domain-model.md passes the
+    // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
+    // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,
+    // and the same finish runs again.
+    const { evaluateTacticalDesignGate, gateFailureInstruction } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
     const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
     if (gate && !gate.ok) {
-      process.stdout.write(`${JSON.stringify({ status: 'gate_error', gate: 'domain_model_check', execution_id: id, stage: gate.stage, errors: gate.errors, instruction: `The runner ran harness-domain-model-check.mjs for ${gate.stage} and it failed. Return these errors to the same subagent so it repairs domain-model.md (never requirements.md or an earlier section only to make the gate pass) and rewrites its output file if its summary or artifacts change, then run finish again. Nothing was committed or recorded, and the stage is still running.`, output_path: paths.files.raw })}\n`);
+      process.stdout.write(`${JSON.stringify({ status: 'gate_error', gate: 'domain_model_check', execution_id: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), output_path: paths.files.raw })}\n`);
       process.exit(1);
     }
     if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) {
