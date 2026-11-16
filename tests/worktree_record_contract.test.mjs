@@ -858,9 +858,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
       const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
       const handoffEnvelope = { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff };
-      // A Codex stage runs its own review loop; a Claude Code stage cannot start a reviewer, so its caller dispatches it.
-      await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: { ...authorInput, context: { ...authorInput.context, provider: 'codex' } }, envelope: handoffEnvelope }), /complete its independent plan-review loop internally/i);
-      await validateReviewedPlanReturn({ root: tree.workspace, input: { ...authorInput, context: { ...authorInput.context, provider: 'claude-code' } }, envelope: handoffEnvelope }).catch((error) => assert.doesNotMatch(error.message, /independent plan-review loop internally/i));
+      // Any provider's stage may hand the independent review to its caller instead of running the loop itself.
+      await validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: handoffEnvelope }).catch((error) => assert.doesNotMatch(error.message, /independent plan-review loop internally/i));
       await bindNativeReviewer({ root: tree.workspace, scope: `plan-${ticketId}`, attemptId: planAdmission.attempt_id, executionId: authorInput.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
       await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });
     } finally {
@@ -1434,6 +1433,23 @@ test('installed compose starts in an existing linked worktree without replacing 
     await writeFile(foreignLog, `${JSON.stringify(foreignMeta)}\n`);
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify({ ...specReviewEvent, agent_id: foreignId, agent_transcript_path: foreignLog, hook_event_name: 'SubagentStart' }), encoding: 'utf8' });
     assert.equal((await inspectActiveReviewAttempt({ root: workspace, scope: `spec-${ticket}-architecture` })).native_review, null);
+    // The main orchestrator may dispatch the reviewer itself: a depth-1 thread it spawned with the reviewer's role binds to
+    // the current stage, any other thread (here: one spawned by an unrelated parent) does not.
+    const { nativeHookContext } = await import(`file://${join(workspace, '.harness/src/workflow/native-context.mjs')}`);
+    const mainDispatchedId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const mainMeta = structuredClone(specReviewerMeta);
+    mainMeta.payload.id = mainDispatchedId;
+    mainMeta.payload.parent_thread_id = record.worktree_id;
+    mainMeta.payload.source.subagent.thread_spawn = { depth: 1, parent_thread_id: record.worktree_id, agent_role: 'spec_adversarial_reviewer', agent_path: '/root/main-reviewer' };
+    await writeFile(join(fakeHome, 'sessions', `rollout-review-${mainDispatchedId}.jsonl`), `${JSON.stringify(mainMeta)}\n`);
+    const previousCodexHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = fakeHome;
+    try {
+      const bound = await nativeHookContext(workspace, [record.worktree_id], { childId: mainDispatchedId, agentType: 'spec_adversarial_reviewer', mainSession: true });
+      assert.equal(bound?.executionId, questionNext.input.execution_id);
+      assert.equal(await nativeHookContext(workspace, [record.worktree_id], { childId: foreignId, agentType: 'spec_adversarial_reviewer', mainSession: true }), null);
+      assert.equal(await nativeHookContext(workspace, [record.worktree_id], { childId: mainDispatchedId, agentType: 'plan_reviewer', mainSession: true }), null);
+    } finally { if (previousCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousCodexHome; }
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify({ ...specReviewEvent, hook_event_name: 'SubagentStart' }), encoding: 'utf8' });
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify({ ...specReviewEvent, hook_event_name: 'SubagentStop', last_assistant_message: JSON.stringify({ verdict: 'pass', findings: [] }) }), encoding: 'utf8' });
     const reviewResult = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', questionNext.input.execution_id, '--agent-id', 'question-agent', '--', process.execPath, join(workspace, '.codex/scripts/harness-spec-review.mjs'), 'record', '--root', workspace, '--ticket', ticket, '--axis', 'architecture', '--attempt', admission.attempt_id], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));

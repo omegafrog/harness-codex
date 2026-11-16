@@ -167,10 +167,9 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
 }
 
 async function mainSessionExecutionId(root) {
-  const { runtimeAgentProvider } = await import('./agent-config.mjs');
-  if (runtimeAgentProvider() !== 'claude-code' || process.cwd() !== root) return null;
-  const { nativeHookContext } = await import('./native-context.mjs');
-  return (await nativeHookContext(root, [], { mainSession: true }))?.executionId ?? null;
+  if (process.cwd() !== root) return null;
+  const { currentStageExecutionId } = await import('./native-context.mjs');
+  return currentStageExecutionId(root);
 }
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason, requireNative = false }) {
@@ -179,8 +178,8 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
   let reviewer_input_ref;
   let reviewerFiles;
   if (action === 'begin') {
-    // A Claude Code stage subagent cannot start the reviewer, so its caller (the main session) opens the admission for
-    // the current stage execution: the stage returned REVIEW_REQUIRED and is waiting for this review.
+    // When the stage cannot start the reviewer, its caller (the main session) opens the admission for the current stage
+    // execution: the stage returned REVIEW_REQUIRED and is waiting for this review.
     const executionId = process.env.HARNESS_SKILL_EXECUTION_ID || await mainSessionExecutionId(root);
     requireValue((process.env.HARNESS_SKILL_EXECUTION_ID ? process.env.HARNESS_WORKSPACE_ROOT === root : Boolean(executionId)) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
     process.env.HARNESS_SKILL_EXECUTION_ID = executionId;

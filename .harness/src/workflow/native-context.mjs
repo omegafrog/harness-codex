@@ -151,9 +151,19 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     // The main session dispatches a reviewer while the current stage has handed control back (waiting for the review),
     // so its context is the current stage's execution rather than a running native agent.
     let matches = [];
-    // Only a Claude Code orchestrator dispatches reviewers for its stage; a Codex stage starts its own reviewer, and a
-    // reviewer started by the Codex main session is never bound to the stage.
-    if (mainSession && state.orchestrator_provider === 'claude-code') {
+    // The main session may dispatch the reviewer for the current stage. A Claude Code event carries no further proof;
+    // a Codex event must come from a thread the orchestrator itself spawned (depth 1) with the reviewer's role, so a
+    // reviewer from any other thread is never bound to the stage.
+    let dispatchedByMain = false;
+    if (mainSession && state.orchestrator_provider === 'claude-code') dispatchedByMain = true;
+    else if (mainSession && state.orchestrator_provider === 'codex' && /^[0-9a-f-]{36}$/i.test(childId || '')) {
+      const { findRollout } = await import('./providers/codex.mjs');
+      const childPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), childId);
+      const metadata = childPath ? await readRolloutMetadata(childPath) : null;
+      const spawn = metadata?.source?.subagent?.thread_spawn;
+      dispatchedByMain = metadata?.id === childId && metadata.cwd === workspace && spawn?.depth === 1 && spawn.parent_thread_id === state.orchestrator_session_id && spawn.agent_role === agentType;
+    }
+    if (dispatchedByMain) {
       const current = state.stages?.[state.current_stage];
       if (current && ['running', 'waiting'].includes(current.status) && current.execution_id) matches = [current];
     } else {
@@ -191,5 +201,26 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     await validateSkillInput({ root: workspace, input });
     if (input.session_directory !== session || input.context?.worktree_ref !== join(session, 'worktree.json')) return null;
     return { root: workspace, session, executionId: input.execution_id, planSetId: input.context?.plan_set_id || null };
+  } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+
+// The execution of the stage that is running or waiting for the main session's review dispatch. Commands such as
+// `harness-plan-review.mjs begin` run in the main session, which has no stage agent identity of its own.
+export async function currentStageExecutionId(root) {
+  if (!root) return null;
+  try {
+    const workspace = await realpath(root);
+    const session = join(workspace, '.io');
+    const record = parseWorktreeRecord(await readFile(join(session, 'worktree.json'), 'utf8'));
+    if (record.state !== 'active' || await realpath(record.workspace) !== workspace || record.session_directory !== session) return null;
+    let state;
+    try { const workflow = JSON.parse(await readFile(join(session, 'runtime/orchestrator/workflow.json'), 'utf8')); state = workflow.state || workflow; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; state = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')); }
+    const current = state.stages?.[state.current_stage];
+    if (!current || !['running', 'waiting'].includes(current.status) || !current.execution_id) return null;
+    const input = await readExecutionInput({ root: workspace, execution_id: current.execution_id });
+    await validateSkillInput({ root: workspace, input });
+    if (input.session_directory !== session || input.context?.worktree_ref !== join(session, 'worktree.json')) return null;
+    return input.execution_id;
   } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }

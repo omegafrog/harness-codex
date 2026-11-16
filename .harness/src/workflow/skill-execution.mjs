@@ -310,9 +310,8 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   const expected = stageExecutionPaths(root, input.execution_id, { create: false }).refs.result;
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
-  // A Claude Code stage subagent cannot start a reviewer, so its caller dispatches the independent reviewer
-  // for the waiting stage; every other provider's stage runs the review loop itself.
-  const callerDispatchesReviewer = input.context?.provider === 'claude-code';
+  // A stage may hand the independent review to its caller, which dispatches the reviewer for the waiting stage.
+  const callerDispatchesReviewer = true;
   requireValue(callerDispatchesReviewer || !(input.skill === 'spec-me' && result.review_request?.skill === 'spec-review'), 'spec-me must perform spec-review internally using a fresh native reviewer');
   requireValue(callerDispatchesReviewer || !(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');
   const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));

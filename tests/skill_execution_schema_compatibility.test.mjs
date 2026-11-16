@@ -221,7 +221,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal((await validateSkillReturn({ root, input, envelope: { ...envelope, status: revision.status, code: revision.code, result: revision } })).valid, true);
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'blocked', code: revision.code, result: { ...revision, status: 'blocked' } } }), /Return status\/code mismatch/);
     const premature = { ...result, status: 'action_required', code: 'REVIEW_REQUIRED', review_request: { skill: 'spec-review', agent_profile: 'spec_adversarial_reviewer', purpose: 'Review', context_path: 'docs/specs/example/' } };
-    await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }), /spec-me must perform spec-review internally/);
+    // A stage may hand the independent review to its caller; the request is then validated like any other review request.
+    await validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }).catch((error) => assert.doesNotMatch(error.message, /must perform spec-review internally/));
     const badContext = { ...premature, review_request: { ...premature.review_request, skill: 'architecture-review', agent_profile: 'default' } };
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: badContext.status, code: badContext.code, result: badContext } }), /Review context must be an existing session-relative JSON file/);
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'action_required' } }), /Return status\/code mismatch/);
