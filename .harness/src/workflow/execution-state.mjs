@@ -21,25 +21,10 @@ export async function processIdentity(pid) {
   } catch (error) { if (error.code === 'ENOENT') return { pid, boot, start: null }; throw error; }
 }
 
-async function processAlive(identity) {
-  if (!identity || !identity.start || !identity.boot) throw new Error('Stage already running or process identity unavailable; inspection required');
-  const current = await processIdentity(identity.pid);
-  if (!current) throw new Error('Stage already running or process identity unavailable; inspection required');
-  return current.boot === identity.boot && current.start === identity.start && current.state !== 'Z';
-}
-
-export async function assertExecutionStopped(entry, { root, session } = {}) {
-  if (entry?.native_managed) {
-    if (entry.status !== 'running' && entry.native_finished === true) return;
-    throw new Error('Native subagent status is not confirmed; inspect the original session before retrying');
-  }
-  const identities = [entry?.owner, ...(entry?.runner_managed && !entry?.child ? [] : [entry?.child])];
-  for (const identity of identities.filter(Boolean)) if (await processAlive(identity)) throw new Error('Stage already running');
-  if (identities.some((identity) => !identity)) {
-    if (!root || !session || !entry?.execution_id) throw new Error('Stage already running or process identity unavailable; inspection required');
-    const log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${entry.execution_id}/exec.stderr.json` });
-    if ((!Number.isInteger(log.exit_code) && !/^SIG[A-Z0-9]+$/.test(log.exit_signal || '')) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.session_id || log.thread_id || '')) throw new Error('Stage termination evidence is incomplete');
-  }
+// Stages run as native subagents of the orchestrator's CLI, so a stage is stopped only when its subagent reported the end.
+export async function assertExecutionStopped(entry) {
+  if (entry?.native_managed && entry.status !== 'running' && entry.native_finished === true) return;
+  throw new Error('Native subagent status is not confirmed; inspect the original session before retrying');
 }
 
 export async function completeExecutionState({ root, session_directory }) {
@@ -65,7 +50,7 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, owner = null, child = null, runnerClaim = false, nativeClaim = false, nativeAgentId = null, nativeTerminalAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, nativeClaim = false, nativeAgentId = null, nativeTerminalAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
   if (nativeAgentId !== null && (typeof nativeAgentId !== 'string' || !/^(?:\/root\/)?[A-Za-z0-9][A-Za-z0-9._:\/-]{0,248}$/.test(nativeAgentId))) throw new Error('Invalid native subagent ID');
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || (input.context?.orchestrator_provider === 'claude-code' ? null : process.env.CODEX_THREAD_ID || null);
@@ -102,14 +87,9 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (nativeTerminalAgentId !== null && (status === 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || previous.native_agent_id !== nativeTerminalAgentId)) throw new Error('Native stage changed before terminal transition');
     if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId))) throw new Error('Native subagent binding mismatch');
     if (nativeClaim && previous?.status === 'running') throw new Error('Stage already running; check the native subagent before retrying');
-    if (runnerClaim && previous?.status === 'running' && previous.execution_id === input.execution_id) {
-      if (!previous.owner) throw new Error('Stage process identity unavailable; inspection required');
-      if (await processAlive(previous.owner) || (previous.child && await processAlive(previous.child))) throw new Error('Stage runner already active');
-      throw new Error('Execution was already started; resume it with a new execution ID');
-    }
     if (status === 'running' && previous?.status === 'running' && previous.execution_id !== input.execution_id) {
-      await assertExecutionStopped(previous, { root, session });
-      previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its processes exited'; previous.finished_at = new Date().toISOString();
+      await assertExecutionStopped(previous);
+      previous.status = 'failed'; previous.code = 'EXECUTION_ERROR'; previous.reason = 'Execution interrupted after its subagent ended'; previous.finished_at = new Date().toISOString();
     }
     if (recoverFromExecutionId) {
       if (status === 'running' || previous?.status !== 'failed' || previous.execution_id === input.execution_id || !previous.attempts?.some((attempt) => attempt.execution_id === input.execution_id)) throw new Error('Recovery target is not a preserved execution of the failed current stage');
@@ -132,12 +112,9 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.owner; delete entry.child; delete entry.runner_managed; delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; }
-      if (runnerClaim) entry.runner_managed = true;
+      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; }
       if (nativeClaim) entry.native_managed = true;
       if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
-      if (owner) entry.owner = owner;
-      if (child) entry.child = child;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];
     }
     else { entry.finished_at = now; if (entry.native_managed) entry.native_finished = true; }

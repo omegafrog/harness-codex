@@ -13,18 +13,6 @@ const git = async (root, args) => (await exec('git', args, { cwd: root, encoding
 const ACTIVE = new Set(['created', 'running', 'waiting', 'blocked']);
 const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
 
-async function observedProcessStatus(entry) {
-  if (entry?.status !== 'running') return null;
-  const identities = [entry.owner, ...(entry.runner_managed && !entry.child ? [] : [entry.child])];
-  if (identities.some((item) => !item?.pid || !item.boot || !item.start)) return 'unknown';
-  const { processIdentity } = await import('./execution-state.mjs');
-  let current;
-  try { current = await Promise.all(identities.map((item) => processIdentity(item.pid))); }
-  catch { return 'unknown'; }
-  if (current.some((item) => !item)) return 'unknown';
-  return current.some((item, index) => item.boot === identities[index].boot && item.start === identities[index].start && item.state !== 'Z') ? 'running' : 'stopped';
-}
-
 async function readJson(directory, file) {
   await assertWorkspaceTarget(directory, file);
   const path = join(directory, file);
@@ -134,8 +122,7 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
       if (state.schema_version !== 1 || (!ACTIVE.has(state.status) && !TERMINAL.has(state.status))) throw new Error('Invalid orchestrator state');
       const ref = state.workflow_ref;
       if (ref === null && (ACTIVE.has(state.status) || TERMINAL.has(state.status))) {
-        const processStatus = await observedProcessStatus(state.stages?.[state.current_stage]);
-        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status === 'running' && processStatus !== null ? processStatus : state.status, recorded_status: state.status, process_status: processStatus, current_stage: state.current_stage, composition_pending: state.stages?.[WORKTREE_STAGE.WORKFLOW_COMPOSE]?.status !== 'completed', orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
+        states.push({ path: join(session, 'runtime/orchestrator/state.json'), session_directory: session, workflow_path: null, status: state.status, recorded_status: state.status, current_stage: state.current_stage, composition_pending: state.stages?.[WORKTREE_STAGE.WORKFLOW_COMPOSE]?.status !== 'completed', orchestrator_session_id: sessionRecord?.agent_sessions?.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: sessionRecord?.agent_sessions || {} });
         continue;
       }
       if (typeof ref !== 'string' || isAbsolute(ref) || win32.isAbsolute(ref) || ref.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) throw new Error('Invalid workflow reference');
@@ -167,8 +154,7 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
           if (Object.keys(agentSessions).length) break;
         }
       }
-      const processStatus = await observedProcessStatus(state.stages?.[state.current_stage]);
-      states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: join(session, ref), status: state.status === 'running' && processStatus !== null ? processStatus : state.status, recorded_status: state.status, process_status: processStatus, current_stage: state.current_stage || null, orchestrator_session_id: agentSessions.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: agentSessions });
+      states.push({ path: join(session, 'runtime/orchestrator/workflow.json'), session_directory: session, workflow_path: join(session, ref), status: state.status, recorded_status: state.status, current_stage: state.current_stage || null, orchestrator_session_id: agentSessions.orchestrator?.session_id || state.codex_session_id || null, agent_sessions: agentSessions });
     } catch (error) { issues.push({ path: join(session, 'runtime/orchestrator/workflow.json'), reason: error.message }); }
   }
   const currentRecord = records.find((record) => record.current);
@@ -248,8 +234,7 @@ export async function refreshWorkflowProgress(observed, event) {
   const stages = await Promise.all(definitions.map(async ({ id, needs = [] }) => {
     const entry = state.stages?.[id];
     if (entry && !statuses.has(entry.status)) throw new Error(`Invalid stage status: ${id}`);
-    const processStatus = await observedProcessStatus(entry);
-    return { id, needs, status: processStatus === 'stopped' ? 'stopped' : processStatus === 'unknown' ? 'unknown' : entry?.status || 'pending', recorded_status: entry?.status || 'pending', process_status: processStatus, execution_id: entry?.execution_id || null, result_ref: entry?.result_ref || null, reason: entry?.reason || null };
+    return { id, needs, status: entry?.status || 'pending', recorded_status: entry?.status || 'pending', execution_id: entry?.execution_id || null, result_ref: entry?.result_ref || null, reason: entry?.reason || null };
   }));
   statuses.add('stopped'); statuses.add('unknown');
   const counts = Object.fromEntries([...statuses].map((status) => [status, stages.filter((stage) => stage.status === status).length]));

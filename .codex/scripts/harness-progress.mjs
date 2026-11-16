@@ -7,9 +7,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 
-const installed = new URL('../../.harness/src/workflow/execution-state.mjs', import.meta.url);
-const { processIdentity } = await import(installed.href);
-
 const SYMBOL = { completed: '✓', running: '▶', waiting: '⏸', blocked: '■', failed: '✗', cancelled: '–', skipped: '–', pending: '·', stopped: '✗', unknown: '?' };
 const LABEL = { completed: '완료', running: '실행 중', waiting: '대기', blocked: '막힘', failed: '실패', cancelled: '취소', skipped: '건너뜀', pending: '예정', stopped: '정지됨', unknown: '확인 불가' };
 const CODE = {
@@ -61,11 +58,6 @@ const duration = (from, to = Date.now()) => {
   return Number.isFinite(seconds) ? `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}` : '';
 };
 
-async function alive(identity) {
-  if (!identity?.pid) return null;
-  const now = await processIdentity(identity.pid).catch(() => null);
-  return Boolean(now && now.start && now.boot === identity.boot && now.start === identity.start && now.state !== 'Z');
-}
 
 
 const oneLine = (text, max = 110) => { const line = String(text).replace(/\s+/g, ' ').trim(); return line.length > max ? `${line.slice(0, max - 1)}…` : line; };
@@ -187,10 +179,6 @@ export async function render(session) {
     if (!entry) continue;
     let status = entry.status;
     let note = CODE[entry.code] || (entry.code && entry.code !== 'OK' ? entry.code : '');
-    if (status === 'running') {
-      const states = await Promise.all([alive(entry.owner), alive(entry.child)]);
-      if (states.includes(false)) { status = 'stopped'; note = '실행기 프로세스가 없음 — 정지된 것으로 보임'; }
-    }
     counts.total += 1;
     if (status === 'completed') counts.completed += 1;
     const time = status === 'running' ? duration(entry.started_at) : entry.started_at && entry.finished_at ? duration(entry.started_at, Date.parse(entry.finished_at)) : '';

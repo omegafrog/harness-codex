@@ -339,7 +339,7 @@ npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 
 설치할 agent provider를 고를 수 있다. 기본값 `all`은 Codex와 Claude Code를 모두 설치한다.
 
-워크플로 stage는 현재 CLI의 서브에이전트로 실행하고 해당 도구에서 완료를 기다린다. Harness 설치와 업데이트는 Codex Wake를 설치하거나 stage 결과 전달에 사용하지 않는다.
+워크플로 stage는 현재 CLI(Codex 또는 Claude Code)의 서브에이전트로 실행하고 해당 도구에서 완료를 기다린다. stage마다 별도 CLI 프로세스를 띄우지 않으며, 서브에이전트는 오케스트레이터 세션 안에서만 실행된다.
 
 ```bash
 npx --yes github:omegafrog/harness-codex install --provider codex        # .agents/skills, Codex hook, 공용 .codex 자산

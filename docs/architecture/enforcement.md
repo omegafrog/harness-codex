@@ -4,7 +4,7 @@
 
 setup의 질문·수신·완료 판정은 `.harness/src/workflow/setup-answers.mjs`와 `harness-setup.mjs`가 소유한다. 현재 배치 생성 후 실제 접수된 rollout 호출의 인자를 대조해 호출 ID와 항목 대응을 고정하고, 해당 폼에서 표시한 질문의 답만 누적한다. 다른 호출·중단 후 응답은 진행 근거로 쓰지 않으며 `can_continue`가 참일 때만 다음 CLI 실행을 허용한다. 설치·갱신은 기존 managed asset 탐색으로 helper·스킬 참조를 배포하고 Doctor는 helper/CLI 누락을 진단한다. `tests/setup_configuration.test.mjs`가 실제 관측한 UI 형식의 fixture로 부분·역순·중복·마지막 답·조건부 생략·최종 확인·중단·Git 가시성을 검증한다. 사용자 설명 요청에 먼저 답하기와 실제 응답을 CLI로 전달하기는 스킬의 수동 실행 규칙이며 hook 자동 수신이나 live UI 정상 진행을 이 회귀만으로 증명하지 않는다.
 
-결과 listener는 검증한 event의 `delivery.observed_at`을 session에 보존하며, runner는 관찰된 결과를 Wake에 다시 전달하지 않는다. 이미 큐에 들어간 알림의 소비 중복·중단 요청 유지와 정상 실행 중 폴링 금지는 orchestrator와 `skill-execution/references/dispatch.md`의 의미적 실행 규칙이다. Spec `begin`은 확정 상태·intent 필드·위임 근거를, GitHub plan `begin`과 planning check는 필수 Issue 초안을 검사한다. 독립 리뷰와 최종 결과 검증은 계속 필요하다. 회귀 근거는 `tests/stage_result_events.test.mjs`, `tests/intent_and_excess_guidance.test.mjs`, `tests/plan_review_spec_paths.test.mjs`다.
+stage 완료는 서브에이전트 도구가 알리며 정상 실행 중 폴링 금지와 중단 요청 유지는 orchestrator와 `skill-execution/references/dispatch.md`의 의미적 실행 규칙이다. Spec `begin`은 확정 상태·intent 필드·위임 근거를, GitHub plan `begin`과 planning check는 필수 Issue 초안을 검사한다. 독립 리뷰와 최종 결과 검증은 계속 필요하다. 회귀 근거는 `tests/intent_and_excess_guidance.test.mjs`, `tests/plan_review_spec_paths.test.mjs`다.
 
 | 규칙 | 현재 enforcement | 남는 판단/한계 |
 |---|---|---|

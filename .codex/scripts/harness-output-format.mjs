@@ -20,7 +20,7 @@ try {
   const schema = await readSkillSessionJson({ root: opts.root, session_directory: session, path: `${prefix}/return.schema.json` });
   let result;
   try {
-    const value = await readSkillSessionJson({ root: opts.root, session_directory: session, path: `${prefix}/codex-last-message.json` });
+    const value = await readSkillSessionJson({ root: opts.root, session_directory: session, path: `${prefix}/output.json` });
     result = validateOutputFormat(value, schema);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;

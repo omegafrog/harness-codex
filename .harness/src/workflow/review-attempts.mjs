@@ -62,18 +62,6 @@ async function readHistory(path, limit = 3) {
   catch (error) { if (error.code === 'ENOENT') return { attempts: [] }; throw error; }
 }
 
-async function interruptedPlanReview(root, last) {
-  const native = last?.native_review, execution = native?.execution_id;
-  if (!native?.agent_id || native.stopped || execution !== last.admission_execution_id || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(execution || '')) return false;
-  try {
-    const log = JSON.parse(await readFile(sessionOutputPath(root, `runtime/executions/${execution}/exec.stderr.json`, { create: false }), 'utf8'));
-    return log.provider === 'codex' && (Number.isInteger(log.exit_code) || /^SIG[A-Z0-9]+$/.test(log.exit_signal || '')) && log.session_id === native.parent_session_id;
-  } catch (error) {
-    if (error.code === 'ENOENT' || error instanceof SyntaxError) return false;
-    throw error;
-  }
-}
-
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
 // 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
 export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, requireNative = false }) {
@@ -120,10 +108,6 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         last.review = { verdict: native.review.verdict, findings: native.review.findings || [], reviewer_id: native.reviewer_id, author_ids: [native.parent_session_id], fork_turns: 'none', inputs: last.inputs };
         last.status = !same(last.inputs, inputs) ? 'stale' : native.review.verdict === 'pass' && (native.review.findings || []).every((item) => item.severity === 'minor') ? 'pass' : 'revise';
         last.settled_after_interruption = true;
-      }
-      if (scope.startsWith('plan-') && last?.status === 'active' && await interruptedPlanReview(root, last)) {
-        last.status = 'aborted';
-        last.reason = `interrupted review: owning execution ${last.native_review.execution_id} ended without a recorded reviewer result`;
       }
       requireValue(last?.status !== 'active', `A review is already active (attempt ${last?.id}, execution ${last?.native_review?.execution_id || last?.admission_execution_id || 'unknown'}); record its result or abort it before dispatch`);
       requireValue(!last || last.status === 'aborted' || (scope.startsWith('plan-') && last.status === 'revise') || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');

@@ -223,27 +223,6 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-async function executionSession({ root, session, executionId, worktreeRef }) {
-  let log = {};
-  try { log = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${executionId}/exec.stderr.json` }); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const previousInput = await readExecutionInput({ root, execution_id: executionId });
-  const provider = log.provider || previousInput.context?.resume_provider || previousInput.context?.provider || 'codex';
-  let session_id = log.session_id || log.thread_id || previousInput.context?.resume_session_id;
-  if (session_id && previousInput.context?.resume_session_id && session_id !== previousInput.context.resume_session_id) throw new Error('Recorded provider session ID does not match resumed session');
-  if (session_id && previousInput.context?.resume_provider && provider !== previousInput.context.resume_provider) throw new Error('Recorded provider does not match resumed session');
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session_id || '')) {
-    if (!worktreeRef) throw new Error(`${provider} session ID missing from execution log`);
-    const record = parseWorktreeRecord(await readFile(worktreeRef, 'utf8'));
-    const matches = [...new Map(Object.values(record.agent_sessions || {}).filter((entry) => entry.execution_id === executionId).map((entry) => [`${entry.provider || 'codex'}:${entry.session_id}`, entry])).values()];
-    if (matches.length !== 1) throw new Error(`${provider} session ID missing or ambiguous in canonical worktree record`);
-    session_id = matches[0].session_id;
-    if (matches[0].provider && matches[0].provider !== provider) throw new Error('Canonical provider does not match execution log');
-  }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session_id || '')) throw new Error(`${provider} session ID missing from execution`);
-  return { provider, session_id };
-}
-
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
@@ -275,32 +254,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const questionIds = await queueRunningAnswers(session, running.execution_id, answer);
       return { waiting_for_running_stage: true, execution_id: running.execution_id, agent_id: running.native_agent_id || null, deferred_question_ids: questionIds };
     }
-    let stopped = false;
-    await assertExecutionStopped(running, { root, session }); stopped = true;
-    if (stopped) {
-      const prefix = `runtime/executions/${running.execution_id}`;
-      let envelope, log, result;
-      try {
-        log = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/exec.stderr.json` });
-        result = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/result.json` });
-      } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      try { envelope = await readSkillSessionJson({ root, session_directory: session, path: `${prefix}/return.json` }); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (!envelope && result && log?.exit_code === 0) envelope = { schema_version: result.schema_version, execution_id: result.execution_id, skill: result.skill, status: result.status, code: result.code, result_ref: `${prefix}/result.json`, result };
-      if (envelope && log?.exit_code === 0 && envelope.result_ref === `${prefix}/result.json`) {
-        const previousInput = await readExecutionInput({ root, execution_id: running.execution_id });
-        if (!result) throw new Error('Stored execution result is missing');
-        for (const key of ['schema_version', 'execution_id', 'skill', 'status', 'code']) {
-          if (result[key] !== envelope[key]) throw new Error(`Stored execution result ${key} does not match return`);
-        }
-        if (!isDeepStrictEqual(result, envelope.result)) throw new Error('Stored execution result does not match return');
-        envelope.result = result;
-        await validateSkillReturn({ root, input: previousInput, envelope });
-        await writeFile(join(session, `${prefix}/return.json`), `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
-        await recordExecutionState({ root, input: previousInput, binding: log.binding || { model: running.model, reasoning_effort: running.reasoning_effort }, status: envelope.status, code: envelope.code, result_ref: envelope.result_ref });
-        state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
-      }
-    }
+    // A running native stage can be prepared again only after its subagent reported the end.
+    await assertExecutionStopped(running);
   }
   const prepared = await readExecutionInput({ root, execution_id: state.stages['workflow-compose'].execution_id });
   const stage = { ...await resolveStageSkill({ root, stageId }), scope: prepared.scope, needs: [], inputs: [], outputs: [], conditions: [], gates: [] };
@@ -381,7 +336,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (restart) {
     if (!worktree_ref || state.current_stage !== 'to-ticket' || !['waiting', 'failed'].includes(state.stages?.['to-ticket']?.status)) throw new Error('Restart requires a waiting or failed to-ticket stage in its active worktree');
     if (state.stages?.['spec-me']?.status !== 'completed' || state.stages?.['spec-me']?.code !== 'OK') throw new Error('Restart requires a completed spec-me stage');
-    await assertExecutionStopped(state.stages['to-ticket'], { root, session: taskSession });
+    await assertExecutionStopped(state.stages['to-ticket']);
     if (state.stages?.['tracker-publish']?.execution_id) throw new Error('Cannot restart after tracker-publish has started');
     const historyPath = join(taskSession, `runtime/reviews/plan-${plan_set_id}.json`);
     try {
@@ -492,9 +447,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
     // after checking that its processes are gone.
     let interrupted = ['failed', 'cancelled'].includes(previous?.status);
-    if (interrupted) await assertExecutionStopped(previous, { root, session: taskSession });
+    if (interrupted) await assertExecutionStopped(previous);
     if (!interrupted && previous?.status === 'running' && !previous.result_ref) {
-      await assertExecutionStopped(previous, { root, session: taskSession });
+      await assertExecutionStopped(previous);
       interrupted = true;
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
@@ -508,12 +463,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: Boolean(userRevisionWaiting || (crossStageRevision && previous.status === 'completed' && previous.code === 'OK')) });
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
     }
-    const neverStarted = interrupted && previous.runner_managed && !previous.child && !previousInput.context?.resume_session_id;
-    const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
-    const switchedProvider = Boolean(previous.native_managed || (orchestratorSession && previousProvider !== provider));
-    const sessionInfo = neverStarted || switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
-    if (sessionInfo) provider = sessionInfo.provider;
-    else if (!switchedProvider && previousInput.context?.provider) provider = previousInput.context.provider;
     if (interrupted) {
       interruptedAnswers = join(taskSession, prefix, 'answers.json');
       const deferredPath = `${prefix}/deferred-answers.json`;
@@ -524,12 +473,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       }
     }
     const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
-    if (switchedProvider) {
+    {
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
       if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     }
-    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   let deferredAnswers = null;
   if (!userRevision && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
@@ -547,12 +496,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
-    const previousProvider = previousInput.context?.provider || previousInput.context?.resume_provider || 'codex';
-    const switchedProvider = Boolean(previous.native_managed || (orchestratorSession && previousProvider !== provider));
-    const sessionInfo = switchedProvider ? null : await executionSession({ root, session: taskSession, executionId: previous.execution_id, worktreeRef });
-    if (sessionInfo) provider = sessionInfo.provider;
     const result = previousReturn.result || await readSkillSessionJson({ root, session_directory: previousSession, path: previous.result_ref });
-    if (switchedProvider) {
+    {
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
     }
@@ -576,7 +521,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     answer = batchAnswers.answers;
-    conversation = { previous_result_ref: previous.result_ref, ...(sessionInfo ? { resume_session_id: sessionInfo.session_id, resume_provider: sessionInfo.provider } : {}), ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
+    conversation = { previous_result_ref: previous.result_ref, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
   }
   workflowBinding = historicalBinding?.provider === provider ? historicalBinding : null;
   if (e2eRequest) {
