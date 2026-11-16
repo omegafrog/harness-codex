@@ -687,7 +687,8 @@ test('installed Claude Code consumer completes setup through --reply and passes 
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter(({ severity }) => severity === 'error'), []);
     const status = git('status', '--short', '--untracked-files=all').split('\n').filter(Boolean);
-    assert.ok(status.includes('?? app.txt') && status.includes('?? .harness/contracts.mjs'));
-    assert.ok(!status.some((line) => /\.claude\/|\.codex\/|\.harness\/(?:src|harness\.yaml)/.test(line)), status.join('\n'));
+    assert.ok(status.includes('?? app.txt'), 'application files stay visible');
+    assert.ok(!status.some((line) => /\.claude\/|\.codex\/|\.agents\/|\.github\/|\.harness\//.test(line)), `every Harness-managed path, including the contract runner, stays out of git status:\n${status.join('\n')}`);
+    assert.match(git('check-ignore', '-v', '.harness/contracts.mjs'), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/, 'the contract runner is excluded like every other managed file');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

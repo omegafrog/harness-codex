@@ -63,7 +63,7 @@ async function buildConsumer() {
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   await updateProject({ sourceRoot, targetRoot: root });
-  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
   git(root, 'commit', '-q', '-m', 'Consumer setup baseline');
   const tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: PLAN_SET });
   const ws = tree.workspace;

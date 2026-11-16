@@ -129,7 +129,8 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
       if (text !== null) assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);
     }
     execFileSync('git', ['check-ignore', '-q', '.codex/internal-skills/skill-execution/references/dispatch.md'], { cwd: root });
-    assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).filter((line) => !line.includes('.harness/contracts.mjs')).length, 0);
+    assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).length, 0);
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

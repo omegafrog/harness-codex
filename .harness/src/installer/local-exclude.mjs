@@ -35,7 +35,7 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const sourceOwnedPaths = new Set([...managedPaths.map((path) => `/${path}`), "/.harness/harness.yaml", "/.codex/context-budget.json", "/.codex/harness-lock.json", "/.codex/hooks.json", "/.claude/settings.local.json"]);
   const exclusions = [
     ...LOCAL_GENERATED_EXCLUDES.filter((entry) => !sourceCheckout || !sourceOwnedPaths.has(entry)),
-    ...managedPaths.filter((path) => !sourceCheckout && path !== ".harness/contracts.mjs").map((path) => `/${path}`),
+    ...(sourceCheckout ? [] : managedPaths.map((path) => `/${path}`)),
   ];
   let result;
   try { result = await execFileAsync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" }); }

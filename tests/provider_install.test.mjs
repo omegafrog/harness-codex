@@ -60,7 +60,8 @@ test('install --provider codex carries no Claude Code files and the Claude provi
     // A plain update keeps what is installed instead of adding the other provider.
     await updateProject({ sourceRoot, targetRoot: root });
     assert.deepEqual(present(root, CLAUDE), []);
-    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '?? .harness/contracts.mjs\n', 'only the intentionally visible contract runner is untracked');
+    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '', 'no Harness-managed path, including the contract runner, shows up in git status');
+    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/, 'the contract runner is excluded like every other managed file');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -80,7 +81,8 @@ test('install --provider claude-code carries no Codex skill root and registers t
     assert.equal((await loadProvider('claude-code')).id, 'claude-code');
     await updateProject({ sourceRoot, targetRoot: root });
     assert.deepEqual(present(root, ['.agents/skills/orchestrator/SKILL.md']), []);
-    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '?? .harness/contracts.mjs\n', 'only the intentionally visible contract runner is untracked');
+    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '', 'no Harness-managed path, including the contract runner, shows up in git status');
+    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/, 'the contract runner is excluded like every other managed file');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

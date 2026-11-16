@@ -82,7 +82,7 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 
 ## 통합 계약 버전과 CI
 
-대상 프로젝트의 `docs/contracts/{product.md,architecture.md,manifest.json,architecture.html,diagrams/}`와 `.github/workflows/harness-contracts.yml`, `.harness/contracts.mjs`는 Git에 포함한다. 설치 runtime `.codex/`가 ignore되어도 CI는 관리되는 독립 표준 라이브러리 checker `.harness/contracts.mjs`를 실행한다. 설치/갱신은 기존 사용자 수정 workflow/checker를 덮지 않고 conflict를 보고하므로 해당 conflict를 해결하기 전 완료하지 않는다.
+대상 프로젝트의 `docs/contracts/{product.md,architecture.md,manifest.json,architecture.html,diagrams/}`는 Git에 포함한다. 관리되는 CI 파일 `.github/workflows/harness-contracts.yml`과 독립 표준 라이브러리 checker `.harness/contracts.mjs`는 다른 관리 자산처럼 `.git/info/exclude`로 ignore되어 `git status`에 나타나지 않는다. CI 검사를 도입하는 프로젝트만 두 파일을 `git add -f`로 명시적으로 커밋한다. 이미 추적 중인 파일은 ignore 규칙의 영향을 받지 않는다. 설치/갱신은 기존 사용자 수정 workflow/checker를 덮지 않고 conflict를 보고하므로 해당 conflict를 해결하기 전 완료하지 않는다.
 
 ```sh
 node .codex/scripts/harness-contracts.mjs seal --root /absolute/project --summary '영향 기능과 모델을 검토하여 통합 계약 갱신'

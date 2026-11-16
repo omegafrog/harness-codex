@@ -80,7 +80,8 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.equal(execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--help'], { encoding: 'utf8' }).includes('Usage:'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC.md/);
-    assert.match(status, /\.harness\/contracts\.mjs/);
+    assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
+    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
     assert.match(status, /to-ticket-plan_revision\.schema\.json/);
     assert.doesNotMatch(status, /\.codex\/scripts\/harness-doctor/);
     await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'custom doctor');
@@ -230,6 +231,69 @@ test('update deletes retired skill files with their empty directories and keeps 
     assert.equal(await exists('.agents/skills/orchestrator/SKILL.md'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall', '.agents', '.claude', '.codex', 'app.txt'], { encoding: 'utf8' });
     assert.equal(status, '?? .agents/skills/my-notes/SKILL.md\n?? app.txt\n');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The contract runner used to be the one managed file left visible to Git. It is ignored like the others now, and an
+// update must also repair a consumer whose exclude file predates that.
+test('the contract runner is excluded like every managed file, repaired on update, and still committable with -f', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/contracts-runner-`);
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  const excludePath = resolve(root, '.git/info/exclude');
+  const runner = '.harness/contracts.mjs';
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Runner test'); git('config', 'user.email', 'test@example.test');
+    // An exclude file written before the exception was removed: every managed path except the runner.
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    const current = await readFile(excludePath, 'utf8');
+    assert.match(current, /^\/\.harness\/contracts\.mjs$/m, 'a fresh install excludes the contract runner');
+    await writeFile(excludePath, current.split('\n').filter((line) => line !== `/${runner}`).join('\n'));
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    assert.match(git('status', '--short', '-uall'), /^\?\? \.harness\/contracts\.mjs$/m, 'the old exclude file leaves the runner visible');
+    // The update path (bin/harness-install.mjs calls this after updateProject) restores the missing entry.
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await writeFile(resolve(root, 'app.txt'), 'application file');
+    assert.match(git('check-ignore', '-v', runner), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
+    assert.equal(git('status', '--short', '-uall'), '?? app.txt\n', 'only application files are visible after install/update');
+
+    // A project that adopts the CI workflow commits both files explicitly; the ignore rule does not untrack them.
+    assert.throws(() => git('add', runner), /ignored/i, 'a plain add of an ignored managed file is refused');
+    git('add', '-f', runner, '.github/workflows/harness-contracts.yml');
+    git('commit', '-qm', 'adopt the contracts CI check');
+    await updateProject({ sourceRoot, targetRoot: root });
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    assert.match(git('ls-files'), /^\.harness\/contracts\.mjs$/m, 'a force-added runner stays tracked across update');
+    await writeFile(resolve(root, runner), '// project edit\n');
+    assert.match(git('status', '--short', '-uall'), /^ M \.harness\/contracts\.mjs$/m, 'a tracked runner keeps showing its changes');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a Harness source checkout excludes nothing it owns, including the contract runner', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/source-checkout-`);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    const { name } = JSON.parse(await readFile(resolve(sourceRoot, 'package.json'), 'utf8'));
+    await writeFile(resolve(root, 'package.json'), JSON.stringify({ name }));
+    for (const path of ['bin/harness-install.mjs', '.harness/src/installer/update.mjs', '.codex/internal-skills/spec-me/GUIDE.md']) {
+      await mkdir(resolve(root, path, '..'), { recursive: true });
+      await writeFile(resolve(root, path), '');
+    }
+    await mkdir(resolve(root, '.harness'), { recursive: true });
+    await writeFile(resolve(root, '.harness/contracts.mjs'), '');
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    assert.throws(() => execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/contracts.mjs'], { stdio: 'pipe' }), 'the runner is source in a source checkout');
+    assert.throws(() => execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/src/installer/update.mjs'], { stdio: 'pipe' }), 'managed source stays visible in a source checkout');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

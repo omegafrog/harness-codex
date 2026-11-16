@@ -40,7 +40,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    execFileSync('git', ['add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs'], { cwd: root });
+    execFileSync('git', ['add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs'], { cwd: root });
     execFileSync('git', ['commit', '-m', 'Consumer setup baseline'], { cwd: root });
     tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: 'calculator' });
 

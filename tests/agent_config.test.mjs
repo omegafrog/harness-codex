@@ -102,6 +102,7 @@ test('install moves a legacy .codex/harness.yaml to the shared location and keep
     await assert.rejects(access(resolve(root, '.codex/harness.yaml')));
     assert.equal(parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).agents.provider, 'claude-code');
     assert.equal(spawnSync('git', ['-C', root, 'check-ignore', '-q', '.harness/harness.yaml']).status, 0, 'shared config stays out of commits');
-    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort().join('|'), '?? .harness/contracts.mjs|?? app.txt');
+    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }).split('\n').filter(Boolean).sort().join('|'), '?? app.txt', 'only the application file is visible; Harness-managed files, including the contract runner, stay out of git status');
+    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

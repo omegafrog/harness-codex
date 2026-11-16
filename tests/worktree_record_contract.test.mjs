@@ -294,7 +294,8 @@ test('installed readiness checks required files without validating their content
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /docs\/agents\/EXEC.md/);
     assert.doesNotMatch(status, /\.codex|\.agents|\.harness\/src/);
-    assert.match(status, /\.harness\/contracts\.mjs/);
+    assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
+    assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
     const ignoredHarnessFile = execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-setup.mjs'], { cwd: root, encoding: 'utf8' });
     assert.match(ignoredHarnessFile, /\.codex\/scripts\/harness-setup\.mjs/);
     const ignoredRuntimeFile = execFileSync('git', ['check-ignore', '-v', '.harness/src/installer/update.mjs'], { cwd: root, encoding: 'utf8' });
@@ -400,7 +401,7 @@ test('compose preserves a failed worktree when project preparation is incomplete
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
     await rm(join(root, 'docs/agents/EXEC.md'));
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
     assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
     const worktrees = git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
@@ -434,7 +435,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await symlink(selectedWorktrees, selectedLink, 'dir');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), `${await readFile(join(root, '.harness/harness.yaml'), 'utf8')}\nworktrees:\n  directory: ${JSON.stringify(selectedLink)}\n`);
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
     git('commit', '-m', 'setup baseline');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     const compose = (executionId) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', executionId], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
@@ -1068,7 +1069,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
-    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     // A binding for a different provider than the current orchestrator is refused before creating a worktree.
@@ -1202,7 +1203,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
-    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
     git(root, 'commit', '-qm', 'setup baseline');
     git(root, 'worktree', 'add', '-qb', 'existing', workspace);
     await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });

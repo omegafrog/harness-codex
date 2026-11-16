@@ -175,8 +175,8 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the card is project-owned and visible to Git');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
-  // .harness/contracts.mjs is the one Harness file the project commits (the contracts checker), so it is not a managed-file leak.
-  assert.doesNotMatch(status.replace('?? .harness/contracts.mjs\n', ''), /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files, including the contract runner, stay out of commits');
+  assert.match(git('check-ignore', '-v', '.harness/contracts.mjs'), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
   assert.throws(() => git('check-ignore', '-q', 'docs/domain/stakeholders/SH-01.md'), 'cards are not ignored');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
 
@@ -230,7 +230,7 @@ test('stakeholder-analysis runs as a workflow stage that spec-me accepts as its 
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md', '.harness/contracts.mjs');
+  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git('commit', '-qm', 'baseline');
 
   const invoke = (cwd, script, args = [], input) => {

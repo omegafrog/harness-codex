@@ -450,7 +450,7 @@ npx --yes --package github:omegafrog/harness-codex \
 
 ### Git과 프로젝트별 파일
 
-`install`과 `update`는 `.agents/`, `.codex/`, `skills-lock.json`을 해당 저장소의 `.git/info/exclude`에 추가한다. 이는 로컬 checkout에만 적용되며 저장소의 `.gitignore`를 바꾸지 않는다.
+`install`과 `update`는 `.agents/`, `.codex/`, `skills-lock.json`을 해당 저장소의 `.git/info/exclude`에 추가한다. 이는 로컬 checkout에만 적용되며 저장소의 `.gitignore`를 바꾸지 않는다. 계약 검사기 `.harness/contracts.mjs`와 CI workflow `.github/workflows/harness-contracts.yml`도 같은 방식으로 ignore된다. CI 검사를 도입하는 프로젝트만 두 파일을 `git add -f`로 명시적으로 커밋한다.
 
 이미 Git이 추적하는 Harness 런타임 파일은 exclude만으로 untrack되지 않는다. 먼저 추적 대상을 확인하고, 팀 정책상 로컬 런타임으로 전환할 파일만 명시적으로 추적 해제한다. 기존 프로젝트별 Codex 설정까지 일괄 추적 해제하지 않도록 주의한다.
 

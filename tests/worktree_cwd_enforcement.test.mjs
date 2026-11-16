@@ -33,7 +33,7 @@ test('installed workflow commands require cwd inside the target worktree', async
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git(primary, 'add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md', '.harness/contracts.mjs');
+  git(primary, 'add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git(primary, 'commit', '-qm', 'baseline');
 
   const invoke = (cwd, script, args = [], env = {}) => spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });

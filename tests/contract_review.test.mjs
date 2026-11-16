@@ -34,7 +34,7 @@ async function consumer() {
   await write('docs/contracts/product.md', '# Product\n');
   await write('docs/contracts/architecture.md', '# Architecture\n');
   await write('docs/contracts/manifest.json', JSON.stringify(manifest));
-  git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/contracts.mjs');
+  git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
   git('commit', '-q', '-m', 'Baseline');
   const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_SKILL_EXECUTION_ID: STAGE, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: STAGE };
   const json = (run) => ({ status: run.status, stderr: run.stderr, json: run.stdout ? JSON.parse(run.stdout) : null });
