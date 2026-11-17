@@ -579,11 +579,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     const rawResultPath = `runtime/executions/${next.input.execution_id}/output.json`;
     await writeFile(join(resultDir, 'output.json'), JSON.stringify({ ...answerEnvelope, execution_id: 'mistyped', result: { ...questionResult, execution_id: 'mistyped' } }));
-    await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...questionWithoutReview, execution_id: 'mistyped' }));
+    await writeFile(join(resultDir, 'result.json'), JSON.stringify(answerEnvelope));
     const rawCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--source', rawResultPath];
     const normalizedResult = JSON.parse(execFileSync(process.execPath, rawCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(normalizedResult.execution_id, next.input.execution_id);
     assert.equal(normalizedResult.result.execution_id, next.input.execution_id);
+    assert.equal(normalizedResult.result.summary, questionResult.summary);
     assert.equal(validated.result.summary, '파일 정본');
     assert.equal(validated.result.artifacts[0].path, `${canonicalSpecDir}/architecture-reviews/review.yaml`);
     // The runner fingerprints the returned file itself instead of trusting the model-typed hash.
@@ -595,7 +596,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(validated.result.questions.length, 1);
     assert.equal(validated.result.questions[0].question_id, `${next.input.execution_id}:1`);
     assert.equal(validated.result.questions[0].title, '범위는?');
-    assert.deepEqual(validated.result, JSON.parse(await readFile(join(resultDir, 'result.json'), 'utf8')));
+    assert.deepEqual(normalizedResult.result, JSON.parse(await readFile(join(resultDir, 'result.json'), 'utf8')));
     const { title, ...oldItem } = questionResult.questions[0];
     await writeFile(join(resultDir, 'result.json'), JSON.stringify({ ...questionResult, questions: [{ ...oldItem, question: title }] }));
     assert.throws(() => execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, stdio: 'pipe' }));

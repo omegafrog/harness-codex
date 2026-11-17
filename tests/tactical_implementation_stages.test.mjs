@@ -88,6 +88,7 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
     '.harness/src/workflow/plan-review.mjs',
     '.harness/src/tracker/publication.mjs',
     '.codex/scripts/harness-native-stage.mjs',
+    '.codex/scripts/harness-result.mjs',
     '.codex/scripts/harness-context.mjs',
   ];
   const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
@@ -249,6 +250,27 @@ test('installed decisions are committed alone and the ticket stages wait for the
   let technologyCommit;
   for (const [stage, name, content] of decisions) {
     const path = `docs/implementation/${flow.planSetId}/${name}`;
+    if (stage === 'tactical-technology') {
+      const begun = await flow.beginStage(stage);
+      const schema = JSON.parse(await readFile(begun.started.schema_path, 'utf8'));
+      assert.ok(schema.properties.result.required.includes('summary'));
+      assert.equal(Object.hasOwn(schema.properties, 'summary'), false);
+      await flow.submitStage(begun, { files: { [path]: content, 'docs/agents/EXEC.md': '검증 명령: npm test\n' }, summary: '기술 결정 완료' });
+      const output = JSON.parse(await readFile(begun.started.output_path, 'utf8'));
+      await writeFile(join(begun.started.output_path, '..', 'result.json'), JSON.stringify(output));
+      delete output.result.summary;
+      await writeFile(begun.started.output_path, JSON.stringify(output));
+      const rejected = flow.finishStage(begun);
+      assert.equal(rejected.status, 1);
+      assert.ok(JSON.parse(rejected.stdout).errors.some(({ path, rule }) => path === '$.result.summary' && rule === 'required'));
+      output.result.summary = '기술 결정 완료';
+      await writeFile(begun.started.output_path, JSON.stringify(output));
+      const finished = flow.finishStage(begun);
+      assert.equal(finished.status, 0, finished.stderr || finished.stdout);
+      assert.equal(JSON.parse(await readFile(join(begun.started.output_path, '..', 'result.json'), 'utf8')).summary, '기술 결정 완료');
+      technologyCommit = flow.treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n');
+      continue;
+    }
     const result = await flow.runStage(stage, {
       files: { [path]: content, ...(stage === 'tactical-technology' ? { 'docs/agents/EXEC.md': '검증 명령: npm test\n' } : {}) },
       expectCommit: true,

@@ -43,8 +43,10 @@ try {
   if (envelope.result_ref === null && !(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED')) envelope.result_ref = paths.refs.result;
   if (envelope.result_ref) {
     if (envelope.result_ref !== paths.refs.result) throw new Error('Result must belong to the requested execution');
-    try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (opts.return) {
+      try { envelope.result = await readSkillSessionJson({ root: opts.root, session_directory: session, path: envelope.result_ref }); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
   }
   if (opts.source) envelope.result.execution_id = input.execution_id;
   if (input.skill !== 'workflow-compose' && !Object.hasOwn(envelope.result, 'review_request')) envelope.result.review_request = null;

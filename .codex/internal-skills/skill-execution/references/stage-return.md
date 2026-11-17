@@ -2,6 +2,8 @@
 
 각 stage 서브에이전트는 전달받은 schema 파일을 직접 읽고 지정된 출력 파일에 schema에 맞는 JSON 객체 하나를 작성한다. 형식 오류를 전달받으면 해당 키와 값을 고쳐 같은 파일에 다시 작성한다. 실행 ID는 작성하지 않는다. 실행기가 정본 입력의 ID를 최상위와 `result`에 채운다. `skill`, `status`, `code`는 `result`와 일치시킨다. `result`에는 schema가 요구하는 `summary`, `artifacts`, `questions`와 해당 stage의 추가 필드도 넣는다. 해당 사항이 없으면 배열은 `[]`, schema에 `review_request`가 있으면 리뷰 요청이 없을 때 `null`이다. 실제 필수 필드와 stage별 추가 제약은 실행기가 제공한 schema와 해당 GUIDE를 따른다.
 
+`summary`는 최상위가 아닌 `result.summary`에 작성한다. 실행기가 저장하는 `result.json`은 직접 작성하지 않는다.
+
 | status | 허용 code | 의미 |
 |---|---|---|
 | `completed` | `OK` | 이 stage의 요청 범위와 완료 gate를 통과했다. |
