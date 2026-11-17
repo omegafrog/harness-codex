@@ -247,7 +247,7 @@ try {
       else throw error;
     }
     if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: format.errors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
-    // The last tactical design stage (integration-design) is accepted as completed only when the whole tactical-design.md passes the
+    // The last tactical design stage (context-boundary) is accepted as completed only when the whole tactical-design.md passes the
     // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
     // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,
     // and the same finish runs again.

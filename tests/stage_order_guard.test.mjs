@@ -82,7 +82,7 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
   const next = JSON.parse(prepare('--stage-id', 'domain-model').stdout);
   assert.equal(next.input.context.transition.from_stage, 'requirements-fix', 'the flow itself continues with domain-model');
 
-  // The tactical stages in order, then spec-me follows integration-design.
+  // The tactical stages in order, then spec-me follows context-boundary.
   for (const stage of TACTICAL_DESIGN_STAGES) {
     if (stage !== TACTICAL_DESIGN_STAGES[0]) refused('spec-me', stage);
     await skipped(stage);
@@ -90,20 +90,20 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
   const ready = prepare('--stage-id', 'spec-me');
   assert.equal(ready.status, 0, ready.stderr);
   const prepared = JSON.parse(ready.stdout);
-  assert.equal(prepared.input.context.transition.from_stage, 'integration-design');
+  assert.equal(prepared.input.context.transition.from_stage, 'context-boundary');
 
   // `start` cannot bypass the order with an input that was prepared earlier: it reads the state again.
   const after = JSON.parse(await readFile(stateFile, 'utf8'));
-  const integration = after.stages['integration-design'];
-  delete after.stages['integration-design'];
+  const boundary = after.stages['context-boundary'];
+  delete after.stages['context-boundary'];
   after.current_stage = 'application-service';
   await writeFile(stateFile, JSON.stringify(after, null, 2) + '\n');
   const start = script(workspace, 'harness-native-stage.mjs', ['start', '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id]);
   assert.notEqual(start.status, 0);
-  assert.match(start.stderr, /spec-me cannot start before integration-design/);
+  assert.match(start.stderr, /spec-me cannot start before context-boundary/);
   assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['spec-me'], undefined, 'a refused start claims nothing');
-  after.stages['integration-design'] = integration;
-  after.current_stage = 'integration-design';
+  after.stages['context-boundary'] = boundary;
+  after.current_stage = 'context-boundary';
   await writeFile(stateFile, JSON.stringify(after, null, 2) + '\n');
   const allowed = script(workspace, 'harness-native-stage.mjs', ['start', '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id]);
   assert.equal(allowed.status, 0, allowed.stderr);

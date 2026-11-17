@@ -22,7 +22,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 - One transaction that changes more than one Aggregate, or reaching into another Aggregate's state instead of its ID.
 - A use case for an activity that an external system owns alone, a pass-through service that adds no coordination, or a repository for anything that is not an Aggregate.
 - Changing sections 1 to 3, or asking the user.
-- Writing anything in `tactical-design.md` but `## 4` and this stage's rows of `## 6`. Sections 1 to 3 are settled input and section 5 belongs to `integration-design`.
+- Writing anything in `tactical-design.md` but `## 4` and this stage's rows of `## 7`. Sections 1 to 3 are settled input and section 5 belongs to `integration-design`.
 
 ## Process
 
@@ -31,7 +31,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 3. On resume, read the previous result and section 4, keep rows already recorded and finish the missing ones.
 4. For each `BIZ` whose models are not all external, list the use cases the normal and exception scenarios need. A reaction to another subdomain's event (`## 4` of `requirements.md`) is its own use case, because it runs in its own transaction.
 5. Write `### 4` one row per use case: the name, its BC, the `BIZ` IDs, the call order using Aggregate, Value Object and Domain Service behaviours exactly as sections 2 and 3 name them, the transaction boundaries, the repositories and the external effects. Load and save through one repository per Aggregate. Write the boundary as `T1: <Aggregate>` per transaction; a reaction that section 2.3 separates by eventual consistency gets its own transaction with its `CON-xx`. A use case that changes no Aggregate (read-only, or in a context without Aggregates) writes `없음 — <이유>`. The read-only check that a `즉시` decision of section 2.3 lists in `조회 전용 Aggregate` is a step of the call order, not a second transaction. Place an external effect (a call to an external system, an event) after the commit it depends on and name it.
-6. Update the project model rows: the transaction and repository of each Aggregate in `데이터 / transaction`, as the shared rules describe. Append the decisions of this stage to `## 6` with sources, using only terms of `CONTEXT.md`.
+6. Update the project model rows: the transaction and repository of each Aggregate in `데이터 / transaction`, as the shared rules describe. Append the decisions of this stage to `## 7` with sources, using only terms of `CONTEXT.md`.
 7. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
@@ -40,5 +40,5 @@ This stage never adds a business rule. A scenario step that no Aggregate, Value 
 
 ## Completion
 
-- Section 4 holds a use case for every `BIZ` that an external system does not own alone, each with its call order, its transactions, its repositories and its external effects, and section 6 holds this stage's decisions with sources.
+- Section 4 holds a use case for every `BIZ` that an external system does not own alone, each with its call order, its transactions, its repositories and its external effects, and section 7 holds this stage's decisions with sources.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. `integration-design` reads the external effects and the boundaries.

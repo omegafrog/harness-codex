@@ -52,7 +52,7 @@ const FORMER_REGISTRY = [
 ];
 
 // Skills added after the registry was retired; each declares its tier in its own document from the start.
-const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'contract-review', 'domain-model', 'domain-service', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'ubiquitous-language'];
+const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'ubiquitous-language'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
@@ -121,7 +121,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   // domain-model (every later stage builds on its models), aggregate-design (a boundary and a consistency choice the
   // business observes) and integration-design (a synchronous or later answer). The two that only apply decided rules,
   // domain-service and application-service, run at the implementation tier.
-  for (const [skill, tier] of Object.entries({ 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance' })) {
+  for (const [skill, tier] of Object.entries({ 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance' })) {
     assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   }
   assert.equal((await readdir(join(sourceRoot, '.codex/internal-skills/skill-execution'))).includes('bindings.json'), false);

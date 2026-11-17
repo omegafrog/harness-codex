@@ -181,7 +181,7 @@ async function verify(projectRoot, options) {
       await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
     }
     await stat(join(projectRoot, ".codex", "internal-skills", "requirements-fix", "references", "template.md"));
-    for (const name of ["domain-model", "aggregate-design", "domain-service", "application-service", "integration-design"]) {
+    for (const name of ["domain-model", "aggregate-design", "domain-service", "application-service", "integration-design", "context-boundary"]) {
       await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
     }
     await stat(join(projectRoot, ".codex", "internal-skills", "domain-model", "references", "template.md"));

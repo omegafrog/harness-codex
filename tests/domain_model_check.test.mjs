@@ -12,7 +12,7 @@ import { READ_ONLY_DOCUMENT, READ_ONLY_REQUIREMENTS, REQUIREMENTS, STATELESS_DOC
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const SCRIPT = join(sourceRoot, '.codex/scripts/harness-domain-model-check.mjs');
-const [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN] = TACTICAL_DESIGN_STAGES;
+const [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN, CONTEXT_BOUNDARY] = TACTICAL_DESIGN_STAGES;
 
 const templateDocument = () => loadTemplate(sourceRoot);
 
@@ -32,9 +32,9 @@ const failing = (document, code, owner, requirements) => {
 const passes = (document, requirements, why) => assert.deepEqual(run(document, requirements), { ok: true, errors: [] }, why);
 
 test('the gate is one check of the whole document, owned by the last tactical stage of the flow', () => {
-  assert.equal(FINAL_TACTICAL_STAGE, INTEGRATION_DESIGN);
+  assert.equal(FINAL_TACTICAL_STAGE, CONTEXT_BOUNDARY);
   assert.equal(FINAL_TACTICAL_STAGE, TACTICAL_DESIGN_STAGES.at(-1));
-  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design']);
+  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
 });
 
 test('the requirements parser reads BIZ headings and the INV and EX bullets, not AC lines, and the table parser reads cleaned headers', () => {
@@ -51,10 +51,10 @@ test('the template example, the stateless-calculator document and a read-only-ag
 test('documents: a missing document is reported against the stage that owes it, and each missing section against the stage that fills it', async () => {
   const document = await templateDocument();
   assert.deepEqual(run('# 전술 설계\n').errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['SECTION_MISSING', stage]));
-  assert.deepEqual(run(upTo(document, 3)).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
-  assert.deepEqual(run(upTo(document, 2)).errors.map((error) => error.owner_stage), [DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]);
-  // The decision history (section 6) is not gated, and a heading is read the way people write it.
-  passes(document.split('## 6.')[0]);
+  assert.deepEqual(run(upTo(document, 3)).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN], ['SECTION_MISSING', CONTEXT_BOUNDARY]]);
+  assert.deepEqual(run(upTo(document, 2)).errors.map((error) => error.owner_stage), [DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN, CONTEXT_BOUNDARY]);
+  // Decision history (section 7) is not gated, and headings are read the way people write them.
+  passes(document.split('## 7.')[0]);
   passes(document.replace('## 5. 통합 설계', '## 5 통합 설계'));
   assert.equal(run(document.replace('## 5. 통합 설계', '### 5. 통합 설계')).ok, false, 'a deeper heading is no section');
   assert.equal(run(document.replace('## 5. 통합 설계', '```\n## 5. 통합 설계\n```')).ok, false, 'a heading inside a code block is no section');
@@ -207,6 +207,16 @@ test('the three false positives of a real run stay gone: a Value Object without 
   failing(READ_ONLY_DOCUMENT.replace('| T1: 사용자 |', '| T1: 사용자, 커뮤니티 글 |'), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE, READ_ONLY_REQUIREMENTS);
 });
 
+test('the final gate requires each integration to have a complete, sourced boundary decision', async () => {
+  const document = await templateDocument();
+  const missing = document.replace(/^\| 커뮤니티 \| 신고 \|.*\n/m, '');
+  failing(missing, 'INTEGRATION_BOUNDARY_MISSING', CONTEXT_BOUNDARY, REQUIREMENTS);
+  const incomplete = document.replace('| 커뮤니티 | 신고 | 관계 패턴은 근거가 말해 주는 경우에만 기록 | section 5에서 쓰는 코드 의존 형태 | 코드 경계에 적합한 검사 방식, 미정이면 근거와 함께 미정 | 각 컨텍스트가 자기 데이터 소유, 다른 테이블·Repository 접근과 내부 타입 전달 금지 | CONTEXT-MAP.md `## 3`, INT-01 |', '| 커뮤니티 | 신고 | - | section 5에서 쓰는 코드 의존 형태 | 코드 경계에 적합한 검사 방식 | 각 컨텍스트가 자기 데이터를 소유한다 | - |');
+  failing(incomplete, 'BOUNDARY_DECISION_INCOMPLETE', CONTEXT_BOUNDARY, REQUIREMENTS);
+  const emptyBoundary = document.replace(/^\| 커뮤니티 \| 신고 \|.*\n/m, '');
+  failing(emptyBoundary, 'BOUNDARY_DECISION_MISSING', CONTEXT_BOUNDARY, REQUIREMENTS);
+});
+
 test('the findings come earliest stage first, so the first one names the stage to reopen', async () => {
   const document = await templateDocument();
   const broken = [
@@ -231,7 +241,7 @@ test('the gate command reads the two documents, prints the verdict and fails the
   await writeFile(join(directory, 'tactical-design.md'), upTo(document, 3));
   const failed = command();
   assert.equal(failed.status, 1);
-  assert.deepEqual(JSON.parse(failed.stdout).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
+  assert.deepEqual(JSON.parse(failed.stdout).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN], ['SECTION_MISSING', CONTEXT_BOUNDARY]]);
   // The stage no longer selects anything: the only input is the documents.
   const staged = command('--stage', 'domain-service');
   assert.equal(staged.status, 1);
@@ -258,7 +268,7 @@ test('the runner gate checks the plan set documents of a workspace and reports a
   await writeFile(join(root, 'docs/specs/set/tactical-design.md'), upTo(document, 2));
   const failing = await checkWorkspaceTacticalDesign({ root, planSetId: 'set' });
   assert.equal(failing.ok, false);
-  assert.deepEqual(codes(failing), ['SECTION_MISSING', 'SECTION_MISSING', 'SECTION_MISSING']);
+  assert.deepEqual(codes(failing), ['SECTION_MISSING', 'SECTION_MISSING', 'SECTION_MISSING', 'SECTION_MISSING']);
 
   const empty = await planSetWorkspace(t, {});
   const missing = await checkWorkspaceTacticalDesign({ root: empty, planSetId: 'set' });
@@ -286,45 +296,45 @@ test('the runner gates only the completed result of the last tactical stage, wit
   const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': failingDocument });
 
   // A finding of an earlier stage's section is reported against that stage, on the last stage's result.
-  const verdict = await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed });
+  const verdict = await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope: completed });
   assert.equal(verdict.ok, false);
-  assert.equal(verdict.stage, INTEGRATION_DESIGN);
+  assert.equal(verdict.stage, CONTEXT_BOUNDARY);
   assert.deepEqual(verdict.errors.map((error) => [error.code, error.id, error.owner_stage]), [['DECISION_NO_SOURCE', 'CON-01', AGGREGATE_DESIGN]]);
-  await assert.rejects(assertTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed }), (error) => {
+  await assert.rejects(assertTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope: completed }), (error) => {
     assert.ok(error instanceof TacticalGateError);
     assert.deepEqual(error.verdict, verdict);
-    assert.match(error.message, /^Tactical design gate failed for integration-design: DECISION_NO_SOURCE \(CON-01\) \[aggregate-design\] CON-01 has no source/);
+    assert.match(error.message, /^Tactical design gate failed for context-boundary: DECISION_NO_SOURCE \(CON-01\) \[aggregate-design\] CON-01 has no source/);
     return true;
   });
 
   // The earlier stages are accepted without a gate even when the document is incomplete or wrong; blocks and questions never reach it.
-  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE]) {
+  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]) {
     assert.equal(await evaluateTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
     assert.equal(await assertTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
   }
   const partial = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': upTo(document, 1) });
-  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE]) assert.equal(await assertTacticalDesignGate({ root: partial, input: input(stage), envelope: completed }), null, `${stage} with only section 1`);
-  for (const envelope of [{ status: 'blocked', code: 'INPUT_MISSING' }, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }, { status: 'failed', code: 'EXECUTION_ERROR' }]) assert.equal(await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope }), null, envelope.code);
+  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]) assert.equal(await assertTacticalDesignGate({ root: partial, input: input(stage), envelope: completed }), null, `${stage} with only section 1`);
+  for (const envelope of [{ status: 'blocked', code: 'INPUT_MISSING' }, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }, { status: 'failed', code: 'EXECUTION_ERROR' }]) assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope }), null, envelope.code);
   assert.equal(await evaluateTacticalDesignGate({ root, input: input('requirements-fix'), envelope: completed }), null, 'another stage');
-  assert.equal(await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN, null), envelope: completed }), null, 'no plan set');
+  assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY, null), envelope: completed }), null, 'no plan set');
   assert.equal(await assertTacticalDesignGate({ root, input: input('spec-me'), envelope: completed }), null);
 
   // The last stage is accepted once the whole document passes, and an incomplete document fails it.
   await writeFile(join(root, 'docs/specs/set/tactical-design.md'), document);
-  assert.deepEqual(await assertTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed }), { stage: INTEGRATION_DESIGN, ok: true, errors: [] });
+  assert.deepEqual(await assertTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope: completed }), { stage: CONTEXT_BOUNDARY, ok: true, errors: [] });
   await writeFile(join(root, 'docs/specs/set/tactical-design.md'), upTo(document, 4));
-  assert.deepEqual((await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed })).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', INTEGRATION_DESIGN]]);
+  assert.deepEqual((await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope: completed })).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', INTEGRATION_DESIGN], ['SECTION_MISSING', CONTEXT_BOUNDARY]]);
 });
 
 test('the rejection tells the stage to repair its own section, or to block and name the earlier stage to reopen', () => {
-  const verdict = (...owners) => ({ stage: INTEGRATION_DESIGN, ok: false, errors: owners.map((owner_stage, index) => ({ code: 'X', message: 'm', id: `ID-${index}`, owner_stage })) });
-  const own = gateFailureInstruction(verdict(INTEGRATION_DESIGN));
-  assert.match(own, /once on the whole tactical-design\.md for integration-design and it failed/);
+  const verdict = (...owners) => ({ stage: CONTEXT_BOUNDARY, ok: false, errors: owners.map((owner_stage, index) => ({ code: 'X', message: 'm', id: `ID-${index}`, owner_stage })) });
+  const own = gateFailureInstruction(verdict(CONTEXT_BOUNDARY));
+  assert.match(own, /once on the whole tactical-design\.md for context-boundary and it failed/);
   assert.match(own, /Nothing was committed or recorded, and the stage is still running/);
   assert.match(own, /same subagent so it repairs its own section/);
   assert.doesNotMatch(own, /DEPENDENCY_INCOMPLETE/);
   const earlier = gateFailureInstruction(verdict(DOMAIN_MODEL, AGGREGATE_DESIGN, INTEGRATION_DESIGN));
-  assert.match(earlier, /owner_stage is domain-model, aggregate-design are in sections of earlier stages/);
+  assert.match(earlier, /owner_stage is domain-model, aggregate-design, integration-design are in sections of earlier stages/);
   assert.match(earlier, /returns blocked \/ DEPENDENCY_INCOMPLETE naming domain-model as the earliest stage to reopen/);
   assert.match(earlier, /without editing any earlier section/);
   assert.match(earlier, /reopens domain-model with --restart-requirements true or --user-revision true --feedback/);
@@ -335,5 +345,5 @@ test('the runner gate refuses a document that is a symlink out of the workspace'
   const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS });
   const outside = await planSetWorkspace(t, { 'tactical-design.md': document });
   await symlink(join(outside, 'docs/specs/set/tactical-design.md'), join(root, 'docs/specs/set/tactical-design.md'));
-  await assert.rejects(assertTacticalDesignGate({ root, input: { skill: INTEGRATION_DESIGN, context: { plan_set_id: 'set' } }, envelope: completed }), /outside case workspace/);
+  await assert.rejects(assertTacticalDesignGate({ root, input: { skill: CONTEXT_BOUNDARY, context: { plan_set_id: 'set' } }, envelope: completed }), /outside case workspace/);
 });

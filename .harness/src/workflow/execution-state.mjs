@@ -59,7 +59,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
   const orchestratorProvider = input.context?.orchestrator_provider || (codexSessionId ? 'codex' : null);
   const stage = input.context?.stage_id || input.skill;
   if ((orchestratorSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestratorSessionId)) || (orchestratorProvider && !['codex', 'claude-code'].includes(orchestratorProvider)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid orchestrator session or stage ID');
-  // Every path that records a stage as completed ends here, so the last tactical design stage (integration-design) cannot be
+  // Every path that records a stage as completed ends here, so the last tactical design stage (context-boundary) cannot be
   // accepted without the gate on the whole tactical-design.md. The earlier tactical stages are not gated.
   if (status === 'completed') await assertTacticalDesignGate({ root, input, envelope: { status, code } });
   const directory = 'runtime/orchestrator';

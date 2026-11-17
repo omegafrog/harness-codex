@@ -105,7 +105,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/requirements-fix/references/template.md',
     '.codex/internal-skills/requirements-fix/references/coverage.md',
     '.codex/internal-skills/event-storming/references/diagrams.md',
-    ...['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    ...['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
     '.codex/internal-skills/domain-model/references/template.md',
     '.codex/internal-skills/domain-model/references/deepening.md',
     ...['bootstrap', 'render'].map((name) => `.codex/tools/plantuml-${name}.mjs`),

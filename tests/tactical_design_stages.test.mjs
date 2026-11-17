@@ -20,13 +20,13 @@ const DEEPENING = '.codex/internal-skills/domain-model/references/deepening.md';
 const GATE = '.codex/scripts/harness-domain-model-check.mjs';
 const GATE_LIBRARY = '.harness/src/workflow/domain-model-gate.mjs';
 const README_PATH = 'README.md';
-const TACTICAL_TIERS = { 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance' };
-const ASKING = ['aggregate-design', 'integration-design'];
-const FINAL_STAGE = 'integration-design';
+const TACTICAL_TIERS = { 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance' };
+const ASKING = ['aggregate-design', 'integration-design', 'context-boundary'];
+const FINAL_STAGE = 'context-boundary';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 
 test('the tactical stages follow the requirements flow in one ordered list, and the orchestrator, the map, the README and every guide agree on it', async () => {
-  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design']);
+  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
   assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES]);
   assert.equal(PRE_SPEC_STAGES.at(REQUIREMENTS_STAGES.length - 1), 'requirements-fix');
   for (const stage of TACTICAL_DESIGN_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
@@ -59,12 +59,12 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
 
   // The requirements template points at the tactical documents and lets only the asking stages add a rule from a user's answer.
   const requirementsTemplate = await read('.codex/internal-skills/requirements-fix/references/template.md');
-  assert.match(requirementsTemplate, /\| `domain-model`부터 `integration-design`까지 \|/);
-  assert.match(requirementsTemplate, /질문을 하는 stage\(`aggregate-design`, `integration-design`\)/);
+  assert.match(requirementsTemplate, /\| `domain-model`부터 `context-boundary`까지 \|/);
+  assert.match(requirementsTemplate, /질문을 하는 stage\(`aggregate-design`, `integration-design`, `context-boundary`\)/);
 
   // The template owns the document shape the gate reads.
   const document = await templateDocument(sourceRoot);
-  assert.deepEqual([...document.matchAll(/^## (.+)$/gm)].map((match) => match[1]), ['1. 모델 후보', '2. Aggregate', '3. Domain Service', '4. Application Service', '5. 통합 설계', '6. 결정 이력']);
+  assert.deepEqual([...document.matchAll(/^## (.+)$/gm)].map((match) => match[1]), ['1. 모델 후보', '2. Aggregate', '3. Domain Service', '4. Application Service', '5. 통합 설계', '6. 컨텍스트 경계', '7. 결정 이력']);
   assert.match(document, /^\| 모델 \| 종류 \| BC \| 정체성·생애주기 또는 값의 의미 \| 현재 상태 \| 근거 \|$/m);
   assert.match(document, /^\| 요구 \| BC \| 소유 모델 \| 근거 \|$/m);
   assert.match(document, /^\| CON \| 규칙 \| 걸친 Aggregate \| 조회 전용 Aggregate \| 일관성 \| 결정 \| 근거·출처 \|$/m);
@@ -88,36 +88,42 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
     assert.match(guide, new RegExp(`^---\\nmodel_tier: ${TACTICAL_TIERS[stage]}\\n---\\n<!-- 내부 workflow 전용`), `${stage} declares its tier and stays internal`);
     assert.match(guide, /domain-model\/references\/template\.md|\(references\/template\.md\)/, `${stage} links the template`);
     assert.match(guide, /domain-model\/references\/deepening\.md|\(references\/deepening\.md\)/, `${stage} links the shared rules`);
-    for (const part of ['## Purpose', '## Inputs', '## Prohibited', '## Process', '## Deepening', '## Completion']) assert.ok(guide.includes(part), `${stage} has ${part}`);
+    const sections = stage === 'context-boundary' ? ['## 목적', '## 입력', '## 금지 사항', '## 절차', '## 심화', '## 완료 조건'] : ['## Purpose', '## Inputs', '## Prohibited', '## Process', '## Deepening', '## Completion'];
+    for (const part of sections) assert.ok(guide.includes(part), `${stage} has ${part}`);
     assert.match(guide, /harness-workspace-preflight\.mjs/, `${stage} runs the preflight`);
     assert.match(guide, /harness-spec-path\.mjs/, `${stage} resolves paths with the helper`);
     assert.match(guide, /`판정: 생략`/, `${stage} records a skip`);
-    assert.match(guide, /The runner commits `docs\/specs\/<plan-set-id>\/`/, `${stage} says what the runner commits`);
+    assert.match(guide, stage === 'context-boundary' ? /Runner는 `CONTEXT-MAP\.md`를 변경 artifact로 보고한 경우에만/ : /The runner commits `docs\/specs\/<plan-set-id>\/`/, `${stage} says what the runner commits`);
     // The gate runs once, in the runner, when the last stage completes: only that guide speaks of it and no stage runs it.
     if (stage === FINAL_STAGE) {
-      assert.match(guide, /## Final gate/);
-      assert.match(guide, /The only gate of the tactical flow runs when this stage returns `completed\/OK`/);
-      assert.match(guide, /whole `tactical-design\.md` \(sections 1 to 5\)/);
+      assert.match(guide, /## 최종 gate/);
+      assert.match(guide, /Runner는 이 stage가 `completed\/OK`를 반환한 뒤에만 전술 gate를 실행한다/);
+      assert.match(guide, /6절/);
       assert.match(guide, /`gate_error`[\s\S]*`owner_stage`/);
-      assert.match(guide, /Errors whose `owner_stage` is `integration-design` are this stage's own/);
-      assert.match(guide, /An error owned by an earlier stage[\s\S]*return `blocked` \/ `DEPENDENCY_INCOMPLETE` naming the earliest `owner_stage`/);
-      assert.match(guide, /`--restart-requirements true` or `--user-revision true --feedback`/);
+      assert.match(guide, /이 stage 소유 오류는 여기서 고칠 수 있다/);
+      assert.match(guide, /이전 stage 오류[\s\S]*`blocked` \/ `DEPENDENCY_INCOMPLETE`/);
+      assert.match(guide, /`--restart-requirements true` (?:or|또는) `--user-revision true --feedback`/);
     } else assert.doesNotMatch(guide, /harness-domain-model-check|gate_error|owner_stage|--stage|gate passes|^## Final gate/im, `${stage} does not run or describe a gate of its own`);
     assert.match(guide, /`DEPENDENCY_INCOMPLETE`|`INPUT_MISSING`/, `${stage} says how it blocks`);
     assert.match(guide, /requirements\.md/, `${stage} reads the requirements`);
     // The document is named for the flow, never for a stage: a stage writes only its own section, and a user instruction that
     // names a stage is read as the stage, not as a file.
-    assert.match(guide, /Writing anything in `tactical-design\.md` but `## \d`/, `${stage} writes only its own section of the tactical design`);
-    assert.match(guide, /refers to that stage and its recorded state, never to a file/, `${stage} reads a stage name as a stage`);
+    assert.match(guide, stage === 'context-boundary' ? /`tactical-design\.md`에서는 `## 6`/ : /Writing anything in `tactical-design\.md` but `## \d`/, `${stage} writes only its own section of the tactical design`);
+    assert.match(guide, stage === 'context-boundary' ? /파일이 아니라 이 stage와 기록된 상태/ : /refers to that stage and its recorded state, never to a file/, `${stage} reads a stage name as a stage`);
     assert.doesNotMatch(guide, /(?<!architecture\/)domain-model\.md/, `${stage} never names the legacy document`);
     assert.doesNotMatch(guide, /ddd-design|spec-me\/GUIDE|architecture-spec/, `${stage} does not depend on the older design guides`);
     if (ASKING.includes(stage)) {
       assert.match(guide, /`action_required` \/ `USER_DECISION_REQUIRED`/, `${stage} may ask`);
-      assert.match(guide, /in Korean/, `${stage} asks in Korean`);
-      assert.match(guide, /a recommended option/, `${stage} recommends an option`);
-      assert.match(guide, /one batch/, `${stage} asks in one batch`);
+      if (stage === 'context-boundary') {
+        assert.match(guide, /질문을 한국어 한 번의 묶음으로/);
+        assert.match(guide, /권장안과 이유/);
+      } else {
+        assert.match(guide, /in Korean/, `${stage} asks in Korean`);
+        assert.match(guide, /a recommended option/, `${stage} recommends an option`);
+        assert.match(guide, /one batch/, `${stage} asks in one batch`);
+      }
       assert.match(guide, /`answers\.json`/, `${stage} records the answer source`);
-      assert.match(guide, /`INV` or `EX` with its `AC`/, `${stage} adds a discovered rule to the requirements`);
+      assert.match(guide, stage === 'context-boundary' ? /`INV` 또는 `EX`와 `AC`/ : /`INV` or `EX` with its `AC`/, `${stage} adds a discovered rule to the requirements`);
     } else {
       assert.doesNotMatch(guide, /`USER_DECISION_REQUIRED`/, `${stage} never asks`);
       assert.match(guide, /never adds a business rule|never add|Asking the user/, `${stage} adds no rule and asks nothing`);
@@ -198,7 +204,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.PRE_SPEC_STAGES], PRE_SPEC_STAGES);
   const installedCommit = await import(pathToFileURL(join(root, '.harness/src/workflow/stage-commit.mjs')));
-  assert.deepEqual(installedCommit.restartDocuments('domain-model', 'x'), ['docs/specs/x/tactical-design.md', 'docs/specs/x/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md'], 'a restart restores the document under its current and its legacy name');
+  assert.deepEqual(installedCommit.restartDocuments('domain-model', 'x'), ['docs/specs/x/tactical-design.md', 'docs/specs/x/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md', 'CONTEXT-MAP.md'], 'a restart restores the document under its current and its legacy name');
   assert.equal(typeof installedCommit.migrateLegacyTacticalDesign, 'function', 'the installed runner carries the legacy rename');
   assert.deepEqual(installedCommit.restartDocuments('bounded-context', 'x'), ['docs/specs/x', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture/domain-model.md']);
 
@@ -345,7 +351,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   assert.match(await readFile(join(workspace, 'docs/architecture/domain-model.md'), 'utf8'), /\| v1 \|/);
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.current_stage, 'domain-model');
-  for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
+  for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
   assert.equal(state.stages['domain-model'].status, 'completed');
   // Without its mapping the new rule is an unowned rule, found by the one gate that runs when the last stage completes (step 7).
 
@@ -356,11 +362,12 @@ test('the tactical stages run after requirements-fix and are accepted section by
   await rerun('aggregate-design', 2, { files: { 'docs/architecture/domain-model.md': projectModel('v3') }, artifacts: [art('docs/architecture/domain-model.md', 'model_index')] });
   await rerun('domain-service', 3);
   await rerun('application-service', 4);
-  const last = await rerun('integration-design', 5);
+  await rerun('integration-design', 5);
+  const last = await rerun('context-boundary', 6);
   assert.equal(invoke(workspace, 'harness-domain-model-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command agrees with the runner on the finished document');
-  assert.deepEqual(treeGit('log', '--format=%s', '-4').trim().split('\n'), ['integration-design', 'application-service', 'domain-service', 'aggregate-design'].map((stage) => `${stage}: ${planSetId}`));
+  assert.deepEqual(treeGit('log', '--format=%s', '-4').trim().split('\n'), ['context-boundary', 'integration-design', 'application-service', 'domain-service'].map((stage) => `${stage}: ${planSetId}`));
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
-  assert.equal(next.input.context.transition.from_stage, 'integration-design');
+  assert.equal(next.input.context.transition.from_stage, 'context-boundary');
   assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'spec-me receives the tactical document as an input reference');
   assert.equal(last.finished.status, 'completed');
 
@@ -373,7 +380,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage/);
 });
 
-test('a skipped stakeholder-analysis makes the tactical stages record the skip without writing, and spec-me follows integration-design', async (t) => {
+test('a skipped stakeholder-analysis makes the tactical stages record the skip without writing, and spec-me follows context-boundary', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, planSetId, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -386,10 +393,10 @@ test('a skipped stakeholder-analysis makes the tactical stages record the skip w
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(existsSync(join(workspace, specPath('tactical-design.md'))), false, 'a skipped analysis leaves no tactical-design.md');
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
-  assert.equal(next.input.context.transition.from_stage, 'integration-design');
+  assert.equal(next.input.context.transition.from_stage, 'context-boundary');
 });
 
-test('the runner accepts the first four tactical stages without a gate and rejects integration-design while the whole document fails, then recovers through the earlier stage, with Git visibility intact', async (t) => {
+test('the runner accepts the first five tactical stages without a gate and rejects context-boundary while the whole document fails, then recovers through the earlier stage, with Git visibility intact', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, beginStage, submitStage, finishStage, tree, planSetId, specPath } = flow;
   const requirements = specPath('requirements.md');
@@ -428,15 +435,16 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service']) assert.equal((await stageState(stage)).status, 'completed', `${stage} was accepted without a gate`);
   assertVisibility([' M app.txt'], 'after the four ungated stages');
 
-  // 2. integration-design completes, and the runner checks the whole document once: the finding of aggregate-design and of
+  // 2. integration-design completes ungated; context-boundary then triggers the single whole-document check: the finding of aggregate-design and of
   // application-service name those stages, the one of its own section names itself, and nothing is committed or recorded.
   const ownError = (text) => text.replace('| 비동기 이벤트 | CON-01 |', '| 비동기 이벤트 | - |');
   const everyone = ownError(multiAggregate(agentSourced(document)));
   assert.notEqual(ownError(document), document);
-  const integration = await beginStage('integration-design');
-  await submitStage(integration, { files: { [tacticalDesign]: everyone }, artifacts });
+  await runStage('integration-design', { files: { [tacticalDesign]: document }, artifacts });
+  const boundary = await beginStage('context-boundary');
+  await submitStage(boundary, { files: { [tacticalDesign]: everyone }, artifacts });
   const head = treeGit('rev-parse', 'HEAD').trim();
-  const rejected = finishStage(integration);
+  const rejected = finishStage(boundary);
   assert.equal(rejected.status, 1, rejected.stdout);
   const rejection = JSON.parse(rejected.stdout);
   assert.deepEqual(Object.keys(rejection), ['status', 'gate', 'execution_id', 'stage', 'errors', 'instruction', 'output_path', 'code', 'why', 'next']);
@@ -444,9 +452,9 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   assert.ok(rejection.next.some((step) => /finish --execution-id /.test(step)), 'the rejection names the finish command to run again');
   assert.equal(rejection.status, 'gate_error');
   assert.equal(rejection.gate, 'domain_model_check');
-  assert.equal(rejection.stage, 'integration-design');
-  assert.equal(rejection.execution_id, integration.prepared.input.execution_id);
-  assert.equal(rejection.output_path, integration.started.output_path);
+  assert.equal(rejection.stage, 'context-boundary');
+  assert.equal(rejection.execution_id, boundary.prepared.input.execution_id);
+  assert.equal(rejection.output_path, boundary.started.output_path);
   assert.deepEqual(rejection.errors.map((error) => [error.owner_stage, error.code, error.id]), [
     ['aggregate-design', 'DECISION_NO_SOURCE', 'CON-01'],
     ['application-service', 'MULTI_AGGREGATE_TRANSACTION', 'AS-04'],
@@ -454,68 +462,69 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   ]);
   for (const error of rejection.errors) assert.deepEqual(Object.keys(error), error.id ? ['code', 'message', 'id', 'owner_stage'] : ['code', 'message', 'owner_stage']);
   assert.match(rejection.errors[0].message, /an agent proposal alone is not a source/);
-  assert.match(rejection.instruction, /once on the whole tactical-design\.md for integration-design and it failed/);
+  assert.match(rejection.instruction, /once on the whole tactical-design\.md for context-boundary and it failed/);
   assert.match(rejection.instruction, /Nothing was committed or recorded, and the stage is still running/);
-  assert.match(rejection.instruction, /Errors whose owner_stage is aggregate-design, application-service are in sections of earlier stages/);
+  assert.match(rejection.instruction, /Errors whose owner_stage is aggregate-design, application-service, integration-design are in sections of earlier stages/);
   assert.match(rejection.instruction, /returns blocked \/ DEPENDENCY_INCOMPLETE naming aggregate-design as the earliest stage to reopen/);
   assert.match(rejection.instruction, /--restart-requirements true or --user-revision true --feedback/);
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'a rejected result is not committed');
-  assert.equal(existsSync(returned(integration)), false, 'no canonical return is written');
-  const running = await stageState('integration-design');
+  assert.equal(existsSync(returned(boundary)), false, 'no canonical return is written');
+  const running = await stageState('context-boundary');
   assert.equal(running.status, 'running', 'the stage stays running so the same subagent can answer the rejection');
-  assert.equal(running.execution_id, integration.prepared.input.execution_id);
+  assert.equal(running.execution_id, boundary.prepared.input.execution_id);
   assertVisibility([' M app.txt', ` M ${tacticalDesign}`], 'after the rejection the document is visible and nothing else changed');
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n', 'application changes stay untouched');
   assert.equal(await readFile(join(workspace, tacticalDesign), 'utf8'), everyone, 'the gate does not edit the stage documents');
-  assert.equal(finishStage(integration).status, 1, 'the same finish rejects again until the output changes');
+  assert.equal(finishStage(boundary).status, 1, 'the same finish rejects again until the output changes');
 
   // The state command cannot record the stage as completed around the gate either.
-  const recorded = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', integration.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });
+  const recorded = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', boundary.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });
   assert.equal(recorded.status, 1);
-  assert.match(JSON.parse(recorded.stderr).error, /^Tactical design gate failed for integration-design: DECISION_NO_SOURCE \(CON-01\) \[aggregate-design\] /);
-  assert.equal((await stageState('integration-design')).status, 'running', 'the state command left the stage running');
+  assert.match(JSON.parse(recorded.stderr).error, /^Tactical design gate failed for context-boundary: DECISION_NO_SOURCE \(CON-01\) \[aggregate-design\] /);
+  assert.equal((await stageState('context-boundary')).status, 'running', 'the state command left the stage running');
 
   // 3. The subagent follows the instruction: an earlier section is settled input, so it restores its working tree and blocks
   // naming the earliest stage. The block is never gated, and the user reopens that stage through the existing restart.
   treeGit('restore', tacticalDesign);
-  await submitStage(integration, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: 'CON-01의 출처가 에이전트 제안뿐이다: aggregate-design을 다시 열어야 한다', files: {}, artifacts: [] });
-  const blocked = finishStage(integration);
+  await submitStage(boundary, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: 'CON-01의 출처가 에이전트 제안뿐이다: aggregate-design을 다시 열어야 한다', files: {}, artifacts: [] });
+  const blocked = finishStage(boundary);
   assert.equal(blocked.status, 0, blocked.stdout || blocked.stderr);
   assert.equal(JSON.parse(blocked.stdout).status, 'blocked');
-  assert.equal((await stageState('integration-design')).status, 'blocked');
+  assert.equal((await stageState('context-boundary')).status, 'blocked');
   assertVisibility([' M app.txt'], 'after the block');
   // The restart needs a clean project tree, as it always did: the application work is set aside for it and comes back after.
   treeGit('stash', 'push', '--', 'app.txt');
   const restart = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'aggregate-design', '--restart-requirements', 'true']);
   assert.equal(restart.previous_stage, 'domain-model');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
-  for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
+  for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
   treeGit('stash', 'pop');
 
   // 4. The reopened stages run again. Their sections are right now, and integration-design's own error is repaired by itself.
   await runStage('aggregate-design', { files: { [tacticalDesign]: upTo(document, 2) }, artifacts });
   await runStage('domain-service', { files: { [tacticalDesign]: upTo(document, 3) }, artifacts });
   await runStage('application-service', { files: { [tacticalDesign]: upTo(document, 4) }, artifacts });
-  const second = await beginStage('integration-design');
-  await submitStage(second, { files: { [tacticalDesign]: ownError(document) }, artifacts });
+  await runStage('integration-design', { files: { [tacticalDesign]: document }, artifacts });
+  const second = await beginStage('context-boundary');
+  const ownBoundaryError = (text) => text.replace('| 커뮤니티 | 신고 | 관계 패턴은 근거가 말해 주는 경우에만 기록 |', '| 커뮤니티 | 신고 | - |');
+  await submitStage(second, { files: { [tacticalDesign]: ownBoundaryError(document) }, artifacts });
   const ownRejected = finishStage(second);
   assert.equal(ownRejected.status, 1, ownRejected.stdout);
   const ownRejection = JSON.parse(ownRejected.stdout);
   assert.equal(ownRejection.status, 'gate_error');
-  assert.deepEqual(ownRejection.errors.map((error) => [error.owner_stage, error.code]), [['integration-design', 'SAGA_WITHOUT_EVENTUAL']]);
+  assert.deepEqual(ownRejection.errors.map((error) => [error.owner_stage, error.code]), [['context-boundary', 'BOUNDARY_DECISION_INCOMPLETE']]);
   assert.match(ownRejection.instruction, /same subagent so it repairs its own section/);
   assert.doesNotMatch(ownRejection.instruction, /DEPENDENCY_INCOMPLETE/);
-  assert.equal((await stageState('integration-design')).status, 'running');
+  assert.equal((await stageState('context-boundary')).status, 'running');
 
-  // Immediate consistency across bounded contexts is no merge and no integration row: the installed gate asks for neither, and
-  // refuses only the Saga/Outbox choice that no longer rests on an eventual-consistency decision.
+  // An unrelated integration error still points back to integration-design, which this stage cannot rewrite.
   const integrationRow = '| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |';
   const crossing = [['| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | 신고 | 즉시 |'], ['| T2: 신고 (CON-01) |', '| T2: 신고 |']].reduce((text, [from, to]) => { assert.ok(text.includes(from), from); return text.replace(from, to); }, document);
   await writeFile(join(workspace, tacticalDesign), crossing);
   const unrealised = finishStage(second);
   assert.equal(unrealised.status, 1, unrealised.stdout);
   assert.deepEqual(JSON.parse(unrealised.stdout).errors.map((error) => [error.owner_stage, error.code, error.id]), [['integration-design', 'SAGA_WITHOUT_EVENTUAL', 'INT-01']], 'no merge is asked of aggregate-design and the finding is this stage own');
-  assert.equal((await stageState('integration-design')).status, 'running');
+  assert.equal((await stageState('context-boundary')).status, 'running');
   assertVisibility([' M app.txt', ` M ${tacticalDesign}`], 'after the cross-context rejection the document is visible and nothing else changed');
   assert.doesNotMatch(unrealised.stdout, /IMMEDIATE_/, 'the merge and cross-context findings are gone');
   await writeFile(join(workspace, tacticalDesign), crossing.replace(integrationRow, '| 동기 확인 | CON-01 | 없음 — 호출한 쪽이 응답을 기다린다 |'));
@@ -532,7 +541,7 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   assert.equal(treeGit('log', '-1', '--format=%s').trim(), `integration-design: ${planSetId}`);
   assert.deepEqual(treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n'), [tacticalDesign]);
   assert.equal(existsSync(returned(second)), true);
-  assert.equal((await stageState('integration-design')).status, 'completed');
+  assert.equal((await stageState('context-boundary')).status, 'completed');
   assertVisibility([' M app.txt'], 'after the accepted stage');
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n');
 
@@ -558,23 +567,23 @@ test('a stage relaunched after a block gets the previous result labelled as evid
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
-  for (const [index, stage] of TACTICAL_DESIGN_STAGES.slice(0, 4).entries()) await runStage(stage, { files: { [tacticalDesign]: upTo(document, index + 1) }, artifacts });
+  for (const [index, stage] of TACTICAL_DESIGN_STAGES.slice(0, 5).entries()) await runStage(stage, { files: { [tacticalDesign]: upTo(document, index + 1) }, artifacts });
 
-  // integration-design blocked on an earlier-stage gate error that a later Harness no longer reports: the first run has no previous result.
+  // context-boundary blocked on an earlier-stage gate error that a later Harness no longer reports: the first run has no previous result.
   const staleSummary = 'DECISION_AGGREGATE_MISMATCH (EX-03, owner aggregate-design): 가장 이른 재개 대상은 aggregate-design이다';
-  const blocked = await runStage('integration-design', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: staleSummary, expectCommit: false });
+  const blocked = await runStage('context-boundary', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: staleSummary, expectCommit: false });
   assert.equal(blocked.prepared.input.context.previous_result_note, undefined, 'a first run has no previous attempt');
   assert.equal(blocked.prepared.input.context.previous_result_ref, undefined);
 
-  // The current gate reports only what is missing now: the sections of the earlier stages are fine and the unwritten section 5 is the stage's own.
+  // The current gate reports only what is missing now: the sections of the earlier stages are fine and the unwritten section 6 is context-boundary's own.
   const check = spawnSync(process.execPath, [join(workspace, GATE), '--workspace-root', workspace], { cwd: workspace, encoding: 'utf8' });
-  assert.equal(check.status, 1, 'the installed gate reads the current documents and refuses the missing section 5');
+  assert.equal(check.status, 1, 'the installed gate reads the current documents and refuses the missing section 6');
   const verdict = JSON.parse(check.stdout);
-  assert.ok(verdict.errors.length > 0 && verdict.errors.every((error) => error.owner_stage === 'integration-design'), `no earlier stage owns an error now: ${check.stdout}`);
+  assert.ok(verdict.errors.length > 0 && verdict.errors.every((error) => error.owner_stage === 'context-boundary'), `no earlier stage owns an error now: ${check.stdout}`);
 
   // The relaunch hands the blocked result over as evidence of the earlier attempt, next to the user's instruction, and completes: the block does not carry over.
-  const feedback = 'Harness가 업데이트되어 aggregate-design 오류를 내던 gate 검사는 제거되었습니다. integration-design만 재실행하세요.';
-  const relaunched = await runStage('integration-design', { extraArgs: ['--feedback', feedback], files: { [tacticalDesign]: document }, artifacts });
+  const feedback = 'Harness가 업데이트되어 aggregate-design 오류를 내던 gate 검사는 제거되었습니다. context-boundary를 재실행하세요.';
+  const relaunched = await runStage('context-boundary', { extraArgs: ['--feedback', feedback], files: { [tacticalDesign]: document }, artifacts });
   const { context, input_refs: refs } = relaunched.prepared.input;
   assert.match(context.previous_result_note, /evidence of an earlier attempt/);
   assert.match(context.previous_result_note, /Re-run the check on the current files before relying on any of them/);
@@ -582,7 +591,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.ok(refs.some((reference) => reference.kind === 'previous_execution_result' && reference.path === context.previous_result_ref), 'the previous result is listed under its own kind');
   assert.equal(JSON.parse(await readFile(join(dirname(relaunched.started.output_path), 'feedback.json'), 'utf8')).feedback, feedback);
   assert.equal(relaunched.finished.status, 'completed');
-  assert.equal(JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8')).stages['integration-design'].status, 'completed');
+  assert.equal(JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8')).stages['context-boundary'].status, 'completed');
 
   // A resume that is not after a block (an answer, a user revision of a completed stage) carries no such note.
   const revision = await runStage('domain-service', { extraArgs: ['--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true'], files: { [tacticalDesign]: `${document}\n<!-- 사용자 수정 -->\n` }, artifacts });
@@ -597,8 +606,8 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   }
   const rules = await readFile(join(workspace, DEEPENING), 'utf8');
   assert.match(rules, /## Relaunch after a block[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>[\s\S]*blocks only on errors that this run still reports for earlier stages/);
-  assert.match(rules, /`integration-design` designs `## 5`/);
-  assert.match(await readFile(join(workspace, '.codex/internal-skills/integration-design/GUIDE.md'), 'utf8'), /A previous `blocked` result, with its gate errors, is evidence of that attempt and not the current state: re-run the gate on the current documents[\s\S]*deepening\.md#relaunch-after-a-block/);
+  assert.match(rules, /`context-boundary` designs `## 6`/);
+  assert.match(await readFile(join(workspace, '.codex/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /이전 실행이 `blocked`였다면[\s\S]*deepening\.md#relaunch-after-a-block/);
   assert.match(await readFile(join(workspace, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');

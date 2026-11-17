@@ -389,7 +389,7 @@ test('a skipped stakeholder-analysis makes the later requirements stages record 
   assert.match(premature.stderr, /spec-me cannot start before domain-model/);
   for (const stage of TACTICAL_DESIGN_STAGES) await runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
-  assert.equal(next.input.context.transition.from_stage, 'integration-design');
+  assert.equal(next.input.context.transition.from_stage, 'context-boundary');
 });
 
 // The event diagrams are rendered by the installed local renderer. The examples in the reference are rendered here, so a

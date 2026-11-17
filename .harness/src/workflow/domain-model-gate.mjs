@@ -1,6 +1,6 @@
 // Deterministic gate of the tactical design flow (domain-model, aggregate-design, domain-service, application-service,
 // integration-design). It checks the plan set's whole tactical-design.md against the fixed requirements.md, once: the runner
-// runs it when the last stage of the flow, integration-design, reports completed/OK (`harness-native-stage.mjs finish` before
+// runs it when the last stage of the flow, context-boundary, reports completed/OK (`harness-native-stage.mjs finish` before
 // anything is committed, and `recordExecutionState` for every other path that records the stage). No earlier stage is gated,
 // so a stage never runs it. Every finding names the stage that owns the failing section (`owner_stage`), so a failure that
 // comes from an earlier stage's section tells which stage to reopen.
@@ -16,7 +16,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 import { specArtifactPath } from './worktrees.mjs';
 
-// Section N of tactical-design.md is filled by the Nth stage of the flow; section 6 (decision history) is not gated.
+// Section N of tactical-design.md is filled by the Nth stage of the flow; section 7 is decision history.
 export const FINAL_TACTICAL_STAGE = TACTICAL_DESIGN_STAGES.at(-1);
 const stageOfSection = (number) => TACTICAL_DESIGN_STAGES[number - 1];
 const EXTERNAL = '외부 시스템';
@@ -156,6 +156,22 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
     const saga = clean(field(row, /Saga|Outbox/i));
     if (isBlank(saga) || /^(해당 )?없음(\s|$|[—–-])/.test(saga)) continue;
     if (!ids(field(row, /일관성/), CON_ID).some((con) => /^최종/.test(decisions.get(con)?.kind || ''))) fail('SAGA_WITHOUT_EVENTUAL', `${clean(row['INT'])} chooses ${saga} but cites no eventual-consistency (최종) decision of section 2.3; Saga and Outbox are considered only for such rules`, clean(row['INT']));
+  }
+
+  // 5. Context-boundary records one sourced boundary decision per relationship exercised by this plan set.
+  owner = TACTICAL_DESIGN_STAGES.at(-1);
+  const boundaryRows = rowsOf(parts[6], '상류 BC', '하류 BC', '관계 패턴', '코드 의존', '경계 강제', '근거·출처');
+  for (const row of boundaryRows) {
+    const fields = ['상류 BC', '하류 BC', '관계 패턴', '코드 의존', '경계 강제', '데이터 소유·타입 경계', '근거·출처'];
+    for (const name of fields) if (isBlank(row[name])) fail('BOUNDARY_DECISION_INCOMPLETE', `Context-boundary row ${clean(row['상류 BC'])} → ${clean(row['하류 BC'])} has no ${name}`, `${clean(row['상류 BC'])} → ${clean(row['하류 BC'])}`);
+  }
+  const hasBoundaryTable = parseTables(parts[6]).some((table) => ['상류 BC', '하류 BC', '관계 패턴', '코드 의존', '경계 강제', '데이터 소유·타입 경계', '근거·출처'].every((name) => table.header.includes(name)));
+  if (!hasBoundaryTable) fail('BOUNDARY_TABLE_MISSING', 'Section 6 must include the context-boundary decision table, including when it records 해당 없음 and why');
+  else if (!boundaryRows.length) fail('BOUNDARY_DECISION_MISSING', 'Section 6 must contain at least one sourced relationship decision or an explicit 해당 없음 row with its rationale');
+  const boundaryPairs = new Set(boundaryRows.map((row) => `${clean(row['상류 BC'])} → ${clean(row['하류 BC'])}`));
+  for (const row of rowsOf(parts[5], 'INT', '상류 BC', '하류 BC')) {
+    const pair = `${clean(row['상류 BC'])} → ${clean(row['하류 BC'])}`;
+    if (!boundaryPairs.has(pair)) fail('INTEGRATION_BOUNDARY_MISSING', `${clean(row['INT'])} (${pair}) has no matching context-boundary decision`, clean(row['INT']));
   }
   return result(errors);
 }

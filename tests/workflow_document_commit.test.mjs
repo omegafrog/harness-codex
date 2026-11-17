@@ -155,7 +155,7 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
 // The tactical design stages commit the plan set's documents; the project's model rows and glossary only when the stage
 // reports them, so the project's own edits to those files are never swept into a stage commit.
 test('each tactical design stage commits docs/specs of its plan set, project documents only when reported, and a block that kept a rule commits that rule', async () => {
-  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design']);
+  assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
   assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES], 'one ordered list covers the flow before spec-me');
   const root = await mkdtemp(join(tmpdir(), 'tactical-docs-'));
   const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
@@ -194,12 +194,16 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
     assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/architecture/domain-model.md', 'docs/specs/set/tactical-design.md']);
     assert.equal(lastSubject(), 'aggregate-design: set');
 
-    // A stage never commits the context map: its owner is bounded-context.
+    // Only context-boundary may commit the context map.
     await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 바뀐 관계 |\n');
     await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 3. Domain Service\n');
     assert.match(await run('domain-service', 'completed', listed('CONTEXT-MAP.md')), /^[0-9a-f]{40}$/);
     assert.deepEqual(lastFiles(), ['docs/specs/set/tactical-design.md']);
     assert.match(git('status', '--short'), /M CONTEXT-MAP\.md/);
+
+    await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 6. 컨텍스트 경계\n');
+    assert.match(await run('context-boundary', 'completed', listed('CONTEXT-MAP.md')), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT-MAP.md', 'docs/specs/set/tactical-design.md']);
 
     // A tactical stage that stops on an invalidated earlier decision keeps only the rule it added to requirements.md.
     await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n\n  - INV-07 신고는 하루 안에 닫힌다 — 출처: answers.json `q-1`\n');
@@ -221,7 +225,7 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
 test('migrateLegacyTacticalDesign renames only a legacy plan set document as git mv does, and a block commits the pending rename', async () => {
   assert.equal(TACTICAL_DESIGN_DOCUMENT, 'tactical-design.md');
   assert.equal(LEGACY_TACTICAL_DESIGN_DOCUMENT, 'domain-model.md');
-  assert.deepEqual(restartDocuments('aggregate-design', 'set'), ['docs/specs/set/tactical-design.md', 'docs/specs/set/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md']);
+  assert.deepEqual(restartDocuments('aggregate-design', 'set'), ['docs/specs/set/tactical-design.md', 'docs/specs/set/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md', 'CONTEXT-MAP.md']);
   const legacy = 'docs/specs/set/domain-model.md';
   const current = 'docs/specs/set/tactical-design.md';
   assert.equal(currentTacticalDesignPath(legacy), current, 'a recorded artifact path follows the rename');

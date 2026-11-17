@@ -43,11 +43,14 @@ const TACTICAL_PROJECT_DOCUMENTS = ['docs/architecture/domain-model.md', 'CONTEX
 const PROJECT_DOCUMENTS = {
   'bounded-context': ['CONTEXT-MAP.md', 'CONTEXT.md'],
   'ubiquitous-language': ['CONTEXT.md'],
-  ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, TACTICAL_PROJECT_DOCUMENTS])),
+  ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, [...TACTICAL_PROJECT_DOCUMENTS, ...(skill === 'context-boundary' ? ['CONTEXT-MAP.md'] : [])]])),
 };
 // Project documents a stage commits only when it names them as artifacts of its result. The project edits them for its
 // own reasons too, so a stage that did not report touching one never sweeps its changes into a commit.
-const LISTED_PROJECT_DOCUMENTS = { 'bounded-context': ['CONTEXT.md'], ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, TACTICAL_PROJECT_DOCUMENTS])) };
+const LISTED_PROJECT_DOCUMENTS = {
+  'bounded-context': ['CONTEXT.md'],
+  ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, [...TACTICAL_PROJECT_DOCUMENTS, ...(skill === 'context-boundary' ? ['CONTEXT-MAP.md'] : [])]])),
+};
 const stageDocuments = (skill, id) => [`docs/specs/${id}`, ...(PROJECT_DOCUMENTS[skill] || [])];
 const WORKFLOW_DOCUMENTS = {
   ...Object.fromEntries(PRE_SPEC_STAGES.map((skill) => [skill, (id) => stageDocuments(skill, id)])),
@@ -64,7 +67,7 @@ const tacticalDesignDocuments = (planSetId) => [`docs/specs/${planSetId}/${TACTI
 // The legacy name is restored too: a checkpoint from before the runner renamed it holds the document under that name, and
 // the rename itself is one of the changes between the checkpoint and HEAD.
 export const restartDocuments = (stageId, planSetId) => TACTICAL_DESIGN_STAGES.includes(stageId)
-  ? [...tacticalDesignDocuments(planSetId), ...TACTICAL_PROJECT_DOCUMENTS]
+  ? [...tacticalDesignDocuments(planSetId), ...TACTICAL_PROJECT_DOCUMENTS, 'CONTEXT-MAP.md']
   : [...new Set(PRE_SPEC_STAGES.flatMap((skill) => stageDocuments(skill, planSetId)))];
 
 // A plan set that an earlier Harness started keeps its tactical design under the legacy name `domain-model.md`, which a

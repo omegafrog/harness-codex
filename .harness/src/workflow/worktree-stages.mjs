@@ -9,6 +9,7 @@ export const WORKTREE_STAGE = Object.freeze({
   CODE_RESEARCH: 'code-research',
   CODE_REVIEW: 'code-review',
   CODEBASE_DESIGN: 'codebase-design',
+  CONTEXT_BOUNDARY: 'context-boundary',
   CORRECT: 'correct',
   DDD_DESIGN: 'ddd-design',
   DIAGNOSING_BUGS: 'diagnosing-bugs',
@@ -85,6 +86,7 @@ export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.DOMAIN_SERVICE,
   WORKTREE_STAGE.APPLICATION_SERVICE,
   WORKTREE_STAGE.INTEGRATION_DESIGN,
+  WORKTREE_STAGE.CONTEXT_BOUNDARY,
 ]);
 
 // Every stage that runs before spec-me, in order: the one list that the commit, restart, stored-input and result

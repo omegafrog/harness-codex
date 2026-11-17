@@ -339,7 +339,7 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
 });
 
 test('installed consumer: the last tactical design stage is taken over with the printed command, and the flow then reaches spec-me', async (t) => {
-  const STAGE_LAST = 'integration-design';
+  const STAGE_LAST = 'context-boundary';
   const f = await interruptedWorkflow(t, {
     stage: STAGE_LAST,
     before: async (flow) => {
@@ -355,7 +355,7 @@ test('installed consumer: the last tactical design stage is taken over with the 
   assert.equal((await readState()).current_stage, STAGE_LAST);
 
   // The new conversation runs the command it was handed, verbatim.
-  const handed = /(node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id integration-design --take-over true)/.exec(ok(run('harness-context.mjs', [])).next)?.[1];
+  const handed = /(node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id context-boundary --take-over true)/.exec(ok(run('harness-context.mjs', [])).next)?.[1];
   assert.ok(handed, 'the context hands over the command');
   const taken = JSON.parse((() => { const result = printed(workspace, handed, fresh); assert.equal(result.status, 0, result.stderr); return result.stdout; })());
   assert.equal(taken.status, 'launched');
@@ -369,7 +369,7 @@ test('installed consumer: the last tactical design stage is taken over with the 
   assert.equal(ok(run('harness-context.mjs', [])).next, undefined, 'nothing is left to take over');
 
   // The resumed stage finishes like any other, and the flow continues with spec-me.
-  ok(printed(workspace, taken.next.bind.replace('<agent_id>', 'integration-design-resumed'), fresh));
+  ok(printed(workspace, taken.next.bind.replace('<agent_id>', 'context-boundary-resumed'), fresh));
   await f.submitStage({ stage: STAGE_LAST, started: taken }, { summary: `생략: stakeholder-analysis 판정 생략 (${f.analysis})` });
   const done = ok(printed(workspace, taken.next.finish, fresh));
   assert.equal(done.status, 'completed');

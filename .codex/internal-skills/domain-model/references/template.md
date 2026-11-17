@@ -1,6 +1,6 @@
 # tactical-design.md 템플릿
 
-`docs/specs/<plan-set-id>/tactical-design.md`는 확정된 `requirements.md`를 전술 설계로 옮기는 plan set 문서다. 다섯 stage가 자기 절만 이어서 채우고, 앞 stage의 절은 다음 stage가 읽기만 한다. 이 문서가 최종 모양의 정본이며 다섯 stage의 GUIDE는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 모델 이름은 `CONTEXT.md`의 현행 용어를 쓴다. 클래스 다이어그램은 이 문서에 넣지 않는다. 문서 이름은 stage가 아니라 흐름을 따른다: `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니고, `docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 이 문서와 다른 파일이다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 stage를 시작하기 전에 `tactical-design.md`로 이름을 바꾼다.
+`docs/specs/<plan-set-id>/tactical-design.md`는 확정된 `requirements.md`를 전술 설계로 옮기는 plan set 문서다. 여섯 stage가 자기 절만 이어서 채우고, 앞 stage의 절은 다음 stage가 읽기만 한다. 이 문서가 최종 모양의 정본이며 여섯 stage의 GUIDE는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 모델 이름은 `CONTEXT.md`의 현행 용어를 쓴다. 클래스 다이어그램은 이 문서에 넣지 않는다. 문서 이름은 stage가 아니라 흐름을 따른다: `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니고, `docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 이 문서와 다른 파일이다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 stage를 시작하기 전에 `tactical-design.md`로 이름을 바꾼다.
 
 ## 단계별 기입
 
@@ -11,8 +11,9 @@
 | `domain-service` | `## 3. Domain Service`를 쓴다. 어떤 Entity·Value Object도 자연스럽게 소유하지 못하는 도메인 판단만 둔다 |
 | `application-service` | `## 4. Application Service`를 쓴다. 업무마다 호출 순서, transaction 경계, Repository, 외부 효과를 기록한다 |
 | `integration-design` | `## 5. 통합 설계`를 쓴다. 컨텍스트 사이의 명령·응답·이벤트와 통신 방식을 기록한다 |
+| `context-boundary` | `## 6. 컨텍스트 경계`를 쓴다. 각 관계의 모델 보호 패턴, 의존 형태, 경계 강제 방식을 근거와 함께 기록한다 |
 
-모든 stage가 `## 6. 결정 이력`에 자기 결정을 출처와 함께 덧붙인다. 앞 stage가 채우지 않은 절은 문서에 아직 없다. `stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다.
+모든 stage가 `## 7. 결정 이력`에 자기 결정을 출처와 함께 덧붙인다. 앞 stage가 채우지 않은 절은 문서에 아직 없다. `stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다.
 
 ## 작성 규칙
 
@@ -25,7 +26,7 @@
 - 같은 규칙을 여러 계층에 복제하지 않는다. 규칙은 소유 모델과 그것을 강제하는 행위 하나에 대응한다. 강제하는 행위는 Entity인 Aggregate Root의 메서드, Value Object의 생성 규칙이나 메서드, Domain Service 중 규칙을 자연스럽게 소유하는 쪽이다. 값이 지키는 규칙을 위해 Entity나 Aggregate를 만들지 않는다.
 - 기술(프레임워크, 저장소, broker, 프로토콜)은 정하지 않는다. 해당 사항이 없는 절에는 `해당 없음 — 이유`를 적는다.
 - 설계 중 새 업무 규칙·예외가 드러나면 이 문서가 아니라 `requirements.md`에 INV·EX·AC로 먼저 덧붙인다. 규칙은 `requirements.md`가 소유하고 이 문서는 그 ID를 모델에 대응시킨다.
-- 어떤 stage도 이 문서를 검사하지 않는다. `integration-design`이 `completed`를 반환할 때 실행기가 `harness-domain-model-check.mjs`로 문서 전체를 한 번 읽으며, 거부하는 것은 `deepening.md`의 여섯 가지뿐이다. 이 문서의 나머지 규칙은 stage GUIDE와 리뷰가 지키는 지침이다. gate는 표를 키 열(`요구`, `소유 모델`, `강제 행위`, `CON`, `AS`, `트랜잭션 경계`, `INT`)로 찾으므로 그 열 이름을 바꾸지 않고, 모르는 열은 무시한다.
+- 어떤 stage도 이 문서를 검사하지 않는다. `context-boundary`가 `completed`를 반환할 때 실행기가 `harness-domain-model-check.mjs`로 문서 전체를 한 번 읽으며, 거부하는 것은 `deepening.md`의 여섯 가지뿐이다. 이 문서의 나머지 규칙은 stage GUIDE와 리뷰가 지키는 지침이다. gate는 표를 키 열(`요구`, `소유 모델`, `강제 행위`, `CON`, `AS`, `트랜잭션 경계`, `INT`)로 찾으므로 그 열 이름을 바꾸지 않고, 모르는 열은 무시한다.
 
 ## 문서 모양
 
@@ -138,7 +139,15 @@ Domain Service는 `2.2`에서 `Domain Service`로 넘긴 규칙만 맡고 조율
 
 `통신 방식`은 업무가 요구하는 동기·비동기 성격이다. broker·프로토콜·프레임워크는 정하지 않는다. `Saga·Outbox`는 `최종`으로 기록한 `CON-xx`가 있는 행에서만 선택하고 선택하지 않으면 `없음 — 이유`를 적는다. 컨텍스트가 다른 Aggregate에 걸친 `즉시` `CON-xx`는 동기 행이 하나 있어야 한다(아래 `일관성 결정과 컨텍스트`).
 
-## 6. 결정 이력
+## 6. 컨텍스트 경계
+
+| 상류 BC | 하류 BC | 관계 패턴 | 코드 의존 | 경계 강제 | 데이터 소유·타입 경계 | 근거·출처 |
+|---|---|---|---|---|---|
+| 커뮤니티 | 신고 | 관계 패턴은 근거가 말해 주는 경우에만 기록 | section 5에서 쓰는 코드 의존 형태 | 코드 경계에 적합한 검사 방식, 미정이면 근거와 함께 미정 | 각 컨텍스트가 자기 데이터 소유, 다른 테이블·Repository 접근과 내부 타입 전달 금지 | CONTEXT-MAP.md `## 3`, INT-01 |
+
+관계가 이 plan set에서 사용되지 않으면 같은 열을 가진 빈 표를 두고 `해당 없음 — 확인한 근거`를 적는다. 근거가 없거나 문서가 모호하면 생략하지 않고 미정으로 적거나 필요한 결정을 사용자에게 묻는다. 관계 방향은 Context Map의 방향을 그대로 쓴다. 코드 의존은 관계마다 상류 공개 API 의존, 하류 포트와 조립 어댑터(ACL), 프로세스 안 이벤트 등 근거에 맞게 적고, 순환 의존은 허용하지 않는다. 데이터 소유권은 각 컨텍스트에 두며 다른 컨텍스트의 테이블·Repository와 내부 타입은 경계를 넘지 않는다. 배포 방식이 결정되지 않았다면 이를 고정하지 않고, 모듈/패키지 분리는 Architecture의 근거에 맡긴다. 특정 프레임워크, 프로토콜, 브로커, Saga, Outbox, 분산 트랜잭션은 여기서 선택하지 않는다.
+
+## 7. 결정 이력
 
 | DEC | stage | 대상 | 결정 | 비교한 대안 | 출처 |
 |---|---|---|---|---|---|

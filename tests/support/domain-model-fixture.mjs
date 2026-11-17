@@ -48,7 +48,7 @@ export async function templateDocument(sourceRoot) {
 // The document as the stage at `level` leaves it: its own section and the earlier ones, and the decision rows of those stages only.
 const levelOf = (stage) => TACTICAL_DESIGN_STAGES.indexOf(stage) + 1;
 export const upTo = (document, level) => document.split(/^(?=## \d+\.)/m)
-  .filter((part) => !/^## \d+\./.test(part) || Number(part.match(/^## (\d+)\./)[1]) <= level || part.startsWith('## 6.'))
+  .filter((part) => !/^## \d+\./.test(part) || Number(part.match(/^## (\d+)\./)[1]) <= level || part.startsWith('## 7.'))
   .join('')
   .split('\n')
   .filter((line) => !/^\| DEC-\d+ \|/.test(line) || levelOf(line.split('|')[2].trim()) <= level)
@@ -142,7 +142,13 @@ export const STATELESS_DOCUMENT = `# 전술 설계
 
 해당 없음 — 컨텍스트 하나다
 
-## 6. 결정 이력
+## 6. 컨텍스트 경계
+
+| 상류 BC | 하류 BC | 관계 패턴 | 코드 의존 | 경계 강제 | 데이터 소유·타입 경계 | 근거·출처 |
+|---|---|---|---|---|---|
+| 해당 없음 — 관계 없음 | 해당 없음 — 관계 없음 | 해당 없음 — 이 plan set은 단일 컨텍스트다 | 해당 없음 — 관계 없음 | 해당 없음 — 관계 없음 | 해당 없음 — 단일 컨텍스트라 공유 경계 없음 | CONTEXT-MAP.md 3절에 관계 없음, section 5에 통합 행 없음 |
+
+## 7. 결정 이력
 
 | DEC | stage | 대상 | 결정 | 비교한 대안 | 출처 |
 |---|---|---|---|---|---|
@@ -274,4 +280,10 @@ export const READ_ONLY_DOCUMENT = `# 도메인 모델
 | INT | 상류 BC | 하류 BC | 명령 | 응답 | 이벤트 | 통신 방식 | 일관성 결정 | Saga·Outbox | 근거·출처 |
 |---|---|---|---|---|---|---|---|---|---|
 | INT-01 | 사용자 인증 | 커뮤니티 | 없음 | 인증 상태와 사용자 ID | 없음 | 동기 확인 | CON-01 | 없음 — 요청마다 현재 상태를 읽는다 | CONTEXT-MAP.md \`## 3\` |
+
+## 6. 컨텍스트 경계
+
+| 상류 BC | 하류 BC | 관계 패턴 | 코드 의존 | 경계 강제 | 데이터 소유·타입 경계 | 근거·출처 |
+|---|---|---|---|---|---|
+| 사용자 인증 | 커뮤니티 | Conformist — 인증이 소유한 확인 결과를 따른다 | 인증의 공개 계약만 조회 | 단일 모듈의 공개/내부 패키지를 아키텍처 테스트로 검사 | 각 컨텍스트가 자기 데이터 소유, 다른 테이블·Repository 접근과 내부 타입 전달 금지 | CONTEXT-MAP.md 3절, INT-01, CON-01 |
 `;

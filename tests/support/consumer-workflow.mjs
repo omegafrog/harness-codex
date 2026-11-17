@@ -30,7 +30,7 @@ tracker:
 // The tier each stage of the flow before spec-me declares in its own GUIDE.
 export const STAGE_TIERS = {
   'stakeholder-analysis': 'implementation', 'subdomain-candidates': 'implementation', 'event-storming': 'implementation', 'subdomain-classification': 'implementation', 'bounded-context': 'high_performance', 'ubiquitous-language': 'implementation', 'requirements-fix': 'high_performance',
-  'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance',
+  'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance',
 };
 export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high' };
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });

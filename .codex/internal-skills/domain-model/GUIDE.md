@@ -25,7 +25,7 @@ First step of the tactical design flow, after `requirements-fix` and before `agg
 - Modeling a rule, event or term with no evidence in `requirements.md`, writing a new business rule, or marking an unbuilt model `implemented`.
 - Naming a model with a word that `CONTEXT.md` or the `## 3` table does not cover, or reviving a retired term.
 - Asking the user.
-- Writing anything in `tactical-design.md` but `## 1` and this stage's rows of `## 6`. The later sections belong to the later stages.
+- Writing anything in `tactical-design.md` but `## 1` and this stage's rows of `## 7`. The later sections belong to the later stages.
 
 ## Process
 
@@ -37,7 +37,7 @@ First step of the tactical design flow, after `requirements-fix` and before `agg
 6. Find the candidates in `### 1.3` from the `BIZ` sections, the event flows and the rules. An Entity has an identity that outlives the events and a lifecycle the requirements describe; a Value Object matters only by its value and is replaced, not changed. Give each its BC, the lifecycle or value meaning, its evidence (BIZ, INV, EX, event) and `현재 상태`. Check each name against `CONTEXT.md`; run a new concept through the language lifecycle as the shared rules say.
 7. Map in `### 1.4`: every `BIZ`, `INV` and `EX`, and every event and glossary term of each BC, to the candidates of that BC. An event that reacts in another subdomain maps to the receiving BC's model. A rule that no candidate can own means a model is missing: add the candidate, or block when the evidence does not support one.
 8. Update the project model rows for the models this stage touched, as the shared rules describe.
-9. Append the decisions of this stage to `## 6`: why each model is an Entity, a Value Object or an external system, what was extended and what alternatives were rejected, each with its source. Section 6 needs at least one row.
+9. Append the decisions of this stage to `## 7`: why each model is an Entity, a Value Object or an external system, what was extended and what alternatives were rejected, each with its source. Section 6 needs at least one row.
 10. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
@@ -46,6 +46,6 @@ This stage never adds a business rule. When the evidence is missing or contradic
 
 ## Completion
 
-- Section 1 of `tactical-design.md` carries the existing-model record (or `기존 모델 없음`), the depth per BC, the models with their evidence and the requirement mapping, and section 6 records its decisions with sources.
+- Section 1 of `tactical-design.md` carries the existing-model record (or `기존 모델 없음`), the depth per BC, the models with their evidence and the requirement mapping, and section 7 records its decisions with sources.
 - The affected rows of `docs/architecture/domain-model.md` are `implemented` only where code showed it; every other row is `accepted-target`.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. `aggregate-design` reads this section as settled input.

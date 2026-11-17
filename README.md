@@ -9,7 +9,7 @@
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
 - 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
-- 전술 설계 흐름 — 확정된 요구사항 뒤, `spec-me` 전에 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design`이 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
+- 전술 설계 흐름 — 확정된 요구사항 뒤, `spec-me` 전에 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
 - `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
@@ -27,7 +27,7 @@ stakeholder-analysis → subdomain-candidates → ubiquitous-language
   → requirements-fix → 확정된 requirements.md
   ↓
 domain-model → aggregate-design → domain-service
-  → application-service → integration-design → tactical-design.md
+  → application-service → integration-design → context-boundary → tactical-design.md
   ↓
 spec-me → Product Spec → Architecture Spec
   ↓
@@ -120,7 +120,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 
 #### 전술 설계 흐름
 
-`requirements-fix`가 `fixed`로 확정한 뒤 `spec-me` 전에 아래 다섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계 절과 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
+`requirements-fix`가 `fixed`로 확정한 뒤 `spec-me` 전에 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
 
 | stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
 |---|---|---|---|
@@ -129,8 +129,9 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `domain-service` | 어떤 Entity·Value Object도 소유하지 못하는 도메인 판단만 둔다. 조율·transaction·저장·외부 효과는 하지 않는다 | 없음 | 같음 |
 | `application-service` | 호출 순서, transaction 경계(transaction마다 Aggregate 하나), Repository, 외부 효과를 정한다. 도메인 판단은 하지 않는다 | 없음 | 같음 |
 | `integration-design` | 컨텍스트 맵의 관계(판단 소유자)와 일관성 결정에서 명령·응답·이벤트와 통신 방식을 정한다. Saga·Outbox는 최종 일관성으로 기록한 규칙에서만 검토한다 | 업무 결과를 바꾸는 통합 결정만 한 묶음 | 같음 |
+| `context-boundary` | 관계 패턴, 코드 의존 형태와 경계 강제 방식을 근거에 따라 정하고 `CONTEXT-MAP.md`에 반영한다. 배포 방식·프레임워크는 정하지 않는다 | 근거가 선택지를 가르지 못할 때만 질문 | 같음 |
 
-- gate는 한 번만 돌고 stage는 돌리지 않는다. `domain-model`·`aggregate-design`·`domain-service`·`application-service`는 gate 없이 `completed/OK`로 받아들이고, 마지막 `integration-design`이 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체를 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root>`와 같은 검사로 확인한다(`harness-native-stage.mjs finish`와 상태 기록). 통과하지 못하면 commit·기록 없이 `gate_error`로 되돌린다. 발견 사항마다 `owner_stage`가 잘못된 절을 채운 stage를 가리킨다. `integration-design` 자신의 절이면 같은 서브에이전트가 고치고, 앞 stage의 절이면 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키며 사용자가 `--restart-requirements`나 `--user-revision`으로 다시 연다. `판정: 생략` 흐름은 문서 없이 통과한다. gate는 반드시 성립해야 하는 여섯 가지만 확인한다. 문서와 `## 1`~`## 5` 절이 있는지, 모든 업무가 모델 또는 외부 시스템 표시에 대응하고 모든 규칙에 소유 모델이 있는지, 모든 규칙에 비어 있지 않은 강제 행위(Aggregate·Entity 메서드, Value Object의 규칙, Domain Service, 외부 시스템 중 어떤 형태든)가 있는지, 둘 이상의 Aggregate에 걸친 규칙이 `즉시`나 `최종`이며 에이전트 제안만이 아닌 출처가 있는 일관성 결정(`CON-xx`)을 인용하는지, 한 transaction이 Aggregate 하나만 바꾸는지, Saga·Outbox가 `최종` 결정에 묶인 통합 행에만 있는지다. 표는 키 열로 찾고 모르는 열은 무시한다. 병합과 `조회 전용 Aggregate`, Root의 종류, Entity 배치, Domain Service·Application Service·통합 행의 충분성 같은 맥락적 DDD 판단은 gate가 아니라 stage GUIDE와 리뷰가 맡는다.
+- gate는 한 번만 돌고 stage는 돌리지 않는다. `domain-model`·`aggregate-design`·`domain-service`·`application-service`·`integration-design`은 gate 없이 `completed/OK`로 받아들이고, 마지막 `context-boundary`가 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체를 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root>`와 같은 검사로 확인한다(`harness-native-stage.mjs finish`와 상태 기록). 통과하지 못하면 commit·기록 없이 `gate_error`로 되돌린다. 발견 사항마다 `owner_stage`가 잘못된 절을 채운 stage를 가리킨다. `context-boundary` 자신의 절이면 같은 서브에이전트가 고치고, 앞 stage의 절이면 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키며 사용자가 `--restart-requirements`나 `--user-revision`으로 다시 연다. `판정: 생략` 흐름은 문서 없이 통과한다. gate는 반드시 성립해야 하는 기존 여섯 조건과, section 5의 통합 행마다 완전하고 출처가 있는 section 6 경계 결정이 있는지 확인한다. 문서와 `## 1`~`## 6` 절이 있는지, 모든 업무가 모델 또는 외부 시스템 표시에 대응하고 모든 규칙에 소유 모델이 있는지, 모든 규칙에 비어 있지 않은 강제 행위(Aggregate·Entity 메서드, Value Object의 규칙, Domain Service, 외부 시스템 중 어떤 형태든)가 있는지, 둘 이상의 Aggregate에 걸친 규칙이 `즉시`나 `최종`이며 에이전트 제안만이 아닌 출처가 있는 일관성 결정(`CON-xx`)을 인용하는지, 한 transaction이 Aggregate 하나만 바꾸는지, Saga·Outbox가 `최종` 결정에 묶인 통합 행에만 있는지다. 표는 키 열로 찾고 모르는 열은 무시한다. 경계 결정의 DDD 적합성, 병합과 `조회 전용 Aggregate`, Root의 종류, Entity 배치, Domain Service·Application Service·통합 행의 충분성 같은 맥락적 DDD 판단은 gate가 아니라 stage GUIDE와 리뷰가 맡는다.
 - 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다. 흐름 순서는 실행기가 확인한다. 앞 stage가 `completed/OK`가 아니면 준비기와 `harness-native-stage.mjs start`가 `spec-me`와 뒤 stage를 거부하며, 이전 Harness가 순서를 어기고 남긴 결과 없는 stage는 종료를 확인한 뒤 `harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`로 되돌린다.
 - `docs/architecture/domain-model.md`와 `CONTEXT.md`는 프로젝트 소유 문서이며 Git에 노출된다. stage가 변경을 artifact로 보고했을 때만 실행기가 plan set 문서와 함께 commit한다.
 - 전술 설계 결과를 `spec-me`가 어떻게 읽는지는 아직 정하지 않았다.
