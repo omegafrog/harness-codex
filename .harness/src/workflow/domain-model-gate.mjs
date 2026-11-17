@@ -18,6 +18,8 @@ const ENTITY = 'Entity';
 const VALUE_OBJECT = 'Value Object';
 const EXTERNAL = '외부 시스템';
 const DOMAIN_SERVICE_MARKER = 'Domain Service';
+// `동기` marks a synchronous communication style; `비동기` (asynchronous) contains it and must not match.
+const SYNCHRONOUS = /(?<!비)동기/;
 // A consistency decision rests on a user decision or on evidence the requirements already carry; an agent proposal alone is not a source.
 const DECISION_SOURCE = /answers\.json|\b(?:INV|EX|AC|BIZ)-\d+\b|요청 원문|CAND-\d+ 채택|사용자 수정 지시/;
 
@@ -147,6 +149,7 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
   }
   const decisions = new Map();
   const decisionRows = new Map();
+  const crossContext = new Map();
   for (const row of tableOf(parts[2], 'CON', '일관성', '근거·출처')?.rows || []) {
     const id = clean(row['CON']);
     const spanned = names(row['걸친 Aggregate']);
@@ -158,7 +161,7 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
     if (!['즉시', '최종'].includes(kind)) fail('DECISION_KIND_INVALID', `${id} has consistency "${kind}"; use 즉시 or 최종`, id);
     if (!DECISION_SOURCE.test(clean(row['근거·출처']))) fail('DECISION_NO_SOURCE', `${id} has no source: cite the user's answer (answers.json <question_id>), an INV/EX/AC/BIZ ID, 요청 원문, CAND-xx 채택 or 사용자 수정 지시; an agent proposal alone is not a source`, id);
     if (kind === '최종' && unique(spanned).length < 2) fail('EVENTUAL_NOT_SEPARATE', `${id} is eventual consistency but spans fewer than two Aggregates`, id);
-    if (kind === '즉시' && (unique(spanned).length !== 1 || !clean(row['결정']).includes('병합'))) fail('IMMEDIATE_NOT_MERGED', `${id} needs immediate consistency, so the Aggregates must be merged into one (결정 names 병합, 걸친 Aggregate lists the merged Aggregate only)`, id);
+    if (kind === '즉시') immediateDecision({ id, spanned: unique(spanned), readOnly: unique(names(row['조회 전용 Aggregate'])), aggregates, contextOf, fail, crossContext });
   }
   // The behaviour that enforces a rule is an Aggregate method, a Value Object's own rule, a Domain Service, or an external system.
   const enforcement = new Map();
@@ -240,11 +243,13 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
   owner = stageOfSection(5);
   const integrations = tableOf(parts[5], 'INT', '통신 방식', '일관성 결정', 'Saga·Outbox');
   const integrated = new Set();
+  const integrationRows = [];
   if (!integrations?.rows.length && !notApplicable(parts[5])) fail('INTEGRATION_MISSING', 'Section 5 declares no integration and does not say `해당 없음 — <reason>`');
   for (const row of integrations?.rows || []) {
     const id = clean(row['INT']);
     const cited = clean(row['일관성 결정']).match(/CON-\d+/g) || [];
     for (const field of ['상류 BC', '하류 BC', '통신 방식']) if (isBlank(row[field])) fail('INTEGRATION_INCOMPLETE', `${id} has no ${field}`, id);
+    integrationRows.push({ id, cited, method: clean(row['통신 방식']), source: row['근거·출처'] });
     for (const con of cited) {
       integrated.add(con);
       if (!decisions.has(con)) fail('UNKNOWN_DECISION', `${id} cites ${con}, which 2.3 does not declare`, id);
@@ -261,9 +266,39 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
     const contexts = unique(names(row?.['걸친 Aggregate']).map((name) => aggregates.get(name)?.bc).filter(Boolean));
     if (contexts.length > 1 && !integrated.has(con)) fail('CROSS_CONTEXT_NOT_INTEGRATED', `${con} crosses ${contexts.join(', ')} but no integration row of section 5 cites it`, con);
   }
+  // Immediate consistency across bounded contexts is never a merge: it is realised as a synchronous check or call.
+  for (const [con, { contexts }] of crossContext) {
+    const cited = integrationRows.filter((row) => row.cited.includes(con));
+    const synchronous = cited.filter((row) => SYNCHRONOUS.test(row.method));
+    const crossing = `${con} needs immediate consistency across ${contexts.join(', ')}. Aggregates of different bounded contexts are never merged, so section 5 must record it as a synchronous check or call`;
+    if (!cited.length) fail('IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', `${crossing}, and no integration row cites it. Add an INT row whose 일관성 결정 is ${con}, whose 통신 방식 is synchronous (동기 확인, 동기 호출) and whose 근거·출처 names its source`, con);
+    else if (!synchronous.length) fail('IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', `${crossing}, but ${cited.map((row) => `${row.id} (${row.method || 'no 통신 방식'})`).join(', ')} citing it ${cited.length > 1 ? 'are' : 'is'} not synchronous. Make its 통신 방식 synchronous (동기 확인, 동기 호출). If the contract can only be asynchronous, the decision contradicts section 2.3: return blocked / DEPENDENCY_INCOMPLETE naming aggregate-design`, con);
+    else if (synchronous.every((row) => isBlank(row.source))) fail('IMMEDIATE_INTEGRATION_NO_SOURCE', `${synchronous.map((row) => row.id).join(', ')} records the synchronous check or call of ${con} without a 근거·출처. Cite the CONTEXT-MAP.md relationship, the requirement or the user's answer it rests on`, con);
+  }
 
   decisionHistory(parts[6], errors);
   return result(errors);
+}
+
+// A rule that needs immediate consistency. Merging is for Aggregates of one bounded context that one operation changes
+// together; an Aggregate that the operation only reads (조회 전용 Aggregate) never needs it. Aggregates of different bounded
+// contexts are never merged: the rule is handed to section 5 as a synchronous check or call (`crossContext`).
+function immediateDecision({ id, spanned, readOnly, aggregates, contextOf, fail, crossContext }) {
+  if (!spanned.length) { fail('DECISION_NO_AGGREGATE', `${id} needs immediate consistency but lists no Aggregate in 걸친 Aggregate; name the Aggregates the rule changes or reads`, id); return; }
+  const stray = readOnly.filter((name) => !spanned.includes(name));
+  if (stray.length) fail('READ_ONLY_NOT_SPANNED', `${id} marks ${stray.join(', ')} as 조회 전용 Aggregate, which 걸친 Aggregate does not list; list it there too, or write \`-\` when the rule changes every Aggregate it spans`, id);
+  const contextOfAggregate = (name) => aggregates.get(name)?.bc || contextOf.get(aggregates.get(name)?.root) || '';
+  const declared = spanned.filter((name) => aggregates.has(name));
+  const changedBy = new Map();
+  for (const name of declared.filter((item) => !readOnly.includes(item))) {
+    const context = contextOfAggregate(name);
+    changedBy.set(context, [...(changedBy.get(context) || []), name]);
+  }
+  for (const [context, changed] of changedBy) {
+    if (changed.length > 1) fail('IMMEDIATE_NOT_MERGED', `${id} has one operation change ${changed.join(', ')}${context ? ` of ${context}` : ''} together, which needs immediate consistency, so they must be one Aggregate: merge them (결정 names 병합, 걸친 Aggregate lists the merged Aggregate). If the operation only reads one of them as a precondition, list it in 조회 전용 Aggregate instead`, id);
+  }
+  const contexts = unique(declared.map(contextOfAggregate).filter(Boolean));
+  if (contexts.length > 1) crossContext.set(id, { contexts });
 }
 
 // Every stage appends its decisions with their sources; a stage that decided nothing says why in one row. A row belongs to

@@ -67,7 +67,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.deepEqual([...document.matchAll(/^## (.+)$/gm)].map((match) => match[1]), ['1. 모델 후보', '2. Aggregate', '3. Domain Service', '4. Application Service', '5. 통합 설계', '6. 결정 이력']);
   assert.match(document, /^\| 모델 \| 종류 \| BC \| 정체성·생애주기 또는 값의 의미 \| 현재 상태 \| 근거 \|$/m);
   assert.match(document, /^\| 요구 \| BC \| 소유 모델 \| 근거 \|$/m);
-  assert.match(document, /^\| CON \| 규칙 \| 걸친 Aggregate \| 일관성 \| 결정 \| 근거·출처 \|$/m);
+  assert.match(document, /^\| CON \| 규칙 \| 걸친 Aggregate \| 조회 전용 Aggregate \| 일관성 \| 결정 \| 근거·출처 \|$/m);
   assert.match(document, /^\| DEC \| stage \| 대상 \| 결정 \| 비교한 대안 \| 출처 \|$/m);
   const template = await read(TEMPLATE);
   assert.match(template, /^\| Context \/ 모델 ID \| 상태 \| Root \/ 소유 코드 \| 규칙 ID → enforcement \| 데이터 \/ transaction \| 공개 계약 \/ 통신 \| deployment \/ extraction trigger \| 근거 \|$/m, 'the project model row format is the model-continuity one');
@@ -505,6 +505,21 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   assert.match(ownRejection.instruction, /same subagent so it repairs its own section/);
   assert.doesNotMatch(ownRejection.instruction, /DEPENDENCY_INCOMPLETE/);
   assert.equal((await stageState('integration-design')).status, 'running');
+
+  // Immediate consistency across bounded contexts is no merge: the installed gate does not ask for one, and asks section 5,
+  // which this stage owns, for a synchronous check or call that cites the decision.
+  const integrationRow = '| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |';
+  const crossing = [['| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | 신고 | 즉시 |'], ['| T2: 신고 (CON-01) |', '| T2: 신고 |']].reduce((text, [from, to]) => { assert.ok(text.includes(from), from); return text.replace(from, to); }, document);
+  await writeFile(join(workspace, tacticalDesign), crossing);
+  const unrealised = finishStage(second);
+  assert.equal(unrealised.status, 1, unrealised.stdout);
+  assert.deepEqual(JSON.parse(unrealised.stdout).errors.map((error) => [error.owner_stage, error.code, error.id]), [['integration-design', 'SAGA_WITHOUT_EVENTUAL', 'INT-01'], ['integration-design', 'IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', 'CON-01']], 'no merge is asked of aggregate-design and the finding is this stage own');
+  assert.equal((await stageState('integration-design')).status, 'running');
+  assertVisibility([' M app.txt', ` M ${tacticalDesign}`], 'after the cross-context rejection the document is visible and nothing else changed');
+  assert.doesNotMatch(unrealised.stdout, /IMMEDIATE_NOT_MERGED/, 'the false merge finding is gone');
+  await writeFile(join(workspace, tacticalDesign), crossing.replace(integrationRow, '| 동기 확인 | CON-01 | 없음 — 호출한 쪽이 응답을 기다린다 |'));
+  assert.equal(invoke(workspace, 'harness-domain-model-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command accepts the synchronous row');
+
   await writeFile(join(workspace, tacticalDesign), document);
   const accepted = finishStage(second);
   assert.equal(accepted.status, 0, accepted.stdout || accepted.stderr);

@@ -91,12 +91,12 @@ test('aggregate-design section: every rule has an enforcing behaviour and every 
   failing(change(document, '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |', '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | 요청 해석(에이전트 제안) |'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
   failing(change(document, '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |', '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | |'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
   assert.equal(run(change(document, 'answers.json `<question_id>` |\n\n`일관성`은', 'INV-03 |\n\n`일관성`은')).ok, true, 'a requirements ID is a source too');
-  failing(change(document, '| 게시글, 신고 | 최종 |', '| 게시글 | 최종 |'), 'EVENTUAL_NOT_SEPARATE', AGGREGATE_DESIGN);
-  failing(change(document, '| 게시글, 신고 | 최종 |', '| 게시글, 신고 | 거의 즉시 |'), 'DECISION_KIND_INVALID', AGGREGATE_DESIGN);
-  failing(change(document, '| 게시글, 신고 | 최종 |', '| 게시글, 신고 | 즉시 |'), 'IMMEDIATE_NOT_MERGED', AGGREGATE_DESIGN);
-  // Immediate consistency merges: the Aggregates become one and the rows say so.
-  const merged = change(change(change(change(document, '| 게시글, 신고 | 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 |', '| 게시글 | 즉시 | 병합: 신고를 게시글 Aggregate에 넣어 한 번에 바꾼다 |'), '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글 | `게시글.삭제()` | CON-01 |'), '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n', ''), '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |', '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문, 신고 |');
+  failing(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글 | - | 최종 |'), 'EVENTUAL_NOT_SEPARATE', AGGREGATE_DESIGN);
+  failing(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | 거의 즉시 |'), 'DECISION_KIND_INVALID', AGGREGATE_DESIGN);
+  // Immediate consistency of Aggregates that one operation changes together merges them: the Aggregates become one and the rows say so.
+  const merged = change(change(change(change(document, '| 게시글, 신고 | - | 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 |', '| 게시글 | - | 즉시 | 병합: 신고를 게시글 Aggregate에 넣어 한 번에 바꾼다 |'), '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글 | `게시글.삭제()` | CON-01 |'), '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n', ''), '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |', '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문, 신고 |');
   failing(merged, 'RULE_AGGREGATE_MISMATCH', AGGREGATE_DESIGN);
+  assert.ok(!codes(run(merged)).includes('IMMEDIATE_NOT_MERGED'), 'the merged Aggregate is not asked to merge again');
   // Aggregate structure: one Aggregate per Entity, an Entity root, declared members.
   failing(change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 신고 | 신고 | 신고 ID | 게시글 |'), 'ENTITY_IN_SEVERAL_AGGREGATES', AGGREGATE_DESIGN);
   failing(change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n', ''), 'ENTITY_UNPLACED', AGGREGATE_DESIGN);
@@ -106,6 +106,67 @@ test('aggregate-design section: every rule has an enforcing behaviour and every 
   // One document, one verdict: a hole in section 1 is reported next to the later problems, earliest stage first.
   const holes = run(change(change(document, '| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |\n', ''), '| INV-02 | 게시글 | `게시글.삭제()` | Aggregate 안 |\n', ''));
   assert.deepEqual(holes.errors.map((error) => [error.code, error.owner_stage]), [['BIZ_UNMAPPED', DOMAIN_MODEL], ['RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN]]);
+});
+
+// The template's consistency decision CON-01 (게시글 of 커뮤니티, 신고 of 신고) turned into an immediate one. The two Aggregates
+// sit in different bounded contexts unless `sameContext` moves 신고 into 커뮤니티.
+const immediate = (document, { readOnly = '-', sameContext = false } = {}) => [
+  ['| 게시글, 신고 | - | 최종 |', `| 게시글, 신고 | ${readOnly} | 즉시 |`],
+  ...(sameContext ? [['| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 커뮤니티 | 신고 | 신고 ID | 신고 |']] : []),
+  ['| T2: 신고 (CON-01) |', '| T2: 신고 |'],
+].reduce((text, [from, to]) => change(text, from, to), document);
+const INTEGRATION_ROW = '| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |';
+const synchronous = (document, method = '동기 호출') => change(document, INTEGRATION_ROW, `| ${method} | CON-01 | 없음 — 호출한 쪽이 응답을 기다린다 |`);
+
+test('immediate consistency merges only Aggregates of one bounded context that one operation changes together', async () => {
+  const document = await templateDocument();
+  // Two Aggregates of the same context that one operation changes together must be one Aggregate.
+  const together = immediate(document, { sameContext: true });
+  const verdict = failing(together, 'IMMEDIATE_NOT_MERGED', AGGREGATE_DESIGN);
+  const message = verdict.errors.find((error) => error.code === 'IMMEDIATE_NOT_MERGED').message;
+  assert.match(message, /^CON-01 has one operation change 게시글, 신고 of 커뮤니티 together/);
+  assert.match(message, /merge them \(결정 names 병합, 걸친 Aggregate lists the merged Aggregate\)/);
+  assert.match(message, /list it in 조회 전용 Aggregate instead/, 'the message names the way out for a read-only precondition');
+  assert.ok(!codes(run(together)).some((code) => code.startsWith('IMMEDIATE_CROSS_CONTEXT')), 'one context needs no integration row');
+  // An Aggregate that the operation only reads is no change to merge, and neither is a single listed Aggregate.
+  assert.ok(!codes(run(immediate(document, { sameContext: true, readOnly: '신고' }))).includes('IMMEDIATE_NOT_MERGED'), 'a read-only Aggregate of the same context is not merged');
+  assert.ok(!codes(run(immediate(document, { sameContext: true, readOnly: '게시글, 신고' }))).includes('IMMEDIATE_NOT_MERGED'), 'a rule that changes nothing needs no merge');
+  assert.ok(!codes(run(change(immediate(document), '| 게시글, 신고 | - | 즉시 |', '| 게시글 | - | 즉시 |'))).includes('IMMEDIATE_NOT_MERGED'), 'one listed Aggregate has nothing to merge, with or without the word 병합');
+  // The read-only marker has to name Aggregates the decision spans, and an immediate decision has to span one.
+  failing(immediate(document, { sameContext: true, readOnly: '인증' }), 'READ_ONLY_NOT_SPANNED', AGGREGATE_DESIGN);
+  failing(change(immediate(document), '| 게시글, 신고 | - | 즉시 |', '| - | - | 즉시 |'), 'DECISION_NO_AGGREGATE', AGGREGATE_DESIGN);
+  // A document written before the column existed reads as "the rule changes every Aggregate it spans".
+  const legacy = immediate(document, { sameContext: true }).replace('| 걸친 Aggregate | 조회 전용 Aggregate | 일관성 |', '| 걸친 Aggregate | 일관성 |').replace('|---|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | - | 즉시 |', '|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | 즉시 |');
+  assert.notEqual(legacy, immediate(document, { sameContext: true }));
+  failing(legacy, 'IMMEDIATE_NOT_MERGED', AGGREGATE_DESIGN);
+});
+
+test('immediate consistency across bounded contexts is never a merge: section 5 must record it as a synchronous check or call with its source', async () => {
+  const document = await templateDocument();
+  // 게시글 (커뮤니티) and 신고 (신고) are in different contexts: no merge, whether the operation changes or only reads the other side.
+  for (const readOnly of ['-', '신고']) {
+    const crossing = immediate(document, { readOnly });
+    assert.ok(!codes(run(crossing)).includes('IMMEDIATE_NOT_MERGED'), `no merge across contexts (조회 전용: ${readOnly})`);
+    assert.deepEqual(run(synchronous(crossing)), { ok: true, errors: [] }, `a synchronous row that cites the decision realises it (조회 전용: ${readOnly})`);
+    assert.deepEqual(run(synchronous(crossing, '동기 확인')), { ok: true, errors: [] }, 'a synchronous check is one too');
+    assert.deepEqual(run(synchronous(crossing, '비동기 알림과 동기 확인')), { ok: true, errors: [] }, 'a row may combine styles when one of them is synchronous');
+  }
+  const crossing = immediate(document, { readOnly: '신고' });
+  // The integration-design stage owns every way the realisation can be missing, and each message says what to write.
+  const unrealised = failing(crossing, 'IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', INTEGRATION_DESIGN);
+  assert.match(unrealised.errors.find((error) => error.code === 'IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS').message, /^CON-01 needs immediate consistency across 커뮤니티, 신고\. Aggregates of different bounded contexts are never merged, so section 5 must record it as a synchronous check or call, but INT-01 \(비동기 이벤트\) citing it is not synchronous\. Make its 통신 방식 synchronous/);
+  assert.deepEqual(unrealised.errors.map((error) => [error.code, error.id, error.owner_stage]), [['SAGA_WITHOUT_EVENTUAL', 'INT-01', INTEGRATION_DESIGN], ['IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', 'CON-01', INTEGRATION_DESIGN]], 'nothing of an earlier stage is blamed');
+  const missing = failing(synchronous(crossing).replace(/^\| INT-01 .*\n/m, '| INT-01 | 신고 | 커뮤니티 | 없음 | 없음 | 신고가 접수됨 | 비동기 이벤트 | - | 없음 — 이벤트를 곧바로 발행한다 | CONTEXT-MAP.md |\n'), 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
+  assert.match(missing.errors.find((error) => error.code === 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED').message, /and no integration row cites it\. Add an INT row whose 일관성 결정 is CON-01, whose 통신 방식 is synchronous \(동기 확인, 동기 호출\) and whose 근거·출처 names its source/);
+  failing(synchronous(crossing).replace(/^\| INT-01 .*\n/m, ''), 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
+  failing(change(synchronous(crossing), '| 없음 — 호출한 쪽이 응답을 기다린다 | CONTEXT-MAP.md `## 3` 커뮤니티 → 신고, answers.json `<question_id>` |', '| 없음 — 호출한 쪽이 응답을 기다린다 | - |'), 'IMMEDIATE_INTEGRATION_NO_SOURCE', INTEGRATION_DESIGN);
+  // Several rows may cite the decision; one synchronous row with a source is enough.
+  const two = change(synchronous(crossing), '\n\n`통신 방식`은', '\n| INT-02 | 신고 | 커뮤니티 | 없음 | 없음 | 신고가 닫힘 | 비동기 이벤트 | CON-01 | 없음 — 이벤트를 곧바로 발행한다 | CONTEXT-MAP.md |\n\n`통신 방식`은');
+  assert.deepEqual(run(two), { ok: true, errors: [] });
+  // The cross-context requirement is for immediate decisions only: an eventual one keeps its own check and needs no synchronous row.
+  assert.deepEqual(run(document), { ok: true, errors: [] });
+  failing(change(document, '| 비동기 이벤트 | CON-01 |', '| 비동기 이벤트 | - |'), 'CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
+  assert.ok(!codes(run(document)).some((code) => code.startsWith('IMMEDIATE_')));
 });
 
 test('a rule that a Value Object owns is enforced by that Value Object, with no Entity or Aggregate invented for it', async () => {
