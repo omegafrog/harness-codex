@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Deterministic gate of the tactical design flow: it checks the whole tactical-design.md of a plan set against requirements.md.
 // The runner runs it once, when integration-design (the last tactical stage) reports completed/OK, and rejects the result
-// while it fails; no stage runs it. This command runs the same check by hand, for example to see what the runner will say.
+// while it fails; no stage runs it. This command runs the same check by hand, for example to see what the runner will say, or for a relaunched stage to see which earlier-stage errors still stand.
 // The checks live in the workflow module.
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';

@@ -545,6 +545,67 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   assert.equal(treeGit('log', '-1', '--format=%s').trim(), `domain-service: ${planSetId}`);
 });
 
+test('a stage relaunched after a block gets the previous result labelled as evidence of an earlier attempt, and the installed guides make it re-run the gate before it blocks again', async (t) => {
+  const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
+  const { workspace, treeGit, runStage, specPath } = flow;
+  const requirements = specPath('requirements.md');
+  const tacticalDesign = specPath('tactical-design.md');
+  const art = (path, kind) => ({ path, kind });
+  const artifacts = [art(tacticalDesign, 'tactical_design')];
+  const document = await templateDocument(sourceRoot);
+  for (const stage of REQUIREMENTS_STAGES) {
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+  }
+  await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
+  for (const [index, stage] of TACTICAL_DESIGN_STAGES.slice(0, 4).entries()) await runStage(stage, { files: { [tacticalDesign]: upTo(document, index + 1) }, artifacts });
+
+  // integration-design blocked on an earlier-stage gate error that a later Harness no longer reports: the first run has no previous result.
+  const staleSummary = 'DECISION_AGGREGATE_MISMATCH (EX-03, owner aggregate-design): 가장 이른 재개 대상은 aggregate-design이다';
+  const blocked = await runStage('integration-design', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: staleSummary, expectCommit: false });
+  assert.equal(blocked.prepared.input.context.previous_result_note, undefined, 'a first run has no previous attempt');
+  assert.equal(blocked.prepared.input.context.previous_result_ref, undefined);
+
+  // The current gate reports only what is missing now: the sections of the earlier stages are fine and the unwritten section 5 is the stage's own.
+  const check = spawnSync(process.execPath, [join(workspace, GATE), '--workspace-root', workspace], { cwd: workspace, encoding: 'utf8' });
+  assert.equal(check.status, 1, 'the installed gate reads the current documents and refuses the missing section 5');
+  const verdict = JSON.parse(check.stdout);
+  assert.ok(verdict.errors.length > 0 && verdict.errors.every((error) => error.owner_stage === 'integration-design'), `no earlier stage owns an error now: ${check.stdout}`);
+
+  // The relaunch hands the blocked result over as evidence of the earlier attempt, next to the user's instruction, and completes: the block does not carry over.
+  const feedback = 'Harness가 업데이트되어 aggregate-design 오류를 내던 gate 검사는 제거되었습니다. integration-design만 재실행하세요.';
+  const relaunched = await runStage('integration-design', { extraArgs: ['--feedback', feedback], files: { [tacticalDesign]: document }, artifacts });
+  const { context, input_refs: refs } = relaunched.prepared.input;
+  assert.match(context.previous_result_note, /evidence of an earlier attempt/);
+  assert.match(context.previous_result_note, /Re-run the check on the current files before relying on any of them/);
+  assert.equal(context.previous_result_ref, `runtime/executions/${blocked.prepared.input.execution_id}/result.json`);
+  assert.ok(refs.some((reference) => reference.kind === 'previous_execution_result' && reference.path === context.previous_result_ref), 'the previous result is listed under its own kind');
+  assert.equal(JSON.parse(await readFile(join(dirname(relaunched.started.output_path), 'feedback.json'), 'utf8')).feedback, feedback);
+  assert.equal(relaunched.finished.status, 'completed');
+  assert.equal(JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8')).stages['integration-design'].status, 'completed');
+
+  // A resume that is not after a block (an answer, a user revision of a completed stage) carries no such note.
+  const revision = await runStage('domain-service', { extraArgs: ['--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true'], files: { [tacticalDesign]: `${document}\n<!-- 사용자 수정 -->\n` }, artifacts });
+  assert.equal(revision.prepared.input.context.user_revision, true);
+  assert.equal(revision.prepared.input.context.previous_result_note, undefined, 'a revision of a completed stage is not a retry of an attempt');
+
+  // The installed guides tell the stage to re-run the gate before it blocks on an earlier stage, and they stay Harness-owned while the application work stays visible.
+  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.codex/internal-skills/skill-execution/worker-base.md', '.harness/src/workflow/stage-input.mjs'];
+  for (const path of owned) {
+    assert.equal(await readFile(join(workspace, path), 'utf8'), await read(path), `installed: ${path}`);
+    assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
+  }
+  const rules = await readFile(join(workspace, DEEPENING), 'utf8');
+  assert.match(rules, /## Relaunch after a block[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>[\s\S]*blocks only on errors that this run still reports for earlier stages/);
+  assert.match(rules, /`integration-design` designs `## 5`/);
+  assert.match(await readFile(join(workspace, '.codex/internal-skills/integration-design/GUIDE.md'), 'utf8'), /A previous `blocked` result, with its gate errors, is evidence of that attempt and not the current state: re-run the gate on the current documents[\s\S]*deepening\.md#relaunch-after-a-block/);
+  assert.match(await readFile(join(workspace, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
+  const status = treeGit('status', '--short', '--untracked-files=all');
+  assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n');
+});
+
 test('a plan set that an earlier Harness started is renamed to tactical-design.md when the next tactical stage is prepared, keeps its history, restarts across the rename and keeps Git visibility', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, beginStage, submitStage, finishStage, planSetId, specPath } = flow;

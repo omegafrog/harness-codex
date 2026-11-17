@@ -6,7 +6,7 @@
 
 - Run the preflight and resolve every plan set document with `harness-spec-path.mjs`, as the stage GUIDE says. The input is `requirements.md` with `상태: fixed`; when it is missing or still `draft`, return `blocked` / `INPUT_MISSING`.
 - When `stakeholder-analysis.md` has `판정: 생략`, none of the five stages writes anything: record the skip and its evidence path in the summary and return `completed/OK`.
-- On resume, read the previous result, the sections already written and the actual answers; keep every decision already recorded and continue at the first step whose output is missing.
+- On resume, read the previous result, the sections already written and the actual answers; keep every decision already recorded and continue at the first step whose output is missing. A previous `blocked` result is evidence of that attempt only (see Relaunch after a block).
 - Earlier sections are settled input. Read them and never edit them, except through a user revision of the stage that owns them.
 - The document is `docs/specs/<plan-set-id>/tactical-design.md`, named for the flow and not for a stage. A stage writes only its own section and its rows of `## 6` there, and a user instruction that names a stage (`domain-model`, `aggregate-design`, ...) refers to that stage's work and recorded state, never to a file: "leave `domain-model` as it is" means do not reopen that stage, and it does not stop a later stage from writing its own section. `docs/architecture/domain-model.md` is a different file, the project's model index.
 - A plan set that an earlier Harness started may hold the document as `domain-model.md`. The runner renames it to `tactical-design.md` (as `git mv` does, committed with the next tactical stage) before a tactical stage runs, so a stage never renames, copies or recreates it and always finds `tactical-design.md`.
@@ -56,6 +56,14 @@ Design work can show that the requirements or an earlier stage missed something.
 3. A stage that may not ask (`domain-model`, `domain-service`, `application-service`) never adds a rule on its own judgement. When the evidence is missing or contradictory, return `blocked` / `INPUT_MISSING`: the summary names the `BIZ`, `INV` or `EX`, what is missing and that the requirements need a revision. The orchestrator reports it, and the user's revision is a `requirements-fix` user revision, after which the stage resumes with `--feedback`.
 4. When the new rule, an answer or the design work invalidates a decision of an earlier tactical stage, return `blocked` / `DEPENDENCY_INCOMPLETE` instead of overwriting that stage's section. The summary names the earliest stage to reopen, the decision, the evidence (IDs, rows, the answer) and the new rule when there is one. Leave the earlier section and every other file untouched except the rule added to `requirements.md`, which the runner commits for this block so the working tree stays clean and the rule survives the restart.
 5. The orchestrator reports the block. The user reopens the earlier stage through the existing paths: `--restart-requirements true` for that stage (the runner restores its tactical documents but keeps `requirements.md`, drops it and every later stage from the state, and the stage runs again), or `--user-revision true --feedback <instruction>` for a completed stage. A requirements revision that also needs a restart comes after the restart.
+
+## Relaunch after a block
+
+A stage relaunched with `--feedback` or a user revision after a `blocked` result reads that result (`context.previous_result_note`) as evidence of the earlier attempt, never as the current state: the documents, Harness or the gate may have changed since, as the user's instruction often says. Gate errors and blockers it names are not facts to repeat.
+
+- Before it blocks on an earlier stage's error, the stage re-runs the current gate on the current documents: `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <absolute workspace root>`. This is a read-only look at the verdict, not a gate of its own.
+- It blocks only on errors that this run still reports for earlier stages, with that output as the evidence. Errors it owns are repaired; errors that no longer appear are dropped.
+- When nothing is left for an earlier stage, the previous block no longer holds: the stage does its own work (`integration-design` designs `## 5`) and returns by the table below. Another blocker, such as a missing input, is re-checked the same way before it is repeated.
 
 ## User revision
 

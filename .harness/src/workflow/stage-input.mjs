@@ -22,6 +22,9 @@ import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'spec-me', 'to-ticket', 'implement-wrapper']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+// A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
+// blockers in it were true when it ended, and Harness, the documents or the gate may have changed since, so it is no verdict.
+export const PREVIOUS_RESULT_NOTE = 'The previous result is evidence of an earlier attempt: its blockers, gate errors and check verdicts were true when that attempt ended, and Harness, the documents or the gate may have changed since. Re-run the check on the current files before relying on any of them or blocking on them again.';
 
 async function hasPassingImplementationGate(root) {
   const directory = join(root, '.io/runtime/workflow-completion');
@@ -508,7 +511,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
       if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     }
-    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
   }
   let deferredAnswers = null;
   if (!userRevision && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
