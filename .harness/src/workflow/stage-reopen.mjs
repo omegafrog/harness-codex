@@ -71,7 +71,10 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   }
   const running = Object.entries(stages).find(([, entry]) => entry?.status === 'running');
   if (running) throw refusal(`Reopen refused: ${running[0]} is still running`, 'A stage cannot be reopened while another stage runs.', [`Wait for its native subagent, then run finish for ${running[1].execution_id}`]);
-  const started = [...REWIND_STAGES.slice(blockedIndex + 1), ...PUBLICATION_STAGES].find((id) => stages[id]);
+  // A to-ticket record that is stale or not completed (blocked, failed, cancelled; typically left from before an earlier rewind)
+  // produced no plan set, so it does not count as started; a current completed to-ticket and any later stage do.
+  const counts = (id) => id === WORKTREE_STAGE.TO_TICKET ? stages[id]?.status === 'completed' && !stages[id].stale : Boolean(stages[id]);
+  const started = [...REWIND_STAGES.slice(blockedIndex + 1), ...PUBLICATION_STAGES].find(counts);
   if (started) throw refusal(`Reopen refused: ${started} has already started`, `Tickets were published or implemented from the plan set (${started} is ${describe(stages[started])}); a forward rewind cannot change what they were built from.`, [], 'Report the gap to the user: changing the design now needs their instruction (--user-revision) or a restart they request.');
   const resultSession = await resolveSkillSession(root, blocked.result_session_directory || session);
   const result = await readSkillSessionJson({ root, session_directory: resultSession, path: blocked.result_ref });

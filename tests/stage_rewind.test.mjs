@@ -242,3 +242,48 @@ test('installed consumer: every refusal after a blocked DEPENDENCY_INCOMPLETE po
   assert.match(again.next, new RegExp(`launch --stage-id application-service --reopen-for ${relaunched.prepared.input.execution_id}`));
   check(attempts(), `launch --stage-id application-service --reopen-for ${relaunched.prepared.input.execution_id}`);
 });
+
+test('installed consumer: a stale or unfinished to-ticket record from before a rewind does not block the reopen, a current completed one does', async (t) => {
+  const flow = await consumerWorkflow(t, REQUEST);
+  const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, invoke } = flow;
+  await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const seeded = await state();
+  for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');
+  const designPath = `docs/specs/${planSetId}/tactical-design.md`;
+  await mkdir(join(workspace, designPath, '..'), { recursive: true });
+  await writeFile(join(workspace, designPath), '# 전술 설계\n');
+  treeGit('add', 'docs'); treeGit('commit', '-qm', 'tactical design fixture');
+  const impl = `docs/implementation/${planSetId}`;
+  await runStage('tactical-technology', { files: { [`${impl}/technology.md`]: 'node --test\n' } });
+  await runStage('tactical-ui', { expectCommit: false });
+  await runStage('tactical-api', { files: { [`${impl}/api.md`]: '`POST /login`\n' }, summary: 'API' });
+  const ticket = await beginStage('tactical-data');
+  const blockedId = ticket.prepared.input.execution_id;
+  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: 'tactical-api', dependency_gap: 'logout API가 없다' } });
+  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...ticket.base]).code, 'DEPENDENCY_INCOMPLETE');
+
+  const seed = async (stages) => {
+    const current = await state();
+    for (const id of ['to-ticket', 'tracker-publish']) delete current.stages[id];
+    Object.assign(current.stages, stages);
+    await writeFile(statePath, JSON.stringify(current, null, 2) + '\n');
+  };
+  const stale = { owner_stage: 'application-service', blocked_stage: 'tactical-data', reopened_for: 'old', rerun_order: [], marked_at: '2026-01-01T00:00:00.000Z' };
+  const refusedStarted = (result) => { assert.notEqual(result.status, 0, result.stdout); assert.match(result.stderr, /to-ticket has already started|tracker-publish has already started/); };
+  const reopen = () => prepare('--stage-id', 'tactical-api', '--reopen-for', blockedId);
+
+  // A current completed to-ticket, and any started tracker-publish, still refuse.
+  await seed({ 'to-ticket': { status: 'completed', code: 'OK', result_ref: 'runtime/executions/to-ticket/result.json' } });
+  refusedStarted(reopen());
+  await seed({ 'tracker-publish': { status: 'blocked', code: 'INPUT_MISSING' }, 'to-ticket': { status: 'blocked', code: 'INPUT_MISSING', stale } });
+  refusedStarted(reopen());
+
+  // A stale blocked to-ticket left from before a rewind is ignored: the reopen is accepted.
+  await seed({ 'to-ticket': { status: 'blocked', code: 'INPUT_MISSING', stale, result_ref: 'runtime/executions/to-ticket/result.json' } });
+  const accepted = await beginStage('tactical-api', { extraArgs: ['--reopen-for', blockedId] });
+  assert.equal(accepted.prepared.input.context.reopen.owner_stage, 'tactical-api');
+});
