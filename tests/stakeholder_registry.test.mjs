@@ -244,7 +244,7 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   const treeGit = gitIn(workspace);
 
   // Preparing the stage needs no workflow manifest: the stage id is the skill id, and the request is its scope.
-  const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'stakeholder-analysis']);
+  const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'stakeholder-analysis']);
   assert.equal(prepared.input.skill, 'stakeholder-analysis');
   assert.equal(prepared.input.scope, request);
   assert.equal(prepared.input.context.stage_id, 'stakeholder-analysis');
@@ -281,7 +281,7 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me cannot start before subdomain-candidates/);
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'subdomain-candidates']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-candidates']);
   assert.equal(next.input.skill, 'subdomain-candidates');
   assert.equal(next.input.context.transition.from_stage, 'stakeholder-analysis');
   assert.equal(next.input.context.transition.code, 'OK');

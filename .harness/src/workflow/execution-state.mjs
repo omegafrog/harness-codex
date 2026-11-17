@@ -25,7 +25,7 @@ export async function processIdentity(pid) {
 // Stages run as native subagents of the orchestrator's CLI, so a stage is stopped only when its subagent reported the end.
 export async function assertExecutionStopped(entry) {
   if (entry?.native_managed && entry.status !== 'running' && entry.native_finished === true) return;
-  throw new Error('Native subagent status is not confirmed; inspect the original session before retrying');
+  throw new Error(`Native subagent status is not confirmed; inspect the original session before retrying${entry?.execution_id ? ` (execution ${entry.execution_id})` : ''}`);
 }
 
 export async function completeExecutionState({ root, session_directory }) {

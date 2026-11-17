@@ -309,7 +309,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me cannot start before domain-model/);
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'domain-model']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
   assert.equal(next.input.skill, 'domain-model');
   assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
   assert.equal(next.input.context.transition.code, 'OK');
@@ -318,7 +318,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the runner never commits the project-owned card');
 
   // A fixed document changes only on an explicit user revision, which reopens requirements-fix and no other requirements stage.
-  const revision = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'requirements-fix', '--feedback', '삭제는 작성자만 한다고 바꿔 줘', '--user-revision', 'true']);
+  const revision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'requirements-fix', '--feedback', '삭제는 작성자만 한다고 바꿔 줘', '--user-revision', 'true']);
   assert.equal(revision.input.skill, 'requirements-fix');
   assert.equal(revision.input.context.user_revision, true);
   const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
@@ -363,7 +363,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(state.stages['bounded-context'], undefined);
   assert.equal(state.stages['requirements-fix'], undefined);
   assert.equal(state.stages['ubiquitous-language'].status, 'completed', 'earlier vocabulary is retained');
-  const fresh = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'bounded-context']);
+  const fresh = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'bounded-context']);
   assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
 });
 
@@ -388,7 +388,7 @@ test('a skipped stakeholder-analysis makes the later requirements stages record 
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me cannot start before domain-model/);
   for (const stage of TACTICAL_DESIGN_STAGES) await runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
   assert.equal(next.input.context.transition.from_stage, 'integration-design');
 });
 

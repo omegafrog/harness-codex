@@ -67,7 +67,7 @@ export async function consumerWorkflow(t, request) {
 
   // The orchestrator's steps before the stage does its own work: prepare, start and bind.
   async function beginStage(stage, { extraArgs = [] } = {}) {
-    const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', stage, ...extraArgs]);
+    const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, ...extraArgs]);
     assert.equal(prepared.input.skill, stage);
     assert.equal(prepared.input.scope, request);
     assert.equal(prepared.input.context.stage_id, stage);

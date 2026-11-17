@@ -47,7 +47,7 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, tree, treeGit, runStage, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
-  const prepare = (...args) => script(workspace, 'harness-prepare-input.mjs', args);
+  const prepare = (...args) => script(workspace, 'harness-prepare-input.mjs', ['--verbose', ...args]);
   const refused = (stage, required) => {
     const result = prepare('--stage-id', stage);
     assert.notEqual(result.status, 0, `${stage} is refused`);
@@ -220,7 +220,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   treeGit('check-ignore', '-v', relative(workspace, join(result.backup, 'state.json')));
   treeGit('check-ignore', '-v', '.harness/src/workflow/requirements-restart.mjs');
   assert.equal(script(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']).status !== 0, true, 'spec-me is still refused after the recovery');
-  const resumed = script(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'domain-model']);
+  const resumed = script(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(resumed.stdout).input.context.transition.from_stage, 'requirements-fix', 'the workflow continues with the flow');
   assert.equal(JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')).stages['domain-model'], undefined, 'preparing records no stage until it starts');

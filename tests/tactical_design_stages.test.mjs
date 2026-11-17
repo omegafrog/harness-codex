@@ -308,7 +308,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   // 3. domain-service blocks for missing evidence without writing; the user may revise the fixed requirements while it is blocked, and it resumes.
   const blocked = await runStage('domain-service', { status: 'blocked', code: 'INPUT_MISSING', summary: 'INV-04의 중복 기준이 요구사항에 없다: requirements-fix 수정이 필요하다', expectCommit: false });
   assert.equal(blocked.finished.status, 'blocked');
-  const revision = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'requirements-fix', '--feedback', '같은 회원이 같은 글을 하루에 한 번만 신고할 수 있다', '--user-revision', 'true']);
+  const revision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'requirements-fix', '--feedback', '같은 회원이 같은 글을 하루에 한 번만 신고할 수 있다', '--user-revision', 'true']);
   assert.equal(revision.input.skill, 'requirements-fix');
   assert.equal(revision.input.context.user_revision, true);
   const resumed = await runStage('domain-service', { extraArgs: ['--feedback', '요구사항을 확인했다'], files: { [tacticalDesign]: upTo(document, 3) }, artifacts: [art(tacticalDesign, 'tactical_design')] });
@@ -356,13 +356,13 @@ test('the tactical stages run after requirements-fix and are accepted section by
   const last = await rerun('integration-design', 5);
   assert.equal(invoke(workspace, 'harness-domain-model-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command agrees with the runner on the finished document');
   assert.deepEqual(treeGit('log', '--format=%s', '-4').trim().split('\n'), ['integration-design', 'application-service', 'domain-service', 'aggregate-design'].map((stage) => `${stage}: ${planSetId}`));
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
   assert.equal(next.input.context.transition.from_stage, 'integration-design');
   assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'spec-me receives the tactical document as an input reference');
   assert.equal(last.finished.status, 'completed');
 
   // A completed tactical stage changes only on an explicit user revision; an earlier requirements stage still does not.
-  const tacticalRevision = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'domain-service', '--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true']);
+  const tacticalRevision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-service', '--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true']);
   assert.equal(tacticalRevision.input.skill, 'domain-service');
   assert.equal(tacticalRevision.input.context.user_revision, true);
   const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
@@ -382,7 +382,7 @@ test('a skipped stakeholder-analysis makes the tactical stages record the skip w
   }
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(existsSync(join(workspace, specPath('tactical-design.md'))), false, 'a skipped analysis leaves no tactical-design.md');
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
   assert.equal(next.input.context.transition.from_stage, 'integration-design');
 });
 
@@ -436,7 +436,9 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   const rejected = finishStage(integration);
   assert.equal(rejected.status, 1, rejected.stdout);
   const rejection = JSON.parse(rejected.stdout);
-  assert.deepEqual(Object.keys(rejection), ['status', 'gate', 'execution_id', 'stage', 'errors', 'instruction', 'output_path']);
+  assert.deepEqual(Object.keys(rejection), ['status', 'gate', 'execution_id', 'stage', 'errors', 'instruction', 'output_path', 'code', 'why', 'next']);
+  assert.equal(rejection.code, 'GATE_ERROR');
+  assert.ok(rejection.next.some((step) => /finish --execution-id /.test(step)), 'the rejection names the finish command to run again');
   assert.equal(rejection.status, 'gate_error');
   assert.equal(rejection.gate, 'domain_model_check');
   assert.equal(rejection.stage, 'integration-design');
@@ -483,7 +485,7 @@ test('the runner accepts the first four tactical stages without a gate and rejec
   assertVisibility([' M app.txt'], 'after the block');
   // The restart needs a clean project tree, as it always did: the application work is set aside for it and comes back after.
   treeGit('stash', 'push', '--', 'app.txt');
-  const restart = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'aggregate-design', '--restart-requirements', 'true']);
+  const restart = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'aggregate-design', '--restart-requirements', 'true']);
   assert.equal(restart.previous_stage, 'domain-model');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
@@ -571,7 +573,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   assert.equal(treeGit('ls-tree', '--name-only', 'HEAD', '--', legacy).trim(), '');
   assertVisibility([' M app.txt'], 'after the stage commit');
   // The finished domain-model stage still records its artifact under the legacy name; reopening it by a user revision follows the rename.
-  const revised = invoke(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'domain-model', '--feedback', '모델 이름을 바꿔 줘', '--user-revision', 'true']);
+  const revised = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model', '--feedback', '모델 이름을 바꿔 줘', '--user-revision', 'true']);
   assert.equal(revised.input.skill, 'domain-model');
   assert.equal(revised.input.context.user_revision, true);
   assert.ok(existsSync(join(workspace, current)) && !existsSync(join(workspace, legacy)), 'preparing a revision keeps the current name');

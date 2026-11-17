@@ -311,10 +311,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
     && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
   if (!reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
-    if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error('Previous stage has no usable result');
+    if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
-    if (!allowed[last.code] && last.code !== 'OK') throw new Error('Resolve the previous stage before selecting another');
+    if (!allowed[last.code] && last.code !== 'OK') throw new Error(`Resolve the previous stage before selecting another: ${lastStage} returned ${last.status}/${last.code}`);
     const priorInput = await readExecutionInput({ root, execution_id: last.execution_id });
     const priorReturn = await readSkillSessionJson({ root, session_directory: session, path: `runtime/executions/${last.execution_id}/return.json` });
     await validateSkillReturn({ root, input: priorInput, envelope: priorReturn });

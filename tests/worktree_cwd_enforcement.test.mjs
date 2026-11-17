@@ -83,14 +83,14 @@ test('installed workflow commands require cwd inside the target worktree', async
     assert.equal(local.workspace_root, a.workspace);
     assert.equal(local.worktree_ref, a.worktree_ref);
     assert.equal(local.plan_set_id, a.plan_set_id);
-    const prepared = ok(a.workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
+    const prepared = ok(a.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
     assert.equal(prepared.input.context.worktree_ref, a.worktree_ref);
     assert.equal(prepared.session_directory, a.session_directory);
-    const args = ['start', '--root', a.workspace, '--worktree-ref', a.worktree_ref, '--execution-id', prepared.input.execution_id];
+    const args = ['start', '--root', a.workspace, '--worktree-ref', a.worktree_ref, '--execution-id', prepared.input.execution_id, '--verbose'];
     assert.match(failed(primary, 'harness-native-stage.mjs', args), /change directory first/);
     const started = ok(a.workspace, 'harness-native-stage.mjs', args);
     assert.equal(started.workspace, a.workspace);
-    assert.equal(started.execution_id, prepared.input.execution_id);
+    assert.equal(started.execution_id, prepared.input.execution_id, 'the verbose start echoes the execution');
 
   });
 

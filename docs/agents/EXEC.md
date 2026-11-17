@@ -319,12 +319,12 @@ stage 실행은 `.codex/internal-skills/skill-execution/references/dispatch.md`�
 결과는 `harness-native-stage.mjs finish`의 반환값과 정본 실행 상태에서 확인한다. 실패나 중단이 확인되기 전에는 같은 stage를 다시 시작하지 않는다.
 
 
-구성된 workflow의 입력과 실행 ID는 `harness-prepare-input.mjs`가 생성한다. 최초 workflow-compose의 worktree는 `harness-compose-workspace.mjs`가 준비한다.
+구성된 workflow의 입력과 실행 ID는 `harness-native-stage.mjs launch`(입력 준비 `harness-prepare-input.mjs`와 예약 `start`를 한 번에 실행)가 생성한다. 출력은 기본이 compact이고 `--verbose`가 전체 입력·결과를 출력하며, 모든 오류는 `why`와 `next` 또는 `user_decision`을 가진 JSON 하나다. 최초 workflow-compose의 worktree는 `harness-compose-workspace.mjs`가 준비한다.
 
 
 workflow-compose 진입의 worktree 생성은 `harness-compose-workspace.mjs`가 기존 lifecycle 코드로 수행한다. 생성된 작업 위치와 session 출력만 이후 stage의 쓰기 경로가 되며, agent는 `context.worktree_ref`의 정본 기록을 읽고 preflight·문서 작업을 수행한다.
 
-stage의 사용자 질문은 `USER_DECISION_REQUIRED`와 `questions`로 반환된다. 사용자 답변은 `harness-prepare-input.mjs --answer <question_id 포함 JSON>`로 전달하며, 준비기는 질문 ID와 답변을 확인해 이전 결과와 함께 새 서브에이전트 실행의 입력으로 만든다.
+stage의 사용자 질문은 `USER_DECISION_REQUIRED`와 `questions`로 반환된다. 사용자 답변은 `harness-native-stage.mjs launch --stage-id <stage> --answer <question_id 포함 JSON>`(또는 `harness-prepare-input.mjs`)로 전달하며, 준비기는 질문 ID와 답변을 확인해 이전 결과와 함께 새 서브에이전트 실행의 입력으로 만든다.
 
 ## Stage 실행 환경
 

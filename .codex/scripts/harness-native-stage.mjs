@@ -2,8 +2,9 @@
 import { constants, existsSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cliSession } from '../../.harness/src/workflow/cli-session.mjs';
 import { resolveCommandContext } from '../../.harness/src/workflow/cli-context.mjs';
 import { executionInputAbsolutePath } from '../../.harness/src/workflow/execution-input.mjs';
@@ -13,18 +14,64 @@ import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
+import { compactFinished, compactStarted, extractVerbose, formatErrorResult, gateErrorResult, launchResult, compactPrepared, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+
+// What the error output needs to know about this call.
+const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
+
+const lastJson = (text) => { try { return JSON.parse(String(text || '').trim().split('\n').filter(Boolean).pop()); } catch { return null; } };
+// A failed child command already printed its explanation as one JSON object: pass it on instead of wrapping it.
+const childFailure = (child, context = {}) => {
+  const printed = lastJson(child.stderr);
+  const error = new Error(printed?.error || String(child.stderr || '').trim() || 'The command failed');
+  if (printed?.code && printed.why) error.explained = { ...printed, ...context };
+  return error;
+};
+
+// prepare + start in one call: the orchestrator gets exactly what it needs to spawn the subagent and then bind it.
+function launchStage(args, verbose) {
+  const scripts = fileURLToPath(new URL('.', import.meta.url));
+  const run = (script, scriptArgs) => spawnSync(process.execPath, [join(scripts, script), ...scriptArgs], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const prepare = run('harness-prepare-input.mjs', [...args, '--verbose']);
+  if (prepare.status !== 0) throw childFailure(prepare);
+  const prepared = lastJson(prepare.stdout);
+  if (!prepared) throw new Error('harness-prepare-input.mjs printed no result');
+  // A saved answer, a partial answer batch or a restart/discard does not start a stage: show what prepare reports.
+  if (!prepared.input?.execution_id) return verbose ? prepared : compactPrepared(prepared);
+  const id = prepared.input.execution_id;
+  errorContext.executionId = id;
+  const start = run('harness-native-stage.mjs', ['start', '--execution-id', id, ...(verbose ? ['--verbose'] : [])]);
+  if (start.status !== 0) throw childFailure(start, { prepared_execution_id: id });
+  const started = lastJson(start.stdout);
+  if (!started) throw new Error('harness-native-stage.mjs start printed no result');
+  const launched = launchResult({ prepared, started });
+  return verbose ? { ...launched, input: prepared.input } : launched;
+}
 
 try {
-  const [requestedAction, ...args] = process.argv.slice(2), opts = {};
+  const [requestedAction, ...rest] = process.argv.slice(2), opts = {};
   let action = requestedAction;
+  errorContext.action = action;
+  const { args, verbose } = extractVerbose(rest);
+  if (action === 'launch') {
+    process.stdout.write(`${JSON.stringify(launchStage(args, verbose))}\n`);
+    process.exit(0);
+  }
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i]?.replace(/^--/, '');
     if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
     opts[key] = args[i + 1];
   }
-  if (!['start', 'inspect', 'reconcile', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !isAbsolute(opts.root || '') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs start|inspect|reconcile|bind|receive|finish|fail|cancel --root ROOT --worktree-ref REF --execution-id ID');
+  if (!['start', 'inspect', 'reconcile', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
+  errorContext.executionId = opts['execution-id'];
+  // --root and --worktree-ref are optional: the current worktree supplies them, and an explicit value must match it.
+  const commandContext = resolveCommandContext({ root: opts.root, worktreeRef: opts['worktree-ref'] });
+  if (!commandContext.worktree_ref) throw new Error(`Workflow commands require a registered linked worktree; change directory to the target worktree: no workflow worktree was found at ${commandContext.root}`);
+  opts.root ??= commandContext.root;
+  opts['worktree-ref'] ??= commandContext.worktree_ref;
+  if (!isAbsolute(opts.root || '')) throw new Error('Invalid native stage arguments');
   const root = opts.root, id = opts['execution-id'];
-  resolveCommandContext({ root, worktreeRef: opts['worktree-ref'] });
+  errorContext.root = root;
   if (['fail', 'cancel'].includes(action) && !opts.reason?.trim()) throw new Error('A native subagent failure reason is required');
   if (!['fail', 'cancel'].includes(action) && opts.reason) throw new Error('Failure reason applies only to fail');
   if ((action === 'bind' || action === 'receive') !== Boolean(opts['agent-id'])) throw new Error('Native agent ID is required only for bind and receive');
@@ -32,6 +79,7 @@ try {
   const input = await readExecutionInput({ root, execution_id: id });
   await validateSkillInput({ root, input });
   if (input.session_directory !== session || input.context?.worktree_ref !== opts['worktree-ref'] || input.context?.parent_execution_id || input.skill === 'workflow-compose') throw new Error('Invalid native stage workspace or input');
+  errorContext.stageId = input.context?.stage_id || input.skill;
   const { workflow, stage } = await resolveWorkflowStage({ root, input });
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null, executionProvider: input.context?.provider || null });
   if ((input.context?.provider && input.context.provider !== binding.provider) || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== binding.provider) || (input.context?.resume_provider && input.context.resume_provider !== binding.provider)) throw new Error('Execution provider must match the orchestrator and binding');
@@ -46,7 +94,8 @@ try {
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);
     const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow, stage });
     await recordExecutionState({ root, input, binding, status: 'running', nativeClaim: true });
-    process.stdout.write(`${JSON.stringify({ execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding })}\n`);
+    const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding };
+    process.stdout.write(`${JSON.stringify(verbose ? started : compactStarted(started, { executionId: id }))}\n`);
   } else {
     const state = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' });
     const current = (state.state || state).stages?.[input.context?.stage_id || input.skill];
@@ -166,7 +215,7 @@ try {
       else if (error instanceof SyntaxError) format = { valid: false, errors: [{ path: '$', rule: 'json', expected: 'valid JSON', value: null, message: error.message }] };
       else throw error;
     }
-    if (!format.valid) { process.stdout.write(`${JSON.stringify({ status: 'format_error', execution_id: id, errors: format.errors, schema_path: paths.files.schema, output_path: paths.files.raw })}\n`); process.exit(1); }
+    if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: format.errors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
     // The last tactical design stage (integration-design) is accepted as completed only when the whole tactical-design.md passes the
     // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
     // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,
@@ -174,7 +223,7 @@ try {
     const { evaluateTacticalDesignGate, gateFailureInstruction } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
     const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
     if (gate && !gate.ok) {
-      process.stdout.write(`${JSON.stringify({ status: 'gate_error', gate: 'domain_model_check', execution_id: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), output_path: paths.files.raw })}\n`);
+      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
     if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) {
@@ -185,7 +234,8 @@ try {
     }
     const { commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
     await commitStageRequest({ root, rawPath: paths.files.raw });
-    execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' });
+    try { execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' }); }
+    catch (error) { throw new Error(`Result rejected: ${lastJson(error.stderr)?.error || String(error.stderr || error.message).trim()}`); }
     await commitWorkflowDocuments({ root, input, rawPath: paths.files.raw });
     const envelope = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.returned });
     const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
@@ -196,6 +246,6 @@ try {
       await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
       throw error;
     }
-    process.stdout.write(`${JSON.stringify({ status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result })}\n`);
+    process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result } : compactFinished({ envelope, stageId: errorContext.stageId, executionId: id }))}\n`);
   }
-} catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 2; }
+} catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }
