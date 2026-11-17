@@ -18,7 +18,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    const config = 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: high\n    implementation_model: example\n    implementation_reasoning_effort: medium\n    execution_model: example\n    execution_reasoning_effort: low\n    low_performance_model: example\n    low_performance_reasoning_effort: low\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\nobservability:\n  victorialogs:\n    local:\n      enabled: false\n';
+    const config = 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: high\n    implementation_model: example\n    implementation_reasoning_effort: medium\n    execution_model: example\n    execution_reasoning_effort: low\n    low_performance_model: example\n    low_performance_reasoning_effort: low\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nobservability:\n  victorialogs:\n    local:\n      enabled: false\n';
     const configured = `${config}worktrees:\n  directory: ${JSON.stringify(join(root, '..', 'chosen worktrees'))}\n`;
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), configured);

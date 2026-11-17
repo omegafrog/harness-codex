@@ -24,7 +24,25 @@ import { userSaidAfter } from './user-inputs.mjs';
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
 // The stages that run once per plan of the published plan set.
-const PLAN_STAGES = new Set(['implement-wrapper', 'tactical-code']);
+const PLAN_STAGES = new Set(['implement-wrapper', 'tactical-code', 'frontend-implementation', 'frontend-visual-review']);
+
+export async function assertFrontendTicketOrder({ root, session, state, stageId, planSetId, planId }) {
+  if (!planId || !planSetId || !['tactical-code', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) return;
+  const ticket = await readFile(join(root, 'docs/plans', planSetId, `${planId}.md`), 'utf8');
+  const frontmatter = /^---\s*\n([\s\S]*?)^---\s*$/m.exec(ticket)?.[1] || '';
+  const frontend = /^frontend:\s*true\s*$/m.test(frontmatter);
+  if (!frontend && stageId === 'tactical-code') return;
+  if (!frontend) throw new Error(`Ticket ${planId} is not a frontend ticket`);
+  if (state.stages?.['tracker-publish']?.status !== 'completed' || state.stages['tracker-publish'].code !== 'OK') throw new Error('Frontend implementation requires completed tracker publication');
+  const required = stageId === 'frontend-implementation' ? 'frontend-design-brief' : stageId === 'frontend-visual-review' ? 'frontend-implementation' : 'frontend-visual-review';
+  const previous = state.stages?.[required];
+  if (previous?.status !== 'completed' || previous.code !== 'OK' || !previous.result_ref) throw new Error(`Frontend ticket requires completed/OK ${required} before ${stageId}`);
+  if (required !== 'frontend-design-brief') {
+    const input = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (input.context?.plan_id !== planId) throw new Error(`Frontend ${required} belongs to a different ticket`);
+    if (required === 'frontend-visual-review' && input.context?.transition?.result_ref !== state.stages?.['frontend-implementation']?.result_ref) throw new Error('Frontend visual review does not cover the current implementation');
+  }
+}
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 // A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
 // blockers in it were true when it ended, and Harness, the documents or the gate may have changed since, so it is no verdict.
@@ -64,7 +82,7 @@ export async function resolveStageSkill({ root, stageId }) {
   for (const file of workflows) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
     const manifest = await loadNamedWorkflow(file.name, { root });
-    matches.push(...manifest.stages.filter((stage) => stage.id === stageId && stage.role === 'pr_author'));
+    matches.push(...manifest.stages.filter((stage) => stage.id === stageId && (stage.role === 'pr_author' || ['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId))));
   }
   if (matches.length > 1) throw new Error(`Workflow stage is ambiguous: ${stageId}`);
   return matches[0] || { id: stageId, skill: stageId };
@@ -264,7 +282,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish')) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
   // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
-  if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implement-wrapper and tactical-code');
+  if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implementation and frontend ticket stages');
   if (stageId === 'implement-wrapper' && planId === null && feedback === null && answer === null) throw new Error('implement-wrapper needs --plan <plan-id>: the orchestrator assigns the next ready plan');
   if (planId !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan ID');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
@@ -322,9 +340,16 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const target = state.stages?.[stageId];
   // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
   const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
+  const frontendDesignHandoff = stageId === 'frontend-design-brief' && lastStage === 'tactical-ui' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
+  const frontendCorrection = stageId === 'frontend-implementation' && lastStage === 'frontend-visual-review' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
+  if (frontendCorrection) {
+    const reviewInput = await readExecutionInput({ root, execution_id: last.execution_id });
+    if (reviewInput.context?.plan_id !== planId) throw new Error('Frontend review belongs to a different ticket');
+    input_refs.push({ base: 'session', path: last.result_ref, kind: 'frontend_review_feedback' });
+  }
   const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
     && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
-  if (!reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  if (!frontendDesignHandoff && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -582,14 +607,27 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
-  if (PLAN_STAGES.has(stageId) && !planId) throw new Error(`${stageId} resume needs the assigned ${stageId === 'tactical-code' ? 'ticket' : 'plan'} from its previous input`);
+  if (stageId === 'to-ticket') {
+    const ui = state.stages?.['tactical-ui'];
+    if (ui?.status === 'completed' && ui.code === 'OK' && ui.result_ref) {
+      const result = await readSkillSessionJson({ root, session_directory: taskSession, path: ui.result_ref });
+      input_refs.push(...result.artifacts.filter((item) => item.kind === 'frontend_design_brief'));
+    }
+  }
+  if (PLAN_STAGES.has(stageId) && !planId && (!stageId.startsWith('frontend-') || state.stages?.['tactical-ui'])) throw new Error(`${stageId} needs the assigned ticket or plan`);
   if (planId !== null) {
     if (!plan_set_id) throw new Error('--plan needs a worktree plan set');
     await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`)).catch(() => { throw new Error(`Plan ${planId} is not part of plan set ${plan_set_id}`); });
     // tactical-code builds one published ticket per execution, after the tickets it depends on, and reads that ticket's file.
-    if (stageId === 'tactical-code') {
+    if (['tactical-code', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) {
       await assertTicketStartable({ root, planSetId: plan_set_id, planId, resume: feedback !== null || answer !== null });
       input_refs.push({ base: 'workspace', path: `docs/plans/${plan_set_id}/${planId}.md`, kind: 'ticket' });
+      await assertFrontendTicketOrder({ root, session: taskSession, state, stageId, planSetId: plan_set_id, planId });
+      const ui = state.stages?.['tactical-ui'];
+      if (ui?.status === 'completed' && ui.code === 'OK' && ui.result_ref) {
+        const result = await readSkillSessionJson({ root, session_directory: taskSession, path: ui.result_ref });
+        input_refs.push(...result.artifacts.filter((item) => item.kind === 'frontend_design_brief'));
+      }
     }
   }
   const checkpointPath = stageId === 'implement-wrapper' && planId ? planRuntimePaths({ root, planId }).checkpoint_path : null;
@@ -605,6 +643,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
+  else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);

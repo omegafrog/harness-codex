@@ -128,25 +128,6 @@ function installPonytailPlugin() {
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
 }
 
-function beadsCliVersion() {
-  const executables = process.platform === "win32" ? [["bd.exe", false], ["bd.cmd", true]] : [["bd", false]];
-  for (const [executable, shell] of executables) {
-    const result = spawnSync(executable, ["version"], { encoding: "utf8", shell });
-    if (result.status === 0) return (result.stdout || result.stderr).trim() || "available";
-  }
-  return null;
-}
-
-function ensureBeadsCli() {
-  const existingVersion = beadsCliVersion();
-  if (existingVersion) return existingVersion;
-
-  const windows = process.platform === "win32";
-  const npm = windows ? "npm.cmd" : "npm";
-  const result = spawnSync(npm, ["install", "--global", "@beads/bd"], { stdio: "inherit", shell: windows });
-  return result.status === 0 ? beadsCliVersion() : null;
-}
-
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     const providers = options.provider || "all";
@@ -166,11 +147,11 @@ async function verify(projectRoot, options) {
     }
     await stat(join(projectRoot, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "code-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-design", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-figma", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-implement", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-visual-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "harness-maintenance", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
@@ -289,10 +270,6 @@ async function main() {
     console.log("Updated .codex/harness-lock.json");
     if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
     if (fullInstall) await noteCodexUserHooks(projectRoot, options);
-    const beadsVersion = ensureBeadsCli();
-    console.log(beadsVersion
-      ? `Beads CLI available: ${beadsVersion}`
-      : "Beads CLI installation failed. Install it manually with: npm install --global @beads/bd");
   } else if (options.command === "lock") {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);

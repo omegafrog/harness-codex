@@ -124,7 +124,6 @@ test('install and update never install Wake and Doctor checks only the configure
   const codex = join(bin, 'codex');
   await writeFile(codex, `#!/usr/bin/env node\nconst fs=require('node:fs'); const a=process.argv.slice(2); fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n'); if(a.join(' ')==='plugin list --json') console.log(JSON.stringify({installed:[{pluginId:'ponytail@ponytail',enabled:true}]})); else if(a.join(' ')==='plugin marketplace list --json') console.log(JSON.stringify({marketplaces:[{name:'ponytail',marketplaceSource:{source:'https://github.com/DietrichGebert/ponytail.git'}}]})); else if(a.join(' ')==='mcp get codex-wake --json') console.log(JSON.stringify({enabled:!process.env.WAKE_TEST_DISABLED,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:process.cwd()}}));\n`);
   await chmod(codex, 0o755);
-  const bd = join(bin, 'bd'); await writeFile(bd, '#!/bin/sh\necho test\n'); await chmod(bd, 0o755);
   const cli = join(sourceRoot, 'bin/harness-install.mjs');
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
   for (const command of ['install', 'update']) {

@@ -34,7 +34,6 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
     }
   }
   if (!hasTrackerConfiguration(config.tracker)) violations.push('Missing or invalid tracker configuration');
-  if (typeof config.beads?.enabled !== 'boolean') violations.push('Missing beads.enabled');
   if (typeof config.observability?.victorialogs?.local?.enabled !== 'boolean') violations.push('Missing observability.victorialogs.local.enabled');
   try {
     const { validateContextBudget } = await import('./skill-execution.mjs');

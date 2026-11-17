@@ -5,6 +5,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
 import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
+import { readSkillSessionJson } from './skill-execution.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_DOCUMENT } from './worktree-stages.mjs';
@@ -91,6 +92,20 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   const indexFile = await safeFile(root, `${base}/plans.md`);
   const designPaths = [];
   for (const path of planDesignCandidates(planSetId)) if (await exists(root, path)) designPaths.push(path);
+  const session = sessionDirectory(root, { create: false });
+  const statePath = join(session, 'runtime/orchestrator/state.json');
+  const hasState = await lstat(statePath).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  const state = hasState ? await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' }) : null;
+  const ui = state?.stages?.['tactical-ui'];
+  if (ui?.status === 'completed' && ui.code === 'OK' && ui.result_ref) {
+    const result = await readSkillSessionJson({ root, session_directory: session, path: ui.result_ref });
+    for (const artifact of result.artifacts.filter((item) => item.base === 'session' && item.kind === 'frontend_design_brief')) {
+      const path = `.io/${artifact.path}`;
+      const file = await safeFile(root, path);
+      requireValue(file.sha256 === artifact.sha256, 'Frontend design brief changed after tactical-ui completed');
+      designPaths.push(path);
+    }
+  }
   const specPaths = (await Promise.all(legacySpecPaths(planSetId).map((path) => exists(root, path)))).every(Boolean) ? legacySpecPaths(planSetId) : [];
   const plans = await discoverPlans({ root, base });
   requireValue(plans.length > 0, 'Plan set has no split plans');

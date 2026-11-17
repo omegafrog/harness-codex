@@ -8,9 +8,9 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
 // tracker-publish activates the published plan set so implementation can start: drafts become Issues, children
-// become sub-issues of the parent, and each Issue gets its Beads mirror with the plan dependencies. A rerun only
+// become sub-issues of the parent. A rerun only
 // completes what is missing, and the result passes the same tracker check implementation uses.
-test('installed tracker activation converts drafts, links sub-issues and creates dependent Beads mirrors once', async () => {
+test('installed tracker activation converts drafts and links sub-issues once', async () => {
   const sourceRoot = resolve('.');
   await mkdir('.io/runtime', { recursive: true });
   const directory = await mkdtemp(resolve('.io/runtime/tracker-activation-'));
@@ -26,6 +26,7 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     const { snapshotPlanSet } = await import(runtime('workflow/plan-review.mjs'));
     const { updateReviewAttempt } = await import(runtime('workflow/review-attempts.mjs'));
     const { preparePublicationDrafts, activatePublication, verifyActivatedPublication } = await import(runtime('tracker/publication.mjs'));
+    const { listPlanTickets } = await import(runtime('tracker/lifecycle.mjs'));
     await mkdir(join(root, '.io'), { recursive: true });
     await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'example' }));
     const plans = join(root, 'docs/plans/example'), specs = join(root, 'docs/specs/example'), drafts = join(root, '.io/runtime/to-ticket/drafts');
@@ -41,13 +42,12 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
     const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
-    await mkdir(join(root, '.beads'), { recursive: true });
 
-    // A fake GitHub Project, repository and Beads store that change as the commands run.
+    // A fake GitHub Project and repository that change as the commands run.
     const items = [];
     for (const [index, draft] of prepared.entries()) items.push({ id: `item-${index}`, status: 'Planned', content: { __typename: 'DraftIssue', title: draft.plan_id, body: (await readFile(join(root, '.io', draft.body_path), 'utf8')).replace(/\n+$/, '') } });
     const issues = new Map(); // number -> { id, subIssues: Set }
-    const beads = []; const calls = { convert: 0, subIssue: 0, beadsCreate: 0, dep: [], labels: new Set(), appliedLabels: [] };
+    const calls = { convert: 0, subIssue: 0, labels: new Set(), appliedLabels: [] };
     const fields = { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: name, name })) }] };
     const run = async (command, args) => {
       if (command === 'gh') {
@@ -84,13 +84,6 @@ test('installed tracker activation converts drafts, links sub-issues and creates
         if (query.includes('items(first:100')) return JSON.stringify({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: items.map((item) => ({ id: item.id, content: item.content, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: item.status, field: { id: 'status' } }] } })) } } } });
         throw new Error(`Unexpected gh query: ${query.slice(0, 80)}`);
       }
-      if (command === 'bd') {
-        const value = (flag) => args[args.indexOf(flag) + 1];
-        if (args[0] === 'list') return JSON.stringify(beads.filter((bead) => !args.includes('--external-ref') || bead.external_ref === value('--external-ref')));
-        if (args[0] === 'create') { calls.beadsCreate++; const bead = { id: `b-${beads.length + 1}`, status: value('--status'), external_ref: value('--external-ref'), metadata: JSON.parse(value('--metadata')), parent: args.includes('--parent') ? value('--parent') : null, dependencies: [] }; beads.push(bead); return `${bead.id}\n`; }
-        if (args[0] === 'show') return JSON.stringify([beads.find((bead) => bead.id === args[1])]);
-        if (args[0] === 'dep') { calls.dep.push(args.slice(2)); beads.find((bead) => bead.id === args[2]).dependencies.push({ id: args[3] }); return ''; }
-      }
       throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
     };
 
@@ -102,21 +95,18 @@ test('installed tracker activation converts drafts, links sub-issues and creates
     assert.deepEqual([...calls.labels].sort(), ['harness:intake', 'harness:plan', 'harness:plan-set']);
     assert.deepEqual(calls.appliedLabels, [['100', 'harness:plan-set'], ['101', 'harness:plan'], ['102', 'harness:plan']]);
     assert.deepEqual([...issues.get(100).subIssues].sort(), ['issue-101', 'issue-102']);
-    const byPlan = Object.fromEntries(beads.map((bead) => [bead.metadata.harness_plan_id, bead]));
-    assert.equal(byPlan['example:parent'].parent, null);
-    assert.equal(byPlan['example:auth'].parent, byPlan['example:parent'].id);
-    assert.deepEqual(calls.dep, [[byPlan['example:posts'].id, byPlan['example:auth'].id]], 'posts waits for auth, from the plan index');
-    assert.ok(beads.every((bead) => bead.status === 'open' && bead.metadata.harness_tracker_version === 1));
     await verifyActivatedPublication({ root, planSetId: 'example', run });
+    items[1].content.body = items[1].content.body.replace(/<!-- harness-plan [^\n]* -->/, '').trimEnd();
+    assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'example', run }), [
+      { plan_id: 'auth', ticket_ref: 'owner/repo#101' }, { plan_id: 'posts', ticket_ref: 'owner/repo#102' },
+    ], 'a unique reviewed body identifies a markerless legacy Issue');
 
     // A rerun converts, links and creates nothing more.
     await activatePublication({ root, planSetId: 'example', run });
     assert.equal(calls.convert, 3);
     assert.equal(calls.subIssue, 2);
-    assert.equal(calls.beadsCreate, 3);
     assert.equal(calls.labels.size, 3, 'reruns do not recreate taxonomy labels');
     assert.equal(calls.appliedLabels.length, 6, 'reruns safely reapply labels');
-    assert.equal(calls.dep.length, 1);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -135,37 +125,6 @@ test('local-markdown publication prepares no Issue drafts', async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-// local-markdown plan files are their own tickets; activation only creates the missing Beads mirrors and their dependencies.
-test('local-markdown activation creates one Beads mirror per plan with dependencies and reruns create nothing', async () => {
-  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { activateLocalMirrors } = await import('../.harness/src/tracker/publication.mjs');
-  const root = await mkdtemp(join(tmpdir(), 'harness-local-mirrors-'));
-  try {
-    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
-    await writeFile(join(root, 'docs/plans/set/plans.md'), '# Plans\n\n| 순서 | Plan | 범위 | 의존성 |\n|---|---|---|---|\n| 1 | [a](a.md) | A | 없음 |\n| 2 | [b](b.md) | B | a |\n');
-    const beads = []; const calls = [];
-    const run = async (command, args) => {
-      calls.push(args[0]);
-      if (args[0] === 'list') { const ref = args[args.indexOf('--external-ref') + 1]; return JSON.stringify(beads.filter((bead) => bead.external_ref === ref)); }
-      if (args[0] === 'create') { const id = `bead-${beads.length + 1}`; beads.push({ id, external_ref: args[args.indexOf('--external-ref') + 1], dependencies: [] }); return id; }
-      if (args[0] === 'show') return JSON.stringify([beads.find((bead) => bead.id === args[1])]);
-      if (args[0] === 'dep') { beads.find((bead) => bead.id === args[2]).dependencies.push({ id: args[3] }); return ''; }
-      throw new Error(`unexpected ${args[0]}`);
-    };
-    const first = await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a', 'b'], config: { beads: { enabled: true } }, run });
-    assert.equal(first.mirrors.length, 2);
-    assert.deepEqual(beads.map((bead) => bead.external_ref), ['docs/plans/set/a.md', 'docs/plans/set/b.md']);
-    assert.deepEqual(beads[1].dependencies, [{ id: 'bead-1' }]);
-    calls.length = 0;
-    await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a', 'b'], config: { beads: { enabled: true } }, run });
-    assert.equal(calls.filter((call) => ['create', 'dep'].includes(call)).length, 0, 'a rerun creates nothing');
-    calls.length = 0;
-    assert.deepEqual((await activateLocalMirrors({ root, planSetId: 'set', planIds: ['a'], config: { beads: { enabled: false } }, run })).mirrors, []);
-    assert.equal(calls.length, 0);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
 // implement-wrapper reads completed/OK after every single plan, so sync-contracts must wait for the plan set's own tracker.
 test('sync-contracts waits until every plan of the set is completed in the local tracker', async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
@@ -174,7 +133,7 @@ test('sync-contracts waits until every plan of the set is completed in the local
   const root = await mkdtemp(join(tmpdir(), 'harness-all-plans-'));
   try {
     await mkdir(join(root, '.harness'), { recursive: true });
-    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     await mkdir(join(root, 'docs/plans/set'), { recursive: true });
     const write = (id, status) => writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: ${status}\n---\n# ${id}\n`);
     await write('a', 'completed'); await write('b', 'planned');

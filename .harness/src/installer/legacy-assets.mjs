@@ -1,6 +1,10 @@
 // Harness files that nothing reads any more. An update removes them (backing up the content) even when they were edited
 // or lost their lock entry, because no setting in them can take effect after the change that retired them.
 export const RETIRED_ASSET_PATHS = new Set([
+  '.codex/internal-skills/beads/GUIDE.md',
+  '.codex/internal-skills/to-ticket/references/beads.md',
+  '.agents/skills/to-ticket/references/beads.md',
+  '.claude/skills/to-ticket/references/beads.md',
   '.codex/scripts/harness-stage-listen.mjs',
   '.codex/scripts/harness-agent-run.mjs',
   '.codex/scripts/harness-codex-run.mjs',
@@ -30,7 +34,7 @@ export const RETIRED_ASSET_PATHS = new Set([
 // Skills that no longer exist in `.codex/internal-skills`. Earlier releases also exposed some of them as public skills
 // (`.agents/skills/<name>`, `.claude/skills/<name>`); an update removes those managed copies, backing up edited ones,
 // and prunes the empty directories they leave behind.
-export const RETIRED_SKILL_NAMES = new Set(['spec-me', 'architecture-spec', 'architecture-review']);
+export const RETIRED_SKILL_NAMES = new Set(['beads', 'spec-me', 'architecture-spec', 'architecture-review']);
 
 // Identified from released source snapshots; unknown or modified content is never adopted.
 export const LEGACY_ASSETS = [

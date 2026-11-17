@@ -22,7 +22,7 @@
 ## 채택하지 않은 부분과 이유
 
 - pstack `architect`의 모든 설계마다 복수 모델·두 경쟁 안 생성: 작은 변경의 비용과 scaffolding을 늘린다. 기존 owner 확장부터 검토하고 실질적 대안/불확실성에만 비교를 적용한다.
-- pstack 조율 상태 저장소, PR 감시와 자동 merge: 기존 tracker/Beads/checkpoint/승인 경계를 중복한다.
+- pstack 조율 상태 저장소, PR 감시와 자동 merge: 기존 tracker/checkpoint/승인 경계를 중복한다.
 - 모든 Context의 서버화, 모든 도메인 타입의 클래스화, 사용되지 않는 repository/event/port 생성: 소유권·일관성·실제 경계 요구 없이 추가하지 않는다.
 - 메서드 수나 로그 수를 성능/추적성 지표로 사용: 사용자 경로의 실제 결과·workload·상관 ID와 rule별 검증 증거가 필요하다.
 - 모든 slice에 새로운 단위/E2E 테스트·UI/server를 만드는 방식: 각 검증 계약은 기존 검사 재사용 또는 해당 없음의 근거를 허용한다. 적용되는 사용자 경로의 미검증을 해당 없음으로 숨기지는 않는다.

@@ -181,46 +181,13 @@ export async function planDependencies(root, planSetId, planIds) {
   return dependencies;
 }
 
-// Turns an approved, published plan set into the tracker state implementation starts from: every Project draft
-// becomes a repository Issue, children are sub-issues of the parent, and each Issue has its Beads mirror with the
-// plan dependencies. Every step reads the current state first, so a rerun after a partial failure only does what
-// is missing. The result is verified with the same tracker check implementation uses.
-// local-markdown: each plan file is its own ticket, so activation only creates the Beads mirror that the lifecycle
-// sync (in-progress, completed) later updates. Nothing is created when Beads is disabled, and a rerun creates only
-// what is missing.
-export async function activateLocalMirrors({ root, planSetId, planIds, config, run = defaultCommand }) {
-  if (config.beads?.enabled === false) return { status: 'activated', plan_set_id: planSetId, mirrors: [] };
-  const bd = (args) => run('bd', args, root);
-  const mirrors = new Map();
-  for (const planId of planIds) {
-    const externalRef = `docs/plans/${planSetId}/${planId}.md`;
-    const existing = JSON.parse(await bd(['list', '--all', '--json', '--limit', '0', '--external-ref', externalRef])).filter((bead) => bead.external_ref === externalRef);
-    if (existing.length > 1) throw new Error(`Several Beads mirror ${externalRef}`);
-    if (existing.length) { mirrors.set(planId, existing[0].id); continue; }
-    const metadata = JSON.stringify({ harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `${planSetId}:${planId}` });
-    const id = (await bd(['create', '--title', `${planSetId} / ${planId}`, '--type', 'feature', '--status', 'open', '--external-ref', externalRef, '--metadata', metadata, '--silent'])).trim().split(/\s+/).pop();
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id || '')) throw new Error(`Beads did not return an ID for ${planId}`);
-    mirrors.set(planId, id);
-  }
-  for (const [planId, needs] of await planDependencies(root, planSetId, planIds)) {
-    const shown = JSON.parse(await bd(['show', mirrors.get(planId), '--json']));
-    const current = new Set((Array.isArray(shown) ? shown[0] : shown)?.dependencies?.map((dependency) => dependency.id || dependency.depends_on_id) || []);
-    for (const need of needs) {
-      if (current.has(mirrors.get(need))) continue;
-      try { await bd(['dep', 'add', mirrors.get(planId), mirrors.get(need)]); }
-      catch (error) { if (!/already|exists|duplicate/i.test(error.message)) throw error; }
-    }
-  }
-  return { status: 'activated', plan_set_id: planSetId, mirrors: planIds.map((planId) => ({ plan_id: planId, bead_id: mirrors.get(planId) })) };
-}
-
 export async function activatePublication({ root, planSetId, run = defaultCommand }) {
   const gh = (args, cwd) => run('gh', args, cwd);
   const ghJson = async (args) => JSON.parse(await gh(args, root));
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   if (config.tracker?.mode === 'local-markdown') {
     const snapshot = await snapshotPlanSet({ root, planSetId });
-    return activateLocalMirrors({ root, planSetId, planIds: snapshot.plans.map((plan) => plan.id), config, run });
+    return { status: 'activated', plan_set_id: planSetId, tickets: snapshot.plans.map((plan) => ({ plan_id: plan.id, ticket_ref: `docs/plans/${planSetId}/${plan.id}.md` })) };
   }
   const repository = config.tracker?.github?.repository;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Configured GitHub repository is required to activate the plan set');
@@ -282,33 +249,6 @@ export async function activatePublication({ root, planSetId, run = defaultComman
     if (response.errors?.length) throw new Error(`Linking ${child.plan_id} under the parent failed: ${response.errors.map((error) => error.message).join('; ')}`);
   }
   const refs = state.items.map((item) => `${repository}#${item.content.number}`);
-  if (config.beads?.enabled !== false) {
-    const bd = async (args) => run('bd', args, root);
-    const mirrors = new Map();
-    const statusOf = (item) => ({ 'In Progress': 'in_progress', Blocked: 'blocked', Done: 'closed' })[item.status] || 'open';
-    for (const item of [parent, ...children]) {
-      const externalRef = `https://github.com/${repository}/issues/${item.content.number}`;
-      const existing = JSON.parse(await bd(['list', '--all', '--json', '--limit', '0', '--external-ref', externalRef])).filter((bead) => bead.external_ref === externalRef);
-      if (existing.length > 1) throw new Error(`Several Beads mirror ${externalRef}`);
-      if (existing.length) { mirrors.set(item.plan_id, existing[0].id); continue; }
-      const metadata = JSON.stringify({ harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `${planSetId}:${item.plan_id === '@parent' ? 'parent' : item.plan_id}` });
-      const args = ['create', '--title', `${planSetId} / ${item.plan_id === '@parent' ? 'parent' : item.plan_id}`, '--type', item.plan_id === '@parent' ? 'epic' : 'feature', '--status', statusOf(item), '--external-ref', externalRef, '--metadata', metadata, '--silent'];
-      if (item.plan_id !== '@parent') args.push('--parent', mirrors.get('@parent'));
-      const id = (await bd(args)).trim().split(/\s+/).pop();
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id || '')) throw new Error(`Beads did not return an ID for ${item.plan_id}`);
-      mirrors.set(item.plan_id, id);
-    }
-    const dependencies = await planDependencies(root, planSetId, children.map((child) => child.plan_id));
-    for (const [planId, needs] of dependencies) {
-      const shown = JSON.parse(await bd(['show', mirrors.get(planId), '--json']));
-      const current = new Set((Array.isArray(shown) ? shown[0] : shown)?.dependencies?.map((dependency) => dependency.id || dependency.depends_on_id) || []);
-      for (const need of needs) {
-        if (current.has(mirrors.get(need))) continue;
-        try { await bd(['dep', 'add', mirrors.get(planId), mirrors.get(need)]); }
-        catch (error) { if (!/already|exists|duplicate/i.test(error.message)) throw error; }
-      }
-    }
-  }
   const { inspectTrackerSync } = await import('./lifecycle.mjs');
   const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
   if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
@@ -316,7 +256,7 @@ export async function activatePublication({ root, planSetId, run = defaultComman
 }
 
 // tracker-publish is complete only when implementation can start: every plan is an Issue in the Project and the
-// tracker check (Issue status and Beads mirror) passes.
+// tracker check passes.
 export async function verifyActivatedPublication({ root, planSetId, run = defaultCommand }) {
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   if (config.tracker?.mode !== 'github') return;

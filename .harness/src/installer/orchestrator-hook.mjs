@@ -7,6 +7,7 @@ const STATUS = 'Preparing Harness workflow composition';
 const EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
 const SCRIPT = 'harness-orchestrator-hook.mjs';
 const quote = (value) => process.platform === 'win32' ? `"${value.replaceAll('"', '\\"')}"` : `'${value.replaceAll("'", "'\\''")}'`;
+const retiredBeadsHook = (handler) => typeof handler?.command === 'string' && /^bd codex-hook (PostCompact|PreCompact|SessionStart|UserPromptSubmit)$/.test(handler.command);
 const owned = (handler) => handler?.statusMessage === STATUS && typeof handler.command === 'string' && handler.command.includes(SCRIPT);
 
 export function orchestratorHook(root) {
@@ -38,22 +39,33 @@ export async function inspectOrchestratorHook(root) {
     const handlers = (config.hooks[event] || []).flatMap((group) => group.hooks).filter(owned);
     return handlers.length === 1 && Object.entries(expected).every(([key, value]) => handlers[0][key] === value);
   });
-  return { valid, path, reason: valid ? 'orchestrator_hook_registered' : 'orchestrator_hook_missing_or_stale' };
+  const retired_hooks = Object.values(config.hooks).flatMap((groups) => Array.isArray(groups) ? groups.flatMap((group) => Array.isArray(group?.hooks) ? group.hooks : []) : []).filter(retiredBeadsHook).length;
+  return { valid, path, retired_hooks, reason: valid ? 'orchestrator_hook_registered' : 'orchestrator_hook_missing_or_stale' };
 }
 
-export async function syncOrchestratorHook(root, { noBackup = false } = {}) {
+export async function syncOrchestratorHook(root, { noBackup = false, register = true } = {}) {
   const directory = await lstat(join(root, '.codex'));
   if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Hook directory must be a real directory');
   const { path, text, config } = await readHooks(root);
-  if ((await inspectOrchestratorHook(root)).valid) return;
-  for (const event of EVENTS) {
+  let retired = false;
+  for (const [event, groups] of Object.entries(config.hooks)) {
+    if (!Array.isArray(groups) || groups.some((group) => !Array.isArray(group?.hooks))) continue;
+    config.hooks[event] = groups.flatMap((group) => {
+      const hooks = group.hooks.filter((handler) => !retiredBeadsHook(handler));
+      if (hooks.length !== group.hooks.length) retired = true;
+      return hooks.length || !group.hooks.some(retiredBeadsHook) ? [{ ...group, hooks }] : [];
+    });
+    if (!config.hooks[event].length) delete config.hooks[event];
+  }
+  if (!retired && (!register || (await inspectOrchestratorHook(root)).valid)) return;
+  if (register) for (const event of EVENTS) {
     const groups = (config.hooks[event] || []).flatMap((group) => {
       const hooks = group.hooks.filter((handler) => !owned(handler));
       return hooks.length || !group.hooks.some(owned) ? [{ ...group, hooks }] : [];
     });
     config.hooks[event] = [...groups, { hooks: [orchestratorHook(root)] }];
   }
-  if (text !== null && !noBackup) {
+  if (text !== null && (!noBackup || retired)) {
     const backup = `.codex/installer-backups/hooks-${randomUUID()}`;
     await assertWorkspaceTarget(root, `${backup}/hooks.json`);
     await mkdir(join(root, backup), { recursive: true, mode: 0o700 });

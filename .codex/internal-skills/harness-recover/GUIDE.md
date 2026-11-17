@@ -17,7 +17,7 @@ model_tier: high_performance
 | 설치 누락·손상·버전/관리 파일 충돌 | lock의 inventory·hash·로컬 수정과 doctor 결과. `npx --yes --package github:omegafrog/harness-codex harness-codex-doctor --project <workspace_root>` | [harness-maintenance](../harness-maintenance/GUIDE.md). lock이 없으면 설치 이력·백업으로 누락과 미설치를 구분한다. |
 | workspace/preflight 실패 | 대상 worktree를 `cwd`로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` | 실제 Git root·등록 worktree·설정과 오류에 표시된 gate를 대조한다. |
 | 준비 문서·실행 프로필·계약 문제 | `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/`와 doctor의 readiness 상세. 계약은 `node .codex/scripts/harness-contracts.mjs check --root <workspace_root>` | [setup의 준비 복구](../../../.codex/skills/setup/SKILL.md). 계약 수정이 필요할 때 [sync-contracts](../../../.codex/internal-skills/sync-contracts/GUIDE.md). |
-| ticket 상태·mirror 불일치 | `node .codex/scripts/harness-tracker.mjs read --root <workspace_root> --ticket <ref>` 및 `check --root <workspace_root>`. 설정된 tracker의 실제 ticket·의존성과 Beads mirror를 대조한다. | [beads](../beads/GUIDE.md). canonical 상태·mirror 상태·동기화 실패를 구분한다. |
+| ticket 상태 오류 | `node .codex/scripts/harness-tracker.mjs read --root <workspace_root> --ticket <ref>` 및 `check --root <workspace_root>`. 설정된 tracker의 실제 ticket·의존성을 확인한다. | `docs/agents/plan-status.md`의 상태 계약. tracker 상태와 동기화 실패를 구분한다. |
 | workflow 재개·완료 기록·review budget 문제 | 해당 `.codex/workflows/*.yaml`, 기존 session의 completion receipt·`runtime/plans/` journal/checkpoint·`runtime/reviews/` 기록과 현재 commit·Spec·plan·검증 증거 | 해당 공개 스킬의 재개 절차와 오류를 낸 CLI의 지원 복구 기능. journal의 권위 기록과 projection을 구분한다. |
 | plan review가 active로 남음 | 오류의 attempt·execution ID, 해당 리뷰 기록의 native reviewer, 소유 execution의 종료 증거와 reviewer 결과를 대조한다. | 종료된 Codex execution의 미완료 리뷰는 다음 plan review begin에서 이력을 보존하며 복구한다. 종료 여부가 불명확하거나 다른 provider면 자동 중단하지 않는다. |
 | worktree 경로·소유권·정리 실패 | Git 등록 목록·branch·HEAD·변경 파일·실행 중 writer와 Git common directory 아래 기존 `harness-workflows/sessions/`의 `worktree.json`·legacy `receipt.json`을 직접 읽는다. | [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md), [worktree CLI](../../../.codex/internal-skills/session-worktree/references/worktree-cli.md). 소유권과 실제 실행 종료를 확인한다. `list`도 session 디렉터리 생성·legacy receipt migration을 할 수 있으므로 승인 후 호출한다. |
@@ -33,7 +33,7 @@ model_tier: high_performance
 |---|---|---|---|---|
 | 정확한 파일 경로·ticket ref·worktree 경로/branch·기록 ID | 관찰한 오류와 충돌 | 생성·수정·삭제·상태 전환을 명시 | 기존 변경과 데이터의 보존 위치 및 복원 한계 | 원래 실패한 검사 |
 
-확인 범위에는 관리 파일·설정·ignore·준비 문서·로그/백업 생성, 설치/update/force/lock, ticket/Issue/Beads 생성·삭제·수정·동기화, workflow/journal/receipt·review 기록 변경, worktree/branch 생성·이동·제거, process 종료와 Git 변경을 포함한다. 호출할 다른 스킬이나 CLI의 부수 변경도 같은 표에 포함한다. 새로운 변경 대상이나 작업이 발견되면 변경안을 갱신해 추가 확인을 받는다.
+확인 범위에는 관리 파일·설정·ignore·준비 문서·로그/백업 생성, 설치/update/force/lock, ticket/Issue 생성·삭제·수정·동기화, workflow/journal/receipt·review 기록 변경, worktree/branch 생성·이동·제거, process 종료와 Git 변경을 포함한다. 호출할 다른 스킬이나 CLI의 부수 변경도 같은 표에 포함한다. 새로운 변경 대상이나 작업이 발견되면 변경안을 갱신해 추가 확인을 받는다.
 
 ## 3. 승인된 복구 실행
 

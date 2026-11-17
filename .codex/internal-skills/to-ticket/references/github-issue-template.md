@@ -80,7 +80,7 @@ Planned
 
 ## 의존한 결정
 
-- [technology/api/data/ui-handoff 결정 요약 또는 `해당 없음 — 이유`]
+- [technology/api/data/UI design 결정 요약 또는 `해당 없음 — 이유`]
 
 ## 완료 기준
 

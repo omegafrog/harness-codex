@@ -237,52 +237,6 @@ function setYamlScalar(source, path, value) {
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
-async function hasLocalBeadsDatabase(path, depth = 3) {
-  const entries = await readdir(path, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
-  for (const entry of entries) {
-    if (/^(embeddeddolt|dolt|.*\.db)$/i.test(entry.name)) return true;
-    if (depth > 0 && entry.isDirectory() && await hasLocalBeadsDatabase(join(path, entry.name), depth - 1)) return true;
-  }
-  return false;
-}
-
-async function setupBeads() {
-  let version = await commandResult('bd', ['version']);
-  if (version.status !== 0) {
-    console.log('Beads CLI가 설치되어 있지 않습니다.');
-    if (!await confirm('npm install --global @beads/bd 를 실행할까요?')) throw new Error('Beads CLI 설치가 승인되지 않아 setup을 중단했습니다.');
-    await exec('npm', ['install', '--global', '@beads/bd']);
-    version = await commandResult('bd', ['version']);
-    if (version.status !== 0) throw new Error(`Beads 설치 후에도 CLI 실행 실패: ${version.stderr || version.error?.message}`);
-  }
-
-  const current = await commandResult('bd', ['where']);
-  if (current.status === 0) {
-    await exec('bd', ['status']);
-    console.log('기존 Beads workspace를 보존했습니다.');
-    return;
-  }
-
-  const origin = await commandResult('git', ['remote', 'get-url', 'origin']);
-  if (origin.error && origin.status === null) throw origin.error;
-  if (origin.status !== 0 && !/No such remote/i.test(origin.stderr || '')) throw new Error(`Git origin 확인 실패: ${origin.stderr || `exit ${origin.status}`}`);
-  const remote = origin.status === 0 ? await commandResult('git', ['ls-remote', 'origin', 'refs/dolt/data']) : { status: 0, stdout: '' };
-  if (remote.status !== 0) throw new Error(`Beads 원격 workspace 확인 실패: ${remote.stderr || remote.error?.message || `exit ${remote.status}`}`);
-  if (remote.stdout.trim()) {
-    const preview = await commandResult('bd', ['bootstrap', '--dry-run']);
-    if (preview.status !== 0) throw new Error(`Beads bootstrap 사전 확인 실패: ${preview.stderr || preview.error?.message}`);
-    console.log(preview.stdout);
-    if (!await confirm('기존 원격 Beads workspace를 이 프로젝트에서 채택할까요?')) throw new Error('Beads 원격 채택이 승인되지 않아 setup을 중단했습니다.');
-    await exec('bd', ['bootstrap']);
-  } else {
-    if (await hasLocalBeadsDatabase(join(root, '.beads'))) throw new Error('기존 로컬 Beads database가 있으나 활성 workspace가 아닙니다. 데이터를 보존하고 setup을 중단했습니다.');
-    if (!await confirm('원격 데이터가 없습니다. 새 Beads workspace를 초기화할까요?')) throw new Error('Beads 초기화가 승인되지 않아 setup을 중단했습니다.');
-    await exec('bd', ['init', '--skip-agents', '--init-if-missing']);
-  }
-  await exec('bd', ['status']);
-  console.log('Beads workspace 준비 완료.');
-}
-
 async function prepareProjectFiles() {
   const seedFiles = [
     ['CONTEXT.md', '.codex/skills/setup/assets/CONTEXT.md'],
@@ -358,7 +312,7 @@ async function main() {
   const existingProvider = runtimeProviderId || currentProviderOf(config), existingModels = providerAgents(config, existingProvider);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
     { value: 'reuse', label: '기존 설정 사용' }, { value: 'reconfigure', label: '새로 설정' },
-  ], 'reuse', `현재 설정: provider ${existingProvider}, 모델 ${Object.entries(existingModels).filter(([key]) => key.endsWith('_model') && key !== 'default_model').map(([key, value]) => `${key}=${value}/${existingModels[key.replace('_model', '_reasoning_effort')] || '?'}`).join(', ') || '없음'}, tracker ${config.tracker?.mode || '미설정'}${config.tracker?.github?.repository ? ` (${config.tracker.github.repository} #${config.tracker.github.project_number || '?'})` : ''}, Beads ${config.beads?.enabled === true ? '사용' : config.beads?.enabled === false ? '끔' : '미설정'}, 관측성 ${config.observability?.victorialogs?.local?.enabled === true ? '사용' : config.observability?.victorialogs?.local?.enabled === false ? '끔' : '미설정'}`) === 'reuse';
+  ], 'reuse', `현재 설정: provider ${existingProvider}, 모델 ${Object.entries(existingModels).filter(([key]) => key.endsWith('_model') && key !== 'default_model').map(([key, value]) => `${key}=${value}/${existingModels[key.replace('_model', '_reasoning_effort')] || '?'}`).join(', ') || '없음'}, tracker ${config.tracker?.mode || '미설정'}${config.tracker?.github?.repository ? ` (${config.tracker.github.repository} #${config.tracker.github.project_number || '?'})` : ''}, 관측성 ${config.observability?.victorialogs?.local?.enabled === true ? '사용' : config.observability?.victorialogs?.local?.enabled === false ? '끔' : '미설정'}`) === 'reuse';
   // Reusing or reconfiguring decides which of the later questions exist, so each of them is marked as depending on it.
   if (hasExisting && native) baseDependencies = [lastQuestionId];
   const hasWorktreeDirectory = typeof config.worktrees?.directory === 'string' && isAbsolute(config.worktrees.directory) && !config.worktrees.directory.includes('\0');
@@ -513,9 +467,7 @@ async function main() {
   }
   });
 
-  const reuseBeads = reuse && typeof config.beads?.enabled === 'boolean';
   const reuseObservability = reuse && typeof config.observability?.victorialogs?.local?.enabled === 'boolean';
-  const useBeads = reuseBeads ? config.beads.enabled : await confirm('Beads를 프로젝트 작업 보드로 사용할까요?', config.beads?.enabled === false ? 'n' : 'y');
   const useVictoriaLogs = reuseObservability ? config.observability.victorialogs.local.enabled : await confirm('로컬 관측성(OpenTelemetry Collector + VictoriaLogs + VictoriaMetrics + 공식 MCP 2개)을 구성할까요?', config.observability?.victorialogs?.local?.enabled === false ? 'n' : 'y');
   // The port and project questions exist only when observability is configured.
   const observabilityDeps = reuseObservability || !native ? [] : [lastQuestionId];
@@ -566,12 +518,11 @@ async function main() {
   console.log(`  provider: ${provider}`);
   for (const [key, value] of Object.entries(selection)) console.log(`  ${key}: ${value}`);
   console.log(`  tracker: ${mode}`);
-  console.log(`  Beads: ${useBeads ? '사용' : '사용 안 함'}`);
   console.log(`  VictoriaLogs local: ${reuseObservability ? '기존 설정 유지' : useVictoriaLogs ? `logs ${logPort}/${retentionDays}일, metrics ${metricsPort}/${metricsRetention}일, OTLP ${otelPort}` : '건너뜀'}`);
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
   // The summary needs every answer, so while any question is pending the confirmation is asked in the same batch and
   // covers the answers given in it; it is asked again whenever a later round brings new or changed answers.
-  const summary = { worktrees: { directory: worktreeDirectory }, agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, beads: useBeads, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
+  const summary = { worktrees: { directory: worktreeDirectory }, agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
   const approved = await confirm('이 설정으로 계속할까요?', 'n', batch.length ? { provisional: true, note: '이 질문들에 대한 답으로 설정을 적용합니다. 요약은 모든 답을 받은 뒤에만 정해집니다.' } : summary, { dependsOn: [...unanswered], revisit: true });
   requireComplete();
   if (!approved) throw new Error('사용자가 설정 적용을 취소했습니다.');
@@ -580,7 +531,6 @@ async function main() {
     if (origin.status === 0) throw new Error('기존 origin을 보존했습니다. 새 repository를 연결하기 전에 origin을 확인하세요.');
     await exec('gh', ['repo', 'create', createRepository.repository, `--${createRepository.visibility}`, '--source', root, '--remote', 'origin']);
   }
-  if (useBeads) await setupBeads();
 
   const currentConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
@@ -598,7 +548,6 @@ async function main() {
       configText = setYamlScalar(configText, path, value);
     }
   }
-  if (!reuseBeads) configText = setYamlScalar(configText, ['beads', 'enabled'], useBeads);
   if (!reuseObservability) for (const provider of ['victorialogs', 'victoriametrics', 'opentelemetry']) configText = setYamlScalar(configText, ['observability', provider, 'local', 'enabled'], useVictoriaLogs);
   if (configureObservability) {
     configText = setYamlScalar(configText, ['observability', 'opentelemetry', 'local', 'port'], otelPort);
@@ -627,7 +576,6 @@ async function main() {
   await prepareProjectFiles();
   console.log(`Updated .harness/harness.yaml${oldConfig ? `; backup: ${backup}` : ''}`);
   console.log(`Tracker configured: ${mode}`);
-  if (useBeads) console.log('Beads workspace 상태를 확인했습니다.');
   if (configureObservability) {
     await exec(process.execPath, [join(root, '.codex/scripts/harness-victorialogs.mjs'), 'setup', '--root', root, '--port', String(logPort), '--retention-days', String(retentionDays), '--metrics-port', String(metricsPort), '--metrics-retention-days', String(metricsRetention), '--otel-port', String(otelPort), '--projects', JSON.stringify(projects)]);
     console.log('OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics·실행 profile·공식 MCP 두 개를 준비했습니다. victorialogs-local-setup 스킬로 기존 앱의 개발 로그를 연결하세요.');

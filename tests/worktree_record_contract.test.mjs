@@ -370,7 +370,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
-    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     await mkdir(join(root, 'docs/plans/calculator'), { recursive: true });
     await writeFile(join(root, 'docs/plans/calculator/calculator.md'), '---\nstatus: planned\n---\n# 계산기\n');
     const { syncTrackerStatus, readTrackerStatus } = await import(`file://${join(root, '.harness/src/tracker/lifecycle.mjs')}`);
@@ -747,6 +747,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const settledPath = join(tree.session_directory, 'runtime/orchestrator/state.json');
     const settledState = JSON.parse(await readFile(settledPath, 'utf8'));
     for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary', 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) settledState.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+    await mkdir(join(tree.session_directory, 'runtime/executions/tactical-ui'), { recursive: true });
+    await writeFile(join(tree.session_directory, 'runtime/executions/tactical-ui/result.json'), JSON.stringify({ artifacts: [], summary: 'UI 없음' }));
     await writeFile(settledPath, JSON.stringify(settledState, null, 2) + '\n');
     const ticketId = JSON.parse(await readFile(tree.worktree_ref, 'utf8')).plan_set_id;
     const specDir = join(tree.workspace, 'docs/specs', ticketId);

@@ -12,7 +12,8 @@
    | `docs/specs/<plan-set-id>/requirements.md` | BIZ·INV·EX·AC. 규칙의 정본이며 ticket은 규칙을 더하거나 조이지 않는다 |
    | `docs/specs/<plan-set-id>/tactical-design.md` | 1절 모델, 2절 Aggregate와 규칙 강제, 3절 Domain Service, 4절 Application Service, 5절 통합, 6절 컨텍스트 경계, 7절 결정 이력 |
    | `CONTEXT.md`, `CONTEXT-MAP.md` | 용어, 컨텍스트와 관계 방향 |
-   | `docs/implementation/<plan-set-id>/technology.md`, `ui-handoff.md`, `api.md`, `data.md` | 기술·UI·API·데이터 결정. ticket이 의존하는 결정이다 |
+   | `docs/implementation/<plan-set-id>/technology.md`, `api.md`, `data.md` | 기술·API·데이터 결정. ticket이 의존하는 결정이다 |
+   | `tactical-ui` 결과의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design |
 
    현행 `docs/contracts/`와 연결 다이어그램, 요청 원문도 읽는다. `stakeholder-analysis`가 `판정: 생략`이라 `requirements.md`와 `tactical-design.md`가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 문서의 빈칸이나 모순 때문에 분할을 정할 수 없으면 해당 규칙의 owner stage를 가리켜 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다.
 3. 활성 workspace의 `<workspace_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 ticket 예상 토큰과 산정 근거를 기록하고, 각 ticket이 한도 안에 들도록 나눈다.
@@ -23,7 +24,7 @@
 
 - 단위: 컨텍스트 하나가 소유한 BIZ 하나를 한 ticket으로 한다. 한도를 넘으면 그 BIZ의 INV·EX·AC 묶음으로 나눈다. ticket은 domain → application → `api.md`가 정한 entry → `data.md`가 정한 저장까지 수직으로 구현하며 계층별로 나누지 않는다. 한 ticket은 한 컨텍스트의 모델만 바꾸고 다른 컨텍스트는 6절이 허용한 공개 API·port로만 접한다.
 - 의존 순서: 5절 통합과 6절 코드 의존 방향을 따른다. 상류 컨텍스트가 공개하는 API·이벤트를 만드는 ticket이 그것을 쓰는 하류 ticket보다 먼저다. 하류가 소유하는 port와 조립 adapter는 상류 공개 API ticket에 의존한다. 즉시 일관성(`CON-xx`의 동기 확인·호출)은 쓰는 쪽이 제공하는 쪽에 의존한다. 순환 의존은 만들지 않고 의존하는 ticket은 `의존성` 절과 index에 선행 ticket ID로 적는다.
-- UI는 ticket으로 만들지 않는다. `ui-handoff.md`가 가리키는 독립 `frontend-design` 결과는 해당 ticket의 `의존한 결정`에서 참조만 한다.
+- UI가 필요하면 화면 구현 ticket을 만들고 YAML frontmatter에 `frontend: true`를 넣는다. 이 ticket은 필요한 backend ticket에 의존하고 design artifact와 화면 구현·visual review 완료 기준을 포함한다. backend 규칙과 API 구현을 이 ticket에 넣지 않아 visual review 전에 선행 ticket에서 사용할 수 있게 한다. 업무 규칙 소유권은 backend ticket에 두고 UI ticket은 표현·상호작용과 응답 표시를 검증한다. 구현과 visual review는 발행 뒤 독립 `frontend-design` workflow가 수행한다. UI가 없는 ticket에는 이 표시를 넣지 않는다.
 - 규칙 소유: 모든 BIZ·INV·EX·AC는 정확히 한 ticket이 소유하고 `소유 규칙과 검증` 표에 강제 위치와 검증 테스트를 적는다. 규칙의 강제 위치(`2.2`, 3절, 4절의 행위와 호출 순서)와 6절의 데이터 소유·허용 의존·경계 강제 방식은 원문대로 옮기고 줄이거나 바꾸지 않는다.
 - E2E ticket은 만들지 않는다. 사용자 경로 E2E는 사용자가 요청할 때 별도 `e2e-test` stage가 소유한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.
 
@@ -74,7 +75,7 @@ status: planned
 - 기술(`technology.md`): Node 20, `node --test`로 실행한다
 - API(`api.md`): `POST /posts`
 - 데이터(`data.md`): `posts` table, migration 포함
-- UI(`ui-handoff.md`): 해당 없음 — 서버 전용 요청
+- UI: 해당 없음 — 서버 전용 요청
 
 ## 의존성
 
@@ -101,6 +102,6 @@ status: planned
 
 GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-issue-template.md)에 맞춰 `<session_directory>/runtime/to-ticket/drafts/`에 저장한다. Parent 초안에 실제 설계 문서 경로와 적용 가능한 ticket-scoped SVG 링크를 넣고, diagram이 없으면 이유를 기록한다. 각 child 초안은 하나의 ticket을 표현한다.
 
-Canonical ticket과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical ticket 작성 뒤 같은 `to-ticket` execution이 독립 fresh reviewer를 호출하고 plan-review gate를 통과한다. Beads와 configured tracker 티켓 발행은 후속 `tracker-publish` workflow stage에서 수행한다.
+Canonical ticket과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical ticket 작성 뒤 같은 `to-ticket` execution이 독립 fresh reviewer를 호출하고 plan-review gate를 통과한다. configured tracker 티켓 발행은 후속 `tracker-publish` workflow stage에서 수행한다.
 
 `tracker.mode`가 `local-markdown`이면 각 ticket 파일(`docs/plans/<plan-set-id>/<plan-id>.md`)이 곧 tracker ticket이므로 위 모양대로 파일 맨 앞에 YAML frontmatter `---\nstatus: planned\n---`를 둔다. 이 frontmatter가 없으면 local tracker가 ticket을 읽지 못해 `tracker-publish`와 구현 단계가 시작되지 않는다. 리뷰 snapshot은 frontmatter의 `status`를 제외하므로 이 값은 리뷰 결과에 영향을 주지 않는다.

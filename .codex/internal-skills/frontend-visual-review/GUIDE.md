@@ -116,6 +116,8 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 
 ## Completion output
 
+`context.stage_id`가 `frontend-visual-review`이고 `context.plan_id`가 있으면 같은 ticket의 `frontend-implementation` 결과를 검토한다. PASS일 때만 `completed/OK`로 반환하고, BLOCKER 또는 MAJOR가 있으면 `blocked/DEPENDENCY_INCOMPLETE`로 수정 근거를 반환한다.
+
 - executed commands
 - routes / flows exercised
 - viewports inspected

@@ -96,11 +96,11 @@ node .codex/scripts/harness-contracts.mjs check --root /absolute/project --base-
 
 워크플로우 조율 효율 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/intent_and_excess_guidance.test.mjs tests/plan_review_spec_paths.test.mjs tests/spec_author_runner.test.mjs tests/tactical_ticket_flow.test.mjs`로 검사한다. `tests/tactical_ticket_flow.test.mjs`는 설치된 consumer에서 `tactical-to-code`의 결정 stage → `to-ticket` → 사용자 승인 뒤 `tracker-publish` → ticket별 `tactical-code`와 최종 gate를 Spec 없이 실행한다. 임시 consumer의 신규 설치·갱신, Doctor, Git 가시성, reviewer 생성 전 필수 기록 검사를 포함한다. 실제 모델 workflow E2E를 대신하지 않는다.
 
-## Tracker/Beads 공통 lifecycle 명령
+## Tracker 공통 lifecycle 명령
 
-새 tracker mirror를 연결한 뒤에는 개별 gh/bd status 명령 대신 다음 공통 명령을 사용한다. root는 실제 consumer worktree의 절대 경로이며 subprocess cwd도 같은 경로다. linked worktree에서는 Git common directory의 공유 Beads도 발견한다.
+tracker 상태 전이에는 다음 공통 명령을 사용한다. root는 실제 consumer worktree의 절대 경로이며 subprocess cwd도 같은 경로다.
 
-기존 mirror 유무와 관계없이 exact ticket 상태를 읽을 때는 다음 read-only 명령을 사용한다. GitHub는 설정된 repository와 issue number를 직접 조회하고 Project/field/item pagination이 불완전하면 누락으로 단정하지 않고 오류를 반환한다. local-markdown은 설정된 ticket 경로를 읽는다.
+exact ticket 상태를 읽을 때는 다음 read-only 명령을 사용한다. GitHub는 설정된 repository와 issue number를 직접 조회하고 Project/field/item pagination이 불완전하면 누락으로 단정하지 않고 오류를 반환한다. local-markdown은 설정된 ticket 경로를 읽는다.
 
 ```sh
 node .codex/scripts/harness-tracker.mjs read --root /absolute/project --ticket owner/repo#123
@@ -108,19 +108,16 @@ node .codex/scripts/harness-tracker.mjs read --root /absolute/project --ticket o
 
 ```sh
 node .codex/scripts/harness-tracker.mjs check --root /absolute/project
-node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --status in-progress --phase implementation --classification committed
-node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --phase test
-node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --phase review
+node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --status in-progress
 node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --status completed
 ```
 
-GitHub mode는 configured Project/Workflow Status의 네 option을 확인하고 exact Issue project item만 변경한다. 기본 Status나 Issue closure를 변경하지 않는다. local-markdown mode는 configured directory 안의 ticket YAML frontmatter 상태를 바꾸고 본문을 보존한다. Beads metadata는 `harness_tracker_version: 1`, `harness_phase`, `harness_classification`이다. 참조 누락·중복·상태/metadata 불일치·권한/API 실패는 오류다.
+GitHub mode는 configured Project/Workflow Status의 네 option을 확인하고 exact Issue project item만 변경한다. 기본 Status도 실행 상태에 맞추며 Issue closure는 변경하지 않는다. local-markdown mode는 configured directory 안의 ticket YAML frontmatter 상태를 바꾸고 본문을 보존한다. 참조 누락·중복·권한/API 실패는 오류다.
 
-부분 성공은 `<session_directory>/runtime/tracker-sync/` journal에 기록한다. canonical을 rollback하지 않고 같은 `sync --ticket <ref>`를 status 없이 실행하면 최신 canonical 상태를 Beads에 반영한다. 실패 기록에 phase/classification이 있으면 같은 flag로 재전달한다. `check`는 외부 상태를 변경하지 않는다. workflow 시작 preflight·dispatch와 종료 명령은 tracker_sync를 실제 검사한다. legacy 데이터는 migration하지 않는다.
+부분 성공은 `<session_directory>/runtime/tracker-sync/` journal에 기록한다. 실패 시 tracker의 실제 상태를 확인하고 재시도한다. `check`는 외부 상태를 변경하지 않는다. workflow 시작 preflight·dispatch와 종료 명령은 tracker_sync를 실제 검사한다. legacy 데이터는 migration하지 않는다.
 
 GitHub 보드 UI는 group-by/filter를 configured Workflow Status로 선택하고 기본 Status 열을 숨긴다. view 설정은 `gh project item-edit`의 상태 갱신과 별개이며 이 CLI는 지원하지 않는 view 변경을 수행했다고 보고하지 않는다. 기존 보드·item 데이터는 이번 변경으로 재작성하지 않는다.
 
-이 저장소의 Beads `status.custom`은 빈 문자열로 설정해 backlog/test/review custom 상태를 제거했다. `bd statuses --json`에서 custom_statuses가 없는 것을 확인했다. Issue 데이터는 이동하지 않았다. 이 환경에서는 unset만 하면 이전 custom 목록이 다시 보였으므로 명시적으로 빈 값을 기록했다. Beads 내장 deferred/pinned/hooked는 도구 기능으로 남지만 Harness tracker lifecycle에는 사용하지 않는다.
 
 ## 세션 파일 출력 경계
 
@@ -136,7 +133,7 @@ Git 프로젝트는 `<git-common-dir>/harness-workflows/sessions/<workspace-hash
 
 모든 하위 agent/tool에 `workspace_root`와 `session_directory`를 명시한다. `tmp/`를 만든 뒤 각 subprocess에 `HARNESS_SESSION_DIR=<session_directory>`, `TMPDIR`, `TMP`, `TEMP=<session_directory>/tmp`를 전달한다. 서버 로그 redirect와 browser screenshot/trace/download/output directory도 resolver가 반환한 `runtime/<작업>/` 아래로 지정한다. 출력 위치를 지정할 수 없는 도구는 task 소유 artifact가 경계 밖으로 생기는지 확인하고, 제어할 수 없으면 실행을 멈추고 제약을 보고한다. 외부 도구 자체의 전역 cache/telemetry까지 OS sandbox로 차단하는 기능은 아니다.
 
-승인된 source·Spec·통합 계약·렌더된 제품 다이어그램·지식 registry는 선언된 최종 프로젝트 경로에 둔다. Git/Beads 원장과 설치 관리 metadata는 각 도구의 관리 경로를 유지한다. 이것을 로그 출력 우회로 사용하지 않는다. 경로 탈출·symlink·공유 hardlink 출력 대상은 공통 resolver가 거부한다.
+승인된 source·Spec·통합 계약·렌더된 제품 다이어그램·지식 registry는 선언된 최종 프로젝트 경로에 둔다. Git 원장과 설치 관리 metadata는 각 도구의 관리 경로를 유지한다. 이것을 로그 출력 우회로 사용하지 않는다. 경로 탈출·symlink·공유 hardlink 출력 대상은 공통 resolver가 거부한다.
 
 ## 테스트·서비스 실행 계약
 
@@ -221,16 +218,6 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 `diagnostic-log-check`는 사용자 v1의 일곱 이벤트, 필수 Resource/Attributes, outcome·숫자/boolean·Trace ID·timestamp 및 offline JSONL CLI를 집중 검증한다. `npm test`를 사용하며 Docker/앱/인프라는 필요하지 않다. 소비 프로젝트 setup은 스키마·예시·수집 매핑과 workspace별 구현/테스트 메모리를 설치하고 `victorialogs-diagnostic-logs` profile을 생성한다. 그 profile의 HARNESS_DIAGNOSTIC_LOG_FILE은 실제 emitter 원본 JSONL 경로다. 원본 타입 검사와 VictoriaLogs 저장 후 string 표현을 구분한다. 일반 unit 검증이나 실패 학습을 이유로 E2E를 추가 실행하지 않는다.
 
-
-## Beads 자동 백업의 table file 누락 복구
-
-`auto-backup failed ... .beads/backup/<table-file>`가 발생하면 작업 상태 변경 성공과 백업 실패를 구분한다. 운영 DB를 재초기화하거나 원격 sync/migration으로 우회하지 않는다.
-
-1. `bd export --output <session_directory>/runtime/beads-before-repair.jsonl`로 읽기 가능한 이슈를 보존하고 `bd backup status --json`, `.beads/backup/manifest`와 실제 파일을 대조한다.
-2. manifest가 참조하는 table file이 없으면 손상된 `.beads/backup/` 전체를 `<session_directory>/runtime/beads-recovery/`에 보존한다. 운영 `.beads/embeddeddolt/`는 건드리지 않는다.
-3. 로컬 Dolt-native 복구 사본은 `bd backup init <session_directory>/runtime/beads-recovery/backup`과 `bd backup sync`로 생성할 수 있다. 이 명시적 destination과 `.beads/backup/`의 자동 백업은 별도이므로 한쪽 성공만으로 다른 쪽 복구를 주장하지 않는다.
-4. 자동 백업은 손상 저장소를 보존해 옮긴 뒤 정상 Beads 쓰기에서 재생성되는지 확인한다. 재현 검증 때문에 `backup.interval`을 일시 변경했다면 원래 설정으로 복구한다. 후속 자동 백업의 경고 부재와 `backup_state.json`의 commit/timestamp 갱신을 모두 확인한다.
-5. 복구 후 다시 export해 이슈 ID와 비대상 이슈 내용을 비교한다. 명시적 backup sync도 재확인한다. 백업 실패를 숨기기 위해 `backup.enabled`를 끄지 않는다. 별도 원격 백업·이전·복원은 이 절차의 범위가 아니다.
 
 ### WSL·Docker Desktop 네트워크 검증 근거
 

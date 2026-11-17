@@ -114,6 +114,10 @@ try {
     if (orderViolation) throw new Error(orderViolation);
     const tacticalViolation = flow ? tacticalImplementationOrderViolation((flow.state || flow).stages, input.context?.stage_id || input.skill) : null;
     if (tacticalViolation) throw new Error(tacticalViolation);
+    if (flow) {
+      const { assertFrontendTicketOrder } = await import('../../.harness/src/workflow/stage-input.mjs');
+      await assertFrontendTicketOrder({ root, session, state: flow.state || flow, stageId: input.context?.stage_id || input.skill, planSetId: input.context?.plan_set_id, planId: input.context?.plan_id });
+    }
     await writeOutputSchema({ root, input, prefix: `runtime/executions/${id}`, path: paths.files.schema, provider: binding.provider });
     const guide = [`.codex/internal-skills/${input.skill}/GUIDE.md`, `.agents/skills/${input.skill}/SKILL.md`, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);

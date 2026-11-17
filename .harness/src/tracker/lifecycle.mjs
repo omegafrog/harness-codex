@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, writeFile, lstat, rename, unlink } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, dirname } from 'node:path';
+import { readFile, writeFile, lstat, rename, unlink, readdir } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -9,10 +9,8 @@ import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
 
 const exec = promisify(execFile);
-export const TRACKER_STATES = Object.freeze({ planned: ['Planned', 'open'], 'in-progress': ['In Progress', 'in_progress'], blocked: ['Blocked', 'blocked'], completed: ['Done', 'closed'] });
+export const TRACKER_STATES = Object.freeze({ planned: ['Planned'], 'in-progress': ['In Progress'], blocked: ['Blocked'], completed: ['Done'] });
 const githubBoardStatus = Object.freeze({ planned: 'Todo', 'in-progress': 'In Progress', blocked: 'In Progress' });
-const PHASES = new Set(['planning', 'implementation', 'test', 'review']);
-const CLASSIFICATIONS = new Set(['backlog', 'committed']);
 const canonical = (value) => Object.keys(TRACKER_STATES).find((key) => key === value || TRACKER_STATES[key][0] === value);
 const defaultRun = async (command, args, cwd) => (await exec(command, args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
 const json = async (run, command, args, root) => JSON.parse(await run(command, args, root));
@@ -73,18 +71,6 @@ function githubReference(config, ref) {
   if (!match || match[1] !== settings.repository) throw new Error('Ticket reference must match configured repository');
   return { settings, owner: match[1].split('/')[0], repo: match[1].split('/')[1], number: Number(match[2]) };
 }
-function beadsExternalRef(config, ref) {
-  if (config.mode !== 'github') return ref;
-  const { settings, number } = githubReference(config, ref);
-  return `https://github.com/${settings.repository}/issues/${number}`;
-}
-function trackerReference(config, externalRef) {
-  if (config.mode !== 'github') return externalRef;
-  const match = externalRef.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/([1-9]\d*)$/);
-  if (!match || match[1] !== config.github?.repository) throw new Error('Beads external_ref does not match the configured GitHub repository');
-  return `${match[1]}#${match[2]}`;
-}
-
 async function githubTickets(root, config, refs, run, context) {
   const { settings } = githubReference(config, refs[0]);
   const { project, field, statusField } = await githubProjectMetadata(root, settings, run, context);
@@ -119,36 +105,61 @@ export async function readTrackerStatus({ workspace_root: root, ticket_ref: ref,
     return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, project_status: tracker.default_status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
   } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
 }
-async function mirror(root, ref, run, config) {
-  const externalRef = beadsExternalRef(config, ref);
-  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--external-ref', externalRef], root);
-  const bead = single(items.filter((item) => item.external_ref === externalRef), 'Beads external_ref');
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(bead.id || '')) throw new Error('Invalid Beads ID');
-  if (bead.metadata?.harness_tracker_version !== 1) throw new Error('Ticket is not registered for lifecycle v1');
-  return bead;
-}
-// A stage implements one plan. Its tickets are checked against that plan so a guessed Issue number cannot move another
-// plan's ticket (the community-comment stage once completed the e2e Issue).
-function assertTicketPlan(bead, expectedPlanId, ref) {
-  if (!expectedPlanId) return;
-  const actual = bead?.metadata?.harness_plan_id;
-  if (actual !== expectedPlanId) throw new Error(`Ticket ${ref} belongs to plan ${actual || 'unknown'}, but this execution implements ${expectedPlanId}; take the ticket from harness-context.mjs plan_tickets`);
-}
-
-// Plan ID → ticket reference of one plan set, read from the Beads mirrors that tracker-publish created.
 export async function listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run = defaultRun } = {}) {
   if (!planSetId) return [];
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId)) throw new Error('Invalid plan set ID');
   const config = await projectConfig(root);
-  const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
-  return items
-    .filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`) && item.external_ref)
-    .map((item) => ({ plan_id: item.metadata.harness_plan_id.slice(planSetId.length + 1), ticket_ref: trackerReference(config, item.external_ref), bead_id: item.id, bead_status: item.status }))
-    .sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+  if (config.mode === 'local-markdown') {
+    const names = await readdir(resolve(root, 'docs/plans', planSetId));
+    return names.filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => ({ plan_id: name.slice(0, -3), ticket_ref: `docs/plans/${planSetId}/${name}` })).sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+  }
+  if (config.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
+  const settings = config.github;
+  const { project } = await githubProjectMetadata(root, settings, run, {});
+  const tickets = new Map();
+  let cursor = null;
+  const cursors = new Set();
+  do {
+    const query = `query { node(id:${JSON.stringify(project.id)}) { ... on ProjectV2 { items(first:100, after:${JSON.stringify(cursor)}) { pageInfo { hasNextPage endCursor } nodes { content { __typename ... on Issue { number url body } } } } } } }`;
+    const response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`], root);
+    const page = response.data?.node?.items;
+    if (response.errors?.length || !Array.isArray(page?.nodes) || typeof page.pageInfo?.hasNextPage !== 'boolean') throw new Error('Incomplete Project ticket response');
+    for (const { content } of page.nodes) {
+      if (content?.__typename !== 'Issue') continue;
+      for (const match of (content.body || '').matchAll(/<!-- harness-plan ([^\n]*?) -->/g)) {
+        let identity;
+        try { identity = JSON.parse(match[1]); } catch { throw new Error('Invalid plan identity in Project Issue'); }
+        if (identity.plan_set_id !== planSetId || identity.plan_id === '@parent') continue;
+        if (typeof identity.plan_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(identity.plan_id) || (!Number.isSafeInteger(content.number) || content.number <= 0) || content.url !== `https://github.com/${settings.repository}/issues/${content.number}`) throw new Error('Invalid plan Issue identity');
+        if (tickets.has(identity.plan_id)) throw new Error(`Duplicate Issue for plan: ${identity.plan_id}`);
+        tickets.set(identity.plan_id, { plan_id: identity.plan_id, ticket_ref: `${settings.repository}#${content.number}` });
+      }
+    }
+    cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+    if (page.pageInfo.hasNextPage && (!cursor || cursors.has(cursor))) throw new Error('Invalid Project pagination');
+    cursors.add(cursor);
+  } while (cursor);
+  // Older publications can be identified only by a unique match to their reviewed publication body.
+  const planDirectory = resolve(root, 'docs/plans', planSetId);
+  const names = await readdir(planDirectory).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+  const missing = names.filter((name) => name.endsWith('.md') && name !== 'plans.md' && !tickets.has(name.slice(0, -3)));
+  if (missing.length) {
+    const { inspectPublication } = await import('./publication.mjs');
+    let publication;
+    try { publication = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) }); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const item of publication?.items || []) {
+      if (item.plan_id === '@parent' || tickets.has(item.plan_id) || item.content?.__typename !== 'Issue' || !item.body_matches) continue;
+      const { number, url } = item.content;
+      if (!Number.isSafeInteger(number) || number <= 0 || url !== `https://github.com/${settings.repository}/issues/${number}`) throw new Error('Invalid legacy plan Issue identity');
+      tickets.set(item.plan_id, { plan_id: item.plan_id, ticket_ref: `${settings.repository}#${number}` });
+    }
+  }
+  return [...tickets.values()].sort((a, b) => a.plan_id.localeCompare(b.plan_id));
 }
 
 // Canonical tracker status of every plan of a plan set, read from the configured tracker (never from a model's report).
-// local-markdown: the plan document's own frontmatter status. github: the Workflow Status of the Issue that the Beads
-// mirror maps to the plan. A plan without a mapped ticket is reported with ticket_ref null; unreadable trackers throw.
+// local-markdown: the plan document's own frontmatter status. github: the Workflow Status of the mapped Issue. A plan without a mapped ticket is reported with ticket_ref null; unreadable trackers throw.
 export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run = defaultRun } = {}) {
   if (!planSetId || !Array.isArray(planIds)) throw new Error('A plan set ID and its plan IDs are required');
   const config = await projectConfig(root);
@@ -171,91 +182,47 @@ export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set
 }
 
 // Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
-// same plan set), and whether each one's Beads ticket is closed. The stage reads this answer instead of matching Issue
+// same plan set), and whether each ticket is completed. The stage reads this answer instead of matching Issue
 // numbers to plans by hand, which has mistaken the plan's own ticket for a prerequisite.
 export async function planDependencies({ workspace_root: root, plan_set_id: planSetId, plan_id: planId, run = defaultRun } = {}) {
   if (!planSetId || !planId) throw new Error('dependencies needs a plan-set worktree and a plan ID');
-  const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run });
-  const known = new Set(tickets.map((ticket) => ticket.plan_id));
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan identity');
+  const names = await readdir(resolve(root, 'docs/plans', planSetId));
+  const known = new Set(names.filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)));
   const text = await readFile(resolve(root, 'docs/plans', planSetId, `${planId}.md`), 'utf8');
   const section = /^##\s+의존성[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(text)?.[1] ?? '';
   // Only sentences that say "선행" name prerequisites; plans mentioned elsewhere (downstream checks) are not dependencies.
   const prerequisite = section.split(/(?<=[.。])\s+|\n+/).filter((sentence) => sentence.includes('선행')).join(' ');
   const ids = [...new Set([...prerequisite.matchAll(/`([A-Za-z0-9][A-Za-z0-9._-]*)`/g)].map((match) => match[1]))].filter((id) => id !== planId && known.has(id));
-  const dependencies = ids.map((id) => {
-    const ticket = tickets.find((item) => item.plan_id === id);
-    return { plan_id: id, ticket_ref: ticket.ticket_ref, bead_status: ticket.bead_status, complete: ticket.bead_status === 'closed' };
-  });
+  const statuses = await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: ids, run });
+  const dependencies = statuses.map((ticket) => ({ ...ticket, complete: ticket.status === 'completed' }));
   const incomplete = dependencies.filter((item) => !item.complete);
   return { status: incomplete.length ? 'blocked' : 'pass', plan_id: planId, dependencies, incomplete: incomplete.map((item) => item.plan_id) };
 }
 
-function metadataValid(bead) {
-  if (!PHASES.has(bead.metadata?.harness_phase)) throw new Error('Invalid harness_phase');
-  if (!CLASSIFICATIONS.has(bead.metadata?.harness_classification)) throw new Error('Invalid harness_classification');
-}
-
-async function worktreePlanSetId(root) {
-  try { return JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id || null; }
-  catch { return null; }
-}
-
 export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, run = defaultRun } = {}) {
   try {
+    const config = await projectConfig(root);
     let refs = ticket_refs;
-    let config = null;
-    let beadsDisabled = false;
-    if (isAbsolute(root || '')) {
-      try { beadsDisabled = parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).beads?.enabled === false; }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
     if (refs === null) {
-      if (beadsDisabled) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
-      // Only versioned mirrors belong to this policy; older/local operational Beads are untouched.
-      if (!isAbsolute(root || '')) throw new Error('Absolute workspace_root is required');
-      let beadsRoot = resolve(root, '.beads');
-      try { await lstat(beadsRoot); } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        const common = (await run('git', ['rev-parse', '--git-common-dir'], root)).trim();
-        beadsRoot = resolve(dirname(resolve(root, common)), '.beads');
-        try { await lstat(beadsRoot); } catch (sharedError) {
-          if (sharedError.code !== 'ENOENT') throw sharedError;
-          return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
-        }
-      }
-      config = await projectConfig(root);
-      const items = await json(run, 'bd', ['list', '--all', '--json', '--limit', '0', '--metadata-field', 'harness_tracker_version=1'], root);
-      // In a workflow worktree the check covers that plan set's tickets: tickets of other, finished plan sets are not this
-      // workflow's concern, and reading every mirror in the repository took longer each run (about a minute at 44 mirrors).
-      const planSetId = await worktreePlanSetId(root);
-      // A stage implements one plan, so without an explicit ticket its check covers only that plan's mirror; the other
-      // plans' mirrors belong to other stages and would always trip the plan assertion below.
-      const planScoped = expected_plan_id ? items.filter((item) => item.metadata?.harness_plan_id === expected_plan_id) : null;
-      const scoped = planScoped ?? (planSetId ? items.filter((item) => String(item.metadata?.harness_plan_id || '').startsWith(`${planSetId}:`)) : items);
-      if (scoped.some((item) => !item.external_ref)) throw new Error('Managed mirror is missing external_ref');
-      refs = scoped.map((item) => trackerReference(config, item.external_ref));
+      let planSetId;
+      try { planSetId = JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!planSetId && expected_plan_id) planSetId = expected_plan_id.slice(0, expected_plan_id.lastIndexOf(':'));
+      const tickets = planSetId ? await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run }) : [];
+      refs = tickets.filter((ticket) => !expected_plan_id || `${planSetId}:${ticket.plan_id}` === expected_plan_id).map((ticket) => ticket.ticket_ref);
     }
     if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
-    if (!refs.length) return { status: 'pass', reason: 'no_managed_tracker_tickets', violations: [] };
-    config ||= await projectConfig(root);
-    const tickets = [], context = {};
-    const githubStatuses = config.mode === 'github' ? await githubTickets(root, config, refs, run, context) : null;
-    for (const ref of refs) {
-      if (beadsDisabled) {
-        const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
-        tickets.push({ ref, status: tracker.status });
-        continue;
-      }
-      const bead = await mirror(root, ref, run, config);
-      assertTicketPlan(bead, expected_plan_id, ref);
-      const tracker = githubStatuses ? githubStatuses.get(ref) : await readTracker(root, config, ref, run, context);
-      metadataValid(bead);
-      if (tracker.status === 'in-progress' && bead.metadata.harness_classification === 'backlog') throw new Error(`Backlog cannot be executing: ${ref}`);
-      if (bead.status !== TRACKER_STATES[tracker.status][1]) throw new Error(`Mirror mismatch: ${ref}; canonical=${tracker.status}, beads=${bead.status}`);
-      tickets.push({ ref, bead_id: bead.id, status: tracker.status });
+    if (expected_plan_id && refs.length) {
+      const separator = expected_plan_id.lastIndexOf(':');
+      const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: expected_plan_id.slice(0, separator), run });
+      if (refs.some((ref) => !tickets.some((ticket) => ticket.plan_id === expected_plan_id.slice(separator + 1) && ticket.ticket_ref === ref))) throw new Error('Ticket does not belong to the expected plan');
     }
-    return { status: 'pass', reason: beadsDisabled ? 'tracker_tickets_current' : 'tracker_mirrors_current', violations: [], tickets };
-  } catch (error) { return { status: 'fail', reason: 'tracker_mirror_unresolved', violations: [error.message] }; }
+    const context = {};
+    const statuses = config.mode === 'github' && refs.length ? await githubTickets(root, config, refs, run, context) : null;
+    const tickets = [];
+    for (const ref of refs) tickets.push({ ref, status: (statuses ? statuses.get(ref) : await readTracker(root, config, ref, run, context)).status });
+    return { status: 'pass', reason: refs.length ? 'tracker_tickets_current' : 'no_managed_tracker_tickets', violations: [], tickets };
+  } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', violations: [error.message] }; }
 }
 
 // Records a note on the ticket (for example what an implementation-only repair changed) without touching the plan.
@@ -281,20 +248,18 @@ export async function commentTracker({ workspace_root: root, ticket_ref: ref, bo
 
 export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status = null, phase = null, classification = null, expected_plan_id = null, run = defaultRun } = {}) {
   if (status !== null && !Object.hasOwn(TRACKER_STATES, status)) throw new Error('Use planned, in-progress, blocked, or completed');
-  if (phase !== null && !PHASES.has(phase)) throw new Error('Invalid phase');
-  if (classification !== null && !CLASSIFICATIONS.has(classification)) throw new Error('Invalid classification');
+  if (phase !== null || classification !== null) throw new Error('Tracker phase and classification were retired with Beads; no metadata was changed');
   const config = await projectConfig(root);
-  const beadsEnabled = parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).beads?.enabled !== false;
-  const bead = beadsEnabled ? await mirror(root, ref, run, config) : null;
-  if (bead) assertTicketPlan(bead, expected_plan_id, ref);
-  if (bead) metadataValid({ metadata: { ...bead.metadata, ...(phase ? { harness_phase: phase } : {}), ...(classification ? { harness_classification: classification } : {}) } });
+  if (expected_plan_id) {
+    const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: [ref], expected_plan_id, run });
+    if (check.status !== 'pass') throw new Error(check.violations.join('; '));
+  }
   const context = {};
   let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
   try {
     const desired = status || tracker.status;
-    if (desired === 'in-progress' && (classification || bead?.metadata.harness_classification) === 'backlog') throw new Error('Commit backlog classification before starting execution');
     await writer.append('tracker_sync_started', { ticket_ref: ref, desired, previous: tracker.status, phase, classification }, { critical: true });
     if (config.mode === 'github') {
       if (tracker.status !== desired) {
@@ -323,31 +288,11 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     tracker = await readTracker(root, config, ref, run, context);
     if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
     if (tracker.statusField && githubBoardStatus[desired] && tracker.default_status !== githubBoardStatus[desired]) throw new Error('GitHub Project Status write did not verify');
-    if (!bead) {
-      const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
-      await writer.append('tracker_sync', result, { critical: true });
-      return result;
-    }
-    const expected = TRACKER_STATES[desired][1];
-    if (bead.status !== expected) {
-      await run('bd', expected === 'closed' ? ['close', bead.id, '--reason', 'Canonical tracker implementation verification completed'] : ['update', bead.id, '--status', expected], root);
-    }
-    if (phase || classification) {
-      const args = ['update', bead.id];
-      if (phase) args.push('--set-metadata', `harness_phase=${phase}`);
-      if (classification) args.push('--set-metadata', `harness_classification=${classification}`);
-      await run('bd', args, root);
-    }
-    const verified = single(await json(run, 'bd', ['show', bead.id, '--json'], root), 'Beads verification');
-    if (verified.external_ref !== beadsExternalRef(config, ref) || verified.status !== expected || (phase && verified.metadata?.harness_phase !== phase) || (classification && verified.metadata?.harness_classification !== classification)) throw new Error('Beads write did not verify');
-    metadataValid(verified);
-    const current = await readTracker(root, config, ref, run, context);
-    if (current.status !== desired) throw new Error('Canonical state changed during mirror write; retry from the latest state');
-    const result = { status: 'pass', reason: 'tracker_mirror_synced', ticket_ref: ref, canonical_status: desired, bead_id: bead.id, tracker_updated, evidence_path: evidence };
+    const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
     return result;
   } catch (error) {
-    const result = { status: 'fail', reason: 'tracker_mirror_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Rerun sync without --status, preserving recorded --phase/--classification; mirror the latest canonical state and never roll it back', evidence_path: evidence };
+    const result = { status: 'fail', reason: 'tracker_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Read the latest tracker status before retrying', evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
     return result;
   } finally { await writer.close(); }

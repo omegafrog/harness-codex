@@ -155,11 +155,9 @@ test('installed stage accepts changed documents while preserving review snapshot
     const linked = join(root, '.io/linked');
     await mkdir(join(root, '.io'), { recursive: true });
     execFileSync('git', ['worktree', 'add', '-qb', 'linked', linked], { cwd: root });
-    await mkdir(join(root, '.beads'), { recursive: true });
-    await mkdir(join(linked, '.beads'), { recursive: true });
     await mkdir(join(linked, '.codex'), { recursive: true });
     await (await import('node:fs/promises')).mkdir(join(linked, '.harness'), { recursive: true });
-    await writeFile(join(linked, '.harness/harness.yaml'), 'beads:\n  enabled: true\ntracker:\n  mode: github\n');
+    await writeFile(join(linked, '.harness/harness.yaml'), 'tracker:\n  mode: github\n');
     await writeFile(join(linked, 'app.txt'), 'application change');
     const linkedStatus = execFileSync('git', ['status', '--short'], { cwd: linked, encoding: 'utf8' });
     assert.match(linkedStatus, /app\.txt/);

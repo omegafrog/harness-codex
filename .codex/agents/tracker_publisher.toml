@@ -1,5 +1,5 @@
 name = "tracker_publisher"
-description = "Publish a reviewed to-ticket plan set to its configured tracker and Beads mirror."
+description = "Publish a reviewed to-ticket plan set to its configured tracker."
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """

@@ -7,12 +7,6 @@
       "source_path": ".codex/internal-skills/attention-span/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
-    ".agents/skills/beads/SKILL.md": {
-      "installed_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
-      "upstream_sha256": "fc19bdbf19b758900ad867d34a4586a5169736569cb936eb84a01829e1d846ba",
-      "source_path": ".codex/internal-skills/beads/GUIDE.md",
-      "source_transform": "project-local-paths-v1"
-    },
     ".agents/skills/code-review/SKILL.md": {
       "installed_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
       "upstream_sha256": "a4dde15000bbdb1ef7bd3e50f66dde9c299d4eecdf6a82f08cb427fed6b24998",
@@ -234,12 +228,6 @@
       "installed_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
       "upstream_sha256": "effde15695ce02a043b650dde55a0b584a32061ae398828c9582d9a0d39e4cfd",
       "source_path": ".codex/internal-skills/to-ticket/GUIDE.md",
-      "source_transform": "project-local-paths-v1"
-    },
-    ".agents/skills/to-ticket/references/beads.md": {
-      "installed_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
-      "upstream_sha256": "c28be606cb82c9986ce9d5754dd3518370d00094540c8e55326432da7b59dbbc",
-      "source_path": ".codex/internal-skills/to-ticket/references/beads.md",
       "source_transform": "project-local-paths-v1"
     },
     ".agents/skills/to-ticket/references/execution-evidence.md": {

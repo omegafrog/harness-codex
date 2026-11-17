@@ -33,7 +33,7 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 | worktree 생성·유지·종료와 `worktree.json` | `.codex/internal-skills/session-worktree/GUIDE.md`, `.codex/internal-skills/workflow-compose/GUIDE.md` |
 | 진입 workspace preflight | 각 stage GUIDE의 `harness-workspace-preflight.mjs` 단계 (runner는 workspace 등록만 확인) |
 | 실행 중 로그·임시 파일·스크린샷 위치 | `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` |
-| tracker lifecycle·Beads mirror | `.codex/internal-skills/beads/GUIDE.md` |
+| tracker lifecycle | `docs/agents/plan-status.md` |
 | 통합 계약 갱신·seal·completion receipt | `.codex/internal-skills/sync-contracts/GUIDE.md` |
 | 기존 Architecture Spec fresh review | `.codex/internal-skills/spec-review/GUIDE.md` |
 | 일반 검증과 E2E 선택 | `.codex/internal-skills/e2e-test/references/verification-policy.md` |
@@ -45,10 +45,6 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 - 기존 모델·규칙 소유권·통신/배포 근거: `docs/architecture/domain-model.md`가 있으면 연결된 source/ADR/diagram과 함께 확인한다. 승인 target과 구현 사실을 구분하고, 작은 기능은 기존 owner 확장부터 검토한다.
 - 규칙의 자동 enforcement와 수동 리뷰 범위: `docs/architecture/enforcement.md`. 반복 agent 오류 방지는 `correct`, 사용자 경로 검증 지도 유지보수는 `maintain-verification`을 사용한다.
 - Reusable implementation-only user guidance: `docs/agents/implementation-guidance.md`. Test and verification preferences: `docs/agents/testing-guidance.md`. Agents read both from the active workspace, and updates travel with that workspace's branch.
-
-## Beads Project Board
-
-This project has a Beads workspace for durable tasks and shared handoff. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
 
 ## 테스트·서비스 실행
 

@@ -9,7 +9,7 @@ model_tier: implementation
 
 ## 입력과 경계
 
-먼저 ticket 파일 `docs/plans/<plan-set-id>/<plan_id>.md`(`input_refs`의 kind `ticket`)를 끝까지 읽는다. ticket이 구현할 규칙(INV/EX/AC)과 강제 위치, 검증 테스트, 접하는 컨텍스트와 6절 경계 규칙, 의존한 결정, 선행 ticket, 완료 기준을 정한다. 그다음 ticket이 인용한 근거만 읽는다: `docs/specs/<plan-set-id>/tactical-design.md`에서 ticket이 가리킨 모델·Aggregate·Application Service·통합·경계 행, `docs/implementation/<plan-set-id>/`의 인용된 `technology.md`·`api.md`·`data.md`·`ui-handoff.md` 결정, `CONTEXT.md`의 용어. 설계 전체나 다른 ticket 문서를 한꺼번에 읽지 않는다. 선행 ticket이 만든 코드는 저장소의 현재 코드로 읽는다.
+먼저 ticket 파일 `docs/plans/<plan-set-id>/<plan_id>.md`(`input_refs`의 kind `ticket`)를 끝까지 읽는다. ticket이 구현할 규칙(INV/EX/AC)과 강제 위치, 검증 테스트, 접하는 컨텍스트와 6절 경계 규칙, 의존한 결정, 선행 ticket, 완료 기준을 정한다. 그다음 ticket이 인용한 근거만 읽는다: `docs/specs/<plan-set-id>/tactical-design.md`에서 ticket이 가리킨 모델·Aggregate·Application Service·통합·경계 행, `docs/implementation/<plan-set-id>/`의 인용된 `technology.md`·`api.md`·`data.md`, UI design artifact, `CONTEXT.md`의 용어. 설계 전체나 다른 ticket 문서를 한꺼번에 읽지 않는다. 선행 ticket이 만든 코드는 저장소의 현재 코드로 읽는다.
 
 workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 사용자의 기존 변경을 보존한다. `harness-workspace-preflight.mjs --for-implementation`을 통과하지 않으면 수정하지 않는다. 편집 전에 ticket을 `in-progress`로 바꾼다: `node .codex/scripts/harness-tracker.mjs sync --root <workspace_root> --ticket <ref> --status in-progress`. `<ref>`는 local-markdown이면 ticket 경로, GitHub mode이면 `harness-context.mjs`의 `plan_tickets`에 있는 이 ticket의 값이다.
 
@@ -19,7 +19,7 @@ workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 �
 - 이 ticket의 컨텍스트만 바꾼다. 다른 컨텍스트는 ticket의 `컨텍스트 경계`가 허용한 공개 API·port로만 접하고, 다른 컨텍스트의 table·Repository에 접근하거나 내부 타입을 넘기지 않는다. 6절의 경계 강제 검사를 ticket이 정한 방식으로 구현한다.
 - 문서상 미정인 UI/API/storage/보안·권한·업무 규칙을 추론하지 않는다. 필요한 결정이 빠졌으면 영향을 받은 ticket·stage와 unblock 조건을 적어 ticket을 `blocked`로 바꾸고 `blocked/DEPENDENCY_INCOMPLETE`로 반환한다. 선행 ticket의 공개 API가 ticket의 전제와 다르면 같은 방식으로 반환하며 선행 ticket을 고치지 않는다.
 - ticket의 `소유 규칙과 검증` 표가 정한 테스트(파일과 테스트 이름)를 이 ticket에서 작성하고, 조건·행위·기대 결과로 업무 규칙을 검증한다. 경계 검사 테스트도 함께 만든다. 프로젝트 기본 CLI로 이 ticket의 테스트와 기존 테스트를 실행한다. 기존 테스트 실패는 기준선과 구분한다.
-- 새 UI 구현은 별도 `frontend-design` workflow가 소유한다. handoff가 없는 UI는 만들지 않는다. design·ticket 문서를 새로 쓰거나 고치지 않는다. tracker 발행, PR, `docs/contracts/`와 E2E 인프라를 호출하지 않는다.
+- 새 UI 구현은 별도 `frontend-design` workflow가 소유한다. `frontend: true` ticket은 해당 ticket의 `frontend-implementation`과 `frontend-visual-review` 완료 뒤 시작하며, 그 결과 변경과 이 ticket의 나머지 코드를 함께 commit한다. design·ticket 문서를 새로 쓰거나 고치지 않는다. tracker 발행, PR, `docs/contracts/`와 E2E 인프라를 호출하지 않는다.
 
 ## 종료
 

@@ -9,21 +9,21 @@ hooks:
   before_complete: [tracker_sync, contract_docs, required_outcome, tests, review, evidence]
   after_merge: []
 stages:
-  - id: design
+  - id: frontend-design-brief
     role: frontend_designer
     skill: frontend-design
     model_tier: high_performance
     needs: []
     gates: []
-  - id: implementation
+  - id: frontend-implementation
     role: frontend_implementation_agent
     skill: frontend-implement
     model_tier: implementation
-    needs: [design]
+    needs: [frontend-design-brief]
     gates: []
-  - id: visual_review
+  - id: frontend-visual-review
     role: frontend_visual_reviewer
     skill: frontend-visual-review
     model_tier: high_performance
-    needs: [implementation]
+    needs: [frontend-implementation]
     gates: []

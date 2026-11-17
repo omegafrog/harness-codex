@@ -46,10 +46,9 @@
 
 ## Tracker lifecycle 용어
 
-- Lifecycle status: configured tracker가 소유하는 planned/in-progress/blocked/completed 네 실행 상태. Beads의 open/in_progress/blocked/closed는 이에 대응하는 mirror다.
-- Backlog classification: 아직 실행 대상으로 채택되지 않은 후보 분류. harness_classification=backlog/committed로 기록하며 lifecycle 상태를 대신하지 않는다.
-- Execution phase: planning/implementation/test/review의 현재 작업 단계. harness_phase metadata이며 독립 상태나 task type이 아니다.
-- Tracker mirror: exact external_ref와 harness_tracker_version=1로 canonical ticket에 연결된 신규 Beads 항목. 로컬 운영 Bead와 구분한다.
+- Lifecycle status: configured tracker가 소유하는 planned/in-progress/blocked/completed 네 실행 상태.
+- Backlog classification: 아직 실행 대상으로 채택되지 않은 후보 분류. lifecycle 상태를 대신하지 않는다.
+- Execution phase: planning/implementation/test/review의 현재 작업 단계. 독립 상태나 task type이 아니다.
 
 ## 사용 규칙
 

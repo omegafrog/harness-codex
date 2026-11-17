@@ -27,7 +27,7 @@ flowchart TD
     M --> N[발행 결과 batch 확인·계획 완료]
     N --> O{요청한 종료 범위}
     O -->|to-ticket까지| P[산출물과 worktree 보존·중단]
-    O -->|구현 포함| Q[구현 시작: Issue 전환·Beads 연결]
+    O -->|구현 포함| Q[구현 시작: Issue 전환]
     Q --> R[plan 구현·필요한 테스트·독립 코드 리뷰]
     R --> S[전체 통합·필요한 E2E·통합 계약·최종 완료]
 ```
@@ -176,7 +176,7 @@ Product·Architecture template도 현재 요구의 중복 기입 여부를 확�
 - `spec-me` 내부 Spec 리뷰, orchestrator가 담당하는 계획 리뷰, 구현 코드 리뷰의 범위와 반환 경로.
 - 질문 묶음·기존 답변 재사용·위임·기술 선택·발행 승인의 구분.
 - provider 선택과 같은 provider/session 재개, 프로세스 생존 확인, 실패·취소·수정 요청 라우팅.
-- GitHub Project draft 발행 → 구현 시작 시 Issue 전환 → Beads 연결과 상태 동기화.
+- GitHub Project draft 발행 → 구현 시작 시 Issue 전환 → tracker 상태 동기화.
 - Spec·계획 단계의 통합 계약 읽기와 최종 구현 단계의 계약 갱신 경계.
 - 실행기가 자동으로 처리하는 내부 기록과 모델이 실제 작성할 제품 산출물.
 - 실패 시 기록을 보존하며, 자동 백업·worktree 삭제·상태 수작업 수정으로 재개하지 않는 규칙.

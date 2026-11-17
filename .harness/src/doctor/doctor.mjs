@@ -90,6 +90,9 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/skill-execution/GUIDE.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/workflows/tactical-to-code.yaml',
+    '.codex/workflows/frontend-design.yaml',
+    ...['frontend-design', 'frontend-figma', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
     '.codex/internal-skills/skill-execution/references/input.md',
@@ -247,7 +250,7 @@ async function inspectWorkflows(root, diagnostics, stageSkills) {
           diagnostics.push(diagnostic("dangerous_sandbox_scope", "error", `danger-full-access is not allowed for ${workflow.id}/${stage.id}`, profilePath));
         }
         if (TRACKER_PUBLISH_WORKFLOWS.includes(workflow.id) && stage.id === "tracker-publish" && mode !== "danger-full-access") {
-          diagnostics.push(diagnostic("tracker_publisher_sandbox", "error", "tracker-publish requires its declared network and shared Beads write access", profilePath));
+          diagnostics.push(diagnostic("tracker_publisher_sandbox", "error", "tracker-publish requires its declared network access", profilePath));
         }
       }
       if (workflow.hooks.before_complete.includes("contract_docs") && completionKindForWorkflow(workflow.id) !== "feature_implemented") {
@@ -510,13 +513,14 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   // The Codex project hook only matters when Codex is the active provider; Claude Code registers its own hook in .claude/settings.local.json.
   // setup does not persist agents.provider (the running CLI decides), so a Claude-only installation is recognised by its own hook file.
   const claudeProvider = await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider) === 'claude-code' || (!config.agents?.provider && Boolean(config.agents?.['claude-code']) && !config.agents?.codex), () => false);
-  if (!claudeProvider && await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
+  if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     try {
       const hook = await inspectOrchestratorHook(repositoryRoot);
-      const userHook = !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
-      if (!hook.valid && !userHook) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
+      if (hook.retired_hooks) diagnostics.push(diagnostic('retired_beads_hook', 'warning', 'Retired Beads hooks remain; update Harness to back up and remove them', hook.path));
+      const userHook = !claudeProvider && !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
+      if (!claudeProvider && !hook.valid && !userHook) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
     } catch (error) {
-      diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
+      if (!claudeProvider) diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
     }
   }
   // Model settings live under agents.<provider>; older flat keys must be moved by update or setup.

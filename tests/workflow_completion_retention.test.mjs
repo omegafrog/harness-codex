@@ -43,7 +43,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     execFileSync('git', ['commit', '-m', 'Consumer setup baseline'], { cwd: root });
     tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: 'calculator' });
 
-    await writeFile(join(tree.workspace, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
+    await writeFile(join(tree.workspace, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
     for (const path of ['docs/specs/calculator/request.md', 'docs/specs/calculator/requirements.md', 'docs/specs/calculator/tactical-design.md', 'docs/implementation/calculator/data.md']) {
       await mkdir(join(tree.workspace, path, '..'), { recursive: true });
       await writeFile(join(tree.workspace, path), `# ${path}\n`);
@@ -79,6 +79,8 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     // The ticket stages belong to the tactical flow: the settled design and decisions precede them.
     const settledState = JSON.parse(await readFile(statePath, 'utf8'));
     for (const stage of [...TACTICAL_DESIGN_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) settledState.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+    await mkdir(join(tree.session_directory, 'runtime/executions/tactical-ui'), { recursive: true });
+    await writeFile(join(tree.session_directory, 'runtime/executions/tactical-ui/result.json'), JSON.stringify({ artifacts: [], summary: 'UI 없음' }));
     await writeFile(statePath, JSON.stringify(settledState, null, 2));
 
     const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();

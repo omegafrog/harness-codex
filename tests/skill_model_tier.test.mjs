@@ -45,7 +45,7 @@ tracker:
 // Every skill the retired skill-execution/bindings.json registered and that still exists; each now declares its tier in its own
 // document. spec-me, architecture-spec and architecture-review were registered too and have since been removed.
 const FORMER_REGISTRY = [
-  'attention-span', 'beads', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
+  'attention-span', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
   'diagnosing-bugs', 'domain-modeling', 'e2e-test', 'eli5', 'evaluate-harness', 'event-storming', 'frontend-design', 'frontend-figma', 'frontend-implement',
   'frontend-visual-review', 'gh-open-pr', 'grill-with-docs', 'grilling', 'harness-maintenance', 'harness-recover', 'implement', 'implement-wrapper',
   'knowledge-harvest', 'maintain-verification', 'plan-review', 'plantuml-diagrams', 'product-spec', 'session-worktree', 'setup', 'spec-review',

@@ -43,7 +43,7 @@ model_tier: implementation
 
 `architecture.html`은 자동 생성한다. 로컬 브라우저에서 DDD 이름을 누르면 같은 페이지의 상세 섹션으로 이동한다. GitHub Markdown에는 SVG와 상세 문서 링크를 함께 둔다. GitHub 이미지 렌더링의 링크 동작을 가정하지 않는다.
 
-신규 tracker mirror가 있는 프로젝트는 workflow 시작 시 workspace preflight를 실행하고, 종료 공통 명령의 `tracker_sync`도 통과해야 한다. 동기화 검사 실패를 문서 seal로 해결할 수 없다. `beads` 스킬의 공통 sync를 재시도하고 실제 canonical 상태와 mirror를 재확인한다.
+프로젝트는 workflow 시작 시 workspace preflight를 실행하고, 종료 공통 명령의 `tracker_sync`도 통과해야 한다. 동기화 검사 실패를 문서 seal로 해결할 수 없다. 공통 sync를 재시도하고 실제 tracker 상태를 재확인한다.
 
 ## 소유 worktree
 

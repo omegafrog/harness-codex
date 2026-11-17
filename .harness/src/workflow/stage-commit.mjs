@@ -53,7 +53,6 @@ const LISTED_PROJECT_DOCUMENTS = {
 };
 const TACTICAL_IMPLEMENTATION_DOCUMENTS = {
   'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, 'docs/agents/EXEC.md'],
-  'tactical-ui': (id) => [`docs/implementation/${id}/ui-handoff.md`],
   'tactical-api': (id) => [`docs/implementation/${id}/api.md`],
   'tactical-data': (id) => [`docs/implementation/${id}/data.md`],
 };

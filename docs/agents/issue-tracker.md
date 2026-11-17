@@ -6,14 +6,13 @@
 
 - `github` mode는 GitHub Issue와 설정된 GitHub Project만 사용한다.
 - `local-markdown` mode는 설정된 로컬 ticket 파일만 사용한다.
-- 선택하지 않은 configured tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다. `to-ticket`이 나눈 ticket과 의존성은 `tracker-publish`가 Beads에 mirror하고, `tactical-code`와 `implement`는 lifecycle 상태를 `harness-tracker.mjs sync`로 갱신해 Beads에도 동기화한다.
+- 선택하지 않은 configured tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다. `tracker-publish`가 선택한 tracker에 ticket을 발행하고, `tactical-code`와 `implement`는 lifecycle 상태를 `harness-tracker.mjs sync`로 갱신한다.
 
 ## 관리 규칙
 
 - GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. split plan은 검증 완료 시 `Done`이지만, child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
 - GitHub mode에서 split plan 완료 상태는 `.harness/harness.yaml`의 `tracker.github.status_field`에 해당하는 Project field를 `gh project item-edit`로 `Done`으로 갱신한 뒤 검증한다. 기본 Project `Status` field 갱신은 유효한 상태 전이가 아니다. child Issue 상태는 `OPEN`이어야 한다.
 - local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
-- `to-ticket`은 선택한 tracker와 관계없이 생성하는 parent/child ticket을 Beads에도 기록한다. `implement`는 시작·차단·완료 상태를 Beads에 mirror한다. 상태의 기준은 계속 선택된 tracker이며 Beads는 공유 보드 표시용이다.
 - 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 
 ## 이 저장소 기준
@@ -38,4 +37,4 @@
 
 ## 새 mirror 상태의 단일 실행 경계
 
-신규 lifecycle v1 mirror는 [상태 계약](plan-status.md)과 `beads` 스킬의 공통 명령을 따른다. GitHub와 Beads를 따로 변경하라는 과거 절차 대신 `harness-tracker.mjs sync`로 순차 갱신·재조회한다. 기존 Issue와 Beads 데이터는 migration하지 않는다. 보드는 Workflow Status로 그룹화하고 기본 Status 열은 표시에서 숨기는 것을 권장한다. backlog는 분류, test/review는 단계 metadata이며 tracker 상태가 아니다.
+lifecycle 상태는 [상태 계약](plan-status.md)의 `harness-tracker.mjs sync`로 갱신·재조회한다. 보드는 Workflow Status로 그룹화하고 기본 Status 열은 표시에서 숨기는 것을 권장한다. backlog는 분류, test/review는 단계 metadata이며 tracker 상태가 아니다.

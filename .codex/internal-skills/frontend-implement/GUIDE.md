@@ -7,6 +7,8 @@ model_tier: implementation
 
 `frontend-design` workflow의 코드 작성과 correction만 담당한다.
 
+`context.stage_id`가 `frontend-implementation`이고 `context.plan_id`가 있으면 게시된 해당 ticket과 전달된 `frontend_design_brief`만 구현한다. 실행 결과를 `completed/OK`로 반환하되 commit이나 ticket 완료는 하지 않는다. 독립 `frontend-visual-review`가 통과한 뒤 `tactical-code`가 같은 ticket의 나머지 작업과 함께 commit한다.
+
 ## Inputs
 
 - absolute `workspace_root`

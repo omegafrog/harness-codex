@@ -387,8 +387,9 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   let backup_directory = null;
   const backupPrefix = `.codex/installer-backups/${randomUUID()}`;
-  for (const action of noBackup ? [] : actions) {
-    if (!action.backup) continue;
+  for (const action of actions) {
+    const retiredBeads = action.retired && (/^\.(?:codex\/internal-skills|agents\/skills|claude\/skills)\/beads\//.test(action.descriptor.target_path) || /^\.(?:codex\/internal-skills|agents\/skills|claude\/skills)\/to-ticket\/references\/beads\.md$/.test(action.descriptor.target_path));
+    if (!action.backup || (noBackup && !retiredBeads)) continue;
     const backup = await containedPath(targetRoot, `${backupPrefix}/${action.descriptor.target_path}`);
     backup_directory ||= resolve(targetRoot, backupPrefix);
     await mkdir(dirname(backup.path), { recursive: true, mode: 0o700 });
@@ -431,7 +432,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     // so an update does not add a project hook that Codex would ask to review again.
     const projectHook = await readFile(resolve(targetRoot, '.codex/hooks.json'), 'utf8').then((text) => text.includes('harness-orchestrator-hook.mjs'), () => false);
     const userHook = !projectHook && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
-    if (activeProvider !== 'claude-code' && !userHook) await syncOrchestratorHook(targetRoot, { noBackup });
+    await syncOrchestratorHook(targetRoot, { noBackup, register: activeProvider !== 'claude-code' && !userHook });
     if (activeProvider !== 'codex') await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };

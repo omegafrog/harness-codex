@@ -21,7 +21,7 @@
 - `github`: [GitHub tracker](../../../../.codex/internal-skills/implement-wrapper/references/tracker/github.md)
 - `local-markdown`: [local-markdown tracker](../../../../.codex/internal-skills/implement-wrapper/references/tracker/local-markdown.md)
 
-구현·리뷰·최종 완료의 승인 조건을 통과한 뒤 공통 tracker helper로 상태를 전이하고 Beads mirror를 검증한다. worker의 작업 완료와 plan·workflow의 완료를 구분한다.
+구현·리뷰·최종 완료의 승인 조건을 통과한 뒤 공통 tracker helper로 상태를 전이하고 검증한다. worker의 작업 완료와 plan·workflow의 완료를 구분한다.
 
 ## 리뷰·통합·완료
 

@@ -5,7 +5,7 @@ const { resolveCommandContext } = await import(new URL('../../.harness/src/workf
 const { commentTracker, inspectTrackerSync, planDependencies, readTrackerStatus, syncTrackerStatus } = await import(installed.href);
 try {
   const [command, ...args] = process.argv.slice(2), options = {};
-  const flags = { '--root': 'workspace_root', '--status': 'status', '--phase': 'phase', '--classification': 'classification', '--body': 'body', '--plan': 'plan' };
+  const flags = { '--root': 'workspace_root', '--status': 'status', '--body': 'body', '--plan': 'plan' };
   const refs = [];
   for (let i = 0; i < args.length; i++) {
     const key = args[i], value = args[++i];
@@ -34,7 +34,7 @@ try {
     if (answer.status !== 'pass') process.exitCode = 1;
     process.exit();
   }
-  if (!['check', 'read', 'sync', 'comment'].includes(command) || (command !== 'check' && refs.length !== 1)) throw new Error('Usage: harness-tracker.mjs check|read|sync|comment --root DIR [--ticket REF] [--status planned|in-progress|blocked|completed] [--phase planning|implementation|test|review] [--classification backlog|committed]');
+  if (!['check', 'read', 'sync', 'comment'].includes(command) || (command !== 'check' && refs.length !== 1)) throw new Error('Usage: harness-tracker.mjs check|read|sync|comment --root DIR [--ticket REF] [--status planned|in-progress|blocked|completed]');
   if (command === 'check' && (options.status || options.phase || options.classification)) throw new Error('check is read-only');
   if (command === 'read' && (options.status || options.phase || options.classification)) throw new Error('read is read-only');
   if (command !== 'comment' && options.body !== undefined) throw new Error('--body applies only to comment');

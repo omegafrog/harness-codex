@@ -11,21 +11,15 @@ const refs = [`${repository}#1`, `${repository}#2`];
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'tracker-mirror-'));
   await mkdir(join(root, '.codex'), { recursive: true });
-  await mkdir(join(root, '.beads'));
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), `tracker:\n  mode: github\n  github:\n    repository: ${repository}\n    project_owner: omegafrog\n    project_number: 1\n    status_field: Workflow Status\n`);
   const calls = [];
   const run = async (command, args) => {
-    if (command === 'bd' && args.includes('--metadata-field')) return JSON.stringify([1, 2].map((number) => ({ id: `harness-${number}`, status: 'open', external_ref: `https://github.com/${repository}/issues/${number}`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed' } })));
-    if (command === 'bd' && args.includes('--external-ref')) {
-      const externalRef = args[args.indexOf('--external-ref') + 1];
-      const match = externalRef.match(/issues\/(\d+)$/);
-      return JSON.stringify([{ id: `harness-${match[1]}`, status: 'open', external_ref: externalRef, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed' } }]);
-    }
     if (command === 'gh' && args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project-id' });
     if (command === 'gh' && args[0] === 'project' && args[1] === 'field-list') return JSON.stringify({ totalCount: 1, fields: [{ id: 'field-id', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: name, name })) }] });
     if (command === 'gh' && args[0] === 'api') {
       const query = args.find((arg) => arg.startsWith('query='));
+      if (query.includes('node(id:')) return JSON.stringify({ data: { node: { items: { pageInfo: { hasNextPage: false }, nodes: [[1, 'calculator'], [2, 'e2e']].map(([number, plan_id]) => ({ content: { __typename: 'Issue', number, url: `https://github.com/${repository}/issues/${number}`, body: `<!-- harness-plan ${JSON.stringify({ plan_set_id: 'set', plan_id })} -->` } })) } } } });
       const issues = [...query.matchAll(/issue_(\d+):issue\(number:(\d+)\)/g)];
       const tickets = Object.fromEntries(issues.map(([, index, number]) => [`issue_${index}`, {
         state: 'OPEN',
@@ -41,107 +35,42 @@ async function fixture() {
   return { root, calls, run };
 }
 
-for (const [name, ticket_refs, expectedBeadsCalls] of [['explicit references', refs, 2], ['managed Beads discovery', null, 3]]) {
-  test(`GitHub tracker sync resolves Beads URL refs for ${name}`, async () => {
-    const { root, calls, run } = await fixture();
-    try {
-      const result = await inspectTrackerSync({ workspace_root: root, ticket_refs, run: async (command, args, cwd) => {
-        const output = await run(command, args, cwd);
-        calls.push([command, args]);
-        return output;
-      } });
-      assert.equal(result.status, 'pass', JSON.stringify(result));
-      assert.deepEqual(result.tickets.map((ticket) => ticket.ref), refs);
-      assert.deepEqual(result.tickets.map((ticket) => ticket.bead_id), ['harness-1', 'harness-2']);
-      assert.equal(calls.filter(([command]) => command === 'bd').length, expectedBeadsCalls);
-    } finally { await rm(root, { recursive: true, force: true }); }
-  });
-}
-
-// In a workflow worktree the check reads only that plan set's mirrors; the primary workspace still checks them all.
-test('tracker check in a worktree covers only the worktree plan set', async () => {
+test('GitHub tracker checks explicit references without an external mirror', async () => {
   const { root, run } = await fixture();
   try {
-    await mkdir(join(root, '.io'), { recursive: true });
-    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ plan_set_id: 'set-a' }));
-    const seen = [];
-    const result = await inspectTrackerSync({ workspace_root: root, run: async (command, args, cwd) => {
-      if (command === 'bd' && args.includes('--metadata-field')) {
-        return JSON.stringify([[1, 'set-a'], [2, 'set-a'], [3, 'set-b']].map(([number, set]) => ({ id: `harness-${number}`, status: 'open', external_ref: `https://github.com/${repository}/issues/${number}`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `${set}:plan-${number}` } })));
-      }
-      seen.push(args.join(' '));
-      return run(command, args, cwd);
-    } });
+    const result = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
     assert.equal(result.status, 'pass', JSON.stringify(result));
     assert.deepEqual(result.tickets.map((ticket) => ticket.ref), refs);
-    assert.ok(!seen.some((call) => call.includes('issues/3')), 'the other plan set is not read');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-// A stage implements one plan: its tickets must be that plan's, and harness-context lists each plan's ticket.
-test('tickets are checked against the plan a stage implements and plan tickets are listed', async () => {
+test('tickets are checked against the plan a stage implements', async () => {
   const { root, run } = await fixture();
   try {
-    const withPlans = async (command, args, cwd) => {
-      const output = await run(command, args, cwd);
-      if (command !== 'bd') return output;
-      const items = JSON.parse(output);
-      return JSON.stringify(items.map((item) => ({ ...item, metadata: { ...item.metadata, harness_plan_id: `set:${item.id === 'harness-1' ? 'calculator' : 'e2e'}` } })));
-    };
-    const mismatch = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[1]], expected_plan_id: 'set:community-comment', run: withPlans });
+    const mismatch = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[1]], expected_plan_id: 'set:calculator', run });
     assert.equal(mismatch.status, 'fail');
-    assert.match(mismatch.violations[0], /belongs to plan set:e2e, but this execution implements set:community-comment/);
-    const match = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[0]], expected_plan_id: 'set:calculator', run: withPlans });
+    const match = await inspectTrackerSync({ workspace_root: root, ticket_refs: [refs[0]], expected_plan_id: 'set:calculator', run });
     assert.equal(match.status, 'pass', JSON.stringify(match));
-    assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run: withPlans }), [
-      { plan_id: 'calculator', ticket_ref: refs[0], bead_id: 'harness-1', bead_status: 'open' },
-      { plan_id: 'e2e', ticket_ref: refs[1], bead_id: 'harness-2', bead_status: 'open' },
+    assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run }), [
+      { plan_id: 'calculator', ticket_ref: refs[0] }, { plan_id: 'e2e', ticket_ref: refs[1] },
+    ]);
+    assert.deepEqual(await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run }), [
+      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' }, { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' }, { plan_id: 'unmapped', ticket_ref: null, status: null },
     ]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-// The final implementation gate reads each plan's canonical status from the tracker, not from a report.
-test('plan set ticket statuses come from the configured tracker', async () => {
-  const { root, run } = await fixture();
-  try {
-    const withPlans = async (command, args, cwd) => {
-      const output = await run(command, args, cwd);
-      if (command !== 'bd') return output;
-      return JSON.stringify(JSON.parse(output).map((item) => ({ ...item, metadata: { ...item.metadata, harness_plan_id: `set:${item.id === 'harness-1' ? 'calculator' : 'e2e'}` } })));
-    };
-    assert.deepEqual(await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run: withPlans }), [
-      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' },
-      { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' },
-      { plan_id: 'unmapped', ticket_ref: null, status: null },
-    ]);
-    await assert.rejects(readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', run: withPlans }), /plan IDs are required/);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-// A stage implements one plan: its check without --ticket must not trip over the mirrors of the plan set's other plans.
-test('a plan-scoped tracker check ignores the other plans of the set', async () => {
+test('plan-scoped local tracker checks only the selected plan', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tracker-plan-scope-'));
   try {
-    await mkdir(join(root, '.beads'), { recursive: true });
     await mkdir(join(root, '.harness'), { recursive: true });
     await mkdir(join(root, 'docs/plans/set'), { recursive: true });
-    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: true\n');
-    const plans = ['P01', 'P02', 'P03'];
-    for (const id of plans) await writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: planned\n---\n# ${id}\n`);
-    const bead = (id) => ({ id: `bead-${id}`, status: 'open', external_ref: `docs/plans/set/${id}.md`, metadata: { harness_tracker_version: 1, harness_phase: 'planning', harness_classification: 'committed', harness_plan_id: `set:${id}` } });
-    const run = async (command, args) => {
-      if (command === 'bd' && args.includes('--metadata-field')) return JSON.stringify(plans.map(bead));
-      if (command === 'bd' && args.includes('--external-ref')) return JSON.stringify(plans.map(bead).filter((item) => item.external_ref === args[args.indexOf('--external-ref') + 1]));
-      throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
-    };
-    const scoped = await inspectTrackerSync({ workspace_root: root, expected_plan_id: 'set:P02', run });
+    await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n');
+    for (const id of ['P01', 'P02', 'P03']) await writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: planned\n---\n# ${id}\n`);
+    const scoped = await inspectTrackerSync({ workspace_root: root, expected_plan_id: 'set:P02' });
     assert.equal(scoped.status, 'pass', JSON.stringify(scoped));
     assert.deepEqual(scoped.tickets.map((ticket) => ticket.ref), ['docs/plans/set/P02.md']);
-    const all = await inspectTrackerSync({ workspace_root: root, run });
-    assert.equal(all.status, 'pass', JSON.stringify(all));
-    assert.equal(all.tickets.length, 3);
-    // An explicit ticket of another plan is still refused.
-    const wrong = await inspectTrackerSync({ workspace_root: root, ticket_refs: ['docs/plans/set/P03.md'], expected_plan_id: 'set:P02', run });
+    const wrong = await inspectTrackerSync({ workspace_root: root, ticket_refs: ['docs/plans/set/P03.md'], expected_plan_id: 'set:P02' });
     assert.equal(wrong.status, 'fail');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

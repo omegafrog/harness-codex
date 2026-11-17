@@ -86,7 +86,7 @@ const INDEX = `# Plan set
 async function prepareWorkflow(t) {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, planSetId, treeGit } = flow;
-  await writeFile(join(workspace, '.harness/harness.yaml'), `${SETUP}beads:\n  enabled: false\n`);
+  await writeFile(join(workspace, '.harness/harness.yaml'), `${SETUP}`);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = JSON.parse(await readFile(statePath, 'utf8'));
   for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
@@ -120,8 +120,8 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   refused(prepare('--stage-id', 'to-ticket'), /to-ticket cannot start before tactical-technology/);
   refused(prepare('--stage-id', 'tactical-code', '--plan', 'post-write'), /tactical-code cannot start before tactical-technology/);
 
-  const decisions = [['tactical-technology', 'technology.md', 'Node 20과 `node --test`를 쓴다.\n'], ['tactical-ui', 'ui-handoff.md', '서버 전용 요청이라 UI는 없다.\n'], ['tactical-api', 'api.md', '`POST /posts`를 둔다.\n'], ['tactical-data', 'data.md', '`posts` table을 둔다.\n']];
-  for (const [stage, name, content] of decisions) await runStage(stage, { files: { [`docs/implementation/${planSetId}/${name}`]: content }, expectCommit: true });
+  const decisions = [['tactical-technology', 'technology.md', 'Node 20과 `node --test`를 쓴다.\n'], ['tactical-ui', null, '서버 전용 요청이라 UI는 없다.'], ['tactical-api', 'api.md', '`POST /posts`를 둔다.\n'], ['tactical-data', 'data.md', '`posts` table을 둔다.\n']];
+  for (const [stage, name, content] of decisions) await runStage(stage, { files: name ? { [`docs/implementation/${planSetId}/${name}`]: content } : {}, summary: content, expectCommit: Boolean(name) });
   refused(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', APPROVAL), /tracker-publish cannot start before to-ticket/);
 
   // to-ticket splits the settled design into tickets per context and business activity, reviewed by a fresh reviewer.

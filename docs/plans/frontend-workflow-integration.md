@@ -243,7 +243,7 @@ MS는 이를 같은 DB를 사용하는 단순화된 CQRS로 설명하고 모든 
 
 사용자의 후속 지시에 따라 이 프로젝트의 backend 영속 데이터 조회·변경에는 CQRS와 서로 다른 데이터 접근 경로를 적용한다. 이전의 “Context별 선택 적용” 제안은 이 범위에서 대체한다. 공개 command/query 유스케이스는 `api`, domain 상태 변경은 `model`, SQL/ORM 기술 구현은 `infra`, controller는 `ui`로 배치한다. MS의 SQL-in-Queries 원본과 동일한 물리 배치라는 뜻은 아니다. 읽기에는 Aggregate repository를 억지로 만들지 않되 권한·데이터 노출 범위·Context 소유권은 계속 지킨다.
 
-분리 대상은 지금 계획 중인 소비 프로젝트의 backend 설계·생성·리뷰 기준이다. Harness 제어 파일·Beads·tracker 저장을 관계형 ORM으로 다시 쓰거나 frontend에 서버 Entity를 복제하지 않는다. 영속화가 없는 기능에는 빈 command/query infrastructure를 만들지 않는다. mediator·handler class는 필수로 추가하지 않고 기존 composition service가 command 유스케이스 역할을 맡을 수 있다.
+분리 대상은 지금 계획 중인 소비 프로젝트의 backend 설계·생성·리뷰 기준이다. Harness 제어 파일·tracker 저장을 관계형 ORM으로 다시 쓰거나 frontend에 서버 Entity를 복제하지 않는다. 영속화가 없는 기능에는 빈 command/query infrastructure를 만들지 않는다. mediator·handler class는 필수로 추가하지 않고 기존 composition service가 command 유스케이스 역할을 맡을 수 있다.
 
 ### CQRS 채택과 서로 다른 영속 접근 방식
 

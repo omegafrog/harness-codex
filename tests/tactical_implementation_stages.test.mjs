@@ -56,7 +56,7 @@ test('tactical implementation is ordered after completed tactical design and rem
   assert.equal(workflow.stages.some(({ skill }) => skill === 'frontend-design'), false, 'frontend design stays its own workflow');
   const guide = await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/references/workflow-map.md'), 'utf8');
   assert.match(guide, /별도 `tactical-to-code` workflow/);
-  assert.match(guide, /`tactical-ui` handoff/);
+  assert.match(guide, /`frontend-design-brief` stage/);
 });
 
 test('fresh install and update distribute the flow, Doctor inventories it, and installed assets stay ignored', async (t) => {
@@ -75,6 +75,9 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
 
   const assets = [
     '.codex/workflows/tactical-to-code.yaml',
+    '.codex/workflows/frontend-design.yaml',
+    ...['frontend-design', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
     ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
     '.codex/internal-skills/to-ticket/references/split.md',
     '.codex/agents/tactical_designer.toml',
@@ -98,6 +101,11 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code, severity }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid'].includes(code)), []);
+  const frontendGuide = join(root, '.codex/internal-skills/frontend-design/GUIDE.md');
+  const savedGuide = await readFile(frontendGuide);
+  await rm(frontendGuide);
+  assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith('frontend-design/GUIDE.md')));
+  await writeFile(frontendGuide, savedGuide);
   assert.equal(doctor.diagnostics.some(({ path }) => path?.endsWith('/spec-me.yaml')), false, 'Doctor no longer sees spec-me as an installed workflow');
   assert.deepEqual(doctor.diagnostics.filter(({ severity, code }) => severity === 'error' && ['tracker_publisher_stage_missing', 'tracker_publisher_sandbox', 'dangerous_sandbox_scope'].includes(code)), [], 'both workflows declare the dedicated publisher stage');
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
@@ -143,7 +151,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
 
   // What nothing reads any more is neither installed nor required; what a live stage still links stays installed.
   const retiredSkills = [...RETIRED_SKILL_NAMES];
-  assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'spec-me']);
+  assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'beads', 'spec-me']);
   for (const path of RETIRED_ASSET_PATHS) assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
   for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.codex/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
   const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`);
@@ -243,13 +251,14 @@ test('installed decisions are committed alone and the ticket stages wait for the
 
   const decisions = [
     ['tactical-technology', 'technology.md', '기존 Node runtime과 package scripts를 유지한다.\n'],
-    ['tactical-ui', 'ui-handoff.md', '사용자 요청이 server-only이므로 UI는 적용되지 않는다.\n'],
+    ['tactical-ui', null, '사용자 요청이 server-only이므로 UI는 적용되지 않는다.'],
     ['tactical-api', 'api.md', '사용자 요청에서 API를 제외했으므로 추가 API 계약은 없다.\n'],
     ['tactical-data', 'data.md', '이 요청은 저장 상태가 없다.\n'],
   ];
   let technologyCommit;
+  const existingHandoff = `docs/implementation/${flow.planSetId}/ui-handoff.md`;
   for (const [stage, name, content] of decisions) {
-    const path = `docs/implementation/${flow.planSetId}/${name}`;
+    const path = name && `docs/implementation/${flow.planSetId}/${name}`;
     if (stage === 'tactical-technology') {
       const begun = await flow.beginStage(stage);
       const schema = JSON.parse(await readFile(begun.started.schema_path, 'utf8'));
@@ -271,10 +280,20 @@ test('installed decisions are committed alone and the ticket stages wait for the
       technologyCommit = flow.treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n');
       continue;
     }
+    if (stage === 'tactical-ui') {
+      await mkdir(join(flow.workspace, existingHandoff, '..'), { recursive: true });
+      await writeFile(join(flow.workspace, existingHandoff), '기존 사용자 문서\n');
+    }
     const result = await flow.runStage(stage, {
-      files: { [path]: content, ...(stage === 'tactical-technology' ? { 'docs/agents/EXEC.md': '검증 명령: npm test\n' } : {}) },
-      expectCommit: true,
+      files: path ? { [path]: content } : {},
+      summary: content,
+      expectCommit: Boolean(path),
     });
+    if (stage === 'tactical-ui') {
+      assert.equal(await readFile(join(flow.workspace, existingHandoff), 'utf8'), '기존 사용자 문서\n');
+      assert.match(flow.treeGit('status', '--short', '--untracked-files=all'), /ui-handoff\.md/);
+      await rm(join(flow.workspace, existingHandoff));
+    }
     if (stage === 'tactical-technology') technologyCommit = result.files;
   }
   assert.ok(technologyCommit.includes('docs/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
@@ -285,4 +304,87 @@ test('installed decisions are committed alone and the ticket stages wait for the
   assert.match(prepare('--stage-id', 'tactical-code', '--plan', 'any-ticket').stderr, /tactical-code cannot start before to-ticket/);
   assert.match(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', '발행하세요').stderr, /tracker-publish cannot start before to-ticket/);
   assert.equal(flow.treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');
+});
+
+test('installed frontend design is dispatched independently and its brief enters plan review', async (t) => {
+  const flow = await consumerWorkflow(t, '게시글 작성 화면을 만든다');
+  const statePath = join(flow.workspace, '.io/runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  state.current_stage = 'workflow-compose';
+  await writeFile(statePath, JSON.stringify(state));
+  await flow.runStage('tactical-technology', { files: { [`docs/implementation/${flow.planSetId}/technology.md`]: 'Node\n' } });
+  await flow.runStage('tactical-ui', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '화면 설계 필요', expectCommit: false });
+  const prepared = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'frontend-design-brief']);
+  assert.equal(prepared.input.skill, 'frontend-design');
+  assert.equal(prepared.input.context.agent_profile, 'frontend_designer');
+  const base = ['--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', prepared.input.execution_id];
+  const started = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...base, '--verbose']);
+  assert.equal(started.sandbox, 'read-only');
+  flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', 'designer']);
+  const result = { schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', summary: '화면 설계 완료', artifacts: [], questions: [], review_request: null, artifact_contents: [{ name: 'frontend-design.md', kind: 'frontend_design_brief', content: '# 게시글 작성 화면\n' }] };
+  await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', result }));
+  const finished = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...base, '--verbose']);
+  const brief = finished.result.artifacts.find((item) => item.kind === 'frontend_design_brief');
+  assert.equal(brief.base, 'session');
+  assert.equal(await readFile(join(flow.workspace, '.io', brief.path), 'utf8'), '# 게시글 작성 화면\n');
+  const ui = await flow.beginStage('tactical-ui', { extraArgs: ['--feedback', '완료된 화면 설계를 확인한다'] });
+  const output = { schema_version: 1, skill: 'tactical-ui', status: 'completed', code: 'OK', summary: '화면 설계 참조', artifacts: [brief], questions: [], review_request: null };
+  await writeFile(ui.started.output_path, JSON.stringify({ schema_version: 1, skill: 'tactical-ui', status: 'completed', code: 'OK', result: output }));
+  assert.equal(flow.finishStage(ui).status, 0);
+  const plans = join(flow.workspace, 'docs/plans', flow.planSetId);
+  await mkdir(plans, { recursive: true });
+  await writeFile(join(plans, 'plans.md'), '# 계획\n');
+  await writeFile(join(plans, 'ui.md'), '---\nstatus: planned\nfrontend: true\n---\n# 화면\n');
+  const { snapshotPlanSet } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/plan-review.mjs')).href);
+  const snapshot = await snapshotPlanSet({ root: flow.workspace, planSetId: flow.planSetId });
+  assert.ok(snapshot.design_paths.includes(`.io/${brief.path}`));
+  assert.equal(snapshot.inputs[`.io/${brief.path}`], brief.sha256);
+  const { assertFrontendTicketOrder } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/stage-input.mjs')).href);
+  const ticketState = { stages: {} };
+  const check = (stageId) => assertFrontendTicketOrder({ root: flow.workspace, session: join(flow.workspace, '.io'), state: ticketState, stageId, planSetId: flow.planSetId, planId: 'ui' });
+  await assert.rejects(check('frontend-implementation'), /tracker publication/);
+  ticketState.stages['tracker-publish'] = { status: 'completed', code: 'OK' };
+  await assert.rejects(check('frontend-implementation'), /frontend-design-brief/);
+  ticketState.stages['frontend-design-brief'] = { status: 'completed', code: 'OK', result_ref: 'brief' };
+  await check('frontend-implementation');
+  await assert.rejects(check('frontend-visual-review'), /frontend-implementation/);
+  const { writeExecutionInput } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/execution-input.mjs')).href);
+  await writeExecutionInput(flow.workspace, { execution_id: 'ui-implementation', skill: 'frontend-implement', context: { plan_id: 'ui' } }, flow.planSetId);
+  ticketState.stages['frontend-implementation'] = { status: 'completed', code: 'OK', result_ref: 'implementation', execution_id: 'ui-implementation' };
+  await check('frontend-visual-review');
+  await assert.rejects(check('tactical-code'), /frontend-visual-review/);
+  await writeExecutionInput(flow.workspace, { execution_id: 'other-review', skill: 'frontend-visual-review', context: { plan_id: 'other' } }, flow.planSetId);
+  ticketState.stages['frontend-visual-review'] = { status: 'completed', code: 'OK', result_ref: 'review', execution_id: 'other-review' };
+  await assert.rejects(check('tactical-code'), /different ticket/);
+  await writeExecutionInput(flow.workspace, { execution_id: 'stale-review', skill: 'frontend-visual-review', context: { plan_id: 'ui', transition: { result_ref: 'old-implementation' } } }, flow.planSetId);
+  ticketState.stages['frontend-visual-review'].execution_id = 'stale-review';
+  await assert.rejects(check('tactical-code'), /current implementation/);
+  await writeExecutionInput(flow.workspace, { execution_id: 'ui-review', skill: 'frontend-visual-review', context: { plan_id: 'ui', transition: { result_ref: 'implementation' } } }, flow.planSetId);
+  ticketState.stages['frontend-visual-review'].execution_id = 'ui-review';
+  await check('tactical-code');
+  const dispatchState = JSON.parse(await readFile(statePath, 'utf8'));
+  for (const stage of ['tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish']) dispatchState.stages[stage] = { status: 'completed', code: 'OK' };
+  await writeFile(statePath, JSON.stringify(dispatchState));
+  const dispatch = async (stage, skill, profile) => {
+    const prepared = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, '--plan', 'ui']);
+    assert.equal(prepared.input.skill, skill);
+    assert.ok(prepared.input.input_refs.some((item) => item.kind === 'frontend_design_brief'));
+    const args = ['--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', prepared.input.execution_id];
+    const started = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...args, '--verbose']);
+    assert.equal(started.agent_profile, profile);
+    flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...args, '--agent-id', stage]);
+    const result = { schema_version: 1, skill, status: 'completed', code: 'OK', summary: '완료', artifacts: [], questions: [], review_request: null };
+    await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill, status: 'completed', code: 'OK', result }));
+    flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...args]);
+    return prepared;
+  };
+  await dispatch('frontend-implementation', 'frontend-implement', 'frontend_implementation_agent');
+  await dispatch('frontend-visual-review', 'frontend-visual-review', 'frontend_visual_reviewer');
+  const code = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-code', '--plan', 'ui']);
+  assert.equal(code.input.context.plan_id, 'ui');
+  await writeFile(join(flow.workspace, '.io', brief.path), '변경됨\n');
+  await assert.rejects(snapshotPlanSet({ root: flow.workspace, planSetId: flow.planSetId }), /brief changed/);
+  assert.match(flow.treeGit('status', '--short', '--untracked-files=all'), /docs\/plans/);
+  assert.doesNotMatch(flow.treeGit('status', '--short', '--untracked-files=all'), /\.io\/|\.harness\//);
 });

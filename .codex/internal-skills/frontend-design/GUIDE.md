@@ -9,6 +9,8 @@ model_tier: high_performance
 
 이 skill은 `implement`, `implement-wrapper`, `code-review`, `e2e-test`의 하위 단계가 아니다. 해당 workflow를 호출하거나 tracker 상태를 변경하지 않는다. 프런트엔드 작업은 이 skill의 자체 design → implementation → visual review → correction loop로 완료한다.
 
+`context.stage_id`가 `frontend-design-brief`이면 이 독립 workflow의 design 단계만 수행한다. Phase 1–3과 필요한 Phase 3.5를 마친 뒤 `artifact_contents`에 `{name: "frontend-design.md", kind: "frontend_design_brief", content: "<완성된 한국어 design brief>"}` 하나를 반환한다. 실행기가 session artifact로 저장한다. 이 단계에서는 Phase 4 이후를 수행하지 않는다. 전체 workflow의 구현과 visual review는 ticket 발행 뒤 별도 stage로 이어진다.
+
 ## Scope
 
 다음 작업에 사용한다.
@@ -168,7 +170,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 
 ## Phase 4 — Implementation
 
-`.codex/workflows/frontend-design.yaml`의 `implementation` stage를 실행해 `frontend_implementation_agent`를 fresh context로 호출한다. workflow runner가 stage dispatch를 담당한다.
+`.codex/workflows/frontend-design.yaml`의 `frontend-implementation` stage를 실행해 `frontend_implementation_agent`를 fresh context로 호출한다. workflow runner가 stage dispatch를 담당한다.
 
 전달해야 하는 것:
 
@@ -185,7 +187,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 
 ## Phase 5 — Browser visual review
 
-구현 후 `.codex/workflows/frontend-design.yaml`의 `visual_review` stage를 실행해 `frontend_visual_reviewer`를 fresh context로 호출한다.
+구현 후 `.codex/workflows/frontend-design.yaml`의 `frontend-visual-review` stage를 실행해 `frontend_visual_reviewer`를 fresh context로 호출한다.
 
 전달해야 하는 것:
 

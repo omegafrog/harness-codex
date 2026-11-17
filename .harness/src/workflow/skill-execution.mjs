@@ -401,6 +401,13 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
     }
   }
+  if (input.context?.stage_id === 'frontend-design-brief' && envelope.status === 'completed') {
+    requireValue(result.artifacts.filter((item) => item.base === 'session' && item.kind === 'frontend_design_brief').length === 1, 'Frontend design must return one session frontend_design_brief artifact');
+  }
+  if (input.skill === 'tactical-ui' && envelope.status === 'completed') {
+    const design = input.input_refs.filter((item) => item.kind === 'frontend_design_brief');
+    if (design.length) requireValue(design.length === 1 && result.artifacts.some((item) => item.base === design[0].base && item.path === design[0].path && item.kind === design[0].kind && item.sha256 === design[0].sha256), 'tactical-ui must retain the completed frontend design artifact');
+  }
   const questions = result.artifacts.filter((item) => item.kind === 'user_question');
   const resultQuestions = result.questions?.length ? result.questions : undefined;
   if (resultQuestions !== undefined) {
