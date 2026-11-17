@@ -184,6 +184,9 @@ async function verify(projectRoot, options) {
     for (const name of ["domain-model", "aggregate-design", "domain-service", "application-service", "integration-design", "context-boundary"]) {
       await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
     }
+    for (const name of ["tactical-technology", "tactical-ui", "tactical-api", "tactical-data", "tactical-code"]) {
+      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+    }
     await stat(join(projectRoot, ".codex", "internal-skills", "domain-model", "references", "template.md"));
   }
   if (options.installAgents) {
@@ -203,6 +206,8 @@ async function verify(projectRoot, options) {
       "plan_reviewer.toml",
       "contract_reviewer.toml",
       "stakeholder_persona.toml",
+      "tactical_designer.toml",
+      "tactical_implementation_agent.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
@@ -216,6 +221,7 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
+    ".codex/workflows/tactical-to-code.yaml",
     ".harness/src/workflow/stage-gates.mjs",
     ".harness/src/workflow/startup-state.mjs",
     ".harness/src/workflow/execution-state.mjs",

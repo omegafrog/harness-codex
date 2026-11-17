@@ -51,9 +51,16 @@ const LISTED_PROJECT_DOCUMENTS = {
   'bounded-context': ['CONTEXT.md'],
   ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, [...TACTICAL_PROJECT_DOCUMENTS, ...(skill === 'context-boundary' ? ['CONTEXT-MAP.md'] : [])]])),
 };
-const stageDocuments = (skill, id) => [`docs/specs/${id}`, ...(PROJECT_DOCUMENTS[skill] || [])];
+const TACTICAL_IMPLEMENTATION_DOCUMENTS = {
+  'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, 'docs/agents/EXEC.md'],
+  'tactical-ui': (id) => [`docs/implementation/${id}/ui-handoff.md`],
+  'tactical-api': (id) => [`docs/implementation/${id}/api.md`],
+  'tactical-data': (id) => [`docs/implementation/${id}/data.md`],
+};
+const stageDocuments = (skill, id) => TACTICAL_IMPLEMENTATION_DOCUMENTS[skill]?.(id) || [`docs/specs/${id}`, ...(PROJECT_DOCUMENTS[skill] || [])];
 const WORKFLOW_DOCUMENTS = {
   ...Object.fromEntries(PRE_SPEC_STAGES.map((skill) => [skill, (id) => stageDocuments(skill, id)])),
+  ...TACTICAL_IMPLEMENTATION_DOCUMENTS,
   'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
   'sync-contracts': () => ['docs/contracts'],

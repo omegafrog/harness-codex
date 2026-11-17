@@ -7,3 +7,10 @@
 정본은 `worktree.json`, 프로젝트 Spec·계획, session의 stage result·review history와 configured tracker의 발행 상태이다. runner는 실행 식별자와 현재성 기록을 관리하고 작성자는 제품 산출물을 작성한다. 추가 ledger를 만들지 않는다. stage 결과·미해결 findings와 gate, 사용자 질문별 답변·승인·위임, provider/session과 실제 process 상태를 확인해 다음 단계를 고른다. 요약이 부족하면 해당 정본을 읽는다. 완료된 조사는 재실행하지 않고 독립 질문은 묶으며 수정 요청은 소유 단계로 반환한다.
 
 필수 독립 리뷰, 실제 승인, 실행 전제와 중복 process 방지는 생략하지 않는다. 같은 provider는 session을 재개하고 다른 provider는 이전 입력과 결과를 읽는 새 session을 사용한다. 진행 중 process의 생존 여부를 확인한다. 실패·취소 시 기록을 보존하며 worktree 삭제나 상태 수작업 변경으로 복구하지 않는다. 각 실행 절차는 [실행 조율](../GUIDE.md), 리뷰와 발행의 해당 GUIDE가 소유한다.
+# 전술 설계에서 구현까지
+
+전술 설계가 모두 `completed/OK`인 뒤 별도 `tactical-to-code` workflow를 시작한다. stage 순서는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `tactical-code`이며 runner가 이전 결과와 전술 설계 완료를 확인한다. 이 흐름은 전술 설계 문서를 소비하고 application code와 test를 만든다. 요구사항 재시작 흐름에 넣지 않으므로 그 재시작은 application code를 복원하거나 삭제하지 않는다.
+
+기술 stage는 기존 stack을 먼저 평가하고, 필요한 기술 결정을 기존 `technology-selection`의 비교 기준과 공신력 있는 근거로 정리한다. `tactical-ui`는 적용 여부를 증거로 확정하고, 필요한 화면 작업은 별도 `frontend-design` workflow로 넘긴다. UI 변경은 자체 scope와 사전 조건을 가진 전체 구현·시각 리뷰 흐름이므로 이 workflow의 하위 stage인 것처럼 기록하지 않는다. 요청이 UI를 포함하고 실행 전제가 충족되면 기존 사용자 요청이 해당 작업을 승인한 범위에서 독립 workflow를 수행하고, 완료된 result를 `tactical-ui` handoff로 확인한다. 실행하지 않았거나 결과가 없는 UI는 완료된 것으로 주장하지 않는다. `tactical-api`는 application entry와 API, `tactical-data`는 상태 저장·data ownership·storage 계약을 각각 결정하며, 요청과 전술 설계상 필요할 때만 채운다.
+
+`tactical-code`는 완료된 전술 설계·기술 결정·적용 계약에서 구현과 테스트를 수행하고 정확한 `commit_request`를 반환한다. 누락된 업무 결정은 추론하지 않고 차단한다. Workflow artifact는 프로젝트 소유이므로 Git에 보이며 설치된 Harness 자산은 Git에서 제외된다.

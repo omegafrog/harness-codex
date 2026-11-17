@@ -9,6 +9,7 @@ Read the matching internal GUIDE and follow its scope. For work that belongs to 
 | Maintain or recover a Harness installation (a plain update is the public `harness-update` skill) | `.codex/internal-skills/harness-maintenance/GUIDE.md` or `.codex/internal-skills/harness-recover/GUIDE.md` |
 | Collect engineering sources or assess Harness evaluations | `.codex/internal-skills/knowledge-harvest/GUIDE.md` or `.codex/internal-skills/evaluate-harness/GUIDE.md` |
 | Design or implement frontend work | `.codex/internal-skills/frontend-design/GUIDE.md` |
+| Implement from an already completed tactical design without Specs or planning | `.codex/workflows/tactical-to-code.yaml` and its stage GUIDE files; UI remains a separate `frontend-design` workflow |
 | Review a change or manage its integration pull request | `.codex/internal-skills/code-review/references/repair.md` or `.codex/internal-skills/gh-open-pr/GUIDE.md` |
 | Reconcile user-facing verification documentation | `.codex/internal-skills/maintain-verification/GUIDE.md` |
 | Run explicit user-journey E2E verification | `.codex/internal-skills/e2e-test/GUIDE.md` |

@@ -48,6 +48,11 @@ export const WORKTREE_STAGE = Object.freeze({
   SYNC_CONTRACTS: 'sync-contracts',
   TO_TICKET: 'to-ticket',
   TRACKER_PUBLISH: 'tracker-publish',
+  TACTICAL_CODE: 'tactical-code',
+  TACTICAL_API: 'tactical-api',
+  TACTICAL_DATA: 'tactical-data',
+  TACTICAL_UI: 'tactical-ui',
+  TACTICAL_TECHNOLOGY: 'tactical-technology',
   UBIQUITOUS_LANGUAGE: 'ubiquitous-language',
   VICTORIALOGS_LOCAL_SETUP: 'victorialogs-local-setup',
   WORKFLOW_COMPOSE: 'workflow-compose',
@@ -88,6 +93,28 @@ export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.INTEGRATION_DESIGN,
   WORKTREE_STAGE.CONTEXT_BOUNDARY,
 ]);
+
+// This independent flow follows completed tactical design. It is deliberately not part of PRE_SPEC_STAGES:
+// restarting requirements must never restore or remove application code.
+export const TACTICAL_IMPLEMENTATION_STAGES = Object.freeze([
+  WORKTREE_STAGE.TACTICAL_TECHNOLOGY,
+  WORKTREE_STAGE.TACTICAL_UI,
+  WORKTREE_STAGE.TACTICAL_API,
+  WORKTREE_STAGE.TACTICAL_DATA,
+  WORKTREE_STAGE.TACTICAL_CODE,
+]);
+
+export function tacticalImplementationOrderViolation(stages, stageId) {
+  const index = TACTICAL_IMPLEMENTATION_STAGES.indexOf(stageId);
+  if (index < 0) return null;
+  const missingDesign = TACTICAL_DESIGN_STAGES.find((id) => stages?.[id]?.status !== 'completed' || stages[id].code !== 'OK');
+  if (missingDesign) return `${stageId} requires completed/OK tactical design stage ${missingDesign}`;
+  if (index === 0) {
+    return null;
+  }
+  const required = TACTICAL_IMPLEMENTATION_STAGES.slice(0, index).find((id) => stages?.[id]?.status !== 'completed' || stages[id].code !== 'OK');
+  return required ? `${stageId} cannot start before ${required}: complete it with completed/OK first` : null;
+}
 
 // Every stage that runs before spec-me, in order: the one list that the commit, restart, stored-input and result
 // canonicalization wiring read. A new stage joins the flow by taking its place in one of the two lists above.

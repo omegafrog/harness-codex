@@ -10,6 +10,7 @@
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
 - 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
 - 전술 설계 흐름 — 확정된 요구사항 뒤, `spec-me` 전에 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
+- 독립 전술 구현 흐름 — 완료된 tactical design에서 사용자가 바로 구현을 요청하면 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `tactical-code` 순서로 결정·구현·테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
 - `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
 - `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
@@ -39,6 +40,8 @@ gh-open-pr → 사용자 Merge
 ```
 
 버그처럼 원인을 먼저 찾아야 하는 작업은 `spec-me` 대신 `diagnosing-bugs`에서 시작한다.
+
+완료된 전술 설계에서 Spec·계획 단계를 건너뛰고 구현하라는 명시적 요청은 별도 `tactical-to-code` workflow로 처리한다. 기존 stack을 먼저 검토하고 API와 storage는 적용될 때만 결정한다. 화면이 요청에 포함되면 기존 `frontend-design` workflow를 독립 실행하고 결과를 handoff한다. 이 workflow는 요구사항 재시작 흐름과 분리되어 있어 application code를 재설정하지 않는다.
 
 ---
 

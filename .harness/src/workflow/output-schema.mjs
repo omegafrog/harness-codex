@@ -6,6 +6,7 @@ import { listDeclaredSkills } from './skill-declaration.mjs';
 
 // 구현 stage만 Spec 밖 동작을 구조화해 신고한다. 과거 결과 호환을 위해 저장 스키마에서는 선택으로 둔다.
 const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
+const COMMIT_REQUEST_FLOWS = new Set([...IMPLEMENTATION_FLOWS, 'tactical-code']);
 
 export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {
   const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
@@ -28,7 +29,11 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     for (const target of [schema.properties, result]) if (target.code?.enum) target.code = { ...target.code, enum: target.code.enum.filter((code) => code !== 'USER_DECISION_REQUIRED') };
     if (result.questions) result.questions = { ...result.questions, maxItems: 0 };
   }
-  else { delete result.unplanned_additions; delete result.commit_request; }
+  else {
+    delete result.unplanned_additions;
+    if (COMMIT_REQUEST_FLOWS.has(flow)) schema.properties.result.required.push('commit_request');
+    else delete result.commit_request;
+  }
   // Structured output requires every property; earlier results without these fields stay valid in the stored schema.
   const question = result.questions?.items;
   if (question?.properties?.decision_kind && !question.required.includes('decision_kind')) question.required = [...question.required, 'decision_kind'];

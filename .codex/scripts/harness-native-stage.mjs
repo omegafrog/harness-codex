@@ -13,7 +13,7 @@ import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveS
 import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
-import { preSpecOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
+import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
 import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchResult, compactPrepared, nativeCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
@@ -111,6 +111,8 @@ try {
     const flow = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     const orderViolation = flow ? preSpecOrderViolation((flow.state || flow).stages, input.context?.stage_id || input.skill) : null;
     if (orderViolation) throw new Error(orderViolation);
+    const tacticalViolation = flow ? tacticalImplementationOrderViolation((flow.state || flow).stages, input.context?.stage_id || input.skill) : null;
+    if (tacticalViolation) throw new Error(tacticalViolation);
     await writeOutputSchema({ root, input, prefix: `runtime/executions/${id}`, path: paths.files.schema, provider: binding.provider });
     const guide = [`.codex/internal-skills/${input.skill}/GUIDE.md`, `.agents/skills/${input.skill}/SKILL.md`, `.codex/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);

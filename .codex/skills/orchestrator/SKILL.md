@@ -30,6 +30,7 @@ Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. �
 | 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
+| 완료된 tactical design에서 Spec·계획 단계를 거치지 않고 구현을 명시적으로 요청함 | 별도 `tactical-to-code` workflow |
 
 기존 workflow 재개 요청은 새 작업으로 취급하지 않는다. workflow 명령은 현재 working directory가 소유 worktree일 때만 실행한다. primary checkout의 후보는 이동할 디렉터리를 찾는 참고 정보이며, 그 위치에서 답변이나 stage를 대신 처리하지 않는다. `.io` 로그나 백업만으로 workflow 또는 worktree를 추정하지 않는다.
 

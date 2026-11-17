@@ -168,7 +168,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
 
   // The tiers resolve from the installed documents, and the installed commit wiring is the source wiring.
   const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
-  for (const [stage, tier] of Object.entries(STAGE_TIERS)) assert.deepEqual(binding(stage), { skill: stage, provider: 'codex', model_tier: tier, model: MODELS[tier], reasoning_effort: tier === 'high_performance' ? 'high' : 'medium' }, stage);
+  for (const [stage, tier] of Object.entries(STAGE_TIERS)) assert.deepEqual(binding(stage), { skill: stage, provider: 'codex', model_tier: tier, model: MODELS[tier], reasoning_effort: tier === 'high_performance' ? 'high' : tier === 'low_performance' ? 'minimal' : 'medium' }, stage);
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.REQUIREMENTS_STAGES], REQUIREMENTS_STAGES);
   const { commitWorkflowDocuments } = await import(pathToFileURL(join(root, '.harness/src/workflow/stage-commit.mjs')));

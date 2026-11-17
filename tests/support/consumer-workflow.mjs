@@ -31,8 +31,9 @@ tracker:
 export const STAGE_TIERS = {
   'stakeholder-analysis': 'implementation', 'subdomain-candidates': 'implementation', 'event-storming': 'implementation', 'subdomain-classification': 'implementation', 'bounded-context': 'high_performance', 'ubiquitous-language': 'implementation', 'requirements-fix': 'high_performance',
   'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance',
+  'tactical-technology': 'low_performance', 'tactical-ui': 'low_performance', 'tactical-api': 'low_performance', 'tactical-data': 'low_performance', 'tactical-code': 'implementation',
 };
-export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high' };
+export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high', low_performance: 'codex-light' };
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
 export async function consumerWorkflow(t, request) {
@@ -71,10 +72,10 @@ export async function consumerWorkflow(t, request) {
     assert.equal(prepared.input.skill, stage);
     assert.equal(prepared.input.scope, request);
     assert.equal(prepared.input.context.stage_id, stage);
-    assert.equal(prepared.input.context.plan_set_id, undefined, 'the stored input derives the plan set from worktree.json');
+    assert.equal(prepared.input.context.plan_set_id, stage.startsWith('tactical-') ? planSetId : undefined, 'only tactical implementation stages receive their canonical plan-set identity');
     const base = ['--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id];
     const started = invoke(workspace, 'harness-native-stage.mjs', ['start', ...base]);
-    assert.equal(started.agent_profile, 'workflow_stage');
+    assert.equal(started.agent_profile, stage === 'tactical-code' ? 'tactical_implementation_agent' : stage.startsWith('tactical-') ? 'tactical_designer' : 'workflow_stage');
     assert.equal(started.guide, join(workspace, `.codex/internal-skills/${stage}/GUIDE.md`));
     assert.equal(started.binding.model_tier, STAGE_TIERS[stage]);
     assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
@@ -85,12 +86,12 @@ export async function consumerWorkflow(t, request) {
   }
 
   // The stage writes its documents and its output file.
-  async function submitStage({ stage, started }, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [] }) {
+  async function submitStage({ stage, started }, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], commit_request = null }) {
     for (const [path, content] of Object.entries(files)) {
       await mkdir(join(workspace, path, '..'), { recursive: true });
       await writeFile(join(workspace, path), content);
     }
-    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null };
+    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null, ...(commit_request ? { commit_request } : {}) };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
   }
 
@@ -98,10 +99,10 @@ export async function consumerWorkflow(t, request) {
   const finishStage = ({ base }) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-native-stage.mjs'), 'finish', ...base], { cwd: workspace, encoding: 'utf8' });
 
   // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
-  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true }) {
+  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true, commit_request = null }) {
     const begun = await beginStage(stage, { extraArgs });
     const { prepared, started, base } = begun;
-    await submitStage(begun, { files, status, code, summary, artifacts, questions });
+    await submitStage(begun, { files, status, code, summary, artifacts, questions, commit_request });
     const before = treeGit('rev-parse', 'HEAD').trim();
     const finished = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...base]);
     assert.equal(finished.status, status);
@@ -109,7 +110,7 @@ export async function consumerWorkflow(t, request) {
     const head = treeGit('rev-parse', 'HEAD').trim();
     if (expectCommit) {
       assert.notEqual(head, before, `${stage} committed its documents`);
-      assert.equal(treeGit('log', '-1', '--format=%s').trim(), `${stage}: ${planSetId}`);
+      assert.equal(treeGit('log', '-1', '--format=%s').trim(), commit_request?.message || `${stage}: ${planSetId}`);
     } else assert.equal(head, before, `${stage} committed nothing`);
     return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
   }
