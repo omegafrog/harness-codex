@@ -338,7 +338,7 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
   assert.match(await read('docs/architecture/enforcement.md'), /stage-takeover\.mjs[\s\S]*takeOverInterruptedStage/);
 });
 
-test('installed consumer: the last tactical design stage is taken over with the printed command, and the flow then reaches spec-me', async (t) => {
+test('installed consumer: the last tactical design stage is taken over, and spec-me is retired', async (t) => {
   const STAGE_LAST = 'context-boundary';
   const f = await interruptedWorkflow(t, {
     stage: STAGE_LAST,
@@ -368,14 +368,17 @@ test('installed consumer: the last tactical design stage is taken over with the 
   assert.equal(state.stages[STAGE_LAST].attempts.at(-1).status, 'failed');
   assert.equal(ok(run('harness-context.mjs', [])).next, undefined, 'nothing is left to take over');
 
-  // The resumed stage finishes like any other, and the flow continues with spec-me.
+  // The resumed stage finishes like any other; new-feature work continues through tactical-to-code.
   ok(printed(workspace, taken.next.bind.replace('<agent_id>', 'context-boundary-resumed'), fresh));
   await f.submitStage({ stage: STAGE_LAST, started: taken }, { summary: `생략: stakeholder-analysis 판정 생략 (${f.analysis})` });
   const done = ok(printed(workspace, taken.next.finish, fresh));
   assert.equal(done.status, 'completed');
   assert.equal(done.code, 'OK');
-  const ready = ok(run(PREPARE, ['--verbose', '--stage-id', 'spec-me']));
-  assert.equal(ready.input.context.transition.from_stage, STAGE_LAST);
+  const ready = run(PREPARE, ['--verbose', '--stage-id', 'spec-me']);
+  assert.equal(ready.status, 1);
+  assert.match(ready.stderr, /spec-me has been removed/);
+  const implementation = ok(run(PREPARE, ['--verbose', '--stage-id', 'tactical-technology']));
+  assert.equal(implementation.input.context.stage_id, 'tactical-technology');
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'the takeover committed nothing');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'Harness-owned state stays out of Git');
 });

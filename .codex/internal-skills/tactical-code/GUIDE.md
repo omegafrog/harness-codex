@@ -13,7 +13,7 @@ model_tier: implementation
 
 기존 모델·public API·규칙 소유자를 재사용하고 전술 설계가 정한 순서대로 작은 변경을 한다. 문서상 미정인 UI/API/storage/보안·권한·업무 규칙을 추론하지 않는다. 필요한 결정이 빠졌으면 영향을 받은 경로와 unblock 조건을 적어 `blocked/DEPENDENCY_INCOMPLETE`로 반환한다. 요청된 비즈니스 동작을 검증하는 테스트를 추가하고 프로젝트 기본 CLI로 실행한다. 기존 테스트 실패는 기준선과 구분한다.
 
-새 UI 구현은 별도 `frontend-design` workflow가 소유한다. handoff가 없는 UI는 만들지 않는다. Spec 또는 plan을 찾거나 작성해 입력으로 삼지 않는다. `spec-me`, tracker, PR, `docs/contracts/`와 E2E 인프라를 호출하지 않는다.
+새 UI 구현은 별도 `frontend-design` workflow가 소유한다. handoff가 없는 UI는 만들지 않는다. Spec 또는 plan을 찾거나 작성해 입력으로 삼지 않는다. tracker, PR, `docs/contracts/`와 E2E 인프라를 호출하지 않는다.
 
 ## 종료
 

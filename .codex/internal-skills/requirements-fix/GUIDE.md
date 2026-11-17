@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## Purpose
 
-Last step of the requirements flow, after `bounded-context` and before `spec-me`. Fill what the earlier stages left open in `requirements.md` with one interview batch, then fix the document: when the coverage gate passes, set its `상태` to `fixed` automatically. There is no approval question, so this stage is the only judgment between the draft and a document that `spec-me` treats as settled user decisions; that is why it runs at the high performance tier. After `fixed`, the document changes only on an explicit user revision.
+Last step of the requirements flow, after `bounded-context`.  Fill what the earlier stages left open in `requirements.md` with one interview batch, then fix the document: when the coverage gate passes, set its `상태` to `fixed` automatically. There is no approval question, so this stage is the final requirements coverage and user-decision checkpoint; that is why it runs at the high performance tier. After `fixed`, the document changes only on an explicit user revision.
 
 ## Inputs
 
@@ -41,4 +41,4 @@ Last step of the requirements flow, after `bounded-context` and before `spec-me`
 - Every checklist row is `SETTLED` or `NOT_APPLICABLE` with a reason, and the document's `상태` is `fixed`.
 - Every `INV` and `EX` has an `AC`, every adopted `CAND` is placed, and nothing from a rejected or held candidate entered.
 - No question was asked about an adopted, answered or resolved item, and no approval question was asked.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `spec-me` reads a `fixed` `requirements.md` as settled user decisions.
+- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. later tactical design stages read `fixed` `requirements.md` as settled user decisions.

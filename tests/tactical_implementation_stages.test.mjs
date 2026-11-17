@@ -51,6 +51,7 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   await writeFile(join(root, 'app.txt'), 'application edit\n');
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+  assert.equal(await readFile(join(root, '.codex/workflows/spec-me.yaml'), 'utf8').catch(() => null), null, 'fresh install has no spec-me workflow');
   await writeFile(join(root, '.harness/harness.yaml'), SETUP);
 
   const assets = [
@@ -69,6 +70,7 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code, severity }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid'].includes(code)), []);
+  assert.equal(doctor.diagnostics.some(({ path }) => path?.endsWith('/spec-me.yaml')), false, 'Doctor no longer sees spec-me as an installed workflow');
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.TACTICAL_IMPLEMENTATION_STAGES], [...TACTICAL_IMPLEMENTATION_STAGES]);
   assert.match(installedStages.tacticalImplementationOrderViolation({}, 'tactical-code'), /requires completed\/OK tactical design stage/);
@@ -80,7 +82,18 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   assert.match(status, /\?\? docs\/implementation\/demo\/technology\.md/);
   assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.agents\/|\.claude\/|\.io\//);
 
-  await updateProject({ sourceRoot, targetRoot: root, force: true });
+  const retiredPaths = ['.codex/workflows/spec-me.yaml', '.codex/internal-skills/spec-me/GUIDE.md', '.codex/agents/spec_document_writer.toml', '.claude/agents/spec_document_writer.md'];
+  for (const path of retiredPaths) {
+    assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
+    await mkdir(join(root, path, '..'), { recursive: true });
+    await writeFile(join(root, path), `legacy ${path}\n`);
+  }
+  const updated = await updateProject({ sourceRoot, targetRoot: root, force: true });
+  for (const path of retiredPaths) {
+    assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `update retires ${path}`);
+    assert.ok(updated.retired.includes(path));
+    assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), `legacy ${path}\n`, `update backs up ${path}`);
+  }
   for (const path of assets) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `${path} remains ignored after update`);
 });
 

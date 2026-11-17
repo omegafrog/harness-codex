@@ -100,6 +100,7 @@ try {
   const session = await cliSession(root, opts['worktree-ref']);
   const input = await readExecutionInput({ root, execution_id: id });
   await validateSkillInput({ root, input });
+  if (input.skill === 'spec-me' || input.context?.stage_id === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
   if (input.session_directory !== session || input.context?.worktree_ref !== opts['worktree-ref'] || input.context?.parent_execution_id || input.skill === 'workflow-compose') throw new Error('Invalid native stage workspace or input');
   errorContext.stageId = input.context?.stage_id || input.skill;
   const { workflow, stage } = await resolveWorkflowStage({ root, input });

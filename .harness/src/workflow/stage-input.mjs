@@ -20,8 +20,8 @@ import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, pre
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
-const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'spec-me', 'to-ticket', 'implement-wrapper']);
-const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
+const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 // A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
 // blockers in it were true when it ended, and Harness, the documents or the gate may have changed since, so it is no verdict.
 export const PREVIOUS_RESULT_NOTE = 'The previous result is evidence of an earlier attempt: its blockers, gate errors and check verdicts were true when that attempt ended, and Harness, the documents or the gate may have changed since. Re-run the check on the current files before relying on any of them or blocking on them again.';
@@ -54,6 +54,7 @@ export async function assertPrStageReadiness({ root, state, stageId }) {
 }
 
 export async function resolveStageSkill({ root, stageId }) {
+  if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
   const workflows = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
   const matches = [];
   for (const file of workflows) {
@@ -254,7 +255,7 @@ async function queueRunningAnswers(session, executionId, answer) {
 export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
-  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper');
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
   if ((repairReceipt || approvalAnswer) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
@@ -269,6 +270,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let historicalBinding = null;
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
+  if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
   // The flow before spec-me runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
   const orderViolation = preSpecOrderViolation(state.stages, stageId);
   if (orderViolation) throw new Error(orderViolation);

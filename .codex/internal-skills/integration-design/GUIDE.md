@@ -19,7 +19,7 @@ Integration step of the tactical design flow, after `application-service` and be
 
 ## Prohibited
 
-- Inspecting source or test code, or choosing a broker, protocol, serialization, framework or deployment unit. Technology choice belongs to `spec-me`.
+- Inspecting source or test code, or choosing a broker, protocol, serialization, framework or deployment unit. Technology choice belongs to `tactical-technology`.
 - Editing `CONTEXT-MAP.md`, adding a relationship the map and the decisions do not evidence, or reassigning a `판단 소유자`.
 - Considering Saga or Outbox for a rule that `aggregate-design` did not record as eventual consistency, or applying one to a same-context reaction that needs none.
 - Reading a consumer's repository, table or internal type, or sharing a model between contexts; a message carries the business information the receiving context needs and nothing of the sender's internals.
@@ -49,4 +49,4 @@ An answer can reveal a business rule or exception that `requirements.md` lacks (
 ## Completion
 
 - Section 5 holds an integration row, with its upstream, downstream, messages, communication style and source, for every relationship of the plan set and every cross-context consistency decision (a synchronous row for each `즉시`, an asynchronous one for each `최종`); a choice that changes the business outcome carries the user's answer as its source. Section 7 holds this stage's decisions with sources.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. How `spec-me` consumes the tactical design is decided later.
+- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. The `tactical-to-code` workflow consumes the completed tactical design.

@@ -1,6 +1,6 @@
 # Harness Codex
 
-**Codex 개발을 요구사항 → 설계 → 계획 → 구현 → 검증 → PR 흐름으로 구조화하는 project-local workflow harness.**
+**Codex 개발을 요구사항 → 설계 → 구현 → 검증 → PR 흐름으로 구조화하는 project-local workflow harness.**
 
 공개 Harness skill은 `$setup`, `$orchestrator`, `$eli5`, `$harness-update` 네 개다(Claude Code에서는 `/setup`, `/orchestrator`, `/eli5`, `/harness-update`). 자연어 유지보수·복구, 버그 분석·수정, 지식·평가, 프런트엔드, 리뷰·PR, 검증 요청은 orchestrator가 관련 내부 GUIDE로 라우팅한다.
 
@@ -8,11 +8,10 @@
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
-- 요구사항 흐름 — 새 기능이면 `spec-me` 전에 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
-- 전술 설계 흐름 — 확정된 요구사항 뒤, `spec-me` 전에 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
-- 독립 전술 구현 흐름 — 완료된 tactical design에서 사용자가 바로 구현을 요청하면 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `tactical-code` 순서로 결정·구현·테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
-- `spec-me` — 질문을 통해 Product / Architecture Spec을 확정
-- `to-ticket` — Spec을 dependency가 있는 vertical implementation plan으로 분할
+- 요구사항 흐름 — 새 기능이면 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
+- 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
+- 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `tactical-code` 순서로 결정·구현·테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
+- `to-ticket` — 기존 승인된 Spec을 dependency가 있는 vertical implementation plan으로 분할
 - `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
 - `implement` + `code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
@@ -30,18 +29,14 @@ stakeholder-analysis → subdomain-candidates → ubiquitous-language
 domain-model → aggregate-design → domain-service
   → application-service → integration-design → context-boundary → tactical-design.md
   ↓
-spec-me → Product Spec → Architecture Spec
-  ↓
-to-ticket → Plan Set
-  ↓
-implement-wrapper → implement × N → code-review
+tactical-to-code: tactical-technology → tactical-ui → tactical-api → tactical-data → tactical-code
   ↓
 gh-open-pr → 사용자 Merge
 ```
 
-버그처럼 원인을 먼저 찾아야 하는 작업은 `spec-me` 대신 `diagnosing-bugs`에서 시작한다.
+버그처럼 원인을 먼저 찾아야 하는 작업은 `diagnosing-bugs`에서 시작한다.
 
-완료된 전술 설계에서 Spec·계획 단계를 건너뛰고 구현하라는 명시적 요청은 별도 `tactical-to-code` workflow로 처리한다. 기존 stack을 먼저 검토하고 API와 storage는 적용될 때만 결정한다. 화면이 요청에 포함되면 기존 `frontend-design` workflow를 독립 실행하고 결과를 handoff한다. 이 workflow는 요구사항 재시작 흐름과 분리되어 있어 application code를 재설정하지 않는다.
+전술 설계가 완료되면 별도 `tactical-to-code` workflow로 구현을 진행한다. 기존 stack을 먼저 검토하고 API와 storage는 적용될 때만 결정한다. 화면이 요청에 포함되면 기존 `frontend-design` workflow를 독립 실행하고 결과를 handoff한다. 이 workflow는 요구사항 재시작 흐름과 분리되어 있어 application code를 재설정하지 않는다.
 
 ---
 
@@ -77,7 +72,7 @@ gh-open-pr → 사용자 Merge
 
 ### 2. 요구사항 흐름
 
-새 기능이면 `spec-me` 전에 아래 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `requirements-fix`가 확정한다. 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다.
+새 기능이면 아래 요구사항 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `requirements-fix`가 확정한다. 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다.
 
 ```text
 사용자 요청
@@ -91,7 +86,7 @@ docs/specs/<plan-set-id>/requirements.md           채택·확정한 항목의 �
 ```
 
 - 논의 대상은 요청 원문뿐이다. 요청이 이미 말한 범위는 후보가 아니라 업무 목적에 `요청 원문`으로 직접 적고, 후보는 요청이 정하지 않은 결정(행위자별 권한, 삭제의 전파, 예외 결과 등)만 구체 규칙으로 제안한다. 후보마다 `요청 앵커`(요청 원문 인용)가 있어야 하며, 앵커 없는 관찰은 접어서 참고용으로만 보여 준다.
-- 채택한 후보와 확정한 업무 주체만 이후 `spec-me`의 요구사항이 된다. 요청 속 행위자를 자동으로 persona로 만들지 않는다.
+- 채택한 후보와 확정한 업무 주체만 구현 요구사항이 된다. 요청 속 행위자를 자동으로 persona로 만들지 않는다.
 - 요청이 기존 승인된 업무 하나 안의 변경이고 새 행위자·권한이나 규칙 충돌이 없으면 건너뛰고 사유를 기록한다.
 
 #### Stakeholder 등록
@@ -119,11 +114,11 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `bounded-context` | 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적는다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
 | `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate를 통과하면 `상태: fixed`로 확정한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 빈칸만 한 묶음 | |
 
-`stakeholder-analysis`가 생략을 판정하면 뒤 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`는 `spec-me`가 사용자 결정으로 읽으며 Product Spec과 이후 단계는 그대로다. Architecture는 확정된 바운디드 컨텍스트를 다시 비교하지 않는다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
+`stakeholder-analysis`가 생략을 판정하면 뒤 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`와 바운디드 컨텍스트는 이후 전술 설계 및 구현의 입력이다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
 
 #### 전술 설계 흐름
 
-`requirements-fix`가 `fixed`로 확정한 뒤 `spec-me` 전에 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
+`requirements-fix`가 `fixed`로 확정한 뒤 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
 
 | stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
 |---|---|---|---|
@@ -135,47 +130,13 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `context-boundary` | 관계 패턴, 코드 의존 형태와 경계 강제 방식을 근거에 따라 정하고 `CONTEXT-MAP.md`에 반영한다. 배포 방식·프레임워크는 정하지 않는다 | 근거가 선택지를 가르지 못할 때만 질문 | 같음 |
 
 - gate는 한 번만 돌고 stage는 돌리지 않는다. `domain-model`·`aggregate-design`·`domain-service`·`application-service`·`integration-design`은 gate 없이 `completed/OK`로 받아들이고, 마지막 `context-boundary`가 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체를 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root>`와 같은 검사로 확인한다(`harness-native-stage.mjs finish`와 상태 기록). 통과하지 못하면 commit·기록 없이 `gate_error`로 되돌린다. 발견 사항마다 `owner_stage`가 잘못된 절을 채운 stage를 가리킨다. `context-boundary` 자신의 절이면 같은 서브에이전트가 고치고, 앞 stage의 절이면 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키며 사용자가 `--restart-requirements`나 `--user-revision`으로 다시 연다. `판정: 생략` 흐름은 문서 없이 통과한다. gate는 반드시 성립해야 하는 기존 여섯 조건과, section 5의 통합 행마다 완전하고 출처가 있는 section 6 경계 결정이 있는지 확인한다. 문서와 `## 1`~`## 6` 절이 있는지, 모든 업무가 모델 또는 외부 시스템 표시에 대응하고 모든 규칙에 소유 모델이 있는지, 모든 규칙에 비어 있지 않은 강제 행위(Aggregate·Entity 메서드, Value Object의 규칙, Domain Service, 외부 시스템 중 어떤 형태든)가 있는지, 둘 이상의 Aggregate에 걸친 규칙이 `즉시`나 `최종`이며 에이전트 제안만이 아닌 출처가 있는 일관성 결정(`CON-xx`)을 인용하는지, 한 transaction이 Aggregate 하나만 바꾸는지, Saga·Outbox가 `최종` 결정에 묶인 통합 행에만 있는지다. 표는 키 열로 찾고 모르는 열은 무시한다. 경계 결정의 DDD 적합성, 병합과 `조회 전용 Aggregate`, Root의 종류, Entity 배치, Domain Service·Application Service·통합 행의 충분성 같은 맥락적 DDD 판단은 gate가 아니라 stage GUIDE와 리뷰가 맡는다.
-- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다. 흐름 순서는 실행기가 확인한다. 앞 stage가 `completed/OK`가 아니면 준비기와 `harness-native-stage.mjs start`가 `spec-me`와 뒤 stage를 거부하며, 이전 Harness가 순서를 어기고 남긴 결과 없는 stage는 종료를 확인한 뒤 `harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`로 되돌린다.
+- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked`로 반환하고, 사용자가 `--restart-requirements` 또는 `--user-revision`으로 앞 stage를 다시 연다. 흐름 순서는 실행기가 확인한다. 앞 stage가 `completed/OK`가 아니면 준비기와 `harness-native-stage.mjs start`가 뒤 stage를 거부하며, 이전 Harness가 순서를 어기고 남긴 결과 없는 stage는 종료를 확인한 뒤 `harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`로 되돌린다.
 - `docs/architecture/domain-model.md`와 `CONTEXT.md`는 프로젝트 소유 문서이며 Git에 노출된다. stage가 변경을 artifact로 보고했을 때만 실행기가 plan set 문서와 함께 commit한다.
-- 전술 설계 결과를 `spec-me`가 어떻게 읽는지는 아직 정하지 않았다.
+- 전술 설계 완료 뒤 별도 `tactical-to-code` workflow가 구현을 이어간다.
 
-### 3. `spec-me`
+### 3. `to-ticket`
 
-바로 코드를 작성하지 않고 요구사항과 설계를 먼저 확정한다.
-
-```text
-사용자 요청
-  ↓
-Product Spec — 무엇을 만들어야 하는가
-  ↓
-Architecture Spec — 어떻게 구현할 것인가
-```
-
-Product 단계는 source/test code를 기준으로 요구사항을 추론하지 않는다. Architecture 단계부터 `code-research`로 현재 구조를 조사하며 필요하면 `event-storming`, `ddd-design`, `codebase-design`을 사용한다.
-
-두 단계 모두 `grill-with-docs`의 coverage gate를 사용한다.
-
-```text
-SETTLED        결정됨
-PARTIAL        일부 결정됨
-UNRESOLVED     결정 필요
-NOT_APPLICABLE 적용되지 않음
-```
-
-중요한 `PARTIAL` / `UNRESOLVED` 항목이 남아 있으면 다음 단계로 진행하지 않는다.
-
-주요 산출물:
-
-```text
-docs/specs/<ticket-id>/
-├─ product-spec.md
-├─ architecture-spec.md
-└─ diagrams/
-```
-
-### 4. `to-ticket`
-
-완성된 Spec을 구현 가능한 **vertical slice**로 나눈다.
+기존 승인된 Spec을 구현 가능한 **vertical slice**로 나눈다.
 
 ```text
 ❌ Entity → Repository → Service → Controller

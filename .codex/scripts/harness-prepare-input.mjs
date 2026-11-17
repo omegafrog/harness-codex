@@ -25,9 +25,11 @@ try {
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
   const repository = await realpath(commandContext.root);
   errorContext.root = repository;
-  const stage = await resolveStageSkill({ root: repository, stageId: options['stage-id'] });
-  const stageSkill = await readSkillDeclaration({ root: repository, skill: stage.skill }).catch((error) => { throw new Error(`${error.message}; --stage-id must select a registered sub-agent skill`); });
-  if (stageSkill.main_session) throw new Error(`${stage.skill} runs in the main session; --stage-id must select a sub-agent skill`);
+  if (!(options['stage-id'] === 'spec-me' && options['discard-out-of-order'] === 'true')) {
+    const stage = await resolveStageSkill({ root: repository, stageId: options['stage-id'] });
+    const stageSkill = await readSkillDeclaration({ root: repository, skill: stage.skill }).catch((error) => { throw new Error(`${error.message}; --stage-id must select a registered sub-agent skill`); });
+    if (stageSkill.main_session) throw new Error(`${stage.skill} runs in the main session; --stage-id must select a sub-agent skill`);
+  }
   const session = await resolveSkillSession(repository, dirname(options['worktree-ref']));
   const workflowRef = null;
   const state = await readSkillSessionJson({ root: repository, session_directory: session, path: 'runtime/orchestrator/state.json' });

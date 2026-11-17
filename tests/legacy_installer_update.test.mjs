@@ -129,8 +129,6 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
     for (const [path, pattern] of [
-      // Question criteria are owned by the Product Spec guide; spec-me links to them.
-      ['.codex/internal-skills/spec-me/GUIDE.md', /무엇을 언제 묻는지는 \[Product Spec 절차\]\(\.\.\/product-spec\/GUIDE\.md\)의 질문 기준/],
       ['.codex/internal-skills/product-spec/GUIDE.md', /Ask about an ambiguity only when it is necessary to deliver the requested core behavior/],
       ['.codex/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
       ['.codex/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
@@ -179,13 +177,13 @@ test('update can replace managed skills without creating backups when explicitly
   const root = await mkdtemp(`${session}/no-backup-`);
   try {
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const path = '.codex/internal-skills/spec-me/GUIDE.md';
+    const path = '.codex/internal-skills/context-boundary/GUIDE.md';
     await writeFile(resolve(root, path), 'local content to replace');
     await writeFile(resolve(root, '.codex/hooks.json'), '{}');
     await writeFile(resolve(root, '.claude/settings.local.json'), '{}');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     assert.equal(result.backup_directory, null);
-    assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, '.codex/internal-skills/spec-me/GUIDE.md')));
+    assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, path)));
     await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
     await assert.rejects(readFile(resolve(root, '.claude/installer-backups'), 'utf8'), { code: 'ENOENT' });
     assert.ok((await inspectOrchestratorHook(root)).valid || await codexUserOrchestratorHookInstalled(), 'the existing user-level hook can serve a consumer without a project hook');
@@ -285,7 +283,7 @@ test('a Harness source checkout excludes nothing it owns, including the contract
     execFileSync('git', ['init', '-q', root]);
     const { name } = JSON.parse(await readFile(resolve(sourceRoot, 'package.json'), 'utf8'));
     await writeFile(resolve(root, 'package.json'), JSON.stringify({ name }));
-    for (const path of ['bin/harness-install.mjs', '.harness/src/installer/update.mjs', '.codex/internal-skills/spec-me/GUIDE.md']) {
+    for (const path of ['bin/harness-install.mjs', '.harness/src/installer/update.mjs', '.codex/internal-skills/skill-execution/references/workflow-map.md']) {
       await mkdir(resolve(root, path, '..'), { recursive: true });
       await writeFile(resolve(root, path), '');
     }

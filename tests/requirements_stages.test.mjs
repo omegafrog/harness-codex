@@ -106,10 +106,8 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/internal-skills/requirements-fix/GUIDE.md'), /automatically/);
   assert.ok((await read('.codex/internal-skills/requirements-fix/references/coverage.md')).includes('확정 조건'));
 
-  // spec-me and the Product procedure only read a fixed document; downstream consumers keep product-spec.md.
-  assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /requirements\.md` exists with `상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
+  // The retired Spec procedure and the Product guide both treat requirements.md as a fixed input.
   assert.match(await read('.codex/internal-skills/product-spec/GUIDE.md'), /`상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
-  assert.match(await read('.codex/internal-skills/spec-me/GUIDE.md'), /bounded-context table[\s\S]*do not compare the context boundaries again/);
   assert.match(await read('.codex/internal-skills/architecture-spec/GUIDE.md'), /requirements\.md` when present instead of running it again/);
   assert.match(await read('.codex/internal-skills/architecture-spec/GUIDE.md'), /already settled the contexts/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /requirements\.md` when present/);
@@ -305,10 +303,10 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /상태: fixed/);
 
   // The tactical design flow follows the last requirements stage and receives the fixed document as an input reference;
-  // spec-me waits for it, so the requirements flow alone does not reach spec-me.
+  // the new-feature flow continues through tactical design before implementation.
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
-  assert.match(premature.stderr, /spec-me cannot start before domain-model/);
+  assert.match(premature.stderr, /spec-me has been removed/);
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
   assert.equal(next.input.skill, 'domain-model');
   assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
@@ -323,7 +321,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(revision.input.context.user_revision, true);
   const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper/);
+  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper/);
 
   // Restart preserves the old state and returns to the checkpoint before bounded-context.
   const restartArgs = ['--stage-id', 'bounded-context', '--restart-requirements', 'true'];
@@ -367,7 +365,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
 });
 
-test('a skipped stakeholder-analysis makes the later requirements stages record the skip without writing, and spec-me follows the tactical stages', async (t) => {
+test('a skipped stakeholder-analysis makes later stages record the skip, then tactical-to-code follows tactical design', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, treeGit, invoke, runStage, planSetId, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -386,10 +384,10 @@ test('a skipped stakeholder-analysis makes the later requirements stages record 
   assert.equal(existsSync(join(workspace, `docs/specs/${planSetId}/requirements.md`)), false, 'a skipped analysis leaves no requirements.md');
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
-  assert.match(premature.stderr, /spec-me cannot start before domain-model/);
+  assert.match(premature.stderr, /spec-me has been removed/);
   for (const stage of TACTICAL_DESIGN_STAGES) await runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
-  assert.equal(next.input.context.transition.from_stage, 'context-boundary');
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
+  assert.equal(next.input.context.stage_id, 'tactical-technology');
 });
 
 // The event diagrams are rendered by the installed local renderer. The examples in the reference are rendered here, so a

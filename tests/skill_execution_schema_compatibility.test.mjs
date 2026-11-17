@@ -389,7 +389,7 @@ test('fresh install and update use consolidated flow schemas and Doctor inventor
     const returnContractText = await readFile(join(root, '.codex/internal-skills/skill-execution/references/stage-return.md'), 'utf8');
     assert.match(returnContractText, /`result\.questions`에 \[질문 스키마\]/);
     assert.match(returnContractText, /질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다/);
-    for (const skill of ['grilling', 'spec-me']) {
+    for (const skill of ['grilling']) {
       const instructions = await readFile(join(root, '.codex/internal-skills', skill, 'GUIDE.md'), 'utf8');
       assert.match(instructions, /stage (return contract|반환 계약)/);
       assert.doesNotMatch(instructions, /결과의 `question`에/);

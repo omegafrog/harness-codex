@@ -12,7 +12,7 @@ main_session: true
 
 workflow 외의 직접 요청은 [기능 라우팅](references/capability-routing.md)에서 담당 GUIDE를 찾아 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
 
-Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. 다른 workflow 후보나 `compose_candidate`보다 먼저 [Harness Maintenance](../../../.codex/internal-skills/harness-maintenance/GUIDE.md)를 현재 checkout에서 실행한다. 설치 업데이트만 요청한 경우 `workflow-compose`, worktree 생성, `spec-me`를 실행하지 않는다.
+Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. 다른 workflow 후보나 `compose_candidate`보다 먼저 [Harness Maintenance](../../../.codex/internal-skills/harness-maintenance/GUIDE.md)를 현재 checkout에서 실행한다. 설치 업데이트만 요청한 경우 `workflow-compose`와 worktree 생성을 실행하지 않는다.
 
 ## Skill 선택
 
@@ -21,16 +21,15 @@ Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. �
 | Harness 설치 업데이트·진단 요청 | `harness-maintenance` |
 | 저장소에 Harness setup이 필요함 | `setup` |
 | setup이 끝났고 새 사용자 작업을 시작함 | `workflow-compose` |
-| `spec-me`를 시작하지 않은 새 기능의 요구사항이 정리되지 않았고 이 plan set에 완료된 `stakeholder-analysis`가 없음 | `stakeholder-analysis` |
-| `spec-me`를 시작하지 않았고 `stakeholder-analysis`가 완료됐지만 요구사항 흐름의 뒤 stage가 남음 | 요구사항 흐름에서 완료되지 않은 첫 stage |
-| `spec-me`를 시작하지 않았고 요구사항 흐름이 완료됐지만 전술 설계 흐름의 stage가 남음 | 전술 설계 흐름에서 완료되지 않은 첫 stage |
-| 새 기능의 요구사항이나 승인이 정리되지 않았고 요구사항 흐름과 전술 설계 흐름이 모두 완료됐거나 이미 `spec-me`가 시작됨 | `spec-me` |
+| 새 기능의 요구사항 흐름에 완료된 `stakeholder-analysis`가 없음 | `stakeholder-analysis` |
+| 요구사항 흐름이 끝나지 않음 | 요구사항 흐름에서 완료되지 않은 첫 stage |
+| 요구사항 흐름은 끝났지만 전술 설계 흐름의 stage가 남음 | 전술 설계 흐름에서 완료되지 않은 첫 stage |
+| 요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음 | 별도 `tactical-to-code` workflow |
 | 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
 | 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
 | 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
-| 완료된 tactical design에서 Spec·계획 단계를 거치지 않고 구현을 명시적으로 요청함 | 별도 `tactical-to-code` workflow |
 
 기존 workflow 재개 요청은 새 작업으로 취급하지 않는다. workflow 명령은 현재 working directory가 소유 worktree일 때만 실행한다. primary checkout의 후보는 이동할 디렉터리를 찾는 참고 정보이며, 그 위치에서 답변이나 stage를 대신 처리하지 않는다. `.io` 로그나 백업만으로 workflow 또는 worktree를 추정하지 않는다.
 
@@ -40,9 +39,9 @@ primary checkout에서 활성 worktree가 발견되면 해당 workflow의 답변
 
 현재 linked worktree에서 새 workflow를 시작할 때는 현재 경로에서 `workflow-compose`를 실행한다. 실행기가 현재 worktree를 workflow에 연결하며 새 worktree를 만들지 않는다. 반환된 workspace가 현재 경로와 같은지 확인하고 첫 stage를 여기서 이어간다. 이미 workflow 기록이 있으면 덮어쓰거나 다른 worktree를 만들지 말고 현재 기록을 확인한다.
 
-요구사항 흐름은 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix` 순서이며 `spec-me` 앞에서만 실행한다. 각 stage는 plan set의 `requirements.md`를 이어서 채우고 완료되면 실행기가 그 문서를 commit한다. `bounded-context`는 `CONTEXT-MAP.md`를, `ubiquitous-language`는 `CONTEXT.md`를 같은 stage 안에서 갱신하며 실행기가 함께 commit한다. 질문은 stage가 반환한 `USER_DECISION_REQUIRED`로 전달하고 stage마다 한 묶음이다. `stakeholder-analysis`가 `판정: 생략`이면 뒤 stage들은 문서를 쓰지 않고 생략을 기록한 채 `completed/OK`를 반환하며, `event-storming`·`subdomain-classification`의 다이어그램 렌더가 막히면 `blocked`를 보고하고 환경이 복구된 뒤 같은 stage를 이어간다. `requirements-fix`가 `fixed`로 확정한 `requirements.md`는 사용자의 명시적 수정 지시가 있을 때만 다시 연다.
+요구사항 흐름은 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix` 순서로 실행한다. 각 stage는 plan set의 `requirements.md`를 이어서 채우고 완료되면 실행기가 그 문서를 commit한다. `bounded-context`는 `CONTEXT-MAP.md`를, `ubiquitous-language`는 `CONTEXT.md`를 같은 stage 안에서 갱신하며 실행기가 함께 commit한다. 질문은 stage가 반환한 `USER_DECISION_REQUIRED`로 전달하고 stage마다 한 묶음이다. `stakeholder-analysis`가 `판정: 생략`이면 뒤 stage들은 문서를 쓰지 않고 생략을 기록한 채 `completed/OK`를 반환하며, `event-storming`·`subdomain-classification`의 다이어그램 렌더가 막히면 `blocked`를 보고하고 환경이 복구된 뒤 같은 stage를 이어간다. `requirements-fix`가 `fixed`로 확정한 `requirements.md`는 사용자의 명시적 수정 지시가 있을 때만 다시 연다.
 
-전술 설계 흐름은 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서이며 요구사항 흐름 뒤, `spec-me` 앞에서만 실행한다. 각 stage는 plan set의 `tactical-design.md`에서 자기 절만 채우고 완료되면 실행기가 `docs/specs/<plan-set-id>/`를 commit한다. 프로젝트 문서 `docs/architecture/domain-model.md`, `CONTEXT.md`, `CONTEXT-MAP.md`는 stage가 artifact로 보고했을 때만 함께 commit한다. `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니다. 사용자가 `domain-model`은 그대로 두고 `aggregate-design`을 다시 하라고 하면 `domain-model` stage를 다시 열지 않는다는 뜻이고 `aggregate-design`은 자기 절을 `tactical-design.md`에 쓴다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 바꾸므로 직접 옮기지 않는다. 질문은 `aggregate-design`(일관성 결정)과 `integration-design`(업무 결과가 갈리는 통합 결정)과 `context-boundary`(경계 선택의 업무 결과가 갈리는 경우)만 반환하며 stage마다 한 묶음이다. gate `harness-domain-model-check.mjs`는 `context-boundary`가 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체에 한 번만 실행하며 앞 다섯 stage는 gate 없이 완료된다. 통과하지 못하면 `finish`가 commit·기록 없이 `gate_error`와 발견 사항(각각 잘못된 절을 채운 stage인 `owner_stage` 포함)을 반환하므로 `format_error`처럼 같은 서브에이전트에 돌려 같은 `finish`를 다시 실행하게 하되, `owner_stage`가 앞 stage이면 그 절은 고치지 않고 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키게 한다. `stakeholder-analysis`가 `판정: 생략`이면 전술 설계 stage도 문서를 쓰지 않고 생략을 기록한 채 `completed/OK`를 반환한다. 요구사항이 부족하거나 앞 stage의 결정이 무효가 되어 stage가 `blocked`(`INPUT_MISSING`·`DEPENDENCY_INCOMPLETE`)를 반환하면 요약이 가리키는 앞 stage와 이유를 사용자에게 알리고, 사용자의 지시에 따라 아래 `--restart-requirements`나 `--user-revision`으로 그 stage를 다시 연다. 앞 stage를 다시 열 때는 restart를 먼저 하고 요구사항 수정은 그 뒤에 한다. 사용자가 완료된 전술 설계 stage를 `--user-revision`으로 고쳤고 stage가 `영향받는 이후 stage`를 보고하면 그 stage부터 restart한다.
+전술 설계 흐름은 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서로 요구사항 흐름 뒤에 실행한다. 각 stage는 plan set의 `tactical-design.md`에서 자기 절만 채우고 완료되면 실행기가 `docs/specs/<plan-set-id>/`를 commit한다. 프로젝트 문서 `docs/architecture/domain-model.md`, `CONTEXT.md`, `CONTEXT-MAP.md`는 stage가 artifact로 보고했을 때만 함께 commit한다. `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니다. 사용자가 `domain-model`은 그대로 두고 `aggregate-design`을 다시 하라고 하면 `domain-model` stage를 다시 열지 않는다는 뜻이고 `aggregate-design`은 자기 절을 `tactical-design.md`에 쓴다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 바꾸므로 직접 옮기지 않는다. 질문은 `aggregate-design`(일관성 결정)과 `integration-design`(업무 결과가 갈리는 통합 결정)과 `context-boundary`(경계 선택의 업무 결과가 갈리는 경우)만 반환하며 stage마다 한 묶음이다. gate `harness-domain-model-check.mjs`는 `context-boundary`가 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체에 한 번만 실행하며 앞 다섯 stage는 gate 없이 완료된다. 통과하지 못하면 `finish`가 commit·기록 없이 `gate_error`와 발견 사항(각각 잘못된 절을 채운 stage인 `owner_stage` 포함)을 반환하므로 `format_error`처럼 같은 서브에이전트에 돌려 같은 `finish`를 다시 실행하게 하되, `owner_stage`가 앞 stage이면 그 절은 고치지 않고 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키게 한다. `stakeholder-analysis`가 `판정: 생략`이면 전술 설계 stage도 문서를 쓰지 않고 생략을 기록한 채 `completed/OK`를 반환한다. 요구사항이 부족하거나 앞 stage의 결정이 무효가 되어 stage가 `blocked`(`INPUT_MISSING`·`DEPENDENCY_INCOMPLETE`)를 반환하면 요약이 가리키는 앞 stage와 이유를 사용자에게 알리고, 사용자의 지시에 따라 아래 `--restart-requirements`나 `--user-revision`으로 그 stage를 다시 연다. 앞 stage를 다시 열 때는 restart를 먼저 하고 요구사항 수정은 그 뒤에 한다. 사용자가 완료된 전술 설계 stage를 `--user-revision`으로 고쳤고 stage가 `영향받는 이후 stage`를 보고하면 그 stage부터 restart한다.
 
 `stakeholder-analysis`는 독립 persona가 낸 후보 요구사항을 사용자가 하나씩 채택하게 하고, 요청이 기존 승인 업무 안의 자명한 변경이면 스스로 건너뛴다. 사용자가 이해관계자를 등록하고 싶어 하면 `node .codex/scripts/harness-stakeholder.mjs add`로 `docs/domain/stakeholders/`에 카드를 만들고 커밋하게 안내한다. 카드는 사용자 소유 문서이므로 orchestrator나 stage가 대신 만들지 않으며, worktree에서 쓰려면 커밋되어 있어야 한다.
 
@@ -66,19 +65,19 @@ stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>
 
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
 
-완료된 Spec·계획·전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+완료된 전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. `context-boundary` 뒤에는 새 `tactical-to-code` workflow를 시작한다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
 
 사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
-요구사항·전술 설계 stage와 `spec-me`의 순서는 실행기가 결정한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
+요구사항·전술 설계 stage의 순서는 실행기가 결정한다. 새 `spec-me` 실행과 준비된 legacy stage의 재개도 거부된다. 결과 없는 구형 stage는 오류가 안내하는 안전한 discard 경로로만 정리한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
 
-구현을 요청받으면 기존 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
+Spec·계획이 승인된 legacy 작업은 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. 새 기능 구현은 전술 설계 완료 뒤 `tactical-to-code` workflow를 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
 
-요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: Spec까지는 `spec-me`, 계획·발행까지는 `to-ticket`, 구현까지는 `implement-wrapper`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
+요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: 계획·발행까지는 `to-ticket`, legacy Spec 기반 구현까지는 `implement-wrapper`, 새 tactical 구현은 `tactical-to-code`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
 gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 완료(`implement-wrapper`)는 plan별 리뷰 evidence, 최종 E2E receipt, tracker 완료 상태, plan의 제거 목록, session checkpoint를 읽으므로 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`에서 막힌 check의 `reason`과 `details`(plan·역할·receipt)를 보고 그 기록을 만드는 단계(리뷰, 승인된 최종 E2E 실행, tracker 완료 전이, 계약 동기화)를 진행한 뒤 다시 실행한다. `passed: true` 같은 값을 직접 써서 gate를 통과시키려 하지 않는다. 그런 값은 무시되고 결과의 `ignored_state_keys`에 기록된다.
 
-메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `spec-me`, `to-ticket`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
+메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `to-ticket`, `tactical-code`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 
 모든 stage는 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)에 따라 현재 CLI의 native 서브에이전트로 호출한다. 실행 ID를 예약한 뒤 실제 에이전트 결과를 기다리고 정적 형식 검증을 수행한다. 형식 오류는 그 에이전트에게 키·값과 함께 돌려 재작성하게 한다.
 반환 상태에 따라 workflow를 전환한다.
@@ -87,7 +86,7 @@ gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 �
 |---|---|
 | `completed/OK` | 요청 범위와 workflow 상태에 따라 다음 skill을 선택한다. workflow 완료 gate가 남아 있으면 전체 완료로 보고하지 않는다. |
 | `REVIEW_REQUIRED` | 반환에 명시된 reviewer/profile을 사용해 독립 리뷰를 진행하고 결과를 원래 skill에 돌려준다. 구체 절차는 해당 skill의 리뷰 계약을 따른다. |
-| `SPEC_REVISION_REQUIRED` | `spec-me`를 선택한다. |
+| `SPEC_REVISION_REQUIRED` | `requirements-fix`를 사용자 수정 지시로 다시 연다. |
 | `PLAN_REVISION_REQUIRED` | `to-ticket`을 선택한다. |
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |

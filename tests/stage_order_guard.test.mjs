@@ -16,12 +16,12 @@ const REQUEST = '게시글 삭제 기능을 추가해줘';
 
 test('the order guard names the first earlier flow stage that is not completed and leaves workflows outside the flow alone', () => {
   // A workflow that never entered the flow, and the first stage of the flow, are not governed.
-  assert.equal(nextRequiredPreSpecStage({ 'workflow-compose': done }, 'spec-me'), null, 'a legacy workflow may start spec-me directly');
+  assert.equal(nextRequiredPreSpecStage({ 'workflow-compose': done }, 'spec-me'), null, 'the helper only answers ordering; stage-input separately rejects retired spec-me');
   assert.equal(nextRequiredPreSpecStage({}, 'stakeholder-analysis'), null);
   assert.equal(nextRequiredPreSpecStage({}, 'implement-wrapper'), null);
   // Once it entered the flow, every earlier stage is required, in the order of the one list.
   assert.equal(nextRequiredPreSpecStage({}, 'subdomain-candidates'), 'stakeholder-analysis', 'a flow stage is governed even when the flow has not started');
-  assert.equal(nextRequiredPreSpecStage(completed(REQUIREMENTS_STAGES), 'spec-me'), 'domain-model', 'the requirements flow alone does not reach spec-me');
+  assert.equal(nextRequiredPreSpecStage(completed(REQUIREMENTS_STAGES), 'spec-me'), 'domain-model', 'the requirements flow alone does not complete tactical design');
   assert.equal(nextRequiredPreSpecStage(completed(REQUIREMENTS_STAGES), 'aggregate-design'), 'domain-model');
   assert.equal(nextRequiredPreSpecStage(completed(REQUIREMENTS_STAGES), 'domain-model'), null);
   assert.equal(nextRequiredPreSpecStage(completed(PRE_SPEC_STAGES), 'spec-me'), null);
@@ -43,7 +43,7 @@ test('the order guard names the first earlier flow stage that is not completed a
   assert.equal(preSpecOrderViolation(completed(PRE_SPEC_STAGES), 'spec-me'), null);
 });
 
-test('an installed consumer cannot skip a flow stage: prepare and start refuse spec-me until the tactical stages completed', async (t) => {
+test('an installed consumer retires spec-me and requires tactical design before tactical-to-code', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, tree, treeGit, runStage, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -54,25 +54,24 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
     assert.match(result.stderr, new RegExp(`${stage} cannot start before ${required}:`), result.stderr);
     return result;
   };
+  const retired = () => { const result = prepare('--stage-id', 'spec-me'); assert.notEqual(result.status, 0); assert.match(result.stderr, /spec-me has been removed/); return result; };
   const stateFile = join(workspace, '.io/runtime/orchestrator/state.json');
 
-  // Before the flow started, spec-me is unaffected (a workflow that never entered the flow) while a flow stage is not.
-  assert.equal(prepare('--stage-id', 'spec-me').status, 0, 'a workflow outside the flow may still prepare spec-me');
+  // No worktree may start spec-me, even before requirements-flow state exists.
+  retired();
   refused('subdomain-candidates', 'stakeholder-analysis');
   assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['subdomain-candidates'], undefined, 'a refusal records nothing');
 
   // A skipped stakeholder-analysis completes the whole flow cheaply; stopping midway shows the next required stage.
   await runStage('stakeholder-analysis', { files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
   refused('event-storming', 'subdomain-candidates');
-  refused('spec-me', 'subdomain-candidates');
+  retired();
   const skipped = (stage) => runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
   for (const stage of REQUIREMENTS_STAGES.slice(1)) await skipped(stage);
 
-  // The exact scenario: the requirements flow completed, then a stale orchestrator asks for spec-me.
+  // The requirements flow alone cannot proceed to implementation.
   const head = treeGit('rev-parse', 'HEAD').trim();
-  const stale = refused('spec-me', 'domain-model');
-  assert.match(stale.stderr, /Complete domain-model next/);
-  assert.doesNotMatch(stale.stderr, /discard-out-of-order/, 'spec-me is not recorded, so there is nothing to discard');
+  retired();
   refused('aggregate-design', 'domain-model');
   refused('integration-design', 'domain-model');
   const state = JSON.parse(await readFile(stateFile, 'utf8'));
@@ -82,15 +81,13 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
   const next = JSON.parse(prepare('--stage-id', 'domain-model').stdout);
   assert.equal(next.input.context.transition.from_stage, 'requirements-fix', 'the flow itself continues with domain-model');
 
-  // The tactical stages in order, then spec-me follows context-boundary.
-  for (const stage of TACTICAL_DESIGN_STAGES) {
-    if (stage !== TACTICAL_DESIGN_STAGES[0]) refused('spec-me', stage);
-    await skipped(stage);
-  }
-  const ready = prepare('--stage-id', 'spec-me');
+  // The tactical stages complete, then tactical-to-code becomes eligible.
+  for (const stage of TACTICAL_DESIGN_STAGES) await skipped(stage);
+  retired();
+  const ready = prepare('--stage-id', 'tactical-technology');
   assert.equal(ready.status, 0, ready.stderr);
   const prepared = JSON.parse(ready.stdout);
-  assert.equal(prepared.input.context.transition.from_stage, 'context-boundary');
+  assert.equal(prepared.input.context.stage_id, 'tactical-technology');
 
   // `start` cannot bypass the order with an input that was prepared earlier: it reads the state again.
   const after = JSON.parse(await readFile(stateFile, 'utf8'));
@@ -100,14 +97,14 @@ test('an installed consumer cannot skip a flow stage: prepare and start refuse s
   await writeFile(stateFile, JSON.stringify(after, null, 2) + '\n');
   const start = script(workspace, 'harness-native-stage.mjs', ['start', '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id]);
   assert.notEqual(start.status, 0);
-  assert.match(start.stderr, /spec-me cannot start before context-boundary/);
-  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['spec-me'], undefined, 'a refused start claims nothing');
+  assert.match(start.stderr, /tactical-technology requires completed\/OK tactical design stage context-boundary/);
+  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['tactical-technology'], undefined, 'a refused start claims nothing');
   after.stages['context-boundary'] = boundary;
   after.current_stage = 'context-boundary';
   await writeFile(stateFile, JSON.stringify(after, null, 2) + '\n');
   const allowed = script(workspace, 'harness-native-stage.mjs', ['start', '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id]);
   assert.equal(allowed.status, 0, allowed.stderr);
-  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['spec-me'].status, 'running', 'in order, start claims the stage as before');
+  assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages['tactical-technology'].status, 'running', 'in order, start claims the stage');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'the guard leaves the project tree clean');
 });
 
@@ -157,7 +154,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   let entry = await claim();
   const stale = script(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
   assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /spec-me cannot start before domain-model:/);
+  assert.match(stale.stderr, /spec-me has been removed/);
   assert.match(stale.stderr, /node \.codex\/scripts\/harness-prepare-input\.mjs --stage-id spec-me --discard-out-of-order true/);
 
   // Nothing proves the orchestrator stopped yet: the transcript is missing, then held open by a live process, then it shows a started subagent.

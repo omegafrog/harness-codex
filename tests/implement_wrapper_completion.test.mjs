@@ -410,8 +410,8 @@ test('implement-wrapper final gate is derived from canonical records, never from
     });
 
     await t.test('dropping completion state keys is scoped to implement-wrapper', async () => {
-      const run = gate(['--state', 'runtime/implement-wrapper/completion-state.json'], { workflow: 'spec-me' });
-      assert.equal(run.result.workflow_id, 'spec-me');
+      const run = gate(['--state', 'runtime/implement-wrapper/completion-state.json'], { workflow: 'to-ticket' });
+      assert.equal(run.result.workflow_id, 'to-ticket');
       assert.equal(run.result.ignored_state_keys, undefined);
     });
   } finally {

@@ -59,7 +59,7 @@ export const WORKTREE_STAGE = Object.freeze({
   WORKTREE_CREATE: 'worktree-create',
 });
 
-// The requirements flow that runs before spec-me, in order. Every stage fills the plan set's living requirements.md, so
+// The requirements flow runs first, in order. Every stage fills the plan set's living requirements.md, so
 // the runner commits, stores and canonicalizes them alike. A new stage joins the flow by taking its place in this list.
 export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.STAKEHOLDER_ANALYSIS,
@@ -83,7 +83,7 @@ export const currentTacticalDesignPath = (path) => typeof path === 'string'
   ? path.replace(/^(docs\/specs\/[A-Za-z0-9][A-Za-z0-9._-]*\/)domain-model\.md$/, `$1${TACTICAL_DESIGN_DOCUMENT}`)
   : path;
 
-// The tactical design flow runs after requirements-fix and before spec-me, one stage per step. Every stage fills its own
+// The tactical design flow runs after requirements-fix, one stage per step. Every stage fills its own
 // section of the plan set's tactical-design.md, so the runner commits and stores them alike.
 export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.DOMAIN_MODEL,
@@ -116,16 +116,16 @@ export function tacticalImplementationOrderViolation(stages, stageId) {
   return required ? `${stageId} cannot start before ${required}: complete it with completed/OK first` : null;
 }
 
-// Every stage that runs before spec-me, in order: the one list that the commit, restart, stored-input and result
+// Requirements and tactical design stages, in order: the one list that commit, restart, stored-input and result
 // canonicalization wiring read. A new stage joins the flow by taking its place in one of the two lists above.
 export const PRE_SPEC_STAGES = Object.freeze([...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES]);
 
 const hasRecordedResult = (entry) => Boolean(entry?.result_ref || entry?.attempts?.some((attempt) => attempt?.result_ref));
 
-// The flow before spec-me runs in order, so a stage starts only after every earlier stage completed with OK. Returns the
+// These stages run in order, so a stage starts only after every earlier stage completed with OK. Returns the
 // first earlier stage that has not, or null when `stageId` may start. The check only reads the recorded stages: an
 // orchestrator holding old instructions cannot skip a stage that a newer Harness inserted into the flow.
-// - spec-me is governed once the plan set has entered the flow; a workflow that never ran a flow stage is unaffected.
+// - A legacy spec-me state is checked after the final tactical-design stage for migration safety.
 // - A stage that already recorded a result is a resume, a user revision or a revision return of started work: it started
 //   when the flow allowed it, so the answer, feedback and revision paths keep working for it.
 export function nextRequiredPreSpecStage(stages, stageId) {
@@ -142,5 +142,5 @@ export function preSpecOrderViolation(stages, stageId) {
   if (!required) return null;
   const status = stages?.[required]?.status;
   const recorded = stages?.[stageId];
-  return `${stageId} cannot start before ${required}: the flow runs ${PRE_SPEC_STAGES.join(' → ')} → ${WORKTREE_STAGE.SPEC_ME} in order, and ${required} is ${status ? `${status}${stages[required].code ? `/${stages[required].code}` : ''}, not completed/OK` : 'not started'}. Complete ${required} next.${recorded ? ` ${stageId} is already recorded as ${recorded.status} without a result, so it was started out of order. After its native run has ended and its Codex session is closed, discard it with: node .codex/scripts/harness-prepare-input.mjs --stage-id ${stageId} --discard-out-of-order true` : ''}`;
+  return `${stageId} cannot start before ${required}: the flow runs ${PRE_SPEC_STAGES.join(' → ')} in order, and ${required} is ${status ? `${status}${stages[required].code ? `/${stages[required].code}` : ''}, not completed/OK` : 'not started'}. Complete ${required} next.${recorded ? ` ${stageId} is already recorded as ${recorded.status} without a result, so it was started out of order. After its native run has ended and its Codex session is closed, discard it with: node .codex/scripts/harness-prepare-input.mjs --stage-id ${stageId} --discard-out-of-order true` : ''}`;
 }

@@ -10,6 +10,10 @@ export const RETIRED_ASSET_PATHS = new Set([
   '.harness/src/workflow/execution-context.mjs',
   // Skill tiers moved into each skill's own document (`model_tier` frontmatter); setup's agents.<provider> values are the only models.
   '.codex/internal-skills/skill-execution/bindings.json',
+  '.codex/workflows/spec-me.yaml',
+  '.codex/internal-skills/spec-me/GUIDE.md',
+  '.codex/agents/spec_document_writer.toml',
+  '.claude/agents/spec_document_writer.md',
 ]);
 
 // Identified from released source snapshots; unknown or modified content is never adopted.

@@ -314,7 +314,7 @@ test('the explanation catalogue covers the errors the stage commands throw and e
   const explain = (message, context = {}) => explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: 'spec-me', executionId: 'x-1', ...context });
   for (const [message, code] of [
     ['Revision repeated without changed evidence; inspect and report before retrying', 'REVISION_REPEATED'],
-    ['Revision must return to spec-me', 'REVISION_TARGET'],
+    ['Revision must return to requirements-fix', 'REVISION_TARGET'],
     ['Resolve the previous stage before selecting another: spec-me returned waiting/REVIEW_REQUIRED', 'PREVIOUS_UNRESOLVED'],
     ['Previous stage has no usable result: spec-me is failed without a recorded result', 'PREVIOUS_RESULT_MISSING'],
     ['Dependency incomplete: spec-me', 'DEPENDENCY_INCOMPLETE'],

@@ -195,7 +195,6 @@ async function verify(projectRoot, options) {
       "architecture_review_lead.toml",
       "spec_reviewer.toml",
       "standards_reviewer.toml",
-      "spec_document_writer.toml",
       "execution_runner.toml",
       "e2e_test_runner.toml",
       "implementation_agent.toml",
@@ -217,7 +216,6 @@ async function verify(projectRoot, options) {
 async function verifyManagedRuntime(projectRoot) {
   for (const path of [
     ".github/pull_request_template.md",
-    ".codex/workflows/spec-me.yaml",
     ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",

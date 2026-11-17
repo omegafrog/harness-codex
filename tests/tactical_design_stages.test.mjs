@@ -35,12 +35,12 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
   assert.ok(orchestrator.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the tactical flow in order');
   assert.match(orchestrator, /전술 설계 흐름에서 완료되지 않은 첫 stage/);
-  assert.match(orchestrator, /요구사항 흐름과 전술 설계 흐름이 모두 완료됐거나 이미 `spec-me`가 시작됨/);
+  assert.match(orchestrator, /요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음/);
   assert.match(orchestrator, /`DEPENDENCY_INCOMPLETE`/);
   assert.match(orchestrator, /restart를 먼저 하고 요구사항 수정은 그 뒤에 한다/);
   const map = await read('.codex/internal-skills/skill-execution/references/workflow-map.md');
   const positions = PRE_SPEC_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
-  assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage before spec-me in order');
+  assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage in order');
   assert.match(map, /harness-domain-model-check\.mjs/);
   const readme = await read('README.md');
   assert.ok(readme.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')));
@@ -355,7 +355,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   assert.equal(state.stages['domain-model'].status, 'completed');
   // Without its mapping the new rule is an unowned rule, found by the one gate that runs when the last stage completes (step 7).
 
-  // 7. The reopened stages run again with the rule mapped, and spec-me follows the last one once the whole document passes the gate.
+  // 7. The reopened stages run again with the rule mapped, and tactical-technology follows the last one once the whole document passes the gate.
   const rerun = async (stage, level, extra = {}) => runStage(stage, {
     files: { [tacticalDesign]: withNewRule(upTo(document, level)), ...extra.files }, artifacts: [art(tacticalDesign, 'tactical_design'), ...(extra.artifacts || [])],
   });
@@ -366,9 +366,9 @@ test('the tactical stages run after requirements-fix and are accepted section by
   const last = await rerun('context-boundary', 6);
   assert.equal(invoke(workspace, 'harness-domain-model-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command agrees with the runner on the finished document');
   assert.deepEqual(treeGit('log', '--format=%s', '-4').trim().split('\n'), ['context-boundary', 'integration-design', 'application-service', 'domain-service'].map((stage) => `${stage}: ${planSetId}`));
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
   assert.equal(next.input.context.transition.from_stage, 'context-boundary');
-  assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'spec-me receives the tactical document as an input reference');
+  assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'tactical-technology receives the tactical document as an input reference');
   assert.equal(last.finished.status, 'completed');
 
   // A completed tactical stage changes only on an explicit user revision; an earlier requirements stage still does not.
@@ -380,7 +380,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage/);
 });
 
-test('a skipped stakeholder-analysis makes the tactical stages record the skip without writing, and spec-me follows context-boundary', async (t) => {
+test('a skipped stakeholder-analysis makes the tactical stages record the skip without writing, and tactical-technology follows context-boundary', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, planSetId, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -392,7 +392,7 @@ test('a skipped stakeholder-analysis makes the tactical stages record the skip w
   }
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(existsSync(join(workspace, specPath('tactical-design.md'))), false, 'a skipped analysis leaves no tactical-design.md');
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
   assert.equal(next.input.context.transition.from_stage, 'context-boundary');
 });
 

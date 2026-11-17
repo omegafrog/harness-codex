@@ -40,4 +40,4 @@ Step of the requirements flow after `subdomain-classification` and before `requi
 
 - The BC table covers every `BIZ` with responsibility, owned rules and data, rationale and compared alternatives, and the boundary choices the user made carry their `answers.json` source.
 - `CONTEXT-MAP.md` carries the contexts, their covered subdomains with class, their relationships with the `판단 소유자` of each and the `accepted-target` status.
-- The runner commits `docs/specs/<plan-set-id>/`, `CONTEXT-MAP.md` and `CONTEXT.md` when this stage completes. `ubiquitous-language` already defined the provisional terms, and the Architecture phase of `spec-me` takes this decision as settled input.
+- The runner commits `docs/specs/<plan-set-id>/`, `CONTEXT-MAP.md` and `CONTEXT.md` when this stage completes. `ubiquitous-language` already defined the provisional terms, and later tactical design stages treat the decision as settled input.

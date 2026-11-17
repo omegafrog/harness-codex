@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
-test('installed Claude spec-me writes directly in one invocation without writer receipts', async () => {
+test('installed Claude question stage returns directly without writer receipts', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'spec-author-runner-'));
   const primary = join(parent, 'project'), root = join(parent, 'worktree'), bin = join(parent, 'bin');
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -23,11 +23,11 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: low\n');
-    const session = join(root, '.io'), ref = join(session, 'worktree.json'), id = 'spec-me-runner-test';
+    const session = join(root, '.io'), ref = join(session, 'worktree.json'), id = 'grilling-runner-test';
     await mkdir(join(session, 'runtime/executions', id), { recursive: true });
     await writeFile(ref, JSON.stringify({ schema_version: 1, worktree_id: 'a77aaa03-329c-4d59-b4c5-269746a893f2', workspace: root, common: await realpath(join(primary, '.git')), git_dir: await realpath(git(root, 'rev-parse', '--absolute-git-dir')), return_root: primary, session_directory: session, branch: 'spec-test', state: 'active', plan_set_id: 'example' }));
     const { writeExecutionInput } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
-    await writeExecutionInput(root, { schema_version: 1, execution_id: id, skill: 'spec-me', scope: '계산기', input_refs: [], context: { worktree_ref: ref, stage_id: 'spec-me', provider: 'claude-code' } }, 'example');
+    await writeExecutionInput(root, { schema_version: 1, execution_id: id, skill: 'grilling', scope: '계산기', input_refs: [], context: { worktree_ref: ref, stage_id: 'grilling', provider: 'claude-code' } }, 'example');
     const native = join(root, '.codex/scripts/harness-native-stage.mjs');
     const base = ['--root', root, '--worktree-ref', ref, '--execution-id', id];
     const start = JSON.parse(execFileSync(process.execPath, [native, 'start', ...base], { cwd: root, encoding: 'utf8' }));
@@ -36,8 +36,8 @@ test('installed Claude spec-me writes directly in one invocation without writer 
     await mkdir(join(root, 'docs/specs/example'), { recursive: true });
     await writeFile(join(root, 'docs/specs/example/product-spec.md'), '# Product\n');
     const q = { question_id: 'question', title: '계속할까요?', decision_kind: null, options: [{ id: 'yes', label: '예', consequence: '계속', evidence: [] }, { id: 'no', label: '아니요', consequence: '대기', evidence: [] }], recommended_option_id: 'yes', rationale: '결정 필요' };
-    const result = { schema_version: 1, skill: 'spec-me', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '진행 중', artifacts: [], questions: [q], review_request: null };
-    const received = spawnSync(process.execPath, [native, 'receive', ...base, '--agent-id', 'claude-agent'], { cwd: root, encoding: 'utf8', input: JSON.stringify({ schema_version: 1, skill: 'spec-me', status: result.status, code: result.code, result }) });
+    const result = { schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '진행 중', artifacts: [], questions: [q], review_request: null };
+    const received = spawnSync(process.execPath, [native, 'receive', ...base, '--agent-id', 'claude-agent'], { cwd: root, encoding: 'utf8', input: JSON.stringify({ schema_version: 1, skill: 'grilling', status: result.status, code: result.code, result }) });
     assert.equal(received.status, 0, received.stderr);
     const finished = JSON.parse(execFileSync(process.execPath, [native, 'finish', ...base], { cwd: root, encoding: 'utf8' }));
     assert.equal(finished.code, 'USER_DECISION_REQUIRED');

@@ -5,7 +5,7 @@ model_tier: low_performance
 
 ## 목적
 
-확정된 전술 설계로 구현을 시작하기 전에 필요한 runtime·framework·언어·라이브러리 결정을 정리한다. 기존 기술 선택 절차의 기준과 근거 검증을 재사용하되 결과는 이 workflow의 산출물로만 보관한다. `spec-me`나 Product/Architecture Spec에 전달하지 않는다.
+확정된 전술 설계로 구현을 시작하기 전에 필요한 runtime·framework·언어·라이브러리 결정을 정리한다. 기존 기술 선택 절차의 기준과 근거 검증을 재사용하되 결과는 이 workflow의 산출물로만 보관한다. 새 Product/Architecture Spec을 작성하지 않는다.
 
 ## 입력과 진행
 

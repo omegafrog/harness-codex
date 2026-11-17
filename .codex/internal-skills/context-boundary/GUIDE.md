@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## 목적
 
-`integration-design` 다음, `spec-me` 앞에서 수행하는 마지막 전술 설계 stage다. 근거가 있는 컨텍스트 관계마다 모델 소유권 보호 패턴과 코드 의존 형태를 결정하고, `tactical-design.md`의 6절과 `CONTEXT-MAP.md` 관계 행에 기록한다. 배포 토폴로지를 전제하지 않으며 프레임워크, broker, protocol, 저장 기술을 선택하지 않는다. 사용자가 `context-boundary`를 지정하면 파일이 아니라 이 stage와 기록된 상태를 뜻한다.
+`integration-design` 다음에 수행하는 마지막 전술 설계 stage다. 근거가 있는 컨텍스트 관계마다 모델 소유권 보호 패턴과 코드 의존 형태를 결정하고, `tactical-design.md`의 6절과 `CONTEXT-MAP.md` 관계 행에 기록한다. 배포 토폴로지를 전제하지 않으며 프레임워크, broker, protocol, 저장 기술을 선택하지 않는다. 사용자가 `context-boundary`를 지정하면 파일이 아니라 이 stage와 기록된 상태를 뜻한다.
 
 ## 입력
 

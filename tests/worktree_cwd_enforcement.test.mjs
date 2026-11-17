@@ -77,13 +77,13 @@ test('installed workflow commands require cwd inside the target worktree', async
   await t.test('root and worktree-ref cannot bypass cwd; local worktree can prepare and dispatch', async () => {
     assert.match(failed(primary, 'harness-context.mjs', ['--worktree-ref', a.worktree_ref]), /change directory into the target worktree/);
     assert.match(failed(primary, 'harness-context.mjs', ['--root', a.workspace]), /change directory first/);
-    assert.match(failed(primary, 'harness-prepare-input.mjs', ['--worktree-ref', a.worktree_ref, '--stage-id', 'spec-me']), /change directory into the target worktree/);
+    assert.match(failed(primary, 'harness-prepare-input.mjs', ['--worktree-ref', a.worktree_ref, '--stage-id', 'grilling']), /change directory into the target worktree/);
 
     const local = ok(a.workspace, 'harness-context.mjs');
     assert.equal(local.workspace_root, a.workspace);
     assert.equal(local.worktree_ref, a.worktree_ref);
     assert.equal(local.plan_set_id, a.plan_set_id);
-    const prepared = ok(a.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'spec-me']);
+    const prepared = ok(a.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'grilling']);
     assert.equal(prepared.input.context.worktree_ref, a.worktree_ref);
     assert.equal(prepared.session_directory, a.session_directory);
     const args = ['start', '--root', a.workspace, '--worktree-ref', a.worktree_ref, '--execution-id', prepared.input.execution_id, '--verbose'];

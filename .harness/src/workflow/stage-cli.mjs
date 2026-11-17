@@ -155,7 +155,7 @@ export function finishNext({ status, code, stageId, executionId }) {
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
   if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user verbatim and wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${launchCommand(stageId, "--feedback '<review result>'")}`;
-  const revision = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
+  const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
   if (revision) return `Return to its owner: ${launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
   if (status === 'blocked') return `Report the unblock condition in result.summary to the user; once resolved: ${launchCommand(stageId, "--feedback '<how it was resolved>'")}`;
   if (status === 'failed' || status === 'cancelled') return `Report the cause; do not rerun automatically. If the user wants to continue: ${launchCommand(stageId, FEEDBACK_ARG)}`;
@@ -231,7 +231,7 @@ function resumeStage(stage, entry, state) {
   }
   if (code === 'USER_DECISION_REQUIRED') return { steps: [launchCommand(stage, ANSWER_ARG)], decision: `${stage} waits for the user's answer to its question (${CONTEXT} lists stages.${stage}.questions). Show it verbatim and wait for the real answer.` };
   if (code === 'REVIEW_REQUIRED') return { steps: [`Run the independent review ${stage} asked for, then: ${launchCommand(stage, "--feedback '<review result>'")}`] };
-  const revision = { SPEC_REVISION_REQUIRED: 'spec-me', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
+  const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
   if (revision) return { steps: [launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')] };
   if (status === 'blocked') return { steps: [launchCommand(stage, "--feedback '<how the blocker was resolved>'")], decision: `${stage} is blocked (${code}). Tell the user the unblock condition from its summary (${CONTEXT}) and wait until it is resolved.` };
   if (status === 'failed' || status === 'cancelled') return { steps: [`After its native subagent has ended: ${launchCommand(stage, FEEDBACK_ARG)}`] };
@@ -246,12 +246,20 @@ const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.cod
 const stageAfter = (previous) => {
   if (previous === 'workflow-compose') return PRE_SPEC_STAGES[0];
   const index = PRE_SPEC_STAGES.indexOf(previous);
-  return index >= 0 ? PRE_SPEC_STAGES[index + 1] ?? 'spec-me' : null;
+  if (index >= 0) return PRE_SPEC_STAGES[index + 1] ?? 'tactical-technology';
+  return previous === 'tactical-technology' ? 'tactical-ui'
+    : previous === 'tactical-ui' ? 'tactical-api'
+      : previous === 'tactical-api' ? 'tactical-data'
+        : previous === 'tactical-data' ? 'tactical-code' : null;
 };
 
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
 // user must decide); the fallback keeps that true for errors this table does not know.
 const RULES = [
+  { re: /^spec-me has been removed/, explain: ({ message }) => ({ code: 'WORKFLOW_RETIRED', why: message, next: [
+    'For new-feature implementation, complete the requirements and tactical design flows, then continue with tactical-to-code.',
+    `If an older spec-me stage is recorded without a result, and its native run and orchestrator session have ended, recover it with: ${PREPARE} --stage-id spec-me --discard-out-of-order true`,
+  ], decision: 'Do not start or resume spec-me. Existing project Spec files are retained.' }) },
   { re: /^Result rejected: /, explain: ({ message, context }) => ({
     code: 'RESULT_REJECTED',
     why: `The output passed the schema, but the runner refused to record it (${message.replace(/^Result rejected: /, '')}). Nothing was committed or recorded and the stage is still running.`,
@@ -266,7 +274,7 @@ const RULES = [
     const resume = resumeStage(required, entryOf(state, required), state);
     return {
       code: 'STAGE_ORDER',
-      why: `The flow before spec-me runs in a fixed order, and ${required} is ${describe(entryOf(state, required))} (it must be completed/OK) before ${stage} may start. Your instruction to start ${stage} is stale; the flow decides.`,
+      why: `The requirements and tactical design flow runs in a fixed order, and ${required} is ${describe(entryOf(state, required))} (it must be completed/OK) before ${stage} may start. Your instruction to start ${stage} is stale; the flow decides.`,
       next: [...resume.steps, ...(/--discard-out-of-order true/.test(message) ? [`Only because ${stage} is recorded without a result (an older Harness started it out of order), once its native run has ended and its Codex session is closed: ${PREPARE} --stage-id ${stage} --discard-out-of-order true`] : [])],
       decision: resume.decision,
     };
@@ -314,7 +322,7 @@ const RULES = [
     decision: 'Report to the user that this revision returned the same unresolved result twice (summary: ' + CONTEXT + ') and ask whether to give a new instruction, change the requirement, or stop. Do not retry without new evidence.',
   }) },
   { re: /^Dependency incomplete: (\S+)/, explain: ({ m, state }) => { const resume = resumeStage(m[1], entryOf(state, m[1]), state); return { code: 'DEPENDENCY_INCOMPLETE', why: `${m[1]} must be completed before this stage; it is ${describe(entryOf(state, m[1]))}.`, next: resume.steps, decision: resume.decision }; } },
-  { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision reopens a finished stage and only exists for the user's own correction, so it needs --feedback with the user's instruction verbatim, and only requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper can be reopened${stage ? ` (${stage} was requested)` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, do not use --user-revision; run the stage normally.' }) },
+  { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision reopens a finished stage and only exists for the user's own correction, so it needs --feedback with the user's instruction verbatim, and only requirements-fix, a tactical design stage, to-ticket or implement-wrapper can be reopened${stage ? ` (${stage} was requested)` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, do not use --user-revision; run the stage normally.' }) },
   { re: /^User revision requires a completed stage or one waiting on its question/, explain: ({ stage, state }) => ({ code: 'USER_REVISION_REFUSED', why: `${stage || 'The stage'} is ${describe(entryOf(state, stage))}; only a completed stage, or one waiting on its question, can be reopened by the user.`, next: [`To run it normally (not as a user revision): ${launchCommand(stage || '<stage-id>')}`, `To see its state: ${CONTEXT}`] }) },
   { re: /^User revision cannot start while another stage is running/, explain: ({ state }) => {
     const running = Object.entries(state?.stages || {}).find(([, entry]) => entry?.status === 'running');
@@ -327,7 +335,7 @@ const RULES = [
   { re: /^Restart requires a clean project/, explain: () => ({ code: 'RESTART_REFUSED', why: 'A restart rewinds the plan set documents and must not overwrite project changes, so the project worktree and index must be clean.', next: ['git status --short (read only) shows what is changed'], decision: 'Ask the user to commit or stash their project changes (never discard them yourself), then repeat the same restart command.' }) },
   { re: /^Restart target must be a requirements|^Later workflow stages prevent|^Restart checkpoint commit not found|^Unrelated or later commits prevent|^Previous stage is not completed|^Invalid checkpoint path/, explain: ({ message }) => ({
     code: 'RESTART_REFUSED',
-    why: /Later workflow stages/.test(message) ? 'A stage after the flow before spec-me has already started, so the flow can no longer be rewound without losing that work.' : /target must be a requirements/.test(message) ? 'A restart exists only for the stages before spec-me (requirements and tactical design flows).' : `The restart would rewind work it cannot prove is only this flow's (${message}).`,
+    why: /Later workflow stages/.test(message) ? 'A stage after the requirements and tactical design flow has already started, so the flow can no longer be rewound without losing that work.' : /target must be a requirements/.test(message) ? 'A requirements restart applies only to the requirements and tactical design stages.' : `The restart would rewind work it cannot prove is only this flow's (${message}).`,
     next: [CONTEXT],
     decision: 'Report this refusal to the user; a restart is not possible for this workflow state, and they decide how to proceed (for example a user revision of one stage with --user-revision).',
   }) },
@@ -369,7 +377,7 @@ const RULES = [
     code: 'FEEDBACK_REFUSED',
     why: `--feedback only continues a stage that failed, was cancelled, was blocked, asked for a review or a matching revision, or was interrupted; ${stage || 'this stage'} is ${describe(entryOf(state, stage))}.`,
     next: [
-      `If the user wants to change a completed stage: ${launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)} (only requirements-fix, tactical design stages, spec-me, to-ticket, implement-wrapper)`,
+      `If the user wants to change a completed stage: ${launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)} (only requirements-fix, tactical design stages, to-ticket, implement-wrapper)`,
       `If it waits for the user's answer: ${launchCommand(stage || '<stage-id>', ANSWER_ARG)}`,
       `State: ${CONTEXT}`,
     ],
@@ -410,7 +418,7 @@ const RULES = [
   { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s real approval of the plan to publish.', next: [], decision: 'Show the reviewed plan to the user and ask for publication approval; only after they approve: ' + launchCommand('tracker-publish', '--publication-approved true') }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },
-  { re: /^Spec (review|overwrite)|^Plan review requires|^Review admission|^spec-overwrite-approved|^Spec approval requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. Review and overwrite approvals are tied to an admitted snapshot or the user's real approval.`, next: [CONTEXT], decision: 'Follow the owning skill (spec-me / plan-review) for the admission or approval step; do not invent either.' }) },
+  { re: /^Spec (review|overwrite)|^Plan review requires|^Review admission|^spec-overwrite-approved|^Spec approval requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. Review and overwrite approvals are tied to an admitted snapshot or the user's real approval.`, next: [CONTEXT], decision: 'Follow the existing Spec or plan review admission for the admission or approval step; do not invent either.' }) },
   { re: /runs in the main session|must select a (registered )?sub-agent skill|^Invalid argument|^Usage:|^Invalid native stage arguments|^Native agent ID is required|[Ff]ailure reason|^restart must be true|^user-revision must be true|^Absolute root|^Valid execution-id|^Absolute .*required/, explain: ({ message }) => ({ code: 'INVALID_ARGUMENT', why: `The command line was rejected (${message}).`, next: [`Prepare and start a sub-agent stage in one step: ${launchCommand('<stage-id>')}`, `Then: ${nativeCommand('bind', '<execution_id>', '--agent-id <agent_id>')} and ${nativeCommand('finish', '<execution_id>')}; fail/cancel also take --reason '<text>'`] }) },
   { re: /^Command failed: git |^Index already holds files|^Commit request/, explain: () => ({ code: 'COMMIT_BLOCKED', why: 'The runner commits a finished stage\'s documents itself and Git refused (a dirty index, changes outside the stage\'s files, or a hook). The orchestrator must not run git add or commit for the stage.', next: ['git status --short (read only) to see what is staged or modified'], decision: 'Report the Git problem to the user; the stage stays running until the cause is fixed, then repeat the same finish command.' }) },
   { re: /^Skill instruction is missing|^Execution provider must match|^Invalid native stage workspace or input|^Workflow stage is ambiguous/, explain: ({ message }) => ({ code: 'INSTALL_OR_BINDING', why: `The stage cannot start with this installation or provider binding (${message}).`, next: [], decision: 'Report this to the user: the Harness installation is incomplete or was run by a different provider than the one that composed the workflow. Run Harness maintenance (update/doctor) from the orchestrator skill; do not edit files.' }) },
