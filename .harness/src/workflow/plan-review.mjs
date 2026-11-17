@@ -90,7 +90,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
   const index = indexFile.content.toString('utf8');
-  // spec-me writes the Specs at fixed paths; those are the review inputs. The index is only read for older plan sets
+  // The Specs live at fixed paths; those are the review inputs. The index is only read for older plan sets
   // whose Specs live elsewhere.
   const fixedSpecs = [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
   const specPaths = (await Promise.all(fixedSpecs.map((path) => safeFile(root, path).then(() => true, () => false)))).every(Boolean) ? fixedSpecs : specPathsFromIndex(index, base, planSetId);

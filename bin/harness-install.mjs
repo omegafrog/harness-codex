@@ -165,13 +165,11 @@ async function verify(projectRoot, options) {
       if (unexpected) throw new Error(`Internal Harness skill is publicly exposed: ${directory}/${unexpected}`);
     }
     await stat(join(projectRoot, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "architecture-spec", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "code-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-figma", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-implement", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "frontend-visual-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "harness-maintenance", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "architecture-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "beads", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
     await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
@@ -192,7 +190,6 @@ async function verify(projectRoot, options) {
   if (options.installAgents) {
     for (const name of [
       "code_researcher.toml",
-      "architecture_review_lead.toml",
       "spec_reviewer.toml",
       "standards_reviewer.toml",
       "execution_runner.toml",

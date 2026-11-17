@@ -2,6 +2,7 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+import { RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from '../.harness/src/installer/legacy-assets.mjs';
 import { loadNamedWorkflow } from '../.harness/src/workflow/loader.mjs';
 import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, tacticalImplementationOrderViolation, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
 import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
@@ -95,6 +97,91 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
     assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), `legacy ${path}\n`, `update backs up ${path}`);
   }
   for (const path of assets) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `${path} remains ignored after update`);
+});
+
+test('update removes every retired spec-me asset from an installed consumer and leaves only project-owned documents visible', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'spec-me-retirement-consumer-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  const sha = (content) => createHash('sha256').update(content).digest('hex');
+  execFileSync('git', ['init', '-q', root]);
+  await writeFile(join(root, 'app.txt'), 'original\n');
+  git('add', 'app.txt');
+  git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture');
+  await writeFile(join(root, 'app.txt'), 'application edit\n');
+  await protectLocalInstallArtifacts(root, sourceRoot);
+  await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+  await writeFile(join(root, '.harness/harness.yaml'), SETUP);
+
+  // What nothing reads any more is neither installed nor required; what a live stage still links stays installed.
+  const retiredSkills = [...RETIRED_SKILL_NAMES];
+  assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'spec-me']);
+  for (const path of RETIRED_ASSET_PATHS) assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
+  for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.codex/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
+  const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`);
+  for (const path of kept) assert.ok((await readFile(join(root, path), 'utf8')).length > 0, `${path} stays installed`);
+  assert.equal((await readFile(join(root, '.codex/internal-skills/requirements-fix/GUIDE.md'), 'utf8')).includes('spec-me/GUIDE.md'), false, 'a live stage guide links no retired guide');
+  assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), false);
+
+  // An earlier release installed these as managed, locked files; one copy was edited by the user, one never was in the lock.
+  const previous = {
+    '.codex/internal-skills/spec-me/GUIDE.md': 'previous spec-me guide',
+    '.codex/internal-skills/spec-me/references/adversarial-spec-review.md': 'previous spec review driver',
+    '.codex/internal-skills/spec-me/references/architecture-decision.md': 'previous decision order',
+    '.codex/internal-skills/spec-me/references/decision-knowledge.md': 'previous decision knowledge',
+    '.codex/internal-skills/architecture-spec/GUIDE.md': 'previous architecture guide',
+    '.codex/internal-skills/architecture-spec/references/template.md': 'previous architecture template',
+    '.codex/internal-skills/architecture-spec/references/topics.md': 'previous architecture topics',
+    '.codex/internal-skills/architecture-review/GUIDE.md': 'previous architecture review guide',
+    '.codex/agents/architecture_review_lead.toml': 'previous review lead',
+    '.claude/agents/architecture_review_lead.md': 'previous review lead for Claude',
+    '.agents/skills/spec-me/SKILL.md': 'previous public spec-me skill',
+    '.claude/skills/spec-me/SKILL.md': 'previous public spec-me skill for Claude',
+  };
+  const lockPath = join(root, '.codex/harness-lock.json');
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+  for (const [path, content] of Object.entries(previous)) {
+    await mkdir(join(root, path, '..'), { recursive: true });
+    await writeFile(join(root, path), content);
+    lock.files[path] = { installed_sha256: sha(content), upstream_sha256: sha(content), source_path: path.startsWith('.claude/agents/') ? '.codex/agents/architecture_review_lead.toml' : path };
+  }
+  const edited = '.codex/internal-skills/architecture-spec/references/template.md';
+  lock.files[edited].installed_sha256 = sha('the template as released');
+  lock.files[edited].upstream_sha256 = lock.files[edited].installed_sha256;
+  const notes = '.codex/internal-skills/spec-me/notes.md';
+  await writeFile(join(root, notes), 'a note the user keeps next to the old guide\n');
+  await writeFile(lockPath, JSON.stringify(lock));
+  const projectDocuments = {
+    'docs/agents/EXEC.md': 'project execution notes\n',
+    'docs/contracts/product.md': 'project product contract\n',
+    'docs/specs/demo/product-spec.md': '# existing approved Product Spec\n',
+    'docs/specs/demo/architecture-spec.md': '# existing approved Architecture Spec\n',
+  };
+  for (const [path, content] of Object.entries(projectDocuments)) {
+    await mkdir(join(root, path, '..'), { recursive: true });
+    await writeFile(join(root, path), content);
+  }
+
+  const updated = await updateProject({ sourceRoot, targetRoot: root });
+  for (const [path, content] of Object.entries(previous)) {
+    assert.ok(updated.retired.includes(path), `${path} is retired by the update`);
+    assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `${path} is removed`);
+    assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), content, `${path} is backed up first`);
+    assert.equal(JSON.parse(await readFile(lockPath, 'utf8')).files[path], undefined, `${path} leaves the lock`);
+  }
+  assert.equal(await readFile(join(root, notes), 'utf8'), 'a note the user keeps next to the old guide\n', 'a file the lock never owned is kept');
+  for (const [path, content] of Object.entries(projectDocuments)) assert.equal(await readFile(join(root, path), 'utf8'), content, `${path} is untouched`);
+  for (const path of kept) assert.ok((await readFile(join(root, path), 'utf8')).length > 0, `${path} survives the update`);
+  const status = git('status', '--short', '--untracked-files=all');
+  assert.match(status, /^M app\.txt$/m);
+  assert.match(status, /\?\? \.codex\/internal-skills\/spec-me\/notes\.md/, 'the user-owned note stays visible to Git');
+  for (const path of Object.keys(projectDocuments)) assert.match(status, new RegExp(`\\?\\? ${path.replaceAll('.', '\\.')}`), `${path} stays visible`);
+  assert.doesNotMatch(status, /\.agents\/|\.claude\/|\.harness\/|\.io\/|installer-backups/);
+  for (const path of Object.keys(previous)) assert.doesNotMatch(status, new RegExp(path.replaceAll('.', '\\.')), `${path} is not left behind as a change`);
+  const doctor = await runDoctor({ root, sourceRoot });
+  assert.deepEqual(doctor.diagnostics.filter(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), []);
+  assert.equal(doctor.diagnostics.some(({ path }) => /spec-me|architecture-spec|architecture-review|architecture_review_lead/.test(path || '') && !path.endsWith('notes.md')), false, 'Doctor neither requires nor reports the retired assets');
+  assert.deepEqual((await updateProject({ sourceRoot, targetRoot: root })).retired, [], 'a second update has nothing left to retire');
 });
 
 test('installed prepare command enforces the tactical implementation order', async (t) => {

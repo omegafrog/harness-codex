@@ -317,7 +317,7 @@ test('the runner gates only the completed result of the last tactical stage, wit
   for (const envelope of [{ status: 'blocked', code: 'INPUT_MISSING' }, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }, { status: 'failed', code: 'EXECUTION_ERROR' }]) assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope }), null, envelope.code);
   assert.equal(await evaluateTacticalDesignGate({ root, input: input('requirements-fix'), envelope: completed }), null, 'another stage');
   assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY, null), envelope: completed }), null, 'no plan set');
-  assert.equal(await assertTacticalDesignGate({ root, input: input('spec-me'), envelope: completed }), null);
+  assert.equal(await assertTacticalDesignGate({ root, input: input('to-ticket'), envelope: completed }), null);
 
   // The last stage is accepted once the whole document passes, and an incomplete document fails it.
   await writeFile(join(root, 'docs/specs/set/tactical-design.md'), document);

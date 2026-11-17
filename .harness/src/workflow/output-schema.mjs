@@ -25,7 +25,7 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   delete result.commit_sha;
   if (IMPLEMENTATION_FLOWS.has(flow)) {
     schema.properties.result.required.push('unplanned_additions', 'commit_request');
-    // Implementation only builds the approved Spec: it never asks the user. A missing decision goes back to spec-me.
+    // Implementation only builds the approved Spec: it never asks the user. A missing decision goes back to requirements-fix.
     for (const target of [schema.properties, result]) if (target.code?.enum) target.code = { ...target.code, enum: target.code.enum.filter((code) => code !== 'USER_DECISION_REQUIRED') };
     if (result.questions) result.questions = { ...result.questions, maxItems: 0 };
   }
@@ -41,7 +41,7 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   if (option?.properties?.evidence && !option.required.includes('evidence')) option.required = [...option.required, 'evidence'];
   if (result.review_request) {
     // A review can run any sub-agent skill, that is, any skill whose document declares a setup tier.
-    const skills = (await listDeclaredSkills(root)).filter((item) => !item.main_session && !(input.skill === 'spec-me' && item.skill === 'spec-review')).map((item) => item.skill);
+    const skills = (await listDeclaredSkills(root)).filter((item) => !item.main_session).map((item) => item.skill);
     const profiles = (await readdir(join(root, '.codex/agents'))).filter((name) => name.endsWith('.toml')).map((name) => name.slice(0, -5));
     const item = result.review_request.anyOf.find((shape) => shape.type === 'object');
     item.properties.skill = { type: 'string', enum: skills, description: '실행할 skill ID' };

@@ -9,7 +9,7 @@ import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { syncOrchestratorHook } from './orchestrator-hook.mjs';
 import { migrateAgentsText } from '../workflow/agent-config.mjs';
 import { transformSourceContent } from './transforms.mjs';
-import { LEGACY_ASSETS, RETIRED_ASSET_PATHS } from './legacy-assets.mjs';
+import { LEGACY_ASSETS, RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from './legacy-assets.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const SOURCE_TRANSFORM = "project-local-paths-v1";
@@ -318,7 +318,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       const target = await readTarget(targetRoot, entry.path);
       if (target && entry.current_sha256 !== entry.installed_sha256) {
         const internalizedPublicSkill = /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(entry.path)?.[1];
-        if (RETIRED_ASSET_PATHS.has(entry.path) || (internalizedPublicSkill && internalSkillNames.has(internalizedPublicSkill))) {
+        if (RETIRED_ASSET_PATHS.has(entry.path) || (internalizedPublicSkill && (internalSkillNames.has(internalizedPublicSkill) || RETIRED_SKILL_NAMES.has(internalizedPublicSkill)))) {
           actions.push({ descriptor: sourceDescriptor(entry.source_path || entry.path, entry.path), retired: true, backup: target.content });
           delete nextFiles[entry.path];
           removed_lock_entries.push(entry.path);
@@ -411,7 +411,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       ...(action.descriptor.source_transform ? { source_transform: action.descriptor.source_transform } : {}),
     };
   }
-  if (scope !== 'agents') removed_directories.push(...await pruneEmptySkillDirectories(targetRoot, new Set([...internalSkillNames, ...descriptors.map((descriptor) => /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(descriptor.target_path)?.[1]).filter(Boolean)])));
+  if (scope !== 'agents') removed_directories.push(...await pruneEmptySkillDirectories(targetRoot, new Set([...internalSkillNames, ...RETIRED_SKILL_NAMES, ...descriptors.map((descriptor) => /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(descriptor.target_path)?.[1]).filter(Boolean)])));
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
   // harness.yaml belongs to the project, so it is only rewritten to move older flat model keys under agents.<provider>.

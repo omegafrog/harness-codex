@@ -58,8 +58,8 @@ try {
       }
       if (result.basis_rechecks.some((item) => item.status === 'blocked')) result.next_action = 'blocked';
     }
-    // Remember the hand-off so the next repair of these same reviews asks for a fresh review instead of spec-me again.
-    if (result.next_action === 'spec-me' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) {
+    // Remember the hand-off so the next repair of these same reviews asks for a fresh review instead of requirements-fix again.
+    if (result.next_action === 'requirements-fix' && options.reviews === `runtime/reviews/implementation-${options.plan}-evidence.json`) {
       evidence.spec_handoff = { at: new Date().toISOString(), reviewer_ids: evidence.reviews.map((item) => item.context_id) };
       await writeFile(sessionOutputPath(options.root, options.reviews), `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
     }

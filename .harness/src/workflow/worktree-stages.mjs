@@ -1,3 +1,7 @@
+// Stage ids that a worktree record or an execution state may name. `spec-me`, `architecture-spec` and `architecture-review`
+// are retired: no workflow runs them and their guides are removed. Their ids stay valid only so that the record of a
+// worktree created by an older Harness still parses; nothing can start them (`spec-me` is refused by name, the others have no
+// skill document any more).
 export const WORKTREE_STAGE = Object.freeze({
   AGGREGATE_DESIGN: 'aggregate-design',
   APPLICATION_SERVICE: 'application-service',

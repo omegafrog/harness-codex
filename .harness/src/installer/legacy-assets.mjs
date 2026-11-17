@@ -10,11 +10,27 @@ export const RETIRED_ASSET_PATHS = new Set([
   '.harness/src/workflow/execution-context.mjs',
   // Skill tiers moved into each skill's own document (`model_tier` frontmatter); setup's agents.<provider> values are the only models.
   '.codex/internal-skills/skill-execution/bindings.json',
+  // spec-me was retired in favour of the tactical-to-code flow; its guides, the Spec-authoring and Learning-review
+  // guides only it dispatched, and their agents have no remaining caller.
   '.codex/workflows/spec-me.yaml',
   '.codex/internal-skills/spec-me/GUIDE.md',
+  '.codex/internal-skills/spec-me/references/adversarial-spec-review.md',
+  '.codex/internal-skills/spec-me/references/architecture-decision.md',
+  '.codex/internal-skills/spec-me/references/decision-knowledge.md',
+  '.codex/internal-skills/architecture-spec/GUIDE.md',
+  '.codex/internal-skills/architecture-spec/references/template.md',
+  '.codex/internal-skills/architecture-spec/references/topics.md',
+  '.codex/internal-skills/architecture-review/GUIDE.md',
   '.codex/agents/spec_document_writer.toml',
   '.claude/agents/spec_document_writer.md',
+  '.codex/agents/architecture_review_lead.toml',
+  '.claude/agents/architecture_review_lead.md',
 ]);
+
+// Skills that no longer exist in `.codex/internal-skills`. Earlier releases also exposed some of them as public skills
+// (`.agents/skills/<name>`, `.claude/skills/<name>`); an update removes those managed copies, backing up edited ones,
+// and prunes the empty directories they leave behind.
+export const RETIRED_SKILL_NAMES = new Set(['spec-me', 'architecture-spec', 'architecture-review']);
 
 // Identified from released source snapshots; unknown or modified content is never adopted.
 export const LEGACY_ASSETS = [

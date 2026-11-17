@@ -27,7 +27,7 @@ tracker:
   local_markdown:
     directory: docs/plans
 `;
-// The tier each stage of the flow before spec-me declares in its own GUIDE.
+// The tier each requirements, tactical design and tactical implementation stage declares in its own GUIDE.
 export const STAGE_TIERS = {
   'stakeholder-analysis': 'implementation', 'subdomain-candidates': 'implementation', 'event-storming': 'implementation', 'subdomain-classification': 'implementation', 'bounded-context': 'high_performance', 'ubiquitous-language': 'implementation', 'requirements-fix': 'high_performance',
   'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance',

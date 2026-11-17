@@ -1,7 +1,7 @@
 schema_version: 1
 execution_purpose: code_validation
 id: public-skill-routing-o47
-workflow: spec-me
+workflow: tactical-to-code
 dispatch_workflow: false
 critical: false
 required_outcome: [artifact_written]

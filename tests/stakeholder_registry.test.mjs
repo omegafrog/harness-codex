@@ -277,10 +277,10 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   assert.equal(treeGit('log', '-1', '--format=%s').trim(), `stakeholder-analysis: ${planSetId}`);
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the runner leaves the project-owned card alone');
 
-  // The next flow stage follows the completed stage and receives the document as an input reference; spec-me waits for the whole flow.
+  // The next flow stage follows the completed stage and receives the document as an input reference; the retired spec-me is refused outright.
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
-  assert.match(premature.stderr, /spec-me cannot start before subdomain-candidates/);
+  assert.match(premature.stderr, /spec-me has been removed/);
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-candidates']);
   assert.equal(next.input.skill, 'subdomain-candidates');
   assert.equal(next.input.context.transition.from_stage, 'stakeholder-analysis');

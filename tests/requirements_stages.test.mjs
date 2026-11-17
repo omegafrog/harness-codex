@@ -18,7 +18,7 @@ const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 const fenced = (text, language) => [...text.matchAll(new RegExp('```' + language + '\\n([\\s\\S]*?)\\n```', 'g'))].map((match) => match[1]);
 
 test('the requirements.md template, the stage guides and the orchestrator agree on the flow and the shape', async () => {
-  // The flow order lives in one list; the orchestrator and the workflow map name the stages in that order before spec-me.
+  // The flow order lives in one list; the orchestrator and the workflow map name the stages in that order.
   assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'bounded-context', 'requirements-fix']);
   for (const stage of REQUIREMENTS_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
@@ -106,10 +106,8 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/internal-skills/requirements-fix/GUIDE.md'), /automatically/);
   assert.ok((await read('.codex/internal-skills/requirements-fix/references/coverage.md')).includes('확정 조건'));
 
-  // The retired Spec procedure and the Product guide both treat requirements.md as a fixed input.
+  // The Product guide and the DDD guide treat requirements.md as a fixed input.
   assert.match(await read('.codex/internal-skills/product-spec/GUIDE.md'), /`상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
-  assert.match(await read('.codex/internal-skills/architecture-spec/GUIDE.md'), /requirements\.md` when present instead of running it again/);
-  assert.match(await read('.codex/internal-skills/architecture-spec/GUIDE.md'), /already settled the contexts/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /requirements\.md` when present/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /do not compare the boundaries again/);
 });
@@ -132,7 +130,6 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
 
   const managed = [
     ...REQUIREMENTS_STAGES.slice(1).map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    '.codex/internal-skills/architecture-spec/GUIDE.md',
     '.harness/src/workflow/requirements-restart.mjs',
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',

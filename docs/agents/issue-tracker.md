@@ -23,7 +23,7 @@
 ## Assignee 규칙
 
 - GitHub mode의 assignee 설정은 `.harness/harness.yaml`의 `tracker.github.assignees`를 사용한다.
-- `spec-me → to-ticket` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다.
+- `to-ticket → tracker-publish` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다. 키 이름 `spec_me`는 이미 소비자의 `.harness/harness.yaml`에 저장된 설정이라 workflow 폐기 뒤에도 바꾸지 않는다. 소비자 설정을 옮기는 migration이 생길 때 함께 바꾼다.
 - Codex가 테스트·개발 중 추가로 만든 Issue는 `codex` 값(`@copilot`)을 assignee로 지정한다.
 - 기존 Issue의 assignee는 별도 요청 없이는 변경하지 않는다.
 

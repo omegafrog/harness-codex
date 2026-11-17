@@ -243,7 +243,7 @@ correctness / quality / tokens / latency / inconclusive 판정
 
 Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으로 선택하고, 매핑이 불명확하면 `p0`를 smoke/regression suite로 사용한다. Baseline은 실패를 없애기 위해 자동 갱신하지 않는다.
 
-`meta-harness-pilot`은 Codex 구독으로 Harness 동작을 점검하는 8-case suite다. 자체 4개 파일 중심 사례에 기존 `p0` 기준선의 `spec-me-ambiguity-gate`, `implement-wrapper-dependency`, `code-review-isolation`을 재사용해 범위를 넓혔다. 초기 `baseline: null` 상태에서는 품질·정책 verdict와 절대 비용만 보고하며 회귀율은 계산하지 않는다. subagent 축은 격리된 reviewer spawn이 불가능할 때 올바르게 차단하는 `code-review-isolation` 동작만 측정한다.
+`meta-harness-pilot`은 Codex 구독으로 Harness 동작을 점검하는 14-case suite다. 자체 4개 파일 중심 사례와 공개 skill-routing 8개 사례에 기존 `p0` 기준선의 `implement-wrapper-dependency`, `code-review-isolation`을 재사용해 범위를 넓혔다. 초기 `baseline: null` 상태에서는 품질·정책 verdict와 절대 비용만 보고하며 회귀율은 계산하지 않는다. subagent 축은 격리된 reviewer spawn이 불가능할 때 올바르게 차단하는 `code-review-isolation` 동작만 측정한다.
 
 ```sh
 node bin/harness-eval.mjs run --suite meta-harness-pilot
@@ -281,7 +281,8 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | --- | --- |
 | `code_researcher` | 코드베이스 조사 |
 | `stakeholder_persona` | 카드 하나(stakeholder 또는 전문가 관점)로 요청의 후보 요구사항 제안, `event-storming`에서는 도메인 관점으로 업무별 이벤트 추출 |
-| `spec_document_writer` | 확정된 Spec 문서화 |
+| `tactical_designer` | 확정된 전술 설계에서 기술·UI handoff·API·data 결정 정리 |
+| `tactical_implementation_agent` | 확정된 전술 설계와 결정에서 code·test 구현 |
 | `diagram_creator` | PlantUML / SVG 생성 |
 | `to_ticket` | vertical plan 작성 |
 | `frontend_designer` | reference-grounded visual direction과 frontend brief 작성 |

@@ -59,7 +59,7 @@ DDD 설계·구조 설계·구현·Architecture 리뷰에서 영향받는 범위
 - 상태는 `implemented`와 `accepted-target`을 구분한다. 설계 승인만으로 구현됐다고 기록하지 않는다. 대상과 현재가 다르면 적용 ticket/Spec 및 기준 commit을 연결한다.
 - Architecture 완료 때 영향받는 모델의 승인 변경과 근거를 반영하고, 구현 완료 때 실제 코드·검증·commit에 대조해 `implemented`로 갱신한다. 경계 변경이 없으면 불필요한 문서·다이어그램을 만들지 않는다.
 - 구조나 통신이 바뀌면 기존 class/context/sequence 다이어그램을 재사용·갱신하거나 ticket-scoped 원본과 SVG를 연결한다. 동일 관계를 별도 사본에 다시 정의하지 않는다. 다이어그램 생성은 기존 `plantuml-diagrams`/`diagram_creator` 계약을 따른다.
-- 다음 `spec-me`는 이 문서와 연결된 source/ADR를 다시 확인한다. 오래된 문서를 구현의 증거로 단독 사용하지 않는다. 동시 ticket 변경은 영향받는 행만 조정하고 상대 변경을 덮어쓰지 않는다.
+- 다음 요구사항·전술 설계 흐름은 이 문서와 연결된 source/ADR를 다시 확인한다. 오래된 문서를 구현의 증거로 단독 사용하지 않는다. 동시 ticket 변경은 영향받는 행만 조정하고 상대 변경을 덮어쓰지 않는다.
 
 ## 리뷰 증거
 

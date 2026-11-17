@@ -35,7 +35,7 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 | 실행 중 로그·임시 파일·스크린샷 위치 | `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` |
 | tracker lifecycle·Beads mirror | `.codex/internal-skills/beads/GUIDE.md` |
 | 통합 계약 갱신·seal·completion receipt | `.codex/internal-skills/sync-contracts/GUIDE.md` |
-| Architecture Spec fresh review | `.codex/internal-skills/spec-me/references/adversarial-spec-review.md`, `.codex/internal-skills/spec-review/GUIDE.md` |
+| 기존 Architecture Spec fresh review | `.codex/internal-skills/spec-review/GUIDE.md` |
 | 일반 검증과 E2E 선택 | `.codex/internal-skills/e2e-test/references/verification-policy.md` |
 
 ## Durable Context

@@ -21,4 +21,4 @@ environment_profile: p0-default
 integration: false
 recording: { mode: none }
 scenario:
-  prompt: "Classify which Harness workflow should start for this request. Product and Architecture Specs are approved, required independent reviews passed, and the user wants vertical implementation tickets prepared. Choose exactly one from spec-me, to-ticket, implement-wrapper, evaluate-harness. Do not execute the workflow. Write .eval-output/pilot/skill-selection-planning.json containing JSON with keys workflow and reason. Use only this workspace, and verify the file parses as JSON."
+  prompt: "Classify which Harness workflow should start for this request. Product and Architecture Specs are approved, required independent reviews passed, and the user wants vertical implementation tickets prepared. Choose exactly one from stakeholder-analysis, to-ticket, implement-wrapper, evaluate-harness. Do not execute the workflow. Write .eval-output/pilot/skill-selection-planning.json containing JSON with keys workflow and reason. Use only this workspace, and verify the file parses as JSON."

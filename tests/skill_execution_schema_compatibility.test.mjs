@@ -31,7 +31,7 @@ test('flow schemas expose only the questions array', async () => {
 test('generated output schemas expose questions without a singular result field', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-output-schema-'));
   try {
-    for (const skill of ['spec-me', 'workflow-compose']) {
+    for (const skill of ['requirements-fix', 'workflow-compose']) {
       const path = join(directory, `${skill}.schema.json`);
       await writeOutputSchema({ root: process.cwd(), input: { execution_id: 'check', skill }, prefix: 'runtime/executions/check', path });
       const schema = await readJson(path);
@@ -57,7 +57,7 @@ test('generated output schemas expose questions without a singular result field'
 test('reusing an execution schema refuses altered and linked files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-schema-reuse-'));
   const path = join(directory, 'schema.json');
-  const options = { root: process.cwd(), input: { execution_id: 'check', skill: 'spec-me' }, prefix: 'runtime/executions/check', path };
+  const options = { root: process.cwd(), input: { execution_id: 'check', skill: 'requirements-fix' }, prefix: 'runtime/executions/check', path };
   try {
     await writeOutputSchema(options);
     await writeFile(path, '{}');
@@ -95,7 +95,7 @@ test('implementation stages must declare unplanned additions in their structured
 test('provider output schemas keep Claude hints out of the Codex contract', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-provider-schema-'));
   try {
-    const input = { execution_id: 'provider-check', skill: 'spec-me' };
+    const input = { execution_id: 'provider-check', skill: 'requirements-fix' };
     for (const provider of ['codex', 'claude-code']) await writeOutputSchema({ root: process.cwd(), input, prefix: 'runtime/executions/provider-check', path: join(directory, `${provider}.json`), provider });
     const codex = await readJson(join(directory, 'codex.json'));
     const claude = await readJson(join(directory, 'claude-code.json'));
@@ -143,7 +143,7 @@ test('installed stage accepts changed documents while preserving review snapshot
       await assert.rejects(readFile(join(root, provider, 'skills/technology-selection/SKILL.md')), { code: 'ENOENT' });
       assert.match(await readFile(join(root, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /workflow-map\.md/);
       assert.ok((await readFile(join(root, provider, 'skills/orchestrator/../../../.codex/internal-skills/skill-execution/references/workflow-map.md'), 'utf8')).length > 0);
-      assert.ok((await readFile(join(root, provider, 'skills/spec-me/references/../../../../.codex/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
+      assert.ok((await readFile(join(root, provider, 'skills/orchestrator/references/../../../../.codex/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
     }
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
     const { inspectClaudeOrchestratorHook } = await import(`file://${join(root, '.claude/harness/installer/claude-orchestrator-hook.mjs')}`);
@@ -170,12 +170,13 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.equal(providers.configuredProvider({ agents: { provider: 'claude-code' } }), 'claude-code');
     assert.equal((await providers.loadProvider('claude-code')).id, 'claude-code');
     const installedSchemaPath = join(root, '.io/runtime/executions/installed-claude/return.schema.json');
-    await writeInstalledOutputSchema({ root, input: { execution_id: 'installed-claude', skill: 'spec-me' }, prefix: 'runtime/executions/installed-claude', path: installedSchemaPath, provider: 'claude-code' });
+    await writeInstalledOutputSchema({ root, input: { execution_id: 'installed-claude', skill: 'requirements-fix' }, prefix: 'runtime/executions/installed-claude', path: installedSchemaPath, provider: 'claude-code' });
     const installedSchema = await readJson(installedSchemaPath);
     assert.match(installedSchema.properties.status.description, /Keep status and code paired/);
     const reviewSchema = installedSchema.properties.result.properties.review_request.anyOf.find((item) => item.type === 'object');
-    assert.ok(!reviewSchema.properties.skill.enum.includes('spec-review'));
-    assert.ok(reviewSchema.properties.skill.enum.includes('architecture-review'));
+    assert.ok(reviewSchema.properties.skill.enum.includes('spec-review'));
+    assert.ok(reviewSchema.properties.skill.enum.includes('plan-review'));
+    assert.ok(!reviewSchema.properties.skill.enum.includes('architecture-review'), 'a retired skill is no longer offered for review');
     assert.match(reviewSchema.properties.context_path.description, /session-relative JSON/);
     assert.equal(codex.id, 'codex');
     assert.equal(claude.id, 'claude-code');
@@ -213,7 +214,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     const originalHash = createHash('sha256').update('original').digest('hex');
     await writeFile(join(root, path), 'revised');
     const reference = { base: 'workspace', path, kind: 'product-spec', sha256: originalHash };
-    const input = { schema_version: 1, execution_id: 'stage-1', skill: 'spec-me', workspace_root: root, session_directory: session, scope: 'calculator', input_refs: [reference] };
+    const input = { schema_version: 1, execution_id: 'stage-1', skill: 'requirements-fix', workspace_root: root, session_directory: session, scope: 'calculator', input_refs: [reference] };
     const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Updated', artifacts: [reference], questions: [], review_request: null };
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
     await validateSkillInput({ root, input });
@@ -223,8 +224,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'blocked', code: revision.code, result: { ...revision, status: 'blocked' } } }), /Return status\/code mismatch/);
     const premature = { ...result, status: 'action_required', code: 'REVIEW_REQUIRED', review_request: { skill: 'spec-review', agent_profile: 'spec_adversarial_reviewer', purpose: 'Review', context_path: 'docs/specs/example/' } };
     // A stage may hand the independent review to its caller; the request is then validated like any other review request.
-    await validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }).catch((error) => assert.doesNotMatch(error.message, /must perform spec-review internally/));
-    const badContext = { ...premature, review_request: { ...premature.review_request, skill: 'architecture-review', agent_profile: 'default' } };
+    await validateSkillReturn({ root, input, envelope: { ...envelope, status: premature.status, code: premature.code, result: premature } }).catch((error) => assert.doesNotMatch(error.message, /spec-review internally/));
+    const badContext = { ...premature, review_request: { ...premature.review_request, skill: 'plan-review', agent_profile: 'default' } };
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: badContext.status, code: badContext.code, result: badContext } }), /Review context must be an existing session-relative JSON file/);
     await assert.rejects(validateSkillReturn({ root, input, envelope: { ...envelope, status: 'action_required' } }), /Return status\/code mismatch/);
     await rm(join(root, path));
@@ -281,7 +282,7 @@ test('installed execution input resolves to the linked worktree, not the source 
     await updateProject({ sourceRoot, targetRoot: root });
     execFileSync('git', ['-C', root, 'worktree', 'add', '-qb', 'test-path', tree]);
     const { writeExecutionInput, executionInputAbsolutePath } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
-    const input = { execution_id: 'execution-1', skill: 'spec-me' };
+    const input = { execution_id: 'execution-1', skill: 'requirements-fix' };
     const relativePath = await writeExecutionInput(tree, input, 'plan-1');
     await writeExecutionInput(root, input, 'plan-1');
     assert.equal(await executionInputAbsolutePath(tree, input.execution_id), join(tree, relativePath));
@@ -315,7 +316,7 @@ test('installed result validation accepts safe directory artifacts and keeps con
 
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
     const reference = { base: 'workspace', path: 'docs/specs/example/architecture-decisions/', kind: 'architecture-decisions', sha256: null };
-    const input = { schema_version: 1, execution_id: 'spec-1', skill: 'spec-me', workspace_root: root, session_directory: join(root, '.io'), scope: 'calculator', input_refs: [reference] };
+    const input = { schema_version: 1, execution_id: 'spec-1', skill: 'requirements-fix', workspace_root: root, session_directory: join(root, '.io'), scope: 'calculator', input_refs: [reference] };
     const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Specs ready', artifacts: [reference], questions: [], review_request: null };
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/spec-1/result.json', result };
 

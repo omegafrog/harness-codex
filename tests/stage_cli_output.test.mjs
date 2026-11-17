@@ -304,31 +304,31 @@ test('the explanation catalogue covers the errors the stage commands throw and e
   assert.ok(messages.size > 100, `scanned ${messages.size} messages`);
   const generic = [];
   for (const message of messages) {
-    const body = explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: 'spec-me', executionId: 'x-1' });
+    const body = explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: 'requirements-fix', executionId: 'x-1' });
     assertActionable(body);
     if (body.code === 'HARNESS_ERROR' && !INTEGRITY.test(message)) generic.push(message);
   }
   assert.deepEqual(generic, [], 'every error the orchestrator can act on has an explanation; add a rule (or list an integrity failure)');
 
   // The refusals that cannot be provoked on a clean consumer, each with its own explanation.
-  const explain = (message, context = {}) => explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: 'spec-me', executionId: 'x-1', ...context });
+  const explain = (message, context = {}) => explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: 'requirements-fix', executionId: 'x-1', ...context });
   for (const [message, code] of [
     ['Revision repeated without changed evidence; inspect and report before retrying', 'REVISION_REPEATED'],
     ['Revision must return to requirements-fix', 'REVISION_TARGET'],
-    ['Resolve the previous stage before selecting another: spec-me returned waiting/REVIEW_REQUIRED', 'PREVIOUS_UNRESOLVED'],
-    ['Previous stage has no usable result: spec-me is failed without a recorded result', 'PREVIOUS_RESULT_MISSING'],
-    ['Dependency incomplete: spec-me', 'DEPENDENCY_INCOMPLETE'],
+    ['Resolve the previous stage before selecting another: requirements-fix returned waiting/REVIEW_REQUIRED', 'PREVIOUS_UNRESOLVED'],
+    ['Previous stage has no usable result: requirements-fix is failed without a recorded result', 'PREVIOUS_RESULT_MISSING'],
+    ['Dependency incomplete: requirements-fix', 'DEPENDENCY_INCOMPLETE'],
     ['User revision cannot start while another stage is running', 'USER_REVISION_REFUSED'],
     ['User revision requires a completed stage or one waiting on its question', 'USER_REVISION_REFUSED'],
     ['Native stage must be bound to the actual subagent ID', 'NOT_BOUND'],
     ['Native subagent binding mismatch', 'BIND_MISMATCH'],
     ['Stage already running; check the native subagent before retrying', 'STAGE_RUNNING'],
-    ['spec-me cannot start before domain-model: the flow runs a in order, and domain-model is failed/EXECUTION_ERROR, not completed/OK. Complete domain-model next.', 'STAGE_ORDER'],
+    ['aggregate-design cannot start before domain-model: the flow runs a in order, and domain-model is failed/EXECUTION_ERROR, not completed/OK. Complete domain-model next.', 'STAGE_ORDER'],
     ['Running stage cannot be verified stopped: the orchestrator Codex session is still open; close it first', 'RESTART_REFUSED'],
     ['PERMISSION_REQUIRED: the Harness subagent hook in /x/hooks.json is not trusted; open Codex, run /hooks and trust "Recording Harness subagent" for SubagentStart and SubagentStop. Stages do not start without it.', 'HOOK_NOT_TRUSTED'],
     ['Command failed: git commit -m x', 'COMMIT_BLOCKED'],
     ['Result rejected: Questions require a waiting decision or review', 'RESULT_REJECTED'],
-    ['Skill instruction is missing: spec-me', 'INSTALL_OR_BINDING'],
+    ['Skill instruction is missing: requirements-fix', 'INSTALL_OR_BINDING'],
   ]) {
     const body = explain(message);
     assert.equal(body.code, code, message);
@@ -337,7 +337,7 @@ test('the explanation catalogue covers the errors the stage commands throw and e
   }
   assert.ok(explain('Revision repeated without changed evidence; inspect and report before retrying').user_decision, 'a repeated revision is the user\'s decision');
   assert.ok(explain('PERMISSION_REQUIRED: the Harness subagent hook in /x is missing; run setup with the codex provider').user_decision);
-  assert.match(explain('Previous stage has no usable result: spec-me is failed without a recorded result', { stageId: 'to-ticket' }).next.join('\n'), /launch --stage-id spec-me --feedback/);
+  assert.match(explain('Previous stage has no usable result: requirements-fix is failed without a recorded result', { stageId: 'to-ticket' }).next.join('\n'), /launch --stage-id requirements-fix --feedback/);
   assert.match(explain('Something nobody planned for').next.join('\n'), /Do not read Harness source/);
   assert.deepEqual(extractVerbose(['--stage-id', 'x', '--verbose']), { args: ['--stage-id', 'x'], verbose: true });
   assert.deepEqual(extractVerbose(['--verbose', 'true', '--stage-id', 'x']), { args: ['--stage-id', 'x'], verbose: true });

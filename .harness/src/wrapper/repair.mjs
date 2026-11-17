@@ -191,7 +191,7 @@ export function buildScopeDecisionQuestions(findings = []) {
         options: [
           { id: "reject", label: labels.reject, consequence: REJECT_CONSEQUENCES[key] },
           ...(members.every(canAcceptWithoutSpec) ? [{ id: "accept", label: labels.accept, consequence: "업무 규칙에 영향이 없는 변경이므로 Spec 수정 없이 그대로 둡니다. 결정은 리뷰 기록에 남습니다." }] : []),
-          { id: "adopt", label: labels.adopt, consequence: ADOPT_CONSEQUENCES[key] || "새 요구사항으로 다루어 spec-me에서 승인받고 영향 계획을 다시 리뷰합니다. 그동안 구현은 멈춥니다." },
+          { id: "adopt", label: labels.adopt, consequence: ADOPT_CONSEQUENCES[key] || "새 요구사항으로 다루어 requirements-fix에서 승인받고 영향 계획을 다시 리뷰합니다. 그동안 구현은 멈춥니다." },
         ],
         recommended_option_id: "reject",
         rationale: `요청하지 않은 동작은 기본적으로 넣지 않습니다.${tradeoff ? ` ${tradeoff}` : ""}${related} 근거: ${finding.evidence || "제공되지 않음"}`,
@@ -464,7 +464,7 @@ export function planRepairRound({ reviews = [], round = 0, maxRounds = Infinity,
         next_action: "user-decision",
         resume_condition: "Ask the user to keep or reject each listed scope item, record the answers, then resume with scope_decisions",
         user_questions: buildScopeDecisionQuestions(pendingScope),
-      } : classification.blockers.some((finding) => BLOCKER_KINDS.has(finding.kind)) ? { next_action: "spec-me", resume_condition: "Approve the changed Specs and refresh the affected plans before implementation resumes" } : {}),
+      } : classification.blockers.some((finding) => BLOCKER_KINDS.has(finding.kind)) ? { next_action: "requirements-fix", resume_condition: "Approve the changed requirements through requirements-fix and refresh the affected plans before implementation resumes" } : {}),
     };
   }
   const removals = classification.repairable.filter((finding) => finding.repair_directive === REMOVE_DIRECTIVE);

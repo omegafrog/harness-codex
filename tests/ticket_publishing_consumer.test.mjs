@@ -23,7 +23,6 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   const implementationSkillPath = join(root, '.codex/internal-skills/implement-wrapper/GUIDE.md');
   const productTemplatePath = join(root, '.codex/internal-skills/product-spec/references/template.md');
   const diagramGuidePath = join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
-  const architectureTemplatePath = join(root, '.codex/internal-skills/architecture-spec/references/template.md');
   const dddGuidePath = join(root, '.codex/internal-skills/ddd-design/GUIDE.md');
   const plannerProfiles = ['.codex/agents/to_ticket.toml', '.claude/agents/to_ticket.md'];
   const checkPlanningGuidance = async () => {
@@ -37,13 +36,6 @@ test('installed and updated ticket guidance and renderer retain relations and ve
     assert.match(guide, /Preserve the actual workspace identity, approved Spec\/review/);
   };
   const checkArchitectureGuidance = async () => {
-    const template = await readFile(architectureTemplatePath, 'utf8');
-    const headings = ['# 2. Domain', '# 3. Aggregate', '# 4. Application Service', '# 5. Bounded Context'];
-    const positions = headings.map((heading) => template.indexOf(heading));
-    assert.ok(positions.every((position, index) => position >= 0 && (!index || position > positions[index - 1])));
-    assert.match(template, /설계 대상 도메인에 하나 이상의 Aggregate를 정의/);
-    assert.match(template, /모든 Aggregate에는 Root Entity/);
-    assert.doesNotMatch(template, /## 1\.2 Product Spec Mapping|## 2\.7 Hotspots|## 3\.7 Business Rule Ownership/);
     const guide = await readFile(dddGuidePath, 'utf8');
     assert.match(guide, /Each Aggregate has a root Entity/);
     assert.doesNotMatch(guide, /Treat creation of a new bounded context as a promotion decision/);

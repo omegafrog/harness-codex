@@ -14,8 +14,8 @@ Turn the user request into product problems, requirements, use cases, and busine
 - User request
 - `CONTEXT.md`
 - Read `CONTEXT-MAP.md` when present
-- `docs/specs/<plan-set-id>/stakeholder-analysis.md` when present: its adopted candidates and confirmed actors are settled user decisions (see [spec-me](../spec-me/GUIDE.md))
-- `docs/specs/<plan-set-id>/requirements.md` when present with `상태: fixed`: its `BIZ` items are settled user decisions to carry into `product-spec.md` with the source `requirements.md BIZ-xx` (see [spec-me](../spec-me/GUIDE.md))
+- `docs/specs/<plan-set-id>/stakeholder-analysis.md` when present: its adopted candidates and confirmed actors are settled user decisions (see [stakeholder-analysis](../stakeholder-analysis/GUIDE.md))
+- `docs/specs/<plan-set-id>/requirements.md` when present with `상태: fixed`: its `BIZ` items are settled user decisions to carry into `product-spec.md` with the source `requirements.md BIZ-xx` (see [requirements-fix](../requirements-fix/GUIDE.md))
 - `references/topics.md`
 - `references/template.md`
 
@@ -30,13 +30,13 @@ Turn the user request into product problems, requirements, use cases, and busine
 
 This is a phase-local guide. Read it when the Product phase begins; do not preload Architecture, review, or diagram instructions while interviewing.
 
-`spec-me`는 아래 절차로 확정한 요구사항과 template을 사용해 Product Spec을 작성하고 리뷰 지적에 따라 수정한다.
+새 기능은 `requirements-fix`가 확정한 `requirements.md`와 전술 설계로 진행하며 이 절차로 Product Spec을 새로 쓰지 않는다. 이 문서는 기존 Product Spec을 승인 근거로 읽거나 사용자가 명시적으로 고치라고 한 경우에만 아래 절차로 수정하고, 범위 승인 규칙·원문 보존·질문 묶음 규칙은 `requirements-fix`와 리뷰 단계가 참조한다.
 
 1. MUST read `references/topics.md` before starting the interview.
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.
 3. Use the user request, `CONTEXT.md`, `CONTEXT-MAP.md` when present, `stakeholder-analysis.md` and a `fixed` `requirements.md` when present, and other allowed product documents to mark topics that are already explicitly settled.
    Apply [language lifecycle](../domain-modeling/references/language-lifecycle.md) to compare affected glossary definitions with the required business meaning and lifecycle. Surface implied renames, definition corrections or splits/merges without waiting for a naming request. Resolve material meaning choices in the existing interview and update settled terms in the consumer glossary; do not inspect source or retire terms on suspicion alone.
-4. Run [grill-with-docs](../grill-with-docs/GUIDE.md) with that coverage checklist in `spec-me` batch mode. Before the first question and after each response batch, examine every applicable topic and collect all currently answerable independent material decisions; return them together. Only defer questions whose answers depend on an unresolved prerequisite.
+4. Run [grill-with-docs](../grill-with-docs/GUIDE.md) with that coverage checklist in batch mode. Before the first question and after each response batch, examine every applicable topic and collect all currently answerable independent material decisions; return them together. Only defer questions whose answers depend on an unresolved prerequisite.
    Ask everything the Spec needs in the first batch, because each extra round costs a full stage run and a wait for the user:
    - For every feature put `목적`, scope and sufficient level into one question set, so no purpose question is left for a later round.
    - Walk each feature's lifecycle and ask it at once: who can see it, who can create it, whether it can be edited or deleted and by whom, and what deleting it does to related data.
@@ -50,7 +50,7 @@ This is a phase-local guide. Read it when the Product phase begins; do not prelo
 8. Write the Product Spec only after the `grill-with-docs` completion gate passes.
    Preserve the user's wording of limits and rules; "5,000자" stays "5,000자". Do not introduce an unstated unit, encoding, normalization, locale, or stricter precision unless it is necessary for the requested outcome; otherwise keep the plain meaning. Carry the reason behind an approved option into that rule's `의도`. Record the actual basis of a reasonable default and never present it as a user decision. Ask only if a necessary material choice cannot be resolved from the available evidence or a reasonable default.
 9. Treat every business concept, actor/role, business state, and rule term defined in Product Spec section 4 as the consumer project's ubiquitous language, shared across the project rather than owned by this plan set. Add or update each entry in the active workspace's `CONTEXT.md`, preserving its existing table and language lifecycle. Reuse the current canonical term when its meaning matches; update its definition when approved behavior changes; record an approved replacement in the retired-term table. Do not leave a term defined only in the ticket-scoped Spec. Keep explanatory phrases and UI copy that do not name a domain concept in the Spec. Record bounded-context responsibilities and relationships in `CONTEXT-MAP.md`, not as glossary definitions.
-10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose; a Product Spec never has class diagrams. The Spec author records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. The spec-me workflow creates diagrams after the Architecture review gate passes; `diagram_creator` uses the finalized Specs and does not make product decisions.
+10. Apply the Product diagram contract in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram inventory; add a business-state diagram only when it has an independent business purpose; a Product Spec never has class diagrams. The Spec author records the final diagram IDs and links to both `.puml` originals and SVG targets in Markdown but does not dispatch diagram creation. A separate diagram stage creates the diagrams once the Specs are frozen and reviewed; `diagram_creator` uses the finalized Specs and does not make product decisions.
 
 ## Coverage gate
 

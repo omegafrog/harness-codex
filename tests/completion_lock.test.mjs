@@ -9,7 +9,7 @@ import { lockCompletionStream } from '../.harness/src/workflow/completion.mjs';
 test('only one completion run holds a workflow journal; a dead holder is replaced', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'completion-lock-'));
   try {
-    const journal = join(dir, 'spec-me-abc.jsonl');
+    const journal = join(dir, 'to-ticket-abc.jsonl');
     const release = await lockCompletionStream(journal);
     await assert.rejects(lockCompletionStream(journal), /Another completion run .* holds/);
     await release();

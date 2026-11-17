@@ -8,7 +8,7 @@ import { commitWorkflowDocuments, migrateLegacyTacticalDesign, restartDocuments 
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath } from '../.harness/src/workflow/worktree-stages.mjs';
 
 // Workflow-owned documents are committed by their stage; unrelated project files stay visible and uncommitted.
-test('spec-me, to-ticket and sync-contracts commit only their own documents when they complete', async () => {
+test('ubiquitous-language, to-ticket and sync-contracts commit only their own documents when they complete', async () => {
   const root = await mkdtemp(join(tmpdir(), 'workflow-docs-'));
   const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
   try {
@@ -24,8 +24,8 @@ test('spec-me, to-ticket and sync-contracts commit only their own documents when
     await writeFile(join(root, 'docs/agents/EXEC.md'), 'run\n');
     const raw = join(root, '..', `${Date.now()}-raw.json`);
     const result = async (skill, status) => { await writeFile(raw, JSON.stringify({ status })); return commitWorkflowDocuments({ root, input: { skill, context: { plan_set_id: 'set' } }, rawPath: raw }); };
-    assert.equal(await result('spec-me', 'action_required'), null, 'only a completed stage commits');
-    assert.match(await result('spec-me', 'completed'), /^[0-9a-f]{40}$/);
+    assert.equal(await result('ubiquitous-language', 'action_required'), null, 'only a completed stage commits');
+    assert.match(await result('ubiquitous-language', 'completed'), /^[0-9a-f]{40}$/);
     assert.deepEqual(git('show', '--name-only', '--format=', 'HEAD').split('\n').sort(), ['CONTEXT.md', 'docs/specs/set/product-spec.md']);
     assert.match(await result('to-ticket', 'completed'), /^[0-9a-f]{40}$/);
     assert.deepEqual(git('show', '--name-only', '--format=', 'HEAD').split('\n'), ['docs/plans/set/auth.md']);
@@ -39,7 +39,7 @@ test('spec-me, to-ticket and sync-contracts commit only their own documents when
     await writeFile(join(root, 'docs/plans/set/auth.md'), '# auth\n\nrevised\n');
     git('add', 'docs/plans/set/auth.md');
     await writeFile(join(root, 'docs/specs/set/product-spec.md'), '# Product\n\nrevised\n');
-    assert.match(await result('spec-me', 'completed'), /^[0-9a-f]{40}$/);
+    assert.match(await result('ubiquitous-language', 'completed'), /^[0-9a-f]{40}$/);
     assert.deepEqual(git('show', '--name-only', '--format=', 'HEAD').split('\n'), ['docs/specs/set/product-spec.md']);
     assert.deepEqual(git('diff', '--cached', '--name-only').split('\n').sort(), ['docs/agents/EXEC.md', 'docs/plans/set/auth.md']);
     await rm(raw, { force: true });
@@ -156,7 +156,7 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
 // reports them, so the project's own edits to those files are never swept into a stage commit.
 test('each tactical design stage commits docs/specs of its plan set, project documents only when reported, and a block that kept a rule commits that rule', async () => {
   assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
-  assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES], 'one ordered list covers the flow before spec-me');
+  assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES], 'one ordered list covers the requirements and tactical design flows');
   const root = await mkdtemp(join(tmpdir(), 'tactical-docs-'));
   const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
   try {

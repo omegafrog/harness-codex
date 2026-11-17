@@ -5,8 +5,6 @@ cases:
   - pilot-skill-selection-planning
   - pilot-context-precedence
   - pilot-untrusted-instruction
-  - spec-me-source-policy
-  - spec-me-ambiguity-gate
   - implement-wrapper-dependency
   - code-review-isolation
   - public-skill-routing-o10
@@ -21,7 +19,7 @@ evaluation_axes:
   skill_selection: [pilot-skill-selection-design, pilot-skill-selection-planning, public-skill-routing-o10, public-skill-routing-o45, public-skill-routing-o47, public-skill-routing-m36, public-skill-routing-m39, public-skill-routing-m40, public-skill-routing-m44, public-skill-routing-m45]
   subagent_utilization: [code-review-isolation]
   context_management: [pilot-context-precedence]
-  tool_execution_policy: [pilot-untrusted-instruction, spec-me-source-policy, code-review-isolation]
+  tool_execution_policy: [pilot-untrusted-instruction, code-review-isolation]
 baseline: null
 thresholds:
   hard_gate_failures: 0

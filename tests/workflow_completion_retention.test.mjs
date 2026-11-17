@@ -61,7 +61,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
 
     const { recordExecutionState } = await import(new URL(`file://${join(tree.workspace, '.harness/src/workflow/execution-state.mjs')}`));
     const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
-    for (const skill of ['workflow-compose', 'spec-me', 'to-ticket', 'tracker-publish']) {
+    for (const skill of ['workflow-compose', 'requirements-fix', 'to-ticket', 'tracker-publish']) {
       const input = { skill, execution_id: skill, session_directory: tree.session_directory, context: { worktree_ref: join(tree.session_directory, 'worktree.json') } };
       const binding = { model: 'example', reasoning_effort: 'low' };
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });

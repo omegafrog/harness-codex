@@ -145,7 +145,7 @@ async function existingRestartInput({ root, session, planSetId, previousExecutio
 }
 
 function storedStageInput(input) {
-  if (!input.context?.worktree_ref || ![...PRE_SPEC_STAGES, 'spec-me', 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
+  if (!input.context?.worktree_ref || ![...PRE_SPEC_STAGES, 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
   const { workspace_root, shared_guidance_root, session_directory, ...rest } = input;
   const { plan_set_id, ...context } = rest.context;
   return { ...rest, context };
@@ -252,7 +252,7 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, specOverwriteApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
@@ -271,7 +271,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
-  // The flow before spec-me runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
+  // The requirements and tactical design flow runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
   const orderViolation = preSpecOrderViolation(state.stages, stageId);
   if (orderViolation) throw new Error(orderViolation);
   const tacticalImplementationViolation = tacticalImplementationOrderViolation(state.stages, stageId);
@@ -281,7 +281,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   // The shared contract describes the integrated result, so it is written only after every plan is implemented.
   if (stageId === 'sync-contracts' && (state.stages?.['implement-wrapper']?.status !== 'completed' || state.stages?.['implement-wrapper']?.code !== 'OK')) throw new Error('sync-contracts starts only after implement-wrapper completed every plan and the final E2E passed');
-  if (specOverwriteApproved && stageId !== 'spec-me') throw new Error('Spec overwrite approval is only valid for spec-me');
   if (restart && (stageId !== 'to-ticket' || answer !== null || feedback !== null)) throw new Error('Restart applies only to to-ticket without an answer or feedback');
   const running = state.stages?.[stageId];
   if (running?.status === 'running' && !running.result_ref) {
@@ -372,7 +371,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   if (restart) {
     if (!worktree_ref || state.current_stage !== 'to-ticket' || !['waiting', 'failed'].includes(state.stages?.['to-ticket']?.status)) throw new Error('Restart requires a waiting or failed to-ticket stage in its active worktree');
-    if (state.stages?.['spec-me']?.status !== 'completed' || state.stages?.['spec-me']?.code !== 'OK') throw new Error('Restart requires a completed spec-me stage');
     await assertExecutionStopped(state.stages['to-ticket']);
     if (state.stages?.['tracker-publish']?.execution_id) throw new Error('Cannot restart after tracker-publish has started');
     const historyPath = join(taskSession, `runtime/reviews/plan-${plan_set_id}.json`);
@@ -391,6 +389,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   } else if (stage.skill !== 'plan-review' && reviewAdmissionRef) throw new Error('Review admission applies only to Spec or plan review');
   for (const dependency of stage.needs) if (!['completed', 'skipped'].includes(state.stages?.[dependency]?.status)) throw new Error(`Dependency incomplete: ${dependency}`);
   if (stageId === 'implement-wrapper') {
+    // A worktree that an older Harness ran through spec-me still records that completed result; implementation reads its
+    // Spec artifacts as before. No new spec-me result can appear, so a worktree without one simply has none to read.
     for (const producerStage of ['to-ticket', 'spec-me']) {
       const producer = state.stages?.[producerStage];
       if (producerStage === 'spec-me' && producer?.status !== 'completed') continue;
@@ -425,9 +425,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (matches[0].base === 'session' && producerSession !== taskSession) throw new Error('Producer session artifact differs from the current worktree session');
     input_refs.push(matches[0]);
   }
-  // A question a stage asked before an upstream stage (spec-me, to-ticket, tracker-publish) was completed again is
+  // A question a stage asked before an upstream stage (to-ticket, tracker-publish) was completed again is
   // superseded by that revision: the stage starts over from the new plan instead of waiting for the old answer.
-  const upstreamRevisedAfter = (entry) => ['spec-me', 'to-ticket', 'tracker-publish'].filter((id) => id !== stageId)
+  const upstreamRevisedAfter = (entry) => ['to-ticket', 'tracker-publish'].filter((id) => id !== stageId)
     .some((id) => Date.parse(state.stages?.[id]?.finished_at || 0) > Date.parse(entry?.updated_at || 0));
   const supersededQuestion = !restart && answer === null && feedback === null && state.stages?.[stageId]?.status === 'waiting'
     && state.stages[stageId].code === 'USER_DECISION_REQUIRED' && upstreamRevisedAfter(state.stages[stageId]);
@@ -515,7 +515,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
       if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     }
-    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}), ...(interrupted && stage.skill === 'spec-me' ? { interrupted_execution_id: previous.execution_id, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}) };
   }
   let deferredAnswers = null;
   if (!userRevision && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
@@ -547,7 +547,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer, deferred);
     if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
     answer = batchAnswers.answers;
-    conversation = { previous_result_ref: previous.result_ref, ...(previousInput.context?.approved_spec_overwrites ? { approved_spec_overwrites: previousInput.context.approved_spec_overwrites } : {}) };
+    conversation = { previous_result_ref: previous.result_ref };
   }
   workflowBinding = historicalBinding?.provider === provider ? historicalBinding : null;
   if (e2eRequest) {
@@ -572,21 +572,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     plan_review_admission = await validatePlanReviewAdmission({ root, planSetId: plan_set_id, admission: await readSkillSessionJson({ root, session_directory: session, path: reviewAdmissionRef }) });
   }
   const execution_id = `${stage.id}-${randomUUID()}`;
-  let approvedSpecOverwrites;
-  if (specOverwriteApproved) {
-    if (!plan_set_id) throw new Error('Spec overwrite approval requires a plan set');
-    approvedSpecOverwrites = {};
-    for (const axis of ['product', 'architecture']) {
-      try {
-        const path = `docs/specs/${plan_set_id}/${axis}-spec.md`;
-        await assertWorkspaceTarget(root, path);
-        const info = await lstat(join(root, path));
-        if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error('Spec approval requires a regular unshared file');
-        approvedSpecOverwrites[axis] = createHash('sha256').update(await readFile(join(root, path))).digest('hex');
-      }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-  }
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
   if (stageId === 'implement-wrapper' && !planId) throw new Error('implement-wrapper resume needs the assigned plan from its previous input');
@@ -607,7 +592,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
-  if (approvedSpecOverwrites) input.context.approved_spec_overwrites = approvedSpecOverwrites;
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);

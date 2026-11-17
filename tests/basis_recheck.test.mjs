@@ -67,6 +67,16 @@ test('basis recheck captures hash-validated historical and current review snapsh
   assert.equal(recorded.route, 'dismiss');
   const verified = await verifiedBasisRecheckResults({ root, planId: 'create', findings: [artifact.finding], results: [{ finding_id: 'F-1', finding_sha256: recorded.finding_sha256, artifact_ref: ref, result_ref: recorded.evidence_ref }] });
   assert.equal(verified[0].route, 'dismiss');
+  // A decision recorded before spec-me was retired names it as the route; reading it again yields requirements-fix.
+  const specDecision = { ...result, classification: 'spec_decision', route: 'requirements-fix', summary: 'The finding needs a changed requirement.', evidence: [
+    { snapshot: 'review_time', path: 'docs/specs/demo/product-spec.md', quote: 'BR-1: Save valid posts.', analysis: 'The reviewed Product Spec holds the rule that must change.' },
+  ] };
+  const decided = await recordBasisRecheck({ root, planId: 'create', artifactRef: ref, result: specDecision });
+  assert.equal(decided.route, 'requirements-fix');
+  const storedPath = join(root, '.io', decided.evidence_ref);
+  await writeFile(storedPath, JSON.stringify({ ...JSON.parse(await readFile(storedPath, 'utf8')), route: 'spec-me' }));
+  const legacy = await verifiedBasisRecheckResults({ root, planId: 'create', findings: [artifact.finding], results: [{ finding_id: 'F-1', finding_sha256: decided.finding_sha256, artifact_ref: ref, result_ref: decided.evidence_ref }] });
+  assert.equal(legacy[0].route, 'requirements-fix');
   const supported = { ...result, classification: 'supported_finding', route: 'implementation', summary: 'The current implementation violates the cited requirement.', evidence: [
     { snapshot: 'current', path: 'docs/specs/demo/product-spec.md', quote: 'BR-1: Save valid posts.', analysis: 'This is the current required behavior.' },
     { snapshot: 'current', path: 'implementation.diff', quote: 'const value = "new";', analysis: 'The implementation diff shows the changed behavior under review.' },
@@ -90,7 +100,7 @@ test('basis recheck refuses missing historical admissions and unsupported child 
   const artifactPath = join(root, '.io', artifactRef);
   await mkdir(join(artifactPath, '..'), { recursive: true });
   await writeFile(artifactPath, JSON.stringify({ schema_version: 1, finding_id: 'F-2', plan_id: 'create', review_time: { plan_set_id: 'demo' }, current: { head: execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), files: {} } }));
-  await assert.rejects(recordBasisRecheck({ root, planId: 'create', artifactRef, result: { schema_version: 1, finding_id: 'F-2', source_plan_id: 'create', classification: 'unsupported_finding', route: 'spec-me', affected_plan_id: 'create', summary: 'x', evidence: [] } }), /Invalid basis-recheck result/);
+  await assert.rejects(recordBasisRecheck({ root, planId: 'create', artifactRef, result: { schema_version: 1, finding_id: 'F-2', source_plan_id: 'create', classification: 'unsupported_finding', route: 'requirements-fix', affected_plan_id: 'create', summary: 'x', evidence: [] } }), /Invalid basis-recheck result/);
 });
 
 async function cliWorkspace() {

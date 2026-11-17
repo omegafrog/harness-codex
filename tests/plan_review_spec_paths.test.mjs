@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { snapshotPlanSet, updatePlanReview, inspectPlanSet } from '../.harness/src/workflow/plan-review.mjs';
 
 // A plan index line can mention "Architecture Spec" next to another document; the review inputs still are the two
-// Specs spec-me wrote, so a plan reviewer always receives the Architecture Spec.
+// Specs at the fixed paths, so a plan reviewer always receives the Architecture Spec.
 test('plan review inputs are the fixed Spec paths even when the index mentions other documents', async () => {
   const root = await mkdtemp(join(tmpdir(), 'plan-spec-paths-'));
   try {

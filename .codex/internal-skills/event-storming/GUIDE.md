@@ -7,7 +7,7 @@ model_tier: implementation
 
 ## Purpose
 
-Step of the requirements flow after `ubiquitous-language` and before `subdomain-classification`. Map the flow of each business activity (`BIZ-xx`) into actors, commands, domain events, policies, external systems and hotspots, at business level only, and record it in `requirements.md` with PlantUML diagrams. This stage is the facilitator: it runs the domain lens as a fresh persona, validates what it returns, asks the user about the hotspots and records the answers. The domain model that `ddd-design` and `architecture-spec` build later starts from this result; this stage does not model aggregates, bounded contexts, modules or persistence.
+Step of the requirements flow after `ubiquitous-language` and before `subdomain-classification`. Map the flow of each business activity (`BIZ-xx`) into actors, commands, domain events, policies, external systems and hotspots, at business level only, and record it in `requirements.md` with PlantUML diagrams. This stage is the facilitator: it runs the domain lens as a fresh persona, validates what it returns, asks the user about the hotspots and records the answers. The domain model that the tactical design flow builds later starts from this result; this stage does not model aggregates, bounded contexts, modules or persistence.
 
 ## Inputs
 
@@ -45,4 +45,4 @@ Step of the requirements flow after `ubiquitous-language` and before `subdomain-
 - `requirements.md` holds the event tables, the cross-subdomain table, the hotspot list with every decision linked to an `INV` or `EX`, and the diagram links.
 - Every hotspot answer is recorded as confirmed with its `answers.json` source; no persona ran after the answers.
 - The `.puml` originals and their `.svg` renders exist under `docs/specs/<plan-set-id>/diagrams/events/`.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `subdomain-classification` validates the subdomain boundaries with these tables, `ddd-design` and `architecture-spec` read the same tables instead of running this stage again.
+- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `subdomain-classification` validates the subdomain boundaries with these tables, `ddd-design` and the tactical design stages read the same tables instead of running this stage again.

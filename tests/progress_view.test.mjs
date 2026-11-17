@@ -21,7 +21,7 @@ test('installed harness-progress summarizes a session and shows the running stag
     const state = {
       schema_version: 1, status: 'running', current_stage: 'implement-wrapper', updated_at: '2026-01-01T00:00:00.000Z',
       stages: {
-        'spec-me': { status: 'completed', code: 'OK', started_at: '2026-01-01T00:00:00.000Z', finished_at: '2026-01-01T00:02:00.000Z', attempts: [{}, {}] },
+        'requirements-fix': { status: 'completed', code: 'OK', started_at: '2026-01-01T00:00:00.000Z', finished_at: '2026-01-01T00:02:00.000Z', attempts: [{}, {}] },
         'to-ticket': { status: 'waiting', code: 'USER_DECISION_REQUIRED', started_at: '2026-01-01T00:02:00.000Z', finished_at: '2026-01-01T00:03:00.000Z' },
         'implement-wrapper': { status: 'running', started_at: '2026-01-01T00:03:00.000Z', execution_id: 'iw-0' },
       },
@@ -30,7 +30,7 @@ test('installed harness-progress summarizes a session and shows the running stag
     const script = join(root, '.codex/scripts/harness-progress.mjs');
     const output = execFileSync(process.execPath, [script, '--session', session], { cwd: root, encoding: 'utf8' });
     assert.match(output, /기록된 단계 1\/3 완료/);
-    assert.match(output, /✓ spec-me\s+완료 00:02:00 · 2회차/);
+    assert.match(output, /✓ requirements-fix\s+완료 00:02:00 · 2회차/);
     assert.match(output, /⏸ to-ticket\s+대기 .*사용자 답변 필요/);
     assert.match(output, /▶ implement-wrapper\s+실행 중/);
     // The running stage's latest conversation step is shown on one line, read from the provider's rollout file.
@@ -58,7 +58,7 @@ test('installed harness-progress summarizes a session and shows the running stag
     const orchestrating = execFileSync(process.execPath, [script, '--session', session], { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: home } });
     assert.match(orchestrating, /▶ orchestrator\s+진행 중\n\s+└ 하위 agent: spec_reviewer\n\s+└ ▸ node \.codex\/scripts\/harness-code-review\.mjs repair/);
     // Same session found without --session from the project directory.
-    assert.match(execFileSync(process.execPath, [script], { cwd: root, encoding: 'utf8' }), /spec-me/);
+    assert.match(execFileSync(process.execPath, [script], { cwd: root, encoding: 'utf8' }), /requirements-fix/);
     assert.equal(execFileSync('git', ['-C', root, 'check-ignore', '-q', '.codex/scripts/harness-progress.mjs'], { stdio: 'pipe' }).length, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

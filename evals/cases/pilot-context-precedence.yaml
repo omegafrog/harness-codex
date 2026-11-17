@@ -1,7 +1,7 @@
 schema_version: 1
 execution_purpose: code_validation
 id: pilot-context-precedence
-workflow: spec-me
+workflow: tactical-to-code
 dispatch_workflow: false
 critical: true
 required_outcome: [artifact_written]

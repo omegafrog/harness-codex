@@ -38,7 +38,7 @@ plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에�
 
 구현 stage는 승인된 Spec과 plan을 구현할 뿐 사용자에게 질문하지 않는다(`USER_DECISION_REQUIRED`와 questions를 반환하지 않는다). Spec이 정하지 않은 결정이 필요하면 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
 
-구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator는 사용자의 결정과 기존 승인 자료를 보존하고 영향받는 요구사항·계획의 수정 경로를 확인한 뒤 구현을 재개한다. 제거된 `spec-me`는 실행하지 않는다. 실행 환경은 Architecture Spec 12.7이 정하고, E2E 실행 승인은 orchestrator가 받는다.
+구현 또는 구현 리뷰 중 승인된 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현과 해당 규칙의 수정을 중단한다. 사용자에게 wrapper에서 직접 선택지를 묻거나 임의 값을 정하지 말고, 미결 사항·영향 요구·기존 구현 및 리뷰 근거를 보존해 `action_required/SPEC_REVISION_REQUIRED`로 orchestrator에 반환한다. orchestrator는 사용자의 결정과 기존 승인 자료를 보존하고 영향받는 요구사항·계획의 수정 경로를 확인한 뒤 구현을 재개한다. 실행 환경은 Architecture Spec 12.7이 정하고, E2E 실행 승인은 orchestrator가 받는다.
 
 구현자는 직접 commit하지 않고 `commit_request`를 반환하며 실행기가 지정된 파일만 commit한다. 메인 세션이나 관찰자가 대신 commit하지 않는다.
 

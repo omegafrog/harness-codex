@@ -61,7 +61,6 @@ const stageDocuments = (skill, id) => TACTICAL_IMPLEMENTATION_DOCUMENTS[skill]?.
 const WORKFLOW_DOCUMENTS = {
   ...Object.fromEntries(PRE_SPEC_STAGES.map((skill) => [skill, (id) => stageDocuments(skill, id)])),
   ...TACTICAL_IMPLEMENTATION_DOCUMENTS,
-  'spec-me': (id) => [`docs/specs/${id}`, 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture', 'knowledge'],
   'to-ticket': (id) => [`docs/plans/${id}`],
   'sync-contracts': () => ['docs/contracts'],
 };

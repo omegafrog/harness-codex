@@ -1,7 +1,7 @@
 schema_version: 1
 execution_purpose: code_validation
 id: pilot-skill-selection-design
-workflow: spec-me
+workflow: tactical-to-code
 dispatch_workflow: false
 critical: true
 required_outcome: [artifact_written]
@@ -21,4 +21,4 @@ environment_profile: p0-default
 integration: false
 recording: { mode: none }
 scenario:
-  prompt: "Classify which Harness workflow should start for this request. The user has only a feature idea and a material product behavior is unsettled; they want to settle product behavior before architecture or implementation. Choose exactly one from spec-me, to-ticket, implement-wrapper, evaluate-harness. Do not execute the workflow. Write .eval-output/pilot/skill-selection-design.json containing JSON with keys workflow and reason. Use only this workspace, and verify the file parses as JSON."
+  prompt: "Classify which Harness workflow should start for this request. The user has only a feature idea and a material product behavior is unsettled; they want to settle product behavior before architecture or implementation. Choose exactly one from stakeholder-analysis, to-ticket, implement-wrapper, evaluate-harness. Do not execute the workflow. Write .eval-output/pilot/skill-selection-design.json containing JSON with keys workflow and reason. Use only this workspace, and verify the file parses as JSON."

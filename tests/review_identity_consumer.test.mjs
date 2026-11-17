@@ -70,8 +70,8 @@ test('a stage completes only when an admitted fresh reviewer finished after any 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     const { assertNoRogueReviewer } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
-    const session = join(root, '.io'), input = { execution_id: 'spec-me-1' };
-    const write = async (events) => { await mkdir(join(session, 'runtime/executions/spec-me-1'), { recursive: true }); await writeFile(join(session, 'runtime/executions/spec-me-1/subagents.jsonl'), events.map((item) => JSON.stringify({ review_scope: 'spec-x-architecture', ...item })).join('\n') + '\n'); };
+    const session = join(root, '.io'), input = { execution_id: 'to-ticket-1' };
+    const write = async (events) => { await mkdir(join(session, 'runtime/executions/to-ticket-1'), { recursive: true }); await writeFile(join(session, 'runtime/executions/to-ticket-1/subagents.jsonl'), events.map((item) => JSON.stringify({ review_scope: 'spec-x-architecture', ...item })).join('\n') + '\n'); };
     await assertNoRogueReviewer({ root, session, input }); // no reviewers at all
     await write([{ event: 'SubagentStart', agent_id: 'forked', admitted: false, forked: true }]);
     await assert.rejects(assertNoRogueReviewer({ root, session, input }), /Reviewer forked ran forked from the author conversation after the last admitted review/);

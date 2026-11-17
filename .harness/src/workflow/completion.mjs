@@ -36,7 +36,6 @@ export async function lockCompletionStream(evidencePath) {
 
 export function completionKindForWorkflow(workflowId) {
   return ({
-    'spec-me': 'spec_ready_for_planning',
     'to-ticket': 'plan_set_ready_for_implementation',
     implement: 'plan_implemented',
     'implement-wrapper': 'feature_implemented',
@@ -79,14 +78,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
       state = { ...state, plan_set_id: planSetId, plan_review: { plan_set_id: planSetId, plan_id: null, phase: 'completion' } };
       derived = await deriveImplementationCompletion({ root: workspace_root, planSetId });
     }
-    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'spec-me' ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
-    // The Architecture review of the worktree's plan set is already in the review history, so the gate reads it there
-    // instead of needing the orchestrator to assemble a completion state file that names the ticket and the record.
-    if (workflow.id === 'spec-me' && worktreeRecord?.plan_set_id && !state.spec_reviews) {
-      const { inspectReviewHistory } = await import('./review-attempts.mjs');
-      const architecture = (await inspectReviewHistory({ root: workspace_root, scope: `spec-${worktreeRecord.plan_set_id}-architecture` }).catch(() => ({}))).last_review;
-      if (architecture) state = { ...state, ticket_id: state.ticket_id ?? worktreeRecord.plan_set_id, spec_reviews: { architecture } };
-    }
+    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
     if (workflow.id === 'to-ticket') state = { ...state, plan_set_id: worktreeRecord?.plan_set_id, plans_index: { workspace_root, plan_set_id: worktreeRecord?.plan_set_id }, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, phase: 'planning' } };
     if (workflow.id === 'implement') state = { ...state, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, ...state.plan_review, plan_id: state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };

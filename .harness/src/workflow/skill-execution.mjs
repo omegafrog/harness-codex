@@ -301,7 +301,6 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   const controlSession = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   for (const key of ['execution_id', 'skill']) requireValue(input[key] === envelope[key], `Return ${key} mismatch`);
   requireValue(CODES[envelope.status]?.includes(envelope.code), 'Return status/code mismatch');
-  requireValue(!(input.skill === 'spec-me' && envelope.code === 'IMPLEMENTATION_REVISION_REQUIRED'), 'spec-me cannot request implementation revision; route changed Specs through planning');
   for (const reference of input.input_refs) await readReference(root, reference, session, controlSession, true);
   if (envelope.result_ref === null) {
     requireValue(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED', 'Only artifact-write failures may omit result_ref');
@@ -317,7 +316,6 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
   // A stage may hand the independent review to its caller, which dispatches the reviewer for the waiting stage.
   const callerDispatchesReviewer = true;
-  requireValue(callerDispatchesReviewer || !(input.skill === 'spec-me' && result.review_request?.skill === 'spec-review'), 'spec-me must perform spec-review internally using a fresh native reviewer');
   requireValue(callerDispatchesReviewer || !(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');
   const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
   const schemaResult = structuredClone(result);
@@ -369,12 +367,8 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     await validatePlanReviewAdmission({ root, planSetId: input.context.plan_set_id, admission, requireActive: false });
     requireValue(result.plan_set_id === input.context.plan_set_id && result.attempt_id === admission.attempt_id, 'Plan review result must match the admitted target');
   }
-  if (envelope.status === 'completed' && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
+  if (envelope.status === 'completed' && ['to-ticket', 'sync-contracts'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
   if (envelope.status === 'completed') {
-    if (!reopening && input.skill === 'spec-me' && input.context?.worktree_ref && !input.context?.agent_profile && !input.context?.role) {
-      const { requireCurrentSpecReview } = await import('./spec-review.mjs');
-      await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
-    }
     if (input.skill === 'tracker-publish') {
       const { verifyActivatedPublication } = await import('../tracker/publication.mjs');
       await verifyActivatedPublication({ root, planSetId: input.context?.plan_set_id });

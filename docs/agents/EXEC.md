@@ -29,8 +29,7 @@
 ## Harness 원본 저장소의 설치 동작
 
 - 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`, `harness-update`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
-- Spec의 session-worktree 분기·준비 참조 검사는 `python3 -B -m unittest discover -s tests -p test_spec_diagram_workflow.py -k test_spec_me_prepares_the_session_worktree_before_spawning_agents`로 실행한다.
-- 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. `spec-me`는 진입 시 `worktree-create` skill을 실행한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
+- 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
 - 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node --test tests/workflow_completion_retention.test.mjs`로 실행한다. 서버·외부 인프라는 필요하지 않다.
 
@@ -76,7 +75,7 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 - Harness eval 계약의 집중 검사는 `npm test`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.
 - 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 설치기는 Ponytail plugin 준비를 위해 Codex/network를 사용할 수 있으므로 실제 실행 권한과 의존성을 먼저 확인한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
 - 진단: 원본 루트를 cwd로 `node bin/harness-doctor.mjs --project <consumer 경로> --json`. `passed`, diagnostics와 exit code를 함께 확인한다.
-- workspace 검사: 검사할 저장소를 cwd로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <절대 worktree 경로> --json`. 관리형 spec-me는 등록된 linked worktree를 사용한다.
+- workspace 검사: 검사할 저장소를 cwd로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <절대 worktree 경로> --json`. 관리형 workflow는 등록된 linked worktree를 사용한다.
 - suite 검증: 원본 루트를 cwd로 `node bin/harness-eval.mjs run --suite <설정된 suite ID>`. `.harness/harness.yaml`, suite manifests, 인증 및 recording profile을 확인하고 `evaluate-harness`를 따른다. 모델 실행 비용이 발생할 수 있으며 일반 suite를 blind 비교라고 부르지 않는다.
 - 실제 E2E/end-user 시나리오는 `e2e-test`와 전용 runner로 실행한다. 생성한 임시 consumer/worktree와 소유 프로세스만 정리하며 결과 증거는 해당 세션 디렉터리에 둔다. worktree는 Git worktree 명령으로 제거하고 사전 존재 파일은 보존한다.
 
@@ -93,7 +92,7 @@ node .codex/scripts/harness-contracts.mjs check --root /absolute/project --base-
 
 `Harness contracts / contracts` Actions job은 PR head를 base commit과 비교하고 push에서도 직전 commit과 비교한다. secrets·쓰기 권한·외부 package 다운로드 없이 검사한다. Actions 비활성화나 필수 check 미설정은 코드가 강제할 수 없으므로 보호 브랜치에서 이 job을 required status check로 지정해야 merge 차단이 보장된다. workflow 완료 gate는 로컬에서도 별도로 적용된다. CI 버전은 [checkout](https://github.com/actions/checkout), [setup-node](https://github.com/actions/setup-node)의 공식 사용법을 기준으로 한다.
 
-모든 실행은 시작 시 캡처한 `git rev-parse HEAD`의 SHA를 보존하고, 정상 종료 직전에 `node .codex/scripts/harness-workflow-complete.mjs --root /absolute/project --workflow spec-me --base-ref <starting-commit-sha>`를 실행한다. 소유 worktree의 ID와 원본 경로는 `<session_directory>/worktree.json`에서 읽는다. `spec-me`·`to-ticket`·`implement-wrapper`의 완료 evidence는 gate가 정본 기록(리뷰 history, 계획 snapshot, plan별 리뷰 evidence, E2E receipt, tracker 상태)에서 직접 읽으므로 상태 파일을 넘기지 않는다. `implement-wrapper`에서는 `--state`로 넘긴 `required_outcome`·`tests`·`reviews`·`retirement`·`evidence`·`plan_review`·`plan_set_id` 값을 무시하고 결과의 `ignored_state_keys`에 남긴다. 이 명령은 선언된 `before_complete` hook과 적용되는 `contract_docs`를 실행하고 `<session_directory>/runtime/workflow-completion/` journal에 verdict를 보존한다. 시작 SHA와 필수 evidence를 완료 입력에 포함한다.
+모든 실행은 시작 시 캡처한 `git rev-parse HEAD`의 SHA를 보존하고, 정상 종료 직전에 `node .codex/scripts/harness-workflow-complete.mjs --root /absolute/project --workflow <workflow-id> --base-ref <starting-commit-sha>`를 실행한다. 소유 worktree의 ID와 원본 경로는 `<session_directory>/worktree.json`에서 읽는다. `to-ticket`·`implement-wrapper`의 완료 evidence는 gate가 정본 기록(리뷰 history, 계획 snapshot, plan별 리뷰 evidence, E2E receipt, tracker 상태)에서 직접 읽으므로 상태 파일을 넘기지 않는다. `implement-wrapper`에서는 `--state`로 넘긴 `required_outcome`·`tests`·`reviews`·`retirement`·`evidence`·`plan_review`·`plan_set_id` 값을 무시하고 결과의 `ignored_state_keys`에 남긴다. 이 명령은 선언된 `before_complete` hook과 적용되는 `contract_docs`를 실행하고 `<session_directory>/runtime/workflow-completion/` journal에 verdict를 보존한다. 시작 SHA와 필수 evidence를 완료 입력에 포함한다.
 
 워크플로우 조율 효율 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/intent_and_excess_guidance.test.mjs tests/plan_review_spec_paths.test.mjs tests/spec_author_runner.test.mjs`로 검사한다. 임시 consumer의 신규 설치·갱신, Doctor, Git 가시성, reviewer 생성 전 필수 기록 검사를 포함한다. 실제 모델 workflow E2E를 대신하지 않는다.
 

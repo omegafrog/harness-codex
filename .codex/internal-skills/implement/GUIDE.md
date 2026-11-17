@@ -38,7 +38,7 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 10. `review_fixed_point`·`commit_request`·검증 근거의 파일 참조와 `unplanned_additions`를 남기고 `action_required/REVIEW_REQUIRED`로 반환한다. 두 리뷰, `harness-code-review.mjs repair` 판정, 수정 worker 배정과 재리뷰는 [구현 workflow 조율](../../../.codex/skills/orchestrator/references/implementation.md)이 맡는다. 수정 worker로 다시 dispatch되면 전달받은 finding과 허용 범위만 고치고 원래 `review_fixed_point`를 유지한 채 같은 방식으로 반환한다.
 11. 분기와 중단:
     - 추가 작업이나 계획 범위 변경이 필요하면 현재 commit·리뷰 보고서·미해결 finding·검증 증거·`review_fixed_point`와 다음 작업을 checkpoint에 보존하고 공통 상태 코드로 반환한다. 재분할·재실행·context 인계는 orchestrator가 정한다.
-    - finding이 새 명령·업무 상태·규칙·경계 또는 승인 Spec 변경을 요구하거나, 승인 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현을 중단한다. 현재 commit·fixed point·변경 근거·영향 경로·재개 조건을 checkpoint에 보존하고 `action_required/SPEC_REVISION_REQUIRED`로 상위 orchestrator에 반환한다. 구현 단계에서 직접 사용자에게 결정 질문을 하거나 임의로 정하지 않는다. orchestrator는 사용자의 결정과 기존 승인 자료를 보존하고 영향받는 요구사항·계획의 수정 경로를 확인한 뒤 승인 결과로 재개한다. 제거된 `spec-me`는 실행하지 않는다.
+    - finding이 새 명령·업무 상태·규칙·경계 또는 승인 Spec 변경을 요구하거나, 승인 Spec에 없는 제품·업무 규칙이나 설계 결정을 발견하면 구현을 중단한다. 현재 commit·fixed point·변경 근거·영향 경로·재개 조건을 checkpoint에 보존하고 `action_required/SPEC_REVISION_REQUIRED`로 상위 orchestrator에 반환한다. 구현 단계에서 직접 사용자에게 결정 질문을 하거나 임의로 정하지 않는다. orchestrator는 사용자의 결정과 기존 승인 자료를 보존하고 영향받는 요구사항·계획의 수정 경로를 확인한 뒤 승인 결과로 재개한다.
     - 외부 환경·권한·의존성·사용자/아키텍처 결정이 막혀 있으면 finding, 필요한 입력, 정확한 unblock condition을 checkpoint와 결과에 기록하고 ticket을 `blocked`로 전환한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
 12. 구현·검증 결과와 선택한 실행 profile의 성공 receipt를 기존 session evidence에 기록한다. Receipt는 session runtime 경로에서 읽으며 profile/config/file hash가 현재 파일과 맞아야 한다.
 13. ticket `completed` 전환과 의존 plan 재계산은 두 리뷰와 completion gate를 통과한 뒤 orchestrator가 수행한다. 구현자는 갱신한 상태를 보고하고 멈춘다.

@@ -12,14 +12,7 @@ function emitAction(action, target, payload = {}) {
   console.log(JSON.stringify({ kind: "tool_result", actor: "codex", correlation_id, action, target, status: "success", payload }));
 }
 
-if (caseId?.startsWith("spec-me") && workspace) {
-  const target = ".eval-output/specs/496/product-spec.md";
-  await mkdir(join(workspace, ".eval-output/specs/496"), { recursive: true });
-  await writeFile(join(workspace, target), "# Evaluated Product Spec\n", "utf8");
-  await writeFile(join(workspace, ".eval-output/specs/496/ambiguity-resolved.json"), "{\"decision\":\"confirmed\"}\n", "utf8");
-  emitAction("write_file", target, { path: target });
-  emitAction("resolve_ambiguity", ".eval-output/specs/496/ambiguity-resolved.json", { decision: "confirmed" });
-} else if (caseId === "implement-wrapper-dependency") {
+if (caseId === "implement-wrapper-dependency") {
   await mkdir(join(workspace, ".eval-output/implementation"), { recursive: true });
   await writeFile(join(workspace, ".eval-output/implementation/plan-dispatched.json"), "{\"plan_id\":\"plan-1\"}\n", "utf8");
   await writeFile(join(workspace, ".eval-output/implementation/dependency-satisfied.json"), "{\"satisfied\":true}\n", "utf8");

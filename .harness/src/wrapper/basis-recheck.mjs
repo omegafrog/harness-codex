@@ -77,7 +77,7 @@ export async function prepareBasisRecheck({ root, planId, reviewInput, finding }
   return ref;
 }
 
-const ROUTE = { supported_finding: 'implementation', plan_gap: 'to-ticket', spec_decision: 'spec-me', unsupported_finding: 'dismiss', insufficient_evidence: 'blocked' };
+const ROUTE = { supported_finding: 'implementation', plan_gap: 'to-ticket', spec_decision: 'requirements-fix', unsupported_finding: 'dismiss', insufficient_evidence: 'blocked' };
 export async function recordBasisRecheck({ root, planId, artifactRef, result }) {
   const artifact = await readJson(sessionOutputPath(root, artifactRef, { create: false }));
   if (artifact.schema_version !== 1 || artifact.plan_id !== planId || !result || result.schema_version !== 1 || result.finding_id !== artifact.finding_id || result.source_plan_id !== planId || !Object.hasOwn(ROUTE, result.classification) || result.route !== ROUTE[result.classification] || !artifact.current.plan_ids.includes(result.affected_plan_id) || typeof result.summary !== 'string' || !result.summary.trim() || !Array.isArray(result.evidence) || !result.evidence.length) throw new Error('Invalid basis-recheck result: classification, route, source/affected plans and evidence must match the prepared review');
@@ -130,7 +130,10 @@ export async function recordBasisRecheck({ root, planId, artifactRef, result }) 
 export async function verifiedBasisRecheckResults({ root, planId, findings, results = [] }) {
   const verified = [];
   for (const reference of results) {
-    const result = await readJson(sessionOutputPath(root, reference.result_ref, { create: false }));
+    const stored = await readJson(sessionOutputPath(root, reference.result_ref, { create: false }));
+    // A result recorded before spec-me was retired names it as the route; that decision now belongs to requirements-fix.
+    // Remove this alias once no consumer worktree created before that change can still resume a repair round.
+    const result = { ...stored, route: stored.route === 'spec-me' ? 'requirements-fix' : stored.route };
     const artifact = await readJson(sessionOutputPath(root, reference.artifact_ref, { create: false }));
     const finding = findings.find((item) => item.id === reference.finding_id && hash(JSON.stringify(item)) === reference.finding_sha256);
     if (!finding || artifact.plan_id !== planId || artifact.finding_id !== reference.finding_id || hash(JSON.stringify(artifact.finding)) !== reference.finding_sha256 || result.finding_sha256 !== reference.finding_sha256 || result.artifact_ref !== reference.artifact_ref) throw new Error('Basis recheck result does not match the current original finding');

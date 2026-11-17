@@ -11,8 +11,8 @@ import { readNativeCodexOutcome } from './native-context.mjs';
 import { assertExecutionStopped } from './execution-state.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 
-// Restore only a contiguous run of Harness-owned commits of the flow before spec-me (requirements and tactical design
-// stages), never unrelated project commits.
+// Restore only a contiguous run of Harness-owned commits of the requirements and tactical design stages, never unrelated
+// project commits. A recorded `spec-me` entry is retired work of an older Harness: it is tolerated and dropped here, never run.
 export async function restartRequirements({ root, session, stageId }) {
   const index = PRE_SPEC_STAGES.indexOf(stageId);
   if (index < 0) throw new Error('Restart target must be a requirements or tactical design stage');
@@ -122,7 +122,7 @@ async function assertUnboundClaimAbandoned({ root, state, entry }) {
   if (await transcriptInUse(path)) throw new Error('Running stage cannot be verified stopped: the orchestrator Codex session is still open; close it first');
 }
 
-// A stage an earlier Harness started out of order (spec-me before a tactical design stage that was inserted into the
+// A stage an earlier Harness started out of order (the retired spec-me before a tactical design stage that was inserted into the
 // flow later) and whose native run ended without a result is dropped from the state, and the workflow returns to the
 // stage it was waiting after. The old state is archived like a requirements restart; project files are never touched,
 // so the project tree must already be clean and the stage must not have committed anything.

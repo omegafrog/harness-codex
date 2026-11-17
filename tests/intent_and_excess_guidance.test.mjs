@@ -35,7 +35,7 @@ test('every stage requires necessary work to meet completion conditions without 
   assert.match(product, /Preserve baseline security, authorization, data protection and ordinary error handling/);
   assert.match(product, /Omit optional improvements without turning them into interview questions/);
   assert.match(product, /Login alone does not require OAuth, email recovery infrastructure or a custom session-timeout policy/);
-  for (const skill of ['architecture-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']) {
+  for (const skill of ['to-ticket', 'plan-review', 'implement', 'code-review']) {
     assert.match(await read(`.codex/internal-skills/${skill}/GUIDE.md`), /\(\.\.\/product-spec\/GUIDE\.md\)/, skill);
   }
   assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /누락 지적에도 같은 필요성 기준/);
@@ -64,7 +64,7 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     await writeFile(resolve(root, path), content);
   }
   const managedPaths = [
-    ...['product-spec', 'architecture-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']
+    ...['product-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']
       .map((skill) => `.codex/internal-skills/${skill}/GUIDE.md`),
     '.codex/internal-skills/product-spec/references/topics.md',
     '.codex/internal-skills/product-spec/references/template.md',
@@ -77,7 +77,6 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.codex/scripts/harness-native-stage.mjs',
     '.agents/skills/orchestrator/SKILL.md',
     '.codex/internal-skills/skill-execution/references/dispatch.md',
-    '.codex/internal-skills/spec-me/references/adversarial-spec-review.md',
   ];
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
@@ -153,10 +152,9 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
   }
 });
 
-test('the Architecture Spec review looks for excess as well as gaps', async () => {
+test('the Spec review looks for excess as well as gaps', async () => {
   assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /과한 설계: .*근거하지 않은 결정·규칙·구성요소/);
   assert.match(await read('.codex/internal-skills/spec-review/GUIDE.md'), /충분한 수준을 넘는 과한 설계를 확인한다/);
-  assert.match(await read('.codex/internal-skills/architecture-spec/GUIDE.md'), /의도가 요구하지 않는 동시성 제어·재시도·복구 절차·보안 강화/);
 });
 
 test('implementation review findings are limited to Spec, repository standards and unbacked additions, with DDD standards as a basis', async () => {
@@ -173,10 +171,9 @@ test('the final E2E conditions are prepared once after all plans, derived by the
   assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /시나리오는 Spec에서 확정됐으므로 다시 작성하거나 실행 조건을 묻지 않는다/);
 });
 
-test('the final E2E is specified in spec-me and planned as the last plan, run once after approval', async () => {
+test('the final E2E is specified in the Product Spec template and planned as the last plan, run once after approval', async () => {
   assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /13\. \*\*End-user Scenarios\*\*/);
   assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /13\. \*\*End-user Scenarios\*\*/);
-  assert.match(await read('.codex/internal-skills/architecture-spec/references/template.md'), /## 12\.7 End-to-End Execution Environment/);
   assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /시나리오를 위해 추가된 요구에 사용자 답변 출처가 있는지/);
   assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /do not add the requirement yourself: ask the user/);
   assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /마지막 child로 `e2e` plan을 하나 둔다/);
@@ -201,16 +198,15 @@ test('implementation never asks the user: the output schema and the result valid
     assert.ok(!schema.properties.code.enum.includes('USER_DECISION_REQUIRED'));
     assert.ok(!schema.properties.result.properties.code.enum.includes('USER_DECISION_REQUIRED'));
     assert.equal(schema.properties.result.properties.questions.maxItems, 0);
-    const other = join(dir, 'spec-me.json');
-    await writeOutputSchema({ root, input: { execution_id: 'spec-me-1', skill: 'spec-me' }, prefix: '', path: other });
-    assert.ok(JSON.parse(await readFile(other, 'utf8')).properties.code.enum.includes('USER_DECISION_REQUIRED'), 'spec-me still asks');
+    const other = join(dir, 'requirements-fix.json');
+    await writeOutputSchema({ root, input: { execution_id: 'requirements-fix-1', skill: 'requirements-fix' }, prefix: '', path: other });
+    assert.ok(JSON.parse(await readFile(other, 'utf8')).properties.code.enum.includes('USER_DECISION_REQUIRED'), 'requirements-fix still asks');
   } finally { await rm(dir, { recursive: true, force: true }); }
   assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /Implementation does not ask the user/);
   assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
 });
 
 test('infrastructure checks belong to the e2e plan, not to each feature plan', async () => {
-  assert.match(await read('.codex/internal-skills/architecture-spec/references/template.md'), /인프라가 있어야 확인되는 계약은 12\.7 환경에서 최종 E2E로 확인한다/);
   assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /그 plan의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
   assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
   assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /그 확인을 `e2e` plan으로 옮기라고 지적한다/);

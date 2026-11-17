@@ -260,10 +260,10 @@ try {
       process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
-    if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['spec-me', 'to-ticket', 'sync-contracts'].includes(input.skill)) {
+    if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['to-ticket', 'sync-contracts'].includes(input.skill)) {
       const { assertNoUnrecordedNativeReview } = await import('../../.harness/src/workflow/review-attempts.mjs');
-      const prefix = input.skill === 'spec-me' ? 'spec' : input.skill === 'to-ticket' ? 'plan' : 'contracts';
-      const scope = `${prefix}-${input.context.plan_set_id}${input.skill === 'spec-me' ? '-architecture' : ''}`;
+      const prefix = input.skill === 'to-ticket' ? 'plan' : 'contracts';
+      const scope = `${prefix}-${input.context.plan_set_id}`;
       await assertNoUnrecordedNativeReview({ root, scope });
     }
     const { commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');

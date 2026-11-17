@@ -42,9 +42,10 @@ tracker:
   local_markdown:
     directory: docs/plans
 `;
-// Every skill the retired skill-execution/bindings.json registered; each now declares its tier in its own document.
+// Every skill the retired skill-execution/bindings.json registered and that still exists; each now declares its tier in its own
+// document. spec-me, architecture-spec and architecture-review were registered too and have since been removed.
 const FORMER_REGISTRY = [
-  'architecture-review', 'architecture-spec', 'attention-span', 'beads', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
+  'attention-span', 'beads', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
   'diagnosing-bugs', 'domain-modeling', 'e2e-test', 'eli5', 'evaluate-harness', 'event-storming', 'frontend-design', 'frontend-figma', 'frontend-implement',
   'frontend-visual-review', 'gh-open-pr', 'grill-with-docs', 'grilling', 'harness-maintenance', 'harness-recover', 'implement', 'implement-wrapper',
   'knowledge-harvest', 'maintain-verification', 'plan-review', 'plantuml-diagrams', 'product-spec', 'session-worktree', 'setup', 'spec-review',
@@ -103,7 +104,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   }
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'orchestrator' })).main_session, true);
   // The tiers carried over from the registry, with its `low` renamed to the setup tier `low_performance`.
-  const expected = { 'plantuml-diagrams': 'low_performance', 'architecture-spec': 'low_performance', 'context-boundary': 'high_performance', implement: 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
+  const expected = { 'plantuml-diagrams': 'low_performance', 'product-spec': 'low_performance', 'context-boundary': 'high_performance', implement: 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
   for (const [skill, tier] of Object.entries(expected)) assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   const declared = (await listDeclaredSkills(sourceRoot)).filter((item) => !item.main_session).map((item) => item.skill);
   assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'a skill document declares a tier that neither the retired registry nor the later additions list, or the reverse');
@@ -257,7 +258,7 @@ test('installed consumer: the binding command returns setup\'s values for a sub-
   const { root } = await install();
   try {
     const binding = (skill) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
-    for (const skill of ['plantuml-diagrams', 'architecture-spec', 'product-spec']) {
+    for (const skill of ['plantuml-diagrams', 'product-spec']) {
       const result = binding(skill);
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(result.stdout), { skill, provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });

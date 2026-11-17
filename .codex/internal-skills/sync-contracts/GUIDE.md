@@ -5,7 +5,7 @@ model_tier: implementation
 
 # sync-contracts
 
-설치된 **대상 프로젝트**의 현행 계약은 `docs/contracts/product.md` 한 장과 `architecture.md` 한 장이다. ticket Spec은 변경 제안·승인 근거다. 다음 `spec-me`는 통합 계약·`CONTEXT.md`·`CONTEXT-MAP.md`와 실제 코드를 먼저 읽는다. manifest는 기능·구성요소·소유 관계·diagram·source_roots를 읽고, 대량 hash 비교는 CLI에 맡긴다. 하네스 자체의 모델을 대상 프로젝트에 복사하지 않는다.
+설치된 **대상 프로젝트**의 현행 계약은 `docs/contracts/product.md` 한 장과 `architecture.md` 한 장이다. ticket Spec은 변경 제안·승인 근거다. 다음 요구사항·전술 설계 흐름은 통합 계약·`CONTEXT.md`·`CONTEXT-MAP.md`와 실제 코드를 먼저 읽는다. manifest는 기능·구성요소·소유 관계·diagram·source_roots를 읽고, 대량 hash 비교는 CLI에 맡긴다. 하네스 자체의 모델을 대상 프로젝트에 복사하지 않는다.
 
 ## 갱신
 
@@ -15,8 +15,8 @@ model_tier: implementation
 4. 바뀐 규칙을 소유한 객체/함수와 실제 호출 경로를 대조한다. Aggregate 외부 규칙 누수·공개 setter 우회·불필요한 추상화·구형 경로 잔존은 작성자가 먼저 확인하고, seal 뒤 [contract-review](../contract-review/GUIDE.md)의 독립 reviewer가 다시 확인한다. 삭제한 기능은 `retired`와 대체 경로를 남기고, 역사 Spec을 현재 계약으로 재사용하지 않는다.
 5. `plantuml-diagrams`의 `diagram_creator`로 전체 DDD 구조·클래스·기능별 sequence·상태 관점을 갱신한다. 원본과 SVG를 함께 보존한다. DDD 구조에는 이름만 두고 모든 이름을 해당 architecture section에 링크한다. 설명·속성·타입·규칙은 문서와 class diagram에 둔다. 적용할 상태/클래스가 없으면 manifest에 구체적 이유를 기록하며 형식적인 모델을 만들지 않는다.
 6. 기능 ID → 규칙 → 모델/메서드 → source → 검증 근거를 연결한다. 영향 있는 성능 목표는 동일 workload·단위·환경·오류율로 before/after를 비교한다. 실행하지 않은 증거를 통과로 쓰지 않는다. `maintain-verification`은 이 통합 Product 계약을 기준으로 구현 drift를 조사하고, 회귀를 계약 수정으로 숨기지 않는다.
-7. `sync-contracts`는 전체 feature 구현이 완료되고 변경 branch에 모든 plan이 통합된 최종 workflow에서만 실행한다. `spec-me`, `to-ticket`, 개별 plan 구현·리뷰, knowledge 작업은 공통 계약을 수정하거나 seal하지 않는다. 최종 구현 workflow는 독립 code review·검증·계약 영향 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 실제 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
-8. 최종 구현 workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존하고, 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. `contract_docs`는 최종 `implement-wrapper` 또는 완결된 단일 구현 workflow에만 적용한다. `spec-me`와 `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함하되 `contract_docs`를 요구하지 않는다. 계약 seal이 독립 리뷰나 다른 완료 gate를 대체하지 않는다.
+7. `sync-contracts`는 전체 feature 구현이 완료되고 변경 branch에 모든 plan이 통합된 최종 workflow에서만 실행한다. `to-ticket`, 개별 plan 구현·리뷰, knowledge 작업은 공통 계약을 수정하거나 seal하지 않는다. 최종 구현 workflow는 독립 code review·검증·계약 영향 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 실제 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
+8. 최종 구현 workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존하고, 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. `contract_docs`는 최종 `implement-wrapper` 또는 완결된 단일 구현 workflow에만 적용한다. `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함하되 `contract_docs`를 요구하지 않는다. 계약 seal이 독립 리뷰나 다른 완료 gate를 대체하지 않는다.
 
    `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA>`
 

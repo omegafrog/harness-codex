@@ -4,7 +4,7 @@
 
 | 리뷰 대상 | 소유 orchestrator | 리뷰 절차 |
 |---|---|---|
-| Architecture Spec | `spec-me` | `spec-review` |
+| 기존 Architecture Spec | `spec-review`를 요청한 orchestrator | `spec-review` |
 | split plan 집합 | to-ticket workflow의 최상위 orchestrator | `plan-review` |
 | 구현 코드 | `code-review`를 호출한 구현 workflow | `code-review` |
 
@@ -16,17 +16,17 @@
 
 child는 아래 JSON 하나를 반환한다. `source_plan_id`는 리뷰받은 plan이고 `affected_plan_id`는 영향받는 기존 plan이어야 한다. `evidence[]`는 `snapshot`이 `review_time` 또는 `current`인 캡처된 파일의 정확한 `path`와 `quote`, 그리고 비교 분석을 포함한다. 코드 근거는 `implementation.diff`, `implementation.staged_diff`, `implementation.worktree_diff`, 또는 `implementation.untracked/<repo-relative-path>`를 인용한다. supported finding에는 current implementation diff와 Spec/plan 근거가 모두 필수다. plan gap은 영향을 받는 현재 canonical plan을 인용한다. dismissed 판정에는 review-time과 current의 evidence가 모두 필수다. parent는 반환물을 session runtime JSON에 저장하고 `node .codex/scripts/harness-code-review.mjs record-basis-result --root <workspace_root> --plan <source-plan-id> --artifact <artifact_ref> --result <child-result-ref>`를 실행한다. runtime은 finding ID·route/classification 조합·source/affected plan·evidence quote를 검증하고 현재 HEAD·tracked/untracked code·plan-set snapshot이 dispatch 때와 같은지 확인한다. 검증이 실패하면 결과를 route에 사용하지 말고 blocked로 반환한다.
 
-검증에 성공하면 `repair`를 다시 실행한다. `dismiss` 결과는 근거와 함께 implementation review evidence에 기록되고 해당 finding만 해소한다. `implementation`은 통상 repair 검증·예약으로 이어진다. `to-ticket`은 지목된 plan의 소유 workflow로, `spec-me`는 실제 Spec 결정을 소유하는 단계로 인계한다. `blocked`는 누락·불일치 근거를 보존해 멈춘다. 어떤 route도 plan/spec review나 implementation completion gate를 대신 통과시키지 않는다.
+검증에 성공하면 `repair`를 다시 실행한다. `dismiss` 결과는 근거와 함께 implementation review evidence에 기록되고 해당 finding만 해소한다. `implementation`은 통상 repair 검증·예약으로 이어진다. `to-ticket`은 지목된 plan의 소유 workflow로, `requirements-fix`는 실제 요구 결정을 소유하는 단계로 인계한다. `blocked`는 누락·불일치 근거를 보존해 멈춘다. 어떤 route도 plan/spec review나 implementation completion gate를 대신 통과시키지 않는다.
 
 ```json
-{"schema_version":1,"finding_id":"<original-id>","source_plan_id":"<reviewed-plan-id>","classification":"supported_finding|plan_gap|spec_decision|unsupported_finding|insufficient_evidence","affected_plan_id":"<existing-plan-id>","route":"implementation|to-ticket|spec-me|dismiss|blocked","summary":"<compact conclusion>","evidence":[{"snapshot":"review_time|current","path":"<captured-path>","quote":"<exact captured text>","analysis":"<why this evidence supports the classification>"}]}
+{"schema_version":1,"finding_id":"<original-id>","source_plan_id":"<reviewed-plan-id>","classification":"supported_finding|plan_gap|spec_decision|unsupported_finding|insufficient_evidence","affected_plan_id":"<existing-plan-id>","route":"implementation|to-ticket|requirements-fix|dismiss|blocked","summary":"<compact conclusion>","evidence":[{"snapshot":"review_time|current","path":"<captured-path>","quote":"<exact captured text>","analysis":"<why this evidence supports the classification>"}]}
 ```
 
 허용 route:
 
 - 기존 plan의 요구와 구현 간 결함이면 해당 plan의 implementation으로 돌려보낸다.
 - 현재 plan이 요구를 충족하지 못하면 영향받는 plan을 지정해 to-ticket으로 보낸다.
-- 실제로 Spec의 결정·요구 변경이 필요하다는 근거가 있으면 spec-me로 보낸다.
+- 실제로 Spec의 결정·요구 변경이 필요하다는 근거가 있으면 requirements-fix로 보낸다.
 - finding이 승인된 근거에 의해 뒷받침되지 않는다고 충분한 evidence로 확인되면 원본 finding을 보존한 채 evidence와 함께 dismiss한다.
 - 비교를 완료할 근거가 부족하면 blocked로 반환하고 누락된 근거를 지정한다.
 
@@ -36,7 +36,7 @@ child는 아래 JSON 하나를 반환한다. `source_plan_id`는 리뷰받은 pl
 2. 원본 finding을 축별로 보존하고 같은 원인의 지적을 연결해 수정표를 대화 또는 기존 checkpoint 근거로 제시한다. `지적 ID·근거 / 원인 / 영향 Spec·plan·diagram·코드·테스트 / 수정 또는 반박 근거 / 필요한 사용자 결정`을 함께 적는다. 새 guard·예약·상태가 다른 정상·경쟁·복구 경로에 만드는 영향을 같은 수정 범위에 포함한다.
 3. 사용자 결정이 필요하면 아래 통합 조회로 관련 축의 기록과 한도를 함께 읽는다. 실제 사용자에게는 해결할 쟁점과 영향을 받는 scope별 현재/남은 한도·필요 결정·재개 조건을 한 번에 제시한다. 이미 관찰한 다른 한도 문제도 같은 요청에 포함한다. 추가 검토로 새 쟁점이 발견되면 그 근거를 별도로 설명한다.
 4. 사용자가 승인한 결정의 원문·범위를 보존하고, 해당하는 소유 CLI의 resolve를 각 scope에 적용한다. Spec review의 준비 abort 한도에 도달했으면 복구된 준비 조건을 `resolve --reason 'preparation recovery: <복구 내용>'`으로 기록한다. 이는 사용자 요구/범위 결정이 아니며 substantive review 회차도 초기화하지 않는다. 기록된 pass는 현재 snapshot gate로 재확인한다. 아직 실행 중인 검토는 기다리며, 사용자의 범위 결정과 기술적 한도 재개 승인을 구분한다.
-5. 확정 답변과 수정표에 해당하는 문서·정본 plan·원장·diagram·코드·검증을 함께 반영하고 현재성을 확인한 뒤 새 admission/commit으로 재검토한다. 활성 검토가 읽는 입력을 수정해야 하면 해당 reviewer를 종료하고 abort를 기록한 뒤 새 snapshot으로 시작한다. Architecture Spec에서 reviewer dispatch 전에 발생한 준비 실패만 spec-me 소유 절차의 `pre-dispatch preparation: <원인>` 사유로 기록한다. reviewer dispatch 뒤의 종료와 legacy abort는 일반 substantive attempt로 계산한다. 검토 중 snapshot을 유지하는 것은 caller의 편집 책임이며 runtime은 변경을 탐지해 stale 결과·repair 예약·완료를 차단한다.
+5. 확정 답변과 수정표에 해당하는 문서·정본 plan·원장·diagram·코드·검증을 함께 반영하고 현재성을 확인한 뒤 새 admission/commit으로 재검토한다. 활성 검토가 읽는 입력을 수정해야 하면 해당 reviewer를 종료하고 abort를 기록한 뒤 새 snapshot으로 시작한다. Architecture Spec에서 reviewer dispatch 전에 발생한 준비 실패만 Spec 리뷰를 요청한 orchestrator의 `pre-dispatch preparation: <원인>` 사유로 기록한다. reviewer dispatch 뒤의 종료와 legacy abort는 일반 substantive attempt로 계산한다. 검토 중 snapshot을 유지하는 것은 caller의 편집 책임이며 runtime은 변경을 탐지해 stale 결과·repair 예약·완료를 차단한다.
 
 ## 통합 조회 CLI
 

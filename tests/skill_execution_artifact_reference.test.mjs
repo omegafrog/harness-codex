@@ -25,8 +25,8 @@ test('installed skill execution accepts a changed input with its original snapsh
     await writeFile(join(root, inputPath), 'revised after review');
     const input = {
       schema_version: 1,
-      execution_id: 'spec-me-1',
-      skill: 'spec-me',
+      execution_id: 'requirements-fix-1',
+      skill: 'requirements-fix',
       workspace_root: root,
       session_directory: sessionDirectory(root),
       scope: 'calculator',

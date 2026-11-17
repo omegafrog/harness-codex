@@ -15,7 +15,7 @@ It does not choose packages, modules, persistence, or framework wiring; those ch
 
 ## Inputs
 
-- Product Spec: 전달된 경로를 사용하며, spec-me 기본 경로는 `docs/specs/<plan-set-id>/product-spec.md`다
+- Product Spec: 전달된 경로를 사용하며, 기본 경로는 `docs/specs/<plan-set-id>/product-spec.md`다
 - `CONTEXT.md`
 - related ADRs
 - event-storming output: the event flow tables and hotspot decisions in `docs/specs/<plan-set-id>/requirements.md` when present

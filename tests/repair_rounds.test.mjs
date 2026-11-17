@@ -45,7 +45,7 @@ test('the implementer records an implementation-only fix on the ticket, not in t
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('reviews already handed to the Spec owner ask for a fresh review instead of spec-me again', async () => {
+test('reviews already handed to the Spec owner ask for a fresh review instead of requirements-fix again', async () => {
   const { reserveImplementationRepair } = await import('../.harness/src/wrapper/repair.mjs');
   const reviews = [{ role: 'standards', context_id: 's1' }, { role: 'spec', context_id: 'p1' }];
   const result = await reserveImplementationRepair({ root: tmpdir(), planId: 'auth', reviewInput: {}, reviews, specHandoff: { at: '2026-11-10T00:00:00Z', reviewer_ids: ['s1', 'p1'] } });

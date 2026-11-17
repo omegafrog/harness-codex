@@ -66,7 +66,7 @@ test('keeping unrequested behavior returns to Spec approval', () => {
   const { reviews } = evidence({ findings: [{ id: 'UB-1', kind: 'unrequested_behavior', severity: 'major', summary: 'NFC', evidence: 'domain.ts:29' }] });
   const decision = planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'UB-1', choice: 'adopt' }] });
   assert.equal(decision.reason, 'scope_expansion');
-  assert.equal(decision.next_action, 'spec-me');
+  assert.equal(decision.next_action, 'requirements-fix');
 });
 
 test('a dismissed unbacked finding completes without repair and passes the review gate', async () => {
@@ -116,7 +116,7 @@ test('keeping a change without Spec work is offered only without rule impact', (
   assert.deepEqual(options(unmarked), ['reject', 'adopt']);
   const escalated = planRepairRound({ reviews: rule.reviews, scopeDecisions: [{ finding_id: 'U-2', choice: 'accept' }] });
   assert.equal(escalated.reason, 'scope_expansion');
-  assert.equal(escalated.next_action, 'spec-me');
+  assert.equal(escalated.next_action, 'requirements-fix');
 });
 
 test('accepted findings let the review gate pass without repair', async () => {
@@ -153,8 +153,8 @@ test('unknown reasons and sourced interpretations do not force a separate user a
 
 test('a delegated decision needs a recorded user answer', () => {
   const decisions = [
-    '| PD-1 | 5,000자 | 사용자 승인 (`spec-me-1/answers.json`) |',
-    '| PD-2 | 댓글 삭제 | 사용자가 위임 (`spec-me-2/answers.json`) |',
+    '| PD-1 | 5,000자 | 사용자 승인 (`requirements-fix-1/answers.json`) |',
+    '| PD-2 | 댓글 삭제 | 사용자가 위임 (`requirements-fix-2/answers.json`) |',
     '| PD-13 | 댓글 동반 삭제 | 사용자가 Spec 결정에 위임 (feedback 항목 3) |',
     '| PD-14 | 알림 | 위임 없음, 사용자 승인 |',
   ].join('\n');
@@ -199,7 +199,7 @@ test('incident findings are judged against intent, not against how strict they s
   assert.equal(reports.action, 'repair');
 });
 
-test('a design decision reaches spec-me only after the user adopts it', () => {
+test('a design decision reaches requirements-fix only after the user adopts it', () => {
   for (const kind of ['requirement_ambiguity', 'architecture_decision', 'scope_expansion', 'spec_conflict']) {
     const { reviews } = evidence({ findings: [{ id: 'D-1', kind, severity: 'major', summary: '숨김 뒤 재시도 결과 저장', evidence: 'x.ts:1', failure_scenario: '드문 경우', plain_explanation: '영수증 테이블이 필요하다' }] });
     const asked = planRepairRound({ reviews });
@@ -209,7 +209,7 @@ test('a design decision reaches spec-me only after the user adopts it', () => {
     assert.equal(question.recommended_option_id, 'reject');
     assert.match(question.rationale, /영수증 테이블이 필요하다/);
     assert.equal(planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'D-1', choice: 'reject' }] }).action, 'complete');
-    assert.equal(planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'D-1', choice: 'adopt' }] }).next_action, 'spec-me');
+    assert.equal(planRepairRound({ reviews, scopeDecisions: [{ finding_id: 'D-1', choice: 'adopt' }] }).next_action, 'requirements-fix');
   }
 });
 
@@ -281,9 +281,9 @@ test('validated basis rechecks dismiss without budget, resume implementation rep
   const implementation = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'implementation' }] });
   assert.equal(implementation.action, 'repair');
   assert.equal(implementation.round, 1);
-  const spec = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'spec-me' }] });
+  const spec = planRepairRound({ reviews, unverifiedBasis, basisRechecks: [{ reviewer_role: 'standards', finding_index: 0, route: 'requirements-fix' }] });
   assert.equal(spec.action, 'block');
-  assert.equal(spec.next_action, 'spec-me');
+  assert.equal(spec.next_action, 'requirements-fix');
   assert.equal(spec.reason, 'basis_recheck_routed');
 });
 
