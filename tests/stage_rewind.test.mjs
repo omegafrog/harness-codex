@@ -184,3 +184,69 @@ test('update restores the rewind module of an installed consumer, Doctor require
   const installed = await readFile(join(primary, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
   assert.match(installed, /--reopen-for/, 'the installed orchestrator guidance carries the rewind rule');
 });
+
+test('installed consumer: every refusal after a blocked DEPENDENCY_INCOMPLETE points to the rewind, legacy results relaunch the blocked stage', async (t) => {
+  const flow = await consumerWorkflow(t, REQUEST);
+  const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, invoke } = flow;
+  await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const refused = (result) => { assert.notEqual(result.status, 0, result.stdout); return JSON.parse(result.stderr.trim().split('\n').pop()); };
+  const seeded = await state();
+  for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');
+  const designPath = `docs/specs/${planSetId}/tactical-design.md`;
+  await mkdir(join(workspace, designPath, '..'), { recursive: true });
+  await writeFile(join(workspace, designPath), '# 전술 설계\n');
+  treeGit('add', 'docs'); treeGit('commit', '-qm', 'tactical design fixture');
+  const impl = `docs/implementation/${planSetId}`;
+  await runStage('tactical-technology', { files: { [`${impl}/technology.md`]: 'node --test\n' } });
+  await runStage('tactical-ui', { expectCommit: false });
+  await runStage('tactical-api', { files: { [`${impl}/api.md`]: '`POST /login`\n' }, summary: 'API' });
+  await runStage('tactical-data', { files: { [`${impl}/data.md`]: '`sessions`\n' }, summary: '데이터' });
+
+  const ticket = await beginStage('to-ticket');
+  const blockedId = ticket.prepared.input.execution_id;
+  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈: application-service에 operation이 없다', resultExtra: { owner_stage: 'application-service', dependency_gap: '로그아웃 operation이 없다' } });
+  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...ticket.base]).code, 'DEPENDENCY_INCOMPLETE');
+
+  const reopenNext = `launch --stage-id application-service --reopen-for ${blockedId}`;
+  const attempts = () => [
+    prepare('--stage-id', 'application-service', '--user-revision', 'true', '--feedback', 'x'),
+    prepare('--stage-id', 'application-service', '--restart-requirements', 'true'),
+    prepare('--stage-id', 'domain-service'),
+  ].map(refused);
+  const check = (errors, expected) => {
+    for (const error of errors) {
+      assert.equal(error.user_decision, undefined, JSON.stringify(error));
+      assert.equal(error.next.length, 1, JSON.stringify(error));
+      assert.ok(error.next[0].includes(expected), `${error.code}: ${error.next[0]}`);
+    }
+  };
+  const withOwner = attempts();
+  assert.ok(withOwner.some((error) => error.code === 'PREVIOUS_RESULT_MISSING' || error.code === 'PREVIOUS_UNRESOLVED'));
+  assert.ok(withOwner.some((error) => error.code === 'RESTART_REFUSED'));
+  check(withOwner, reopenNext);
+
+  // A result recorded before owner_stage existed: the owner is only named in the summary.
+  const entry = (await state()).stages['to-ticket'];
+  const resultPath = join(workspace, '.io', entry.result_ref);
+  const result = JSON.parse(await readFile(resultPath, 'utf8'));
+  delete result.owner_stage; delete result.dependency_gap;
+  await writeFile(resultPath, JSON.stringify(result));
+  const legacy = attempts();
+  check(legacy, "launch --stage-id to-ticket --feedback 'Re-check the blocker and return owner_stage and dependency_gap");
+
+  // The relaunch of the blocked stage is accepted and its schema carries owner_stage / dependency_gap.
+  const relaunched = await beginStage('to-ticket', { extraArgs: ['--feedback', 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'] });
+  assert.equal(relaunched.prepared.input.context.previous_result_note !== undefined, true);
+  const schema = JSON.parse(await readFile(relaunched.started.schema_path, 'utf8'));
+  assert.ok(schema.properties.result.properties.owner_stage && schema.properties.result.properties.dependency_gap);
+  await submitStage(relaunched, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '다시 확인', resultExtra: { owner_stage: null, dependency_gap: null } });
+  assert.deepEqual(JSON.parse(flow.finishStage(relaunched).stdout).errors.map((error) => error.path), ['$.result.owner_stage'], 'the relaunch must name the owner');
+  await submitStage(relaunched, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '다시 확인', resultExtra: { owner_stage: 'application-service', dependency_gap: '로그아웃 operation이 없다' } });
+  const again = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...relaunched.base]);
+  assert.match(again.next, new RegExp(`launch --stage-id application-service --reopen-for ${relaunched.prepared.input.execution_id}`));
+  check(attempts(), `launch --stage-id application-service --reopen-for ${relaunched.prepared.input.execution_id}`);
+});

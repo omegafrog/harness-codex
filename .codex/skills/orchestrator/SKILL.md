@@ -71,7 +71,7 @@ Legacy 구현의 E2E 실패가 앱이 아니라 테스트 코드만의 결함으
 
 사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
-stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](../../../.codex/internal-skills/skill-execution/references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다.
+stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](../../../.codex/internal-skills/skill-execution/references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다. 이 block 뒤 어떤 명령이 거부돼도(`PREVIOUS_RESULT_MISSING`, `RESTART_REFUSED` 등) 오류의 `next`를 그대로 따른다: owner가 기록돼 있으면 `--reopen-for`, 옛 결과라 `owner_stage`가 없으면 block된 stage를 `--feedback`으로 다시 실행해 owner를 반환하게 한다. `--user-revision`·`--restart-requirements`로 우회하거나 사용자에게 묻지 않는다.
 
 요구사항·전술 설계 stage의 순서는 실행기가 결정한다. 새 `spec-me` 실행과 준비된 legacy stage의 재개도 거부된다. 결과 없는 구형 stage는 오류가 안내하는 안전한 discard 경로로만 정리한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
 

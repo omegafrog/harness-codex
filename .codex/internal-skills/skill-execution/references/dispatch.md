@@ -47,3 +47,5 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 5. 같은 gap으로 owner를 되돌린 결과가 다시 같은 block이면 새 근거 없이 반복하지 않고 사용자에게 보고한다.
 
 `--restart-requirements true`는 사용자가 명시적으로 롤백을 지시한 경우에만 쓰며 이 경로와 별개다.
+
+`DEPENDENCY_INCOMPLETE` block 뒤 `PREVIOUS_RESULT_MISSING`·`RESTART_REFUSED`·order guard·user-revision 거부가 나오면 그 오류의 `next`가 이 경로를 가리킨다. `result.owner_stage`가 있으면 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`, 없으면(이전 Harness가 기록한 결과) `launch --stage-id <blocked stage> --feedback 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'`로 block된 stage를 다시 실행해 owner를 반환받는다. 요약 문장에서 owner를 추정하지 않고, `--user-revision`·`--restart-requirements`를 쓰거나 사용자에게 기다리라고 말하지 않는다.

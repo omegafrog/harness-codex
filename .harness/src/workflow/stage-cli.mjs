@@ -5,6 +5,9 @@
 // happened, why, and the exact next command or the decision the user must make.
 import { PRE_SPEC_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
 import { cliContext, orchestratorState } from './cli-context.mjs';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { OWNER_REQUIRED_STAGES } from './stage-reopen.mjs';
 
 const NATIVE = 'node .codex/scripts/harness-native-stage.mjs';
 const PREPARE = 'node .codex/scripts/harness-prepare-input.mjs';
@@ -225,9 +228,42 @@ function loadState(context) {
   try { return orchestratorState(context.root || cliContext().root); } catch { return null; }
 }
 
+
+// ---- blocked / DEPENDENCY_INCOMPLETE rewind -------------------------------------------------------------------------------
+// A design or ticket stage blocked on upstream output is never resolved by the user or by --user-revision/--restart-requirements:
+// the runner reopens the owner stage forward (--reopen-for), or, for a result without owner_stage, asks the blocked stage to name it.
+
+const LEGACY_OWNER_FEEDBACK = "--feedback 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'";
+
+function readBlockedResult(entry, root) {
+  if (!entry?.result_ref) return null;
+  const bases = [entry.result_session_directory, join(root, '.io')].filter(Boolean);
+  for (const base of bases) {
+    try { return JSON.parse(readFileSync(isAbsolute(entry.result_ref) ? entry.result_ref : join(base, entry.result_ref), 'utf8')); } catch { /* try the next base */ }
+  }
+  return null;
+}
+
+// The steps that handle a blocked / DEPENDENCY_INCOMPLETE `stage`, or null when it is not such a block. Never a user decision.
+export function dependencyRewind(stage, entry, context = {}) {
+  if (!stage || entry?.status !== 'blocked' || entry.code !== 'DEPENDENCY_INCOMPLETE' || !OWNER_REQUIRED_STAGES.includes(stage)) return null;
+  let root;
+  try { root = context.root || cliContext().root; } catch { root = null; }
+  const owner = root ? readBlockedResult(entry, root)?.owner_stage : null;
+  if (typeof owner === 'string' && owner && entry.execution_id) {
+    return { steps: [launchCommand(owner, `--reopen-for ${entry.execution_id}`)], why: `${stage} is blocked on the output of ${owner}. Go back with --reopen-for; do not ask the user and do not use --user-revision or --restart-requirements.` };
+  }
+  return { steps: [launchCommand(stage, LEGACY_OWNER_FEEDBACK)], why: `${stage} is blocked (DEPENDENCY_INCOMPLETE) but its result names no owner_stage (recorded by an older Harness). Relaunch it so it names the owner; do not ask the user and do not use --user-revision or --restart-requirements.` };
+}
+
+// Refusals the orchestrator hits while trying to go back from such a block; they point to the rewind instead of waiting.
+const REWIND_REFUSAL_CODES = new Set(['PREVIOUS_RESULT_MISSING', 'PREVIOUS_UNRESOLVED', 'DEPENDENCY_INCOMPLETE', 'RESTART_REFUSED', 'USER_REVISION_REFUSED', 'REVISION_TARGET', 'REVISION_REPEATED', 'REOPEN_REFUSED', 'DISCARD_REFUSED', 'FEEDBACK_REFUSED']);
+
 // What moves `stage`, as recorded in `entry`, forward.
 function resumeStage(stage, entry, state) {
   if (!entry) return { steps: [launchCommand(stage)] };
+  const rewind = !entry.stale && dependencyRewind(stage, entry);
+  if (rewind) return { steps: rewind.steps };
   const { status, code } = entry;
   if (entry.stale) return { steps: [`${launchCommand(stage)} (re-run in order; it receives the upstream change automatically: ${entry.stale.rerun_order.join(' → ')})`] };
   if (status === 'running') {
@@ -458,6 +494,9 @@ export function explainError(error, context = {}) {
     if (m) { explained = rule.explain({ m, message, state, stage, context }); break; }
   }
   explained ??= FALLBACK(message);
+  const current = state?.current_stage;
+  const rewind = REWIND_REFUSAL_CODES.has(explained.code) ? dependencyRewind(current, state?.stages?.[current], context) : null;
+  if (rewind) explained = { ...explained, why: `${rewind.why} (${explained.why})`, next: rewind.steps, decision: undefined };
   const next = (explained.next || []).filter(Boolean);
   const decision = explained.decision;
   // A refusal always leaves the orchestrator a step: if no command applies it is the user's decision or a report.
