@@ -1295,6 +1295,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     const resultValue = { schema_version: 1, skill: 'grilling', status: 'blocked', code: 'INPUT_MISSING', summary: 'missing input', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: 'grilling', status: 'blocked', code: 'INPUT_MISSING', result: resultValue }));
     await recordCodexTurn('agent-1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'completed', 'stage finished');
+    assert.equal(JSON.parse(reconcile(nativeArgs, []).stdout).status, 'unknown');
     assert.equal(JSON.parse(reconcile(nativeArgs, [{ agent_name: '/root/agent-1', agent_status: { completed: 'forged' } }]).stdout).status, 'unknown');
     const finished = reconcile(nativeArgs, [{ agent_name: '/root/agent-1', agent_status: { completed: 'stage finished' } }]);
     assert.equal(finished.status, 0, finished.stderr);
@@ -1501,9 +1502,12 @@ test('installed compose starts in an existing linked worktree without replacing 
     execFileSync(process.execPath, [...native, 'start', ...interruptedArgs], { cwd: workspace, encoding: 'utf8' });
     execFileSync(process.execPath, [...native, 'bind', ...interruptedArgs, '--agent-id', 'interrupted-agent'], { cwd: workspace, encoding: 'utf8' });
     await recordCodexTurn('interrupted-agent', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'interrupted');
-    const interrupted = reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }]);
+    assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'running' }]).stdout).status, 'running');
+    assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }, { agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }]).stdout).status, 'unknown');
+    const interrupted = reconcile(interruptedArgs, []);
     assert.equal(interrupted.status, 0, interrupted.stderr);
     assert.equal(JSON.parse(interrupted.stdout).status, 'failed');
+    assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages.grilling.status, 'failed');
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
 

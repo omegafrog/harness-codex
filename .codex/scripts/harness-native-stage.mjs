@@ -179,17 +179,17 @@ try {
       if (!report || !Array.isArray(report.agents)) throw new Error('Native agent status must contain the current host agent list');
       const expected = current.native_agent_id.startsWith('/') ? current.native_agent_id : `/root/${current.native_agent_id}`;
       const matches = report.agents.filter((item) => item?.agent_name === expected);
-      if (matches.length !== 1) {
-        process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'agent_not_uniquely_reported' })}\n`);
-        process.exit(0);
-      }
-      const hostStatus = matches[0].agent_status;
-      if (hostStatus === 'running' || hostStatus === 'pending') {
+      if (matches.length === 1 && ['running', 'pending'].includes(matches[0].agent_status)) {
         process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: current.native_agent_id })}\n`);
         process.exit(0);
       }
       const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
       const outcome = await readNativeCodexOutcome({ root, parentSessionId: input.context.orchestrator_session_id, stage: current });
+      if (matches.length !== 1 && !(matches.length === 0 && outcome?.status === 'interrupted')) {
+        process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'agent_not_uniquely_reported' })}\n`);
+        process.exit(0);
+      }
+      const hostStatus = matches.length ? matches[0].agent_status : 'interrupted';
       if (hostStatus && typeof hostStatus === 'object' && !Array.isArray(hostStatus) && Object.keys(hostStatus).length === 1 && Object.hasOwn(hostStatus, 'completed') && typeof hostStatus.completed === 'string') {
         if (outcome?.status !== 'completed' || outcome.output !== hostStatus.completed) {
           process.stdout.write(`${JSON.stringify({ status: 'unknown', execution_id: id, agent_id: current.native_agent_id, reason: 'completed_turn_not_verified' })}\n`);
