@@ -8,7 +8,7 @@
 |---|---|---|
 | `completed` | `OK` | 이 stage의 요청 범위와 완료 gate를 통과했다. |
 | `action_required` | `REVIEW_REQUIRED`, `SPEC_REVISION_REQUIRED`, `PLAN_REVISION_REQUIRED`, `IMPLEMENTATION_REVISION_REQUIRED`, `USER_DECISION_REQUIRED` | 상위 caller가 리뷰·다른 stage·사용자 결정으로 전환해야 한다. |
-| `blocked` | `ENVIRONMENT_UNAVAILABLE`, `PERMISSION_REQUIRED`, `DEPENDENCY_INCOMPLETE`, `INPUT_MISSING`, `MODEL_BINDING_UNAVAILABLE` | 환경·권한·의존성·입력·모델 전제가 없어 실행을 계속할 수 없다. |
+| `blocked` | `ENVIRONMENT_UNAVAILABLE`, `PERMISSION_REQUIRED`, `DEPENDENCY_INCOMPLETE`, `INPUT_MISSING`, `MODEL_BINDING_UNAVAILABLE` | 환경·권한·의존성·입력·모델 전제가 없어 실행을 계속할 수 없다. `ENVIRONMENT_UNAVAILABLE`는 orchestrator가 같은 stage를 `--feedback`으로 다시 실행해 preflight를 재확인하게 하고, 같은 원인으로 다시 막힐 때만 사용자에게 보고한다. |
 | `failed` | `EXECUTION_ERROR`, `INVALID_INPUT`, `ARTIFACT_WRITE_FAILED` | 실행·입력 검증·산출물 기록이 실패했다. |
 | `cancelled` | `CANCELLED` | 실행이 취소됐다. |
 

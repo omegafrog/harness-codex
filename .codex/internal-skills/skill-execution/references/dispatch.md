@@ -48,4 +48,9 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 
 `--restart-requirements true`는 사용자가 명시적으로 롤백을 지시한 경우에만 쓰며 이 경로와 별개다.
 
+### 환경 block 재시도와 범위 축소 지시
+
+- 현재 stage가 `blocked` / `ENVIRONMENT_UNAVAILABLE`이면 사용자에게 기다리라고 하지 않고 `launch --stage-id <그 stage> --feedback '<환경에서 바뀐 것, 그 사이 받은 사용자 지시>'`로 다시 실행한다. stage가 workspace preflight를 다시 실행해 전제를 재확인한다. 같은 원인으로 다시 막힐 때만 사용자에게 보고한다. 이 block 뒤 `STAGE_ORDER`·`PREVIOUS_RESULT_MISSING`·`PREVIOUS_UNRESOLVED`·`USER_REVISION_REFUSED`·`REVISION_TARGET`·`RESTART_REFUSED`·`FEEDBACK_REFUSED`·`REOPEN_REFUSED`·`DISCARD_REFUSED`가 나오면 오류의 `next`가 이 재실행을 가리키며, 다른 stage를 시작하거나 `--user-revision`·`--restart`를 쓰지 않는다.
+- 전술 단계에서 사용자가 범위를 줄이거나 범위 밖 항목을 빼라고 지시하면 `--user-revision`·`--restart`를 쓰지 않고 그 지시를 다음에 실행할 stage의 `--feedback`으로 전달한다. stale stage는 순서대로 다시 실행한다. 구현 설계 문서에 남은 범위 밖 항목은 `tactical-data`의 design-freeze gate가 잡아 owner stage로 되돌린다.
+
 `DEPENDENCY_INCOMPLETE` block 뒤 `PREVIOUS_RESULT_MISSING`·`RESTART_REFUSED`·order guard·user-revision 거부가 나오면 그 오류의 `next`가 이 경로를 가리킨다. `result.owner_stage`가 있으면 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`, 없으면(이전 Harness가 기록한 결과) `launch --stage-id <blocked stage> --feedback 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'`로 block된 stage를 다시 실행해 owner를 반환받는다. 요약 문장에서 owner를 추정하지 않고, `--user-revision`·`--restart-requirements`를 쓰거나 사용자에게 기다리라고 말하지 않는다.

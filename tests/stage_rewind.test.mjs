@@ -243,6 +243,52 @@ test('installed consumer: every refusal after a blocked DEPENDENCY_INCOMPLETE po
   check(attempts(), `launch --stage-id application-service --reopen-for ${relaunched.prepared.input.execution_id}`);
 });
 
+test('installed consumer: a stage blocked by ENVIRONMENT_UNAVAILABLE is retried with --feedback; refusals on other paths point to that relaunch', async (t) => {
+  const flow = await consumerWorkflow(t, REQUEST);
+  const { workspace, beginStage, submitStage, invoke } = flow;
+  await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const refused = (result) => { assert.notEqual(result.status, 0, result.stdout); return JSON.parse(result.stderr.trim().split('\n').pop()); };
+  const seeded = await state();
+  for (const stage of [...PRE_SPEC_STAGES.slice(0, PRE_SPEC_STAGES.indexOf('application-service'))]) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');
+
+  const first = await beginStage('application-service');
+  await submitStage(first, { status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', summary: 'workspace preflight: tracker_status_unresolved', expectCommit: false });
+  const blocked = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...first.base]);
+  assert.equal(blocked.code, 'ENVIRONMENT_UNAVAILABLE');
+  assert.match(blocked.next, /launch --stage-id application-service --feedback /);
+  assert.doesNotMatch(blocked.next, /Report the unblock condition/);
+  assert.equal((await state()).stages['application-service'].code, 'ENVIRONMENT_UNAVAILABLE');
+
+  const relaunchNext = 'launch --stage-id application-service --feedback';
+  const attempts = [
+    prepare('--stage-id', 'application-service', '--user-revision', 'true', '--feedback', 'x'),
+    prepare('--stage-id', 'application-service', '--restart-requirements', 'true'),
+    prepare('--stage-id', 'integration-design'),
+    prepare('--stage-id', 'to-ticket', '--user-revision', 'true', '--feedback', 'scope narrowed'),
+    prepare('--stage-id', 'to-ticket', '--restart', 'true'),
+    prepare('--stage-id', 'tactical-api', '--user-revision', 'true', '--feedback', 'scope narrowed'),
+  ].map(refused);
+  for (const error of attempts) {
+    assert.equal(error.user_decision, undefined, JSON.stringify(error));
+    assert.equal(error.next.length, 1, JSON.stringify(error));
+    assert.ok(error.next[0].includes(relaunchNext), `${error.code}: ${error.next[0]}`);
+    assert.doesNotMatch(error.next[0], /--user-revision|--restart/);
+  }
+  assert.ok(attempts.some((error) => error.code === 'STAGE_ORDER'), JSON.stringify(attempts.map((error) => error.code)));
+
+  // The relaunch is accepted, carries the user's instruction, and the stage runs again.
+  const instruction = '로그아웃과 현재 세션 조회는 범위에서 제외한다';
+  const relaunched = await beginStage('application-service', { extraArgs: ['--feedback', instruction] });
+  assert.equal(relaunched.prepared.input.context.previous_result_note !== undefined, true);
+  const feedback = JSON.parse(await readFile(join(workspace, `.io/runtime/executions/${relaunched.prepared.input.execution_id}/feedback.json`), 'utf8')).feedback;
+  assert.ok(feedback.includes(instruction));
+  assert.equal((await state()).stages['application-service'].status, 'running');
+});
+
 test('installed consumer: a stale or unfinished to-ticket record from before a rewind does not block the reopen, a current completed one does', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, invoke } = flow;

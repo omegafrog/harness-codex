@@ -167,6 +167,7 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${launchCommand(stageId, "--feedback '<review result>'")}`;
   const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
   if (revision) return `Return to its owner: ${launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
+  if (status === 'blocked' && ENVIRONMENT_BLOCK_CODES.has(code)) return `${environmentRetry(stageId, { status, code }).steps[0]} (the stage re-runs its preflight; report to the user only if it is blocked again by the same cause)`;
   if (status === 'blocked') return `Report the unblock condition in result.summary to the user; once resolved: ${launchCommand(stageId, "--feedback '<how it was resolved>'")}`;
   if (status === 'failed' || status === 'cancelled') return `Report the cause; do not rerun automatically. If the user wants to continue: ${launchCommand(stageId, FEEDBACK_ARG)}`;
   return `Resolve ${executionId} per the orchestrator skill.`;
@@ -256,13 +257,21 @@ export function dependencyRewind(stage, entry, context = {}) {
   return { steps: [launchCommand(stage, LEGACY_OWNER_FEEDBACK)], why: `${stage} is blocked (DEPENDENCY_INCOMPLETE) but its result names no owner_stage (recorded by an older Harness). Relaunch it so it names the owner; do not ask the user and do not use --user-revision or --restart-requirements.` };
 }
 
+// A stage blocked by the environment (renderer, tool, tracker or network precondition) is retried by relaunching it with
+// feedback: the stage runs its workspace preflight again. Other stages, --user-revision and --restart cannot unblock it.
+export const ENVIRONMENT_BLOCK_CODES = new Set(['ENVIRONMENT_UNAVAILABLE']);
+export function environmentRetry(stage, entry) {
+  if (!stage || entry?.status !== 'blocked' || !ENVIRONMENT_BLOCK_CODES.has(entry.code) || entry.stale) return null;
+  return { steps: [launchCommand(stage, "--feedback '<what changed in the environment, and any user instruction given meanwhile>'")], why: `${stage} is blocked (${entry.code}). Relaunch it with --feedback: it runs its workspace preflight again. Do not start another stage, do not use --user-revision or --restart, and do not tell the user to wait. Report to the user only if the relaunch fails again with the same cause.` };
+}
+
 // Refusals the orchestrator hits while trying to go back from such a block; they point to the rewind instead of waiting.
-const REWIND_REFUSAL_CODES = new Set(['PREVIOUS_RESULT_MISSING', 'PREVIOUS_UNRESOLVED', 'DEPENDENCY_INCOMPLETE', 'RESTART_REFUSED', 'USER_REVISION_REFUSED', 'REVISION_TARGET', 'REVISION_REPEATED', 'REOPEN_REFUSED', 'DISCARD_REFUSED', 'FEEDBACK_REFUSED']);
+const REWIND_REFUSAL_CODES = new Set(['STAGE_ORDER', 'PREVIOUS_RESULT_MISSING', 'PREVIOUS_UNRESOLVED', 'DEPENDENCY_INCOMPLETE', 'RESTART_REFUSED', 'USER_REVISION_REFUSED', 'REVISION_TARGET', 'REVISION_REPEATED', 'REOPEN_REFUSED', 'DISCARD_REFUSED', 'FEEDBACK_REFUSED']);
 
 // What moves `stage`, as recorded in `entry`, forward.
 function resumeStage(stage, entry, state) {
   if (!entry) return { steps: [launchCommand(stage)] };
-  const rewind = !entry.stale && dependencyRewind(stage, entry);
+  const rewind = !entry.stale && (dependencyRewind(stage, entry) || environmentRetry(stage, entry));
   if (rewind) return { steps: rewind.steps };
   const { status, code } = entry;
   if (entry.stale) return { steps: [`${launchCommand(stage)} (re-run in order; it receives the upstream change automatically: ${entry.stale.rerun_order.join(' → ')})`] };
@@ -496,7 +505,8 @@ export function explainError(error, context = {}) {
   }
   explained ??= FALLBACK(message);
   const current = state?.current_stage;
-  const rewind = REWIND_REFUSAL_CODES.has(explained.code) ? dependencyRewind(current, state?.stages?.[current], context) : null;
+  const currentEntry = state?.stages?.[current];
+  const rewind = REWIND_REFUSAL_CODES.has(explained.code) ? dependencyRewind(current, currentEntry, context) || environmentRetry(current, currentEntry) : null;
   if (rewind) explained = { ...explained, why: `${rewind.why} (${explained.why})`, next: rewind.steps, decision: undefined };
   const next = (explained.next || []).filter(Boolean);
   const decision = explained.decision;

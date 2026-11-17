@@ -71,7 +71,7 @@ Legacy 구현의 E2E 실패가 앱이 아니라 테스트 코드만의 결함으
 
 사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
-stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](../../../.codex/internal-skills/skill-execution/references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다. 전술 stage가 "이 기능을 범위에 포함할까요?" 같은 범위 질문을 반환하면 전달하지 않는다(범위 추가 금지, 요구사항 흐름은 사용자가 명시적으로 다시 시작한다). `to-ticket`은 되돌아가지 않으며 `DESIGN_NOT_FROZEN`은 사용자에게 보고한다. 이 block 뒤 어떤 명령이 거부돼도(`PREVIOUS_RESULT_MISSING`, `RESTART_REFUSED` 등) 오류의 `next`를 그대로 따른다: owner가 기록돼 있으면 `--reopen-for`, 옛 결과라 `owner_stage`가 없으면 block된 stage를 `--feedback`으로 다시 실행해 owner를 반환하게 한다. `--user-revision`·`--restart-requirements`로 우회하거나 사용자에게 묻지 않는다.
+stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](../../../.codex/internal-skills/skill-execution/references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다. 전술 stage가 "이 기능을 범위에 포함할까요?" 같은 범위 질문을 반환하면 전달하지 않는다(범위 추가 금지, 요구사항 흐름은 사용자가 명시적으로 다시 시작한다). `to-ticket`은 되돌아가지 않으며 `DESIGN_NOT_FROZEN`은 사용자에게 보고한다. 이 block 뒤 어떤 명령이 거부돼도(`PREVIOUS_RESULT_MISSING`, `RESTART_REFUSED` 등) 오류의 `next`를 그대로 따른다: owner가 기록돼 있으면 `--reopen-for`, 옛 결과라 `owner_stage`가 없으면 block된 stage를 `--feedback`으로 다시 실행해 owner를 반환하게 한다. `--user-revision`·`--restart-requirements`로 우회하거나 사용자에게 묻지 않는다. 전술 단계 중 사용자가 범위를 줄이거나 범위 밖 항목을 빼라고 지시하면 `--user-revision`·`--restart`가 아니라 다음에 실행할 stage의 `--feedback`으로 전달하고 stale stage를 순서대로 다시 실행한다. 구현 설계 문서에 남은 범위 밖 항목은 `tactical-data`의 design-freeze gate가 잡아 owner로 되돌린다.
 
 요구사항·전술 설계 stage의 순서는 실행기가 결정한다. 새 `spec-me` 실행과 준비된 legacy stage의 재개도 거부된다. 결과 없는 구형 stage는 오류가 안내하는 안전한 discard 경로로만 정리한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
 
@@ -94,7 +94,7 @@ gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. `tactica
 | `PLAN_REVISION_REQUIRED` | `to-ticket`을 선택한다. |
 | `IMPLEMENTATION_REVISION_REQUIRED` | 영향을 받은 구현 plan의 `implement-wrapper`를 선택한다. |
 | `USER_DECISION_REQUIRED` | 반환된 질문을 사용자에게 전달하고 실제 답을 요청 skill에 돌려준다. |
-| `blocked` | 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
+| `blocked` | `ENVIRONMENT_UNAVAILABLE`는 사용자에게 기다리라고 하지 않고 같은 stage를 `launch --stage-id <stage> --feedback '<환경 변경·사용자 지시>'`로 다시 실행한다(preflight가 다시 확인하며, 같은 원인으로 또 막힐 때만 보고). 다른 stage·`--user-revision`·`--restart`로 우회하지 않는다. 그 밖의 코드는 보고된 unblock 조건을 기다린 뒤 같은 workflow를 재개한다. |
 | `running` | 실제 서브에이전트의 결과를 기다린다. 상태가 불명확한 실행은 중복으로 시작하거나 완료를 추정하지 않는다. |
 | `failed` 또는 `cancelled` | 원인과 보존된 실행 결과를 확인하고 같은 stage를 `--feedback`으로 이어간다. 같은 provider는 기존 대화를 재개하고 다른 provider는 이전 입력·결과를 읽는 새 대화를 사용한다. |
 
