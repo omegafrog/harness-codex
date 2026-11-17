@@ -99,12 +99,16 @@ export const TACTICAL_DESIGN_STAGES = Object.freeze([
 ]);
 
 // This independent flow follows completed tactical design. It is deliberately not part of PRE_SPEC_STAGES:
-// restarting requirements must never restore or remove application code.
+// restarting requirements must never restore or remove application code. The settled decisions (technology, UI handoff,
+// API, data) feed the ticket split (`to-ticket`), the user approves the plan set before `tracker-publish` publishes it,
+// and `tactical-code` then implements the published tickets one by one.
 export const TACTICAL_IMPLEMENTATION_STAGES = Object.freeze([
   WORKTREE_STAGE.TACTICAL_TECHNOLOGY,
   WORKTREE_STAGE.TACTICAL_UI,
   WORKTREE_STAGE.TACTICAL_API,
   WORKTREE_STAGE.TACTICAL_DATA,
+  WORKTREE_STAGE.TO_TICKET,
+  WORKTREE_STAGE.TRACKER_PUBLISH,
   WORKTREE_STAGE.TACTICAL_CODE,
 ]);
 

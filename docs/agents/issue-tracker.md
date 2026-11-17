@@ -6,7 +6,7 @@
 
 - `github` mode는 GitHub Issue와 설정된 GitHub Project만 사용한다.
 - `local-markdown` mode는 설정된 로컬 ticket 파일만 사용한다.
-- 선택하지 않은 configured tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다. `to-ticket`은 ticket과 의존성을 Beads에 mirror하고, `implement`는 lifecycle 상태를 Beads에도 동기화한다.
+- 선택하지 않은 configured tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다. `to-ticket`이 나눈 ticket과 의존성은 `tracker-publish`가 Beads에 mirror하고, `tactical-code`와 `implement`는 lifecycle 상태를 `harness-tracker.mjs sync`로 갱신해 Beads에도 동기화한다.
 
 ## 관리 규칙
 
@@ -23,7 +23,7 @@
 ## Assignee 규칙
 
 - GitHub mode의 assignee 설정은 `.harness/harness.yaml`의 `tracker.github.assignees`를 사용한다.
-- `to-ticket → tracker-publish` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다. 키 이름 `spec_me`는 이미 소비자의 `.harness/harness.yaml`에 저장된 설정이라 workflow 폐기 뒤에도 바꾸지 않는다. 소비자 설정을 옮기는 migration이 생길 때 함께 바꾼다.
+- `tactical-to-code`의 `to-ticket → tracker-publish` 흐름은 사용자의 직접 발행 승인(`--approval-answer`)을 받은 뒤에만 Project draft를 만들고 Issue로 전환한다. ticket 한 개를 구현하는 `tactical-code`는 시작 때 `in-progress`로, 테스트가 통과한 뒤 `completed`로 바꾸며 local-markdown mode에서는 ticket 파일의 `status` 변경을 그 ticket의 commit에 포함한다. `to-ticket → tracker-publish` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다. 키 이름 `spec_me`는 이미 소비자의 `.harness/harness.yaml`에 저장된 설정이라 workflow 폐기 뒤에도 바꾸지 않는다. 소비자 설정을 옮기는 migration이 생길 때 함께 바꾼다.
 - Codex가 테스트·개발 중 추가로 만든 Issue는 `codex` 값(`@copilot`)을 assignee로 지정한다.
 - 기존 Issue의 assignee는 별도 요청 없이는 변경하지 않는다.
 

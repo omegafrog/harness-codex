@@ -1,5 +1,5 @@
 name = "plan_reviewer"
-description = "Independently compare complete split plans with their Product and Architecture Specs."
+description = "Independently compare complete tickets with the settled tactical design and implementation decisions."
 sandbox_mode = "read-only"
 
 developer_instructions = """

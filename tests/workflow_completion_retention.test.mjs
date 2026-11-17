@@ -9,9 +9,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
-import { snapshotSpecReview } from '../.harness/src/workflow/spec-review.mjs';
-import { updateReviewAttempt } from '../.harness/src/workflow/review-attempts.mjs';
 import { updatePlanReview } from '../.harness/src/workflow/plan-review.mjs';
+import { TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { writeExecutionInput } from '../.harness/src/workflow/execution-input.mjs';
 import { createWorkflowWorktree, finishWorkflowWorktree } from '../.harness/src/workflow/worktrees.mjs';
 
@@ -45,19 +44,14 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: 'calculator' });
 
     await writeFile(join(tree.workspace, '.harness/harness.yaml'), 'tracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\nbeads:\n  enabled: false\n');
-    for (const path of ['docs/specs/calculator/request.md', 'docs/specs/calculator/product-spec.md', 'docs/specs/calculator/architecture-spec.md']) {
+    for (const path of ['docs/specs/calculator/request.md', 'docs/specs/calculator/requirements.md', 'docs/specs/calculator/tactical-design.md', 'docs/implementation/calculator/data.md']) {
       await mkdir(join(tree.workspace, path, '..'), { recursive: true });
       await writeFile(join(tree.workspace, path), `# ${path}\n`);
     }
     await mkdir(join(tree.workspace, 'docs/plans/calculator'), { recursive: true });
-    await writeFile(join(tree.workspace, 'docs/plans/calculator/plans.md'), '# Plan set\nProduct Spec: `docs/specs/calculator/product-spec.md`\nArchitecture Spec: `docs/specs/calculator/architecture-spec.md`\n');
+    await writeFile(join(tree.workspace, 'docs/plans/calculator/plans.md'), '# Plan set\nTactical design: `docs/specs/calculator/tactical-design.md`\n');
     const ticket = 'docs/plans/calculator/calculator.md';
     await writeFile(join(tree.workspace, ticket), '---\nstatus: planned\n---\n# Calculator\n');
-
-    const specInputs = await snapshotSpecReview({ root: tree.workspace, ticketId: 'calculator' });
-    const specAttempt = await updateReviewAttempt({ root: tree.workspace, scope: 'spec-calculator-architecture', action: 'begin', inputs: specInputs });
-    const specReview = { axis: 'architecture', ticket_id: 'calculator', reviewer_id: 'spec-reviewer', author_ids: ['spec-author'], fork_turns: 'none', verdict: 'pass', inputs: specInputs, findings: [] };
-    await updateReviewAttempt({ root: tree.workspace, scope: 'spec-calculator-architecture', action: 'record', inputs: specInputs, attemptId: specAttempt.attempt_id, review: specReview });
 
     const { recordExecutionState } = await import(new URL(`file://${join(tree.workspace, '.harness/src/workflow/execution-state.mjs')}`));
     const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
@@ -82,6 +76,10 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'completed', code: 'OK' });
     }
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'waiting');
+    // The ticket stages belong to the tactical flow: the settled design and decisions precede them.
+    const settledState = JSON.parse(await readFile(statePath, 'utf8'));
+    for (const stage of [...TACTICAL_DESIGN_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) settledState.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+    await writeFile(statePath, JSON.stringify(settledState, null, 2));
 
     const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();
     await writeFile(completionPath, JSON.stringify({
@@ -109,7 +107,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).current_stage, 'tracker-publish');
     const progress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(progress.status, 'completed');
-    assert.equal(progress.counts.completed, 4);
+    assert.equal(progress.counts.completed, 14, 'four recorded stages and the ten settled design and decision stages');
     execFileSync(process.execPath, [...args, '--final-workflow'], { cwd: tree.workspace });
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).status, 'completed');
     assert.deepEqual(completed.worktree_retained, { state: 'preserved', workspace_root: tree.workspace });
@@ -122,7 +120,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }), '');
     assert.match(await readFile(join(tree.workspace, ticket), 'utf8'), /# Calculator/);
 
-    const specBeforeRestart = await readFile(join(tree.workspace, 'docs/specs/calculator/product-spec.md'));
+    const specBeforeRestart = await readFile(join(tree.workspace, 'docs/specs/calculator/tactical-design.md'));
     await writeFile(join(tree.workspace, 'application-owned.txt'), 'keep visible');
     const restartState = JSON.parse(await readFile(statePath, 'utf8'));
     delete restartState.stages['tracker-publish'];
@@ -142,7 +140,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     assert.equal(restart.input.skill, 'to-ticket');
     assert.equal(restart.input.context.transition, undefined);
     assert.equal(restart.input.context.resume_session_id, undefined);
-    assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/product-spec.md'), 'utf8'), specBeforeRestart.toString());
+    assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/tactical-design.md'), 'utf8'), specBeforeRestart.toString());
     const archives = await readdir(join(tree.session_directory, 'runtime/restarts'));
     assert.equal(archives.length, 1);
     assert.match(await readFile(join(tree.session_directory, 'runtime/restarts', archives[0], 'plans/plans.md'), 'utf8'), /# Plan set/);
@@ -158,7 +156,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
 
     await mkdir(join(tree.workspace, 'docs/plans/calculator'), { recursive: true });
     for (const [path, content] of Object.entries({
-      'docs/plans/calculator/plans.md': '# Replacement plans\nProduct Spec: `docs/specs/calculator/product-spec.md`\nArchitecture Spec: `docs/specs/calculator/architecture-spec.md`\n',
+      'docs/plans/calculator/plans.md': '# Replacement plans\nTactical design: `docs/specs/calculator/tactical-design.md`\n',
       'docs/plans/calculator/replacement.md': '# Replacement plan\n',
     })) await writeFile(join(tree.workspace, path), content);
     restartState.stages['to-ticket'] = { ...restartState.stages['to-ticket'], status: 'failed', execution_id: 'failed-to-ticket', code: 'EXECUTION_ERROR', result_ref: undefined, native_managed: true, native_finished: true };
@@ -167,7 +165,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     const failedRestart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.notEqual(failedRestart.input.execution_id, restart.input.execution_id);
     assert.deepEqual(failedRestart.input.input_refs, []);
-    assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/product-spec.md'), 'utf8'), specBeforeRestart.toString());
+    assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/tactical-design.md'), 'utf8'), specBeforeRestart.toString());
     assert.equal((await readdir(join(tree.session_directory, 'runtime/restarts'))).length, 2);
   } finally {
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root, worktree_id: tree.worktree_id, outcome: 'aborted' });

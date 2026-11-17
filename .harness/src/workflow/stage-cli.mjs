@@ -3,7 +3,7 @@
 // sends it reading Harness source. So the default output holds only what the next step needs (ids, paths, status, the
 // next command, and the payloads that must be relayed), `--verbose` prints the full detail, and every error names what
 // happened, why, and the exact next command or the decision the user must make.
-import { PRE_SPEC_STAGES } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
 import { cliContext, orchestratorState } from './cli-context.mjs';
 
 const NATIVE = 'node .codex/scripts/harness-native-stage.mjs';
@@ -151,7 +151,10 @@ export function compactContext(context) {
   return Object.fromEntries(Object.entries(kept).filter(([, value]) => !empty(value)));
 }
 
+const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 export function finishNext({ status, code, stageId, executionId }) {
+  if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. Only after the user's own reply: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
+  if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
   if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user verbatim and wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${launchCommand(stageId, "--feedback '<review result>'")}`;
@@ -235,6 +238,7 @@ function resumeStage(stage, entry, state) {
   if (revision) return { steps: [launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')] };
   if (status === 'blocked') return { steps: [launchCommand(stage, "--feedback '<how the blocker was resolved>'")], decision: `${stage} is blocked (${code}). Tell the user the unblock condition from its summary (${CONTEXT}) and wait until it is resolved.` };
   if (status === 'failed' || status === 'cancelled') return { steps: [`After its native subagent has ended: ${launchCommand(stage, FEEDBACK_ARG)}`] };
+  if (status === 'completed' && code === 'OK' && stage === 'tactical-code') return { steps: [`The last ticket is completed; take the next one from ready_tickets in ${CONTEXT}: ${launchCommand(stage, '--plan <ticket-id>')}`] };
   if (status === 'completed' && code === 'OK') return { steps: [`${stage} is already completed; continue with the stage after it.`] };
   return { steps: [CONTEXT] };
 }
@@ -246,11 +250,9 @@ const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.cod
 const stageAfter = (previous) => {
   if (previous === 'workflow-compose') return PRE_SPEC_STAGES[0];
   const index = PRE_SPEC_STAGES.indexOf(previous);
-  if (index >= 0) return PRE_SPEC_STAGES[index + 1] ?? 'tactical-technology';
-  return previous === 'tactical-technology' ? 'tactical-ui'
-    : previous === 'tactical-ui' ? 'tactical-api'
-      : previous === 'tactical-api' ? 'tactical-data'
-        : previous === 'tactical-data' ? 'tactical-code' : null;
+  if (index >= 0) return PRE_SPEC_STAGES[index + 1] ?? TACTICAL_IMPLEMENTATION_STAGES[0];
+  const flow = TACTICAL_IMPLEMENTATION_STAGES.indexOf(previous);
+  return flow >= 0 ? TACTICAL_IMPLEMENTATION_STAGES[flow + 1] ?? null : null;
 };
 
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
@@ -269,8 +271,8 @@ const RULES = [
     ],
     decision: 'If the same error returns after the rewrite, report it to the user and stop.',
   }) },
-  { re: /^(\S+) cannot start before (\S+):/, explain: ({ m, message, state }) => {
-    const [, stage, required] = m;
+  { re: /^(\S+) cannot start before (\S+):|^(\S+) requires completed\/OK tactical design stage (\S+)/, explain: ({ m, message, state }) => {
+    const stage = m[1] ?? m[3], required = m[2] ?? m[4];
     const resume = resumeStage(required, entryOf(state, required), state);
     return {
       code: 'STAGE_ORDER',
@@ -329,7 +331,7 @@ const RULES = [
     return { code: 'USER_REVISION_REFUSED', why: `${running ? `${running[0]} is still running` : 'Another stage is still running'}; a user revision cannot start until its native subagent has ended.`, next: running?.[1]?.execution_id ? [`Wait for its native subagent, then ${nativeCommand('finish', running[1].execution_id)}`, `Then repeat the same user-revision command.`] : [CONTEXT] };
   } },
   { re: /^(Implementation revision|Repair receipt|Test defect evidence|E2E repair|E2E failure|E2E request|E2E stage requires|Invalid E2E)/, explain: ({ message }) => ({ code: 'USER_REVISION_REFUSED', why: `The E2E repair or request does not satisfy its recorded evidence (${message}). These checks tie a repair to the exact failed E2E receipt and the user's approval.`, next: ['Use the failure receipt, approval answer and plan exactly as the E2E result and the user\'s own words recorded them; see orchestrator references/implementation.md.'], decision: 'If the receipt or approval no longer matches (stale commit, changed profile), report it to the user and ask whether to rerun the E2E.' }) },
-  { re: /^Restart applies only to to-ticket|^A to-ticket restart|^Cannot restart|^Restart requires a (waiting|completed)|^This waiting to-ticket execution|^Archived restart|^Restart archive|^Multiple restart archives/, explain: ({ message }) => ({ code: 'RESTART_REFUSED', why: `A to-ticket restart is only valid for a waiting or failed to-ticket stage after spec-me, before tracker-publish (${message}).`, next: [CONTEXT], decision: 'Report this refusal to the user and wait for their direction; do not edit state or retry the restart.' }) },
+  { re: /^Restart applies only to to-ticket|^A to-ticket restart|^Cannot restart|^Restart requires a (waiting|completed)|^This waiting to-ticket execution|^Archived restart|^Restart archive|^Multiple restart archives/, explain: ({ message }) => ({ code: 'RESTART_REFUSED', why: `A to-ticket restart is only valid for a waiting or failed to-ticket stage, before tracker-publish started (${message}).`, next: [CONTEXT], decision: 'Report this refusal to the user and wait for their direction; do not edit state or retry the restart.' }) },
   { re: /^Restart target must be completed/, explain: ({ stage, state }) => ({ code: 'RESTART_REFUSED', why: `${stage || 'The stage'} is ${describe(entryOf(state, stage))}; only a completed stage can be restarted, because a restart rewinds what it already wrote.`, next: [`To run it for the first time or continue it: ${launchCommand(stage || '<stage-id>')}`, `State: ${CONTEXT}`] }) },
   { re: /^Requirements restart must be requested alone/, explain: ({ stage }) => ({ code: 'RESTART_REFUSED', why: '--restart-requirements must be the only option besides --stage-id.', next: [`${PREPARE} --stage-id ${stage || '<stage-id>'} --restart-requirements true`] }) },
   { re: /^Restart requires a clean project/, explain: () => ({ code: 'RESTART_REFUSED', why: 'A restart rewinds the plan set documents and must not overwrite project changes, so the project worktree and index must be clean.', next: ['git status --short (read only) shows what is changed'], decision: 'Ask the user to commit or stash their project changes (never discard them yourself), then repeat the same restart command.' }) },
@@ -414,8 +416,9 @@ const RULES = [
   } },
   { re: /^PERMISSION_REQUIRED: the Harness subagent hook/, explain: ({ message }) => ({ code: 'HOOK_NOT_TRUSTED', why: 'Codex stages need the Harness subagent hook to record native subagent identity, and it is missing or not trusted.', next: [], decision: `Ask the user to ${/missing/.test(message) ? 'run Harness setup with the codex provider' : 'open Codex, run /hooks and trust "Recording Harness subagent" for SubagentStart and SubagentStop'}, then repeat the command. Stages do not start without it.` }) },
   { re: /^Worktree preparation is incomplete|^Workflow composition record is missing|^Worktree record is not active|^Worktree reference does not match|^Worktree record must be|requires plan_set_id in worktree\.json/, explain: ({ message }) => ({ code: 'WORKFLOW_NOT_READY', why: `This directory is not an active, composed workflow worktree (${message}).`, next: [CONTEXT], decision: 'If workflow-compose never completed, start the workflow through the orchestrator skill (workflow-compose); otherwise report this error to the user.' }) },
-  { re: /needs --plan|needs the assigned plan|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, plan_tickets and implementation_reviews; pick the next ready plan from there`, launchCommand('implement-wrapper', '--plan <plan-id>')] }) },
-  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s real approval of the plan to publish.', next: [], decision: 'Show the reviewed plan to the user and ask for publication approval; only after they approve: ' + launchCommand('tracker-publish', '--publication-approved true') }) },
+  { re: /^tactical-code \S+ cannot start before its prerequisite|^Ticket \S+ is already completed/, explain: ({ message }) => ({ code: 'TICKET_ORDER', why: `tactical-code builds one published ticket per run, after the tickets it depends on are completed (${message}).`, next: [`${CONTEXT} lists ready_tickets with the tickets still open and their prerequisites`, launchCommand('tactical-code', '--plan <ticket-id>')], decision: 'Pick a ready ticket; do not start a ticket whose prerequisite is open, and do not mark a ticket completed yourself.' }) },
+  { re: /needs --plan|needs the assigned \S+ from its previous input|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan and tactical-code exactly one ticket that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, ready_tickets, plan_tickets and implementation_reviews; pick the next ready one from there`, launchCommand('tactical-code', '--plan <ticket-id>')] }) },
+  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must be in the log of the user\'s inputs, written after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: 'Show the whole reviewed plan set to the user and ask whether to publish it; only after the user replies, pass that reply verbatim: ' + launchCommand('tracker-publish', PUBLISH_ARGS) }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },
   { re: /^Spec review|^Plan review requires|^Review admission/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. A review is tied to an admitted snapshot.`, next: [CONTEXT], decision: 'Follow the existing Spec or plan review admission for the admission step; do not invent it.' }) },

@@ -24,9 +24,9 @@ Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. �
 | 새 기능의 요구사항 흐름에 완료된 `stakeholder-analysis`가 없음 | `stakeholder-analysis` |
 | 요구사항 흐름이 끝나지 않음 | 요구사항 흐름에서 완료되지 않은 첫 stage |
 | 요구사항 흐름은 끝났지만 전술 설계 흐름의 stage가 남음 | 전술 설계 흐름에서 완료되지 않은 첫 stage |
-| 요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음 | 별도 `tactical-to-code` workflow |
-| 승인된 Spec은 있지만 구현 계획·티켓이 없음 | `to-ticket` |
-| 승인된 계획이 있고 구현이 요청됨 | `implement-wrapper` |
+| 요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음 | 별도 `tactical-to-code` workflow: 결정 stage → `to-ticket` → `tracker-publish` → ticket별 `tactical-code` |
+| 전술 설계와 구현 결정(technology·UI·API·data)이 끝났고 구현 ticket이 없음 | `tactical-to-code`의 `to-ticket` |
+| Spec 기반으로 승인된 legacy 계획이 있고 구현이 요청됨 | `implement-wrapper` |
 | 모든 plan 구현과 최종 E2E가 통과했고 통합 계약이 아직 seal·독립 리뷰되지 않음 | `sync-contracts` |
 | 사용자가 제품 경로의 검증 문서를 만들거나 맞춰 달라고 요청함 | `maintain-verification` |
 | 사용자가 실제 서버·인프라를 사용하는 엔드유저 E2E를 요청함 | `e2e-test` |
@@ -63,19 +63,21 @@ stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>
 
 다른 Codex 대화가 시작한 stage가 대화 종료로 `running`에 멈춰 있으면(`harness-context`의 `next`, `inspect`의 `session: other`, `STAGE_RUNNING` 오류가 알려 준다) 사용자를 원래 대화로 돌아가라고 하지 않는다. 안내된 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> --take-over true` 한 번만 실행하고 반환을 그대로 따른다. 실행기가 이전 대화와 agent의 종료를 확인하지 못하면 이유와 `next`·`user_decision`을 반환하며, `fail`이나 state 수정으로 우회하지 않는다.
 
-`to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
+`to-ticket`이 완료되면 리뷰를 통과한 계획 전체(ticket 목록·의존 순서·각 ticket의 규칙과 검증)를 한국어로 사용자에게 보여주고 발행해도 되는지 묻는다. 사용자가 직접 답한 뒤에만 `tracker-publish`를 선택하며 그 답 원문을 `--approval-answer`로 넘긴다(`launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`). 실행기는 to-ticket 완료 뒤 사용자 입력 기록에 그 답이 있어야만 준비하므로 플래그만으로는 발행되지 않는다. 승인 거부·미응답·계획 수정 요청은 `tracker-publish`를 호출하지 않고 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다. 발행 stage가 완료된 뒤에는 `tactical-code`가 ticket을 구현한다. GitHub tracker mode에서 사용자가 계획 PR을 요청하면 `plan-pr` stage를 `pr_author`로 실행하며, 이미 발행·활성화된 plan set을 요구사항·설계 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않고 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남긴다.
 
 완료된 전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. `context-boundary` 뒤에는 새 `tactical-to-code` workflow를 시작한다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+
+Legacy 구현의 E2E 실패가 앱이 아니라 테스트 코드만의 결함으로 확인되면 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)를 따른다.
 
 사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
 요구사항·전술 설계 stage의 순서는 실행기가 결정한다. 새 `spec-me` 실행과 준비된 legacy stage의 재개도 거부된다. 결과 없는 구형 stage는 오류가 안내하는 안전한 discard 경로로만 정리한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
 
-Spec·계획이 승인된 legacy 작업은 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. 새 기능 구현은 전술 설계 완료 뒤 `tactical-to-code` workflow를 사용한다. tracker의 승인된 기능 plan을 한 개씩 구현·검증·리뷰하고, 전체 통합 리뷰 뒤 마지막 `e2e` plan을 구현·리뷰한 다음 사용자에게 실행 승인만 받는다. E2E 실패는 자동 수정·재실행하지 않고 증거와 함께 사용자 결정을 요청한다. 다만 실패 증거를 직접 읽고 앱은 Spec대로 동작했으며 테스트 코드만 틀렸다고 확정한 경우는 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)로 고치고 다시 실행한다. 구현 및 계약 gate가 통과한 뒤 non-final `implement-wrapper` completion gate를 실행한다. pass가 기록되면 GitHub tracker mode에서만 `integration-pr` stage를 `pr_author`로 실행해 같은 plan-set draft를 갱신하고 ready로 만든다. 이후 `implement-wrapper`의 final completion gate를 실행한다. PR 작성·갱신은 모든 계획의 terminal 상태, 검증, 독립 리뷰 및 non-final completion receipt 확인 뒤 수행하며, 기존 같은 head PR이 있으면 새 PR을 만들지 않는다. `gh-open-pr`의 사용자 소유 merge/close 경계는 그대로 적용한다.
+Spec·계획이 승인된 legacy 작업은 `implement-wrapper`와 [구현 workflow 조율](references/implementation.md)을 사용한다. 새 기능 구현은 전술 설계 완료 뒤 `tactical-to-code` workflow를 사용한다: `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → (사용자 발행 승인) → `tracker-publish` → `tactical-code`. `tactical-code`는 ticket 하나를 한 실행으로 구현해 commit 하나를 남긴다. `node .codex/scripts/harness-context.mjs`의 `ready_tickets`(아직 완료되지 않았고 선행 ticket이 모두 완료된 ticket)에서 하나를 골라 `launch --stage-id tactical-code --plan <ticket-id>`로 시작하며, 실행기가 선행 ticket이 열려 있거나 이미 완료된 ticket의 시작을 거부한다. ticket이 `completed/OK`이면 다음 ready ticket을 시작하고 남은 ticket이 없으면 완료 gate를 실행한다. 사용자 경로 E2E는 사용자가 요청할 때 별도 `e2e-test`로 실행한다.
 
-요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: 계획·발행까지는 `to-ticket`, legacy Spec 기반 구현까지는 `implement-wrapper`, 새 tactical 구현은 `tactical-to-code`. `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
+요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`로 완료 gate를 실행한다. `<workflow-id>`는 요청 범위의 마지막 workflow다: 결정과 계획·발행까지는 `to-ticket`, legacy Spec 기반 구현까지는 `implement-wrapper`, 새 tactical 구현은 `tactical-to-code`(모든 ticket이 tracker에서 완료되고 `tactical-code` 실행 commit이 기록되어야 통과한다). `--base-ref`는 그 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. gate가 통과해야 전체 workflow가 완료된다. 중간 stage의 gate에는 `--final-workflow`를 쓰지 않는다.
 
-gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. 구현 완료(`implement-wrapper`)는 plan별 리뷰 evidence, 최종 E2E receipt, tracker 완료 상태, plan의 제거 목록, session checkpoint를 읽으므로 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`에서 막힌 check의 `reason`과 `details`(plan·역할·receipt)를 보고 그 기록을 만드는 단계(리뷰, 승인된 최종 E2E 실행, tracker 완료 전이, 계약 동기화)를 진행한 뒤 다시 실행한다. `passed: true` 같은 값을 직접 써서 gate를 통과시키려 하지 않는다. 그런 값은 무시되고 결과의 `ignored_state_keys`에 기록된다.
+gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. `tactical-to-code`는 tracker의 ticket 완료 상태와 ticket별 `tactical-code` 실행·commit 기록을, 구현 완료(`implement-wrapper`)는 plan별 리뷰 evidence, 최종 E2E receipt, tracker 완료 상태, plan의 제거 목록, session checkpoint를 읽으므로 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`에서 막힌 check의 `reason`과 `details`(plan·역할·receipt)를 보고 그 기록을 만드는 단계(리뷰, 승인된 최종 E2E 실행, tracker 완료 전이, 계약 동기화)를 진행한 뒤 다시 실행한다. `passed: true` 같은 값을 직접 써서 gate를 통과시키려 하지 않는다. 그런 값은 무시되고 결과의 `ignored_state_keys`에 기록된다.
 
 메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `to-ticket`, `tactical-code`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 

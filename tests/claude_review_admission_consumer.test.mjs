@@ -152,7 +152,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     }
     assert.equal(planHistory.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: planScope });
-    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'spec_paths', 'plans', 'inputs', 'execution_workspace']);
+    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'design_paths', 'spec_paths', 'plans', 'inputs', 'execution_workspace']);
 
     await mkdir(join(root, 'docs/specs/budget-ticket'), { recursive: true });
     const budgetSpec = join(root, 'docs/specs/budget-ticket/architecture-spec.md');

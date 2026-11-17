@@ -214,7 +214,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   // Arguments and workspace.
   refusal(exec(workspace, PREPARE, ['--stage-id']), 'INVALID_ARGUMENT');
   refusal(exec(workspace, NATIVE, ['finish']), 'INVALID_ARGUMENT');
-  refusal(exec(workspace, PREPARE, ['--stage-id', 'tracker-publish']), 'PRECONDITION');
+  refusal(exec(workspace, PREPARE, ['--stage-id', 'tracker-publish']), 'STAGE_ORDER');
   const wrong = refusal(exec(primary, NATIVE, ['finish', '--execution-id', 'x-1']), 'WRONG_WORKSPACE');
   assert.ok(wrong.user_decision);
   assert.match(ids(refusal(exec(primary, NATIVE, ['finish', '--root', workspace, '--execution-id', 'x-1']), 'WRONG_WORKSPACE')), new RegExp(`cd ${workspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
@@ -279,13 +279,13 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   const flowRun = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'subdomain-candidates']));
   const guarded = refusal(exec(workspace, PREPARE, ['--stage-id', 'ubiquitous-language']), 'STAGE_ORDER');
   assert.match(ids(guarded), new RegExp(`finish --execution-id ${flowRun.execution_id}`), 'the order guard names the running stage to finish');
-  const unusable = refusal(exec(workspace, PREPARE, ['--stage-id', 'to-ticket']), 'PREVIOUS_RESULT_MISSING');
+  const unusable = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_RESULT_MISSING');
   assert.match(unusable.error, /subdomain-candidates is running/);
   assert.match(ids(unusable), new RegExp(`finish --execution-id ${flowRun.execution_id}`));
   ok(runPrinted(workspace, flowRun.next.bind));
   await submitStage({ stage: 'subdomain-candidates', started: flowRun }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
   ok(runPrinted(workspace, flowRun.next.finish));
-  const unresolved = refusal(exec(workspace, PREPARE, ['--stage-id', 'to-ticket']), 'PREVIOUS_UNRESOLVED');
+  const unresolved = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_UNRESOLVED');
   assert.ok(unresolved.user_decision, 'the question is the user\'s');
   assert.match(ids(unresolved), /launch --stage-id subdomain-candidates --answer/);
   const waitingOrder = refusal(exec(workspace, PREPARE, ['--stage-id', 'ubiquitous-language']), 'STAGE_ORDER');
@@ -293,7 +293,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
 });
 
 test('the explanation catalogue covers the errors the stage commands throw and each explanation leaves a next step', async () => {
-  const files = ['.harness/src/workflow/stage-input.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/stage-takeover.mjs', '.harness/src/workflow/execution-state.mjs', '.harness/src/workflow/worktree-stages.mjs', '.codex/scripts/harness-prepare-input.mjs', '.codex/scripts/harness-native-stage.mjs', '.harness/src/workflow/cli-context.mjs', '.harness/src/workflow/execution-input.mjs'];
+  const files = ['.harness/src/workflow/stage-input.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/stage-takeover.mjs', '.harness/src/workflow/execution-state.mjs', '.harness/src/workflow/worktree-stages.mjs', '.codex/scripts/harness-prepare-input.mjs', '.codex/scripts/harness-native-stage.mjs', '.harness/src/workflow/cli-context.mjs', '.harness/src/workflow/execution-input.mjs', '.harness/src/workflow/tactical-tickets.mjs'];
   // Internal integrity failures name no recovery the orchestrator can run; they fall back to a report-to-user decision.
   const INTEGRITY = /^(Invalid process identity|Invalid workflow state schema|Workflow reference mismatch|Workflow already active|Current stage is not|Current workflow stage is not completed|Recovery target|Stage execution changed|Invalid terminal transition|Invalid orchestrator session|Unsafe|Invalid, duplicate|Invalid canonical|Invalid restart|Invalid interrupted|Cannot (archive|recover|establish)|Unknown interrupted|Stage workspace must|Planning workspace|Producer|Execution session|Restart input session|Invalid active worktree|Invalid execution input identity|Canonical worktree|Invalid E2E|Invalid test defect|Invalid deferred|Invalid ID|Cannot verify|Blocked implementation result|Legacy SUBTASK_REQUIRED|Multiple restart|Spec approval|Pending answers|Recorded decision|Dependency incomplete|Native output|Native agent|Native subagent (output|binding is)|Reconciliation|Input|Restart archive|Archived restart|Worktree reference does not match workflow|harness-.*printed no result)/;
   const messages = new Set();
@@ -329,6 +329,11 @@ test('the explanation catalogue covers the errors the stage commands throw and e
     ['Command failed: git commit -m x', 'COMMIT_BLOCKED'],
     ['Result rejected: Questions require a waiting decision or review', 'RESULT_REJECTED'],
     ['Skill instruction is missing: requirements-fix', 'INSTALL_OR_BINDING'],
+    ['tracker-publish requires completed/OK tactical design stage domain-model', 'STAGE_ORDER'],
+    ['Publication approval answer was not recorded: no user message after the reviewed plan set contains it', 'PRECONDITION'],
+    ['tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)', 'PLAN_ARGUMENT'],
+    ['tactical-code post-write cannot start before its prerequisite ticket auth is completed; ready tickets: auth', 'TICKET_ORDER'],
+    ['Ticket auth is already completed; ready tickets: none', 'TICKET_ORDER'],
   ]) {
     const body = explain(message);
     assert.equal(body.code, code, message);

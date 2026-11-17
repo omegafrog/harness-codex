@@ -162,7 +162,7 @@ const defaultCommand = async (command, args, cwd) => (await exec(command, args, 
 
 // Plan dependencies come from the reviewed index: each table row starts with the plan link, and plan IDs named in
 // its dependency column are what that plan waits for.
-async function planDependencies(root, planSetId, planIds) {
+export async function planDependencies(root, planSetId, planIds) {
   const index = await readFile(join(root, 'docs/plans', planSetId, 'plans.md'), 'utf8');
   const dependencies = new Map(planIds.map((id) => [id, []]));
   const pattern = (id) => new RegExp(`(^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`);

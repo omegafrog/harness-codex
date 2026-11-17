@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { bindNativeReviewer } from './support/native-reviewer.mjs';
 import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
+import { TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 
 const schemas = '.codex/internal-skills/skill-execution/schemas';
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
@@ -431,9 +432,15 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const { prepareStageInput } = await import(`${installedRuntime}/stage-input.mjs`);
     await mkdir(join(session, 'runtime/orchestrator'), { recursive: true });
     const statePath = join(session, 'runtime/orchestrator/state.json');
-    await writeFile(statePath, JSON.stringify({ schema_version: 1, stages: { 'workflow-compose': { status: 'completed' }, 'to-ticket': { status: 'running' } } }));
+    const settled = Object.fromEntries([...TACTICAL_DESIGN_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data'].map((stage) => [stage, { status: 'completed', code: 'OK' }]));
+    await writeFile(statePath, JSON.stringify({ schema_version: 1, stages: { 'workflow-compose': { status: 'completed' }, ...settled, 'to-ticket': { status: 'running' } } }));
+    // The flow order comes first; once to-ticket completed, the user's own approval is what publishing needs.
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish' }), /tracker-publish cannot start before to-ticket/);
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /tracker-publish cannot start before to-ticket/);
+    await writeFile(statePath, JSON.stringify({ schema_version: 1, stages: { 'workflow-compose': { status: 'completed' }, ...settled, 'to-ticket': { status: 'completed', code: 'OK', finished_at: new Date().toISOString() } } }));
     await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish' }), /user publication approval are required/);
-    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /Completed to-ticket/);
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true }), /Publication approval answer was not recorded/);
+    await assert.rejects(prepareStageInput({ root, session, stageId: 'tracker-publish', publicationApproved: true, approvalAnswer: '발행하세요' }), /Publication approval answer was not recorded/);
     const workflow = await loadNamedWorkflow('to-ticket', { root });
     assert.deepEqual(workflow.stages.map(({ id }) => id), ['to-ticket', 'tracker-publish', 'plan-pr']);
     assert.deepEqual(workflow.stages[1].needs, ['to-ticket']);
@@ -446,15 +453,20 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'to-ticket' }, workflow: 'to-ticket', stage: 'to-ticket' }), { profile: 'to_ticket', sandbox: 'workspace-write' });
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, workflow: 'to-ticket', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
     const inferredStage = await resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } });
-    assert.deepEqual(inferredStage, { workflow: 'to-ticket', stage: 'tracker-publish' });
+    // The tactical flow and the plan-and-publish scope declare the ticket stages identically, so either resolves them.
+    assert.deepEqual(inferredStage, { workflow: 'tactical-to-code', stage: 'tracker-publish' });
+    assert.deepEqual(await resolveWorkflowStage({ root, input: { skill: 'to-ticket', context: { stage_id: 'to-ticket' } } }), { workflow: 'tactical-to-code', stage: 'to-ticket' });
+    assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, workflow: 'tactical-to-code', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
     await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'to-ticket' } }, workflow: 'to-ticket', stage: 'tracker-publish' }), /does not match the execution input/);
     assert.equal((await resolveSkillBinding({ root, skill: 'tracker-publish', ...inferredStage })).model_tier, 'high_performance');
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, ...inferredStage }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' });
-    await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'missing-stage' } } }).then((stage) => resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, ...stage })), /only as the to-ticket workflow stage/);
+    await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'missing-stage' } } }).then((stage) => resolveAgentSandbox({ root, input: { skill: 'tracker-publish' }, ...stage })), /only as the tracker-publish stage of the to-ticket or tactical-to-code workflow/);
     const workflowDir = join(root, '.codex/workflows');
     const duplicateWorkflow = join(workflowDir, 'to-ticket-copy.yaml');
     const toTicketManifest = await readFile(join(workflowDir, 'to-ticket.yaml'), 'utf8');
     await writeFile(duplicateWorkflow, toTicketManifest.replace('id: to-ticket\n', 'id: to-ticket-copy\n'));
+    assert.equal((await resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } })).stage, 'tracker-publish', 'an identical declaration is no ambiguity');
+    await writeFile(duplicateWorkflow, toTicketManifest.replace('id: to-ticket\n', 'id: to-ticket-copy\n').replace('    skill: tracker-publish\n', '    skill: tracker-publish\n    model_tier: low_performance\n'));
     await assert.rejects(resolveWorkflowStage({ root, input: { skill: 'tracker-publish', context: { stage_id: 'tracker-publish' } } }), /Workflow stage is ambiguous/);
     await rm(duplicateWorkflow);
     const toTicketInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
@@ -471,10 +483,12 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const specRoot = join(root, 'docs/specs/sample');
     await mkdir(planRoot, { recursive: true });
     await mkdir(join(specRoot, 'diagrams'), { recursive: true });
-    await writeFile(join(planRoot, 'plans.md'), '- Product Spec: `docs/specs/sample/product-spec.md`\n- Architecture Spec: `docs/specs/sample/architecture-spec.md`\n- [plan](slice.md)\n');
+    await mkdir(join(root, 'docs/implementation/sample'), { recursive: true });
+    await writeFile(join(planRoot, 'plans.md'), '- Tactical design: `docs/specs/sample/tactical-design.md`\n- [plan](slice.md)\n');
     await writeFile(join(planRoot, 'slice.md'), '---\nstatus: planned\n---\n# Slice\n');
-    await writeFile(join(specRoot, 'product-spec.md'), '![diagram](diagrams/flow.svg)\n');
-    await writeFile(join(specRoot, 'architecture-spec.md'), '# Architecture\n');
+    await writeFile(join(specRoot, 'requirements.md'), '![diagram](diagrams/flow.svg)\n');
+    await writeFile(join(specRoot, 'tactical-design.md'), '# Tactical design\n');
+    await writeFile(join(root, 'docs/implementation/sample/data.md'), '# Data\n');
     await writeFile(join(specRoot, 'diagrams/flow.svg'), '<svg>reviewed</svg>\n');
 
     const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
@@ -507,7 +521,7 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     const reviewStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(reviewStatus, /docs\/plans\/sample\/slice.md/);
     assert.doesNotMatch(reviewStatus, /\.harness\/src\//);
-    await writeFile(join(specRoot, 'architecture-spec.md'), '# Architecture changed\n');
+    await writeFile(join(specRoot, 'tactical-design.md'), '# Tactical design changed\n');
     let stale;
     try {
       execFileSync(process.execPath, [cli, 'check', '--root', root, '--plan-set', 'sample', '--phase', 'planning'], { cwd: root, encoding: 'utf8' });

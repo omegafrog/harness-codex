@@ -33,7 +33,8 @@ test('installed and updated ticket guidance and renderer retain relations and ve
     }
     const guide = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
     assert.match(guide, /their absence or empty content is not a plan-authoring prerequisite/);
-    assert.match(guide, /Preserve the actual workspace identity, approved Spec\/review/);
+    assert.match(guide, /Preserve the actual workspace identity, the settled tactical design and decision documents/);
+    assert.doesNotMatch(guide, /Product and Architecture Specs|approved Specs/);
   };
   const checkArchitectureGuidance = async () => {
     const guide = await readFile(dddGuidePath, 'utf8');
@@ -92,12 +93,16 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await checkArchitectureGuidance();
   assert.equal(await readFile(join(root, 'CONTEXT.md'), 'utf8'), 'project-owned glossary');
   const { renderSplitPlanIssue } = await import(pathToFileURL(join(root, '.harness/src/tracker/render.mjs')));
-  const plan = { schema_version: 1, kind: 'split-plan', plan_id: 'ui', issue: 11, parent_issue: 9, status: 'Planned', purpose: '계산 결과를 표시한다.', scope: ['workspace_root: /workspace', 'workspace_branch: feature', '화면을 구현한다.'], acceptance_criteria: ['결과 14가 표시된다.'], test_contract: { unit_policy: '없음', ui_entity_e2e: '상위 이슈' }, verification: ['키보드와 오류 보존을 확인한다.'], dependencies: [10], specs: { product_spec: 'product.md', architecture_spec: 'architecture.md' } };
+  const plan = { schema_version: 1, kind: 'split-plan', plan_id: 'ui', issue: 11, parent_issue: 9, status: 'Planned', purpose: '계산 결과를 표시한다.', scope: ['workspace_root: /workspace', 'workspace_branch: feature', '화면을 구현한다.'], acceptance_criteria: ['결과 14가 표시된다.'], test_contract: { unit_policy: '없음', ui_entity_e2e: '상위 이슈' }, verification: ['키보드와 오류 보존을 확인한다.'], dependencies: [10], design: ['docs/specs/demo/tactical-design.md', 'docs/implementation/demo/api.md'] };
   const body = renderSplitPlanIssue(plan);
   assert.match(body, /상위 이슈: #9\n\n## 상태/);
   assert.match(body, /## 의존성\n\n#10/);
   assert.match(body, /키보드와 오류 보존을 확인한다/);
   assert.match(body, /<details><summary>실행 정보<\/summary>[\s\S]*workspace_root: \/workspace/);
+  assert.match(body, /## 관련 설계\n\n- docs\/specs\/demo\/tactical-design\.md\n- docs\/implementation\/demo\/api\.md/);
+  assert.doesNotMatch(body, /Product Spec|Architecture Spec/);
+  assert.doesNotMatch(renderSplitPlanIssue({ ...plan, test_contract: { unit_policy: '없음' } }), /ui ~ entity/, 'a ticket without an E2E carries none');
+  assert.throws(() => renderSplitPlanIssue({ ...plan, design: [] }), /plan.design|design must be a non-empty list/);
   const { verification, ...legacyPlan } = plan;
   assert.doesNotMatch(renderSplitPlanIssue(legacyPlan), /필요한 비테스트 검증/);
   await mkdir(join(root, 'docs/agents'), { recursive: true });

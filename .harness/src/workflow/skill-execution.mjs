@@ -146,6 +146,9 @@ export async function assertNoRogueReviewer({ root, session, input }) {
   requireValue(laterAdmitted, `Reviewer ${rogue.agent_id} ran ${rogue.forked ? 'forked from the author conversation' : 'outside an admitted review attempt'} after the last admitted review; begin a new review with a fresh reviewer before completing`);
 }
 
+// Workflows that declare the dedicated `tracker-publish` stage. It alone may run with network and shared tracker access.
+export const TRACKER_PUBLISH_WORKFLOWS = Object.freeze(['to-ticket', 'tactical-to-code']);
+
 export async function resolveWorkflowStage({ root, input, workflow = null, stage = null }) {
   requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
   if (workflow) {
@@ -153,15 +156,18 @@ export async function resolveWorkflowStage({ root, input, workflow = null, stage
     return { workflow, stage };
   }
   if (!input.context?.stage_id) return { workflow: null, stage: null };
-  const files = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
+  const files = (await readdir(join(root, '.codex/workflows'), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   const matches = [];
   for (const file of files) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
     const manifest = await loadNamedWorkflow(file.name, { root });
-    if (manifest.stages.some((candidate) => candidate.id === input.context.stage_id && candidate.skill === input.skill)) matches.push(manifest.id);
+    const declared = manifest.stages.find((candidate) => candidate.id === input.context.stage_id && candidate.skill === input.skill);
+    if (declared) matches.push({ workflow: manifest.id, stage: declared });
   }
-  requireValue(matches.length <= 1, 'Workflow stage is ambiguous; pass --workflow and --stage');
-  return matches.length ? { workflow: matches[0], stage: input.context.stage_id } : { workflow: null, stage: null };
+  // The ticket stages belong to the tactical flow and to the plan-and-publish scope; both declare them identically, so
+  // either resolves to the same role and tier. Declarations that differ are a real ambiguity.
+  requireValue(new Set(matches.map(({ stage: declared }) => `${declared.role}|${declared.model_tier ?? ''}`)).size <= 1, 'Workflow stage is ambiguous; pass --workflow and --stage');
+  return matches.length ? { workflow: matches[0].workflow, stage: input.context.stage_id } : { workflow: null, stage: null };
 }
 
 export async function resolveAgentSandbox({ root, input, workflow = null, stage = null }) {
@@ -173,11 +179,11 @@ export async function resolveAgentSandbox({ root, input, workflow = null, stage 
     if (profile) requireValue(profile === selected.role, 'Execution profile does not match the workflow role');
     profile = selected.role;
   } else requireValue(!stage, 'workflow and stage must be supplied together');
-  if (input.skill === 'tracker-publish') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'Tracker publishing is available only as the to-ticket workflow stage');
+  if (input.skill === 'tracker-publish') requireValue(TRACKER_PUBLISH_WORKFLOWS.includes(workflow) && stage === 'tracker-publish' && profile === 'tracker_publisher', 'Tracker publishing is available only as the tracker-publish stage of the to-ticket or tactical-to-code workflow');
   if (input.skill === 'gh-open-pr') requireValue(profile === 'pr_author' && (workflow === 'to-ticket' && stage === 'plan-pr' || workflow === 'implement-wrapper' && stage === 'integration-pr'), 'PR authoring is available only at its gated to-ticket or implement-wrapper workflow stage');
   const mode = profile ? /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8'))?.[1] : 'workspace-write';
   requireValue(['read-only', 'workspace-write', 'danger-full-access'].includes(mode), 'Agent profile requires a supported sandbox_mode');
-  if (mode === 'danger-full-access') requireValue(workflow === 'to-ticket' && stage === 'tracker-publish' && profile === 'tracker_publisher', 'danger-full-access is reserved for the to-ticket tracker-publish stage');
+  if (mode === 'danger-full-access') requireValue(TRACKER_PUBLISH_WORKFLOWS.includes(workflow) && stage === 'tracker-publish' && profile === 'tracker_publisher', 'danger-full-access is reserved for the tracker-publish stage');
   return { profile, sandbox: mode };
 }
 
@@ -248,10 +254,6 @@ export async function validateSkillInput({ root, input }) {
   input = await resolveInputWorktree(root, input);
   validate(input, await json(join(root, CONTRACT, 'schemas/input.schema.json')));
   if (input.skill === 'tracker-publish') requireValue(input.context?.publication_approved === true, 'User publication approval is required');
-  if (input.context?.worktree_ref && ['to-ticket', 'tracker-publish'].includes(input.skill)) {
-    const { requireCurrentSpecReview } = await import('./spec-review.mjs');
-    await requireCurrentSpecReview({ root, ticketId: input.context.plan_set_id });
-  }
   if (input.skill === 'tracker-publish' && input.context?.worktree_ref) {
     const { preparePublicationDrafts } = await import('../tracker/publication.mjs');
     const expected = await preparePublicationDrafts({ root, planSetId: input.context.plan_set_id });

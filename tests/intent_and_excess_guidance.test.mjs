@@ -35,8 +35,15 @@ test('every stage requires necessary work to meet completion conditions without 
   assert.match(product, /Preserve baseline security, authorization, data protection and ordinary error handling/);
   assert.match(product, /Omit optional improvements without turning them into interview questions/);
   assert.match(product, /Login alone does not require OAuth, email recovery infrastructure or a custom session-timeout policy/);
-  for (const skill of ['to-ticket', 'plan-review', 'implement', 'code-review']) {
+  for (const skill of ['implement', 'code-review']) {
     assert.match(await read(`.codex/internal-skills/${skill}/GUIDE.md`), /\(\.\.\/product-spec\/GUIDE\.md\)/, skill);
+  }
+  // The ticket stages no longer depend on a Spec: the same necessity rule rests on the requirements and the tactical design.
+  for (const skill of ['to-ticket', 'plan-review']) {
+    const guide = await read(`.codex/internal-skills/${skill}/GUIDE.md`);
+    assert.doesNotMatch(guide, /product-spec\/GUIDE\.md|12\.7|13절/, skill);
+    assert.doesNotMatch(guide.replace(/이전 릴리스의 Product·Architecture Spec[^\n]*\n/, '\n'), /Architecture Spec|Product Spec/, skill);
+    assert.match(guide, /INV\/EX\/AC/, skill);
   }
   assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /누락 지적에도 같은 필요성 기준/);
 });
@@ -171,13 +178,13 @@ test('the final E2E conditions are prepared once after all plans, derived by the
   assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /시나리오는 Spec에서 확정됐으므로 다시 작성하거나 실행 조건을 묻지 않는다/);
 });
 
-test('the final E2E is specified in the Product Spec template and planned as the last plan, run once after approval', async () => {
+test('the final E2E is specified in the Product Spec template and run once after approval; tickets never carry an E2E', async () => {
   assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /13\. \*\*End-user Scenarios\*\*/);
   assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /13\. \*\*End-user Scenarios\*\*/);
   assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /시나리오를 위해 추가된 요구에 사용자 답변 출처가 있는지/);
   assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /do not add the requirement yourself: ask the user/);
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /마지막 child로 `e2e` plan을 하나 둔다/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /마지막 `e2e` plan이 모든 기능 plan에 의존/);
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /E2E ticket은 만들지 않는다/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /ticket에 E2E를 배정하지 않는다/);
   const orchestration = await read('.codex/skills/orchestrator/references/implementation.md');
   assert.match(orchestration, /마지막 `e2e` plan을 다른 plan과 같은 방식/);
   assert.match(orchestration, /사용자에게 실행 승인만 묻는다/);
@@ -206,10 +213,10 @@ test('implementation never asks the user: the output schema and the result valid
   assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
 });
 
-test('infrastructure checks belong to the e2e plan, not to each feature plan', async () => {
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /그 plan의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
+test('infrastructure checks belong to a separately requested E2E, not to each ticket', async () => {
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /그 ticket의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
   assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /그 확인을 `e2e` plan으로 옮기라고 지적한다/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /ticket에서 빼고 사용자가 요청하는 별도 E2E로 넘기라고 지적한다/);
 });
 
 test('the implementer builds to the same layer criteria the reviewer judges with', async () => {
@@ -217,7 +224,7 @@ test('the implementer builds to the same layer criteria the reviewer judges with
   assert.match(implement, /코드를 쓰기 전에 반드시: \[model continuity contract\]/);
   assert.match(implement, /리뷰어도 같은 기준으로 판정한다/);
   assert.match(implement, /plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다/);
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /각 plan에 `계층 배치` 절을 두고/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /`계층 배치`가 있는지 확인한다/);
+  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /domain → application → `api\.md`가 정한 entry → `data\.md`가 정한 저장까지 수직으로 구현하며/);
+  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /domain → application → API → 저장까지 수직이어야 한다/);
   assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /리뷰어가 인용한 근거\(`basis`의 source·path·quote\)를 그대로 넣어/);
 });

@@ -10,6 +10,7 @@ import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 import { completeExecutionState } from './execution-state.mjs';
 import { DERIVED_STATE_KEYS, deriveImplementationCompletion } from './implementation-completion.mjs';
+import { deriveTacticalOutcome } from './tactical-tickets.mjs';
 const execFileAsync = promisify(execFile);
 
 // Two gate runs for the same workflow and start commit append to one journal. Started together they both wrote
@@ -37,6 +38,7 @@ export async function lockCompletionStream(evidencePath) {
 export function completionKindForWorkflow(workflowId) {
   return ({
     'to-ticket': 'plan_set_ready_for_implementation',
+    'tactical-to-code': 'tickets_implemented',
     implement: 'plan_implemented',
     'implement-wrapper': 'feature_implemented',
     'frontend-design': 'feature_implemented',
@@ -78,8 +80,16 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
       state = { ...state, plan_set_id: planSetId, plan_review: { plan_set_id: planSetId, plan_id: null, phase: 'completion' } };
       derived = await deriveImplementationCompletion({ root: workspace_root, planSetId });
     }
-    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(workflow.id === 'to-ticket' ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
-    if (workflow.id === 'to-ticket') state = { ...state, plan_set_id: worktreeRecord?.plan_set_id, plans_index: { workspace_root, plan_set_id: worktreeRecord?.plan_set_id }, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, phase: 'planning' } };
+    // The ticket-by-ticket outcome of tactical-to-code is read from the tracker and the recorded tactical-code runs only,
+    // so a state file cannot claim it, and the published plan set must still be the reviewed one.
+    let derivedOutcome = null;
+    if (workflow.id === 'tactical-to-code') {
+      ignoredStateKeys = ['required_outcome', 'plan_set_id', 'plans_index', 'plan_review'].filter((key) => state?.[key] !== undefined);
+      state = Object.fromEntries(Object.entries(state || {}).filter(([key]) => !['required_outcome', 'plan_set_id', 'plans_index', 'plan_review'].includes(key)));
+      derivedOutcome = await deriveTacticalOutcome({ root: workspace_root, planSetId: worktreeRecord?.plan_set_id || null, session: sessionDirectory(workspace_root) });
+    }
+    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['to-ticket', 'tactical-to-code'].includes(workflow.id) ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
+    if (['to-ticket', 'tactical-to-code'].includes(workflow.id)) state = { ...state, plan_set_id: worktreeRecord?.plan_set_id, plans_index: { workspace_root, plan_set_id: worktreeRecord?.plan_set_id }, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, phase: 'planning' } };
     if (workflow.id === 'implement') state = { ...state, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, ...state.plan_review, plan_id: state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };
     const evidence_path = sessionOutputPath(workspace_root, `runtime/workflow-completion/${workflow.id}-${base_ref}.jsonl`);
@@ -87,6 +97,7 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();
     const registry = new LifecycleGateRegistry({ hooks });
     for (const [ruleId, verdictOfRecords] of Object.entries(derived?.checks || {})) registry.replace(ruleId, () => verdictOfRecords);
+    if (derivedOutcome) registry.replace('required_outcome', () => derivedOutcome);
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry, eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();

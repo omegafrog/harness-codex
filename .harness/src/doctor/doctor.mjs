@@ -11,7 +11,7 @@ import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFi
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
-import { validateContextBudget } from "../workflow/skill-execution.mjs";
+import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/skill-execution.mjs";
 import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
@@ -124,7 +124,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'stage-cli', 'stage-takeover'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'stage-cli', 'stage-takeover', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
@@ -233,20 +233,20 @@ async function inspectWorkflows(root, diagnostics, stageSkills) {
     const path = join(directory, name);
     try {
       const workflow = await loadWorkflowFile(path, { root });
-      if (workflow.id === "to-ticket") {
+      if (TRACKER_PUBLISH_WORKFLOWS.includes(workflow.id)) {
         const publisher = workflow.stages.find((stage) => stage.id === "tracker-publish");
         if (!publisher || publisher.skill !== "tracker-publish" || publisher.role !== "tracker_publisher") {
-          diagnostics.push(diagnostic("tracker_publisher_stage_missing", "error", "to-ticket must declare its dedicated tracker-publish stage and role", path));
+          diagnostics.push(diagnostic("tracker_publisher_stage_missing", "error", `${workflow.id} must declare its dedicated tracker-publish stage and role`, path));
         }
       }
       for (const stage of workflow.stages) {
         const profilePath = workflow.references.roles[stage.role];
         const profile = await readContainedRegularFile(root, profilePath, `Agent profile ${stage.role}`);
         const mode = /^sandbox_mode\s*=\s*"([^"]+)"\s*$/m.exec(profile)?.[1];
-        if (mode === "danger-full-access" && !(workflow.id === "to-ticket" && stage.id === "tracker-publish" && stage.skill === "tracker-publish" && stage.role === "tracker_publisher")) {
+        if (mode === "danger-full-access" && !(TRACKER_PUBLISH_WORKFLOWS.includes(workflow.id) && stage.id === "tracker-publish" && stage.skill === "tracker-publish" && stage.role === "tracker_publisher")) {
           diagnostics.push(diagnostic("dangerous_sandbox_scope", "error", `danger-full-access is not allowed for ${workflow.id}/${stage.id}`, profilePath));
         }
-        if (workflow.id === "to-ticket" && stage.id === "tracker-publish" && mode !== "danger-full-access") {
+        if (TRACKER_PUBLISH_WORKFLOWS.includes(workflow.id) && stage.id === "tracker-publish" && mode !== "danger-full-access") {
           diagnostics.push(diagnostic("tracker_publisher_sandbox", "error", "tracker-publish requires its declared network and shared Beads write access", profilePath));
         }
       }

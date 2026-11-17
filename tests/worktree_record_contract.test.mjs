@@ -741,7 +741,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', result_ref: specRef, result: specResult }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: specRef });
     const planCommand = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'];
-    assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /recorded passing Architecture review/);
+    // to-ticket is a stage of the tactical flow: it waits for the settled design and decisions, and asks for no Spec review.
+    assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /to-ticket requires completed\/OK tactical design stage domain-model/);
+    const settledPath = join(tree.session_directory, 'runtime/orchestrator/state.json');
+    const settledState = JSON.parse(await readFile(settledPath, 'utf8'));
+    for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary', 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) settledState.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+    await writeFile(settledPath, JSON.stringify(settledState, null, 2) + '\n');
     const ticketId = JSON.parse(await readFile(tree.worktree_ref, 'utf8')).plan_set_id;
     const specDir = join(tree.workspace, 'docs/specs', ticketId);
     await mkdir(specDir, { recursive: true });
@@ -762,11 +767,6 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const { validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
     const specEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', result_ref: specRef, result: specResult };
     await validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: specEnvelope });
-    const architecturePath = join(specDir, 'architecture-spec.md');
-    const reviewedSpec = await readFile(architecturePath, 'utf8');
-    await writeFile(architecturePath, `${reviewedSpec}\n변경됨\n`);
-    assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /Architecture review is not current/);
-    await writeFile(architecturePath, reviewedSpec);
     assert.throws(() => execFileSync(process.execPath, [...planCommand, '--feedback', '허용되지 않는 전환 피드백'], { cwd: tree.workspace, stdio: 'pipe' }), /Feedback requires/);
     const plan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(plan.input.context.transition.from_stage, 'requirements-fix');
@@ -879,7 +879,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(planRevision.input.context.user_revision, true);
     assert.equal(planRevision.input.context.previous_result_ref, reviewRef);
     assert.equal(JSON.parse(await readFile(blockedStatePath, 'utf8')).stages['to-ticket'].status, 'completed');
-    const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    // Publishing needs the user's own reply to the reviewed plan set, found in the log of the user's inputs after to-ticket finished.
+    const approvalReply = '네, 검토한 계획 그대로 발행하세요';
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8', stdio: 'pipe' }), /Publication approval answer was not recorded/);
+    await mkdir(join(tree.session_directory, 'runtime/orchestrator'), { recursive: true });
+    await appendFile(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl'), `${JSON.stringify({ at: new Date(Date.now() + 5000).toISOString(), session_id: record.worktree_id, source: 'prompt', text: approvalReply })}\n`);
+    const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(publisher.input.context.transition.from_stage, 'to-ticket');
     assert.deepEqual(publisher.input.context.execution_workspace, { workspace_root: tree.workspace, workspace_branch: worktreeRecord.branch });
     // This workspace is configured for local-markdown, where a plan file is its own ticket and no Issue drafts are prepared.

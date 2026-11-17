@@ -26,6 +26,11 @@ try {
   }));
   let planTickets = [];
   try { planTickets = await (await import(new URL('../../.harness/src/tracker/lifecycle.mjs', import.meta.url).href)).listPlanTickets({ workspace_root: ctx.root, plan_set_id: ctx.plan_set_id }); } catch { planTickets = []; }
+  // The tickets tactical-code can take next: not completed, every prerequisite completed.
+  let readyTickets = [];
+  if (ctx.plan_set_id && state?.stages?.['tracker-publish']?.status === 'completed') {
+    try { readyTickets = (await (await import(new URL('../../.harness/src/workflow/tactical-tickets.mjs', import.meta.url).href)).ticketReadiness({ root: ctx.root, planSetId: ctx.plan_set_id })).filter((ticket) => ticket.ready).map(({ plan_id, depends_on }) => ({ plan_id, depends_on })); } catch { readyTickets = []; }
+  }
   const plansDir = ctx.plan_set_id ? join(ctx.root, 'docs/plans', ctx.plan_set_id) : null;
   const plans = plansDir && existsSync(plansDir) ? readdirSync(plansDir).filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)) : [];
   const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length })) }]));
@@ -41,6 +46,7 @@ try {
     stages,
     // Take a plan's ticket from here: Issue numbers do not follow the plan order.
     plan_tickets: planTickets,
+    ready_tickets: readyTickets,
     plans, implementation_reviews: reviews,
     ...worktrees,
   };

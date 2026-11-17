@@ -18,9 +18,13 @@ import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
 import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
+import { assertTicketStartable } from './tactical-tickets.mjs';
+import { userSaidAfter } from './user-inputs.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
+// The stages that run once per plan of the published plan set.
+const PLAN_STAGES = new Set(['implement-wrapper', 'tactical-code']);
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 // A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
 // blockers in it were true when it ended, and Harness, the documents or the gate may have changed since, so it is no verdict.
@@ -257,10 +261,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
-  if ((repairReceipt || approvalAnswer) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
+  if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish')) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
-  // implement-wrapper builds one plan the orchestrator assigns; it never chooses the plan itself.
-  if (planId !== null && stageId !== 'implement-wrapper') throw new Error('--plan applies only to implement-wrapper');
+  // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
+  if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implement-wrapper and tactical-code');
   if (stageId === 'implement-wrapper' && planId === null && feedback === null && answer === null) throw new Error('implement-wrapper needs --plan <plan-id>: the orchestrator assigns the next ready plan');
   if (planId !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error('Invalid plan ID');
   if (answer !== null && (typeof answer !== 'string' || !answer.trim())) throw new Error('User answer must not be empty');
@@ -276,7 +280,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (orderViolation) throw new Error(orderViolation);
   const tacticalImplementationViolation = tacticalImplementationOrderViolation(state.stages, stageId);
   if (tacticalImplementationViolation) throw new Error(tacticalImplementationViolation);
+  if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
   if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
+  // The orchestrator's own words cannot prove that the user approved: the user's reply to the reviewed plan set must be in
+  // the log of the user's actual inputs, written after to-ticket finished. A bare flag publishes nothing.
+  if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z' }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   // The shared contract describes the integrated result, so it is written only after every plan is implemented.
@@ -480,7 +488,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         if (createHash('sha256').update(await readFile(join(root, path))).digest('hex') !== hash) throw new Error(`E2E failure receipt is stale: ${path}`);
       }
     }
-    if (stageId === 'implement-wrapper' && planId === null) planId = previousInput.context?.plan_id ?? null;
+    if (PLAN_STAGES.has(stageId) && planId === null) planId = previousInput.context?.plan_id ?? null;
     // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
     // after checking that its processes are gone.
     let interrupted = ['failed', 'cancelled'].includes(previous?.status);
@@ -529,7 +537,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (previousSession !== taskSession) throw new Error('Pending decision belongs to a different worktree session');
     const prefix = `runtime/executions/${previous.execution_id}`;
     const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
-    if (stageId === 'implement-wrapper' && planId === null) planId = previousInput.context?.plan_id ?? null;
+    if (PLAN_STAGES.has(stageId) && planId === null) planId = previousInput.context?.plan_id ?? null;
     const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
     await validateSkillReturn({ root, input: previousInput, envelope: previousReturn });
     if (previousReturn.status !== 'action_required' || previousReturn.code !== previous.code || previousReturn.result_ref !== previous.result_ref || previousInput.skill !== stage.skill) throw new Error('Pending response does not match stage state');
@@ -574,10 +582,15 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
-  if (stageId === 'implement-wrapper' && !planId) throw new Error('implement-wrapper resume needs the assigned plan from its previous input');
+  if (PLAN_STAGES.has(stageId) && !planId) throw new Error(`${stageId} resume needs the assigned ${stageId === 'tactical-code' ? 'ticket' : 'plan'} from its previous input`);
   if (planId !== null) {
     if (!plan_set_id) throw new Error('--plan needs a worktree plan set');
     await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`)).catch(() => { throw new Error(`Plan ${planId} is not part of plan set ${plan_set_id}`); });
+    // tactical-code builds one published ticket per execution, after the tickets it depends on, and reads that ticket's file.
+    if (stageId === 'tactical-code') {
+      await assertTicketStartable({ root, planSetId: plan_set_id, planId, resume: feedback !== null || answer !== null });
+      input_refs.push({ base: 'workspace', path: `docs/plans/${plan_set_id}/${planId}.md`, kind: 'ticket' });
+    }
   }
   const checkpointPath = stageId === 'implement-wrapper' && planId ? planRuntimePaths({ root, planId }).checkpoint_path : null;
   // A plan set that an earlier Harness started holds its tactical design under the legacy name domain-model.md. The stage

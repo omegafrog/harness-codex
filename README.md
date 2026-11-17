@@ -10,9 +10,9 @@
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
 - 요구사항 흐름 — 새 기능이면 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
 - 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
-- 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `tactical-code` 순서로 결정·구현·테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
-- `to-ticket` — 기존 승인된 Spec을 dependency가 있는 vertical implementation plan으로 분할
-- `implement-wrapper` — orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
+- 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → (사용자 발행 승인) `tracker-publish` → `tactical-code` 순서로 결정·ticket 분할·발행·ticket별 구현과 테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
+- `to-ticket` — 완료된 tactical design과 구현 결정을 바운디드 컨텍스트·업무별 vertical ticket(의존 순서, 소유 규칙과 검증 테스트, 컨텍스트 경계 포함)으로 분할하고 독립 리뷰
+- `implement-wrapper` — Spec 기반 legacy 계획에서 orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
 - `implement` + `code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
 - `frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
@@ -29,14 +29,15 @@ stakeholder-analysis → subdomain-candidates → ubiquitous-language
 domain-model → aggregate-design → domain-service
   → application-service → integration-design → context-boundary → tactical-design.md
   ↓
-tactical-to-code: tactical-technology → tactical-ui → tactical-api → tactical-data → tactical-code
+tactical-to-code: tactical-technology → tactical-ui → tactical-api → tactical-data
+  → to-ticket → (사용자 승인) tracker-publish → tactical-code (ticket별)
   ↓
 gh-open-pr → 사용자 Merge
 ```
 
 버그처럼 원인을 먼저 찾아야 하는 작업은 `diagnosing-bugs`에서 시작한다.
 
-전술 설계가 완료되면 별도 `tactical-to-code` workflow로 구현을 진행한다. 기존 stack을 먼저 검토하고 API와 storage는 적용될 때만 결정한다. 화면이 요청에 포함되면 기존 `frontend-design` workflow를 독립 실행하고 결과를 handoff한다. 이 workflow는 요구사항 재시작 흐름과 분리되어 있어 application code를 재설정하지 않는다.
+전술 설계가 완료되면 별도 `tactical-to-code` workflow로 구현을 진행한다. 기존 stack을 먼저 검토하고 API와 storage는 적용될 때만 결정한 뒤, 그 결정과 전술 설계를 컨텍스트·업무별 ticket으로 나누어 사용자 승인 뒤 발행하고 ticket을 의존 순서대로 하나씩 구현한다. 화면이 요청에 포함되면 기존 `frontend-design` workflow를 독립 실행하고 결과를 handoff한다. 이 workflow는 요구사항 재시작 흐름과 분리되어 있어 application code를 재설정하지 않는다.
 
 ---
 
@@ -136,7 +137,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 
 ### 3. `to-ticket`
 
-기존 승인된 Spec을 구현 가능한 **vertical slice**로 나눈다.
+완료된 tactical design과 구현 결정(technology·UI·API·data)을 구현 가능한 **vertical slice**로 나눈다. 한 ticket은 한 바운디드 컨텍스트가 소유한 업무(BIZ) 하나다.
 
 ```text
 ❌ Entity → Repository → Service → Controller
@@ -146,7 +147,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 ✅ 관리자 잠금 해제
 ```
 
-각 Plan에는 scope, dependency, acceptance criteria, test contract, 관련 Spec이 포함된다.
+각 ticket에는 소유 INV/EX/AC와 강제 위치·검증 테스트, 접하는 컨텍스트와 6절 경계 규칙(데이터 소유·허용 의존·경계 검사), 의존한 결정, 선행 ticket, 완료 기준이 포함된다. 상류 컨텍스트의 공개 API ticket이 하류 소비 ticket보다 먼저 온다. 계획은 독립 리뷰를 통과한 뒤 사용자가 직접 승인해야만 발행된다.
 
 GitHub mode에서는 다음 구조를 사용한다.
 

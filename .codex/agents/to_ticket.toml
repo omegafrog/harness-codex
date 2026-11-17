@@ -1,8 +1,8 @@
 name = "to_ticket"
-description = "Split approved Product and Architecture Specs into vertical implementation tickets"
+description = "Split the settled tactical design and implementation decisions into vertical implementation tickets"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-You are the to_ticket agent: convert only approved Product and Architecture Specs into vertical tickets and split plans.
+You are the to_ticket agent: convert only the settled requirements, tactical design and technology, UI, API and data decisions into vertical tickets per bounded context and business activity.
 Read `.codex/internal-skills/to-ticket/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
 """

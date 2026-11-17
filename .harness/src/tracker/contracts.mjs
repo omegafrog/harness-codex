@@ -51,6 +51,11 @@ function specs(value, label) {
   };
 }
 
+// The tactical design documents a plan set (or one ticket) is derived from: workspace-relative paths, at least one.
+function design(value, label) {
+  return list(value, label);
+}
+
 function diagrams(value, label) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new TrackerContractError(`${label} must be a list`);
@@ -99,7 +104,7 @@ function rejectUnknown(value, allowed, label) {
 
 export function validatePlanSet(raw) {
   const value = object(raw, "plan_set");
-  rejectUnknown(value, new Set(["schema_version", "kind", "id", "title", "parent_issue", "purpose", "specs", "children", "execution_order", "verification", "diagrams"]), "plan_set");
+  rejectUnknown(value, new Set(["schema_version", "kind", "id", "title", "parent_issue", "purpose", "design", "children", "execution_order", "verification", "diagrams"]), "plan_set");
   if (value.schema_version !== 1 || value.kind !== "plan-set") throw new TrackerContractError("plan_set must use schema_version 1 and kind plan-set");
   const children = objectList(value.children, "plan_set.children").map((item, index) => {
     const child = object(item, `plan_set.children[${index}]`);
@@ -124,7 +129,7 @@ export function validatePlanSet(raw) {
     title: string(value.title, "plan_set.title"),
     parent_issue: issueNumber(value.parent_issue, "plan_set.parent_issue"),
     purpose: string(value.purpose, "plan_set.purpose"),
-    specs: specs(value.specs, "plan_set.specs"),
+    design: design(value.design, "plan_set.design"),
     children,
     execution_order: executionOrder,
     verification: list(value.verification, "plan_set.verification"),
@@ -134,7 +139,7 @@ export function validatePlanSet(raw) {
 
 export function validateSplitPlan(raw) {
   const value = object(raw, "split_plan");
-  rejectUnknown(value, new Set(["schema_version", "kind", "plan_id", "issue", "parent_issue", "status", "purpose", "scope", "acceptance_criteria", "test_contract", "verification", "dependencies", "specs", "diagrams"]), "split_plan");
+  rejectUnknown(value, new Set(["schema_version", "kind", "plan_id", "issue", "parent_issue", "status", "purpose", "scope", "acceptance_criteria", "test_contract", "verification", "dependencies", "design", "diagrams"]), "split_plan");
   if (value.schema_version !== 1 || value.kind !== "split-plan") throw new TrackerContractError("split_plan must use schema_version 1 and kind split-plan");
   const testContract = object(value.test_contract, "split_plan.test_contract");
   rejectUnknown(testContract, new Set(["unit_policy", "ui_entity_e2e"]), "split_plan.test_contract");
@@ -151,10 +156,11 @@ export function validateSplitPlan(raw) {
     verification: list(value.verification ?? [], "split_plan.verification", { allowEmpty: true }),
     test_contract: {
       unit_policy: string(testContract.unit_policy, "split_plan.test_contract.unit_policy"),
-      ui_entity_e2e: string(testContract.ui_entity_e2e, "split_plan.test_contract.ui_entity_e2e"),
+      // A user-journey E2E is a separate, explicitly requested stage; a ticket records one only when its plan names it.
+      ...(testContract.ui_entity_e2e === undefined ? {} : { ui_entity_e2e: string(testContract.ui_entity_e2e, "split_plan.test_contract.ui_entity_e2e") }),
     },
     dependencies: issueList(value.dependencies || [], "split_plan.dependencies"),
-    specs: specs(value.specs, "split_plan.specs"),
+    design: design(value.design, "split_plan.design"),
     diagrams: diagrams(value.diagrams, "split_plan.diagrams"),
   };
 }

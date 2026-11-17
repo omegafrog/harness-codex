@@ -1,7 +1,7 @@
 import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES
 import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
 
 test('tactical implementation is ordered after completed tactical design and remains outside pre-spec restarts', async () => {
-  assert.deepEqual(TACTICAL_IMPLEMENTATION_STAGES, ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'tactical-code']);
+  assert.deepEqual(TACTICAL_IMPLEMENTATION_STAGES, ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code']);
   assert.ok(TACTICAL_IMPLEMENTATION_STAGES.every((stage) => Object.values(WORKTREE_STAGE).includes(stage)));
   assert.ok(TACTICAL_IMPLEMENTATION_STAGES.every((stage) => !PRE_SPEC_STAGES.includes(stage)));
   assert.match(tacticalImplementationOrderViolation({}, 'tactical-technology'), /requires completed\/OK tactical design stage domain-model/);
@@ -28,14 +28,31 @@ test('tactical implementation is ordered after completed tactical design and rem
   const ui = { ...technical, 'tactical-ui': { status: 'completed', code: 'OK' } };
   assert.match(tacticalImplementationOrderViolation(ui, 'tactical-code'), /cannot start before tactical-api/);
   const api = { ...ui, 'tactical-api': { status: 'completed', code: 'OK' } };
-  assert.match(tacticalImplementationOrderViolation(api, 'tactical-code'), /cannot start before tactical-data/);
-  assert.equal(tacticalImplementationOrderViolation({ ...api, 'tactical-data': { status: 'completed', code: 'OK' } }, 'tactical-code'), null);
+  assert.match(tacticalImplementationOrderViolation(api, 'to-ticket'), /cannot start before tactical-data/);
+  const data = { ...api, 'tactical-data': { status: 'completed', code: 'OK' } };
+  assert.equal(tacticalImplementationOrderViolation(data, 'to-ticket'), null, 'the ticket split follows the settled decisions');
+  assert.match(tacticalImplementationOrderViolation(data, 'tracker-publish'), /cannot start before to-ticket/);
+  assert.match(tacticalImplementationOrderViolation(data, 'tactical-code'), /cannot start before to-ticket/);
+  const split = { ...data, 'to-ticket': { status: 'completed', code: 'OK' } };
+  assert.equal(tacticalImplementationOrderViolation(split, 'tracker-publish'), null);
+  assert.match(tacticalImplementationOrderViolation(split, 'tactical-code'), /cannot start before tracker-publish/, 'no code before the plan set is published');
+  assert.match(tacticalImplementationOrderViolation({ ...split, 'tracker-publish': { status: 'waiting', code: 'USER_DECISION_REQUIRED' } }, 'tactical-code'), /cannot start before tracker-publish/);
+  assert.equal(tacticalImplementationOrderViolation({ ...split, 'tracker-publish': { status: 'completed', code: 'OK' } }, 'tactical-code'), null);
   assert.ok((await import('../.harness/src/workflow/stage-commit.mjs')).restartDocuments('tactical-code', 'demo').every((path) => !/^(src|test|app)\//.test(path)));
 
   const workflow = await loadNamedWorkflow('tactical-to-code', { root: sourceRoot });
   assert.deepEqual(workflow.stages.map(({ id }) => id), [...TACTICAL_IMPLEMENTATION_STAGES]);
   assert.ok(workflow.stages.every((stage, index) => stage.needs.length === (index ? 1 : 0)));
   assert.ok(workflow.stages.some(({ id }) => id === 'tactical-ui'), 'the flow has an explicit UI applicability/handoff stage');
+  // The ticket stages are the existing ones: the plan-and-publish scope declares the same roles and tiers, and neither
+  // workflow asks for a Spec review.
+  const planning = await loadNamedWorkflow('to-ticket', { root: sourceRoot });
+  for (const id of ['to-ticket', 'tracker-publish']) {
+    const [a, b] = [workflow, planning].map((item) => item.stages.find((stage) => stage.id === id));
+    assert.deepEqual([a.skill, a.role, a.model_tier], [b.skill, b.role, b.model_tier], `${id} is declared identically`);
+  }
+  for (const item of [workflow, planning]) assert.ok(!Object.values(item.hooks).flat().includes('spec_reviews'), `${item.id} needs no Spec review`);
+  assert.ok(workflow.hooks.before_complete.includes('plan_review') && workflow.hooks.before_complete.includes('required_outcome'));
   assert.equal(workflow.stages.some(({ skill }) => skill === 'frontend-design'), false, 'frontend design stays its own workflow');
   const guide = await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/references/workflow-map.md'), 'utf8');
   assert.match(guide, /별도 `tactical-to-code` workflow/);
@@ -58,12 +75,20 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
 
   const assets = [
     '.codex/workflows/tactical-to-code.yaml',
-    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.codex/internal-skills/to-ticket/references/split.md',
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
+    '.codex/agents/to_ticket.toml',
+    '.codex/agents/tracker_publisher.toml',
+    '.codex/agents/plan_reviewer.toml',
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-input.mjs',
+    '.harness/src/workflow/tactical-tickets.mjs',
+    '.harness/src/workflow/plan-review.mjs',
+    '.harness/src/tracker/publication.mjs',
     '.codex/scripts/harness-native-stage.mjs',
+    '.codex/scripts/harness-context.mjs',
   ];
   const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
   for (const path of assets) {
@@ -73,9 +98,11 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code, severity }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid'].includes(code)), []);
   assert.equal(doctor.diagnostics.some(({ path }) => path?.endsWith('/spec-me.yaml')), false, 'Doctor no longer sees spec-me as an installed workflow');
+  assert.deepEqual(doctor.diagnostics.filter(({ severity, code }) => severity === 'error' && ['tracker_publisher_stage_missing', 'tracker_publisher_sandbox', 'dangerous_sandbox_scope'].includes(code)), [], 'both workflows declare the dedicated publisher stage');
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.TACTICAL_IMPLEMENTATION_STAGES], [...TACTICAL_IMPLEMENTATION_STAGES]);
   assert.match(installedStages.tacticalImplementationOrderViolation({}, 'tactical-code'), /requires completed\/OK tactical design stage/);
+  assert.match(installedStages.tacticalImplementationOrderViolation({}, 'tracker-publish'), /requires completed\/OK tactical design stage/);
 
   await mkdir(join(root, 'docs/implementation/demo'), { recursive: true });
   await writeFile(join(root, 'docs/implementation/demo/technology.md'), 'confirmed project decision\n');
@@ -205,7 +232,7 @@ test('installed prepare command enforces the tactical implementation order', asy
   assert.notEqual(JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-technology']?.status, 'running', 'start rechecks tactical design and claims nothing after an upstream revision');
 });
 
-test('installed dispatch selects the tactical code profile and commits only requested application files', async (t) => {
+test('installed decisions are committed alone and the ticket stages wait for them', async (t) => {
   const flow = await consumerWorkflow(t, 'server-only maintenance; UI와 API를 제외하고 저장할 상태가 없다');
   const statePath = join(flow.workspace, '.io/runtime/orchestrator/state.json');
   const state = JSON.parse(await readFile(statePath, 'utf8'));
@@ -230,18 +257,10 @@ test('installed dispatch selects the tactical code profile and commits only requ
   }
   assert.ok(technologyCommit.includes('docs/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
 
-  const source = 'export const answer = () => 42;\n';
-  const unit = "import assert from 'node:assert/strict';\nimport { answer } from '../src/answer.mjs';\nassert.equal(answer(), 42);\n";
-  const code = await flow.runStage('tactical-code', {
-    files: { 'src/answer.mjs': source, 'test/answer.test.mjs': unit },
-    commit_request: { message: `tactical-code: ${flow.planSetId}`, paths: ['src/answer.mjs', 'test/answer.test.mjs'] },
-    expectCommit: true,
-  });
-  assert.equal(code.started.agent_profile, 'tactical_implementation_agent');
-  assert.equal(code.started.binding.model_tier, 'implementation');
-  assert.equal(code.started.binding.model, 'codex-implementation');
-  assert.deepEqual(code.files, ['src/answer.mjs', 'test/answer.test.mjs']);
-  assert.equal(await readFile(join(flow.workspace, 'src/answer.mjs'), 'utf8'), source);
-  assert.equal(await readFile(join(flow.workspace, 'test/answer.test.mjs'), 'utf8'), unit);
+  // The decisions alone do not start code: the ticket split and the user-approved publication come first. The ticket-by-ticket
+  // run of tactical-code (profile, binding, one commit per ticket) is covered by tactical_ticket_flow.test.mjs.
+  const prepare = (...args) => spawnSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: flow.workspace, encoding: 'utf8' });
+  assert.match(prepare('--stage-id', 'tactical-code', '--plan', 'any-ticket').stderr, /tactical-code cannot start before to-ticket/);
+  assert.match(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', '발행하세요').stderr, /tracker-publish cannot start before to-ticket/);
   assert.equal(flow.treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');
 });

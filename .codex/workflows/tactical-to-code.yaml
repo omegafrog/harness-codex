@@ -1,12 +1,12 @@
 schema_version: 1
 id: tactical-to-code
 orchestrator: orchestrator
-roles: [tactical_designer, tactical_implementation_agent]
-skills: [orchestrator, tactical-technology, tactical-ui, tactical-api, tactical-data, tactical-code]
+roles: [tactical_designer, to_ticket, tracker_publisher, tactical_implementation_agent]
+skills: [orchestrator, tactical-technology, tactical-ui, tactical-api, tactical-data, to-ticket, plan-review, tracker-publish, tactical-code]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, tests, evidence]
+  before_complete: [plans_index, plan_review, required_outcome]
   after_merge: []
 stages:
   - id: tactical-technology
@@ -29,8 +29,16 @@ stages:
     skill: tactical-data
     model_tier: low_performance
     needs: [tactical-api]
+  - id: to-ticket
+    role: to_ticket
+    skill: to-ticket
+    needs: [tactical-data]
+  - id: tracker-publish
+    role: tracker_publisher
+    skill: tracker-publish
+    needs: [to-ticket]
   - id: tactical-code
     role: tactical_implementation_agent
     skill: tactical-code
     model_tier: implementation
-    needs: [tactical-data]
+    needs: [tracker-publish]

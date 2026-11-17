@@ -7,6 +7,7 @@ import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
+import { LEGACY_TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_DOCUMENT } from './worktree-stages.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -41,24 +42,23 @@ async function safeFile(root, path) {
   return { content, sha256: hash(content) };
 }
 
-function specPathsFromIndex(index, base, planSetId) {
-  const found = {};
-  for (const line of index.split(/\r?\n/)) {
-    const kind = /product\s+spec/i.test(line) ? 'product' : /architecture\s+spec/i.test(line) ? 'architecture' : null;
-    if (!kind) continue;
-    // A line can mention a Spec and link other documents (EXEC.md, a plan); only a path that names that Spec counts.
-    const candidates = [...line.matchAll(/`([^`]+\.md)`/g), ...line.matchAll(/\]\(([^)]+\.md)\)/g)].map((match) => match[1]);
-    const raw = candidates.find((path) => new RegExp(`${kind}[^/]*\\.md$`, 'i').test(path));
-    if (!raw || /^https?:/i.test(raw)) continue;
-    const path = posix.normalize(raw.startsWith('docs/') ? raw : posix.join(base, raw));
-    requireValue(!path.startsWith('../') && !isAbsolute(path), `Spec path escapes workspace: ${raw}`);
-    found[kind] = path;
-  }
-  found.product ||= `docs/specs/${planSetId}/product-spec.md`;
-  found.architecture ||= `docs/specs/${planSetId}/architecture-spec.md`;
-  requireValue(found.product !== found.architecture, 'Product and Architecture Spec paths must differ');
-  return [found.product, found.architecture];
-}
+// A plan set is reviewed against the documents the tactical flow settled: the fixed requirements, the tactical design
+// (`tactical-design.md`, or the legacy name an earlier Harness gave it), the project glossary and context map, and the
+// technology, UI handoff, API and data decisions. Whichever of them exist are the review basis; nothing here needs a
+// Product or Architecture Spec.
+const DECISION_DOCUMENTS = ['technology', 'ui-handoff', 'api', 'data'];
+export const planDesignCandidates = (planSetId) => [
+  `docs/specs/${planSetId}/requirements.md`,
+  `docs/specs/${planSetId}/${TACTICAL_DESIGN_DOCUMENT}`,
+  `docs/specs/${planSetId}/${LEGACY_TACTICAL_DESIGN_DOCUMENT}`,
+  'CONTEXT.md',
+  'CONTEXT-MAP.md',
+  ...DECISION_DOCUMENTS.map((name) => `docs/implementation/${planSetId}/${name}.md`),
+];
+// Specs of a plan set that predates the tactical flow stay in its review basis when they exist, so that plan set keeps a
+// current review. They are never required and the current flow never writes them.
+const legacySpecPaths = (planSetId) => [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
+const exists = (root, path) => safeFile(root, path).then(() => true, (error) => (error.code === 'ENOENT' ? false : Promise.reject(error)));
 
 async function discoverPlans({ root, base }) {
   const entries = await readdir(join(root, base), { withFileTypes: true });
@@ -89,16 +89,15 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   }
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
-  const index = indexFile.content.toString('utf8');
-  // The Specs live at fixed paths; those are the review inputs. The index is only read for older plan sets
-  // whose Specs live elsewhere.
-  const fixedSpecs = [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
-  const specPaths = (await Promise.all(fixedSpecs.map((path) => safeFile(root, path).then(() => true, () => false)))).every(Boolean) ? fixedSpecs : specPathsFromIndex(index, base, planSetId);
+  const designPaths = [];
+  for (const path of planDesignCandidates(planSetId)) if (await exists(root, path)) designPaths.push(path);
+  const specPaths = (await Promise.all(legacySpecPaths(planSetId).map((path) => exists(root, path)))).every(Boolean) ? legacySpecPaths(planSetId) : [];
   const plans = await discoverPlans({ root, base });
   requireValue(plans.length > 0, 'Plan set has no split plans');
+  requireValue(designPaths.length + specPaths.length > 0, `Plan set has no design basis: expected the tactical flow's documents (docs/specs/${planSetId}/tactical-design.md, docs/implementation/${planSetId}/*.md)`);
 
   const inputs = { [`${base}/plans.md`]: indexFile.sha256 };
-  for (const path of specPaths) {
+  for (const path of [...designPaths, ...specPaths]) {
     const file = await safeFile(root, path);
     inputs[path] = file.sha256;
   }
@@ -106,7 +105,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
     const key = plan.path || `${base}/plans/${plan.id}#canonical`;
     inputs[key] = plan.sha256;
   }
-  return { plan_set_id: planSetId, base, spec_paths: specPaths, plans, inputs, execution_workspace: executionWorkspace };
+  return { plan_set_id: planSetId, base, design_paths: designPaths, spec_paths: specPaths, plans, inputs, execution_workspace: executionWorkspace };
 }
 
 export async function validatePlanReviewAdmission({ root, planSetId, admission, requireActive = true }) {
@@ -144,9 +143,9 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
       review_snapshot_sha256: hash(JSON.stringify(Object.keys(snapshot.inputs).sort().map((key) => [key, snapshot.inputs[key]]))),
       review_attempt_id: review.attempt_id,
       execution_workspace: snapshot.execution_workspace,
-      plan_set_id: planSetId, ticket_id: snapshot.spec_paths[0].split("/")[2], spec_paths: snapshot.spec_paths, plan_ids: snapshot.plans.map((plan) => plan.id),
+      plan_set_id: planSetId, ticket_id: snapshot.spec_paths[0]?.split("/")[2] ?? planSetId, design_paths: snapshot.design_paths, spec_paths: snapshot.spec_paths, plan_ids: snapshot.plans.map((plan) => plan.id),
       plan_id: planId || null, plan_reference: selected?.path || selected?.reference || null,
-      product_spec_path: snapshot.spec_paths[0], architecture_spec_path: snapshot.spec_paths[1],
+      product_spec_path: snapshot.spec_paths[0] ?? null, architecture_spec_path: snapshot.spec_paths[1] ?? null,
       canonical_plan: selected ? { kind: 'file', reference: selected.path, input_key: `${canonicalKey}#canonical`, hash_algorithm: 'sha256', normalization: 'frontmatter-status-excluded-v1', sha256: hash(normalizeReviewContent(selected.path, Buffer.from(canonicalBody))) } : null,
     } };
   } catch (error) { return { status: 'blocked', reason: error.message, violations: ['plan_review'] }; }
@@ -160,7 +159,7 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
     const prior = history.last_review?.inputs || {};
     const changed_paths = [...new Set([...Object.keys(prior), ...Object.keys(snapshot.inputs)])].filter((path) => prior[path] !== snapshot.inputs[path]).sort();
     const changedPlans = snapshot.plans.filter((plan) => changed_paths.includes(plan.path)).map((plan) => plan.id);
-    const specificationChanged = changed_paths.some((path) => path.startsWith('docs/specs/') || path === 'CONTEXT.md' || path === 'CONTEXT-MAP.md' || path.startsWith('docs/contracts/'));
+    const specificationChanged = changed_paths.some((path) => path.startsWith('docs/specs/') || path.startsWith('docs/implementation/') || path === 'CONTEXT.md' || path === 'CONTEXT-MAP.md' || path.startsWith('docs/contracts/'));
     const affected_plan_ids = specificationChanged ? snapshot.plans.map((plan) => plan.id) : changedPlans;
     return { status: 'pass', plan_set_id: planSetId, changed_paths, affected_plan_ids, revalidation: changed_paths.length ? 'Review changed sections and directly affected relationships with a fresh independent reviewer.' : 'No changed review inputs.' };
   } catch (error) { return { status: 'blocked', reason: error.message, plan_set_id: planSetId }; }
