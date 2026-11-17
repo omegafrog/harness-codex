@@ -335,6 +335,7 @@ test('the tactical stages run after requirements-fix and are accepted section by
   const deepened = await runStage('integration-design', {
     extraArgs: ['--answer', 'a'], status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '신고 기한(INV-05)이 새로 생겼다: aggregate-design을 다시 열어야 한다',
     files: { [requirements]: withRule, [tacticalDesign]: `${upTo(document, 4)}\n## 5. 반쯤 쓴 절\n` }, artifacts: [art(requirements, 'requirements')],
+    resultExtra: { owner_stage: 'aggregate-design', dependency_gap: '신고 기한(INV-05)의 소유 Aggregate가 없다' },
   });
   assert.deepEqual(deepened.files, [requirements], 'a block keeps only the rule it added to the requirements');
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /M docs\/specs\/.*tactical-design\.md/, 'the half-written section stays uncommitted');
@@ -465,8 +466,8 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   assert.match(rejection.instruction, /once on the whole tactical-design\.md for context-boundary and it failed/);
   assert.match(rejection.instruction, /Nothing was committed or recorded, and the stage is still running/);
   assert.match(rejection.instruction, /Errors whose owner_stage is aggregate-design, application-service, integration-design are in sections of earlier stages/);
-  assert.match(rejection.instruction, /returns blocked \/ DEPENDENCY_INCOMPLETE naming aggregate-design as the earliest stage to reopen/);
-  assert.match(rejection.instruction, /--restart-requirements true or --user-revision true --feedback/);
+  assert.match(rejection.instruction, /returns blocked \/ DEPENDENCY_INCOMPLETE with result\.owner_stage aggregate-design \(the earliest stage to reopen\)/);
+  assert.match(rejection.instruction, /reopens aggregate-design itself with --reopen-for and re-runs the stale stages in order, without asking the user/);
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'a rejected result is not committed');
   assert.equal(existsSync(returned(boundary)), false, 'no canonical return is written');
   const running = await stageState('context-boundary');
@@ -486,7 +487,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   // 3. The subagent follows the instruction: an earlier section is settled input, so it restores its working tree and blocks
   // naming the earliest stage. The block is never gated, and the user reopens that stage through the existing restart.
   treeGit('restore', tacticalDesign);
-  await submitStage(boundary, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: 'CON-01의 출처가 에이전트 제안뿐이다: aggregate-design을 다시 열어야 한다', files: {}, artifacts: [] });
+  await submitStage(boundary, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: 'CON-01의 출처가 에이전트 제안뿐이다: aggregate-design을 다시 열어야 한다', files: {}, artifacts: [], resultExtra: { owner_stage: 'aggregate-design', dependency_gap: 'CON-01의 출처가 없다' } });
   const blocked = finishStage(boundary);
   assert.equal(blocked.status, 0, blocked.stdout || blocked.stderr);
   assert.equal(JSON.parse(blocked.stdout).status, 'blocked');
@@ -571,7 +572,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
 
   // context-boundary blocked on an earlier-stage gate error that a later Harness no longer reports: the first run has no previous result.
   const staleSummary = 'DECISION_AGGREGATE_MISMATCH (EX-03, owner aggregate-design): 가장 이른 재개 대상은 aggregate-design이다';
-  const blocked = await runStage('context-boundary', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: staleSummary, expectCommit: false });
+  const blocked = await runStage('context-boundary', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: staleSummary, expectCommit: false, resultExtra: { owner_stage: 'aggregate-design', dependency_gap: staleSummary } });
   assert.equal(blocked.prepared.input.context.previous_result_note, undefined, 'a first run has no previous attempt');
   assert.equal(blocked.prepared.input.context.previous_result_ref, undefined);
 

@@ -268,7 +268,7 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   await mkdir(join(workspace, 'docs/domain/stakeholders'), { recursive: true });
   await writeFile(join(workspace, artifactPath), `# Stakeholder 분석\n\n> ${request}\n`);
   await writeFile(join(workspace, 'docs/domain/stakeholders/SH-01.md'), formatCard({ id: 'SH-01', role: '작성자', goals: ['내 글을 지운다'] }));
-  const completed = { schema_version: 1, skill: 'stakeholder-analysis', status: 'completed', code: 'OK', result: { schema_version: 1, skill: 'stakeholder-analysis', status: 'completed', code: 'OK', summary: 'CAND 1건 채택', artifacts: [{ base: 'workspace', path: artifactPath, kind: 'stakeholder_analysis', sha256: '0'.repeat(64) }], questions: [], review_request: null } };
+  const completed = { schema_version: 1, skill: 'stakeholder-analysis', status: 'completed', code: 'OK', result: { schema_version: 1, skill: 'stakeholder-analysis', status: 'completed', code: 'OK', summary: 'CAND 1건 채택', artifacts: [{ base: 'workspace', path: artifactPath, kind: 'stakeholder_analysis', sha256: '0'.repeat(64) }], questions: [], review_request: null, owner_stage: null, dependency_gap: null } };
   await writeFile(started.output_path, JSON.stringify(completed));
   const finished = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...base]);
   assert.equal(finished.status, 'completed');

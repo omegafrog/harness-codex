@@ -335,9 +335,9 @@ test('the rejection tells the stage to repair its own section, or to block and n
   assert.doesNotMatch(own, /DEPENDENCY_INCOMPLETE/);
   const earlier = gateFailureInstruction(verdict(DOMAIN_MODEL, AGGREGATE_DESIGN, INTEGRATION_DESIGN));
   assert.match(earlier, /owner_stage is domain-model, aggregate-design, integration-design are in sections of earlier stages/);
-  assert.match(earlier, /returns blocked \/ DEPENDENCY_INCOMPLETE naming domain-model as the earliest stage to reopen/);
+  assert.match(earlier, /returns blocked \/ DEPENDENCY_INCOMPLETE with result\.owner_stage domain-model \(the earliest stage to reopen\)/);
   assert.match(earlier, /without editing any earlier section/);
-  assert.match(earlier, /reopens domain-model with --restart-requirements true or --user-revision true --feedback/);
+  assert.match(earlier, /reopens domain-model itself with --reopen-for/);
 });
 
 test('the runner gate refuses a document that is a symlink out of the workspace', async (t) => {

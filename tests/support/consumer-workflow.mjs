@@ -88,12 +88,12 @@ export async function consumerWorkflow(t, request) {
   }
 
   // The stage writes its documents and its output file.
-  async function submitStage({ stage, started }, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], commit_request = null }) {
+  async function submitStage({ stage, started }, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], commit_request = null, resultExtra = {} }) {
     for (const [path, content] of Object.entries(files)) {
       await mkdir(join(workspace, path, '..'), { recursive: true });
       await writeFile(join(workspace, path), content);
     }
-    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
+    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null, owner_stage: null, dependency_gap: null, ...resultExtra, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
   }
 
@@ -101,10 +101,10 @@ export async function consumerWorkflow(t, request) {
   const finishStage = ({ base }) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-native-stage.mjs'), 'finish', ...base], { cwd: workspace, encoding: 'utf8' });
 
   // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
-  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true, commit_request = null }) {
+  async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true, commit_request = null, resultExtra = {} }) {
     const begun = await beginStage(stage, { extraArgs });
     const { prepared, started, base } = begun;
-    await submitStage(begun, { files, status, code, summary, artifacts, questions, commit_request });
+    await submitStage(begun, { files, status, code, summary, artifacts, questions, commit_request, resultExtra });
     const before = treeGit('rev-parse', 'HEAD').trim();
     const finished = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...base]);
     assert.equal(finished.status, status);

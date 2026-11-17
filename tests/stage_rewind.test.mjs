@@ -1,0 +1,186 @@
+import './support/trusted-codex-home.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { PRE_SPEC_STAGES, REWIND_STAGES, TACTICAL_DESIGN_STAGES, isCurrentStage, nextRequiredPreSpecStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from '../.harness/src/workflow/worktree-stages.mjs';
+import { dependencyOwnerErrors } from '../.harness/src/workflow/stage-reopen.mjs';
+import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
+import { updateProject } from '../.harness/src/installer/update.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+
+const REQUEST = '커뮤니티 로그아웃과 현재 세션 조회 기능을 구현한다';
+const done = { status: 'completed', code: 'OK', result_ref: 'runtime/executions/x/result.json' };
+const stale = (owner, blocked, order) => ({ owner_stage: owner, blocked_stage: blocked, reopened_for: 'blocked-1', rerun_order: order, marked_at: '2026-01-01T00:00:00.000Z' });
+
+test('a stale result is not current and the order guards re-run stale stages in order', () => {
+  assert.equal(isCurrentStage(done), true);
+  assert.equal(isCurrentStage({ ...done, stale: stale('aggregate-design', 'context-boundary', []) }), false);
+  assert.equal(isCurrentStage({ status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }), false);
+  assert.deepEqual(REWIND_STAGES.slice(-6), ['context-boundary', 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket']);
+
+  // Tactical design: aggregate-design was reopened for context-boundary; domain-service..integration-design completed before.
+  const mark = stale('aggregate-design', 'context-boundary', ['aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
+  const stages = Object.fromEntries(PRE_SPEC_STAGES.map((id) => [id, { ...done }]));
+  stages['domain-service'] = { ...done, stale: mark }; stages['application-service'] = { ...done, stale: mark }; stages['integration-design'] = { ...done, stale: mark };
+  stages['context-boundary'] = { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: 'r', stale: mark };
+  // A stage that already recorded a result normally resumes freely; a stale one does not.
+  assert.equal(nextRequiredPreSpecStage(stages, 'domain-service'), null, 'the first stale stage follows a current one');
+  assert.equal(nextRequiredPreSpecStage(stages, 'application-service'), 'domain-service');
+  assert.match(preSpecOrderViolation(stages, 'application-service'), /application-service cannot start before domain-service: domain-service is stale, because aggregate-design was reopened for context-boundary\. Re-run the stale stages in order/);
+  assert.equal(nextRequiredPreSpecStage(stages, 'context-boundary'), 'domain-service');
+  stages['domain-service'] = { ...done };
+  assert.equal(nextRequiredPreSpecStage(stages, 'application-service'), null);
+  assert.equal(nextRequiredPreSpecStage(stages, 'integration-design'), 'application-service');
+
+  // Tactical implementation: tickets cannot start on a stale upstream.
+  const flow = { ...Object.fromEntries(PRE_SPEC_STAGES.map((id) => [id, { ...done }])), 'tactical-technology': { ...done }, 'tactical-ui': { ...done }, 'tactical-api': { ...done }, 'tactical-data': { ...done, stale: stale('tactical-api', 'to-ticket', ['tactical-api', 'tactical-data', 'to-ticket']) } };
+  assert.match(tacticalImplementationOrderViolation(flow, 'to-ticket'), /to-ticket cannot start before tactical-data: its result is stale because tactical-api was reopened for to-ticket/);
+  assert.match(tacticalImplementationOrderViolation({ ...flow, 'to-ticket': { ...done } }, 'tracker-publish'), /tracker-publish cannot start before tactical-data/);
+  flow['tactical-data'] = { ...done };
+  assert.equal(tacticalImplementationOrderViolation(flow, 'to-ticket'), null);
+});
+
+test('a blocked dependency result must name an earlier owner and the gap', () => {
+  const check = (skill, result, status = 'blocked', code = 'DEPENDENCY_INCOMPLETE') => dependencyOwnerErrors({ skill, raw: { status, code, result } });
+  assert.deepEqual(check('to-ticket', { owner_stage: 'application-service', dependency_gap: '로그아웃 operation이 없다' }), null);
+  assert.equal(check('to-ticket', { owner_stage: null, dependency_gap: null })[0].path, '$.result.owner_stage');
+  assert.equal(check('to-ticket', { dependency_gap: 'x' })[0].missing, true);
+  assert.equal(check('to-ticket', { owner_stage: 'to-ticket', dependency_gap: 'x' })[0].path, '$.result.owner_stage', 'a stage cannot own its own gap');
+  assert.equal(check('to-ticket', { owner_stage: 'tracker-publish', dependency_gap: 'x' })[0].path, '$.result.owner_stage', 'a later stage cannot own it');
+  assert.equal(check('application-service', { owner_stage: 'aggregate-design', dependency_gap: '' })[0].path, '$.result.dependency_gap');
+  assert.equal(check('tactical-ui', { owner_stage: null, dependency_gap: null }), null, 'tactical-ui hands off to the frontend design brief');
+  assert.equal(check('implement-wrapper', { owner_stage: null }), null);
+  assert.equal(check('to-ticket', {}, 'completed', 'OK'), null);
+  assert.equal(check('to-ticket', {}, 'blocked', 'INPUT_MISSING'), null);
+});
+
+test('installed consumer: a blocked ticket split reopens its owner forward and re-runs the stale stages in order', async (t) => {
+  const flow = await consumerWorkflow(t, REQUEST);
+  const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, finishStage, invoke, tree } = flow;
+  await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const refused = (result, pattern) => { assert.notEqual(result.status, 0, result.stdout); assert.match(result.stderr, pattern, result.stderr); return JSON.parse(result.stderr.trim().split('\n').pop()); };
+  // The tactical design flow is already done (the fixture stands in for its six stages); the decisions run for real.
+  const seeded = await state();
+  for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');
+  const designPath = `docs/specs/${planSetId}/tactical-design.md`;
+  await mkdir(join(workspace, designPath, '..'), { recursive: true });
+  await writeFile(join(workspace, designPath), '# 전술 설계\n\n## 4. Application Service\n\n| use case | 설명 |\n|---|---|\n| 로그인 | 세션을 연다 |\n');
+  treeGit('add', 'docs'); treeGit('commit', '-qm', 'tactical design fixture');
+  const impl = `docs/implementation/${planSetId}`;
+  const api = `${impl}/api.md`, data = `${impl}/data.md`;
+  await runStage('tactical-technology', { files: { [`${impl}/technology.md`]: 'node --test\n' } });
+  await runStage('tactical-ui', { expectCommit: false });
+  await runStage('tactical-api', { files: { [api]: '`POST /login`\n`POST /logout`\n`GET /session`\n' }, summary: 'API 계약' });
+  await runStage('tactical-data', { files: { [data]: '`sessions` table\n' }, summary: '데이터' });
+
+  // to-ticket finds that logout and the session query have no application-service operation.
+  const ticket = await beginStage('to-ticket');
+  const blockedId = ticket.prepared.input.execution_id;
+  const gap = '로그아웃과 현재 세션 조회 API에 대응하는 operation·호출·transaction 경계가 application-service 설계에 없다';
+  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: null, dependency_gap: null } });
+  const missingOwner = finishStage(ticket);
+  assert.equal(missingOwner.status, 1, missingOwner.stdout);
+  assert.deepEqual(JSON.parse(missingOwner.stdout).errors.map((error) => error.path), ['$.result.owner_stage'], 'a block without its owner is returned to the subagent');
+  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: 'tactical-api', dependency_gap: gap } });
+  const blocked = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...ticket.base]);
+  assert.equal(blocked.code, 'DEPENDENCY_INCOMPLETE');
+  assert.equal(blocked.result.owner_stage, 'tactical-api');
+  assert.match(blocked.next, new RegExp(`launch --stage-id tactical-api --reopen-for ${blockedId}`));
+  assert.match(blocked.next, /Do not ask the user/);
+  assert.equal((await state()).stages['to-ticket'].stale, undefined, 'nothing is marked until the owner is reopened');
+
+  // Refusals, each with an actionable explanation; none records anything.
+  assert.match(refused(prepare('--stage-id', 'tactical-data', '--reopen-for', blockedId), /names tactical-api as the owner, not tactical-data/).next[0], new RegExp(`--stage-id tactical-api --reopen-for ${blockedId}`));
+  refused(prepare('--stage-id', 'tactical-ui', '--reopen-for', blockedId), /names tactical-api as the owner/);
+  refused(prepare('--stage-id', 'tactical-api', '--reopen-for', blockedId, '--feedback', 'x'), /must be requested with --stage-id only/);
+  refused(prepare('--stage-id', 'tactical-api', '--reopen-for', 'no-such-execution'), /no stage has execution no-such-execution/);
+  refused(prepare('--stage-id', 'to-ticket', '--reopen-for', blockedId), /does not come after to-ticket/);
+  refused(prepare('--stage-id', 'tracker-publish', '--reopen-for', blockedId), /cannot be reopened/);
+  assert.equal(refused(prepare('--stage-id', 'tactical-api', '--reopen-for', 'bad id'), /invalid blocked execution id/).code, 'REOPEN_REFUSED');
+  refused(prepare('--stage-id', 'tactical-api', '--restart-requirements', 'true'), /Restart target must be a requirements or tactical design stage/);
+  assert.ok(Object.values((await state()).stages).every((entry) => !entry.stale), 'refusals mark nothing');
+
+  // Reopen the owner: nothing is rolled back, the downstream stages become stale.
+  const headBefore = treeGit('rev-parse', 'HEAD').trim();
+  const apiBefore = await readFile(join(workspace, api), 'utf8');
+  const reopened = await beginStage('tactical-api', { extraArgs: ['--reopen-for', blockedId] });
+  assert.equal(treeGit('rev-parse', 'HEAD').trim(), headBefore, 'no commit is rewound');
+  assert.equal(await readFile(join(workspace, api), 'utf8'), apiBefore, 'the document is not rolled back');
+  assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'the worktree is untouched');
+  const marked = await state();
+  assert.equal(marked.stages['tactical-api'].status, 'running');
+  assert.equal(marked.stages['tactical-api'].stale, undefined, 'the owner itself is not stale');
+  assert.equal(marked.stages['tactical-technology'].stale, undefined);
+  assert.equal(marked.stages['tactical-ui'].stale, undefined);
+  for (const id of ['tactical-data', 'to-ticket']) assert.deepEqual({ ...marked.stages[id].stale, marked_at: undefined }, { owner_stage: 'tactical-api', blocked_stage: 'to-ticket', reopened_for: blockedId, rerun_order: ['tactical-api', 'tactical-data', 'to-ticket'], marked_at: undefined });
+  const input = reopened.prepared.input;
+  assert.deepEqual(input.context.reopen, { reason: 'dependency_gap', owner_stage: 'tactical-api', blocked_stage: 'to-ticket', blocked_execution_id: blockedId, rerun_order: ['tactical-api', 'tactical-data', 'to-ticket'] });
+  assert.ok(input.input_refs.some((ref) => ref.kind === 'dependency_gap_result' && ref.path.includes(blockedId)));
+  assert.ok(input.input_refs.some((ref) => ref.kind === 'previous_execution_result'));
+  const feedback = JSON.parse(await readFile(join(tree.worktree_ref, '..', `runtime/executions/${input.execution_id}/feedback.json`), 'utf8').catch(() => readFile(join(workspace, `.io/runtime/executions/${input.execution_id}/feedback.json`), 'utf8'))).feedback;
+  assert.ok(feedback.includes(gap) && /edit|Edit/.test(feedback) && /do not start from scratch/.test(feedback));
+  // The owner is still running: the order guard keeps the stale stages closed.
+  assert.match(refused(prepare('--stage-id', 'tactical-data'), /tactical-data cannot start before tactical-api/).why, /tactical-api is running/);
+  refused(prepare('--stage-id', 'to-ticket'), /to-ticket cannot start before tactical-api/);
+
+  // The owner edits forward and completes.
+  await submitStage(reopened, { files: { [api]: `${apiBefore}\`DELETE /session\` 로그아웃 (application-service: LogoutUseCase)\n` }, summary: '로그아웃·세션 조회 계약 보강' });
+  const ownerDone = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...reopened.base]);
+  assert.equal(ownerDone.status, 'completed');
+  assert.match(ownerDone.next, /Stale stages remain: re-run them in order, next .*--stage-id tactical-data/);
+  assert.match(treeGit('show', '--', api), /DELETE \/session/, 'the owner commit holds the forward edit');
+  // The old block can no longer be used to reopen again, and the downstream stages stay in order.
+  refused(prepare('--stage-id', 'tactical-api', '--reopen-for', blockedId), /not its latest blocked/);
+  refused(prepare('--stage-id', 'to-ticket'), /to-ticket cannot start before tactical-data/);
+  refused(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', 'ok'), /tracker-publish cannot start before tactical-data/);
+  assert.ok((await state()).stages['tactical-data'].stale, 'the downstream result stays stale until it is re-run');
+
+  // tactical-data is re-run with a note that its upstream changed, from its own previous result.
+  const rerun = await beginStage('tactical-data');
+  assert.equal(rerun.prepared.input.context.reopen.reason, 'upstream_changed');
+  assert.ok(rerun.prepared.input.context.previous_result_ref);
+  assert.ok(rerun.prepared.input.input_refs.some((ref) => ref.kind === 'previous_execution_result'));
+  const rerunFeedback = JSON.parse(await readFile(join(workspace, `.io/runtime/executions/${rerun.prepared.input.execution_id}/feedback.json`), 'utf8')).feedback;
+  assert.match(rerunFeedback, /Upstream changed: tactical-api was reopened for to-ticket/);
+  assert.equal((await state()).stages['tactical-data'].stale, undefined, 'a new execution clears the stale mark');
+  assert.ok((await state()).stages['to-ticket'].stale);
+  await submitStage(rerun, { files: { [data]: '`sessions` table\n`session_tokens` index\n' }, summary: '데이터 갱신' });
+  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...rerun.base]).status, 'completed');
+
+  // The blocked stage runs last, from its own blocked result, and is the final one to clear.
+  const again = await beginStage('to-ticket');
+  assert.equal(again.prepared.input.context.previous_result_note !== undefined, true);
+  assert.match(JSON.parse(await readFile(join(workspace, `.io/runtime/executions/${again.prepared.input.execution_id}/feedback.json`), 'utf8')).feedback, /Upstream changed/);
+  const finalState = await state();
+  assert.equal(finalState.stages['to-ticket'].status, 'running');
+  assert.ok(Object.values(finalState.stages).every((entry) => !entry.stale), 'no stage is stale once every one was re-run');
+});
+
+test('update restores the rewind module of an installed consumer, Doctor requires it and Git ignores it', async (t) => {
+  const { primary } = await consumerWorkflow(t, REQUEST);
+  const module = '.harness/src/workflow/stage-reopen.mjs';
+  const git = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
+  assert.equal(await readFile(join(primary, module), 'utf8'), await readFile(join(sourceRoot, module), 'utf8'), 'a fresh install has the module');
+  await unlink(join(primary, module));
+  const lockPath = join(primary, '.codex/harness-lock.json');
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+  delete lock.files[module];
+  await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+  assert.ok((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === join(primary, module)), 'Doctor requires the module');
+  assert.ok(!existsSync(join(primary, module)));
+  await updateProject({ sourceRoot, targetRoot: primary });
+  assert.equal(await readFile(join(primary, module), 'utf8'), await readFile(join(sourceRoot, module), 'utf8'), 'update installs the module');
+  assert.ok(JSON.parse(await readFile(lockPath, 'utf8')).files[module], 'update records it');
+  assert.equal((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
+  assert.match(git('check-ignore', '-v', module), /info\/exclude/);
+  assert.equal(git('status', '--short', '--untracked-files=all').trim(), '', 'Harness-owned files stay out of Git status');
+  const installed = await readFile(join(primary, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+  assert.match(installed, /--reopen-for/, 'the installed orchestrator guidance carries the rewind rule');
+});

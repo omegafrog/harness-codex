@@ -202,6 +202,7 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/workflow/startup-state.mjs",
     ".harness/src/workflow/execution-state.mjs",
     ".harness/src/workflow/stage-input.mjs",
+    ".harness/src/workflow/stage-reopen.mjs",
     ".harness/src/workflow/spec-review.mjs",
     ".harness/src/workflow/review-attempts.mjs",
     ".harness/src/wrapper/repair.mjs",

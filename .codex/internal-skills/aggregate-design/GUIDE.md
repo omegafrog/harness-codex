@@ -42,7 +42,7 @@ Step of the tactical design flow after `domain-model` and before `domain-service
 
 ## Deepening
 
-An answer or the grouping can reveal a rule that `requirements.md` lacks: add it to the owning `BIZ` as `INV` or `EX` with its `AC`, the `answers.json` source and a history line, and map it to a model by appending a row to `### 1.4` and its enforcement to `### 2.2`, as the shared rules describe. When it needs a model that section 1 lacks, or invalidates a section 1 decision (a model that is really two, an Entity that is a Value Object), return `blocked` / `DEPENDENCY_INCOMPLETE` naming `domain-model` and change nothing there. The shared rules describe how the orchestrator reopens the earlier stage.
+An answer or the grouping can reveal a rule that `requirements.md` lacks: add it to the owning `BIZ` as `INV` or `EX` with its `AC`, the `answers.json` source and a history line, and map it to a model by appending a row to `### 1.4` and its enforcement to `### 2.2`, as the shared rules describe. When it needs a model that section 1 lacks, or invalidates a section 1 decision (a model that is really two, an Entity that is a Value Object), return `blocked` / `DEPENDENCY_INCOMPLETE` naming `domain-model` and change nothing there. The shared rules describe how the orchestrator reopens the earlier stage. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](../domain-model/references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
 
 ## Completion
 

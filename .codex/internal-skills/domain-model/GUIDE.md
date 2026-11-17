@@ -42,7 +42,7 @@ First step of the tactical design flow, after `requirements-fix` and before `agg
 
 ## Deepening
 
-This stage never adds a business rule. When the evidence is missing or contradictory, return `blocked` / `INPUT_MISSING` naming the `BIZ`, `INV` or `EX` and the revision it needs; when a bounded context or SD class cannot hold the model, return `blocked` / `DEPENDENCY_INCOMPLETE` naming `bounded-context` or `subdomain-classification`. The orchestrator reopens through `--restart-requirements` or a `requirements-fix` user revision as [the shared rules](references/deepening.md) describe.
+This stage never adds a business rule. When the evidence is missing or contradictory, return `blocked` / `INPUT_MISSING` naming the `BIZ`, `INV` or `EX` and the revision it needs; when a bounded context or SD class cannot hold the model, return `blocked` / `DEPENDENCY_INCOMPLETE` naming `bounded-context` or `subdomain-classification`. The orchestrator reopens through `--restart-requirements` or a `requirements-fix` user revision as [the shared rules](references/deepening.md) describe. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
 
 ## Completion
 

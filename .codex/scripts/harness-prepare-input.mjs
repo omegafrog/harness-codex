@@ -11,7 +11,7 @@ const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchCommand, stage
 const errorContext = { script: 'prepare', stageId: undefined, root: undefined, mode: null };
 try {
   const { args: rawArgs, verbose } = extractVerbose(process.argv.slice(2));
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure', 'reopen-for']);
   const options = {};
   for (let i = 0; i < rawArgs.length; i += 2) {
     const key = rawArgs[i]?.replace(/^--/, '');
@@ -87,7 +87,7 @@ try {
   if (options['publication-approved'] !== undefined && options['publication-approved'] !== 'true') throw new Error('publication-approved must be true');
   if (options.restart !== undefined && options.restart !== 'true') throw new Error('restart must be true');
   if (options['user-revision'] !== undefined && options['user-revision'] !== 'true') throw new Error('user-revision must be true');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, e2eRequest: options['e2e-request'] ?? null, testDefectFailure: options['test-defect-failure'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', restart: options.restart === 'true' });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, e2eRequest: options['e2e-request'] ?? null, testDefectFailure: options['test-defect-failure'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', restart: options.restart === 'true', reopenFor: options['reopen-for'] ?? null });
   process.stdout.write(`${JSON.stringify(verbose ? prepared : compactPrepared(prepared))}\n`);
 } catch (error) {
   writeError(process.stderr, error, errorContext);

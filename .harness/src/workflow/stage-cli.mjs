@@ -116,7 +116,7 @@ export function launchResult({ prepared, started }) {
 // The result of a finished stage, without what the orchestrator never uses: the fields already at the top level, file
 // hashes, the commit request the runner consumed and empty arrays.
 export function compactResult(result = {}) {
-  const { schema_version, execution_id, skill, status, code, summary, artifacts, questions, review_request, unplanned_additions, commit_request, commit_sha, ...extra } = result;
+  const { schema_version, execution_id, skill, status, code, summary, artifacts, questions, review_request, unplanned_additions, commit_request, commit_sha, owner_stage, dependency_gap, ...extra } = result;
   const out = {};
   if (summary !== undefined) out.summary = clip(summary, 4000);
   out.artifacts = (Array.isArray(artifacts) ? artifacts : []).map(({ base, path, kind }) => ({ kind, path, ...(base && base !== 'workspace' ? { base } : {}) }));
@@ -124,6 +124,8 @@ export function compactResult(result = {}) {
   if (review_request) out.review_request = review_request;
   if (Array.isArray(unplanned_additions) && unplanned_additions.length) out.unplanned_additions = unplanned_additions;
   if (commit_sha) out.commit_sha = commit_sha;
+  if (owner_stage) out.owner_stage = owner_stage;
+  if (dependency_gap) out.dependency_gap = clip(dependency_gap, 2000);
   for (const [key, value] of Object.entries(extra)) {
     const size = sizeOf(value);
     out[key] = size <= 1200 ? value : `<omitted ${size} bytes; use --verbose to print it>`;
@@ -136,7 +138,7 @@ export function compactResult(result = {}) {
 export function compactContext(context) {
   const current = context.current_stage;
   const stages = Object.fromEntries(Object.entries(context.stages || {}).map(([id, entry]) => {
-    const settled = entry.status === 'completed' && entry.code === 'OK' && id !== current;
+    const settled = entry.status === 'completed' && entry.code === 'OK' && id !== current && !entry.stale;
     if (settled) return [id, { status: entry.status, code: entry.code }];
     const { attempts, summary, questions, ...rest } = entry;
     return [id, { ...rest, ...(attempts > 1 ? { attempts } : {}), ...(summary ? { summary: clip(summary, 300) } : {}), ...(questions?.length ? { questions } : {}) }];
@@ -152,7 +154,9 @@ export function compactContext(context) {
 }
 
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
-export function finishNext({ status, code, stageId, executionId }) {
+export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null }) {
+  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user and do not answer business questions for them. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. When it completes, re-run each stale stage in order up to ${stageId} (${launchCommand('<stale-stage>')}; the runner names the next one if you start the wrong one). Only a question returned by one of these stages goes to the user.`;
+  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${launchCommand(staleOrder[0])}; the last is the stage that was blocked. Do not ask the user.`;
   if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. Only after the user's own reply: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
@@ -165,7 +169,7 @@ export function finishNext({ status, code, stageId, executionId }) {
   return `Resolve ${executionId} per the orchestrator skill.`;
 }
 
-export function compactFinished({ envelope, stageId, executionId }) {
+export function compactFinished({ envelope, stageId, executionId, staleOrder = null }) {
   return {
     status: envelope.status,
     code: envelope.code,
@@ -173,7 +177,7 @@ export function compactFinished({ envelope, stageId, executionId }) {
     stage_id: stageId,
     result_ref: envelope.result_ref,
     result: compactResult(envelope.result),
-    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId }),
+    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder }),
   };
 }
 
@@ -208,7 +212,7 @@ export function gateErrorResult({ gate, executionId, stage, errors, instruction,
     code: 'GATE_ERROR',
     why: 'The finished stage was rejected by its gate; nothing was committed or recorded and the stage is still running.',
     next: [
-      'Send errors to the same subagent unchanged. If an error names an earlier owner_stage, the subagent must return blocked / DEPENDENCY_INCOMPLETE pointing at that stage instead of editing its section.',
+      'Send errors to the same subagent unchanged. If an error names an earlier owner_stage, the subagent must return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage and result.dependency_gap pointing at that stage instead of editing its section. The orchestrator then reopens that stage itself (finish prints the command); it does not ask the user.',
       `Then run again: ${nativeCommand('finish', executionId)}`,
       'If the subagent cannot fix it after a repeat, report the errors to the user and stop; do not edit documents or record completion yourself.',
     ],
@@ -225,6 +229,7 @@ function loadState(context) {
 function resumeStage(stage, entry, state) {
   if (!entry) return { steps: [launchCommand(stage)] };
   const { status, code } = entry;
+  if (entry.stale) return { steps: [`${launchCommand(stage)} (re-run in order; it receives the upstream change automatically: ${entry.stale.rerun_order.join(' → ')})`] };
   if (status === 'running') {
     const foreign = foreignRunningStage(state);
     if (foreign?.stage === stage) return { steps: [takeoverStep(foreign), ...(entry.execution_id ? [`If its state is unclear: ${nativeCommand('inspect', entry.execution_id)}`] : [])] };
@@ -246,7 +251,7 @@ function resumeStage(stage, entry, state) {
 // ---- error catalogue -------------------------------------------------------------------------------------------------
 
 const entryOf = (state, stage) => state?.stages?.[stage] ?? null;
-const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.code}` : ''}` : 'not started';
+const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.code}` : ''}${entry.stale ? `, stale after ${entry.stale.owner_stage} was reopened for ${entry.stale.blocked_stage}` : ''}` : 'not started';
 const stageAfter = (previous) => {
   if (previous === 'workflow-compose') return PRE_SPEC_STAGES[0];
   const index = PRE_SPEC_STAGES.indexOf(previous);
@@ -331,6 +336,13 @@ const RULES = [
     return { code: 'USER_REVISION_REFUSED', why: `${running ? `${running[0]} is still running` : 'Another stage is still running'}; a user revision cannot start until its native subagent has ended.`, next: running?.[1]?.execution_id ? [`Wait for its native subagent, then ${nativeCommand('finish', running[1].execution_id)}`, `Then repeat the same user-revision command.`] : [CONTEXT] };
   } },
   { re: /^(Implementation revision|Repair receipt|Test defect evidence|E2E repair|E2E failure|E2E request|E2E stage requires|Invalid E2E)/, explain: ({ message }) => ({ code: 'USER_REVISION_REFUSED', why: `The E2E repair or request does not satisfy its recorded evidence (${message}). These checks tie a repair to the exact failed E2E receipt and the user's approval.`, next: ['Use the failure receipt, approval answer and plan exactly as the E2E result and the user\'s own words recorded them; see orchestrator references/implementation.md.'], decision: 'If the receipt or approval no longer matches (stale commit, changed profile), report it to the user and ask whether to rerun the E2E.' }) },
+  { re: /^Reopen refused: /, explain: ({ message, stage }) => ({
+    code: 'REOPEN_REFUSED',
+    why: `A forward reopen is allowed only for the stage that the latest blocked / DEPENDENCY_INCOMPLETE result of a later stage names as owner, before tracker-publish started (${message.replace(/^Reopen refused: /, '')}).`,
+    next: [CONTEXT, `For a rollback the user asks for: ${PREPARE} --stage-id ${stage || '<stage-id>'} --restart-requirements true`],
+    decision: 'If the blocked result names no valid owner, report it to the user and wait for their direction.',
+  }) },
+  { re: /^Workflow cannot complete: /, explain: ({ message }) => ({ code: 'STALE_STAGES', why: `${message}.`, next: [CONTEXT] }) },
   { re: /^Restart applies only to to-ticket|^A to-ticket restart|^Cannot restart|^Restart requires a (waiting|completed)|^This waiting to-ticket execution|^Archived restart|^Restart archive|^Multiple restart archives/, explain: ({ message }) => ({ code: 'RESTART_REFUSED', why: `A to-ticket restart is only valid for a waiting or failed to-ticket stage, before tracker-publish started (${message}).`, next: [CONTEXT], decision: 'Report this refusal to the user and wait for their direction; do not edit state or retry the restart.' }) },
   { re: /^Restart target must be completed/, explain: ({ stage, state }) => ({ code: 'RESTART_REFUSED', why: `${stage || 'The stage'} is ${describe(entryOf(state, stage))}; only a completed stage can be restarted, because a restart rewinds what it already wrote.`, next: [`To run it for the first time or continue it: ${launchCommand(stage || '<stage-id>')}`, `State: ${CONTEXT}`] }) },
   { re: /^Requirements restart must be requested alone/, explain: ({ stage }) => ({ code: 'RESTART_REFUSED', why: '--restart-requirements must be the only option besides --stage-id.', next: [`${PREPARE} --stage-id ${stage || '<stage-id>'} --restart-requirements true`] }) },

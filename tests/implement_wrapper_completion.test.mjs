@@ -427,7 +427,7 @@ test('the completion gate and the sync-contracts stage need a passing independen
   const { validateSkillReturn } = await f.here('.harness/src/workflow/skill-execution.mjs');
   const contractCheck = async () => (await f.derive()).checks.contract_review;
   const input = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', workspace_root: f.ws, session_directory: f.session, scope: PLAN_SET, input_refs: [], context: { worktree_ref: join(f.session, 'worktree.json'), plan_set_id: PLAN_SET } };
-  const result = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', summary: 'Contract sealed and reviewed', artifacts: [], questions: [], review_request: null };
+  const result = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', summary: 'Contract sealed and reviewed', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
   const envelope = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', result_ref: 'runtime/executions/sync-contracts/result.json', result };
   await writeFile(sessionFile(f, envelope.result_ref), JSON.stringify(result));
   const logLines = async () => (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));

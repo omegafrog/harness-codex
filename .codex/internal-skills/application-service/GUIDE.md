@@ -36,7 +36,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 
 ## Deepening
 
-This stage never adds a business rule. A scenario step that no Aggregate, Value Object or Domain Service behaviour covers, or a use case that would need two Aggregates in one transaction, is not solved here: return `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design` or `domain-service`, or `blocked` / `INPUT_MISSING` when the requirements do not say what the step does. Nothing in earlier sections is edited. The shared rules describe how the orchestrator reopens the earlier stage.
+This stage never adds a business rule. A scenario step that no Aggregate, Value Object or Domain Service behaviour covers, or a use case that would need two Aggregates in one transaction, is not solved here: return `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design` or `domain-service`, or `blocked` / `INPUT_MISSING` when the requirements do not say what the step does. Nothing in earlier sections is edited. The shared rules describe how the orchestrator reopens the earlier stage. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](../domain-model/references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
 
 ## Completion
 

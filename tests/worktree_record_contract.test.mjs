@@ -570,7 +570,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const canonicalSpecDir = `docs/specs/${tree.plan_set_id}`;
     await mkdir(join(tree.workspace, canonicalSpecDir, 'architecture-reviews'), { recursive: true });
     await writeFile(join(tree.workspace, canonicalSpecDir, 'architecture-reviews/review.yaml'), 'review');
-    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `${canonicalSpecDir}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: 'a'.repeat(64) }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null };
+    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `${canonicalSpecDir}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: 'a'.repeat(64) }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null, owner_stage: null, dependency_gap: null };
     const { review_request: omittedReview, ...questionWithoutReview } = questionResult;
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
@@ -653,7 +653,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
       const accepted = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
       assert.equal(accepted.result.review_request.agent_profile, agent_profile);
     }
-    const unstructuredReview = { ...review, review_request: null };
+    const unstructuredReview = { ...review, review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(unstructuredReview));
     await writeFile(join(resultDir, 'return.json'), JSON.stringify({ ...answerEnvelope, code: 'REVIEW_REQUIRED', result: unstructuredReview }));
     assert.equal(JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' })).result.review_request, null);
@@ -729,7 +729,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(redirected.input.context.user_revision, true);
     assert.equal(redirected.input.context.previous_result_ref, `runtime/executions/${next.input.execution_id}/result.json`);
     await rm(join(tree.session_directory, 'runtime/executions', redirected.input.execution_id), { recursive: true, force: true });
-    const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], questions: [], review_request: null };
+    const specResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', summary: '명세 준비 완료', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     const specRef = `runtime/executions/${next.input.execution_id}/result.json`;
     const sameStageRevision = { ...specResult, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '리뷰 지적 수정' };
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(sameStageRevision));
@@ -777,7 +777,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const planInput = await findExecutionInput(tree.workspace, plan.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const planRef = `runtime/executions/${plan.input.execution_id}/result.json`;
-    const planResult = { schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '수용 조건 보완 필요', artifacts: [], questions: [], review_request: null };
+    const planResult = { schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', summary: '수용 조건 보완 필요', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(tree.session_directory, planRef), JSON.stringify(planResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${plan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef, result: planResult }));
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef });
@@ -789,7 +789,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const revisionInput = await findExecutionInput(tree.workspace, revision.input.execution_id);
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const revisionRef = `runtime/executions/${revision.input.execution_id}/result.json`;
-    const revisionResult = { schema_version: 1, execution_id: revision.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 세분화 필요', artifacts: [], questions: [], review_request: null };
+    const revisionResult = { schema_version: 1, execution_id: revision.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 세분화 필요', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(tree.session_directory, revisionRef), JSON.stringify(revisionResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${revision.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: revision.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef, result: revisionResult }));
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef });
@@ -800,7 +800,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const question = { question_id: `${replan.input.execution_id}:1`, title: '계획을 선택하세요', options: [{ id: 'a', label: 'A', consequence: 'A 적용' }, { id: 'b', label: 'B', consequence: 'B 적용' }], recommended_option_id: 'a', rationale: '테스트' };
     const waitingRef = `runtime/executions/${replan.input.execution_id}/result.json`;
-    const waitingResult = { schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], questions: [question], review_request: null };
+    const waitingResult = { schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '사용자 선택 필요', artifacts: [], questions: [question], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(tree.session_directory, waitingRef), JSON.stringify(waitingResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${replan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef, result: waitingResult }));
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef });
@@ -823,7 +823,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
       await readFile(join(tree.session_directory, 'runtime/reviews', `plan-${ticketId}.json`));
       await assert.rejects(readFile(join(root, '.io/runtime/reviews', `plan-${ticketId}.json`)), { code: 'ENOENT' });
       reviewRef = `runtime/executions/${authorInput.execution_id}/result.json`;
-      reviewedResult = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', summary: '계획 작성 및 독립 리뷰 완료', artifacts: [{ base: 'workspace', path: `docs/plans/${ticketId}/slice.md`, kind: 'split-plan', sha256: createHash('sha256').update(await readFile(join(planDir, 'slice.md'))).digest('hex') }], questions: [], review_request: null };
+      reviewedResult = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', summary: '계획 작성 및 독립 리뷰 완료', artifacts: [{ base: 'workspace', path: `docs/plans/${ticketId}/slice.md`, kind: 'split-plan', sha256: createHash('sha256').update(await readFile(join(planDir, 'slice.md'))).digest('hex') }], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
       reviewedEnvelope = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', result_ref: reviewRef, result: reviewedResult };
       ({ validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`));
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
@@ -861,7 +861,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(implementation.input.context.plan_id, 'slice');
     assert.equal(implementation.input.context.checkpoint_path, join(tree.session_directory, 'runtime/plans/slice/checkpoint.md'));
     const blockedRef = `runtime/executions/${implementation.input.execution_id}/result.json`;
-    const blockedResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '계획 발행 후 구현을 시작할 수 있습니다.', artifacts: [], questions: [], review_request: null, unplanned_additions: [], commit_request: null };
+    const blockedResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '계획 발행 후 구현을 시작할 수 있습니다.', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null, unplanned_additions: [], commit_request: null };
     const blockedEnvelope = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: blockedRef, result: blockedResult };
     await writeFile(join(tree.session_directory, blockedRef), JSON.stringify(blockedResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${implementation.input.execution_id}/return.json`), JSON.stringify(blockedEnvelope));
@@ -901,7 +901,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     publishingState.current_stage = 'tracker-publish';
     await writeFile(blockedStatePath, JSON.stringify(publishingState));
     const publisherRef = `runtime/executions/${publisherInput.execution_id}/result.json`;
-    const publisherResult = { schema_version: 1, execution_id: publisherInput.execution_id, skill: 'tracker-publish', status: 'completed', code: 'OK', summary: '발행 완료', artifacts: [], questions: [], review_request: null };
+    const publisherResult = { schema_version: 1, execution_id: publisherInput.execution_id, skill: 'tracker-publish', status: 'completed', code: 'OK', summary: '발행 완료', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(tree.session_directory, publisherRef), JSON.stringify(publisherResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${publisherInput.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: publisherInput.execution_id, skill: 'tracker-publish', status: 'completed', code: 'OK', result_ref: publisherRef, result: publisherResult }));
     await recordExecutionState({ root: tree.workspace, input: publisherInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: publisherRef });
@@ -919,7 +919,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     for (const axis of ['product', 'architecture']) assert.ok(implementation.input.input_refs.some((item) => item.path === `docs/specs/${ticketId}/${axis}-spec.md`));
     assert.equal(implementation.input.context.producer_result_refs['to-ticket'].path, reviewRef);
     const implementationRef = `runtime/executions/${implementation.input.execution_id}/result.json`;
-    const implementationResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'completed', code: 'OK', summary: 'Done', artifacts: [], questions: [], review_request: null, unplanned_additions: [], commit_request: null };
+    const implementationResult = { schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'completed', code: 'OK', summary: 'Done', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null, unplanned_additions: [], commit_request: null };
     await writeFile(join(tree.session_directory, implementationRef), JSON.stringify(implementationResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${implementation.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: implementation.input.execution_id, skill: 'implement-wrapper', status: 'completed', code: 'OK', result_ref: implementationRef, result: implementationResult }));
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
@@ -972,7 +972,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const stateBeforeE2e = await readFile(implementationStatePath, 'utf8');
     const e2eRef = `runtime/executions/${e2e.input.execution_id}/result.json`;
     const artifactHash = async (path) => createHash('sha256').update(await readFile(join(tree.session_directory, path))).digest('hex');
-    const e2eResult = { schema_version: 1, execution_id: e2e.input.execution_id, skill: 'e2e-test', status: 'failed', code: 'EXECUTION_ERROR', summary: 'E2E failed', artifacts: [{ base: 'session', path: fastReceiptRef, kind: 'e2e_receipt', sha256: await artifactHash(fastReceiptRef) }, { base: 'session', path: fastFailureRef, kind: 'e2e_failure', sha256: await artifactHash(fastFailureRef) }], questions: [], review_request: null };
+    const e2eResult = { schema_version: 1, execution_id: e2e.input.execution_id, skill: 'e2e-test', status: 'failed', code: 'EXECUTION_ERROR', summary: 'E2E failed', artifacts: [{ base: 'session', path: fastReceiptRef, kind: 'e2e_receipt', sha256: await artifactHash(fastReceiptRef) }, { base: 'session', path: fastFailureRef, kind: 'e2e_failure', sha256: await artifactHash(fastFailureRef) }], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(tree.session_directory, e2eRef), JSON.stringify(e2eResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${e2e.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: e2e.input.execution_id, skill: 'e2e-test', status: 'failed', code: 'EXECUTION_ERROR', result_ref: e2eRef, result: e2eResult }));
     await recordExecutionState({ root: tree.workspace, input: e2e.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
@@ -998,7 +998,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     failedState.stages['requirements-fix'] = { status: 'failed', execution_id: next.input.execution_id, skill: 'requirements-fix', code: 'EXECUTION_ERROR', result_ref: null, reason: 'Result execution_id mismatch', native_managed: true, native_finished: true };
     await writeFile(statePath, JSON.stringify(failedState));
     const failedPrefix = join(tree.session_directory, 'runtime/executions', next.input.execution_id);
-    const invalidResult = { schema_version: 1, execution_id: 'requirements-fix-invalid-id', skill: 'requirements-fix', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', summary: '재생성 필요', artifacts: [], questions: [], review_request: null };
+    const invalidResult = { schema_version: 1, execution_id: 'requirements-fix-invalid-id', skill: 'requirements-fix', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', summary: '재생성 필요', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     const invalidEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', result_ref: null, result: invalidResult };
     await writeFile(join(failedPrefix, 'output.json'), JSON.stringify(invalidEnvelope));
     const repair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
@@ -1021,7 +1021,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(statePath, JSON.stringify(failedState));
     const failedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(failedResume.input.context.resume_session_id, undefined);
-    const preservedReturn = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 수정', artifacts: [], questions: [], review_request: null };
+    const preservedReturn = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 수정', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(preservedReturn));
     await writeFile(join(resultDir, 'return.json'), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: `runtime/executions/${next.input.execution_id}/result.json`, result: preservedReturn }));
     const failedResumeInput = await readExecutionInput({ root: tree.workspace, execution_id: failedResume.input.execution_id });
@@ -1292,7 +1292,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     const invalid = spawnSync(process.execPath, [...native, 'finish', ...nativeArgs], { cwd: workspace, encoding: 'utf8' });
     assert.equal(invalid.status, 1, invalid.stderr);
     assert.ok(JSON.parse(invalid.stdout).errors.some(({ path, value }) => path === '$.status' && value === 4));
-    const resultValue = { schema_version: 1, skill: 'grilling', status: 'blocked', code: 'INPUT_MISSING', summary: 'missing input', artifacts: [], questions: [], review_request: null };
+    const resultValue = { schema_version: 1, skill: 'grilling', status: 'blocked', code: 'INPUT_MISSING', summary: 'missing input', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: 'grilling', status: 'blocked', code: 'INPUT_MISSING', result: resultValue }));
     await recordCodexTurn('agent-1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'completed', 'stage finished');
     assert.equal(JSON.parse(reconcile(nativeArgs, [{ agent_name: '/root/agent-1', agent_status: { completed: 'forged' } }]).stdout).status, 'unknown');
@@ -1468,7 +1468,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     execFileSync(process.execPath, [prepare, '--verbose', '--stage-id', 'grilling', '--answer', answer], { cwd: workspace, encoding: 'utf8' });
     assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(answer));
     const question = { question_id: 'temporary', title: '범위는?', decision_kind: null, options: [{ id: 'basic', label: '기본', consequence: '기본', evidence: [] }, { id: 'full', label: '전체', consequence: '전체', evidence: [] }], recommended_option_id: 'basic', rationale: '기본 범위' };
-    const questionResult = { schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', artifacts: [], questions: [question], review_request: null };
+    const questionResult = { schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', artifacts: [], questions: [question], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(questionStart.output_path, JSON.stringify({ schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', result: questionResult }));
     const asked = JSON.parse(execFileSync(process.execPath, [...native, 'finish', ...questionArgs], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(asked.status, 'action_required');

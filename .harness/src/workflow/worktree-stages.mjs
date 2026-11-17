@@ -113,21 +113,36 @@ export const TACTICAL_IMPLEMENTATION_STAGES = Object.freeze([
   WORKTREE_STAGE.TACTICAL_CODE,
 ]);
 
+// A stage result counts only while it is completed/OK and no upstream rewind marked it stale (`entry.stale`, see stage-reopen.mjs).
+export const isCurrentStage = (entry) => entry?.status === 'completed' && entry.code === 'OK' && !entry.stale;
+
 export function tacticalImplementationOrderViolation(stages, stageId) {
   const index = TACTICAL_IMPLEMENTATION_STAGES.indexOf(stageId);
   if (index < 0) return null;
-  const missingDesign = TACTICAL_DESIGN_STAGES.find((id) => stages?.[id]?.status !== 'completed' || stages[id].code !== 'OK');
+  const missingDesign = TACTICAL_DESIGN_STAGES.find((id) => !isCurrentStage(stages?.[id]));
   if (missingDesign) return `${stageId} requires completed/OK tactical design stage ${missingDesign}`;
   if (index === 0) {
     return null;
   }
-  const required = TACTICAL_IMPLEMENTATION_STAGES.slice(0, index).find((id) => stages?.[id]?.status !== 'completed' || stages[id].code !== 'OK');
-  return required ? `${stageId} cannot start before ${required}: complete it with completed/OK first` : null;
+  const required = TACTICAL_IMPLEMENTATION_STAGES.slice(0, index).find((id) => !isCurrentStage(stages?.[id]));
+  if (!required) return null;
+  const stale = stages?.[required]?.stale;
+  return stale
+    ? `${stageId} cannot start before ${required}: its result is stale because ${stale.owner_stage} was reopened for ${stale.blocked_stage}. Re-run the stale stages in order: ${stale.rerun_order.join(' → ')}`
+    : `${stageId} cannot start before ${required}: complete it with completed/OK first`;
 }
+
 
 // Requirements and tactical design stages, in order: the one list that commit, restart, stored-input and result
 // canonicalization wiring read. A new stage joins the flow by taking its place in one of the two lists above.
 export const PRE_SPEC_STAGES = Object.freeze([...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES]);
+
+// The order a forward rewind walks: the owner of a gap is re-run, then every stage after it up to the blocked one. Only stages
+// that precede the publication of tickets can be rewound; tracker-publish and tactical-code never rewind.
+export const REWIND_STAGES = Object.freeze([
+  ...PRE_SPEC_STAGES,
+  ...TACTICAL_IMPLEMENTATION_STAGES.slice(0, TACTICAL_IMPLEMENTATION_STAGES.indexOf(WORKTREE_STAGE.TO_TICKET) + 1),
+]);
 
 const hasRecordedResult = (entry) => Boolean(entry?.result_ref || entry?.attempts?.some((attempt) => attempt?.result_ref));
 
@@ -139,9 +154,10 @@ const hasRecordedResult = (entry) => Boolean(entry?.result_ref || entry?.attempt
 //   when the flow allowed it, so the answer, feedback and revision paths keep working for it.
 export function nextRequiredPreSpecStage(stages, stageId) {
   const index = stageId === WORKTREE_STAGE.SPEC_ME ? PRE_SPEC_STAGES.length : PRE_SPEC_STAGES.indexOf(stageId);
-  if (index < 0 || hasRecordedResult(stages?.[stageId])) return null;
+  // A stale stage is re-run in order: the resume exemption does not apply to it.
+  if (index < 0 || (hasRecordedResult(stages?.[stageId]) && !stages[stageId].stale)) return null;
   if (stageId === WORKTREE_STAGE.SPEC_ME && !PRE_SPEC_STAGES.some((id) => stages?.[id])) return null;
-  return PRE_SPEC_STAGES.slice(0, index).find((id) => stages?.[id]?.status !== 'completed' || stages[id].code !== 'OK') ?? null;
+  return PRE_SPEC_STAGES.slice(0, index).find((id) => !isCurrentStage(stages?.[id])) ?? null;
 }
 
 // The refusal message names the stage the flow needs next. A stage that an earlier Harness started out of order is
@@ -149,7 +165,11 @@ export function nextRequiredPreSpecStage(stages, stageId) {
 export function preSpecOrderViolation(stages, stageId) {
   const required = nextRequiredPreSpecStage(stages, stageId);
   if (!required) return null;
-  const status = stages?.[required]?.status;
   const recorded = stages?.[stageId];
+  if (recorded?.stale || stages?.[required]?.stale) {
+    const { owner_stage: owner, blocked_stage: blocked, rerun_order: order } = (recorded?.stale || stages[required].stale);
+    return `${stageId} cannot start before ${required}: ${required} is ${stages[required]?.stale ? 'stale' : stages?.[required]?.status || 'not started'}${stages[required]?.stale ? `, because ${owner} was reopened for ${blocked}` : ''}. Re-run the stale stages in order (${(order || []).join(' → ')}); ${required} is next.`;
+  }
+  const status = stages?.[required]?.status;
   return `${stageId} cannot start before ${required}: the flow runs ${PRE_SPEC_STAGES.join(' → ')} in order, and ${required} is ${status ? `${status}${stages[required].code ? `/${stages[required].code}` : ''}, not completed/OK` : 'not started'}. Complete ${required} next.${recorded ? ` ${stageId} is already recorded as ${recorded.status} without a result, so it was started out of order. After its native run has ended and its Codex session is closed, discard it with: node .codex/scripts/harness-prepare-input.mjs --stage-id ${stageId} --discard-out-of-order true` : ''}`;
 }

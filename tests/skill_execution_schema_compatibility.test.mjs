@@ -214,7 +214,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     await writeFile(join(root, path), 'revised');
     const reference = { base: 'workspace', path, kind: 'product-spec', sha256: originalHash };
     const input = { schema_version: 1, execution_id: 'stage-1', skill: 'requirements-fix', workspace_root: root, session_directory: session, scope: 'calculator', input_refs: [reference] };
-    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Updated', artifacts: [reference], questions: [], review_request: null };
+    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Updated', artifacts: [reference], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/stage-1/result.json', result };
     await validateSkillInput({ root, input });
     assert.equal((await validateSkillReturn({ root, input, envelope })).valid, true);
@@ -316,7 +316,7 @@ test('installed result validation accepts safe directory artifacts and keeps con
     const { validateSkillInput, validateSkillReturn } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
     const reference = { base: 'workspace', path: 'docs/specs/example/architecture-decisions/', kind: 'architecture-decisions', sha256: null };
     const input = { schema_version: 1, execution_id: 'spec-1', skill: 'requirements-fix', workspace_root: root, session_directory: join(root, '.io'), scope: 'calculator', input_refs: [reference] };
-    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Specs ready', artifacts: [reference], questions: [], review_request: null };
+    const result = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', summary: 'Specs ready', artifacts: [reference], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     const envelope = { schema_version: 1, execution_id: input.execution_id, skill: input.skill, status: 'completed', code: 'OK', result_ref: 'runtime/executions/spec-1/result.json', result };
 
     await validateSkillInput({ root, input });

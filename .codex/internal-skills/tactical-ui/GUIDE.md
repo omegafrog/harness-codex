@@ -15,7 +15,7 @@ model_tier: low_performance
 
 사용자 요청에 UI가 포함되면 새 page/view/app shell 또는 큰 UX 재설계는 `.codex/workflows/frontend-design.yaml`의 독립 workflow가 소유한다. design 단계는 ticket 분할 전에, implementation과 visual review는 ticket 발행 뒤에 수행한다. 이 요청이 frontend 작업을 명시했다면 추가 blanket approval 없이 실행한다. 대상이나 scope가 요청에서 불명확할 때만 먼저 질문한다.
 
-이 stage는 `frontend-design`을 child stage로 실행하지 않으며, 그 결과를 만들거나 완료 상태를 대신 기록하지 않는다. 설계가 없으면 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다. orchestrator는 독립 workflow의 `frontend-design-brief`를 실행하고 완료된 결과를 가지고 이 stage를 feedback으로 재개한다. 재개 시 같은 workspace의 `completed/OK` design 결과와 `frontend_design_brief` artifact를 확인한다. 실패·미완료·다른 workspace의 결과는 받지 않는다.
+이 stage는 `frontend-design`을 child stage로 실행하지 않으며, 그 결과를 만들거나 완료 상태를 대신 기록하지 않는다. 설계가 없으면 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다. 이 인계 block은 `result.owner_stage`·`result.dependency_gap`을 `null`로 둔다. 앞선 전술 설계가 부족해 막힐 때는 `owner_stage`와 `dependency_gap`을 적어 orchestrator가 그 stage를 다시 열게 한다. orchestrator는 독립 workflow의 `frontend-design-brief`를 실행하고 완료된 결과를 가지고 이 stage를 feedback으로 재개한다. 재개 시 같은 workspace의 `completed/OK` design 결과와 `frontend_design_brief` artifact를 확인한다. 실패·미완료·다른 workspace의 결과는 받지 않는다.
 
 ## 산출물
 

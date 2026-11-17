@@ -12,6 +12,8 @@
 | `failed` | `EXECUTION_ERROR`, `INVALID_INPUT`, `ARTIFACT_WRITE_FAILED` | 실행·입력 검증·산출물 기록이 실패했다. |
 | `cancelled` | `CANCELLED` | 실행이 취소됐다. |
 
+`blocked` / `DEPENDENCY_INCOMPLETE`는 앞 stage의 산출물이 비었거나 부족해 계속할 수 없을 때 쓴다. 전술 설계 stage와 `tactical-technology`·`tactical-api`·`tactical-data`·`to-ticket`은 `result.owner_stage`에 빈틈을 소유한 가장 앞 stage의 ID를, `result.dependency_gap`에 그 stage가 추가하거나 고쳐야 할 내용(빠진 operation·호출·transaction 경계·행과 근거)을 반드시 적는다. 해당하지 않으면 두 필드는 `null`이다. 실행기는 이 pairing이 없거나 `owner_stage`가 앞 stage가 아니면 `format_error`로 돌려보내고, 있으면 orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 앞으로 진행한다([상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)). 업무 결정이 필요한 경우는 이 코드가 아니라 `USER_DECISION_REQUIRED`를 쓴다. `tactical-ui`가 화면 설계를 기다리는 `DEPENDENCY_INCOMPLETE`는 `frontend-design-brief` 인계이므로 `owner_stage`가 `null`이다.
+
 Spec 수정이 필요하면 반드시 `action_required` / `SPEC_REVISION_REQUIRED`를 함께 반환한다. 작업이 실제로 막혔다는 이유로 `blocked`와 이 코드를 조합하지 않는다. tracker의 Blocked 상태와 stage 반환 `status`는 별개다. 계획 수정과 사용자 결정도 각각 `action_required` / `PLAN_REVISION_REQUIRED`, `action_required` / `USER_DECISION_REQUIRED`를 쓴다. 임의의 코드나 조합을 만들지 않는다.
 
 지금 답할 수 있는 질문은 최대한 모아 한 번에 반환하고, 앞선 답에 따라 달라지는 질문만 다음으로 미룬다. 사용자 결정이 필요하면 `result.questions`에 [질문 스키마](../schemas/question.schema.json)의 질문을 넣고 `action_required` / `USER_DECISION_REQUIRED`로 반환한다. 질문이 하나여도 배열에 담고 질문 문장은 `title`에 쓴다. 질문이 없으면 빈 배열로 두고, 결과 최상위에 단수 `question` 필드는 쓰지 않는다. stage 안에서 사용자 질문 도구를 직접 호출하지 않는다. orchestrator가 실제 답변을 전달하면 이전 결과·질문·답변을 읽어 같은 작업을 이어가며, checkpoint와 이미 확정된 답변을 결과 파일에 보존한다. 리뷰 요청이나 산출물은 해당 stage의 계약과 제공된 schema에 맞게 기록한다. 읽기 전용 reviewer의 새 보고서는 schema가 요구하는 `result.artifact_contents`로 반환한다.

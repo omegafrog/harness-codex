@@ -20,3 +20,5 @@ model_tier: low_performance
 매번 `docs/implementation/<plan-set-id>/technology.md`에 현재 stack, 검토한 실행·검증 명령, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거, 수용한 단점 및 미확정 항목을 한국어로 기록한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `docs/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
 
 결과는 `completed/OK` 또는 `action_required/USER_DECISION_REQUIRED`다. 기술 선택 질문의 근거는 질문 결과에 적고 `answers.json`을 보존한다. 이 stage는 code, Product Spec, Architecture Spec, `docs/contracts/`를 수정하지 않는다.
+
+앞선 전술 설계 stage의 산출물이 부족해 진행할 수 없으면 `blocked/DEPENDENCY_INCOMPLETE`로 반환하고 `result.owner_stage`(빈틈을 소유한 가장 앞 stage)와 `result.dependency_gap`(그 stage가 추가하거나 고쳐야 할 내용과 근거)을 반드시 적는다. 실행기는 둘이 없으면 반려하며, orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 이 stage까지 순서대로 다시 진행한다. 업무 결정이 필요하면 이 코드가 아니라 `USER_DECISION_REQUIRED` 질문을 쓴다.

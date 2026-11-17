@@ -327,6 +327,21 @@
     "commit_sha": {
       "type": "string",
       "pattern": "^[a-f0-9]{40}$"
+    },
+    "owner_stage": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "description": "Required for blocked / DEPENDENCY_INCOMPLETE in a design or ticket stage: the id of the earliest earlier flow stage whose output is missing or insufficient. The runner reopens that stage and walks forward again. null otherwise."
+    },
+    "dependency_gap": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Required with owner_stage: what the owner stage must add or change (the missing operation, call, row or decision and the evidence). null otherwise."
     }
   }
 }

@@ -254,6 +254,11 @@ try {
       else throw error;
     }
     if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: format.errors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
+    // A blocked / DEPENDENCY_INCOMPLETE result of a later flow stage must name the earlier stage that owns the gap, so the
+    // orchestrator can reopen it by itself. The stage stays running and the subagent corrects its output.
+    const { dependencyOwnerErrors, staleStages } = await import('../../.harness/src/workflow/stage-reopen.mjs');
+    const ownerErrors = dependencyOwnerErrors({ skill: input.skill, raw });
+    if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: ownerErrors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
     // The last tactical design stage (context-boundary) is accepted as completed only when the whole tactical-design.md passes the
     // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
     // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,
@@ -284,6 +289,7 @@ try {
       await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
       throw error;
     }
-    process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result } : compactFinished({ envelope, stageId: errorContext.stageId, executionId: id }))}\n`);
+    const staleOrder = envelope.status === 'completed' ? staleStages(await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: 'runtime/orchestrator/state.json' }).catch(() => null)) : null;
+    process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder }))}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

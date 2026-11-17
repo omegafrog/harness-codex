@@ -16,7 +16,8 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { markStagesStale, resolveReopen, staleFeedback } from './stage-reopen.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 import { assertTicketStartable } from './tactical-tickets.mjs';
 import { userSaidAfter } from './user-inputs.mjs';
@@ -274,7 +275,7 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
@@ -293,13 +294,24 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' });
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
+  // Forward rewind: the owner named by a later stage's blocked / DEPENDENCY_INCOMPLETE result is relaunched with that gap as its
+  // feedback. Nothing is rolled back; the stale marks of the stages after it are recorded once its input exists.
+  let reopenPlan = null;
+  if (reopenFor !== null) {
+    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .codex/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
+    reopenPlan = await resolveReopen({ root, session, state, ownerStage: stageId, blockedExecutionId: reopenFor });
+    feedback = reopenPlan.feedback;
+  }
+  // A stage marked stale by a rewind is re-run with a note that its upstream changed.
+  const staleMark = reopenPlan || restart ? null : state.stages?.[stageId]?.stale ?? null;
+  if (staleMark && feedback === null && answer === null) feedback = staleFeedback(stageId, staleMark);
   // The requirements and tactical design flow runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
   const orderViolation = preSpecOrderViolation(state.stages, stageId);
   if (orderViolation) throw new Error(orderViolation);
   const tacticalImplementationViolation = tacticalImplementationOrderViolation(state.stages, stageId);
   if (tacticalImplementationViolation) throw new Error(tacticalImplementationViolation);
   if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
-  if (stageId === 'tracker-publish' && (!publicationApproved || state.stages?.['to-ticket']?.status !== 'completed' || state.stages?.['to-ticket']?.code !== 'OK')) throw new Error('Completed to-ticket and user publication approval are required');
+  if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
   // The orchestrator's own words cannot prove that the user approved: the user's reply to the reviewed plan set must be in
   // the log of the user's actual inputs, written after to-ticket finished. A bare flag publishes nothing.
   if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z' }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
@@ -349,7 +361,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
     && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
-  if (!frontendDesignHandoff && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  if (!reopenPlan && !frontendDesignHandoff && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -472,8 +484,26 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (userRevision && Object.values(state.stages).some((item) => item?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
   let conversation = {};
   let interruptedAnswers;
+  // The owner of a gap, or a stage a rewind marked stale, is a finished stage that is edited forward from its own result.
+  const reopenedForward = Boolean(reopenPlan) || Boolean(staleMark && previous?.status === 'completed' && previous.code === 'OK');
   const crossStageRevision = transition && lastStage !== stageId && REVISION_TARGETS[transition.code] === stageId;
-  if (feedback !== null && crossStageRevision && !previous) {
+  if (reopenedForward) {
+    const prefix = `runtime/executions/${previous.execution_id}`;
+    const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
+    const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
+    await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: true });
+    if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code) throw new Error('Feedback target does not match stage state');
+    const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
+    input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
+    if (reopenPlan) input_refs.push({ base: reopenPlan.blocked_result_base, path: reopenPlan.blocked_result_ref, kind: 'dependency_gap_result' });
+    conversation = {
+      previous_result_ref: previous.result_ref,
+      reopen: reopenPlan
+        ? { reason: 'dependency_gap', owner_stage: reopenPlan.owner_stage, blocked_stage: reopenPlan.blocked_stage, blocked_execution_id: reopenPlan.blocked_execution_id, rerun_order: reopenPlan.stale.rerun_order }
+        : { reason: 'upstream_changed', owner_stage: staleMark.owner_stage, blocked_stage: staleMark.blocked_stage, blocked_execution_id: staleMark.reopened_for, rerun_order: staleMark.rerun_order },
+    };
+  } else if (feedback !== null && crossStageRevision && !previous) {
     conversation = { previous_result_ref: transition.result_ref };
   } else if (feedback !== null) {
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
@@ -647,6 +677,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
+  if (reopenPlan) await markStagesStale({ session: taskSession, plan: reopenPlan });
   if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });
   const paths = stageExecutionPaths(root, execution_id);
   if (paths.session !== taskSession) throw new Error('Execution session does not match workspace');

@@ -35,6 +35,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     else delete result.commit_request;
   }
   // Structured output requires every property; earlier results without these fields stay valid in the stored schema.
+  // A blocked / DEPENDENCY_INCOMPLETE result names the owner of the gap; the runner checks that pairing at finish (dependencyOwnerErrors).
+  for (const key of ['owner_stage', 'dependency_gap']) if (result[key] && !schema.properties.result.required.includes(key)) schema.properties.result.required.push(key);
   const question = result.questions?.items;
   if (question?.properties?.decision_kind && !question.required.includes('decision_kind')) question.required = [...question.required, 'decision_kind'];
   const option = question?.properties?.options?.items;

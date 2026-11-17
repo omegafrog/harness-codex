@@ -36,7 +36,7 @@ Step of the tactical design flow after `aggregate-design` and before `applicatio
 
 ## Deepening
 
-This stage never adds a business rule. A decision that the requirements leave unstated returns `blocked` / `INPUT_MISSING` naming the `BIZ`, `INV` or `EX`. A rule that an Aggregate should own, or a service that would need an Aggregate or consistency decision to change, returns `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design`; nothing in section 2 is edited. The shared rules describe how the orchestrator reopens the earlier stage.
+This stage never adds a business rule. A decision that the requirements leave unstated returns `blocked` / `INPUT_MISSING` naming the `BIZ`, `INV` or `EX`. A rule that an Aggregate should own, or a service that would need an Aggregate or consistency decision to change, returns `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design`; nothing in section 2 is edited. The shared rules describe how the orchestrator reopens the earlier stage. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](../domain-model/references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
 
 ## Completion
 

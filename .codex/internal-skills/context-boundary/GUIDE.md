@@ -38,7 +38,7 @@ model_tier: high_performance
 
 ## 최종 gate
 
-이전 실행이 `blocked`였다면 이전 gate 오류는 당시 시도의 근거로만 보고 현재 문서에 gate를 다시 실행한 뒤 현재 오류로 block한다. [공통 재시작 규칙](../domain-model/references/deepening.md#relaunch-after-a-block)을 따른다. Runner는 이 stage가 `completed/OK`를 반환한 뒤에만 전술 gate를 실행한다. 실패하면 각 finding의 `owner_stage`와 함께 `gate_error`가 반환된다. 이 stage 소유 오류는 여기서 고칠 수 있다. 이전 stage 오류는 확정된 입력이므로 문서를 시작 당시의 commit 상태로 복구하고 가장 앞선 `owner_stage`를 지정해 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환한다. 오류의 `code`, `id`, `message`를 근거로 포함한다. 사용자는 `--restart-requirements true` 또는 `--user-revision true --feedback`으로 해당 stage를 다시 연다.
+이전 실행이 `blocked`였다면 이전 gate 오류는 당시 시도의 근거로만 보고 현재 문서에 gate를 다시 실행한 뒤 현재 오류로 block한다. [공통 재시작 규칙](../domain-model/references/deepening.md#relaunch-after-a-block)을 따른다. Runner는 이 stage가 `completed/OK`를 반환한 뒤에만 전술 gate를 실행한다. 실패하면 각 finding의 `owner_stage`와 함께 `gate_error`가 반환된다. 이 stage 소유 오류는 여기서 고칠 수 있다. 이전 stage 오류는 확정된 입력이므로 문서를 시작 당시의 commit 상태로 복구하고 가장 앞선 `owner_stage`를 지정해 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환한다. 오류의 `code`, `id`, `message`를 근거로 포함한다. 사용자는 `--restart-requirements true` 또는 `--user-revision true --feedback`으로 해당 stage를 다시 연다. 앞 stage `owner_stage`의 오류로 block할 때는 `result.owner_stage`에 가장 앞 owner를, `result.dependency_gap`에 gate 오류 근거를 적는다. orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 앞으로 진행하며, 이 stage는 마지막 stage이므로 다시 완료될 때 gate가 다시 실행된다. [자동 되돌아가기 규칙](../domain-model/references/deepening.md#automatic-rewind-to-the-owner)
 
 ## 완료 조건
 

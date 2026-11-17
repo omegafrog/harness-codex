@@ -322,14 +322,14 @@ test('installed frontend design is dispatched independently and its brief enters
   const started = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...base, '--verbose']);
   assert.equal(started.sandbox, 'read-only');
   flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', 'designer']);
-  const result = { schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', summary: '화면 설계 완료', artifacts: [], questions: [], review_request: null, artifact_contents: [{ name: 'frontend-design.md', kind: 'frontend_design_brief', content: '# 게시글 작성 화면\n' }] };
+  const result = { schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', summary: '화면 설계 완료', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null, artifact_contents: [{ name: 'frontend-design.md', kind: 'frontend_design_brief', content: '# 게시글 작성 화면\n' }] };
   await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', result }));
   const finished = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...base, '--verbose']);
   const brief = finished.result.artifacts.find((item) => item.kind === 'frontend_design_brief');
   assert.equal(brief.base, 'session');
   assert.equal(await readFile(join(flow.workspace, '.io', brief.path), 'utf8'), '# 게시글 작성 화면\n');
   const ui = await flow.beginStage('tactical-ui', { extraArgs: ['--feedback', '완료된 화면 설계를 확인한다'] });
-  const output = { schema_version: 1, skill: 'tactical-ui', status: 'completed', code: 'OK', summary: '화면 설계 참조', artifacts: [brief], questions: [], review_request: null };
+  const output = { schema_version: 1, skill: 'tactical-ui', status: 'completed', code: 'OK', summary: '화면 설계 참조', artifacts: [brief], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
   await writeFile(ui.started.output_path, JSON.stringify({ schema_version: 1, skill: 'tactical-ui', status: 'completed', code: 'OK', result: output }));
   assert.equal(flow.finishStage(ui).status, 0);
   const plans = join(flow.workspace, 'docs/plans', flow.planSetId);
@@ -374,7 +374,7 @@ test('installed frontend design is dispatched independently and its brief enters
     const started = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...args, '--verbose']);
     assert.equal(started.agent_profile, profile);
     flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...args, '--agent-id', stage]);
-    const result = { schema_version: 1, skill, status: 'completed', code: 'OK', summary: '완료', artifacts: [], questions: [], review_request: null };
+    const result = { schema_version: 1, skill, status: 'completed', code: 'OK', summary: '완료', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill, status: 'completed', code: 'OK', result }));
     flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...args]);
     return prepared;

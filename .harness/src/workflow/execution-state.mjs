@@ -40,6 +40,8 @@ export async function completeExecutionState({ root, session_directory }) {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const state = workflow?.state || await readSkillSessionJson({ root, session_directory: session, path: `${directory}/state.json` });
     if (state.schema_version !== 1 || !state.current_stage || state.stages?.[state.current_stage]?.status !== 'completed') throw new Error('Current workflow stage is not completed');
+    const stale = Object.entries(state.stages || {}).filter(([, entry]) => entry?.stale).map(([id]) => id);
+    if (stale.length) throw new Error(`Workflow cannot complete: ${stale.join(', ')} ${stale.length > 1 ? 'are' : 'is'} stale after an upstream stage was reopened; re-run the stale stages in order`);
     state.status = 'completed';
     state.updated_at = new Date().toISOString();
     const temporary = join(session, directory, `.workflow-${randomUUID()}.json`);
@@ -116,7 +118,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; delete entry.taken_over; }
+      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; delete entry.taken_over; delete entry.stale; }
       if (nativeClaim) entry.native_managed = true;
       if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];

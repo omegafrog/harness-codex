@@ -17,3 +17,5 @@
 `to-ticket`과 `tracker-publish`는 기존 계획 stage를 그대로 쓰되 입력이 Spec이 아니라 위 전술 설계와 결정 문서다. 발행은 사용자의 직접 답이 있어야만 진행한다.
 
 `tactical-code`는 게시된 ticket 하나를 완료된 전술 설계·기술 결정과 ticket 파일에 근거해 구현·테스트하고 정확한 `commit_request`를 반환한다(ticket마다 한 번 실행, `--plan <ticket-id>`). 누락된 업무 결정은 추론하지 않고 차단한다. Workflow artifact는 프로젝트 소유이므로 Git에 보이며 설치된 Harness 자산은 Git에서 제외된다.
+
+앞 stage의 산출물이 부족해 어느 stage든 `blocked` / `DEPENDENCY_INCOMPLETE`(`owner_stage`·`dependency_gap` 포함)를 반환하면 orchestrator는 사용자에게 묻지 않고 owner stage를 `--reopen-for`로 다시 열고, 이후 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)). 업무 결정 질문만 사용자에게 간다.
