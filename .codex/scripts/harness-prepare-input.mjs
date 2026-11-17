@@ -6,12 +6,12 @@ const { prepareStageInput, resolveStageSkill } = await import(new URL('stage-inp
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
-const { compactPrepared, extractVerbose, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
+const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
 // What the error output needs to know about this call.
 const errorContext = { script: 'prepare', stageId: undefined, root: undefined, mode: null };
 try {
   const { args: rawArgs, verbose } = extractVerbose(process.argv.slice(2));
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'spec-overwrite-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure']);
   const options = {};
   for (let i = 0; i < rawArgs.length; i += 2) {
     const key = rawArgs[i]?.replace(/^--/, '');
@@ -19,7 +19,7 @@ try {
     options[key] = rawArgs[i + 1];
   }
   errorContext.stageId = options['stage-id'];
-  errorContext.mode = options['restart-requirements'] !== undefined ? 'restart' : options['discard-out-of-order'] !== undefined ? 'discard' : null;
+  errorContext.mode = options['restart-requirements'] !== undefined ? 'restart' : options['discard-out-of-order'] !== undefined ? 'discard' : options['take-over-interrupted'] !== undefined ? 'takeover' : null;
   const commandContext = (await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href)).resolveCommandContext({ worktreeRef: options['worktree-ref'] });
   options['worktree-ref'] = commandContext.worktree_ref ?? options['worktree-ref'];
   if (!isAbsolute(options['worktree-ref'] || '') || basename(options['worktree-ref']) !== 'worktree.json' || !options['stage-id']) throw new Error('Absolute worktree-ref and stage-id are required');
@@ -43,6 +43,17 @@ try {
   const root = await realpath(record.workspace);
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
+  // Codex stages need the trusted Harness subagent hook to record native reviewer identity.
+  const assertCodexHookTrusted = async () => {
+    const { parseYaml } = await import(new URL('../eval/yaml.mjs', base));
+    const provider = record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).agents?.provider || 'codex';
+    if (provider === 'codex') {
+      const { inspectCodexHookTrust } = await import(new URL('providers/codex.mjs', base));
+      const trust = await inspectCodexHookTrust();
+      if (!trust.trusted) throw new Error(`PERMISSION_REQUIRED: the Harness subagent hook in ${trust.hooks_path} is ${trust.missing.length ? 'missing; run setup with the codex provider' : 'not trusted; open Codex, run /hooks and trust "Recording Harness subagent" for SubagentStart and SubagentStop'}. Stages do not start without it.`);
+    }
+    return provider;
+  };
   if (options['restart-requirements'] !== undefined) {
     if (options['restart-requirements'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'restart-requirements'].includes(key))) throw new Error('Requirements restart must be requested alone');
     const { restartRequirements } = await import(new URL('requirements-restart.mjs', base));
@@ -58,15 +69,16 @@ try {
     process.stdout.write(`${JSON.stringify({ ...discarded, next: following ? `The flow returned to ${discarded.previous_stage}. Continue with the stage that follows it: ${launchCommand(following)}` : `The flow returned to ${discarded.previous_stage}. Continue per the orchestrator skill.` })}\n`);
     process.exit(0);
   }
-  await resolveSkillSession(root, session);
-  // Codex stages need the trusted Harness subagent hook to record native reviewer identity.
-  const { parseYaml } = await import(new URL('../eval/yaml.mjs', base));
-  const stageProvider = record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).agents?.provider || 'codex';
-  if (stageProvider === 'codex') {
-    const { inspectCodexHookTrust } = await import(new URL('providers/codex.mjs', base));
-    const trust = await inspectCodexHookTrust();
-    if (!trust.trusted) throw new Error(`PERMISSION_REQUIRED: the Harness subagent hook in ${trust.hooks_path} is ${trust.missing.length ? 'missing; run setup with the codex provider' : 'not trusted; open Codex, run /hooks and trust "Recording Harness subagent" for SubagentStart and SubagentStop'}. Stages do not start without it.`);
+  if (options['take-over-interrupted'] !== undefined) {
+    if (options['take-over-interrupted'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'take-over-interrupted'].includes(key))) throw new Error('Taking over an interrupted stage must be requested alone');
+    await assertCodexHookTrusted();
+    const { takeOverInterruptedStage } = await import(new URL('stage-takeover.mjs', base));
+    const taken = await takeOverInterruptedStage({ root, session: worktreeSession, stageId: options['stage-id'] });
+    process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `--feedback '${TAKEOVER_FEEDBACK}'`)}` })}\n`);
+    process.exit(0);
   }
+  await resolveSkillSession(root, session);
+  const stageProvider = await assertCodexHookTrusted();
   const recordedOrchestrator = record.agent_sessions?.orchestrator;
   const orchestrator = recordedOrchestrator ? { ...recordedOrchestrator, provider: recordedOrchestrator.provider || 'codex' } : state.orchestrator_session_id ? { session_id: state.orchestrator_session_id, provider: state.orchestrator_provider || 'codex' } : state.codex_session_id ? { session_id: state.codex_session_id, provider: 'codex' } : null;
   const codexSessionId = orchestrator?.provider === 'codex' ? orchestrator.session_id : null;

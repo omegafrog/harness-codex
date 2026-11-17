@@ -25,7 +25,7 @@ export async function processIdentity(pid) {
 // Stages run as native subagents of the orchestrator's CLI, so a stage is stopped only when its subagent reported the end.
 export async function assertExecutionStopped(entry) {
   if (entry?.native_managed && entry.status !== 'running' && entry.native_finished === true) return;
-  throw new Error(`Native subagent status is not confirmed; inspect the original session before retrying${entry?.execution_id ? ` (execution ${entry.execution_id})` : ''}`);
+  throw new Error(`Native subagent status is not confirmed; check it with inspect before retrying${entry?.execution_id ? ` (execution ${entry.execution_id})` : ''}`);
 }
 
 export async function completeExecutionState({ root, session_directory }) {
@@ -116,7 +116,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; }
+      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; delete entry.taken_over; }
       if (nativeClaim) entry.native_managed = true;
       if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];

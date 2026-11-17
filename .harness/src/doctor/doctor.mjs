@@ -120,7 +120,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'stage-cli'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'stage-cli', 'stage-takeover'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (config.agents?.provider === 'claude-code') {

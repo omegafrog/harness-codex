@@ -82,7 +82,7 @@ export async function restartRequirements({ root, session, stageId }) {
 }
 
 // True while any process of this user holds the transcript open: a live Codex session keeps its own transcript open.
-async function transcriptInUse(path) {
+export async function transcriptInUse(path) {
   let pids;
   try { pids = (await readdir('/proc')).filter((name) => /^\d+$/.test(name)); }
   catch (error) { if (error.code === 'ENOENT') throw new Error('Cannot verify that the orchestrator session ended: process information is unavailable on this platform'); throw error; }

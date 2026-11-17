@@ -18,6 +18,23 @@ export const launchCommand = (stage, extra = '') => `${NATIVE} launch --stage-id
 export const nativeCommand = (action, executionId, extra = '') => `${NATIVE} ${action} --execution-id ${executionId}${extra ? ` ${extra}` : ''}`;
 export const contextCommand = () => CONTEXT;
 
+// The feedback a taken-over stage resumes with. It is internal agent input, so it is English, and it holds no quote
+// because the printed command wraps it in single quotes.
+export const TAKEOVER_FEEDBACK = 'The previous run of this stage was interrupted when the Codex conversation that started it ended, and it recorded no result. Continue from the committed documents and the previous input, and keep any answers already given.';
+export const takeoverCommand = (stage) => launchCommand(stage, '--take-over true');
+
+// The current stage is a native run that another Codex conversation started and never finished. Only that case can be
+// taken over: this conversation cannot wait for, finish or reconcile an agent it did not spawn.
+export function foreignRunningStage(state, sessionId = process.env.CODEX_THREAD_ID) {
+  const stage = state?.current_stage;
+  const entry = stage ? state.stages?.[stage] : null;
+  if (!sessionId || state?.orchestrator_provider !== 'codex' || !state.orchestrator_session_id || state.orchestrator_session_id === sessionId) return null;
+  if (!entry || entry.status !== 'running' || !entry.native_managed || entry.result_ref) return null;
+  return { stage, entry, owner: state.orchestrator_session_id };
+}
+
+export const takeoverStep = ({ stage, owner }) => `${stage} is still recorded as running by another Codex conversation (${owner}). Do not send the user back to that conversation. If it and its agent have ended, take the stage over with ${takeoverCommand(stage)}; it checks that they ended and, if they may still be running, refuses with the next step.`;
+
 // `--verbose` is a bare flag. A following `true` is accepted so `--verbose true` also works.
 export function extractVerbose(argv) {
   const args = [];
@@ -202,10 +219,12 @@ function loadState(context) {
 }
 
 // What moves `stage`, as recorded in `entry`, forward.
-function resumeStage(stage, entry) {
+function resumeStage(stage, entry, state) {
   if (!entry) return { steps: [launchCommand(stage)] };
   const { status, code } = entry;
   if (status === 'running') {
+    const foreign = foreignRunningStage(state);
+    if (foreign?.stage === stage) return { steps: [takeoverStep(foreign), ...(entry.execution_id ? [`If its state is unclear: ${nativeCommand('inspect', entry.execution_id)}`] : [])] };
     return { steps: [
       ...(entry.execution_id ? [`Wait for its native subagent to end (do not start another), then: ${nativeCommand('finish', entry.execution_id)}`, `If its state is unclear: ${nativeCommand('inspect', entry.execution_id)}`] : [`Wait for its native subagent to end, then run finish for its execution (${CONTEXT} shows it).`]),
     ] };
@@ -244,7 +263,7 @@ const RULES = [
   }) },
   { re: /^(\S+) cannot start before (\S+):/, explain: ({ m, message, state }) => {
     const [, stage, required] = m;
-    const resume = resumeStage(required, entryOf(state, required));
+    const resume = resumeStage(required, entryOf(state, required), state);
     return {
       code: 'STAGE_ORDER',
       why: `The flow before spec-me runs in a fixed order, and ${required} is ${describe(entryOf(state, required))} (it must be completed/OK) before ${stage} may start. Your instruction to start ${stage} is stale; the flow decides.`,
@@ -274,7 +293,7 @@ const RULES = [
   { re: /^Previous stage has no usable result(?:: (\S+) is (\w+)(?:\/(\w+))?)?/, explain: ({ m, state, stage }) => {
     const last = m[1] || state?.current_stage;
     const entry = entryOf(state, last) ?? (m[2] ? { status: m[2], code: m[3] } : null);
-    const resume = last ? resumeStage(last, entry) : { steps: [CONTEXT] };
+    const resume = last ? resumeStage(last, entry, state) : { steps: [CONTEXT] };
     return {
       code: 'PREVIOUS_RESULT_MISSING',
       why: `${stage || 'The requested stage'} continues from the workflow's current stage${last ? ` (${last}, ${describe(entry)})` : ''}, but that stage has no recorded usable result (it is running, failed, blocked or cancelled), so there is nothing to hand over. Resolve ${last || 'it'} first instead of selecting another stage.`,
@@ -284,7 +303,7 @@ const RULES = [
   } },
   { re: /^Resolve the previous stage before selecting another(?:: (\S+) returned (\w+)\/(\w+))?/, explain: ({ m, state, stage }) => {
     const last = m[1] || state?.current_stage;
-    const resume = last ? resumeStage(last, entryOf(state, last) ?? (m[2] ? { status: m[2], code: m[3] } : null)) : { steps: [CONTEXT] };
+    const resume = last ? resumeStage(last, entryOf(state, last) ?? (m[2] ? { status: m[2], code: m[3] } : null), state) : { steps: [CONTEXT] };
     return { code: 'PREVIOUS_UNRESOLVED', why: `${last || 'The previous stage'} returned ${m[2] ? `${m[2]}/${m[3]}` : 'a result'} that must be handled before ${stage || 'another stage'} can start (a question to answer, a review to run, or a blocker).`, next: resume.steps, decision: resume.decision };
   } },
   { re: /^Revision must return to (\S+)/, explain: ({ m }) => ({ code: 'REVISION_TARGET', why: `The previous result asked for a revision owned by ${m[1]}, so no other stage may be prepared in between.`, next: [launchCommand(m[1], m[1] === 'implement-wrapper' ? '--plan <plan-id>' : '')] }) },
@@ -294,7 +313,7 @@ const RULES = [
     next: [`If the user gives an instruction: ${launchCommand(stage || '<owner-stage>', `--user-revision true ${USER_FEEDBACK_ARG}`)}`],
     decision: 'Report to the user that this revision returned the same unresolved result twice (summary: ' + CONTEXT + ') and ask whether to give a new instruction, change the requirement, or stop. Do not retry without new evidence.',
   }) },
-  { re: /^Dependency incomplete: (\S+)/, explain: ({ m, state }) => { const resume = resumeStage(m[1], entryOf(state, m[1])); return { code: 'DEPENDENCY_INCOMPLETE', why: `${m[1]} must be completed before this stage; it is ${describe(entryOf(state, m[1]))}.`, next: resume.steps, decision: resume.decision }; } },
+  { re: /^Dependency incomplete: (\S+)/, explain: ({ m, state }) => { const resume = resumeStage(m[1], entryOf(state, m[1]), state); return { code: 'DEPENDENCY_INCOMPLETE', why: `${m[1]} must be completed before this stage; it is ${describe(entryOf(state, m[1]))}.`, next: resume.steps, decision: resume.decision }; } },
   { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision reopens a finished stage and only exists for the user's own correction, so it needs --feedback with the user's instruction verbatim, and only requirements-fix, a tactical design stage, spec-me, to-ticket or implement-wrapper can be reopened${stage ? ` (${stage} was requested)` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, do not use --user-revision; run the stage normally.' }) },
   { re: /^User revision requires a completed stage or one waiting on its question/, explain: ({ stage, state }) => ({ code: 'USER_REVISION_REFUSED', why: `${stage || 'The stage'} is ${describe(entryOf(state, stage))}; only a completed stage, or one waiting on its question, can be reopened by the user.`, next: [`To run it normally (not as a user revision): ${launchCommand(stage || '<stage-id>')}`, `To see its state: ${CONTEXT}`] }) },
   { re: /^User revision cannot start while another stage is running/, explain: ({ state }) => {
@@ -312,10 +331,32 @@ const RULES = [
     next: [CONTEXT],
     decision: 'Report this refusal to the user; a restart is not possible for this workflow state, and they decide how to proceed (for example a user revision of one stage with --user-revision).',
   }) },
-  { re: /^Running stage cannot be verified stopped/, explain: ({ message, context }) => ({
-    code: context.mode === 'discard' ? 'DISCARD_REFUSED' : 'RESTART_REFUSED',
-    why: `The runner will not rewind state while a stage's native agent may still be running (${message.replace(/^Running stage cannot be verified stopped:? ?/, '') || 'no proof that it ended'}).`,
-    next: [`Wait for the native subagent to end, or close the orchestrator Codex session that started it, then repeat the same command.`, ...(/subagent started after the claim/.test(message) ? [`A subagent started after the claim was never bound: bind it with ${nativeCommand('bind', '<execution_id>', '--agent-id <agent_id>')} or inspect it with ${nativeCommand('inspect', '<execution_id>')}.`] : [])],
+  { re: /^Takeover refused: |^Taking over an interrupted stage must be requested alone/, explain: ({ message, stage, context, state }) => {
+    const reason = message.replace(/^Takeover refused: /, '');
+    const target = stage || '<stage-id>';
+    const retry = takeoverCommand(target);
+    const base = { code: 'TAKEOVER_REFUSED', why: `A stage that another Codex conversation started is taken over only when that conversation and its agent provably ended, the stage recorded no result and the project tree is clean (${reason}). Nothing was changed.` };
+    if (/must be requested alone/.test(message)) return { ...base, why: `${message}. Pass only --stage-id with --take-over true.`, next: [retry] };
+    if (/uncommitted changes/.test(reason)) return { ...base, next: ['git status --short (read only) lists the changes'], decision: `The interrupted stage may have left these changes. Show them to the user and ask them to commit or stash what they want to keep (never discard them yourself); then repeat: ${retry}` };
+    if (/wrote its output/.test(reason)) {
+      const id = /finish --execution-id (\S+)/.exec(reason)?.[1] || context.executionId || entryOf(state, stage)?.execution_id;
+      return { ...base, next: [id ? nativeCommand('finish', id) : `${CONTEXT} shows its execution_id; then run finish for it`] };
+    }
+    if (/conversation started .+ itself/.test(reason)) {
+      const id = entryOf(state, stage)?.execution_id;
+      return { ...base, next: id ? [`Wait for its native subagent to end, then: ${nativeCommand('finish', id)}`, `If its state is unclear: ${nativeCommand('inspect', id)}`] : [CONTEXT] };
+    }
+    if (/must be the current native stage|is not recorded|another stage is running/.test(reason)) return { ...base, next: [CONTEXT], decision: 'The stage is not an interrupted run this conversation can take over; read its state and continue from it, or report the refusal to the user.' };
+    if (/CODEX_THREAD_ID/.test(reason)) return { ...base, decision: 'Run the command from the Codex conversation that orchestrates this workflow (Codex sets CODEX_THREAD_ID there). If this is not a Codex CLI session, ask the user to continue in the conversation that started the stage.' };
+    if (/only a stage that a Codex conversation/.test(reason)) return { ...base, decision: 'Ask the user to continue in the conversation that started this stage; another provider cannot verify that the run ended.' };
+    return { ...base, next: [CONTEXT], decision: 'Report this refusal to the user and wait for their direction; do not edit state files.' };
+  } },
+  { re: /^Running stage cannot be verified stopped/, explain: ({ message, stage, context }) => ({
+    code: context.mode === 'takeover' ? 'TAKEOVER_REFUSED' : context.mode === 'discard' ? 'DISCARD_REFUSED' : 'RESTART_REFUSED',
+    why: `The runner will not ${context.mode === 'takeover' ? 'take a stage over' : 'rewind state'} while a stage's native agent may still be running (${message.replace(/^Running stage cannot be verified stopped:? ?/, '') || 'no proof that it ended'}).`,
+    next: context.mode === 'takeover'
+      ? [`Close the Codex conversation that started the stage (or let its agent end), then repeat the same command: ${takeoverCommand(stage || '<stage-id>')}`]
+      : [`Wait for the native subagent to end, or close the orchestrator Codex session that started it, then repeat the same command.`, ...(/subagent started after the claim/.test(message) ? [`A subagent started after the claim was never bound: bind it with ${nativeCommand('bind', '<execution_id>', '--agent-id <agent_id>')} or inspect it with ${nativeCommand('inspect', '<execution_id>')}.`] : [])],
     decision: 'If you cannot establish that it ended, ask the user to close the Codex session and tell you.',
   }) },
   { re: /is not out of order|must be the current native stage|^Another stage is running|^Only a stage run by a Codex orchestrator|^Discarding requires a clean|already committed documents|is not recorded in the workflow state|^No completed stage to return to|^Discarding an out-of-order stage must be requested alone/, explain: ({ message, stage }) => ({
@@ -342,6 +383,14 @@ const RULES = [
   { re: /^Native subagent status is not confirmed|^Stage already running/, explain: ({ message, stage, state }) => {
     const entry = entryOf(state, stage);
     const id = /\(execution (\S+)\)/.exec(message)?.[1] || entry?.execution_id;
+    const foreign = foreignRunningStage(state);
+    if (foreign) {
+      return {
+        code: 'STAGE_RUNNING',
+        why: `${foreign.stage} is recorded as running by another Codex conversation (${foreign.owner}); this conversation did not spawn its agent, so it cannot wait for or finish it, and the runner will not start a second run of it.`,
+        next: [takeoverStep(foreign), ...(foreign.entry.execution_id ? [`If you need its state first: ${nativeCommand('inspect', foreign.entry.execution_id)}`] : [])],
+      };
+    }
     return {
       code: 'STAGE_RUNNING',
       why: `${stage || 'The stage'} is recorded as running and its native subagent has not reported the end, so the runner will not start a second run of it.`,

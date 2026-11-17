@@ -7,17 +7,28 @@ import { parseWorktreeRecord } from './worktrees.mjs';
 import { readExecutionInput, validateSkillInput } from './skill-execution.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 
-async function readRolloutMetadata(path) {
+export async function readRolloutMetadata(path) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = await handle.stat();
     if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe Codex transcript');
-    const lines = createInterface({ input: createReadStream(path, { fd: handle.fd, autoClose: false }), crlfDelay: Infinity });
-    for await (const line of lines) {
-      try { const entry = JSON.parse(line); return entry.type === 'session_meta' ? entry.payload : null; }
-      catch { return null; }
+    // Only the first line (session_meta) is needed. It is read directly: a line reader that stops early is still reading
+    // the file when the handle closes, which fails on a transcript larger than one read.
+    const chunks = [];
+    let length = 0, position = 0;
+    for (;;) {
+      const buffer = Buffer.alloc(65536);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (!bytesRead) break;
+      const newline = buffer.subarray(0, bytesRead).indexOf(10);
+      const used = newline >= 0 ? newline : bytesRead;
+      chunks.push(buffer.subarray(0, used));
+      length += used;
+      position += bytesRead;
+      if (newline >= 0 || length > 4 * 1024 * 1024) break;
     }
-    return null;
+    try { const entry = JSON.parse(Buffer.concat(chunks).toString('utf8')); return entry.type === 'session_meta' ? entry.payload : null; }
+    catch { return null; }
   } finally { await handle.close(); }
 }
 

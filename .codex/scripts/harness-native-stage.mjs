@@ -14,7 +14,7 @@ import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
-import { compactFinished, compactStarted, extractVerbose, formatErrorResult, gateErrorResult, launchResult, compactPrepared, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchResult, compactPrepared, nativeCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
@@ -28,10 +28,31 @@ const childFailure = (child, context = {}) => {
   return error;
 };
 
+// `--take-over true` is the only option besides --stage-id: it returns the stage's id, or null without the flag.
+function takeOverStage(args) {
+  const index = args.indexOf('--take-over');
+  if (index < 0) return null;
+  const rest = args.filter((_, i) => i !== index && i !== index + 1);
+  if (args[index + 1] !== 'true' || rest.length !== 2 || rest[0] !== '--stage-id' || !rest[1]) throw new Error('Taking over an interrupted stage must be requested alone');
+  return rest[1];
+}
+
 // prepare + start in one call: the orchestrator gets exactly what it needs to spawn the subagent and then bind it.
-function launchStage(args, verbose) {
+// With --take-over true the stage another (ended) Codex conversation left running is first recorded as interrupted and
+// this conversation becomes the orchestrator; the launch then resumes that stage with a fresh execution.
+function launchStage(requestedArgs, verbose) {
   const scripts = fileURLToPath(new URL('.', import.meta.url));
   const run = (script, scriptArgs) => spawnSync(process.execPath, [join(scripts, script), ...scriptArgs], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const takeOverId = takeOverStage(requestedArgs);
+  let args = requestedArgs, taken = null;
+  if (takeOverId) {
+    errorContext.stageId = takeOverId;
+    const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true']);
+    if (takeover.status !== 0) throw childFailure(takeover);
+    taken = lastJson(takeover.stdout);
+    if (!taken) throw new Error('harness-prepare-input.mjs printed no result');
+    args = ['--stage-id', takeOverId, '--feedback', TAKEOVER_FEEDBACK];
+  }
   const prepare = run('harness-prepare-input.mjs', [...args, '--verbose']);
   if (prepare.status !== 0) throw childFailure(prepare);
   const prepared = lastJson(prepare.stdout);
@@ -45,7 +66,8 @@ function launchStage(args, verbose) {
   const started = lastJson(start.stdout);
   if (!started) throw new Error('harness-native-stage.mjs start printed no result');
   const launched = launchResult({ prepared, started });
-  return verbose ? { ...launched, input: prepared.input } : launched;
+  const takenOver = taken ? { taken_over: { previous_execution_id: taken.execution_id, previous_session_id: taken.previous_session_id, verified: taken.verified, ...(verbose ? { backup: taken.backup } : {}) } } : {};
+  return verbose ? { ...launched, ...takenOver, input: prepared.input } : { ...launched, ...takenOver };
 }
 
 try {
@@ -123,7 +145,16 @@ try {
         }
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
       finally { if (file) await file.close(); }
-      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, output_path: paths.files.raw, schema_path: paths.files.schema })}\n`);
+      // Which conversation owns the run, what the agent's own transcript says, and the next step when another (ended)
+      // conversation started it: this one cannot wait for or finish an agent it did not spawn, so it takes the stage over.
+      const workflowState = state.state || state;
+      const here = process.env.CODEX_THREAD_ID || null;
+      let nativeOutcome = null;
+      if (threadId) nativeOutcome = (await (await import('../../.harness/src/workflow/native-context.mjs')).readNativeCodexOutcome({ root, parentSessionId: workflowState.orchestrator_session_id, stage: current }).catch(() => null))?.status || null;
+      const foreign = foreignRunningStage(workflowState, here);
+      const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
+      const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
+      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(next ? { next } : {}) })}\n`);
       process.exit(0);
     }
     if (action === 'bind') {

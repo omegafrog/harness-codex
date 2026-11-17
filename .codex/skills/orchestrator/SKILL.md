@@ -61,6 +61,8 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]` 한 번으로 입력 준비와 예약을 마친다. 반환된 경로·`agent_profile`·`binding`으로 서브에이전트를 띄운 뒤 `next.bind`를, 종료하면 `next.finish`를 실행한다. 출력은 기본이 compact이며 `--verbose`는 진단 전용이다. 오류는 `why`와 `next`(명령) 또는 `user_decision`을 가진 JSON 하나이며 그대로 따른다. 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않고, `next`가 없거나 해결되지 않으면 오류를 사용자에게 보고한다.
 
+다른 Codex 대화가 시작한 stage가 대화 종료로 `running`에 멈춰 있으면(`harness-context`의 `next`, `inspect`의 `session: other`, `STAGE_RUNNING` 오류가 알려 준다) 사용자를 원래 대화로 돌아가라고 하지 않는다. 안내된 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> --take-over true` 한 번만 실행하고 반환을 그대로 따른다. 실행기가 이전 대화와 agent의 종료를 확인하지 못하면 이유와 `next`·`user_decision`을 반환하며, `fail`이나 state 수정으로 우회하지 않는다.
+
 `to-ticket`이 완료되면 계획 전체를 사용자에게 보여주고 발행 승인을 받은 뒤에만 `tracker-publish`를 선택한다. 승인 전달은 공통 실행 조율을 따른다. 발행 stage가 완료된 뒤 GitHub tracker mode이면 `plan-pr` stage를 `pr_author`로 실행해 정본 계획 PR을 draft로 만들거나 같은 head의 기존 PR을 갱신한다. local-markdown mode는 PR stage를 건너뛴다. PR 작성은 tracker 발행·승인 완료 뒤에만 허용한다. 이미 발행·활성화된 plan set을 Spec 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않는다. 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남기고 중단됐던 단계를 이어 간다.
 
 완료된 Spec·계획·전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하거나, 질문을 기다리는 `spec-me`·`to-ticket`을 사용자가 답 대신 다시 하라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.

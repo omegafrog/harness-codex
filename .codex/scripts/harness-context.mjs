@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
-const { compactContext, extractVerbose } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { compactContext, extractVerbose, foreignRunningStage, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 try {
   const { args, verbose } = extractVerbose(process.argv.slice(2));
@@ -34,6 +34,8 @@ try {
   const context = {
     workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, plan_set_id: ctx.plan_set_id, branch: ctx.record?.branch || null,
     current_stage: state?.current_stage || null, workflow_status: state?.status || null,
+    // A stage another Codex conversation left running cannot be waited for from this one: the exact way on is here.
+    next: (() => { const foreign = foreignRunningStage(state); return foreign ? takeoverStep(foreign) : null; })(),
     // The orchestrator's last reply; when it is newer than every stage update it may be a question awaiting the user.
     orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,
     stages,
