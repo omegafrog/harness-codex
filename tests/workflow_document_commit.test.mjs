@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { commitWorkflowDocuments } from '../.harness/src/workflow/stage-commit.mjs';
-import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
+import { commitWorkflowDocuments, migrateLegacyTacticalDesign, restartDocuments } from '../.harness/src/workflow/stage-commit.mjs';
+import { LEGACY_TACTICAL_DESIGN_DOCUMENT, PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath } from '../.harness/src/workflow/worktree-stages.mjs';
 
 // Workflow-owned documents are committed by their stage; unrelated project files stay visible and uncommitted.
 test('spec-me, to-ticket and sync-contracts commit only their own documents when they complete', async () => {
@@ -178,40 +178,113 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
     // The project edits its own model rows and glossary; a stage that did not report them leaves those edits alone.
     await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 모델 색인\n\n프로젝트가 직접 고친 행\n');
     await writeFile(join(root, 'CONTEXT.md'), '# Context\n\n- 프로젝트가 직접 고친 용어\n');
-    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 1. 모델 후보\n');
+    await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 1. 모델 후보\n');
     await writeFile(join(root, 'app.txt'), 'app in progress\n');
     assert.equal(await run('domain-model', 'action_required', [], 'USER_DECISION_REQUIRED'), null, 'a stage waiting for the user commits nothing');
     assert.equal(await run('domain-model', 'blocked', [], 'INPUT_MISSING'), null, 'a block for missing evidence commits nothing');
     assert.match(await run('domain-model'), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['docs/specs/set/domain-model.md']);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/tactical-design.md']);
     assert.equal(lastSubject(), 'domain-model: set');
     assert.match(git('status', '--short'), /M docs\/architecture\/domain-model\.md/);
     assert.match(git('status', '--short'), /M CONTEXT\.md/);
 
     // Reported project documents join the commit.
-    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 1. 모델 후보\n\n## 2. Aggregate\n');
+    await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 1. 모델 후보\n\n## 2. Aggregate\n');
     assert.match(await run('aggregate-design', 'completed', listed('docs/architecture/domain-model.md', 'CONTEXT.md')), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/architecture/domain-model.md', 'docs/specs/set/domain-model.md']);
+    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/architecture/domain-model.md', 'docs/specs/set/tactical-design.md']);
     assert.equal(lastSubject(), 'aggregate-design: set');
 
     // A stage never commits the context map: its owner is bounded-context.
     await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 바뀐 관계 |\n');
-    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 3. Domain Service\n');
+    await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 3. Domain Service\n');
     assert.match(await run('domain-service', 'completed', listed('CONTEXT-MAP.md')), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['docs/specs/set/domain-model.md']);
+    assert.deepEqual(lastFiles(), ['docs/specs/set/tactical-design.md']);
     assert.match(git('status', '--short'), /M CONTEXT-MAP\.md/);
 
     // A tactical stage that stops on an invalidated earlier decision keeps only the rule it added to requirements.md.
     await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n\n  - INV-07 신고는 하루 안에 닫힌다 — 출처: answers.json `q-1`\n');
-    await writeFile(join(root, 'docs/specs/set/domain-model.md'), '# 도메인 모델\n\n## 4. 반쯤 쓴 절\n');
+    await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 4. 반쯤 쓴 절\n');
     assert.match(await run('integration-design', 'blocked', [], 'DEPENDENCY_INCOMPLETE'), /^[0-9a-f]{40}$/);
     assert.deepEqual(lastFiles(), ['docs/specs/set/requirements.md']);
     assert.equal(lastSubject(), 'integration-design: set');
-    assert.match(git('status', '--short'), /M docs\/specs\/set\/domain-model\.md/, 'the half-written section is not committed');
+    assert.match(git('status', '--short'), /M docs\/specs\/set\/tactical-design\.md/, 'the half-written section is not committed');
     assert.equal(await run('requirements-fix', 'blocked', [], 'DEPENDENCY_INCOMPLETE'), null, 'only tactical stages keep a rule when they block');
 
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /M app\.txt$/m, 'application changes stay visible and untouched');
     await rm(raw, { force: true });
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// A plan set that an earlier Harness started holds the tactical design as domain-model.md. The runner renames it before a tactical
+// stage runs, as `git mv` does, and the stage commit that follows carries the rename, even when the stage blocks.
+test('migrateLegacyTacticalDesign renames only a legacy plan set document as git mv does, and a block commits the pending rename', async () => {
+  assert.equal(TACTICAL_DESIGN_DOCUMENT, 'tactical-design.md');
+  assert.equal(LEGACY_TACTICAL_DESIGN_DOCUMENT, 'domain-model.md');
+  assert.deepEqual(restartDocuments('aggregate-design', 'set'), ['docs/specs/set/tactical-design.md', 'docs/specs/set/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md']);
+  const legacy = 'docs/specs/set/domain-model.md';
+  const current = 'docs/specs/set/tactical-design.md';
+  assert.equal(currentTacticalDesignPath(legacy), current, 'a recorded artifact path follows the rename');
+  assert.equal(currentTacticalDesignPath('docs/architecture/domain-model.md'), 'docs/architecture/domain-model.md', 'the project model index is not a plan set document');
+  assert.equal(currentTacticalDesignPath('docs/specs/set/nested/domain-model.md'), 'docs/specs/set/nested/domain-model.md');
+  const document = '# 전술 설계\n\n## 1. 모델 후보\n';
+  const directories = [];
+  const fixture = async (files) => {
+    const root = await mkdtemp(join(tmpdir(), 'legacy-tactical-'));
+    directories.push(root);
+    const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    for (const [path, content] of Object.entries({ 'app.txt': 'app\n', 'docs/architecture/domain-model.md': '# 모델 색인\n', 'docs/specs/set/requirements.md': '# 요구사항 명세\n\n- 상태: fixed\n', ...files })) {
+      await mkdir(join(root, path, '..'), { recursive: true });
+      await writeFile(join(root, path), content);
+    }
+    git('add', '.'); git('commit', '-qm', 'base');
+    return { root, git };
+  };
+  try {
+    // A tracked legacy document is renamed in the working tree and in the index: history follows the file.
+    const { root, git } = await fixture({ [legacy]: document });
+    assert.deepEqual(await migrateLegacyTacticalDesign({ root, planSetId: 'set' }), { from: legacy, to: current });
+    assert.equal(git('status', '--short', '--untracked-files=all'), `R  ${legacy} -> ${current}`, 'the rename is staged and nothing else changed');
+    assert.equal(await readFile(join(root, current), 'utf8'), document);
+    assert.equal(await readFile(join(root, 'docs/architecture/domain-model.md'), 'utf8'), '# 모델 색인\n', 'the project model index is never renamed');
+    assert.equal(await migrateLegacyTacticalDesign({ root, planSetId: 'set' }), null, 'a second preparation has nothing to rename');
+
+    // The stage blocks on an earlier decision: the commit keeps the rule it added and the rename, so the tree is clean for the restart.
+    const raw = join(root, '..', `${Date.now()}-legacy-raw.json`);
+    await writeFile(join(root, 'docs/specs/set/requirements.md'), '# 요구사항 명세\n\n- 상태: fixed\n\n  - INV-07 신고는 하루 안에 닫힌다 — 출처: answers.json `q-1`\n');
+    await writeFile(raw, JSON.stringify({ status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: { artifacts: [] } }));
+    const sha = await commitWorkflowDocuments({ root, input: { skill: 'aggregate-design', context: { plan_set_id: 'set' } }, rawPath: raw });
+    assert.match(sha, /^[0-9a-f]{40}$/);
+    assert.deepEqual(git('show', '--name-status', '-M', '--format=', 'HEAD').split('\n').sort(), [`M\tdocs/specs/set/requirements.md`, `R100\t${legacy}\t${current}`]);
+    assert.equal(git('status', '--porcelain', '--untracked-files=all'), '', 'the tree is clean');
+    assert.deepEqual(git('log', '--follow', '--format=%s', '--', current).split('\n'), ['aggregate-design: set', 'base']);
+    await rm(raw, { force: true });
+
+    // Nothing to rename: no legacy document, or the current name already exists (the plan set is never merged by guesswork).
+    const none = await fixture({ [current]: document });
+    assert.equal(await migrateLegacyTacticalDesign({ root: none.root, planSetId: 'set' }), null);
+    const both = await fixture({ [legacy]: 'old\n', [current]: document });
+    assert.equal(await migrateLegacyTacticalDesign({ root: both.root, planSetId: 'set' }), null);
+    assert.equal(await readFile(join(both.root, legacy), 'utf8'), 'old\n');
+    assert.equal(await readFile(join(both.root, current), 'utf8'), document);
+    assert.equal(both.git('status', '--short'), '');
+    const empty = await fixture({});
+    assert.equal(await migrateLegacyTacticalDesign({ root: empty.root, planSetId: 'set' }), null);
+
+    // After a restart the checkpoint's legacy file is back in the working tree without the index, while HEAD holds the current name.
+    const restarted = await fixture({ [current]: 'committed after the rename\n' });
+    await rm(join(restarted.root, current));
+    await writeFile(join(restarted.root, legacy), document);
+    assert.deepEqual(await migrateLegacyTacticalDesign({ root: restarted.root, planSetId: 'set' }), { from: legacy, to: current });
+    assert.equal(restarted.git('diff', '--name-status'), `M\t${current}`, 'the document is an unstaged modification of the committed one, as for any document the stage rewrites');
+    assert.equal(restarted.git('diff', '--cached', '--name-status'), '', 'nothing is staged');
+    assert.equal(await readFile(join(restarted.root, current), 'utf8'), document);
+
+    // A legacy name that is not a regular file is refused, as is an invalid plan set.
+    const linked = await fixture({ 'outside.md': 'outside\n' });
+    await symlink(join(linked.root, 'outside.md'), join(linked.root, legacy));
+    await assert.rejects(migrateLegacyTacticalDesign({ root: linked.root, planSetId: 'set' }), /regular file/);
+    await assert.rejects(migrateLegacyTacticalDesign({ root, planSetId: '../set' }), /Invalid plan_set_id/);
+  } finally { for (const directory of directories) await rm(directory, { recursive: true, force: true }); }
 });

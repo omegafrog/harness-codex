@@ -65,8 +65,20 @@ export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.REQUIREMENTS_FIX,
 ]);
 
+// The plan set document that the tactical design stages fill, one section each. It is named for the flow, not for the first
+// stage: a user instruction about the `domain-model` stage then cannot read as an instruction about a file.
+export const TACTICAL_DESIGN_DOCUMENT = 'tactical-design.md';
+// What an earlier Harness called it. A plan set that still holds it is renamed by the runner when a tactical stage input is
+// prepared (migrateLegacyTacticalDesign). `docs/architecture/domain-model.md` is the project's model index and is never renamed.
+export const LEGACY_TACTICAL_DESIGN_DOCUMENT = 'domain-model.md';
+// The current path of a plan set document that an earlier Harness recorded under the legacy name (an artifact of a finished
+// stage), or the path itself. Records of finished stages are never rewritten; a read of one follows the rename instead.
+export const currentTacticalDesignPath = (path) => typeof path === 'string'
+  ? path.replace(/^(docs\/specs\/[A-Za-z0-9][A-Za-z0-9._-]*\/)domain-model\.md$/, `$1${TACTICAL_DESIGN_DOCUMENT}`)
+  : path;
+
 // The tactical design flow runs after requirements-fix and before spec-me, one stage per step. Every stage fills its own
-// section of the plan set's domain-model.md, so the runner commits and stores them alike.
+// section of the plan set's tactical-design.md, so the runner commits and stores them alike.
 export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.DOMAIN_MODEL,
   WORKTREE_STAGE.AGGREGATE_DESIGN,

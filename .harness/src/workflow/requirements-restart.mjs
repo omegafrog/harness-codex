@@ -47,7 +47,8 @@ export async function restartRequirements({ root, session, stageId }) {
     while (position + 1 < history.length && later.has(history[position + 1][1])) position += 1;
     const base = git('rev-parse', `${history[position][0]}^`).trim();
     const paths = restartDocuments(stageId, record.plan_set_id);
-    changed = git('diff', '--name-only', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);
+    // --no-renames: a document renamed since the checkpoint must list both its old and its new path, or the old one is not restored.
+    changed = git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);
     if (changed.some((path) => !paths.some((p) => path === p || path.startsWith(`${p}/`)))) throw new Error('Invalid checkpoint path');
     archive = join(session, 'runtime/restarts', `requirements-${randomUUID()}`);
     await mkdir(archive, { recursive: true, mode: 0o700 });
@@ -68,7 +69,11 @@ export async function restartRequirements({ root, session, stageId }) {
     return { status: 'ready', stage_id: stageId, previous_stage: previous, backup: archive, base_commit: base };
   } catch (error) {
     if (archive) {
-      if (changed.length) git('restore', '--source', 'HEAD', '--worktree', '--', ...changed);
+      // A document that HEAD no longer holds (the legacy tactical design name, after the runner renamed it) was brought back
+      // from the checkpoint; rolling back removes it again instead of asking git for a path it does not know.
+      const inHead = changed.filter((path) => git('ls-tree', '--name-only', 'HEAD', '--', path).trim());
+      if (inHead.length) git('restore', '--source', 'HEAD', '--worktree', '--', ...inHead);
+      for (const path of changed.filter((item) => !inHead.includes(item))) await rm(join(root, path), { force: true });
       await writeFile(statePath, original);
       await writeFile(join(session, 'worktree.json'), originalRecord);
     }

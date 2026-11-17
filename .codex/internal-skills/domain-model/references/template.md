@@ -1,6 +1,6 @@
-# domain-model.md 템플릿
+# tactical-design.md 템플릿
 
-`docs/specs/<plan-set-id>/domain-model.md`는 확정된 `requirements.md`를 전술 설계로 옮기는 plan set 문서다. 다섯 stage가 자기 절만 이어서 채우고, 앞 stage의 절은 다음 stage가 읽기만 한다. 이 문서가 최종 모양의 정본이며 다섯 stage의 GUIDE는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 모델 이름은 `CONTEXT.md`의 현행 용어를 쓴다. 클래스 다이어그램은 이 문서에 넣지 않는다.
+`docs/specs/<plan-set-id>/tactical-design.md`는 확정된 `requirements.md`를 전술 설계로 옮기는 plan set 문서다. 다섯 stage가 자기 절만 이어서 채우고, 앞 stage의 절은 다음 stage가 읽기만 한다. 이 문서가 최종 모양의 정본이며 다섯 stage의 GUIDE는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 모델 이름은 `CONTEXT.md`의 현행 용어를 쓴다. 클래스 다이어그램은 이 문서에 넣지 않는다. 문서 이름은 stage가 아니라 흐름을 따른다: `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니고, `docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 이 문서와 다른 파일이다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 stage를 시작하기 전에 `tactical-design.md`로 이름을 바꾼다.
 
 ## 단계별 기입
 
@@ -30,7 +30,7 @@
 ## 문서 모양
 
 ````markdown
-# 도메인 모델
+# 전술 설계
 
 - plan set: `<plan-set-id>`
 - requirements: `requirements.md` (같은 디렉터리, `상태: fixed`)
@@ -181,4 +181,4 @@ Domain Service는 `2.2`에서 `Domain Service`로 넘긴 규칙만 맡고 조율
 - 한 행은 Entity 하나(Aggregate Root이거나 구성원) 또는 외부 시스템 하나다. Value Object는 그것을 쓰는 Entity 행의 `Root / 소유 코드` 칸에 `VO: 이름`으로 적는다. 쓰는 Entity가 없는 Value Object(Aggregate가 없는 BC)는 자기 행을 가지며 `Root / 소유 코드`에 `VO`를 적는다. `Context / 모델 ID`는 `<BC> / <모델>` 형식이다.
 - `상태`는 `implemented`와 `accepted-target`을 구분한다. 확인한 코드가 있는 행만 `implemented`이며 설계 승인만으로 `implemented`로 쓰지 않는다. 구현 완료는 이 stage들이 아니라 구현 뒤 `sync-contracts`가 반영한다.
 - 열은 stage가 나눠 채운다. `domain-model`은 `상태`, `Root / 소유 코드`(기존 `file:line`이나 `미정`)와 `근거`를, `aggregate-design`은 `Root / 소유 코드`와 `규칙 ID → enforcement`, `데이터 / transaction`의 Aggregate 경계를, `domain-service`는 Domain Service가 맡은 `규칙 ID → enforcement`를, `application-service`는 `데이터 / transaction`의 transaction·Repository를, `integration-design`은 `공개 계약 / 통신`을 채운다. `deployment / extraction trigger`는 이 stage들이 정하지 않으며 기존 값을 그대로 둔다.
-- `근거`에는 `docs/specs/<plan-set-id>/domain-model.md`의 해당 절을 연결한다. 모델 문서에 표가 없으면 이 표를 새 절로 더하고 기존 본문은 지우지 않는다. 같은 행을 다른 plan set이 고치고 있으면 상대의 변경을 덮어쓰지 않는다.
+- `근거`에는 `docs/specs/<plan-set-id>/tactical-design.md`의 해당 절을 연결한다. 모델 문서에 표가 없으면 이 표를 새 절로 더하고 기존 본문은 지우지 않는다. 같은 행을 다른 plan set이 고치고 있으면 상대의 변경을 덮어쓰지 않는다.

@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { lstat, readFile, rename, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
+import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { LEGACY_TACTICAL_DESIGN_DOCUMENT, PRE_SPEC_STAGES, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 const PROTECTED_PATH = /^(?:\.git|\.io)(?:\/|$)/;
@@ -55,11 +56,48 @@ const WORKFLOW_DOCUMENTS = {
   'sync-contracts': () => ['docs/contracts'],
 };
 
+// The plan set's tactical design document under its current and its legacy name (see migrateLegacyTacticalDesign).
+const tacticalDesignDocuments = (planSetId) => [`docs/specs/${planSetId}/${TACTICAL_DESIGN_DOCUMENT}`, `docs/specs/${planSetId}/${LEGACY_TACTICAL_DESIGN_DOCUMENT}`];
+
 // What a restart of the stage restores. Requirement stages own the whole plan set. A tactical stage owns only the tactical
 // design documents: the rules that its iterative deepening added to requirements.md are the user's decisions and stay.
+// The legacy name is restored too: a checkpoint from before the runner renamed it holds the document under that name, and
+// the rename itself is one of the changes between the checkpoint and HEAD.
 export const restartDocuments = (stageId, planSetId) => TACTICAL_DESIGN_STAGES.includes(stageId)
-  ? [`docs/specs/${planSetId}/domain-model.md`, ...TACTICAL_PROJECT_DOCUMENTS]
+  ? [...tacticalDesignDocuments(planSetId), ...TACTICAL_PROJECT_DOCUMENTS]
   : [...new Set(PRE_SPEC_STAGES.flatMap((skill) => stageDocuments(skill, planSetId)))];
+
+// A plan set that an earlier Harness started keeps its tactical design under the legacy name `domain-model.md`, which a
+// user instruction about the `domain-model` stage can be mistaken for. The runner renames it to `tactical-design.md` with
+// `git mv` when a tactical stage input is prepared and before the stage runs: the index records the rename, so history
+// follows the file, and the next tactical stage commit takes it together with the stage's own edits. Nothing happens
+// when the plan set has no legacy document or already has the current one; `docs/architecture/domain-model.md`, the
+// project's model index, is never touched.
+export async function migrateLegacyTacticalDesign({ root, planSetId }) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) throw new Error('Invalid plan_set_id');
+  const [current, legacy] = tacticalDesignDocuments(planSetId);
+  for (const path of [legacy, current]) await assertWorkspaceTarget(root, path);
+  const stat = (path) => lstat(join(root, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  const legacyInfo = await stat(legacy);
+  if (!legacyInfo || await stat(current)) return null;
+  if (!legacyInfo.isFile() || legacyInfo.isSymbolicLink()) throw new Error(`${legacy} must be a regular file`);
+  const indexed = async (path) => Boolean(await git(root, 'ls-files', '--', path));
+  if (await indexed(legacy) && !await indexed(current)) await git(root, 'mv', '--', legacy, current);
+  else {
+    // The index does not hold the legacy document in this shape (a restart restored it into the working tree only), so the
+    // file moves alone and the stage commit sees the difference from HEAD as it does for any document of the stage.
+    await rename(join(root, legacy), join(root, current));
+    if (await indexed(legacy)) await git(root, 'rm', '--cached', '--quiet', '--', legacy);
+  }
+  return { from: legacy, to: current };
+}
+
+// True while HEAD holds the plan set's tactical design only under the legacy name: the rename is not committed yet.
+async function legacyRenamePending(root, planSetId) {
+  const [current, legacy] = tacticalDesignDocuments(planSetId);
+  const inHead = async (path) => Boolean(await git(root, 'ls-tree', '--name-only', 'HEAD', '--', path));
+  return await inHead(legacy) && !await inHead(current);
+}
 
 export async function commitWorkflowDocuments({ root, input, rawPath }) {
   const owned = WORKFLOW_DOCUMENTS[input?.skill];
@@ -70,14 +108,22 @@ export async function commitWorkflowDocuments({ root, input, rawPath }) {
   // committed, so the tree is clean for the restart that reopens the earlier stage and the rule survives it.
   const deepening = TACTICAL_DESIGN_STAGES.includes(input.skill) && envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE';
   if (envelope.status !== 'completed' && !deepening) return null;
-  const paths = (deepening ? [`docs/specs/${planSetId}/requirements.md`] : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path)
+  // The rename the runner made before this stage ran is part of the same clean-tree guarantee: the restart needs it committed.
+  const renamed = deepening && await legacyRenamePending(root, planSetId) ? tacticalDesignDocuments(planSetId) : [];
+  const paths = (deepening ? [`docs/specs/${planSetId}/requirements.md`, ...renamed] : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path)
     || envelope.result?.artifacts?.some((item) => item.base === 'workspace' && item.path === path));
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
   if (!changed.length) return null;
+  // `present` is staged as the working tree has it. A document that already left both the working tree and the index (the
+  // legacy name after the runner renamed it) is only in HEAD: it is not staged again but still belongs to the commit.
   const present = [];
-  for (const path of paths) if (existsSync(join(root, path)) || await git(root, 'ls-files', '--', path)) present.push(path);
-  await git(root, 'add', '-A', '--', ...present);
+  const departed = [];
+  for (const path of paths) {
+    if (existsSync(join(root, path)) || await git(root, 'ls-files', '--', path)) present.push(path);
+    else if (await git(root, 'ls-tree', '--name-only', 'HEAD', '--', path)) departed.push(path);
+  }
+  if (present.length) await git(root, 'add', '-A', '--', ...present);
   // A pathspec commit takes only these documents; anything else in the index stays staged for its owner.
-  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present);
+  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present, ...departed);
   return git(root, 'rev-parse', 'HEAD');
 }

@@ -40,7 +40,7 @@ export const REQUIREMENTS = `# 요구사항 명세
 
 export async function templateDocument(sourceRoot) {
   const template = await readFile(join(sourceRoot, '.codex/internal-skills/domain-model/references/template.md'), 'utf8');
-  const document = [...template.matchAll(/````markdown\n([\s\S]*?)\n````/g)].map((match) => match[1]).find((block) => block.startsWith('# 도메인 모델'));
+  const document = [...template.matchAll(/````markdown\n([\s\S]*?)\n````/g)].map((match) => match[1]).find((block) => block.startsWith('# 전술 설계'));
   assert.ok(document, 'the template carries the document shape');
   return document;
 }
@@ -73,7 +73,7 @@ export const STATELESS_REQUIREMENTS = `# 요구사항 명세
   - AC-01 계산 결과가 화면에 보인다 — 출처: 요청 원문
 `;
 
-export const STATELESS_DOCUMENT = `# 도메인 모델
+export const STATELESS_DOCUMENT = `# 전술 설계
 
 - plan set: \`calculator\`
 - requirements: \`requirements.md\` (같은 디렉터리, \`상태: fixed\`)

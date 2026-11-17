@@ -1,5 +1,5 @@
 // Deterministic gate of the tactical design flow (domain-model, aggregate-design, domain-service, application-service,
-// integration-design). It checks the plan set's whole domain-model.md against the fixed requirements.md, once: the runner
+// integration-design). It checks the plan set's whole tactical-design.md against the fixed requirements.md, once: the runner
 // runs it when the last stage of the flow, integration-design, reports completed/OK (`harness-native-stage.mjs finish` before
 // anything is committed, and `recordExecutionState` for every other path that records the stage). No earlier stage is gated,
 // so a stage never runs it. Every finding names the stage that owns the failing section (`owner_stage`), so a failure that
@@ -7,10 +7,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
+import { TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 import { specArtifactPath } from './worktrees.mjs';
 
-// Section N of domain-model.md is filled by the Nth stage of the flow; section 6 is shared by all of them.
+// Section N of tactical-design.md is filled by the Nth stage of the flow; section 6 is shared by all of them.
 export const FINAL_TACTICAL_STAGE = TACTICAL_DESIGN_STAGES.at(-1);
 const stageOfSection = (number) => TACTICAL_DESIGN_STAGES[number - 1];
 const MODEL_KINDS = ['Entity', 'Value Object', '외부 시스템'];
@@ -53,7 +53,7 @@ export function parseTables(text) {
   return tables;
 }
 
-// domain-model.md by its numbered top-level sections; a section is "filled" once its heading is present.
+// tactical-design.md by its numbered top-level sections; a section is "filled" once its heading is present.
 function sections(text) {
   const parts = {};
   const matches = [...String(text).matchAll(/^## (\d+)\./gm)];
@@ -80,13 +80,13 @@ function valueObjectTarget(action, models) {
   return models.has(text) || !text.includes('.') ? text : text.slice(0, text.lastIndexOf('.')).trim();
 }
 
-export function checkDomainModel({ requirements, domainModel }) {
+export function checkTacticalDesign({ requirements, tacticalDesign }) {
   const errors = [];
   let owner = stageOfSection(1);
   const fail = (code, message, id) => errors.push({ code, message, ...(id ? { id } : {}), owner_stage: owner });
   const { business, rules } = parseRequirements(requirements);
-  const parts = sections(domainModel);
-  TACTICAL_DESIGN_STAGES.forEach((stage, index) => { if (!parts[index + 1]) errors.push({ code: 'SECTION_MISSING', message: `domain-model.md has no \`## ${index + 1}.\` section; ${stage} must have filled it`, owner_stage: stage }); });
+  const parts = sections(tacticalDesign);
+  TACTICAL_DESIGN_STAGES.forEach((stage, index) => { if (!parts[index + 1]) errors.push({ code: 'SECTION_MISSING', message: `${TACTICAL_DESIGN_DOCUMENT} has no \`## ${index + 1}.\` section; ${stage} must have filled it`, owner_stage: stage }); });
   if (errors.length) return result(errors);
 
   // 1. Models and the requirement mapping.
@@ -285,7 +285,7 @@ const stageOrder = (stage) => TACTICAL_DESIGN_STAGES.indexOf(stage);
 const result = (errors) => ({ ok: errors.length === 0, errors: [...errors].sort((a, b) => stageOrder(a.owner_stage) - stageOrder(b.owner_stage)) });
 
 // A stakeholder-analysis that decided to skip the requirements flow lets every later stage of the flow record the skip and
-// write nothing, so there is no domain-model.md to check. The template's own `판정: 실행 | 생략` line is not a skip.
+// write nothing, so there is no tactical-design.md to check. The template's own `판정: 실행 | 생략` line is not a skip.
 const SKIPPED_ANALYSIS = /^\s*(?:[-*]\s*)?판정\s*:\s*생략\s*$/m;
 export const stakeholderAnalysisSkipped = (text) => SKIPPED_ANALYSIS.test(String(text));
 
@@ -297,14 +297,14 @@ async function planSetDocument(root, planSetId, name) {
 }
 
 // The gate on the plan set's documents of a workspace: what the command and the runner both run.
-export async function checkWorkspaceDomainModel({ root, planSetId }) {
+export async function checkWorkspaceTacticalDesign({ root, planSetId }) {
   const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
   const requirements = await planSetDocument(root, planSetId, 'requirements.md');
-  const domainModel = await planSetDocument(root, planSetId, 'domain-model.md');
-  const missing = [[requirements, WORKTREE_STAGE.REQUIREMENTS_FIX], [domainModel, TACTICAL_DESIGN_STAGES[0]]].filter(([document]) => document.text === null);
+  const tacticalDesign = await planSetDocument(root, planSetId, TACTICAL_DESIGN_DOCUMENT);
+  const missing = [[requirements, WORKTREE_STAGE.REQUIREMENTS_FIX], [tacticalDesign, TACTICAL_DESIGN_STAGES[0]]].filter(([document]) => document.text === null);
   if (missing.length) return result(missing.map(([document, stage]) => ({ code: 'DOCUMENT_MISSING', message: `${document.path} does not exist; write it at this exact path (resolve it with harness-spec-path.mjs) before the stage returns completed`, owner_stage: stage })));
-  return checkDomainModel({ requirements: requirements.text, domainModel: domainModel.text });
+  return checkTacticalDesign({ requirements: requirements.text, tacticalDesign: tacticalDesign.text });
 }
 
 // The runner's verdict on a result that claims completion; null when the gate does not apply: any stage but the last of the
@@ -313,16 +313,16 @@ export async function evaluateTacticalDesignGate({ root, input, envelope }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
   if (stage !== FINAL_TACTICAL_STAGE || envelope?.status !== 'completed' || !planSetId) return null;
-  return { stage, ...(await checkWorkspaceDomainModel({ root, planSetId })) };
+  return { stage, ...(await checkWorkspaceTacticalDesign({ root, planSetId })) };
 }
 
 // What the caller does with a rejection. A finding of the returning stage's own section is repaired by that stage; a finding
 // that names an earlier stage is a settled section the stage may not edit, so the stage blocks and the earlier stage reopens.
 export function gateFailureInstruction(verdict) {
   const earlier = unique(verdict.errors.map((error) => error.owner_stage)).filter((stage) => stage !== verdict.stage);
-  const head = `The runner ran the domain-model gate (harness-domain-model-check.mjs) once on the whole domain-model.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running.`;
-  if (!earlier.length) return `${head} Return these errors to the same subagent so it repairs its own section and decision rows of domain-model.md (never requirements.md or an earlier section only to make the gate pass) and rewrites its output file if its summary or artifacts change, then run finish again.`;
-  return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in sections of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return the errors to the same subagent so it returns blocked / DEPENDENCY_INCOMPLETE naming ${earlier[0]} as the earliest stage to reopen, with these errors as the evidence and without editing any earlier section, restores domain-model.md to its committed content (the restart needs a clean tree) and rewrites its output file, then run finish again. The orchestrator reports the block and the user reopens ${earlier[0]} with --restart-requirements true or --user-revision true --feedback <instruction>.`;
+  const head = `The runner ran the tactical design gate (harness-domain-model-check.mjs) once on the whole ${TACTICAL_DESIGN_DOCUMENT} for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running.`;
+  if (!earlier.length) return `${head} Return these errors to the same subagent so it repairs its own section and decision rows of ${TACTICAL_DESIGN_DOCUMENT} (never requirements.md or an earlier section only to make the gate pass) and rewrites its output file if its summary or artifacts change, then run finish again.`;
+  return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in sections of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return the errors to the same subagent so it returns blocked / DEPENDENCY_INCOMPLETE naming ${earlier[0]} as the earliest stage to reopen, with these errors as the evidence and without editing any earlier section, restores ${TACTICAL_DESIGN_DOCUMENT} to the content it had when the stage started, which is its committed content (the restart needs a clean tree) and rewrites its output file, then run finish again. The orchestrator reports the block and the user reopens ${earlier[0]} with --restart-requirements true or --user-revision true --feedback <instruction>.`;
 }
 
 export class TacticalGateError extends Error {
@@ -333,7 +333,7 @@ export class TacticalGateError extends Error {
   }
 }
 
-// The last tactical stage is accepted as completed only when the whole domain-model.md passes the gate.
+// The last tactical stage is accepted as completed only when the whole tactical-design.md passes the gate.
 export async function assertTacticalDesignGate(options) {
   const verdict = await evaluateTacticalDesignGate(options);
   if (verdict && !verdict.ok) throw new TacticalGateError(verdict);

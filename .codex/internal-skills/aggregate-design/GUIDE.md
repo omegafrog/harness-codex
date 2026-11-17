@@ -7,14 +7,14 @@ model_tier: high_performance
 
 ## Purpose
 
-Step of the tactical design flow after `domain-model` and before `domain-service`. Group the Entities and Value Objects of section 1 into Aggregates by the invariants that must hold together, name the behaviour that enforces every rule, and decide the consistency of every rule that spans Aggregates. The result is section 2 of `docs/specs/<plan-set-id>/domain-model.md` and the Aggregate columns of the project's model rows. This stage runs at the high performance tier because a boundary is expensive to reverse and the consistency choice changes what the business observes. Consistency is a business decision, so this stage asks the user when the requirements do not settle it.
+Step of the tactical design flow after `domain-model` and before `domain-service`. Group the Entities and Value Objects of section 1 into Aggregates by the invariants that must hold together, name the behaviour that enforces every rule, and decide the consistency of every rule that spans Aggregates. The result is section 2 of `docs/specs/<plan-set-id>/tactical-design.md` and the Aggregate columns of the project's model rows. This stage runs at the high performance tier because a boundary is expensive to reverse and the consistency choice changes what the business observes. Consistency is a business decision, so this stage asks the user when the requirements do not settle it. "Leave `domain-model` as it is and run `aggregate-design` again" means that the `domain-model` stage is not reopened; the wording refers to that stage and its recorded state, never to a file, and `tactical-design.md` stays open to this stage for `## 2`.
 
 ## Inputs
 
 - The user request (`scope` of the execution input), read verbatim.
-- `docs/specs/<plan-set-id>/domain-model.md` section 1 and `requirements.md` (`BIZ`, `INV`, `EX`, `AC`, event flows, `## 4`), resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/tactical-design.md` section 1 and `requirements.md` (`BIZ`, `INV`, `EX`, `AC`, event flows, `## 4`), resolved with `harness-spec-path.mjs`.
 - `CONTEXT-MAP.md` and `CONTEXT.md` for the settled contexts and terms; `docs/architecture/domain-model.md` for existing Aggregates.
-- The [domain-model.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
+- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
 
 ## Prohibited
 
@@ -25,6 +25,7 @@ Step of the tactical design flow after `domain-model` and before `domain-service
 - Letting an Aggregate hold another Aggregate's object: other Aggregates are referenced by ID only, and one transaction changes one Aggregate.
 - Choosing a consistency model by technical preference, or asking about one that `INV`, `EX` or `AC` already settles.
 - Choosing persistence, messaging or frameworks, or deciding how an eventual-consistency rule is delivered (`integration-design` does).
+- Writing anything in `tactical-design.md` but `## 2`, this stage's rows of `## 6` and the mapping row that Deepening allows in `### 1.4`. Section 1 and the later sections belong to other stages.
 
 ## Process
 
@@ -36,7 +37,7 @@ Step of the tactical design flow after `domain-model` and before `domain-service
 6. Settle consistency for each rule that involves two or more Aggregates. Immediate consistency (both must change together or not at all) means one Aggregate: merge and record it. Eventual consistency allowed means separate Aggregates. First read `INV`, `EX`, `AC` and the event flows: a rule that states a deadline, an all-or-nothing outcome or an acceptable delay settles it, and its source is that ID. When nothing settles it, ask in one batch, in Korean: one question per rule titled with its ID, an option for each choice with the business consequence (what the user sees if the second change fails or lags, and what the immediate option blocks), a recommended option and a rationale from the request. Return `action_required` / `USER_DECISION_REQUIRED`.
 7. With the answers, record `### 2.3`: one `CON-xx` per such rule with the consistency, the decision (the merge or the separation and what each side may observe in between) and the source `answers.json` with the `question_id`. Redo the grouping where a merge changed it. A free-text answer is recorded in the user's wording; ask again only when it is ambiguous.
 8. Update the project model rows (Root, `규칙 ID → enforcement`, the Aggregate boundary of `데이터 / transaction`) as the shared rules describe, append the decisions of this stage to `## 6` with their sources, and use only terms of `CONTEXT.md`.
-9. Return `completed/OK` with `domain-model.md`, plus `requirements.md`, `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
+9. Return `completed/OK` with `tactical-design.md`, plus `requirements.md`, `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
 

@@ -5,9 +5,9 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkDomainModel, parseRequirements, parseTables } from '../.codex/scripts/harness-domain-model-check.mjs';
+import { checkTacticalDesign, parseRequirements, parseTables } from '../.codex/scripts/harness-domain-model-check.mjs';
 import { TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
-import { FINAL_TACTICAL_STAGE, TacticalGateError, assertTacticalDesignGate, checkWorkspaceDomainModel, evaluateTacticalDesignGate, gateFailureInstruction, stakeholderAnalysisSkipped } from '../.harness/src/workflow/domain-model-gate.mjs';
+import { FINAL_TACTICAL_STAGE, TacticalGateError, assertTacticalDesignGate, checkWorkspaceTacticalDesign, evaluateTacticalDesignGate, gateFailureInstruction, stakeholderAnalysisSkipped } from '../.harness/src/workflow/domain-model-gate.mjs';
 import { REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument as loadTemplate, upTo } from './support/domain-model-fixture.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -19,7 +19,7 @@ const templateDocument = () => loadTemplate(sourceRoot);
 const change = (document, from, to) => { assert.ok(document.includes(from), `fixture text exists: ${from}`); return document.replace(from, to); };
 const codes = (verdict) => verdict.errors.map((error) => error.code);
 // The gate always reads the whole document; `owner` is the stage whose section the finding must point at.
-const run = (document, requirements = REQUIREMENTS) => checkDomainModel({ requirements, domainModel: document });
+const run = (document, requirements = REQUIREMENTS) => checkTacticalDesign({ requirements, tacticalDesign: document });
 const failing = (document, code, owner, requirements) => {
   const verdict = run(document, requirements);
   assert.equal(verdict.ok, false, `fails with ${code}`);
@@ -72,7 +72,7 @@ test('decision history: every stage records a decision with a source, and a miss
 
 test('a document that misses sections reports each missing section against the stage that fills it', async () => {
   const document = await templateDocument();
-  assert.deepEqual(run('# 도메인 모델\n').errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['SECTION_MISSING', stage]));
+  assert.deepEqual(run('# 전술 설계\n').errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['SECTION_MISSING', stage]));
   assert.deepEqual(run(upTo(document, 3)).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
   assert.deepEqual(run(upTo(document, 2)).errors.map((error) => error.owner_stage), [DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]);
 });
@@ -209,19 +209,19 @@ test('the gate command reads the two documents, prints the verdict and fails the
   t.after(() => rm(directory, { recursive: true, force: true }));
   const document = await templateDocument();
   await writeFile(join(directory, 'requirements.md'), REQUIREMENTS);
-  await writeFile(join(directory, 'domain-model.md'), document);
-  const command = (...extra) => spawnSync(process.execPath, [SCRIPT, '--requirements', join(directory, 'requirements.md'), '--domain-model', join(directory, 'domain-model.md'), ...extra], { encoding: 'utf8' });
+  await writeFile(join(directory, 'tactical-design.md'), document);
+  const command = (...extra) => spawnSync(process.execPath, [SCRIPT, '--requirements', join(directory, 'requirements.md'), '--tactical-design', join(directory, 'tactical-design.md'), ...extra], { encoding: 'utf8' });
   const passed = command();
   assert.equal(passed.status, 0, passed.stderr);
   assert.deepEqual(JSON.parse(passed.stdout), { ok: true, errors: [] });
-  await writeFile(join(directory, 'domain-model.md'), upTo(document, 3));
+  await writeFile(join(directory, 'tactical-design.md'), upTo(document, 3));
   const failed = command();
   assert.equal(failed.status, 1);
   assert.deepEqual(JSON.parse(failed.stdout).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
   // The stage no longer selects anything: the only input is the documents.
   const staged = command('--stage', 'domain-service');
   assert.equal(staged.status, 1);
-  assert.match(staged.stderr, /^Usage: harness-domain-model-check\.mjs --workspace-root <absolute-workspace-root> \| --requirements <path> --domain-model <path>/);
+  assert.match(staged.stderr, /^Usage: harness-domain-model-check\.mjs --workspace-root <absolute-workspace-root> \| --requirements <path> --tactical-design <path>/);
   const relative = spawnSync(process.execPath, [SCRIPT, '--workspace-root', 'relative/path'], { encoding: 'utf8' });
   assert.equal(relative.status, 1);
   assert.match(relative.stderr, /absolute path/);
@@ -239,19 +239,19 @@ const completed = { status: 'completed', code: 'OK' };
 
 test('the runner gate checks the plan set documents of a workspace and reports a missing document instead of throwing', async (t) => {
   const document = await templateDocument();
-  const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'domain-model.md': document });
-  assert.deepEqual(await checkWorkspaceDomainModel({ root, planSetId: 'set' }), { ok: true, errors: [] });
-  await writeFile(join(root, 'docs/specs/set/domain-model.md'), upTo(document, 2));
-  const failing = await checkWorkspaceDomainModel({ root, planSetId: 'set' });
+  const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': document });
+  assert.deepEqual(await checkWorkspaceTacticalDesign({ root, planSetId: 'set' }), { ok: true, errors: [] });
+  await writeFile(join(root, 'docs/specs/set/tactical-design.md'), upTo(document, 2));
+  const failing = await checkWorkspaceTacticalDesign({ root, planSetId: 'set' });
   assert.equal(failing.ok, false);
   assert.deepEqual(codes(failing), ['SECTION_MISSING', 'SECTION_MISSING', 'SECTION_MISSING']);
 
   const empty = await planSetWorkspace(t, {});
-  const missing = await checkWorkspaceDomainModel({ root: empty, planSetId: 'set' });
+  const missing = await checkWorkspaceTacticalDesign({ root: empty, planSetId: 'set' });
   assert.equal(missing.ok, false);
   assert.deepEqual(missing.errors.map((error) => [error.code, error.owner_stage]), [['DOCUMENT_MISSING', 'requirements-fix'], ['DOCUMENT_MISSING', DOMAIN_MODEL]]);
   assert.match(missing.errors[0].message, /docs\/specs\/set\/requirements\.md does not exist/);
-  assert.match(missing.errors[1].message, /docs\/specs\/set\/domain-model\.md does not exist/);
+  assert.match(missing.errors[1].message, /docs\/specs\/set\/tactical-design\.md does not exist/);
 });
 
 test('only a stakeholder-analysis that decided to skip lets the gate pass without documents', async (t) => {
@@ -259,9 +259,9 @@ test('only a stakeholder-analysis that decided to skip lets the gate pass withou
   assert.equal(stakeholderAnalysisSkipped('판정: 생략\n'), true);
   for (const text of ['- 판정: 실행\n', '- 판정: 실행 | 생략\n', '- 판정: 생략하지 않는다\n', '판정을 생략으로 적지 않았다\n', '']) assert.equal(stakeholderAnalysisSkipped(text), false, text);
   const skipped = await planSetWorkspace(t, { 'stakeholder-analysis.md': '# Stakeholder 분석\n\n- 판정: 생략\n' });
-  assert.deepEqual(await checkWorkspaceDomainModel({ root: skipped, planSetId: 'set' }), { ok: true, skipped: true, errors: [] });
+  assert.deepEqual(await checkWorkspaceTacticalDesign({ root: skipped, planSetId: 'set' }), { ok: true, skipped: true, errors: [] });
   const executed = await planSetWorkspace(t, { 'stakeholder-analysis.md': '# Stakeholder 분석\n\n- 판정: 실행\n' });
-  assert.deepEqual((await checkWorkspaceDomainModel({ root: executed, planSetId: 'set' })).errors.map((error) => error.code), ['DOCUMENT_MISSING', 'DOCUMENT_MISSING']);
+  assert.deepEqual((await checkWorkspaceTacticalDesign({ root: executed, planSetId: 'set' })).errors.map((error) => error.code), ['DOCUMENT_MISSING', 'DOCUMENT_MISSING']);
 });
 
 test('the runner gates only the completed result of the last tactical stage, with the whole document', async (t) => {
@@ -269,7 +269,7 @@ test('the runner gates only the completed result of the last tactical stage, wit
   const input = (skill, planSetId = 'set') => ({ skill, context: planSetId ? { plan_set_id: planSetId } : {} });
   const failingDocument = document.replace(/^(\| CON-01 \|.*\| )answers\.json `<question_id>` \|$/m, '$1에이전트 제안 |');
   assert.notEqual(failingDocument, document);
-  const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'domain-model.md': failingDocument });
+  const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': failingDocument });
 
   // A finding of an earlier stage's section is reported against that stage, on the last stage's result.
   const verdict = await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed });
@@ -288,7 +288,7 @@ test('the runner gates only the completed result of the last tactical stage, wit
     assert.equal(await evaluateTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
     assert.equal(await assertTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
   }
-  const partial = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'domain-model.md': upTo(document, 1) });
+  const partial = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': upTo(document, 1) });
   for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE]) assert.equal(await assertTacticalDesignGate({ root: partial, input: input(stage), envelope: completed }), null, `${stage} with only section 1`);
   for (const envelope of [{ status: 'blocked', code: 'INPUT_MISSING' }, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }, { status: 'failed', code: 'EXECUTION_ERROR' }]) assert.equal(await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope }), null, envelope.code);
   assert.equal(await evaluateTacticalDesignGate({ root, input: input('requirements-fix'), envelope: completed }), null, 'another stage');
@@ -296,16 +296,16 @@ test('the runner gates only the completed result of the last tactical stage, wit
   assert.equal(await assertTacticalDesignGate({ root, input: input('spec-me'), envelope: completed }), null);
 
   // The last stage is accepted once the whole document passes, and an incomplete document fails it.
-  await writeFile(join(root, 'docs/specs/set/domain-model.md'), document);
+  await writeFile(join(root, 'docs/specs/set/tactical-design.md'), document);
   assert.deepEqual(await assertTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed }), { stage: INTEGRATION_DESIGN, ok: true, errors: [] });
-  await writeFile(join(root, 'docs/specs/set/domain-model.md'), upTo(document, 4));
+  await writeFile(join(root, 'docs/specs/set/tactical-design.md'), upTo(document, 4));
   assert.deepEqual((await evaluateTacticalDesignGate({ root, input: input(INTEGRATION_DESIGN), envelope: completed })).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', INTEGRATION_DESIGN]]);
 });
 
 test('the rejection tells the stage to repair its own section, or to block and name the earlier stage to reopen', () => {
   const verdict = (...owners) => ({ stage: INTEGRATION_DESIGN, ok: false, errors: owners.map((owner_stage, index) => ({ code: 'X', message: 'm', id: `ID-${index}`, owner_stage })) });
   const own = gateFailureInstruction(verdict(INTEGRATION_DESIGN));
-  assert.match(own, /once on the whole domain-model\.md for integration-design and it failed/);
+  assert.match(own, /once on the whole tactical-design\.md for integration-design and it failed/);
   assert.match(own, /Nothing was committed or recorded, and the stage is still running/);
   assert.match(own, /same subagent so it repairs its own section/);
   assert.doesNotMatch(own, /DEPENDENCY_INCOMPLETE/);
@@ -319,7 +319,7 @@ test('the rejection tells the stage to repair its own section, or to block and n
 test('the runner gate refuses a document that is a symlink out of the workspace', async (t) => {
   const document = await templateDocument();
   const root = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS });
-  const outside = await planSetWorkspace(t, { 'domain-model.md': document });
-  await symlink(join(outside, 'docs/specs/set/domain-model.md'), join(root, 'docs/specs/set/domain-model.md'));
+  const outside = await planSetWorkspace(t, { 'tactical-design.md': document });
+  await symlink(join(outside, 'docs/specs/set/tactical-design.md'), join(root, 'docs/specs/set/tactical-design.md'));
   await assert.rejects(assertTacticalDesignGate({ root, input: { skill: INTEGRATION_DESIGN, context: { plan_set_id: 'set' } }, envelope: completed }), /outside case workspace/);
 });

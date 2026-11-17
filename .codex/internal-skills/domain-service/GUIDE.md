@@ -7,13 +7,13 @@ model_tier: implementation
 
 ## Purpose
 
-Step of the tactical design flow after `aggregate-design` and before `application-service`. Give a Domain Service to each domain decision that no Entity or Value Object naturally owns, which is the set of rules `aggregate-design` handed over in section 2.2. A Domain Service decides; it does not coordinate. The result is section 3 of `docs/specs/<plan-set-id>/domain-model.md` and the enforcement column of the project's model rows. No persona runs and the user is not asked.
+Step of the tactical design flow after `aggregate-design` and before `application-service`. Give a Domain Service to each domain decision that no Entity or Value Object naturally owns, which is the set of rules `aggregate-design` handed over in section 2.2. A Domain Service decides; it does not coordinate. The result is section 3 of `docs/specs/<plan-set-id>/tactical-design.md` and the enforcement column of the project's model rows. No persona runs and the user is not asked. When the user says not to reopen `aggregate-design`, the instruction refers to that stage and its recorded state, never to a file; this stage still writes `## 3` of `tactical-design.md`.
 
 ## Inputs
 
-- `docs/specs/<plan-set-id>/domain-model.md` sections 1 and 2 and `requirements.md` (`INV`, `EX`, `AC`, event flows), resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/tactical-design.md` sections 1 and 2 and `requirements.md` (`INV`, `EX`, `AC`, event flows), resolved with `harness-spec-path.mjs`.
 - `CONTEXT.md` for the terms; `docs/architecture/domain-model.md` for existing services.
-- The [domain-model.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
+- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
 
 ## Prohibited
 
@@ -22,6 +22,7 @@ Step of the tactical design flow after `aggregate-design` and before `applicatio
 - Taking a rule that an Aggregate method or a Value Object already enforces, or moving a decision out of an Entity or Value Object that can own it naturally.
 - Adding a service that no rule needs, a pass-through wrapper, or a domain rule that `requirements.md` does not state.
 - Changing sections 1 or 2, or asking the user.
+- Writing anything in `tactical-design.md` but `## 3` and this stage's rows of `## 6`. Sections 1 and 2 are settled input and the later sections belong to the later stages.
 
 ## Process
 
@@ -31,7 +32,7 @@ Step of the tactical design flow after `aggregate-design` and before `applicatio
 4. Collect every rule that section 2.2 marks `Domain Service`, and every domain decision in the `BIZ` sections that needs several Aggregates' data or a policy no single model owns. For each, test the natural owner once more: if one Entity or Value Object can decide it from its own state, it is an Aggregate behaviour or a Value Object rule and `aggregate-design` made a wrong hand-over, which is a block (see Deepening), not a service.
 5. Write `### 3`: one row per service with a domain-language name, its BC, the decision it makes in one sentence (inputs, and the result as a domain value), the models it uses, the rule IDs it enforces, its behaviour with the inputs the decision needs, and why no Entity or Value Object owns it. A service is stateless and has no side effect. When no rule needs a service, write `해당 없음 — <이유>` and append that decision to `## 6`.
 6. Update the project model rows: the services' rules in `규칙 ID → enforcement`, as the shared rules describe. Append the decisions of this stage to `## 6` with sources, using only terms of `CONTEXT.md`.
-7. Return `completed/OK` with `domain-model.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
+7. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
 

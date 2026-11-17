@@ -7,13 +7,13 @@ model_tier: implementation
 
 ## Purpose
 
-Step of the tactical design flow after `domain-service` and before `integration-design`. For every business activity, design the use case that coordinates the Aggregates and Domain Services: the call order, the transaction boundaries, the repositories and the external effects. It decides nothing about the business. The result is section 4 of `docs/specs/<plan-set-id>/domain-model.md` and the transaction column of the project's model rows. No persona runs and the user is not asked.
+Step of the tactical design flow after `domain-service` and before `integration-design`. For every business activity, design the use case that coordinates the Aggregates and Domain Services: the call order, the transaction boundaries, the repositories and the external effects. It decides nothing about the business. The result is section 4 of `docs/specs/<plan-set-id>/tactical-design.md` and the transaction column of the project's model rows. No persona runs and the user is not asked. A stage name in a user instruction, such as `domain-service` in "keep `domain-service` as it is", refers to that stage and its recorded state, never to a file; `## 4` of `tactical-design.md` is still written here.
 
 ## Inputs
 
-- `docs/specs/<plan-set-id>/domain-model.md` sections 1 to 3 and `requirements.md` (`BIZ`, `INV`, `EX`, `AC`, event flows), resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/tactical-design.md` sections 1 to 3 and `requirements.md` (`BIZ`, `INV`, `EX`, `AC`, event flows), resolved with `harness-spec-path.mjs`.
 - `CONTEXT.md` for the terms; `docs/architecture/domain-model.md` for existing use cases and rows.
-- The [domain-model.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
+- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
 
 ## Prohibited
 
@@ -22,6 +22,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 - One transaction that changes more than one Aggregate, or reaching into another Aggregate's state instead of its ID.
 - A use case for an activity that an external system owns alone, a pass-through service that adds no coordination, or a repository for anything that is not an Aggregate.
 - Changing sections 1 to 3, or asking the user.
+- Writing anything in `tactical-design.md` but `## 4` and this stage's rows of `## 6`. Sections 1 to 3 are settled input and section 5 belongs to `integration-design`.
 
 ## Process
 
@@ -31,7 +32,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 4. For each `BIZ` whose models are not all external, list the use cases the normal and exception scenarios need. A reaction to another subdomain's event (`## 4` of `requirements.md`) is its own use case, because it runs in its own transaction.
 5. Write `### 4` one row per use case: the name, its BC, the `BIZ` IDs, the call order using Aggregate, Value Object and Domain Service behaviours exactly as sections 2 and 3 name them, the transaction boundaries, the repositories and the external effects. Load and save through one repository per Aggregate. Write the boundary as `T1: <Aggregate>` per transaction; a reaction that section 2.3 separates by eventual consistency gets its own transaction with its `CON-xx`. A use case that changes no Aggregate (read-only, or in a context without Aggregates) writes `없음 — <이유>`. Place an external effect (a call to an external system, an event) after the commit it depends on and name it.
 6. Update the project model rows: the transaction and repository of each Aggregate in `데이터 / transaction`, as the shared rules describe. Append the decisions of this stage to `## 6` with sources, using only terms of `CONTEXT.md`.
-7. Return `completed/OK` with `domain-model.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
+7. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
 
 ## Deepening
 

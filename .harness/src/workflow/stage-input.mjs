@@ -16,7 +16,8 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, preSpecOrderViolation } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, preSpecOrderViolation } from './worktree-stages.mjs';
+import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'spec-me', 'to-ticket', 'implement-wrapper']);
@@ -587,6 +588,16 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`)).catch(() => { throw new Error(`Plan ${planId} is not part of plan set ${plan_set_id}`); });
   }
   const checkpointPath = stageId === 'implement-wrapper' && planId ? planRuntimePaths({ root, planId }).checkpoint_path : null;
+  // A plan set that an earlier Harness started holds its tactical design under the legacy name domain-model.md. The stage
+  // must find it as tactical-design.md, so the runner renames it here, before the stage runs; the stage commit takes it.
+  // The artifacts of finished stages that the stage reads are listed under the current name once the legacy file is gone.
+  if (plan_set_id && TACTICAL_DESIGN_STAGES.includes(stage.skill)) {
+    await migrateLegacyTacticalDesign({ root, planSetId: plan_set_id });
+    for (const reference of input_refs) {
+      const renamed = reference.base === 'workspace' ? currentTacticalDesignPath(reference.path) : reference.path;
+      if (renamed !== reference.path && !await lstat(join(root, reference.path)).then(() => true, () => false)) reference.path = renamed;
+    }
+  }
   const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   if (approvedSpecOverwrites) input.context.approved_spec_overwrites = approvedSpecOverwrites;

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
 import { lstat, readFile, realpath, readdir } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
@@ -12,6 +13,7 @@ import { assertSingleProvider, configuredProvider, parseWorkflowBinding } from '
 import { providerAgents, tierSettingKeys } from './agent-config.mjs';
 import { readSkillDeclaration } from './skill-declaration.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
+import { currentTacticalDesignPath } from './worktree-stages.mjs';
 
 const CONTRACT = '.codex/internal-skills/skill-execution';
 const execFileAsync = promisify(execFile);
@@ -198,7 +200,10 @@ async function readReference(root, reference, sessionRoot, controlSessionRoot = 
   else if (reference.base === 'control_session') base = controlSessionRoot;
   else base = root;
   await assertWorkspaceTarget(base, relativePath);
-  const path = resolve(base, relativePath);
+  let path = resolve(base, relativePath);
+  // A finished stage of an earlier Harness recorded the tactical design under its legacy name; the runner renamed the file.
+  const renamed = reference.base === 'workspace' ? currentTacticalDesignPath(parts.join('/')) : null;
+  if (renamed && renamed !== parts.join('/') && !existsSync(path)) { await assertWorkspaceTarget(base, renamed); path = resolve(base, renamed); }
   const info = await lstat(path);
   if (allowDirectory && info.isDirectory()) return null;
   requireValue(info.isFile(), `Artifact is not a regular file: ${reference.path}`);

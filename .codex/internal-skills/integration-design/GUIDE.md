@@ -7,15 +7,15 @@ model_tier: high_performance
 
 ## Purpose
 
-Last step of the tactical design flow, after `application-service` and before `spec-me`. Specify how the bounded contexts exchange what the business needs: the commands, responses and events, and the communication style of each relationship. The inputs are the relationships of `CONTEXT-MAP.md` (with the context that owns the decision, `판단 소유자`) and the consistency decisions of `aggregate-design`. The result is section 5 of `docs/specs/<plan-set-id>/domain-model.md` and the communication column of the project's model rows. This stage runs at the high performance tier because the choice between a synchronous answer and a later reaction changes what users observe. It asks the user when an integration decision changes the business outcome. It chooses no broker, protocol or framework.
+Last step of the tactical design flow, after `application-service` and before `spec-me`. Specify how the bounded contexts exchange what the business needs: the commands, responses and events, and the communication style of each relationship. The inputs are the relationships of `CONTEXT-MAP.md` (with the context that owns the decision, `판단 소유자`) and the consistency decisions of `aggregate-design`. The result is section 5 of `docs/specs/<plan-set-id>/tactical-design.md` and the communication column of the project's model rows. This stage runs at the high performance tier because the choice between a synchronous answer and a later reaction changes what users observe. It asks the user when an integration decision changes the business outcome. It chooses no broker, protocol or framework. An instruction that names a stage, for example "do not touch `application-service`", refers to that stage and its recorded state, never to a file: this stage writes `## 5` of `tactical-design.md` all the same.
 
 ## Inputs
 
 - The user request (`scope` of the execution input), read verbatim.
-- `docs/specs/<plan-set-id>/domain-model.md` sections 1 to 4 (the `CON-xx` decisions and the external effects of the use cases) and `requirements.md`, resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/tactical-design.md` sections 1 to 4 (the `CON-xx` decisions and the external effects of the use cases) and `requirements.md`, resolved with `harness-spec-path.mjs`.
 - `CONTEXT-MAP.md` `## 3`: each relationship's upstream, downstream, responsibilities, communication contract and `판단 소유자`. It is read-only here; `bounded-context` owns it.
 - `CONTEXT.md` for the terms; `docs/architecture/domain-model.md` for the existing communication of the affected rows.
-- The [domain-model.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
+- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
 
 ## Prohibited
 
@@ -24,6 +24,7 @@ Last step of the tactical design flow, after `application-service` and before `s
 - Considering Saga or Outbox for a rule that `aggregate-design` did not record as eventual consistency, or applying one to a same-context reaction that needs none.
 - Reading a consumer's repository, table or internal type, or sharing a model between contexts; a message carries the business information the receiving context needs and nothing of the sender's internals.
 - Asking about an integration choice that the contract, `INV`, `EX` or `AC` already settles, or presenting a recommendation as the user's decision.
+- Writing anything in `tactical-design.md` but `## 5`, this stage's rows of `## 6` and the mapping rows that Deepening allows in `### 1.4` and `### 2.2`. Sections 1 to 4 are settled input.
 
 ## Process
 
@@ -35,7 +36,7 @@ Last step of the tactical design flow, after `application-service` and before `s
 6. Settle the communication style from the business: a response that the caller needs before it can continue is synchronous; a reaction that may follow later is asynchronous. A style that the contract, `INV`, `EX`, `AC` or the `CON-xx` decision settles is recorded with that source. Ask in one batch, in Korean, only when the choice changes what the business observes, for example whether the caller must get a confirmed answer at once or may be told later, what the user sees when the downstream is unavailable, or who decides when the contexts disagree. One question per integration titled with its relationship, an option per choice with its business consequence, a recommended option and a rationale. Return `action_required` / `USER_DECISION_REQUIRED`.
 7. Choose Saga or Outbox only for rows that cite an eventual-consistency `CON-xx`: whether a compensation or a reliable publication is needed to keep that decision true, and what happens on failure. Every other row writes `없음`. With answers, record them in the user's wording with the source `answers.json` and the `question_id`; ask again only when an answer is ambiguous.
 8. Update the project model rows (`공개 계약 / 통신`), append the decisions of this stage to `## 6` with their sources, and use only terms of `CONTEXT.md`, as the shared rules describe. When the plan set has one context and no relationship, write `해당 없음 — <이유>` in section 5 and record that decision.
-9. Return `completed/OK` with `domain-model.md`, plus `requirements.md`, `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed. The runner, not this stage, then runs the final gate (see Final gate).
+9. Return `completed/OK` with `tactical-design.md`, plus `requirements.md`, `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed. The runner, not this stage, then runs the final gate (see Final gate).
 
 ## Deepening
 
@@ -43,10 +44,10 @@ An answer can reveal a business rule or exception that `requirements.md` lacks (
 
 ## Final gate
 
-The only gate of the tactical flow runs when this stage returns `completed/OK`. The runner checks the whole `domain-model.md` (sections 1 to 6) against `requirements.md` with `harness-domain-model-check.mjs`, as [the shared rules](../domain-model/references/deepening.md) list, before it commits or records anything. No earlier stage was checked, so a failure can come from any section. `finish` returns it as `gate_error` with `errors`, each carrying an `owner_stage`, and this stage stays `running`:
+The only gate of the tactical flow runs when this stage returns `completed/OK`. The runner checks the whole `tactical-design.md` (sections 1 to 6) against `requirements.md` with `harness-domain-model-check.mjs`, as [the shared rules](../domain-model/references/deepening.md) list, before it commits or records anything. No earlier stage was checked, so a failure can come from any section. `finish` returns it as `gate_error` with `errors`, each carrying an `owner_stage`, and this stage stays `running`:
 
 - Errors whose `owner_stage` is `integration-design` are this stage's own: repair section 5 and this stage's rows of section 6, rewrite the output file and return again.
-- An error owned by an earlier stage means that stage's section is wrong. Earlier sections are settled input, so do not edit them and do not change `requirements.md` to make the gate pass: return `blocked` / `DEPENDENCY_INCOMPLETE` naming the earliest `owner_stage`, with the errors (`code`, `id`, `message`) as the evidence, after restoring `domain-model.md` to its committed content so that the restart finds a clean tree. The orchestrator reports the block and the user reopens that stage with `--restart-requirements true` or `--user-revision true --feedback`, as the shared rules describe; this stage runs again after it.
+- An error owned by an earlier stage means that stage's section is wrong. Earlier sections are settled input, so do not edit them and do not change `requirements.md` to make the gate pass: return `blocked` / `DEPENDENCY_INCOMPLETE` naming the earliest `owner_stage`, with the errors (`code`, `id`, `message`) as the evidence, after restoring `tactical-design.md` to the content it had when this stage started (its committed content) so that the restart finds a clean tree. The orchestrator reports the block and the user reopens that stage with `--restart-requirements true` or `--user-revision true --feedback`, as the shared rules describe; this stage runs again after it.
 
 ## Completion
 
