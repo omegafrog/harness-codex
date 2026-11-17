@@ -25,7 +25,7 @@
 - 같은 규칙을 여러 계층에 복제하지 않는다. 규칙은 소유 모델과 그것을 강제하는 행위 하나에 대응한다. 강제하는 행위는 Entity인 Aggregate Root의 메서드, Value Object의 생성 규칙이나 메서드, Domain Service 중 규칙을 자연스럽게 소유하는 쪽이다. 값이 지키는 규칙을 위해 Entity나 Aggregate를 만들지 않는다.
 - 기술(프레임워크, 저장소, broker, 프로토콜)은 정하지 않는다. 해당 사항이 없는 절에는 `해당 없음 — 이유`를 적는다.
 - 설계 중 새 업무 규칙·예외가 드러나면 이 문서가 아니라 `requirements.md`에 INV·EX·AC로 먼저 덧붙인다. 규칙은 `requirements.md`가 소유하고 이 문서는 그 ID를 모델에 대응시킨다.
-- 어떤 stage도 이 문서를 검사하지 않는다. `integration-design`이 `completed`를 반환할 때 실행기가 `harness-domain-model-check.mjs`로 문서 전체의 표를 한 번 읽는다(규칙은 `deepening.md`). 표의 열 이름을 바꾸지 않는다.
+- 어떤 stage도 이 문서를 검사하지 않는다. `integration-design`이 `completed`를 반환할 때 실행기가 `harness-domain-model-check.mjs`로 문서 전체를 한 번 읽으며, 거부하는 것은 `deepening.md`의 여섯 가지뿐이다. 이 문서의 나머지 규칙은 stage GUIDE와 리뷰가 지키는 지침이다. gate는 표를 키 열(`요구`, `소유 모델`, `강제 행위`, `CON`, `AS`, `트랜잭션 경계`, `INT`)로 찾으므로 그 열 이름을 바꾸지 않고, 모르는 열은 무시한다.
 
 ## 문서 모양
 
@@ -101,7 +101,7 @@
 | INV-04 | 신고 | Domain Service | Aggregate 안 |
 | EX-01 | - | 외부 시스템: 인증 시스템 | Aggregate 안 |
 
-`강제 행위`는 그 Aggregate의 `주요 행위`에 적힌 root 메서드, 소유 모델이 Value Object일 때 `Value Object: <모델>` 또는 `Value Object: <모델>.<행위>()`, `Domain Service`(뒤 stage가 채운다), 또는 소유 모델이 외부 시스템일 때 `외부 시스템: <모델>`이다. Value Object가 Aggregate 구성원이면 `Aggregate` 칸에 그 Aggregate를 적고, 어느 Aggregate에도 속하지 않으면 `-`를 적는다. 둘 이상의 Aggregate에 걸친 규칙은 `일관성 범위`에 `CON-xx`를 적는다.
+`강제 행위`는 그 Aggregate의 `주요 행위`에 적는 root 메서드, 소유 모델이 Value Object일 때 `Value Object: <모델>` 또는 `Value Object: <모델>.<행위>()`, `Domain Service`(뒤 stage가 채운다), 또는 소유 모델이 외부 시스템일 때 `외부 시스템: <모델>`이다. Value Object가 Aggregate 구성원이면 `Aggregate` 칸에 그 Aggregate를 적고, 어느 Aggregate에도 속하지 않으면 `-`를 적는다. 둘 이상의 Aggregate에 걸친 규칙은 `일관성 범위`에 `CON-xx`를 적는다.
 
 ### 2.3 일관성 결정
 
@@ -155,16 +155,16 @@ Domain Service는 `2.2`에서 `Domain Service`로 넘긴 규칙만 맡고 조율
 
 | 상황 | 기록 |
 |---|---|
-| 같은 컨텍스트의 Aggregate 둘 이상을 한 연산이 함께 바꾼다 | 하나로 병합한다. `결정`에 `병합`을 쓰고 `걸친 Aggregate`에 합친 Aggregate 하나만 적는다. 병합하지 않고 둘을 적으면 gate가 거부한다 |
+| 같은 컨텍스트의 Aggregate 둘 이상을 한 연산이 함께 바꾼다 | 하나로 병합한다. `결정`에 `병합`을 쓰고 `걸친 Aggregate`에 합친 Aggregate 하나만 적는다. 병합하지 않고 둘을 적는 것은 설계 오류다 |
 | 한 연산이 같은 컨텍스트의 다른 Aggregate를 선행 조건으로 읽기만 한다 | 병합하지 않는다. 읽기만 하는 Aggregate를 `걸친 Aggregate`와 `조회 전용 Aggregate`에 적는다 |
-| 컨텍스트가 다른 Aggregate에 걸친다(바꾸든 읽기만 하든) | 병합하지 않는다. 각 컨텍스트의 Aggregate를 모두 `걸친 Aggregate`에 적고 읽기만 하는 쪽은 `조회 전용 Aggregate`에도 적는다. `aggregate-design`은 `일관성`을 `즉시`로 기록하고, `integration-design`이 `## 5`에 이 `CON-xx`를 `일관성 결정`에 인용하고 `통신 방식`이 동기(`동기 확인`, `동기 호출`)이며 `근거·출처`가 있는 행을 적는다. `Saga·Outbox`는 `없음 — 이유`다. 이 행이 없으면 gate가 `integration-design`의 오류로 거부한다 |
+| 컨텍스트가 다른 Aggregate에 걸친다(바꾸든 읽기만 하든) | 병합하지 않는다. 각 컨텍스트의 Aggregate를 모두 `걸친 Aggregate`에 적고 읽기만 하는 쪽은 `조회 전용 Aggregate`에도 적는다. `aggregate-design`은 `일관성`을 `즉시`로 기록하고, `integration-design`이 `## 5`에 이 `CON-xx`를 `일관성 결정`에 인용하고 `통신 방식`이 동기(`동기 확인`, `동기 호출`)이며 `근거·출처`가 있는 행을 적는다. `Saga·Outbox`는 `없음 — 이유`다. 이 행이 없으면 `integration-design`의 설계가 빠진 것이다 |
 | 늦어도 되는 반응이다 | 분리하고 `최종`으로 기록한다. 컨텍스트가 다르면 `## 5` 행이 그 `CON-xx`를 인용한다 |
 
-예를 들어 커뮤니티 컨텍스트가 요청마다 인증 컨텍스트의 현재 인증 상태를 확인하면 `걸친 Aggregate`는 `사용자, 커뮤니티 글`, `조회 전용 Aggregate`는 `사용자`, `일관성`은 `즉시`이고, `## 5`의 행은 `통신 방식`을 `동기 확인`으로 적는다. 사용자와 커뮤니티 글을 하나로 병합하지 않는다. 그 `CON-xx`를 `일관성 범위`에 적은 `2.2`의 규칙 행은 `걸친 Aggregate`와 같은 Aggregate를 모두 적는다(`조회 전용 Aggregate` 포함).
+예를 들어 커뮤니티 컨텍스트가 요청마다 인증 컨텍스트의 현재 인증 상태를 확인하면 `걸친 Aggregate`는 `사용자, 커뮤니티 글`, `조회 전용 Aggregate`는 `사용자`, `일관성`은 `즉시`이고, `## 5`의 행은 `통신 방식`을 `동기 확인`으로 적는다. 사용자와 커뮤니티 글을 하나로 병합하지 않는다. 그 `CON-xx`를 `일관성 범위`에 적은 `2.2`의 규칙 행은 규칙이 바꾸는 Aggregate를 적고, 읽기만 하는 Aggregate는 적어도 되고 빼도 된다.
 
 ## Aggregate가 없는 컨텍스트
 
-상태와 생애주기가 없는 BC는 Aggregate를 만들지 않는다. 예를 들어 계산 요청과 결과를 값(Value Object)으로만 다루는 계산기에는 지킬 상태가 없고, 규칙(지원하는 연산, 0으로 나누기)은 값이 만들어질 때 값이 강제한다. Root가 될 Entity를 만들어 내지 않는다. 이 BC는 2.1의 Aggregate 표 뒤에 `BC`와 `Aggregate 없음 사유` 표로 이유를 적고, 2.2의 `강제 행위`에 Value Object를 적는다. 이유를 적지 않은 BC는 gate가 거부한다. 외부 시스템만 있는 BC는 적지 않아도 된다. 문서 전체에 Aggregate가 하나도 없으면 2.1에 `해당 없음 — 이유`를 적어도 된다. Aggregate가 하나라도 있으면 Root는 Entity이고 모든 Entity는 Aggregate 하나에 속한다.
+상태와 생애주기가 없는 BC는 Aggregate를 만들지 않는다. 예를 들어 계산 요청과 결과를 값(Value Object)으로만 다루는 계산기에는 지킬 상태가 없고, 규칙(지원하는 연산, 0으로 나누기)은 값이 만들어질 때 값이 강제한다. Root가 될 Entity를 만들어 내지 않는다. 이 BC는 2.1의 Aggregate 표 뒤에 `BC`와 `Aggregate 없음 사유` 표로 이유를 적고, 2.2의 `강제 행위`에 Value Object를 적는다. 이유를 적지 않은 BC는 설계가 빠진 것이다. 외부 시스템만 있는 BC는 적지 않아도 된다. 문서 전체에 Aggregate가 하나도 없으면 2.1에 `해당 없음 — 이유`를 적어도 된다. Aggregate가 하나라도 있으면 Root는 Entity이고 모든 Entity는 Aggregate 하나에 속한다.
 
 ````markdown
 ### 2.1 Aggregate

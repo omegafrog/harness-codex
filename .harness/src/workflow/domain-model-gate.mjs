@@ -4,44 +4,52 @@
 // anything is committed, and `recordExecutionState` for every other path that records the stage). No earlier stage is gated,
 // so a stage never runs it. Every finding names the stage that owns the failing section (`owner_stage`), so a failure that
 // comes from an earlier stage's section tells which stage to reopen.
+//
+// It holds only what must be true whatever the design: the documents and sections exist, every BIZ/INV/EX is owned by a model
+// and every INV/EX has an enforcing behaviour, every rule that spans Aggregates cites a sourced consistency decision, one
+// transaction changes at most one Aggregate, and Saga/Outbox belong to eventual consistency. Contextual DDD judgement (where
+// an Entity lives, what to merge, what a Domain Service owns, how contexts integrate) belongs to the stage GUIDEs and reviews.
+// Tables are found by their key columns and read tolerantly: an unknown or missing optional column is ignored.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 import { specArtifactPath } from './worktrees.mjs';
 
-// Section N of tactical-design.md is filled by the Nth stage of the flow; section 6 is shared by all of them.
+// Section N of tactical-design.md is filled by the Nth stage of the flow; section 6 (decision history) is not gated.
 export const FINAL_TACTICAL_STAGE = TACTICAL_DESIGN_STAGES.at(-1);
 const stageOfSection = (number) => TACTICAL_DESIGN_STAGES[number - 1];
-const MODEL_KINDS = ['Entity', 'Value Object', '외부 시스템'];
-const ENTITY = 'Entity';
-const VALUE_OBJECT = 'Value Object';
 const EXTERNAL = '외부 시스템';
-const DOMAIN_SERVICE_MARKER = 'Domain Service';
-// `동기` marks a synchronous communication style; `비동기` (asynchronous) contains it and must not match.
-const SYNCHRONOUS = /(?<!비)동기/;
+const RULE_ID = /\b(?:INV|EX)-\d+\b/g;
+const CON_ID = /\bCON-\d+\b/g;
 // A consistency decision rests on a user decision or on evidence the requirements already carry; an agent proposal alone is not a source.
 const DECISION_SOURCE = /answers\.json|\b(?:INV|EX|AC|BIZ)-\d+\b|요청 원문|CAND-\d+ 채택|사용자 수정 지시/;
 
 const unique = (items) => [...new Set(items)];
-const clean = (value) => String(value ?? '').replace(/`/g, '').trim();
-const isBlank = (value) => !clean(value) || clean(value) === '-';
-const names = (value) => clean(value).split(/[,，]/).map((item) => item.trim()).filter((item) => item && item !== '-');
-const behaviors = (value) => clean(value).replace(/\([^)]*\)/g, '').split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+const clean = (value) => String(value ?? '').replace(/<br\s*\/?>/gi, ' ').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+const isBlank = (value) => !clean(value) || /^[-–—]$/.test(clean(value));
+const names = (value) => clean(value).replace(/[(（][^)）]*[)）]/g, '').split(/[,，、]|\s및\s/).map((item) => item.trim()).filter((item) => item && !isBlank(item));
+const ids = (value, pattern) => unique(clean(value).match(pattern) || []);
 const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((cell) => cell.trim());
+// A column found by a pattern on its header, for the optional columns whose exact wording may vary.
+const field = (row, pattern) => { const key = Object.keys(row).find((name) => pattern.test(name)); return key === undefined ? '' : row[key]; };
+
+// The text with fenced code blocks blanked, so an example inside one is never read as the document.
+const outsideFences = (text) => {
+  let fenced = false;
+  return String(text).split(/\r?\n/).map((line) => {
+    if (/^\s*```/.test(line)) { fenced = !fenced; return ''; }
+    return fenced ? '' : line;
+  });
+};
 
 // Tables outside fenced code blocks, keyed by their header cells.
 export function parseTables(text) {
-  const lines = [];
-  let fenced = false;
-  for (const line of String(text).split(/\r?\n/)) {
-    if (/^\s*```/.test(line)) { fenced = !fenced; lines.push(''); continue; }
-    lines.push(fenced ? '' : line);
-  }
+  const lines = outsideFences(text);
   const tables = [];
   for (let i = 0; i < lines.length; i += 1) {
     if (!/^\s*\|/.test(lines[i]) || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) continue;
-    const header = cells(lines[i]);
+    const header = cells(lines[i]).map(clean);
     const rows = [];
     i += 2;
     while (i < lines.length && /^\s*\|/.test(lines[i])) {
@@ -57,17 +65,15 @@ export function parseTables(text) {
 
 // tactical-design.md by its numbered top-level sections; a section is "filled" once its heading is present.
 function sections(text) {
+  const body = outsideFences(text).join('\n');
   const parts = {};
-  const matches = [...String(text).matchAll(/^## (\d+)\./gm)];
-  matches.forEach((match, index) => { parts[Number(match[1])] = text.slice(match.index, matches[index + 1]?.index ?? text.length); });
+  const matches = [...body.matchAll(/^##[ \t]+(\d+)(?!\d)/gm)];
+  matches.forEach((match, index) => { parts[Number(match[1])] = body.slice(match.index, matches[index + 1]?.index ?? body.length); });
   return parts;
 }
 
-function tableOf(section, ...required) {
-  return parseTables(section || '').find((table) => required.every((name) => table.header.includes(name)));
-}
-
-const notApplicable = (section) => /^\s*해당 없음\s*—\s*\S/m.test(section || '');
+// The rows of every table of the section that has all the key columns.
+const rowsOf = (section, ...required) => parseTables(section || '').filter((table) => required.every((name) => table.header.includes(name))).flatMap((table) => table.rows);
 
 export function parseRequirements(text) {
   return {
@@ -76,11 +82,9 @@ export function parseRequirements(text) {
   };
 }
 
-// The Value Object that a `강제 행위` of the form `Value Object: <모델>` or `Value Object: <모델>.<행위>()` names.
-function valueObjectTarget(action, models) {
-  const text = clean(action.slice(VALUE_OBJECT.length).replace(/^\s*:\s*/, '')).replace(/\([^)]*\)/g, '').trim();
-  return models.has(text) || !text.includes('.') ? text : text.slice(0, text.lastIndexOf('.')).trim();
-}
+// A behaviour cell that names nothing: blank, `-` or `없음 — <reason>`. Any other form (Aggregate or Entity method, Value Object
+// rule, Domain Service, 외부 시스템) enforces the rule.
+const noBehavior = (value) => isBlank(value) || /^(해당 )?없음(\s*[—–-].*)?$/.test(clean(value));
 
 export function checkTacticalDesign({ requirements, tacticalDesign }) {
   const errors = [];
@@ -91,228 +95,69 @@ export function checkTacticalDesign({ requirements, tacticalDesign }) {
   TACTICAL_DESIGN_STAGES.forEach((stage, index) => { if (!parts[index + 1]) errors.push({ code: 'SECTION_MISSING', message: `${TACTICAL_DESIGN_DOCUMENT} has no \`## ${index + 1}.\` section; ${stage} must have filled it`, owner_stage: stage }); });
   if (errors.length) return result(errors);
 
-  // 1. Models and the requirement mapping.
-  const modelTable = tableOf(parts[1], '모델', '종류');
-  const models = new Map();
-  const contextOf = new Map();
-  for (const row of modelTable?.rows || []) {
-    const name = clean(row['모델']);
-    if (models.has(name)) fail('MODEL_DUPLICATE', `Model ${name} is declared twice`, name);
-    if (!MODEL_KINDS.includes(clean(row['종류']))) fail('MODEL_KIND_INVALID', `Model ${name} has kind "${clean(row['종류'])}"; use ${MODEL_KINDS.join(', ')}`, name);
-    models.set(name, clean(row['종류']));
-    contextOf.set(name, clean(row['BC']));
+  // 1. Every BIZ maps to a model or an external-system marker, and every INV and EX to an owning model.
+  const models = new Set(rowsOf(parts[1], '모델', '종류').map((row) => clean(row['모델'])).filter(Boolean));
+  const owners = new Map();
+  for (const row of rowsOf(parts[1], '요구', '소유 모델')) {
+    for (const id of ids(row['요구'], /\b(?:BIZ|INV|EX)-\d+\b/g)) owners.set(id, [...(owners.get(id) || []), ...(clean(row['소유 모델']).includes(EXTERNAL) ? [EXTERNAL] : []), ...names(row['소유 모델'])]);
   }
-  if (!models.size) fail('MODELS_MISSING', 'Section 1 declares no model (Entity, Value Object or 외부 시스템)');
-  const mapping = new Map();
-  for (const row of tableOf(parts[1], '요구', '소유 모델')?.rows || []) {
-    const id = clean(row['요구']);
-    if (!/^(BIZ|INV|EX)-\d+$/.test(id)) continue;
-    if (!business.includes(id) && !rules.includes(id)) fail('UNKNOWN_REQUIREMENT', `${id} is not in requirements.md`, id);
-    const owners = names(row['소유 모델']);
-    for (const owned of owners) if (!models.has(owned)) fail('UNKNOWN_MODEL', `${id} maps to ${owned}, which section 1 does not declare`, id);
-    mapping.set(id, owners.filter((item) => models.has(item)));
-  }
-  for (const id of business) if (!mapping.get(id)?.length) fail('BIZ_UNMAPPED', `${id} maps to no model or ${EXTERNAL} marker`, id);
-  for (const id of rules) if (!mapping.get(id)?.length) fail('RULE_NO_OWNER', `${id} has no owning model`, id);
+  const owned = (id) => (owners.get(id) || []).some((name) => name === EXTERNAL || !models.size || models.has(name));
+  for (const id of business) if (!owned(id)) fail('BIZ_UNMAPPED', `${id} maps to no model or ${EXTERNAL} marker in section 1`, id);
+  for (const id of rules) if (!owned(id)) fail('RULE_NO_OWNER', `${id} has no owning model in section 1`, id);
 
-  // 2. Aggregates, the behaviour that enforces each rule, and the consistency decisions.
+  // 2. Every INV and EX has an enforcing behaviour in 2.2, and a rule that spans Aggregates cites a sourced consistency decision.
   owner = stageOfSection(2);
-  const aggregates = new Map();
-  const aggregateTable = tableOf(parts[2], 'Aggregate', 'Root');
-  for (const row of aggregateTable?.rows || []) {
-    const name = clean(row['Aggregate']);
-    const root = clean(row['Root']);
-    const members = names(row['구성원']);
-    if (aggregates.has(name)) fail('AGGREGATE_DUPLICATE', `Aggregate ${name} is declared twice`, name);
-    if (models.get(root) !== ENTITY) fail('ROOT_NOT_ENTITY', `Root ${root} of ${name} is not an Entity declared in section 1`, name);
-    for (const member of members) if (!models.has(member)) fail('UNKNOWN_MODEL', `${name} lists member ${member}, which section 1 does not declare`, name);
-    aggregates.set(name, { root, members, bc: clean(row['BC']), behaviors: behaviors(row['주요 행위']) });
-  }
-  const aggregatesOf = (model) => [...aggregates].filter(([, value]) => value.root === model || value.members.includes(model)).map(([name]) => name);
-  // A bounded context with no state lifecycle has no Aggregate, and the document says so: a row of the 2.1 table of
-  // contexts without an Aggregate, or `해당 없음 — <reason>` for a section that declares none at all.
-  const withoutAggregate = new Set((tableOf(parts[2], 'BC', 'Aggregate 없음 사유')?.rows || []).filter((row) => !isBlank(row['BC']) && !isBlank(row['Aggregate 없음 사유'])).map((row) => clean(row['BC'])));
-  const sectionExplained = !aggregates.size && notApplicable(parts[2]);
-  if (!aggregates.size && !sectionExplained && !withoutAggregate.size) fail('AGGREGATES_MISSING', 'Section 2 declares no Aggregate and gives no reason: add the Aggregates, a row (BC, Aggregate 없음 사유) for each context without one, or `해당 없음 — <reason>`');
-  else {
-    const contexts = unique([...models].filter(([, kind]) => kind !== EXTERNAL).map(([name]) => contextOf.get(name)).filter(Boolean));
-    for (const context of contexts) {
-      const placed = [...models].some(([name, kind]) => kind !== EXTERNAL && contextOf.get(name) === context && aggregatesOf(name).length);
-      if (!placed && !withoutAggregate.has(context) && !sectionExplained) fail('AGGREGATE_ABSENCE_UNEXPLAINED', `${context} has no Aggregate and section 2.1 gives no reason; add a row (BC, Aggregate 없음 사유) saying why it has no state lifecycle, or declare its Aggregate`, context);
-    }
-  }
-  for (const [model, kind] of models) {
-    if (kind !== ENTITY) continue;
-    const where = aggregatesOf(model);
-    if (!where.length) fail('ENTITY_UNPLACED', `Entity ${model} belongs to no Aggregate`, model);
-    if (where.length > 1) fail('ENTITY_IN_SEVERAL_AGGREGATES', `Entity ${model} belongs to ${where.join(', ')}; an Entity lives in exactly one Aggregate`, model);
-  }
   const decisions = new Map();
-  const decisionRows = new Map();
-  const crossContext = new Map();
-  for (const row of tableOf(parts[2], 'CON', '일관성', '근거·출처')?.rows || []) {
-    const id = clean(row['CON']);
-    const spanned = names(row['걸친 Aggregate']);
-    const kind = clean(row['일관성']);
-    if (decisions.has(id)) fail('DECISION_DUPLICATE', `${id} is declared twice`, id);
-    decisions.set(id, kind);
-    decisionRows.set(id, { rules: names(row['규칙']), spanned: unique(spanned) });
-    for (const name of spanned) if (!aggregates.has(name)) fail('UNKNOWN_AGGREGATE', `${id} names ${name}, which section 2 does not declare`, id);
-    if (!['즉시', '최종'].includes(kind)) fail('DECISION_KIND_INVALID', `${id} has consistency "${kind}"; use 즉시 or 최종`, id);
-    if (!DECISION_SOURCE.test(clean(row['근거·출처']))) fail('DECISION_NO_SOURCE', `${id} has no source: cite the user's answer (answers.json <question_id>), an INV/EX/AC/BIZ ID, 요청 원문, CAND-xx 채택 or 사용자 수정 지시; an agent proposal alone is not a source`, id);
-    if (kind === '최종' && unique(spanned).length < 2) fail('EVENTUAL_NOT_SEPARATE', `${id} is eventual consistency but spans fewer than two Aggregates`, id);
-    if (kind === '즉시') immediateDecision({ id, spanned: unique(spanned), readOnly: unique(names(row['조회 전용 Aggregate'])), aggregates, contextOf, fail, crossContext });
+  for (const row of rowsOf(parts[2], 'CON')) {
+    const [id] = ids(row['CON'], CON_ID);
+    if (id) decisions.set(id, { kind: clean(field(row, /^일관성$/)), rules: ids(row['규칙'], RULE_ID), spanned: names(field(row, /^걸친 Aggregate$/)), source: clean(field(row, /출처/)) });
   }
-  // The behaviour that enforces a rule is an Aggregate method, a Value Object's own rule, a Domain Service, or an external system.
   const enforcement = new Map();
-  const needsDomainService = new Set();
-  for (const row of tableOf(parts[2], '요구', 'Aggregate', '강제 행위')?.rows || []) {
-    const id = clean(row['요구']);
-    if (!/^(INV|EX)-\d+$/.test(id)) continue;
-    if (!rules.includes(id)) { fail('UNKNOWN_REQUIREMENT', `${id} is not in requirements.md`, id); continue; }
-    const spanned = unique(names(row['Aggregate']));
-    const action = clean(row['강제 행위']);
-    const scope = clean(row['일관성 범위']);
-    for (const name of spanned) if (!aggregates.has(name)) fail('UNKNOWN_AGGREGATE', `${id} names ${name}, which section 2 does not declare`, id);
-    const owners = mapping.get(id) || [];
-    if (action === DOMAIN_SERVICE_MARKER) needsDomainService.add(id);
-    else if (action.startsWith(EXTERNAL)) {
-      const target = clean(action.slice(EXTERNAL.length).replace(/^\s*:\s*/, ''));
-      if (!owners.includes(target) || models.get(target) !== EXTERNAL) fail('EXTERNAL_ENFORCEMENT_INVALID', `${id} is delegated to "${target}", which is not an ${EXTERNAL} that owns it in section 1`, id);
-    } else if (action.startsWith(VALUE_OBJECT)) {
-      const target = valueObjectTarget(action, models);
-      if (!owners.includes(target) || models.get(target) !== VALUE_OBJECT) fail('VALUE_OBJECT_ENFORCEMENT_INVALID', `${id} is enforced by "${action}", which is not a ${VALUE_OBJECT} that owns it in section 1`, id);
-    } else if (!behaviors(action).length || !behaviors(action).every((behavior) => spanned.some((name) => aggregates.get(name)?.behaviors.includes(behavior)))) fail('RULE_NO_ENFORCEMENT', `${id} is enforced by "${action}", which is no listed behaviour of ${spanned.join(', ') || 'any Aggregate'}`, id);
-    // The row must name every Aggregate that holds an owning Entity, so a rule that really spans Aggregates cannot hide behind one.
-    const entityPlaced = unique(owners.filter((item) => models.get(item) === ENTITY).flatMap(aggregatesOf));
-    const placed = unique(owners.flatMap(aggregatesOf));
-    if (entityPlaced.some((name) => !spanned.includes(name)) || (placed.length && !placed.some((name) => spanned.includes(name)))) fail('RULE_AGGREGATE_MISMATCH', `${id} is owned by ${owners.join(', ')} (in ${placed.join(', ')}) but section 2.2 assigns it to ${spanned.join(', ') || 'no Aggregate'}; list every Aggregate that holds an owning Entity`, id);
-    if (spanned.length > 1 && !(/^CON-\d+$/.test(scope) && decisions.has(scope))) fail('CROSS_AGGREGATE_NO_DECISION', `${id} spans ${spanned.join(', ')} without a consistency decision (일관성 범위 must name a CON row of 2.3)`, id);
-    if (/^CON-\d+$/.test(scope) && !decisions.has(scope)) fail('UNKNOWN_DECISION', `${id} cites ${scope}, which 2.3 does not declare`, id);
-    const decided = decisionRows.get(scope);
-    if (decided && !decided.rules.includes(id)) fail('DECISION_RULE_MISMATCH', `${id} cites ${scope}, which decides ${decided.rules.join(', ') || 'no rule'}`, id);
-    if (decided && decided.spanned.length && [...spanned].sort().join() !== [...decided.spanned].sort().join()) fail('DECISION_AGGREGATE_MISMATCH', `${id} spans ${spanned.join(', ')} but ${scope} decides ${decided.spanned.join(', ')}`, id);
-    enforcement.set(id, action);
+  for (const row of rowsOf(parts[2], '요구', '강제 행위')) {
+    for (const id of ids(row['요구'], RULE_ID)) enforcement.set(id, [...(enforcement.get(id) || []), { enforced: !noBehavior(row['강제 행위']), spanned: unique(names(row['Aggregate'])), cited: ids(row['일관성 범위'], CON_ID) }]);
   }
-  for (const id of rules) if (!enforcement.has(id)) fail('RULE_NO_ENFORCEMENT', `${id} has no enforcing behaviour in section 2.2`, id);
-
-  // 3. Domain services own only what 2.2 handed over, and every handed-over rule gets one.
-  owner = stageOfSection(3);
-  const covered = new Set();
-  const serviceIds = new Set();
-  for (const row of tableOf(parts[3], 'DS', '강제 규칙', '행위')?.rows || []) {
-    const id = clean(row['DS']);
-    if (serviceIds.has(id)) fail('SERVICE_DUPLICATE', `${id} is declared twice`, id);
-    serviceIds.add(id);
-    if (isBlank(row['행위'])) fail('SERVICE_NO_BEHAVIOR', `${id} names no behaviour`, id);
-    const owned = names(row['강제 규칙']);
-    if (!owned.length) fail('SERVICE_NO_RULE', `${id} enforces no rule; a Domain Service exists only for a rule no Entity or Value Object owns`, id);
-    for (const rule of owned) {
-      if (!rules.includes(rule)) fail('UNKNOWN_REQUIREMENT', `${id} enforces ${rule}, which is not in requirements.md`, id);
-      else if (!needsDomainService.has(rule)) fail('DOMAIN_SERVICE_REDUNDANT', `${id} enforces ${rule}, which section 2.2 already assigns to an Aggregate behaviour, a ${VALUE_OBJECT} or an ${EXTERNAL}`, id);
-      covered.add(rule);
+  const judged = new Set();
+  for (const id of rules) {
+    const rows = enforcement.get(id) || [];
+    if (!rows.some((row) => row.enforced)) fail('RULE_NO_ENFORCEMENT', `${id} has no enforcing behaviour in section 2.2`, id);
+    // A rule's decisions are the ones its 2.2 rows cite and the ones that list it; it spans what those rows and decisions name.
+    const cited = unique([...rows.flatMap((row) => row.cited), ...[...decisions].filter(([, decision]) => decision.rules.includes(id)).map(([con]) => con)]);
+    const known = cited.filter((con) => decisions.has(con));
+    const spanned = unique([...rows.flatMap((row) => row.spanned), ...known.flatMap((con) => decisions.get(con).spanned)]);
+    if (spanned.length < 2) continue;
+    if (!known.length) fail('CROSS_AGGREGATE_NO_DECISION', `${id} spans ${spanned.join(', ')} ${cited.length ? `and cites ${cited.join(', ')}, which section 2.3 does not declare` : 'without a consistency decision (일관성 범위 must name a CON row of 2.3)'}`, id);
+    for (const con of known.filter((item) => !judged.has(item))) {
+      judged.add(con);
+      const { kind, source } = decisions.get(con);
+      if (!/^(즉시|최종)/.test(kind)) fail('DECISION_KIND_INVALID', `${con} has consistency "${kind}"; use 즉시 or 최종`, con);
+      if (!DECISION_SOURCE.test(source)) fail('DECISION_NO_SOURCE', `${con} has no source: cite the user's answer (answers.json <question_id>), an INV/EX/AC/BIZ ID, 요청 원문, CAND-xx 채택 or 사용자 수정 지시; an agent proposal alone is not a source`, con);
     }
   }
-  if (!serviceIds.size && !notApplicable(parts[3])) fail('SERVICES_MISSING', 'Section 3 declares no Domain Service and does not say `해당 없음 — <reason>`');
-  for (const id of needsDomainService) if (!covered.has(id)) fail('DOMAIN_SERVICE_MISSING', `${id} is handed to a Domain Service in 2.2 but section 3 has none for it`, id);
 
-  // 4. Application services call, they do not decide: each transaction changes one Aggregate.
+  // 3. A transaction boundary changes at most one Aggregate: the Aggregates a segment names, longest name first.
   owner = stageOfSection(4);
-  const covers = new Set();
-  const services = tableOf(parts[4], 'AS', '업무', '트랜잭션 경계');
-  for (const row of services?.rows || []) {
-    const id = clean(row['AS']);
-    for (const biz of clean(row['업무']).match(/BIZ-\d+/g) || []) covers.add(biz);
-    const boundary = clean(row['트랜잭션 경계']);
-    if (/^없음\s*—\s*\S/.test(boundary)) continue;
-    if (!boundary) { fail('TRANSACTION_MISSING', `${id} has no transaction boundary; write \`없음 — <reason>\` for a use case that changes no Aggregate`, id); continue; }
-    for (const segment of boundary.split(';').map((item) => item.trim()).filter(Boolean)) {
-      const consistency = segment.match(/CON-\d+/g) || [];
-      const touched = names(segment.replace(/^T\d+\s*:\s*/, '').replace(/\([^)]*\)/g, ''));
-      if (touched.length !== 1 || !aggregates.has(touched[0])) fail('MULTI_AGGREGATE_TRANSACTION', `${id} transaction "${segment}" must change exactly one declared Aggregate`, id);
-      for (const con of consistency) if (decisions.get(con) !== '최종') fail('TRANSACTION_CONSISTENCY_INVALID', `${id} cites ${con}, which is not an eventual-consistency decision of 2.3`, id);
+  const aggregates = unique([
+    ...rowsOf(parts[2], 'Aggregate', 'Root').map((row) => clean(row['Aggregate'])),
+    ...rowsOf(parts[2], '요구', '강제 행위').flatMap((row) => names(row['Aggregate'])),
+    ...[...decisions.values()].flatMap((decision) => decision.spanned),
+  ].filter((name) => name && !isBlank(name))).sort((a, b) => b.length - a.length);
+  for (const row of rowsOf(parts[4], 'AS', '트랜잭션 경계')) {
+    for (const segment of clean(row['트랜잭션 경계']).split(/[;；]|(?=\bT\d+\s*:)/)) {
+      let text = segment.replace(/[(（][^)）]*[)）]/g, ' ').replace(/^[\s,，]*(?:T\d+\s*:)?/, '').split('—')[0];
+      if (/^\s*없음/.test(text)) continue;
+      const touched = aggregates.filter((name) => { const hit = text.includes(name); if (hit) text = text.split(name).join(' '); return hit; });
+      if (touched.length > 1) fail('MULTI_AGGREGATE_TRANSACTION', `${clean(row['AS'])} transaction "${segment.trim()}" changes ${touched.join(', ')}; one transaction changes exactly one Aggregate`, clean(row['AS']));
     }
   }
-  for (const id of business) {
-    const owners = mapping.get(id) || [];
-    if (owners.length && owners.every((item) => models.get(item) === EXTERNAL)) continue;
-    if (!covers.has(id)) fail('BIZ_NO_APPLICATION_SERVICE', `${id} is coordinated by no Application Service in section 4`, id);
-  }
 
-  // 5. Integration: the Saga/Outbox choice exists only for rules recorded as eventual consistency.
+  // 4. Saga and Outbox are chosen only on integration rows tied to an eventual-consistency decision.
   owner = stageOfSection(5);
-  const integrations = tableOf(parts[5], 'INT', '통신 방식', '일관성 결정', 'Saga·Outbox');
-  const integrated = new Set();
-  const integrationRows = [];
-  if (!integrations?.rows.length && !notApplicable(parts[5])) fail('INTEGRATION_MISSING', 'Section 5 declares no integration and does not say `해당 없음 — <reason>`');
-  for (const row of integrations?.rows || []) {
-    const id = clean(row['INT']);
-    const cited = clean(row['일관성 결정']).match(/CON-\d+/g) || [];
-    for (const field of ['상류 BC', '하류 BC', '통신 방식']) if (isBlank(row[field])) fail('INTEGRATION_INCOMPLETE', `${id} has no ${field}`, id);
-    integrationRows.push({ id, cited, method: clean(row['통신 방식']), source: row['근거·출처'] });
-    for (const con of cited) {
-      integrated.add(con);
-      if (!decisions.has(con)) fail('UNKNOWN_DECISION', `${id} cites ${con}, which 2.3 does not declare`, id);
-    }
-    const saga = clean(row['Saga·Outbox']);
-    const eventual = cited.some((con) => decisions.get(con) === '최종');
-    if (/^없음(\s*—\s*\S.*)?$/.test(saga) || isBlank(saga)) {
-      if (eventual && isBlank(saga)) fail('SAGA_OUTBOX_UNCONSIDERED', `${id} carries an eventual-consistency decision, so state the Saga/Outbox choice (or \`없음 — <reason>\`)`, id);
-    } else if (!eventual) fail('SAGA_WITHOUT_EVENTUAL', `${id} chooses ${saga} but cites no eventual-consistency decision; Saga and Outbox are considered only for such rules`, id);
+  for (const row of rowsOf(parts[5], 'INT')) {
+    const saga = clean(field(row, /Saga|Outbox/i));
+    if (isBlank(saga) || /^(해당 )?없음(\s|$|[—–-])/.test(saga)) continue;
+    if (!ids(field(row, /일관성/), CON_ID).some((con) => /^최종/.test(decisions.get(con)?.kind || ''))) fail('SAGA_WITHOUT_EVENTUAL', `${clean(row['INT'])} chooses ${saga} but cites no eventual-consistency (최종) decision of section 2.3; Saga and Outbox are considered only for such rules`, clean(row['INT']));
   }
-  for (const [con, kind] of decisions) {
-    if (kind !== '최종') continue;
-    const row = tableOf(parts[2], 'CON', '일관성')?.rows.find((item) => clean(item['CON']) === con);
-    const contexts = unique(names(row?.['걸친 Aggregate']).map((name) => aggregates.get(name)?.bc).filter(Boolean));
-    if (contexts.length > 1 && !integrated.has(con)) fail('CROSS_CONTEXT_NOT_INTEGRATED', `${con} crosses ${contexts.join(', ')} but no integration row of section 5 cites it`, con);
-  }
-  // Immediate consistency across bounded contexts is never a merge: it is realised as a synchronous check or call.
-  for (const [con, { contexts }] of crossContext) {
-    const cited = integrationRows.filter((row) => row.cited.includes(con));
-    const synchronous = cited.filter((row) => SYNCHRONOUS.test(row.method));
-    const crossing = `${con} needs immediate consistency across ${contexts.join(', ')}. Aggregates of different bounded contexts are never merged, so section 5 must record it as a synchronous check or call`;
-    if (!cited.length) fail('IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', `${crossing}, and no integration row cites it. Add an INT row whose 일관성 결정 is ${con}, whose 통신 방식 is synchronous (동기 확인, 동기 호출) and whose 근거·출처 names its source`, con);
-    else if (!synchronous.length) fail('IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', `${crossing}, but ${cited.map((row) => `${row.id} (${row.method || 'no 통신 방식'})`).join(', ')} citing it ${cited.length > 1 ? 'are' : 'is'} not synchronous. Make its 통신 방식 synchronous (동기 확인, 동기 호출). If the contract can only be asynchronous, the decision contradicts section 2.3: return blocked / DEPENDENCY_INCOMPLETE naming aggregate-design`, con);
-    else if (synchronous.every((row) => isBlank(row.source))) fail('IMMEDIATE_INTEGRATION_NO_SOURCE', `${synchronous.map((row) => row.id).join(', ')} records the synchronous check or call of ${con} without a 근거·출처. Cite the CONTEXT-MAP.md relationship, the requirement or the user's answer it rests on`, con);
-  }
-
-  decisionHistory(parts[6], errors);
   return result(errors);
-}
-
-// A rule that needs immediate consistency. Merging is for Aggregates of one bounded context that one operation changes
-// together; an Aggregate that the operation only reads (조회 전용 Aggregate) never needs it. Aggregates of different bounded
-// contexts are never merged: the rule is handed to section 5 as a synchronous check or call (`crossContext`).
-function immediateDecision({ id, spanned, readOnly, aggregates, contextOf, fail, crossContext }) {
-  if (!spanned.length) { fail('DECISION_NO_AGGREGATE', `${id} needs immediate consistency but lists no Aggregate in 걸친 Aggregate; name the Aggregates the rule changes or reads`, id); return; }
-  const stray = readOnly.filter((name) => !spanned.includes(name));
-  if (stray.length) fail('READ_ONLY_NOT_SPANNED', `${id} marks ${stray.join(', ')} as 조회 전용 Aggregate, which 걸친 Aggregate does not list; list it there too, or write \`-\` when the rule changes every Aggregate it spans`, id);
-  const contextOfAggregate = (name) => aggregates.get(name)?.bc || contextOf.get(aggregates.get(name)?.root) || '';
-  const declared = spanned.filter((name) => aggregates.has(name));
-  const changedBy = new Map();
-  for (const name of declared.filter((item) => !readOnly.includes(item))) {
-    const context = contextOfAggregate(name);
-    changedBy.set(context, [...(changedBy.get(context) || []), name]);
-  }
-  for (const [context, changed] of changedBy) {
-    if (changed.length > 1) fail('IMMEDIATE_NOT_MERGED', `${id} has one operation change ${changed.join(', ')}${context ? ` of ${context}` : ''} together, which needs immediate consistency, so they must be one Aggregate: merge them (결정 names 병합, 걸친 Aggregate lists the merged Aggregate). If the operation only reads one of them as a precondition, list it in 조회 전용 Aggregate instead`, id);
-  }
-  const contexts = unique(declared.map(contextOfAggregate).filter(Boolean));
-  if (contexts.length > 1) crossContext.set(id, { contexts });
-}
-
-// Every stage appends its decisions with their sources; a stage that decided nothing says why in one row. A row belongs to
-// the stage it names, so a missing or unsourced decision points at the stage that must record it.
-function decisionHistory(section, errors) {
-  const rows = tableOf(section, 'DEC', 'stage', '출처')?.rows || [];
-  for (const stage of TACTICAL_DESIGN_STAGES) {
-    if (!rows.some((row) => clean(row['stage']) === stage)) errors.push({ code: 'NO_DECISION_RECORD', message: `Section 6 has no decision row for ${stage}; record at least one decision with its source`, owner_stage: stage });
-  }
-  for (const row of rows) {
-    if (!isBlank(row['출처'])) continue;
-    const stage = clean(row['stage']);
-    errors.push({ code: 'DECISION_RECORD_NO_SOURCE', message: `${clean(row['DEC'])} has no source`, id: clean(row['DEC']), owner_stage: TACTICAL_DESIGN_STAGES.includes(stage) ? stage : FINAL_TACTICAL_STAGE });
-  }
 }
 
 // The earliest stage comes first: the stage to reopen is the first one a finding names.

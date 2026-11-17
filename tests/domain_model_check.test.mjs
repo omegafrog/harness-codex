@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { checkTacticalDesign, parseRequirements, parseTables } from '../.codex/scripts/harness-domain-model-check.mjs';
 import { TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { FINAL_TACTICAL_STAGE, TacticalGateError, assertTacticalDesignGate, checkWorkspaceTacticalDesign, evaluateTacticalDesignGate, gateFailureInstruction, stakeholderAnalysisSkipped } from '../.harness/src/workflow/domain-model-gate.mjs';
-import { REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument as loadTemplate, upTo } from './support/domain-model-fixture.mjs';
+import { READ_ONLY_DOCUMENT, READ_ONLY_REQUIREMENTS, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument as loadTemplate, upTo } from './support/domain-model-fixture.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const SCRIPT = join(sourceRoot, '.codex/scripts/harness-domain-model-check.mjs');
@@ -29,240 +29,193 @@ const failing = (document, code, owner, requirements) => {
   return verdict;
 };
 
+const passes = (document, requirements, why) => assert.deepEqual(run(document, requirements), { ok: true, errors: [] }, why);
+
 test('the gate is one check of the whole document, owned by the last tactical stage of the flow', () => {
   assert.equal(FINAL_TACTICAL_STAGE, INTEGRATION_DESIGN);
   assert.equal(FINAL_TACTICAL_STAGE, TACTICAL_DESIGN_STAGES.at(-1));
   assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design']);
 });
 
-test('the requirements parser reads BIZ headings and the INV and EX bullets, not AC lines', () => {
+test('the requirements parser reads BIZ headings and the INV and EX bullets, not AC lines, and the table parser reads cleaned headers', () => {
   assert.deepEqual(parseRequirements(REQUIREMENTS), { business: ['BIZ-01', 'BIZ-02', 'BIZ-03', 'BIZ-04'], rules: ['INV-01', 'EX-01', 'INV-02', 'INV-03', 'INV-04'] });
-  assert.deepEqual(parseTables('```\n| a | b |\n|---|---|\n| 1 | 2 |\n```\n\n| 열 | 값 |\n|:--|--:|\n| x | - |\n| - | - |\n'), [{ header: ['열', '값'], rows: [{ 열: 'x', 값: '-' }] }], 'fenced tables are ignored and an empty row is dropped');
+  assert.deepEqual(parseTables('```\n| a | b |\n|---|---|\n| 1 | 2 |\n```\n\n| 열 | **값** |\n|:--|--:|\n| x | - |\n| - | - |\n'), [{ header: ['열', '값'], rows: [{ 열: 'x', 값: '-' }] }], 'fenced tables are ignored, header markup is dropped and an empty row is dropped');
 });
 
-test('the template example passes the gate, so the template and the gate cannot drift apart', async () => {
+test('the template example, the stateless-calculator document and a read-only-aggregate document pass the gate', async () => {
+  passes(await templateDocument());
+  passes(STATELESS_DOCUMENT, STATELESS_REQUIREMENTS);
+  passes(READ_ONLY_DOCUMENT, READ_ONLY_REQUIREMENTS);
+});
+
+test('documents: a missing document is reported against the stage that owes it, and each missing section against the stage that fills it', async () => {
   const document = await templateDocument();
-  assert.deepEqual(run(document), { ok: true, errors: [] });
+  assert.deepEqual(run('# 전술 설계\n').errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['SECTION_MISSING', stage]));
+  assert.deepEqual(run(upTo(document, 3)).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
+  assert.deepEqual(run(upTo(document, 2)).errors.map((error) => error.owner_stage), [DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]);
+  // The decision history (section 6) is not gated, and a heading is read the way people write it.
+  passes(document.split('## 6.')[0]);
+  passes(document.replace('## 5. 통합 설계', '## 5 통합 설계'));
+  assert.equal(run(document.replace('## 5. 통합 설계', '### 5. 통합 설계')).ok, false, 'a deeper heading is no section');
+  assert.equal(run(document.replace('## 5. 통합 설계', '```\n## 5. 통합 설계\n```')).ok, false, 'a heading inside a code block is no section');
 });
 
 test('domain-model section: every BIZ maps to a model or an external-system marker and every INV and EX has an owning model', async () => {
   const document = await templateDocument();
   failing(change(document, '| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |\n', ''), 'BIZ_UNMAPPED', DOMAIN_MODEL);
+  failing(change(document, '| BIZ-02 | 커뮤니티 | 게시글 |', '| BIZ-02 | 커뮤니티 | 게시물 |'), 'BIZ_UNMAPPED', DOMAIN_MODEL);
+  failing(change(document, '| BIZ-02 | 커뮤니티 | 게시글 |', '| BIZ-02 | 커뮤니티 | - |'), 'BIZ_UNMAPPED', DOMAIN_MODEL);
+  failing(document, 'BIZ_UNMAPPED', DOMAIN_MODEL, `${REQUIREMENTS}\n### BIZ-05 신고 취소 (SD-02)\n`);
   failing(change(document, '| INV-04 | 신고 | 신고 | 같은 회원의 같은 글 신고를 막는다 |\n', ''), 'RULE_NO_OWNER', DOMAIN_MODEL);
   failing(change(document, '| EX-01 | 인증 | 인증 시스템 |', '| EX-01 | 인증 | - |'), 'RULE_NO_OWNER', DOMAIN_MODEL);
-  failing(change(document, '| BIZ-02 | 커뮤니티 | 게시글 |', '| BIZ-02 | 커뮤니티 | 게시물 |'), 'UNKNOWN_MODEL', DOMAIN_MODEL);
-  failing(change(document, '| BIZ-04 | 인증 | 인증 시스템 |', '| BIZ-04 | 인증 | 인증 시스템, 로그인 기록 |'), 'UNKNOWN_MODEL', DOMAIN_MODEL);
-  failing(change(document, '| 본문 | Value Object |', '| 본문 | Value Obj |'), 'MODEL_KIND_INVALID', DOMAIN_MODEL);
-  failing(change(document, '| 신고 | Entity | 신고 |', '| 게시글 | Entity | 신고 |'), 'MODEL_DUPLICATE', DOMAIN_MODEL);
-  failing(change(document, '| INV-04 | 신고 | 신고 |', '| INV-09 | 신고 | 신고 |'), 'UNKNOWN_REQUIREMENT', DOMAIN_MODEL);
-  failing(document, 'BIZ_UNMAPPED', DOMAIN_MODEL, `${REQUIREMENTS}\n### BIZ-05 신고 취소 (SD-02)\n`);
   failing(document, 'RULE_NO_OWNER', DOMAIN_MODEL, REQUIREMENTS.replace('- 업무 규칙: 없음', '- 업무 규칙:\n  - EX-07 취소는 접수 뒤 한 시간 안에만 된다'));
-  // An external system owns what the requirements hand to it, so a generic subdomain needs no model of its own.
-  assert.equal(run(document).ok, true);
+  // Read tolerantly: one declared owner is enough, remarks and markup around a name are ignored, and an external marker owns what it names.
+  passes(change(document, '| BIZ-04 | 인증 | 인증 시스템 |', '| BIZ-04 | 인증 | 인증 시스템, 로그인 기록 |'));
+  passes(change(document, '| BIZ-02 | 커뮤니티 | 게시글 |', '| BIZ-02 | 커뮤니티 | **`게시글`** (Entity) |'));
+  passes(change(document, '| BIZ-04 | 인증 | 인증 시스템 |', '| BIZ-04 | 인증 | 외부 시스템: 결제 |'));
+  passes(change(document, '| BIZ-02 | 커뮤니티 | 게시글 |', '| BIZ-02, BIZ-05 | 커뮤니티 | 게시글 |'));
 });
 
-test('decision history: every stage records a decision with a source, and a missing one names the stage that owes it', async () => {
-  const document = await templateDocument();
-  failing(change(document, '| DEC-01 | domain-model |', '| DEC-01 | domain-service |'), 'NO_DECISION_RECORD', DOMAIN_MODEL);
-  failing(change(document, '| DEC-04 | application-service |', '| DEC-04 | domain-service |'), 'NO_DECISION_RECORD', APPLICATION_SERVICE);
-  failing(change(document, '| 새 게시물 모델 | `src/community/post.ts:12`, BIZ-01 |', '| 새 게시물 모델 | - |'), 'DECISION_RECORD_NO_SOURCE', DOMAIN_MODEL);
-  failing(change(document, '| 이벤트로 전달한다 | 동기 호출 | answers.json `<question_id>`, CONTEXT-MAP.md `## 3` |', '| 이벤트로 전달한다 | 동기 호출 | |'), 'DECISION_RECORD_NO_SOURCE', INTEGRATION_DESIGN);
-  assert.deepEqual(run(document.split('## 6.')[0]).errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['NO_DECISION_RECORD', stage]), 'a document without section 6 owes a record from every stage');
-});
-
-test('a document that misses sections reports each missing section against the stage that fills it', async () => {
-  const document = await templateDocument();
-  assert.deepEqual(run('# 전술 설계\n').errors.map((error) => [error.code, error.owner_stage]), TACTICAL_DESIGN_STAGES.map((stage) => ['SECTION_MISSING', stage]));
-  assert.deepEqual(run(upTo(document, 3)).errors.map((error) => [error.code, error.owner_stage]), [['SECTION_MISSING', APPLICATION_SERVICE], ['SECTION_MISSING', INTEGRATION_DESIGN]]);
-  assert.deepEqual(run(upTo(document, 2)).errors.map((error) => error.owner_stage), [DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]);
-});
-
-test('aggregate-design section: every rule has an enforcing behaviour and every cross-aggregate rule a consistency decision with a source', async () => {
+test('aggregate-design section: every INV and EX has an enforcing behaviour of any form', async () => {
   const document = await templateDocument();
   failing(change(document, '| INV-02 | 게시글 | `게시글.삭제()` | Aggregate 안 |\n', ''), 'RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN);
-  failing(change(document, '| INV-02 | 게시글 | `게시글.삭제()` |', '| INV-02 | 게시글 | `게시글.숨기기()` |'), 'RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN);
-  failing(change(document, '| EX-01 | - | 외부 시스템: 인증 시스템 |', '| EX-01 | - | 외부 시스템: 신고 |'), 'EXTERNAL_ENFORCEMENT_INVALID', AGGREGATE_DESIGN);
-  // A rule that spans Aggregates needs a decision; hiding it behind one Aggregate or naming no decision both fail.
-  failing(change(document, '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | Aggregate 안 |'), 'CROSS_AGGREGATE_NO_DECISION', AGGREGATE_DESIGN);
-  failing(change(document, '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글 | `게시글.삭제()` | Aggregate 안 |'), 'RULE_AGGREGATE_MISMATCH', AGGREGATE_DESIGN);
-  failing(change(document, '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-09 |'), 'UNKNOWN_DECISION', AGGREGATE_DESIGN);
-  failing(change(document, '| CON-01 | INV-03 |', '| CON-01 | INV-02 |'), 'DECISION_RULE_MISMATCH', AGGREGATE_DESIGN);
-  // The source of a consistency decision is the user or the requirements, never an agent proposal alone.
-  failing(change(document, '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |', '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | 요청 해석(에이전트 제안) |'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
-  failing(change(document, '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |', '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | |'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
-  assert.equal(run(change(document, 'answers.json `<question_id>` |\n\n`일관성`은', 'INV-03 |\n\n`일관성`은')).ok, true, 'a requirements ID is a source too');
-  failing(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글 | - | 최종 |'), 'EVENTUAL_NOT_SEPARATE', AGGREGATE_DESIGN);
+  for (const empty of ['', '-', '없음', '없음 — 아직 정하지 않았다']) failing(change(document, '| INV-02 | 게시글 | `게시글.삭제()` |', `| INV-02 | 게시글 | ${empty} |`), 'RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN);
+  // Any non-empty form enforces it: a method (whether or not the Aggregate lists it), a Value Object rule, a Domain Service, an external system.
+  passes(change(document, '| INV-02 | 게시글 | `게시글.삭제()` |', '| INV-02 | 게시글 | `게시글.숨기기()` |'));
+  passes(change(document, '| INV-01 | 게시글 | `게시글.작성()` |', '| INV-01 | 게시글 | Value Object: 본문.검증() |'));
+  passes(change(document, '| INV-01 | 게시글 | `게시글.작성()` |', '| INV-01 | - | Value Object: 본문 |'));
+  passes(change(document, '| EX-01 | - | 외부 시스템: 인증 시스템 |', '| EX-01 | - | 인증 시스템이 거절한다 |'));
+  passes(change(document, '| INV-01 | 게시글 | `게시글.작성()` |', '| INV-01 | 게시글 | Domain Service |'));
+  // One row naming several rules enforces each of them.
+  passes(change(change(document, '| INV-01 | 게시글 | `게시글.작성()` | Aggregate 안 |\n', ''), '| INV-02 | 게시글 | `게시글.삭제()` |', '| INV-01, INV-02 | 게시글 | `게시글.작성()`, `게시글.삭제()` |'));
+  // The table is found by its key columns: the Aggregate and scope columns are optional.
+  passes(change(document, '| 요구 | Aggregate | 강제 행위 | 일관성 범위 |\n|---|---|---|---|\n| INV-01 | 게시글 | `게시글.작성()` | Aggregate 안 |\n| INV-02 | 게시글 | `게시글.삭제()` | Aggregate 안 |\n| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |\n| INV-04 | 신고 | Domain Service | Aggregate 안 |\n| EX-01 | - | 외부 시스템: 인증 시스템 | Aggregate 안 |', '| 요구 | 강제 행위 |\n|---|---|\n| INV-01 | `게시글.작성()` |\n| INV-02 | `게시글.삭제()` |\n| INV-03 | `게시글.삭제()`, `신고.닫기()` |\n| INV-04 | Domain Service |\n| EX-01 | 외부 시스템: 인증 시스템 |'));
+});
+
+test('aggregate-design section: a rule that spans Aggregates cites a consistency decision of kind 즉시 or 최종 whose source is not an agent proposal alone', async () => {
+  const document = await templateDocument();
+  const spanning = '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |';
+  const source = '| 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |';
+  const decided = (text) => change(document, source, source.replace('answers.json `<question_id>`', text));
+  // No decision: the scope names none, names one that 2.3 does not declare, and no decision lists the rule either.
+  failing(change(change(document, spanning, spanning.replace('CON-01', 'Aggregate 안')), '| CON-01 | INV-03 |', '| CON-01 | INV-02 |'), 'CROSS_AGGREGATE_NO_DECISION', AGGREGATE_DESIGN);
+  const unknown = failing(change(change(document, spanning, spanning.replace('CON-01', 'CON-09')), '| CON-01 | INV-03 |', '| CON-01 | INV-02 |'), 'CROSS_AGGREGATE_NO_DECISION', AGGREGATE_DESIGN);
+  assert.match(unknown.errors.find((error) => error.code === 'CROSS_AGGREGATE_NO_DECISION').message, /cites CON-09, which section 2\.3 does not declare/);
+  // A decision that lists the rule is cited too, from either side; the rule may name one Aggregate when its decision names more.
+  passes(change(document, spanning, spanning.replace('CON-01', 'Aggregate 안')));
+  passes(change(document, spanning, '| INV-03 | 게시글 | `게시글.삭제()` | CON-01 |'));
+  // The kind is 즉시 or 최종, in any markup.
   failing(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | 거의 즉시 |'), 'DECISION_KIND_INVALID', AGGREGATE_DESIGN);
-  // Immediate consistency of Aggregates that one operation changes together merges them: the Aggregates become one and the rows say so.
-  const merged = change(change(change(change(document, '| 게시글, 신고 | - | 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 |', '| 게시글 | - | 즉시 | 병합: 신고를 게시글 Aggregate에 넣어 한 번에 바꾼다 |'), '| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |', '| INV-03 | 게시글 | `게시글.삭제()` | CON-01 |'), '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n', ''), '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |', '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문, 신고 |');
-  failing(merged, 'RULE_AGGREGATE_MISMATCH', AGGREGATE_DESIGN);
-  assert.ok(!codes(run(merged)).includes('IMMEDIATE_NOT_MERGED'), 'the merged Aggregate is not asked to merge again');
-  // Aggregate structure: one Aggregate per Entity, an Entity root, declared members.
-  failing(change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 신고 | 신고 | 신고 ID | 게시글 |'), 'ENTITY_IN_SEVERAL_AGGREGATES', AGGREGATE_DESIGN);
-  failing(change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n', ''), 'ENTITY_UNPLACED', AGGREGATE_DESIGN);
-  failing(change(document, '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |', '| 게시글 | 커뮤니티 | 본문 | 게시글 ID | 게시글, 본문 |'), 'ROOT_NOT_ENTITY', AGGREGATE_DESIGN);
-  failing(change(document, '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |', '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 첨부 |'), 'UNKNOWN_MODEL', AGGREGATE_DESIGN);
-  failing(change(document, '| INV-04 | 신고 | Domain Service |', '| INV-04 | 신고, 쓰레기 | Domain Service |'), 'UNKNOWN_AGGREGATE', AGGREGATE_DESIGN);
-  // One document, one verdict: a hole in section 1 is reported next to the later problems, earliest stage first.
-  const holes = run(change(change(document, '| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |\n', ''), '| INV-02 | 게시글 | `게시글.삭제()` | Aggregate 안 |\n', ''));
-  assert.deepEqual(holes.errors.map((error) => [error.code, error.owner_stage]), [['BIZ_UNMAPPED', DOMAIN_MODEL], ['RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN]]);
+  failing(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | |'), 'DECISION_KIND_INVALID', AGGREGATE_DESIGN);
+  passes(change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | **즉시** 일관성 |').replace('Outbox: 삭제와 같은 transaction에 이벤트를 기록한다', '없음 — 호출한 쪽이 응답을 기다린다'));
+  // The source is the user or the requirements, never an agent proposal alone or nothing.
+  failing(decided('요청 해석(에이전트 제안)'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
+  failing(decided(''), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
+  const noSource = failing(decided('에이전트 제안'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN);
+  assert.match(noSource.errors.find((error) => error.code === 'DECISION_NO_SOURCE').message, /an agent proposal alone is not a source/);
+  for (const accepted of ['INV-03', 'BIZ-02, CONTEXT-MAP.md `## 3`', '요청 원문', 'CAND-02 채택', '사용자 수정 지시']) passes(decided(accepted));
+  // Only the decisions that a rule cites are judged, and a decision that no rule cites needs nothing.
+  passes(change(document, '\n\n`일관성`은', '\n| CON-02 | INV-01 | 게시글 | - | 아무거나 | - | |\n\n`일관성`은'));
+  // A rule inside one Aggregate needs no decision at all, and the optional read-only column may be absent.
+  passes(change(change(document, spanning, '| INV-03 | 게시글 | `게시글.삭제()` | Aggregate 안 |'), '| CON-01 | INV-03 |', '| CON-01 | INV-02 |'));
+  passes(change(document, '| CON | 규칙 | 걸친 Aggregate | 조회 전용 Aggregate | 일관성 |', '| CON | 규칙 | 걸친 Aggregate | 일관성 |').replace('|---|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | - | 최종 |', '|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | 최종 |'));
 });
 
-// The template's consistency decision CON-01 (게시글 of 커뮤니티, 신고 of 신고) turned into an immediate one. The two Aggregates
-// sit in different bounded contexts unless `sameContext` moves 신고 into 커뮤니티.
-const immediate = (document, { readOnly = '-', sameContext = false } = {}) => [
-  ['| 게시글, 신고 | - | 최종 |', `| 게시글, 신고 | ${readOnly} | 즉시 |`],
-  ...(sameContext ? [['| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 커뮤니티 | 신고 | 신고 ID | 신고 |']] : []),
-  ['| T2: 신고 (CON-01) |', '| T2: 신고 |'],
-].reduce((text, [from, to]) => change(text, from, to), document);
-const INTEGRATION_ROW = '| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |';
-const synchronous = (document, method = '동기 호출') => change(document, INTEGRATION_ROW, `| ${method} | CON-01 | 없음 — 호출한 쪽이 응답을 기다린다 |`);
-
-test('immediate consistency merges only Aggregates of one bounded context that one operation changes together', async () => {
+test('application-service section: each transaction boundary changes at most one Aggregate', async () => {
   const document = await templateDocument();
-  // Two Aggregates of the same context that one operation changes together must be one Aggregate.
-  const together = immediate(document, { sameContext: true });
-  const verdict = failing(together, 'IMMEDIATE_NOT_MERGED', AGGREGATE_DESIGN);
-  const message = verdict.errors.find((error) => error.code === 'IMMEDIATE_NOT_MERGED').message;
-  assert.match(message, /^CON-01 has one operation change 게시글, 신고 of 커뮤니티 together/);
-  assert.match(message, /merge them \(결정 names 병합, 걸친 Aggregate lists the merged Aggregate\)/);
-  assert.match(message, /list it in 조회 전용 Aggregate instead/, 'the message names the way out for a read-only precondition');
-  assert.ok(!codes(run(together)).some((code) => code.startsWith('IMMEDIATE_CROSS_CONTEXT')), 'one context needs no integration row');
-  // An Aggregate that the operation only reads is no change to merge, and neither is a single listed Aggregate.
-  assert.ok(!codes(run(immediate(document, { sameContext: true, readOnly: '신고' }))).includes('IMMEDIATE_NOT_MERGED'), 'a read-only Aggregate of the same context is not merged');
-  assert.ok(!codes(run(immediate(document, { sameContext: true, readOnly: '게시글, 신고' }))).includes('IMMEDIATE_NOT_MERGED'), 'a rule that changes nothing needs no merge');
-  assert.ok(!codes(run(change(immediate(document), '| 게시글, 신고 | - | 즉시 |', '| 게시글 | - | 즉시 |'))).includes('IMMEDIATE_NOT_MERGED'), 'one listed Aggregate has nothing to merge, with or without the word 병합');
-  // The read-only marker has to name Aggregates the decision spans, and an immediate decision has to span one.
-  failing(immediate(document, { sameContext: true, readOnly: '인증' }), 'READ_ONLY_NOT_SPANNED', AGGREGATE_DESIGN);
-  failing(change(immediate(document), '| 게시글, 신고 | - | 즉시 |', '| - | - | 즉시 |'), 'DECISION_NO_AGGREGATE', AGGREGATE_DESIGN);
-  // A document written before the column existed reads as "the rule changes every Aggregate it spans".
-  const legacy = immediate(document, { sameContext: true }).replace('| 걸친 Aggregate | 조회 전용 Aggregate | 일관성 |', '| 걸친 Aggregate | 일관성 |').replace('|---|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | - | 즉시 |', '|---|---|---|---|---|---|\n| CON-01 | INV-03 | 게시글, 신고 | 즉시 |');
-  assert.notEqual(legacy, immediate(document, { sameContext: true }));
-  failing(legacy, 'IMMEDIATE_NOT_MERGED', AGGREGATE_DESIGN);
+  const boundary = (text) => change(document, '| T1: 신고 | 신고 |', `| ${text} | 신고 |`);
+  for (const many of ['T1: 신고, 게시글', 'T1: `신고` + `게시글`', 'T1: 게시글 및 신고', 'T1: 게시글, 신고 (CON-01)']) failing(boundary(many), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE);
+  const found = failing(boundary('T1: 신고, 게시글'), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE).errors.find((error) => error.code === 'MULTI_AGGREGATE_TRANSACTION');
+  assert.equal(found.id, 'AS-04');
+  assert.match(found.message, /AS-04 transaction "T1: 신고, 게시글" changes 게시글, 신고; one transaction changes exactly one Aggregate/);
+  // One Aggregate per transaction, however the transactions are listed, noted or left empty.
+  for (const fine of ['T1: 신고; T2: 게시글 (CON-01)', 'T1: 신고, T2: 게시글', 'T1: 신고 (게시글 확인 포함)', 'T1: 신고 — 게시글은 읽기만 한다', '없음 — 신고와 게시글을 바꾸지 않는다', '없음', '', '-', 'T1: 알 수 없는 것', 'T1: 신고 (변경 시)']) passes(boundary(fine));
+  // The table is found by its key columns, and a context without Aggregates has nothing to count.
+  passes(STATELESS_DOCUMENT.replace('| 없음 — 저장하지 않고 Aggregate를 바꾸지 않는다 |', '| T1: 계산 요청, 계산 결과 |'), STATELESS_REQUIREMENTS);
 });
 
-test('immediate consistency across bounded contexts is never a merge: section 5 must record it as a synchronous check or call with its source', async () => {
+test('integration-design section: Saga and Outbox appear only on a row tied to an eventual-consistency decision', async () => {
   const document = await templateDocument();
-  // 게시글 (커뮤니티) and 신고 (신고) are in different contexts: no merge, whether the operation changes or only reads the other side.
-  for (const readOnly of ['-', '신고']) {
-    const crossing = immediate(document, { readOnly });
-    assert.ok(!codes(run(crossing)).includes('IMMEDIATE_NOT_MERGED'), `no merge across contexts (조회 전용: ${readOnly})`);
-    assert.deepEqual(run(synchronous(crossing)), { ok: true, errors: [] }, `a synchronous row that cites the decision realises it (조회 전용: ${readOnly})`);
-    assert.deepEqual(run(synchronous(crossing, '동기 확인')), { ok: true, errors: [] }, 'a synchronous check is one too');
-    assert.deepEqual(run(synchronous(crossing, '비동기 알림과 동기 확인')), { ok: true, errors: [] }, 'a row may combine styles when one of them is synchronous');
-  }
-  const crossing = immediate(document, { readOnly: '신고' });
-  // The integration-design stage owns every way the realisation can be missing, and each message says what to write.
-  const unrealised = failing(crossing, 'IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', INTEGRATION_DESIGN);
-  assert.match(unrealised.errors.find((error) => error.code === 'IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS').message, /^CON-01 needs immediate consistency across 커뮤니티, 신고\. Aggregates of different bounded contexts are never merged, so section 5 must record it as a synchronous check or call, but INT-01 \(비동기 이벤트\) citing it is not synchronous\. Make its 통신 방식 synchronous/);
-  assert.deepEqual(unrealised.errors.map((error) => [error.code, error.id, error.owner_stage]), [['SAGA_WITHOUT_EVENTUAL', 'INT-01', INTEGRATION_DESIGN], ['IMMEDIATE_CROSS_CONTEXT_NOT_SYNCHRONOUS', 'CON-01', INTEGRATION_DESIGN]], 'nothing of an earlier stage is blamed');
-  const missing = failing(synchronous(crossing).replace(/^\| INT-01 .*\n/m, '| INT-01 | 신고 | 커뮤니티 | 없음 | 없음 | 신고가 접수됨 | 비동기 이벤트 | - | 없음 — 이벤트를 곧바로 발행한다 | CONTEXT-MAP.md |\n'), 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
-  assert.match(missing.errors.find((error) => error.code === 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED').message, /and no integration row cites it\. Add an INT row whose 일관성 결정 is CON-01, whose 통신 방식 is synchronous \(동기 확인, 동기 호출\) and whose 근거·출처 names its source/);
-  failing(synchronous(crossing).replace(/^\| INT-01 .*\n/m, ''), 'IMMEDIATE_CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
-  failing(change(synchronous(crossing), '| 없음 — 호출한 쪽이 응답을 기다린다 | CONTEXT-MAP.md `## 3` 커뮤니티 → 신고, answers.json `<question_id>` |', '| 없음 — 호출한 쪽이 응답을 기다린다 | - |'), 'IMMEDIATE_INTEGRATION_NO_SOURCE', INTEGRATION_DESIGN);
-  // Several rows may cite the decision; one synchronous row with a source is enough.
-  const two = change(synchronous(crossing), '\n\n`통신 방식`은', '\n| INT-02 | 신고 | 커뮤니티 | 없음 | 없음 | 신고가 닫힘 | 비동기 이벤트 | CON-01 | 없음 — 이벤트를 곧바로 발행한다 | CONTEXT-MAP.md |\n\n`통신 방식`은');
-  assert.deepEqual(run(two), { ok: true, errors: [] });
-  // The cross-context requirement is for immediate decisions only: an eventual one keeps its own check and needs no synchronous row.
-  assert.deepEqual(run(document), { ok: true, errors: [] });
-  failing(change(document, '| 비동기 이벤트 | CON-01 |', '| 비동기 이벤트 | - |'), 'CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
-  assert.ok(!codes(run(document)).some((code) => code.startsWith('IMMEDIATE_')));
+  const row = '| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |';
+  const tied = (cited, saga = 'Outbox: 삭제와 같은 transaction에 이벤트를 기록한다') => change(document, row, `| 비동기 이벤트 | ${cited} | ${saga} |`);
+  failing(tied('-'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN);
+  failing(tied('CON-05'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN);
+  failing(change(tied('CON-01'), '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | 즉시 |'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN);
+  failing(tied('-', 'Saga: 보상 transaction'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN);
+  const refused = failing(tied('-'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN).errors[0];
+  assert.deepEqual([refused.id, refused.owner_stage], ['INT-01', INTEGRATION_DESIGN]);
+  assert.match(refused.message, /INT-01 chooses Outbox: .* but cites no eventual-consistency \(최종\) decision of section 2\.3/);
+  // Tied to an eventual decision it may choose either; a row without one writes nothing or `없음 — <reason>`; nothing else is asked of section 5.
+  passes(tied('CON-01'));
+  passes(tied('CON-01', 'Saga: 보상 transaction'));
+  passes(tied('-', '없음 — 이벤트를 곧바로 발행한다'));
+  passes(tied('-', '없음'));
+  passes(tied('-', ''));
+  passes(tied('CON-01', '없음 — 이벤트를 곧바로 발행한다'));
+  passes(document.replace(/^\| INT-01 .*\n/m, ''));
+  passes(document.replace(/^\| INT-01 .*\n/m, '').replace('| INT | 상류 BC |', '해당 없음 — 컨텍스트 하나다\n\n| INT | 상류 BC |'));
+  passes(change(document, '| INT | 상류 BC | 하류 BC | 명령 | 응답 | 이벤트 | 통신 방식 | 일관성 결정 | Saga·Outbox | 근거·출처 |', '| INT | 상류 BC | 하류 BC | 통신 방식 | 일관성 결정 | 근거·출처 |').replace('|---|---|---|---|---|---|---|---|---|---|\n| INT-01 | 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '|---|---|---|---|---|---|\n| INT-01 | 커뮤니티 | 신고 | 비동기 이벤트 | CON-01 |'));
 });
 
-test('a rule that a Value Object owns is enforced by that Value Object, with no Entity or Aggregate invented for it', async () => {
+test('contextual DDD judgement is no gate finding: it stays with the stage guides and the reviews', async () => {
   const document = await templateDocument();
-  // INV-01 (the length of the body) belongs to the Value Object 본문, and the Aggregate that holds it is named like any member.
-  const owned = change(document, '| INV-01 | 게시글 | `게시글.작성()` | Aggregate 안 |', '| INV-01 | 게시글 | Value Object: 본문.검증() | Aggregate 안 |');
-  assert.deepEqual(run(owned), { ok: true, errors: [] });
-  assert.equal(run(change(owned, 'Value Object: 본문.검증()', 'Value Object: 본문')).ok, true, 'the construction rule needs no method name');
-  assert.equal(run(change(owned, 'Value Object: 본문.검증()', '`Value Object: 본문.검증()`')).ok, true, 'a code-formatted cell is read the same way');
-  // Only a Value Object that owns the rule in section 1 can enforce it.
-  failing(change(owned, 'Value Object: 본문.검증()', 'Value Object: 신고.검증()'), 'VALUE_OBJECT_ENFORCEMENT_INVALID', AGGREGATE_DESIGN);
-  failing(change(owned, 'Value Object: 본문.검증()', 'Value Object: 게시글.검증()'), 'VALUE_OBJECT_ENFORCEMENT_INVALID', AGGREGATE_DESIGN);
-  failing(change(owned, 'Value Object: 본문.검증()', 'Value Object: 쓰레기'), 'VALUE_OBJECT_ENFORCEMENT_INVALID', AGGREGATE_DESIGN);
-  failing(change(owned, '| INV-01 | 게시글 | Value Object: 본문.검증() |', '| INV-01 | 신고 | Value Object: 본문.검증() |'), 'RULE_AGGREGATE_MISMATCH', AGGREGATE_DESIGN);
-  // The section 3 stage still refuses a rule that a Value Object already enforces.
-  failing(change(document, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | INV-01 | `중복 신고 판정.판정()` |'), 'DOMAIN_SERVICE_REDUNDANT', DOMAIN_SERVICE);
-  failing(change(owned, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | INV-01 | `중복 신고 판정.판정()` |'), 'DOMAIN_SERVICE_REDUNDANT', DOMAIN_SERVICE);
-});
-
-test('a bounded context with no state lifecycle may have no Aggregate when the document says why', async () => {
-  // The calculator: a calculation request and its result are Value Objects, and the request enforces both rules.
-  assert.deepEqual(run(STATELESS_DOCUMENT, STATELESS_REQUIREMENTS), { ok: true, errors: [] });
-  const reason = '| 계산기 | 상태와 생애주기가 없다. 계산 요청과 결과는 값으로만 존재한다 |\n';
-  failing(change(STATELESS_DOCUMENT, reason, ''), 'AGGREGATES_MISSING', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  failing(change(STATELESS_DOCUMENT, reason, '| 계산기 | - |\n'), 'AGGREGATES_MISSING', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  failing(change(STATELESS_DOCUMENT, reason, '| 환율 | 값이 바뀌지 않는다 |\n'), 'AGGREGATE_ABSENCE_UNEXPLAINED', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  // A section that declares no Aggregate at all may say so in one line.
-  const whole = change(STATELESS_DOCUMENT, `| BC | Aggregate 없음 사유 |\n|---|---|\n${reason}`, '해당 없음 — 상태와 생애주기가 없다\n');
-  assert.equal(run(whole, STATELESS_REQUIREMENTS).ok, true);
-  // The Value Object that enforces the rule must be one of its owners; an Entity cannot be invented without a home.
-  failing(change(STATELESS_DOCUMENT, '| 계산 요청 | Value Object | 계산기 |', '| 계산 요청 | Entity | 계산기 |'), 'ENTITY_UNPLACED', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  failing(change(STATELESS_DOCUMENT, '| INV-01 | - | Value Object: 계산 요청.생성() |', '| INV-01 | - | Value Object: 계산 결과.생성() |'), 'VALUE_OBJECT_ENFORCEMENT_INVALID', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
+  const post = '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 |';
+  const report = '| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |\n';
+  const ds = /^\| DS-01 .*\n/m.exec(document)[0];
+  const mutations = {
+    'Root is not an Entity': change(document, post, '| 게시글 | 커뮤니티 | 본문 | 게시글 ID | 게시글, 본문 |'),
+    'an Entity in no Aggregate': change(document, report, ''),
+    'an Entity in two Aggregates': change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 신고 | 신고 | 신고 ID | 게시글 |'),
+    'a duplicated model and an invalid kind': change(change(document, '| 신고 | Entity | 신고 |', '| 신고 | Entity | 커뮤니티 | 한 번 더 | accepted-target | BIZ-03 |\n| 신고 | Entity | 신고 |'), '| 본문 | Value Object |', '| 본문 | Value Obj |'),
+    'an Aggregate member that section 1 does not declare': change(document, post, '| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 첨부 |'),
+    'a Value Object enforcement that names an unrelated model': change(change(document, '| INV-01 | 게시글 | `게시글.작성()` |', '| INV-01 | 신고 | Value Object: 신고.검증() |'), '| EX-01 | - | 외부 시스템: 인증 시스템 |', '| EX-01 | - | 외부 시스템: 신고 |'),
+    'a rule row that lists other Aggregates than its owner': change(document, '| INV-02 | 게시글 | `게시글.삭제()` |', '| INV-02 | 신고 | `신고.접수()` |'),
+    'a rule whose decision lists another rule': change(document, '| CON-01 | INV-03 |', '| CON-01 | INV-02 |'),
+    'a rule row that names an Aggregate that 2.1 lacks': change(document, '| INV-02 | 게시글 | `게시글.삭제()` |', '| INV-02 | 쓰레기 | `게시글.삭제()` |'),
+    'a requirement that requirements.md does not have': change(document, '| INV-04 | 신고 | 신고 | 같은 회원의 같은 글 신고를 막는다 |\n', '| INV-04 | 신고 | 신고 | 같은 회원의 같은 글 신고를 막는다 |\n| INV-09 | 신고 | 신고 | 없는 규칙이다 |\n'),
+    'a Domain Service that is missing, redundant, empty or unknown': [document.replace(ds, ''), change(document, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | INV-01 | `중복 신고 판정.판정()` |'), change(document, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | - | - |'), change(document, '| 신고 | INV-04 |', '| 신고 | INV-77 |')],
+    'a section 3 that says nothing': document.replace(/\| DS \| 이름 \|[\s\S]*?(?=\n\nDomain Service는)/, ''),
+    'a business activity with no Application Service': change(document, '| 신고 | BIZ-03 |', '| 신고 | BIZ-09 |'),
+    'a missing transaction boundary or an unknown consistency in it': [change(document, '| T1: 게시글 | 게시글 | 없음 |\n| AS-02', '| | 게시글 | 없음 |\n| AS-02'), change(document, '| T2: 신고 (CON-01) |', '| T2: 신고 (CON-09) |')],
+    'a decision history that is missing a stage or a source': [change(document, '| DEC-01 | domain-model |', '| DEC-01 | domain-service |'), change(document, '| 새 게시물 모델 | `src/community/post.ts:12`, BIZ-01 |', '| 새 게시물 모델 | - |')],
+    'an incomplete integration row, or a cross-context decision with none': [change(document, '| 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | 비동기 이벤트 |', '| 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | |'), document.replace(/^\| INT-01 .*\n/m, '')],
+    'an eventual decision that spans one Aggregate, or a repeated decision': [change(document, '| 게시글, 신고 | - | 최종 |', '| 게시글 | - | 최종 |'), change(document, '\n\n`일관성`은', '\n| CON-01 | INV-03 | 게시글, 신고 | - | 최종 | 한 번 더 | answers.json `<question_id>` |\n\n`일관성`은')],
+    'an eventual Saga choice that is left blank': change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| CON-01 | |'),
+  };
+  for (const [what, variants] of Object.entries(mutations)) for (const variant of [variants].flat()) passes(variant, undefined, what);
+  // Immediate consistency is never a merge and never an INT row: the decision may span Aggregates of one context or of several.
+  const immediate = (text) => change(text, '| 게시글, 신고 | - | 최종 |', '| 게시글, 신고 | - | 즉시 |').replace('| T2: 신고 (CON-01) |', '| T2: 신고 |').replace('| 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| 비동기 이벤트 | CON-01 | 없음 — 이벤트를 곧바로 발행한다 |');
+  passes(immediate(document));
+  passes(immediate(change(document, '| 신고 | 신고 | 신고 | 신고 ID | 신고 |', '| 신고 | 커뮤니티 | 신고 | 신고 ID | 신고 |')));
+  // A bounded context with no state lifecycle needs no Aggregate and no reason for it, but its rules are still enforced.
+  passes(change(STATELESS_DOCUMENT, '| 계산기 | 상태와 생애주기가 없다. 계산 요청과 결과는 값으로만 존재한다 |\n', ''), STATELESS_REQUIREMENTS);
+  passes(change(STATELESS_DOCUMENT, '| 계산 요청 | Value Object | 계산기 |', '| 계산 요청 | Entity | 계산기 |'), STATELESS_REQUIREMENTS);
   failing(change(STATELESS_DOCUMENT, '| INV-01 | - | Value Object: 계산 요청.생성() | 값 안 |\n', ''), 'RULE_NO_ENFORCEMENT', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  // Every other rule keeps applying: a Root is an Entity once an Aggregate exists, and the use case still names its transaction.
-  const rooted = change(change(STATELESS_DOCUMENT, '|---|---|---|---|---|---|---|\n\n| BC |', '|---|---|---|---|---|---|---|\n| 계산 | 계산기 | 계산 요청 | 계산 ID | 계산 요청, 계산 결과 | `계산 요청.생성()` | - |\n\n| BC |'), '| INV-01 | - |', '| INV-01 | 계산 |');
-  failing(rooted, 'ROOT_NOT_ENTITY', AGGREGATE_DESIGN, STATELESS_REQUIREMENTS);
-  failing(change(STATELESS_DOCUMENT, '| 없음 — 저장하지 않고 Aggregate를 바꾸지 않는다 |', '| |'), 'TRANSACTION_MISSING', APPLICATION_SERVICE, STATELESS_REQUIREMENTS);
-  // Mixed with Aggregates: only a context that has none needs its own reason.
-  const community = await templateDocument();
-  const withScore = (reasonRow) => community
-    .replace(/^(\| 인증 시스템 \| 외부 시스템 \|.*)$/m, '$1\n| 점수 | Value Object | 점수 | 값이 의미를 갖는다. 같은 값이면 같은 점수다 | accepted-target | INV-05 |')
-    .replace(/^(\| EX-01 \| 인증 \| 인증 시스템 \|.*)$/m, '$1\n| BIZ-05 | 점수 | 점수 | 점수를 계산한다 |\n| INV-05 | 점수 | 점수 | 점수는 0 이상이다 |')
-    .replace(/^(\| EX-01 \| - \| 외부 시스템: 인증 시스템 \|.*)$/m, '$1\n| INV-05 | - | Value Object: 점수.생성() | 값 안 |')
-    .replace(/^(\| AS-04 \|.*)$/m, '$1\n| AS-05 | 점수 계산 | 점수 | BIZ-05 | 점수 만들기 | 없음 — Aggregate를 바꾸지 않는다 | 없음 | 없음 |')
-    .replace('\n### 2.2 규칙 강제', `${reasonRow}\n### 2.2 규칙 강제`);
-  const scoreRequirements = `${REQUIREMENTS}\n### BIZ-05 점수 계산 (SD-04)\n\n- 업무 규칙:\n  - INV-05 점수는 0 이상이다 — 출처: 요청 원문\n`;
-  const table = '\n| BC | Aggregate 없음 사유 |\n|---|---|\n| 점수 | 상태가 없고 값만 있다 |\n';
-  assert.deepEqual(run(withScore(table), scoreRequirements), { ok: true, errors: [] });
-  failing(withScore(''), 'AGGREGATE_ABSENCE_UNEXPLAINED', AGGREGATE_DESIGN, scoreRequirements);
+  failing(change(STATELESS_DOCUMENT, '| INV-01 | 계산기 | 계산 요청 | 지원하는 연산자는 요청의 값이 정한다 |\n', ''), 'RULE_NO_OWNER', DOMAIN_MODEL, STATELESS_REQUIREMENTS);
 });
 
-test('domain-service section: every rule handed over has a service and no service takes a rule an Aggregate enforces', async () => {
-  const document = await templateDocument();
-  failing(document.replace(/^\| DS-01 .*\n/m, ''), 'DOMAIN_SERVICE_MISSING', DOMAIN_SERVICE);
-  failing(change(document, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | INV-01 | `중복 신고 판정.판정()` |'), 'DOMAIN_SERVICE_REDUNDANT', DOMAIN_SERVICE);
-  failing(change(document, '| 신고 | INV-04 | `중복 신고 판정.판정()` |', '| 신고 | INV-04 | - |'), 'SERVICE_NO_BEHAVIOR', DOMAIN_SERVICE);
-  failing(change(document, '| 신고 | INV-04 |', '| 신고 | - |'), 'SERVICE_NO_RULE', DOMAIN_SERVICE);
-  failing(change(document, '| 신고 | INV-04 |', '| 신고 | INV-77 |'), 'UNKNOWN_REQUIREMENT', DOMAIN_SERVICE);
-  // A plan set may need no Domain Service when every rule has an Aggregate behaviour.
-  const noService = change(change(document, '| INV-04 | 신고 | Domain Service |', '| INV-04 | 신고 | `신고.접수()` |'), /\| DS-01 .*\n/.exec(document)[0], '').replace('| DS | 이름 |', '해당 없음 — 모든 규칙을 Aggregate 행위가 강제한다\n\n| DS | 이름 |');
-  assert.equal(run(noService).ok, true);
-  failing(change(noService, '| INV-04 | 신고 | `신고.접수()` |', '| INV-04 | 신고 | Domain Service |'), 'DOMAIN_SERVICE_MISSING', DOMAIN_SERVICE);
-});
-
-test('application-service section: every business activity has a use case and every transaction changes one Aggregate', async () => {
-  const document = await templateDocument();
-  failing(change(document, '| 신고 | BIZ-03 |', '| 신고 | BIZ-09 |'), 'BIZ_NO_APPLICATION_SERVICE', APPLICATION_SERVICE);
-  failing(change(document, '| T1: 신고 | 신고 |', '| T1: 신고, 게시글 | 신고 |'), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE);
-  failing(change(document, '| T1: 신고 | 신고 |', '| T1: 쓰레기 | 신고 |'), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE);
-  failing(change(document, '| T1: 게시글 | 게시글 | 게시글이 삭제됨 이벤트 |', '| T1: 게시글; T2: 신고 (CON-09) | 게시글 | 게시글이 삭제됨 이벤트 |'), 'TRANSACTION_CONSISTENCY_INVALID', APPLICATION_SERVICE);
-  failing(change(document, '| T1: 게시글 | 게시글 | 없음 |\n| AS-02', '| | 게시글 | 없음 |\n| AS-02'), 'TRANSACTION_MISSING', APPLICATION_SERVICE);
-  assert.equal(run(change(document, '| T1: 게시글 | 게시글 | 없음 |\n| AS-02', '| 없음 — 조회만 한다 | 게시글 | 없음 |\n| AS-02')).ok, true);
-  // The business activity that only an external system serves needs no use case.
-  assert.equal(run(document).ok, true);
-});
-
-test('integration-design section: Saga and Outbox appear only for eventual consistency and every cross-context decision is integrated', async () => {
-  const document = await templateDocument();
-  failing(change(document, '| 비동기 이벤트 | CON-01 |', '| 비동기 이벤트 | - |'), 'CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
-  failing(change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| - | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |'), 'SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN);
-  failing(change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| CON-01 | |'), 'SAGA_OUTBOX_UNCONSIDERED', INTEGRATION_DESIGN);
-  failing(change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| CON-05 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |'), 'UNKNOWN_DECISION', INTEGRATION_DESIGN);
-  failing(change(document, '| 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | 비동기 이벤트 |', '| 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | |'), 'INTEGRATION_INCOMPLETE', INTEGRATION_DESIGN);
-  failing(document.replace(/^\| INT-01 .*\n/m, ''), 'CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN);
-  // A plan set with no cross-context decision and no relationship says so.
-  const single = change(document, '| 신고 | 신고 | 신고 | 신고 ID |', '| 신고 | 커뮤니티 | 신고 | 신고 ID |').replace(/^\| INT-01 .*\n/m, '').replace('| INT | 상류 BC |', '해당 없음 — 컨텍스트 하나다\n\n| INT | 상류 BC |');
-  assert.equal(run(single).ok, true);
-  // Saga or Outbox on a row without an eventual-consistency decision is refused even for a plausible integration.
-  const withoutSaga = change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| CON-01 | 없음 — 이벤트를 곧바로 발행한다 |');
-  assert.equal(run(withoutSaga).ok, true, 'a considered and rejected Saga/Outbox is a valid record');
+test('the three false positives of a real run stay gone: a Value Object without Aggregate, a read-only Aggregate, an immediate decision across contexts', () => {
+  // A context of Value Objects declares no Aggregate and no Root, and `Value Object: <모델>` needs no method.
+  passes(READ_ONLY_DOCUMENT, READ_ONLY_REQUIREMENTS);
+  // The decision is 즉시 across contexts and the Aggregates are not merged; the rows list the Aggregate they change, or all of them.
+  passes(READ_ONLY_DOCUMENT.replace('| EX-03 | 커뮤니티 글 | `커뮤니티 글.인증된 사용자 확인()` | CON-01 |', '| EX-03 | 사용자, 커뮤니티 글 | `커뮤니티 글.인증된 사용자 확인()` | CON-01 |'), READ_ONLY_REQUIREMENTS);
+  passes(READ_ONLY_DOCUMENT.replace(/\| 조회 전용 Aggregate /, '').replace('| 사용자 | 즉시 |', '| 즉시 |').replace('|---|---|---|---|---|---|---|\n| CON-01', '|---|---|---|---|---|---|\n| CON-01'), READ_ONLY_REQUIREMENTS);
+  // What it still enforces about that document: the decision is judged for its kind and source because EX-03 spans both Aggregates through it.
+  failing(READ_ONLY_DOCUMENT.replace('requirements.md BIZ-03, EX-03, EX-04; CONTEXT-MAP.md `## 3`', '요청 해석(에이전트 제안)'), 'DECISION_NO_SOURCE', AGGREGATE_DESIGN, READ_ONLY_REQUIREMENTS);
+  failing(READ_ONLY_DOCUMENT.replace('| 사용자 | 즉시 |', '| 사용자 | 곧 |'), 'DECISION_KIND_INVALID', AGGREGATE_DESIGN, READ_ONLY_REQUIREMENTS);
+  failing(READ_ONLY_DOCUMENT.replace('| EX-03, EX-04, 이벤트: 인증 성공 수신 |', '| EX-04 |').replace('| EX-03 | 커뮤니티 글 | `커뮤니티 글.인증된 사용자 확인()` | CON-01 |', '| EX-03 | 사용자, 커뮤니티 글 | `커뮤니티 글.인증된 사용자 확인()` | 값 안 |'), 'CROSS_AGGREGATE_NO_DECISION', AGGREGATE_DESIGN, READ_ONLY_REQUIREMENTS);
+  failing(READ_ONLY_DOCUMENT.replace('| T1: 사용자 |', '| T1: 사용자, 커뮤니티 글 |'), 'MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE, READ_ONLY_REQUIREMENTS);
 });
 
 test('the findings come earliest stage first, so the first one names the stage to reopen', async () => {
   const document = await templateDocument();
-  const broken = change(change(change(document, '| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| - | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |'), '| INV-04 | 신고 | Domain Service |', '| INV-04 | 신고 | `신고.접수()` |'), '| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |\n', '');
-  assert.deepEqual(run(broken).errors.map((error) => [error.code, error.owner_stage]), [['BIZ_UNMAPPED', DOMAIN_MODEL], ['DOMAIN_SERVICE_REDUNDANT', DOMAIN_SERVICE], ['SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN], ['CROSS_CONTEXT_NOT_INTEGRATED', INTEGRATION_DESIGN]]);
+  const broken = [
+    ['| CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |', '| - | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 |'],
+    ['| T1: 신고 | 신고 |', '| T1: 신고, 게시글 | 신고 |'],
+    ['answers.json `<question_id>` |\n\n`일관성`은', '요청 해석(에이전트 제안) |\n\n`일관성`은'],
+    ['| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |\n', ''],
+  ].reduce((text, [from, to]) => change(text, from, to), document);
+  assert.deepEqual(run(broken).errors.map((error) => [error.code, error.owner_stage]), [['BIZ_UNMAPPED', DOMAIN_MODEL], ['DECISION_NO_SOURCE', AGGREGATE_DESIGN], ['MULTI_AGGREGATE_TRANSACTION', APPLICATION_SERVICE], ['SAGA_WITHOUT_EVENTUAL', INTEGRATION_DESIGN]]);
 });
 
 test('the gate command reads the two documents, prints the verdict and fails the process on a failing gate', async (t) => {

@@ -44,9 +44,9 @@ An answer can reveal a business rule or exception that `requirements.md` lacks (
 
 ## Final gate
 
-The only gate of the tactical flow runs when this stage returns `completed/OK`. The runner checks the whole `tactical-design.md` (sections 1 to 6) against `requirements.md` with `harness-domain-model-check.mjs`, as [the shared rules](../domain-model/references/deepening.md) list, before it commits or records anything. No earlier stage was checked, so a failure can come from any section. `finish` returns it as `gate_error` with `errors`, each carrying an `owner_stage`, and this stage stays `running`:
+The only gate of the tactical flow runs when this stage returns `completed/OK`. The runner checks the whole `tactical-design.md` (sections 1 to 5) against `requirements.md` with `harness-domain-model-check.mjs`, as [the shared rules](../domain-model/references/deepening.md) list, before it commits or records anything. It rejects only those six checks, so the rest of this guide is yours to keep. No earlier stage was checked, so a failure can come from any section. `finish` returns it as `gate_error` with `errors`, each carrying an `owner_stage`, and this stage stays `running`:
 
-- Errors whose `owner_stage` is `integration-design` are this stage's own: repair section 5 and this stage's rows of section 6, rewrite the output file and return again.
+- Errors whose `owner_stage` is `integration-design` are this stage's own: repair section 5, rewrite the output file and return again.
 - An error owned by an earlier stage means that stage's section is wrong. Earlier sections are settled input, so do not edit them and do not change `requirements.md` to make the gate pass: return `blocked` / `DEPENDENCY_INCOMPLETE` naming the earliest `owner_stage`, with the errors (`code`, `id`, `message`) as the evidence, after restoring `tactical-design.md` to the content it had when this stage started (its committed content) so that the restart finds a clean tree. The orchestrator reports the block and the user reopens that stage with `--restart-requirements true` or `--user-revision true --feedback`, as the shared rules describe; this stage runs again after it.
 
 ## Completion

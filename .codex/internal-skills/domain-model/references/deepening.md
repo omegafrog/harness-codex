@@ -21,14 +21,24 @@ Model, service and message names use the terms of `CONTEXT.md` and the `## 3` ta
 
 ## Final gate
 
-No stage runs a gate, and the runner accepts `domain-model`, `aggregate-design`, `domain-service` and `application-service` as `completed` / `OK` without one. The whole `tactical-design.md` is checked once, when `integration-design` returns `completed` / `OK`: `harness-native-stage.mjs finish` runs `node .codex/scripts/harness-domain-model-check.mjs` on `requirements.md` and every section before it commits or records anything, and the state command and a recovery record refuse to record `integration-design` as completed while it fails. The rules every stage writes toward:
+No stage runs a gate, and the runner accepts `domain-model`, `aggregate-design`, `domain-service` and `application-service` as `completed` / `OK` without one. The whole `tactical-design.md` is checked once, when `integration-design` returns `completed` / `OK`: `harness-native-stage.mjs finish` runs `node .codex/scripts/harness-domain-model-check.mjs` on `requirements.md` and sections 1 to 5 before it commits or records anything, and the state command and a recovery record refuse to record `integration-design` as completed while it fails. The gate holds only what must be true whatever the design, finds tables by their key columns and ignores columns it does not know. Every stage writes toward these six checks:
 
-- every `BIZ` maps to at least one model or `외부 시스템` marker;
-- every `INV` and `EX` maps to an owning model and to an enforcing behaviour: an Aggregate Root method listed in the Aggregate's `주요 행위`, a Value Object's own rule (`Value Object: <모델>` or `Value Object: <모델>.<행위>()`), a Domain Service, or an `외부 시스템` that owns the rule. A rule that a value owns is enforced by that Value Object; no Entity or Aggregate is created only to hold it;
-- when an Aggregate exists its Root is an Entity, and every Entity belongs to exactly one Aggregate. A bounded context whose models are Value Objects or have no state lifecycle may have no Aggregate, and section 2.1 records the reason for that context;
-- every rule that spans Aggregates has a consistency decision (`CON-xx`) with a source that is not an agent proposal;
-- `즉시` consistency merges only Aggregates of one bounded context that one operation changes together (`걸친 Aggregate` lists the merged Aggregate); an Aggregate that the operation only reads is listed in `조회 전용 Aggregate` and needs no merge. A `즉시` decision across bounded contexts is never merged: it needs an `INT` row of section 5 that cites the `CON-xx` in `일관성 결정`, with a synchronous `통신 방식` and a `근거·출처` (owned by `integration-design`);
-- later sections add their own checks (Domain Service coverage, one Aggregate per transaction, Saga/Outbox only for eventual consistency) and every stage leaves at least one decision row of its own in section 6, with its source.
+- the documents exist and sections `## 1` to `## 5` are present;
+- every `BIZ` maps to a model or an `외부 시스템` marker in `### 1.4`, and every `INV` and `EX` to an owning model;
+- every `INV` and `EX` has a non-empty enforcing behaviour in `### 2.2`, in any form: an Aggregate or Entity method, a Value Object's rule (`Value Object: <모델>` or `Value Object: <모델>.<행위>()`), a Domain Service or an `외부 시스템`;
+- every rule that spans more than one Aggregate (its `### 2.2` row or a decision that lists it names two or more) cites a consistency decision `CON-xx` of `### 2.3` whose `일관성` is `즉시` or `최종` and whose source is not an agent proposal;
+- a transaction boundary of section 4 changes at most one Aggregate;
+- Saga and Outbox appear in section 5 only on a row that cites a `최종` decision.
+
+The rest is design judgement that the stage GUIDEs and the reviews own; the gate never rejects it, so each stage keeps to it by its own guide:
+
+- A Root is an Entity and every Entity belongs to exactly one Aggregate. A bounded context of Value Objects or without a state lifecycle has no Aggregate and says why in `### 2.1`; no Entity or Aggregate is created only to hold a rule that a value owns.
+- `즉시` merges only Aggregates of one bounded context that one operation changes together; an Aggregate that the operation only reads goes in `조회 전용 Aggregate`. A `즉시` decision across bounded contexts is never merged: an `INT` row of section 5 cites the `CON-xx` with a synchronous `통신 방식` and a `근거·출처` (`integration-design`).
+- A rule row of `### 2.2` names the Aggregates its rule changes, and a decision's `규칙` lists the rules it decides.
+- A Domain Service exists only for a rule that `### 2.2` hands over, and every handed-over rule has one; no service takes a rule that an Aggregate or a Value Object enforces.
+- Every `BIZ` that an external system does not own alone has an Application Service, and every use case names its transaction or `없음 — <이유>`.
+- Every eventual-consistency decision across contexts has an integration row, and each integration row names its upstream, downstream and `통신 방식`.
+- Every stage leaves at least one decision row of its own in section 6, with its source.
 
 A failing gate comes back from `finish` as `gate_error` and the stage stays `running`. Every error carries `owner_stage`, the stage whose section is wrong, and the errors are ordered from the earliest stage. The caller hands the errors to the same `integration-design` subagent:
 
