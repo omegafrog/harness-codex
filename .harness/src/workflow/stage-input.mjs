@@ -408,6 +408,14 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     executionWorkspace = await resolveExecutionWorkspace(root, plan_set_id || null);
     historicalBinding = record.workflow_binding || null;
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
+    // to-ticket splits a frozen design: a fresh start (or a re-run after a rewind) needs the design-freeze gate to pass on the current
+    // documents. A to-ticket that already recorded a result resumes, answers and revises without the check.
+    const ticketEntry = state.stages?.['to-ticket'];
+    if (stage.skill === 'to-ticket' && plan_set_id && (!(ticketEntry?.result_ref || ticketEntry?.attempts?.some((attempt) => attempt?.result_ref)) || ticketEntry.stale)) {
+      const { designNotFrozen } = await import('./design-freeze-gate.mjs');
+      const notFrozen = await designNotFrozen({ root, planSetId: plan_set_id });
+      if (notFrozen) throw new Error(notFrozen);
+    }
     if (stageId === 'sync-contracts') {
       // implement-wrapper reads completed/OK after every single plan, so the plan set's own tracker decides when it is done.
       const { snapshotPlanSet } = await import('./plan-review.mjs');

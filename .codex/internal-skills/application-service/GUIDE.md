@@ -17,6 +17,7 @@ Step of the tactical design flow after `domain-service` and before `integration-
 
 ## Prohibited
 
+- Scope: a use case or operation that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
 - Inspecting source or test code, or choosing a framework, transaction mechanism, repository technology or message broker.
 - Making a domain decision: a rule, a branch on business state or a calculation belongs to an Aggregate method, a Value Object or a Domain Service. An Application Service calls them and passes the result on.
 - One transaction that changes more than one Aggregate, or reaching into another Aggregate's state instead of its ID.

@@ -19,18 +19,18 @@ import { specArtifactPath } from './worktrees.mjs';
 // Section N of tactical-design.md is filled by the Nth stage of the flow; section 7 is decision history.
 export const FINAL_TACTICAL_STAGE = TACTICAL_DESIGN_STAGES.at(-1);
 const stageOfSection = (number) => TACTICAL_DESIGN_STAGES[number - 1];
-const EXTERNAL = '외부 시스템';
+export const EXTERNAL = '외부 시스템';
 const RULE_ID = /\b(?:INV|EX)-\d+\b/g;
 const CON_ID = /\bCON-\d+\b/g;
 // A consistency decision rests on a user decision or on evidence the requirements already carry; an agent proposal alone is not a source.
 const DECISION_SOURCE = /answers\.json|\b(?:INV|EX|AC|BIZ)-\d+\b|요청 원문|CAND-\d+ 채택|사용자 수정 지시/;
 
-const unique = (items) => [...new Set(items)];
-const clean = (value) => String(value ?? '').replace(/<br\s*\/?>/gi, ' ').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
-const isBlank = (value) => !clean(value) || /^[-–—]$/.test(clean(value));
-const names = (value) => clean(value).replace(/[(（][^)）]*[)）]/g, '').split(/[,，、]|\s및\s/).map((item) => item.trim()).filter((item) => item && !isBlank(item));
-const ids = (value, pattern) => unique(clean(value).match(pattern) || []);
-const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map((cell) => cell.trim());
+export const unique = (items) => [...new Set(items)];
+export const clean = (value) => String(value ?? '').replace(/<br\s*\/?>/gi, ' ').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+export const isBlank = (value) => !clean(value) || /^[-–—]$/.test(clean(value));
+export const names = (value) => clean(value).replace(/[(（][^)）]*[)）]/g, '').split(/[,，、]|\s및\s/).map((item) => item.trim()).filter((item) => item && !isBlank(item));
+export const ids = (value, pattern) => unique(clean(value).match(pattern) || []);
+const cells = (line) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|\s*$/, '').split(/(?<!\\)\|/).map((cell) => cell.trim().replaceAll('\\|', '|'));
 // A column found by a pattern on its header, for the optional columns whose exact wording may vary.
 const field = (row, pattern) => { const key = Object.keys(row).find((name) => pattern.test(name)); return key === undefined ? '' : row[key]; };
 
@@ -64,7 +64,7 @@ export function parseTables(text) {
 }
 
 // tactical-design.md by its numbered top-level sections; a section is "filled" once its heading is present.
-function sections(text) {
+export function sections(text) {
   const body = outsideFences(text).join('\n');
   const parts = {};
   const matches = [...body.matchAll(/^##[ \t]+(\d+)(?!\d)/gm)];
@@ -73,7 +73,7 @@ function sections(text) {
 }
 
 // The rows of every table of the section that has all the key columns.
-const rowsOf = (section, ...required) => parseTables(section || '').filter((table) => required.every((name) => table.header.includes(name))).flatMap((table) => table.rows);
+export const rowsOf = (section, ...required) => parseTables(section || '').filter((table) => required.every((name) => table.header.includes(name))).flatMap((table) => table.rows);
 
 export function parseRequirements(text) {
   return {
@@ -185,7 +185,7 @@ const result = (errors) => ({ ok: errors.length === 0, errors: [...errors].sort(
 const SKIPPED_ANALYSIS = /^\s*(?:[-*]\s*)?판정\s*:\s*생략\s*$/m;
 export const stakeholderAnalysisSkipped = (text) => SKIPPED_ANALYSIS.test(String(text));
 
-async function planSetDocument(root, planSetId, name) {
+export async function planSetDocument(root, planSetId, name) {
   const path = specArtifactPath(planSetId, name);
   await assertWorkspaceTarget(root, path);
   try { return { path, text: await readFile(join(root, path), 'utf8') }; }

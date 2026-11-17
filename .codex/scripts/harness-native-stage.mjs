@@ -269,6 +269,15 @@ try {
       process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
+    // The last implementation-design stage (tactical-data) is accepted as completed only when the design freezes: nothing in api.md,
+    // data.md or ui-handoff.md adds scope, and every requirement is covered. A rejection leaves the stage running; an error of an
+    // earlier stage's document makes the stage return blocked / DEPENDENCY_INCOMPLETE naming that owner.
+    const { evaluateDesignFreezeGate, freezeFailureInstruction } = await import('../../.harness/src/workflow/design-freeze-gate.mjs');
+    const freeze = await evaluateDesignFreezeGate({ root, input, envelope: raw });
+    if (freeze && !freeze.ok) {
+      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'design_freeze_check', executionId: id, stage: freeze.stage, errors: freeze.errors, instruction: freezeFailureInstruction(freeze), outputPath: paths.files.raw }))}\n`);
+      process.exit(1);
+    }
     if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['to-ticket', 'sync-contracts'].includes(input.skill)) {
       const { assertNoUnrecordedNativeReview } = await import('../../.harness/src/workflow/review-attempts.mjs');
       const prefix = input.skill === 'to-ticket' ? 'plan' : 'contracts';

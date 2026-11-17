@@ -145,9 +145,14 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
   const missing = names.filter((name) => name.endsWith('.md') && name !== 'plans.md' && !tickets.has(name.slice(0, -3)));
   if (missing.length) {
     const { inspectPublication } = await import('./publication.mjs');
+    // Publication bodies exist only for a reviewed plan set. Local drafts that are unreviewed, stale or unreadable cannot match a
+    // legacy publication, and they must not fail the preflight of stages that never publish (only tracker-publish and tactical-code
+    // need them, through preparePublicationDrafts).
+    const { inspectPlanSet } = await import('../workflow/plan-review.mjs');
+    const reviewed = await inspectPlanSet({ root, planSetId, phase: 'planning' }).then((review) => review.status === 'pass', () => false);
     let publication;
-    try { publication = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) }); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { if (reviewed) publication = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) }); }
+    catch (error) { if (error.code !== 'ENOENT' && error.code !== 'PUBLICATION_NOT_READY') throw error; }
     for (const item of publication?.items || []) {
       if (item.plan_id === '@parent' || tickets.has(item.plan_id) || item.content?.__typename !== 'Issue' || !item.body_matches) continue;
       const { number, url } = item.content;

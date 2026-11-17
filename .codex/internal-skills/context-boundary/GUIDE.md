@@ -17,6 +17,8 @@ model_tier: high_performance
 
 ## 금지 사항
 
+- 범위 추가: `requirements.md`의 기존 `BIZ`/`INV`/`EX`/`AC`에 추적되지 않는 관계·경계 결정을 만들거나, 기능을 범위에 포함할지 사용자에게 묻지 않는다. [No new scope](../domain-model/references/deepening.md#no-new-scope)를 따른다.
+
 `tactical-design.md`에서는 `## 6`과 이 stage가 추가하는 `## 7` 결정 이력 행만 수정한다. 아래의 구형 이력 이동 예외 외에는 다른 절을 쓰지 않는다.
 
 소스·테스트 코드를 살펴보지 않는다. 기본적으로 이전 전술 절, 요구사항, 관계 방향, 결정 소유자를 바꾸지 않는다. 다만 [심화 절차](#심화)에서 이 stage의 질문에 대한 사용자 답변으로 새 업무 규칙이 확인되면, 공통 deepening 규칙에 따라 해당 요구사항 행만 추가할 수 있다. 기능 이름만 보고 관계나 방향을 추론하지 않는다. modular monolith 배포를 전제하지 않는다. 사용자가 토폴로지를 지정하지 않았다면 배포 방식은 미정으로 둔다. framework, protocol, broker, 직렬화 형식, 저장 기술, Saga, Outbox, 분산 트랜잭션을 선택하지 않는다.

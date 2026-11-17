@@ -15,6 +15,10 @@ model_tier: low_performance
 
 적용성이 확인되지 않은 UI/API/database를 가정하지 않는다. 요구와 전술 설계로 UI/API/data 저장이 명확하지 않으면 해당 영역은 미정으로 남기고 후속 계약 stage가 확인한다. 근거·답변이 없는 기술은 선택했다고 쓰지 않는다.
 
+## 범위 추가 금지
+
+기술 선택은 확정된 요구와 설계를 구현하는 수단만 정한다. 요구에 추적되지 않는 기능·화면·endpoint·데이터를 기술 결정의 부산물로 만들지 않고, 범위 질문도 하지 않는다. 선택 근거는 `requirements.md`의 BIZ/INV/EX/AC나 `tactical-design.md`의 `AS-xx`·`CON-xx`를 인용한다.
+
 ## 산출물
 
 매번 `docs/implementation/<plan-set-id>/technology.md`에 현재 stack, 검토한 실행·검증 명령, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거, 수용한 단점 및 미확정 항목을 한국어로 기록한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `docs/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.

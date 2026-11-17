@@ -19,6 +19,7 @@ Integration step of the tactical design flow, after `application-service` and be
 
 ## Prohibited
 
+- Scope: an integration row that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
 - Inspecting source or test code, or choosing a broker, protocol, serialization, framework or deployment unit. Technology choice belongs to `tactical-technology`.
 - Editing `CONTEXT-MAP.md`, adding a relationship the map and the decisions do not evidence, or reassigning a `판단 소유자`.
 - Considering Saga or Outbox for a rule that `aggregate-design` did not record as eventual consistency, or applying one to a same-context reaction that needs none.

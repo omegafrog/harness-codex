@@ -19,6 +19,7 @@ First step of the tactical design flow, after `requirements-fix` and before `agg
 
 ## Prohibited
 
+- Scope: a model or rule row that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
 - Comparing, splitting or merging bounded contexts again, changing the context map or an SD class. A boundary that looks wrong is an iterative-deepening block, not an edit.
 - Deciding Aggregates, Domain Services, Application Services, persistence, APIs or messages. This stage names models and maps requirements to them.
 - Inspecting code outside the one `code-research` delegation, or reading code to find business terms.

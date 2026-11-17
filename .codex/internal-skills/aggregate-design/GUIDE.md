@@ -18,6 +18,7 @@ Step of the tactical design flow after `domain-model` and before `domain-service
 
 ## Prohibited
 
+- Scope: an Aggregate or consistency decision that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
 - Inspecting source or test code; existing Aggregates come from section 1 and the project model document only.
 - Changing section 1 or the bounded contexts, or adding a model that section 1 does not declare. The only addition allowed there is a mapping row for a new rule (see Deepening).
 - Mapping one `BIZ` to one Aggregate mechanically, or creating an Aggregate that no invariant needs. A single Entity may be an Aggregate; a model without its own invariant joins the Aggregate whose invariant it serves.

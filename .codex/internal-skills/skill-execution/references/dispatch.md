@@ -43,7 +43,7 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 1. `finish`가 출력한 `next`의 명령 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`를 실행한다. 다른 옵션은 함께 쓰지 않는다. 실행기는 해당 stage의 최신 결과가 `blocked` / `DEPENDENCY_INCOMPLETE`이고 그 `owner_stage`가 요청한 stage일 때만 허용한다(그 뒤 stage가 이미 시작됐거나 발행됐으면 거부).
 2. 문서와 산출물은 되돌리지 않는다. owner stage는 `dependency_gap_result` 입력과 gap 설명을 feedback으로 받아 기존 산출물을 앞으로 고친다. owner 뒤에 이미 `completed`였던 stage와 block된 stage는 상태에 `stale`로 기록되어 `completed/OK`로 인정되지 않는다.
 3. owner가 완료되면 `finish` 출력의 `next`가 남은 stale stage를 알려 준다. owner 다음 stage부터 block된 stage까지 `launch --stage-id <stage>`를 순서대로 실행한다(옵션 불필요, 실행기가 "상위가 바뀌었으니 기존 산출물을 갱신하라"는 안내를 자동으로 붙인다). 순서를 어기면 오류가 다음 stage를 가리킨다. `tracker-publish`·`tactical-code`는 stale 상태에서 시작할 수 없다.
-4. 마지막 전술 설계 stage(`context-boundary`)가 다시 완료될 때 전술 gate가 다시 한 번 실행된다.
+4. 마지막 전술 설계 stage(`context-boundary`)가 다시 완료될 때 전술 gate가, `tactical-data`가 다시 완료될 때 design-freeze gate가 다시 한 번 실행된다. `to-ticket`은 이 되돌아가기를 쓰지 않는다: 확정된 설계만 나누며 설계 결함은 `DESIGN_NOT_FROZEN`으로 사용자에게 보고한다.
 5. 같은 gap으로 owner를 되돌린 결과가 다시 같은 block이면 새 근거 없이 반복하지 않고 사용자에게 보고한다.
 
 `--restart-requirements true`는 사용자가 명시적으로 롤백을 지시한 경우에만 쓰며 이 경로와 별개다.

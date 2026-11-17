@@ -74,3 +74,23 @@ test('plan-scoped local tracker checks only the selected plan', async () => {
     assert.equal(wrong.status, 'fail');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('leftover unreviewed plan drafts do not fail the tracker preflight of other stages', async () => {
+  const { root, run } = await fixture();
+  try {
+    // A to-ticket draft that was never reviewed or published: its publication bodies cannot exist yet.
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    await mkdir(join(root, '.io/runtime/to-ticket/drafts'), { recursive: true });
+    await writeFile(join(root, 'docs/plans/set/plans.md'), '# plans\n');
+    await writeFile(join(root, 'docs/plans/set/draft-only.md'), '# draft\n');
+    await writeFile(join(root, '.io/runtime/to-ticket/drafts/parent.md'), '# parent\n');
+    const sync = await inspectTrackerSync({ workspace_root: root, expected_plan_id: 'set:calculator', run });
+    assert.equal(sync.status, 'pass', JSON.stringify(sync));
+    // Already published tickets stay checked.
+    assert.deepEqual(sync.tickets.map((ticket) => ticket.ref), [refs[0]]);
+    assert.deepEqual((await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run })).map((ticket) => ticket.plan_id), ['calculator', 'e2e']);
+    // Publication bodies are still required where publication happens.
+    const { preparePublicationDrafts } = await import('../.harness/src/tracker/publication.mjs');
+    await assert.rejects(preparePublicationDrafts({ root, planSetId: 'set' }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -47,6 +47,15 @@ A failing gate comes back from `finish` as `gate_error` and `context-boundary` s
 
 A flow whose `stakeholder-analysis.md` says `판정: 생략` passes without documents. `blocked` and `action_required` results are never gated.
 
+## No new scope
+
+No tactical design stage (`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design`, `context-boundary`) and no implementation-design stage (`tactical-technology`, `tactical-ui`, `tactical-api`, `tactical-data`) adds scope. Every model, rule row, use case, integration, endpoint, screen and stored entity traces to a requirement ID (`BIZ`, `INV`, `EX`, `AC`) that already exists in `requirements.md`, and an item that traces to none is not created. A request, an earlier stage's proposal or a convenient neighbour (for example logout beside login, a session query, an admin screen) is not a requirement.
+
+- Never ask the user whether a feature, use case, operation, endpoint or screen should be in scope ("이 기능을 범위에 포함할까요?"). Scope changes belong to the requirements flow, which only the user restarts explicitly (`--restart-requirements true` or a `requirements-fix` user revision).
+- A requirement that the design does not cover is a design gap, not a scope question: go back to the stage that owns the missing piece (`blocked` / `DEPENDENCY_INCOMPLETE` with `owner_stage`, as below).
+- An item that exists but traces to no requirement is removed by the stage that owns it. The design-freeze gate (`harness-design-freeze-check.mjs`) checks this when `tactical-data` completes and `to-ticket` does not start while it fails; `to-ticket` only splits the frozen design and never reopens a stage.
+- The user questions of `aggregate-design`, `integration-design` and `context-boundary` decide consistency, integration or boundary choices of behaviour that is already in scope, never whether the behaviour exists. Iterative deepening below adds an `INV`/`EX` only to an existing `BIZ`, never a new capability.
+
 ## Iterative deepening
 
 Design work can show that the requirements or an earlier stage missed something. The stage never papers over it.

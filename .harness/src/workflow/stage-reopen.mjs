@@ -35,10 +35,15 @@ export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_
 
 // A blocked result that must name its owner: the stages whose DEPENDENCY_INCOMPLETE can mean "an earlier stage's output is
 // missing or insufficient". tactical-ui is excluded: its DEPENDENCY_INCOMPLETE also hands off to frontend-design-brief.
-export const OWNER_REQUIRED_STAGES = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA, WORKTREE_STAGE.TO_TICKET]);
+// to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
+// as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
+export const OWNER_REQUIRED_STAGES = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
 
 // Format errors for a finish whose blocked / DEPENDENCY_INCOMPLETE result does not name a valid earlier owner; null otherwise.
 export function dependencyOwnerErrors({ skill, raw }) {
+  if (skill === WORKTREE_STAGE.TO_TICKET && raw?.status === 'blocked' && raw?.code === 'DEPENDENCY_INCOMPLETE') {
+    return [{ path: '$.code', rule: 'enum', expected: 'to-ticket never rewinds to a design stage: it returns blocked / INPUT_MISSING with a summary starting `DESIGN_NOT_FROZEN:` that names the defect and its document, and owner_stage and dependency_gap stay null', value: raw.code }];
+  }
   if (!OWNER_REQUIRED_STAGES.includes(skill) || raw?.status !== 'blocked' || raw?.code !== 'DEPENDENCY_INCOMPLETE') return null;
   const owner = raw.result?.owner_stage;
   const earlier = REWIND_STAGES.slice(0, REWIND_STAGES.indexOf(skill));

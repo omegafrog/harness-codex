@@ -15,7 +15,7 @@
    | `docs/implementation/<plan-set-id>/technology.md`, `api.md`, `data.md` | 기술·API·데이터 결정. ticket이 의존하는 결정이다 |
    | `tactical-ui` 결과의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design |
 
-   현행 `docs/contracts/`와 연결 다이어그램, 요청 원문도 읽는다. `stakeholder-analysis`가 `판정: 생략`이라 `requirements.md`와 `tactical-design.md`가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 문서의 빈칸이나 모순 때문에 분할을 정할 수 없으면 해당 규칙의 owner stage를 `result.owner_stage`에, 빈 내용을 `result.dependency_gap`에 적어 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다.
+   현행 `docs/contracts/`와 연결 다이어그램, 요청 원문도 읽는다. `stakeholder-analysis`가 `판정: 생략`이라 `requirements.md`와 `tactical-design.md`가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 문서의 빈칸이나 모순 때문에 분할을 정할 수 없으면 설계 stage로 되돌아가지 않고 `blocked/INPUT_MISSING`과 `DESIGN_NOT_FROZEN:`으로 시작하는 summary(문서·항목·요구 ID)를 반환한다. `to-ticket`은 확정된 설계만 ticket으로 나누며 `owner_stage`·`dependency_gap`은 `null`이다.
 3. 활성 workspace의 `<workspace_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 ticket 예상 토큰과 산정 근거를 기록하고, 각 ticket이 한도 안에 들도록 나눈다.
 
 ## 분할 기준

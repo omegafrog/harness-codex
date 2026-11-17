@@ -29,6 +29,13 @@ const REQUIREMENTS = `# 요구사항 명세
 `;
 const TACTICAL_DESIGN = `# 전술 설계
 
+## 4. Application Service
+
+| AS | 이름 | 업무 |
+|---|---|---|
+| AS-01 | 방문자 확인 | BIZ-01 |
+| AS-02 | 게시글 작성 | BIZ-02 |
+
 ## 6. 컨텍스트 경계
 
 | 상류 BC | 하류 BC | 관계 패턴 | 코드 의존 | 경계 강제 | 데이터 소유·타입 경계 | 근거·출처 |

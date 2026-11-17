@@ -17,6 +17,7 @@ Step of the tactical design flow after `aggregate-design` and before `applicatio
 
 ## Prohibited
 
+- Scope: a Domain Service that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
 - Inspecting source or test code, or reading an existing service from code.
 - Orchestration, transaction boundaries, persistence, repository calls, publishing events or any external effect. Those belong to `application-service`.
 - Taking a rule that an Aggregate method or a Value Object already enforces, or moving a decision out of an Entity or Value Object that can own it naturally.
