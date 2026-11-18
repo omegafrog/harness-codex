@@ -42,3 +42,9 @@ Last step of the requirements flow, after `bounded-context`.  Fill what the earl
 - Every `INV` and `EX` has an `AC`, every adopted `CAND` is placed, and nothing from a rejected or held candidate entered.
 - No question was asked about an adopted, answered or resolved item, and no approval question was asked.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. later tactical design stages read `fixed` `requirements.md` as settled user decisions.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 확정 전 기존 정의와 신규 정의의 충돌·누락을 비교하고, 범위가 달라지는 판단은 기존 사용자 결정 절차를 따른다.
+
+확정할 공통 정의와 기존 ID 재사용 결정을 사용자 답변 및 coverage와 대조한다. 새 Plan Set의 확정된 변경은 실행 폴더의 proposal JSON에 `{schema_version:1, links:{<로컬 ID>:<공통 ID>}, changes:[{operation,id,reason,document:{metadata,body}}]}`로 작성한다. 기존 정의는 `reuse`와 ID만 지정할 수 있다. `node .codex/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace 상대 proposal 경로>`의 출력을 같은 실행 폴더의 `domain-sync.json`에 저장한다. 완료 승인 과정에서 실행기가 계획을 검증해 적용하고 Stage 문서와 함께 커밋한다. 관련 정의가 이미 맵에 있으면 기존 연결을 보존한다.

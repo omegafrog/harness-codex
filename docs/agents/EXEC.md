@@ -52,7 +52,7 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 
 사용자 입력은 hook을 실행한 현재 worktree에만 기록한다. primary checkout에서는 다른 workflow로 입력을 전달하지 않으며, 답변·재개는 target worktree로 이동해 orchestrator를 호출한다. Codex 사용자 수준 write-guard hook 명령이 갱신되었으므로 실제 consumer 업데이트 후 Doctor에서 신뢰 상태를 확인하며 필요한 경우 `/hooks`에서 변경된 hook을 검토·신뢰한다.
 
-아래 계산기 E2E는 primary checkout에서 첫 요청으로 worktree를 만들고, 첫 호출이 stage를 실행하지 않은 채 검증된 경로를 반환하는지 확인한다. 그 경로에서 두 번째 `codex exec`를 시작해 새 기능의 첫 stage인 `stakeholder-analysis`로 진입하고 요구사항 흐름(`stakeholder-analysis`→`subdomain-candidates`→`ubiquitous-language`→`event-storming`→`subdomain-classification`→`bounded-context`→`requirements-fix`)과 전술 설계 흐름(`domain-model`→`aggregate-design`→`domain-service`→`application-service`→`integration-design`→`context-boundary`)을 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 이어지는지 관찰한다. 실제 사용자 답변은 해당 worktree orchestrator 대화에서만 전달한다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 source push 후 실제 consumer 갱신 순서를 유지한다.
+아래 계산기 E2E는 primary checkout에서 첫 요청으로 worktree를 만들고, 첫 호출이 stage를 실행하지 않은 채 검증된 경로를 반환하는지 확인한다. 그 경로에서 두 번째 `codex exec`를 시작해 새 기능의 첫 stage인 `stakeholder-analysis`로 진입하고 요구사항 흐름(`stakeholder-analysis`→`subdomain-candidates`→`ubiquitous-language`→`event-storming`→`subdomain-classification`→`bounded-context`→`requirements-fix`)과 전술 설계 흐름(`domain-model`→`aggregate-design`→`domain-service`→`application-service`→`integration-design`→`context-boundary`)을 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 이어지는지 관찰한다. 자유 입력으로 계속 진행하거나 답변할 때는 해당 worktree에서 매번 `$orchestrator` 또는 `/orchestrator`로 시작한다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 source push 후 실제 consumer 갱신 순서를 유지한다.
 
 - 용어/구형 경로의 작은 Luna 검증 결과와 한계는 `docs/verification/luna-workflow-check.md`에 기록했다. 임시 프로젝트는 세션 디렉터리의 tmp/에서 실행하며 별도 서버/인프라가 필요하지 않다. 프로젝트를 재사용할 때 실제 존재와 Git root를 확인하고 `npm test`를 실행한다. 이름만으로 이전 결과나 현재 상태를 신뢰하지 않는다.
 
@@ -236,7 +236,7 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ### 소비자 테스트 저장소의 workflow 재실행
 
-Claude Code를 비대화식 메인 orchestrator로 실행하거나 기존 Claude 대화를 재개할 때는 대상 저장소 또는 worktree를 cwd로 두고 `node .codex/scripts/harness-claude-orchestrator.mjs '<요청>'` 또는 `node .codex/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '<계속할 요청>'`을 사용한다. 이 실행기는 매번 `claude -p --permission-mode bypassPermissions`를 명시한다. 메인 Claude의 승인 확인을 우회하므로 사용자가 승인한 작업에만 사용한다. 각 workflow stage의 sandbox와 permission mode는 별도 실행기·profile이 계속 결정한다.
+Claude Code를 비대화식 메인 orchestrator로 실행하거나 기존 Claude 대화를 재개할 때는 대상 저장소 또는 worktree를 cwd로 두고 `node .claude/harness/scripts/harness-claude-orchestrator.mjs '/orchestrator <요청>'` 또는 `node .claude/harness/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '/orchestrator <계속할 요청>'`을 사용한다. 이 실행기는 매번 `claude -p --permission-mode bypassPermissions`를 명시한다. 메인 Claude의 승인 확인을 우회하므로 사용자가 승인한 작업에만 사용한다. 각 workflow stage의 sandbox와 permission mode는 별도 실행기·profile이 계속 결정한다.
 
 사용자가 소비자 workflow 재실행을 요청하면 `/home/jiwoo/workspace/harness-test`가 Git `main`의 clean 상태인지, 설치된 Harness 버전과 Doctor 결과가 적절한지 먼저 확인한다. 기존 linked worktree 정리는 명시적으로 요청된 경우에만 수행한다. 삭제 전 각 worktree의 tracked·untracked 변경과 `.io`를 포함한 전체 내용을 백업하고 백업을 검증한다. 다른 저장소의 worktree는 건드리지 않는다.
 
@@ -288,7 +288,7 @@ codex exec resume --json --model gpt-6-luna \
   -c 'model_reasoning_effort="medium"' \
   -c 'approval_policy="never"' \
   -c 'sandbox_mode="danger-full-access"' \
-  --dangerously-bypass-hook-trust '<orchestrator-thread-id>' '<사용자가 승인한 실제 후속 요청>'
+  --dangerously-bypass-hook-trust '<orchestrator-thread-id>' '$orchestrator <사용자가 승인한 실제 후속 요청>'
 ```
 
 실제 resume 인자, cwd, prompt, 반환 코드는 해당 E2E의 `resume-<stage>-invocation.json`에 기록한다. stage의 실제 provider와 서브에이전트 ID는 워크트리 `.io/worktree.json`의 `agent_sessions`와 `runtime/orchestrator/state.json`의 `native_agent_id`, 실행별 `subagents.jsonl`을 함께 보존해 대조한다.

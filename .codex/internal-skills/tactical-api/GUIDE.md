@@ -24,3 +24,7 @@ endpoint 표에는 반드시 `근거` 열을 둔다. 각 행은 그 endpoint가 
 ## 산출물
 
 적용 범위, 근거와 계약을 `docs/implementation/<plan-set-id>/api.md`에 한국어로 기록한다. UI design이 있으면 해당 design artifact를 인용한다. UI/API가 없으면 판단 근거를 기록한다. 질문은 `action_required/USER_DECISION_REQUIRED`, 앞선 전술 설계나 frontend design이 부족하면 `blocked/DEPENDENCY_INCOMPLETE`로 반환한다. 이 block은 `result.owner_stage`(빈틈을 소유한 가장 앞 stage)와 `result.dependency_gap`(그 stage가 추가하거나 고쳐야 할 내용과 근거)을 반드시 적는다. 없으면 실행기가 반려하며, 있으면 orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 이 stage까지 순서대로 다시 진행한다. 실행기가 완료 시 이 stage 소유 문서만 자동 commit한다. 이 stage는 Spec과 `docs/contracts/`를 쓰지 않는다.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.

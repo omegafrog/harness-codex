@@ -47,6 +47,12 @@ export async function restartRequirements({ root, session, stageId }) {
     while (position + 1 < history.length && later.has(history[position + 1][1])) position += 1;
     const base = git('rev-parse', `${history[position][0]}^`).trim();
     const paths = restartDocuments(stageId, record.plan_set_id);
+    if (!['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].includes(stageId)) {
+      const ownedDomainPaths = history.slice(0, position + 1).flatMap(([sha]) =>
+        git('diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', '-z', sha, '--', 'docs/domain').split('\0').filter(Boolean));
+      paths.push(...new Set(ownedDomainPaths));
+    }
+
     // --no-renames: a document renamed since the checkpoint must list both its old and its new path, or the old one is not restored.
     changed = git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);
     if (changed.some((path) => !paths.some((p) => path === p || path.startsWith(`${p}/`)))) throw new Error('Invalid checkpoint path');

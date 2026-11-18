@@ -51,3 +51,7 @@ An answer can reveal a business rule or exception that `requirements.md` lacks (
 
 - Section 5 holds an integration row, with its upstream, downstream, messages, communication style and source, for every relationship of the plan set and every cross-context consistency decision (a synchronous row for each `즉시`, an asynchronous one for each `최종`); a choice that changes the business outcome carries the user's answer as its source. Section 7 holds this stage's decisions with sources.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. The `tactical-to-code` workflow consumes the completed tactical design.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.

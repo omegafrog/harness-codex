@@ -44,3 +44,7 @@ This stage never adds a business rule. A decision that the requirements leave un
 - Section 3 holds one service row with a behaviour for each rule that section 2.2 hands to a Domain Service (or says `해당 없음 — <이유>`), and section 7 holds this stage's decisions with sources.
 - Services are stateless decisions: no coordination, persistence or external effect appears in a row.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. `application-service` calls these services in its use cases.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.

@@ -45,3 +45,7 @@ Reuse established context ownership where evidence exists. Otherwise mark each n
 - `requirements.md` has no materially ambiguous or conflicting use, and no item gained or lost meaning or source.
 - `CONTEXT.md` carries the settled terms and any replacement records.
 - The runner commits `docs/specs/<plan-set-id>/` and `CONTEXT.md` when this stage completes. `event-storming` uses the terms, and `bounded-context` reconciles their final scope.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. Pack에 표시된 용어는 CONTEXT.md의 현행 표로 확인한다. 폐기 용어를 현행 Alias로 되살리지 않는다.

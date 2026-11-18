@@ -46,3 +46,7 @@ Step of the requirements flow after `ubiquitous-language` and before `subdomain-
 - Every hotspot answer is recorded as confirmed with its `answers.json` source; no persona ran after the answers.
 - The `.puml` originals and their `.svg` renders exist under `docs/specs/<plan-set-id>/diagrams/events/`.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `subdomain-classification` validates the subdomain boundaries with these tables, `ddd-design` and the tactical design stages read the same tables instead of running this stage again.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 후보 이벤트·정책·전이를 비교하고 같은 정의는 공통 ID를 참조한다. 신규 이벤트 흐름의 각 정의에 Plan Set 고유 EVT-xx, POL-xx, TRN-xx를 배정한다. 없는 정책·전이에는 ID를 만들지 않는다. 완료 문서에 ID를 소급 추가하지 않는다.

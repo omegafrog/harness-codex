@@ -1,0 +1,50 @@
+name: Harness domain
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+    types: [checks_requested]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  domain-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Validate domain merge
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          args=(--base "$BASE" --head "$HEAD_SHA" --merged "$GITHUB_SHA")
+          if [[ -n "$PR_NUMBER" ]]; then
+            latest="$(gh api --method GET "repos/$GITHUB_REPOSITORY/commits" -f sha="$BASE_REF" -F per_page=1 --jq '.[0].sha')"
+            if [[ "$latest" != "$BASE" ]]; then
+              echo "STALE_BASE: refresh the PR branch against the latest target"
+              exit 1
+            fi
+            review="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" |
+              jq -r --arg head "$HEAD_SHA" 'add | sort_by(.id) | group_by(.user.login) | map(map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | last) | map(select(.state == "APPROVED" and .commit_id == $head and (.author_association == "OWNER" or .author_association == "MEMBER"))) | first | .html_url // empty')"
+            if [[ -n "$review" ]]; then
+              mkdir -p .io
+              jq -n --arg base "$BASE" --arg head "$HEAD_SHA" --arg evidence "$review" '{base:$base, head:$head, verdict:"pass", evidence:$evidence}' > .io/ci-domain-review.json
+              args+=(--review .io/ci-domain-review.json)
+            fi
+          else
+            args+=(--structural-only)
+          fi
+          node .codex/scripts/harness-domain.mjs merge-check "${args[@]}"

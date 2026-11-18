@@ -47,3 +47,7 @@ First stage of a new feature: extract candidate requirements for the user's requ
 - `requirements.md` exists with `상태: draft`, and its `요구사항 초안` cites only adopted candidates (`CAND-xx`), confirmed actors and `요청 원문`.
 - Rejected and held candidates stay in the candidate table and are not reintroduced by later stages without a new user decision.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `subdomain-candidates` continues from both documents.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 기존 Actor·권한·규칙과 같은 결정을 다시 묻기 전에 정본을 비교한다. persona 입력 계약은 유지한다.

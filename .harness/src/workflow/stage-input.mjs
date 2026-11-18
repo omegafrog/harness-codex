@@ -679,6 +679,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (renamed !== reference.path && !await lstat(join(root, reference.path)).then(() => true, () => false)) reference.path = renamed;
     }
   }
+  const { prepareDomainContextPack } = await import('../domain/context-pack.mjs');
+  for (let i = input_refs.length - 1; i >= 0; i--) {
+    if (input_refs[i].kind === 'domain_context_pack') input_refs.splice(i, 1);
+  }
+  const domainPack = await prepareDomainContextPack({ root, stage: stageId, request: prepared.scope, feedback, answers: Array.isArray(answer) ? answer : [] });
+  if (domainPack) input_refs.push(domainPack);
   const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;

@@ -41,3 +41,7 @@ Step of the requirements flow after `event-storming` and before `bounded-context
 - Every SD row has `분류` of `core`, `supporting` or `generic`, a `근거` and `상태: confirmed`; the set was confirmed by the user's answers.
 - Any change to the set is backed by event evidence, and the diagrams and `## 4` agree with it.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `bounded-context` reads the confirmed subdomains and their classes.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 기존 Subdomain의 분류와 근거를 확인한다. 기존 분류 변경은 사용자에게 확인한다.

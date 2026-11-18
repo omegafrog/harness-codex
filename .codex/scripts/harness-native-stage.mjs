@@ -299,7 +299,14 @@ try {
     await commitStageRequest({ root, rawPath: paths.files.raw });
     try { execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' }); }
     catch (error) { throw new Error(`Result rejected: ${lastJson(error.stderr)?.error || String(error.stderr || error.message).trim()}`); }
-    await commitWorkflowDocuments({ root, input, rawPath: paths.files.raw });
+    const { applyDomainSync, assertStageDomainSync, readStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');
+    const domainPlan = raw.status === 'completed' && raw.code === 'OK' ? await readStageDomainSync(root, input) : null;
+    if (domainPlan) {
+      await applyDomainSync(root, domainPlan, { commit: (domainPaths) => commitWorkflowDocuments({ root, input, rawPath: paths.files.raw, domainPaths }) });
+    } else {
+      if (raw.status === 'completed' && raw.code === 'OK') await assertStageDomainSync(root, input);
+      await commitWorkflowDocuments({ root, input, rawPath: paths.files.raw });
+    }
     const envelope = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.returned });
     const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
       ? () => writeImplementationCheckpoint({ input, status: envelope.status, code: envelope.code, envelope, verified: true }) : null;

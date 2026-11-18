@@ -204,3 +204,7 @@ After the user merges the plan-set integration PR, verify intended parent/child 
 ## 소유 worktree
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
+
+## 공통 도메인 병합 검증
+
+PR 생성·갱신 전 최신 대상 브랜치를 가져온 다음 `node .codex/scripts/harness-domain.mjs merge-check --base <최신 대상 ref> --head HEAD`를 실행한다. `REVIEW_REQUIRED`이면 영향받는 규칙과 소비 정책을 PR에 표시하고 해당 base·head에 대한 독립 검토를 요청한다. 검토 뒤에는 그 버전의 근거로 다시 검사한다. 구조나 소유권 충돌은 수정한 뒤 검사하며, 생성 인덱스 충돌은 병합 결과의 정본으로 인덱스를 다시 만든다.

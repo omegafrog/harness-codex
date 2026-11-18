@@ -1,7 +1,10 @@
 export function transformSourceContent(content, transform) {
   const text = content.toString('utf8');
   if (transform === 'project-local-paths-v1') return text.replaceAll('.codex/skills/', '.agents/skills/');
-  if (transform === 'claude-skills-v1') return text.replaceAll('.codex/skills/', '.claude/skills/');
+  if (transform === 'claude-skills-v1') {
+    return text.replaceAll('.codex/skills/', '.claude/skills/')
+      .replace(/^(---\r?\nname: orchestrator\r?\n)/, '$1disable-model-invocation: true\n');
+  }
   if (transform === 'claude-agent-v1') {
     const fields = Object.fromEntries(['name', 'description', 'sandbox_mode'].map((key) => {
       const match = new RegExp(`^${key} = "((?:\\\\.|[^"])*)"$`, 'm').exec(text);

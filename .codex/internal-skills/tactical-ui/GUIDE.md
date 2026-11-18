@@ -24,3 +24,7 @@ model_tier: low_performance
 ## 산출물
 
 결과의 `summary`에 적용 여부와 근거를 한국어로 기록한다. UI가 있으면 확인한 `frontend_design_brief` artifact를 결과의 `artifacts`에 그대로 참조한다. 구현과 visual review가 아직 완료됐다고 적지 않는다. 기존 `ui-handoff.md`는 사용자 문서이므로 수정하거나 삭제하지 않는다. 이 stage는 frontend 코드를 수정하지 않고 Product/Architecture Spec이나 `docs/contracts/`도 쓰지 않는다.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.

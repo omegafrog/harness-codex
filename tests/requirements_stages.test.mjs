@@ -44,7 +44,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   const biz = document.slice(document.indexOf('### BIZ-01'), document.indexOf('## 3. 용어'));
   for (const field of ['상태', '업무 목적', '업무 주체', '참여한 stakeholder', '정상 시나리오', '업무 규칙', '예외 시나리오', '완료 조건', '이벤트 흐름', '출처·변경 이력']) assert.match(biz, new RegExp(`^- ${field}:`, 'm'), field);
   assert.match(biz, /INV-01/); assert.match(biz, /EX-01/); assert.match(biz, /AC-01/);
-  assert.match(biz, /\| 순서 \| 행위자 \| 명령 \| 도메인 이벤트 \| 정책 \| 외부 시스템 \| 근거 \|/);
+  assert.match(biz, /\| 순서 \| 행위자 \| 명령 \| 이벤트 ID \| 도메인 이벤트 \| 정책 ID \| 정책 \| 전이 ID \| 상태 전이 \| 공통 ID \| 외부 시스템 \| 근거 \|/);
   for (const source of ['요청 원문', 'CAND-xx 채택', 'answers.json', '요청 해석(에이전트 제안)']) assert.ok(template.includes(source), `source: ${source}`);
   for (const heading of ['6.1 범위·비목표', '6.2 우선순위·트레이드오프', '6.3 업무 상태·전이', '6.4 E2E 시나리오']) assert.ok(document.includes(heading), heading);
   assert.match(document, /\(answers\.json\)/, 'a user-decided term row ends with (answers.json)');
@@ -226,6 +226,13 @@ test('the requirements stages run in order as workflow stages and the tactical d
   await mkdir(join(workspace, 'docs/domain/stakeholders'), { recursive: true });
   await writeFile(join(workspace, 'docs/domain/stakeholders/SH-01.md'), '---\nid: SH-01\nkind: person\nrole: "작성자"\ngoals:\n  - "내 글을 지운다"\n---\n');
 
+  const { writeDomainDocument } = await import(pathToFileURL(join(workspace, '.harness/src/domain/repository.mjs')));
+  await writeDomainDocument(workspace, {
+    metadata: { schema_version: 1, id: 'actor.author', kind: 'actor', name: '게시글 작성자', status: 'accepted-target',
+      role: '게시글 작성자', authority: '게시글 삭제', scope: '본인 글', aliases: [], source_refs: ['CONTEXT.md'], references: ['SH-01'] },
+    body: '# 게시글 작성자\n',
+  });
+
   // 1. stakeholder-analysis creates both documents; the requirements draft only holds what the user settled.
   const first = await runStage('stakeholder-analysis', {
     files: { [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n`, [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 2. 업무\n\n### 요구사항 초안\n\n- 업무 목적: 게시글 삭제 (요청 원문: "게시글 삭제 기능")\n` },
@@ -233,6 +240,12 @@ test('the requirements stages run in order as workflow stages and the tactical d
     summary: 'CAND 1건 채택',
   });
   assert.deepEqual(first.files, [analysis, requirements].sort());
+  const packRef = first.prepared.input.input_refs.find(({ kind }) => kind === 'domain_context_pack');
+  const pack = JSON.parse(await readFile(join(workspace, '.io', packRef.path), 'utf8'));
+  assert.ok(pack.candidates.some(({ id }) => id === 'actor.author'));
+  assert.match(treeGit('check-ignore', '-v', `.io/${packRef.path}`), /info\/exclude/);
+  assert.match(treeGit('status', '--short', '--untracked-files=all'), /docs\/domain\/actors\/actor\.author\.md/);
+
 
   // 2. subdomain-candidates receives the previous stage's documents and only rewrites requirements.md.
   const second = await runStage('subdomain-candidates', {
@@ -242,6 +255,10 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(second.prepared.input.context.transition.from_stage, 'stakeholder-analysis');
   assert.ok(second.prepared.input.input_refs.some((reference) => reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(second.files, [requirements]);
+  const secondPackRef = second.prepared.input.input_refs.find(({ kind }) => kind === 'domain_context_pack');
+  const secondPack = JSON.parse(await readFile(join(workspace, '.io', secondPackRef.path), 'utf8'));
+  assert.ok(!secondPack.candidates.some(({ kind }) => kind === 'actor'));
+
 
   // 3. ubiquitous-language commits the plan set documents and the project glossary in one commit.
   const language = await runStage('ubiquitous-language', {
@@ -286,17 +303,32 @@ test('the requirements stages run in order as workflow stages and the tactical d
 
   // 6. bounded-context commits the plan set documents together with the project's context map.
   const contexts = await runStage('bounded-context', {
-    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|\n| 커뮤니티 | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
+    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
     artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
   });
   assert.deepEqual(contexts.files, ['CONTEXT-MAP.md', 'CONTEXT.md', requirements]);
 
   // 7. requirements-fix fixes the document automatically and the runner commits it.
-  const fixed = await runStage('requirements-fix', {
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n' },
+  const fixing = await flow.beginStage('requirements-fix');
+  await flow.submitStage(fixing, {
+    files: { [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n- INV-01 작성자가 글을 삭제한다.\n' },
     artifacts: [artifact(requirements, 'requirements')],
   });
-  assert.deepEqual(fixed.files, [requirements]);
+  const { planDomainSync } = await import(pathToFileURL(join(workspace, '.harness/src/domain/sync.mjs')));
+  const id = 'community.rule.delete-own-post';
+  const domainPath = `docs/domain/contexts/community/rules/${id}.md`;
+  const domainPlan = await planDomainSync(workspace, planSetId, {
+    schema_version: 1, links: { 'INV-01': id }, changes: [{ operation: 'create', id, reason: '확정된 작성자 제한',
+      document: { metadata: { schema_version: 1, id, owner_context: 'community', kind: 'rule', name: '게시글 삭제 권한',
+        status: 'accepted-target', aliases: [], source_refs: [`${requirements}#INV-01`], references: [],
+        statement: '작성자만 삭제한다', condition: '삭제 요청', violation_result: '삭제 거절' }, body: '# 게시글 삭제 권한\n' } }],
+  });
+  await writeFile(join(fixing.prepared.execution_directory, 'domain-sync.json'), JSON.stringify(domainPlan));
+  const fixed = flow.finishStage(fixing);
+  assert.equal(fixed.status, 0, fixed.stderr);
+  assert.equal(JSON.parse(fixed.stdout).status, 'completed');
+  assert.match(treeGit('show', '--name-only', '--format=', 'HEAD'), /domain-links\.json/);
+  assert.ok(treeGit('show', '--name-only', '--format=', 'HEAD').includes(domainPath));
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /상태: fixed/);
 
   // The tactical design flow follows the last requirements stage and receives the fixed document as an input reference;
@@ -326,6 +358,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.notEqual(dirty.status, 0);
   assert.match(dirty.stderr, /clean project worktree/);
   await rm(join(workspace, 'docs/domain/stakeholders/SH-01.md'));
+  await rm(join(workspace, 'docs/domain/actors/actor.author.md'));
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const beforeRestart = await readFile(statePath, 'utf8');
   const running = JSON.parse(beforeRestart);
@@ -350,6 +383,8 @@ test('the requirements stages run in order as workflow stages and the tactical d
   treeGit('reset', '--hard', 'HEAD^');
   const restart = invoke(workspace, 'harness-prepare-input.mjs', restartArgs);
   assert.equal(restart.previous_stage, 'subdomain-classification');
+  assert.equal(existsSync(join(workspace, domainPath)), false);
+  assert.equal(existsSync(join(workspace, specPath('domain-links.json'))), false);
   assert.ok(existsSync(join(restart.backup, 'state.json')));
   const restored = await readFile(join(workspace, requirements), 'utf8');
   assert.match(restored, /confirmed/);

@@ -7,6 +7,7 @@ import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
 import { WORKTREE_STAGE } from './worktree-stages.mjs';
 import { assertTacticalDesignGate } from './domain-model-gate.mjs';
+import { assertStageDomainSync } from '../domain/sync.mjs';
 import { assertDesignFreezeGate } from './design-freeze-gate.mjs';
 
 const ACTIVE_WORKFLOW_STATES = new Set(['created', 'running', 'waiting', 'blocked']);
@@ -65,7 +66,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
   // Every path that records a stage as completed ends here, so the last tactical design stage (context-boundary) cannot be
   // accepted without the gate on the whole tactical-design.md. The earlier tactical stages are not gated.
   // The design-freeze gate likewise guards the last implementation-design stage (tactical-data) before to-ticket may split the design.
-  if (status === 'completed') { await assertTacticalDesignGate({ root, input, envelope: { status, code } }); await assertDesignFreezeGate({ root, input, envelope: { status, code } }); }
+  if (status === 'completed') { await assertTacticalDesignGate({ root, input, envelope: { status, code } }); await assertDesignFreezeGate({ root, input, envelope: { status, code } }); if (code === 'OK') await assertStageDomainSync(root, input); }
   const directory = 'runtime/orchestrator';
   await assertWorkspaceTarget(session, `${directory}/workflow.json`);
   await mkdir(join(session, directory), { recursive: true });

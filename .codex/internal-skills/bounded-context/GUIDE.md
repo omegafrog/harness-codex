@@ -41,3 +41,9 @@ Step of the requirements flow after `subdomain-classification` and before `requi
 - The BC table covers every `BIZ` with responsibility, owned rules and data, rationale and compared alternatives, and the boundary choices the user made carry their `answers.json` source.
 - `CONTEXT-MAP.md` carries the contexts, their covered subdomains with class, their relationships with the `판단 소유자` of each and the `accepted-target` status.
 - The runner commits `docs/specs/<plan-set-id>/`, `CONTEXT-MAP.md` and `CONTEXT.md` when this stage completes. `ubiquitous-language` already defined the provisional terms, and later tactical design stages treat the decision as settled input.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 기존 Context 책임과 관계를 먼저 확인한다. Subdomain과 Context의 1:1 대응을 가정하지 않는다.
+
+공통 정의를 소유할 Context는 `CONTEXT-MAP.md`의 Bounded Context 표에서 `Context ID`를 사용한다. 기존 ID를 우선하고, 새 Context의 ID는 소문자 slug로 정한다. 이름 변경 시 ID는 유지한다.

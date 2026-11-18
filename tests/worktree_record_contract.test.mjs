@@ -1215,10 +1215,14 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.equal(result.workspace_ownership, 'existing');
     const hook = join(workspace, '.codex/scripts/harness-orchestrator-hook.mjs');
     const send = (prompt, session_id = record.worktree_id) => execFileSync(process.execPath, [hook], { cwd: workspace, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: workspace, session_id, prompt }), encoding: 'utf8' });
-    assert.equal(send('계속 진행해').trim(), '');
     const inputLog = join(workspace, '.io/runtime/orchestrator/user-inputs.jsonl');
+    for (const prompt of ['계속 진행해', '승인', '문서에서 $orchestrator 사용법을 설명해']) {
+      assert.equal(send(prompt).trim(), '');
+    }
+    await assert.rejects(readFile(inputLog, 'utf8'), { code: 'ENOENT' });
+    assert.match(send('$orchestrator 계속 진행해'), /additionalContext/);
     const captured = await readFile(inputLog, 'utf8');
-    assert.match(captured, /계속 진행해/);
+    assert.equal(JSON.parse(captured).text, '계속 진행해');
     assert.equal(send('하네스 업데이트해').trim(), '');
     assert.equal(send('$setup').trim(), '');
     assert.equal(send('다른 세션의 요청', 'b77aaa03-329c-4d59-b4c5-269746a893f2').trim(), '');
@@ -1534,13 +1538,14 @@ test('installed hooks route a Harness update to maintenance without composing a 
     await writeFile(join(root, 'app.mjs'), 'application owned\n');
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
+    assert.match(await readFile(join(root, '.claude/skills/orchestrator/SKILL.md'), 'utf8'), /^disable-model-invocation: true$/m);
     const before = git('worktree', 'list', '--porcelain');
     for (const path of ['.codex/scripts/harness-orchestrator-hook.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs']) {
-      for (const prompt of ['하네스 업데이트해', '일반적인 질문', '$setup']) {
+      for (const prompt of ['하네스 업데이트해', '일반적인 질문', '$setup', '문서에서 /orchestrator 사용법을 설명해']) {
         const output = execFileSync(process.execPath, [join(root, path)], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id, prompt }), encoding: 'utf8' });
         assert.equal(output.trim(), '', `${path} must not invoke orchestrator for ${prompt}`);
       }
-      const response = JSON.parse(execFileSync(process.execPath, [join(root, path)], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id, prompt: '$orchestrator 계산기 만들어' }), encoding: 'utf8' }));
+      const response = JSON.parse(execFileSync(process.execPath, [join(root, path)], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: record.worktree_id, prompt: '/orchestrator 계산기 만들어' }), encoding: 'utf8' }));
       assert.match(response.hookSpecificOutput.additionalContext, /orchestrator/);
     }
     const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'harness-update', '--request', '하네스 업데이트해', '--execution-id', 'update-attempt'], { cwd: root, encoding: 'utf8' });

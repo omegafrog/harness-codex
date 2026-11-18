@@ -43,3 +43,7 @@ Ask only when two plausible groupings of the same request change which work is i
 - `requirements.md` has a complete SD table and a `BIZ` section for every activity, with the draft block gone.
 - Every item keeps its original source; rejected, held and out-of-scope items are absent.
 - The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `ubiquitous-language` reads the SD table and the `BIZ` sections.
+
+## 공통 도메인 조회
+
+입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 기존 Subdomain과 업무 후보를 먼저 비교하고 의미가 같으면 공통 ID를 근거로 연결한다.

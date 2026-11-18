@@ -107,7 +107,7 @@ async function legacyRenamePending(root, planSetId) {
   return await inHead(legacy) && !await inHead(current);
 }
 
-export async function commitWorkflowDocuments({ root, input, rawPath }) {
+export async function commitWorkflowDocuments({ root, input, rawPath, domainPaths = [] }) {
   const owned = WORKFLOW_DOCUMENTS[input?.skill];
   const planSetId = input?.context?.plan_set_id;
   if (!owned || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return null;
@@ -120,6 +120,10 @@ export async function commitWorkflowDocuments({ root, input, rawPath }) {
   const renamed = deepening && await legacyRenamePending(root, planSetId) ? tacticalDesignDocuments(planSetId) : [];
   const paths = (deepening ? [`docs/specs/${planSetId}/requirements.md`, ...renamed] : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path)
     || envelope.result?.artifacts?.some((item) => item.base === 'workspace' && item.path === path));
+  if (domainPaths.length && await git(root, 'diff', '--cached', '--name-only', '--', ...domainPaths)) {
+    throw new Error('Domain sync paths already have staged changes');
+  }
+  paths.push(...domainPaths);
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
   if (!changed.length) return null;
   // `present` is staged as the working tree has it. A document that already left both the working tree and the index (the
@@ -130,8 +134,13 @@ export async function commitWorkflowDocuments({ root, input, rawPath }) {
     if (existsSync(join(root, path)) || await git(root, 'ls-files', '--', path)) present.push(path);
     else if (await git(root, 'ls-tree', '--name-only', 'HEAD', '--', path)) departed.push(path);
   }
-  if (present.length) await git(root, 'add', '-A', '--', ...present);
-  // A pathspec commit takes only these documents; anything else in the index stays staged for its owner.
-  await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present, ...departed);
+  try {
+    if (present.length) await git(root, 'add', '-A', '--', ...present);
+    // A pathspec commit takes only these documents; anything else in the index stays staged for its owner.
+    await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present, ...departed);
+  } catch (error) {
+    if (domainPaths.length) await git(root, 'reset', '-q', 'HEAD', '--', ...domainPaths);
+    throw error;
+  }
   return git(root, 'rev-parse', 'HEAD');
 }
