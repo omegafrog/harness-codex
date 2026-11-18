@@ -12,7 +12,7 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { checkTacticalDesign } from '../.harness/src/workflow/domain-model-gate.mjs';
 import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
-import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
+import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { READ_ONLY_REQUIREMENTS, READ_ONLY_DOCUMENT, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument, upTo } from './support/domain-model-fixture.mjs';
 
 const TEMPLATE = '.codex/internal-skills/domain-model/references/template.md';
@@ -287,7 +287,7 @@ test('the tactical stages run after the requirements flow and are accepted secti
   const document = await templateDocument(sourceRoot);
 
   // The requirements flow ends with a fixed requirements.md that carries the rules the design maps.
-  const markers = { 'stakeholder-analysis': { [analysis]: '# Stakeholder 분석\n', [requirements]: draft('stakeholder-analysis') } };
+  const markers = { 'stakeholder-analysis': { [analysis]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft('stakeholder-analysis') } };
   for (const stage of REQUIREMENTS_STAGES) {
     const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
@@ -415,7 +415,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   };
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // Work of the application that the stages never touch.
@@ -564,7 +564,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   const artifacts = [art(tacticalDesign, 'tactical_design')];
   const document = await templateDocument(sourceRoot);
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
@@ -634,7 +634,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   const restartArgs = (stage) => ['--stage-id', stage, '--restart-requirements', 'true'];
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // The earlier Harness wrote and committed the document as domain-model.md, next to the project's own model index.

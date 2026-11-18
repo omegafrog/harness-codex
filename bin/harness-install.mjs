@@ -214,6 +214,7 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/workflow/domain-model-gate.mjs",
     ".codex/scripts/harness-design-freeze-check.mjs",
     ".harness/src/workflow/design-freeze-gate.mjs",
+    ".harness/src/workflow/stakeholder-analysis-gate.mjs",
     ".harness/src/stakeholders/cards.mjs",
     ".codex/scripts/harness-write-guard.mjs",
     ".harness/src/workflow/contract-review.mjs",

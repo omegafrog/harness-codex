@@ -270,6 +270,14 @@ try {
     const { dependencyOwnerErrors, staleStages } = await import('../../.harness/src/workflow/stage-reopen.mjs');
     const ownerErrors = dependencyOwnerErrors({ skill: input.skill, raw });
     if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: ownerErrors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
+    // stakeholder-analysis is accepted (its questions or its completion) only when the requester's features are recorded as settled
+    // and no anchored persona candidate was dropped as out of scope. A rejection leaves the stage running for the same subagent.
+    const { evaluateStakeholderAnalysisGate, stakeholderAnalysisFailureInstruction } = await import('../../.harness/src/workflow/stakeholder-analysis-gate.mjs');
+    const analysisGate = await evaluateStakeholderAnalysisGate({ root, input, envelope: raw });
+    if (analysisGate && !analysisGate.ok) {
+      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate), outputPath: paths.files.raw }))}\n`);
+      process.exit(1);
+    }
     // The last tactical design stage (context-boundary) is accepted as completed only when the whole tactical-design.md passes the
     // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
     // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,

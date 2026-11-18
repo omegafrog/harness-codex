@@ -36,6 +36,9 @@ export const STAGE_TIERS = {
 // The agent profile each tactical implementation stage runs under; every other stage runs as a plain workflow stage.
 const STAGE_PROFILES = { 'to-ticket': 'to_ticket', 'tracker-publish': 'tracker_publisher', 'tactical-code': 'tactical_implementation_agent' };
 export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high', low_performance: 'codex-light' };
+// A stakeholder-analysis.md that passes the runner's check: the requester is a participant and the requested feature is
+// recorded as the requester's settled requirement, quoted from the request.
+export const stakeholderAnalysisDocument = (request, feature = request) => `# Stakeholder 분석\n\n> ${request}\n\n## 3. 참여자\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 기능은 요청자가 정한 요구사항이다 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n\n### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| ${feature} | "${feature}" | REQUESTER | 확정 | 요청 원문 | - |\n`;
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
 export async function consumerWorkflow(t, request) {

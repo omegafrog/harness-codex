@@ -10,7 +10,7 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { TAKEOVER_FEEDBACK, explainError, foreignRunningStage } from '../.harness/src/workflow/stage-cli.mjs';
 import { PRE_SPEC_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
-import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
+import { consumerWorkflow, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 const STAGE = 'stakeholder-analysis';
@@ -55,8 +55,11 @@ async function interruptedWorkflow(t, { stage = STAGE, before = null, bind = tru
   let answers;
   if (asked) {
     ok(printed(workspace, launched.next.bind.replace('<agent_id>', 'analysis-agent-1'), old));
-    await flow.submitStage({ stage, started: launched }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
+    await flow.submitStage({ stage, started: launched }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question], files: { [analysis]: stakeholderAnalysisDocument(REQUEST) } });
     assert.equal(ok(printed(workspace, launched.next.finish, old)).code, 'USER_DECISION_REQUIRED');
+    // The runner checked the waiting document. This fixture is about the takeover of the resumed run, which requires a clean
+    // project tree, so the uncommitted question-time document is removed here.
+    await rm(join(workspace, analysis));
     launched = ok(run(NATIVE, ['launch', '--stage-id', stage, '--answer', 'no'], old));
     answers = await readFile(join(session, 'runtime/executions', launched.execution_id, 'answers.json'), 'utf8');
   }

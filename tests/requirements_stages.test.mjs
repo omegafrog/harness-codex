@@ -11,7 +11,7 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { WORKTREE_STAGE, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
-import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
+import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 
 const TEMPLATE = '.codex/internal-skills/requirements-fix/references/template.md';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
@@ -98,6 +98,10 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/skills/setup/assets/CONTEXT-MAP.md'), /^\| Upstream \| Downstream \| Upstream 책임 \| Downstream 책임 \| 통신 계약 \| 판단 소유자 \| 상태·근거 \|\n\|---\|---\|---\|---\|---\|---\|---\|$/m);
   assert.match(context, /mark unspecified details as undecided/);
   assert.match(context, /pattern only when supported by evidence/);
+  // The user sees which stakeholder each candidate question came from, by role and participant ID.
+  const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
+  assert.match(analysisGuide, /Start each question title with the stakeholders it came from, each by the role and ID of the participant table/);
+  assert.match(analysisGuide, /`\[제안: 도메인 전문가\(LENS-DOMAIN\), 결제 담당자\(SH-01\)\]`/);
   const events = await read('.codex/internal-skills/event-storming/GUIDE.md');
   assert.match(events, /`mode: events`/);
   assert.match(events, /`stakeholder_persona`/);
@@ -116,6 +120,31 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/internal-skills/product-spec/GUIDE.md'), /`상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /requirements\.md` when present/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /do not compare the boundaries again/);
+});
+
+test('the requester is a stakeholder: requested features are settled, and a persona candidate anchored in the request is never dropped as out of scope', async () => {
+  const { checkStakeholderAnalysis } = await import('../.harness/src/workflow/stakeholder-analysis-gate.mjs');
+  const request = '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해.';
+  const participants = '| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청 기능 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n';
+  const features = (decision = '확정', phrase = '커뮤니티 기능') => `| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 커뮤니티 | "${phrase}" | REQUESTER | ${decision} | 요청 원문 | q:4 |\n`;
+  const observation = (anchor) => `| 제안자 | 관찰 | 요청 앵커 | 근거 |\n|---|---|---|---|\n| LENS-DOMAIN | 게시물 작성자만 수정한다 | "${anchor}" | 근거 |\n`;
+  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis }).errors.map(({ code }) => code);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('결제 기능')}`), [], 'an observation anchored outside the request is kept out of scope');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('유저 인증과 커뮤니티 기능')}`), ['ANCHORED_CANDIDATE_EXCLUDED'], 'the E2E defect: an anchored community candidate was moved out of scope');
+  assert.deepEqual(codes(`# 분석\n\n${features()}`), ['REQUESTER_MISSING']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}`), ['REQUESTED_FEATURES_MISSING']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('대기')}`), ['REQUESTED_FEATURE_ASKED'], 'a requested feature is never asked for adoption');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('확정', '게시판 기능')}`), ['REQUESTED_FEATURE_NOT_QUOTED']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n| 제안자 | 관찰 | 근거 |\n|---|---|---|\n| LENS-DOMAIN | 관찰 | 근거 |\n`), ['OBSERVATION_ANCHOR_MISSING']);
+  assert.ok(checkStakeholderAnalysis({ request, analysis: '# 분석\n\n- 판정: 생략\n' }).ok, 'a skipped analysis is not checked');
+
+  // The guides carry the same rules: subdomain-candidates never asks about a requested feature and rewinds instead.
+  const candidates = await read('.codex/internal-skills/subdomain-candidates/GUIDE.md');
+  assert.match(candidates, /Every feature of the requested-feature table in `stakeholder-analysis\.md` gets at least one `BIZ`/);
+  assert.match(candidates, /`result\.owner_stage: stakeholder-analysis`/);
+  const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
+  assert.match(analysisGuide, /This is the only reason a candidate leaves the candidate table/);
+  assert.match(analysisGuide, /`\[제안: 요청자\(REQUESTER\) · 요청 기능: <기능>\]`/);
 });
 
 test('installed consumers get the requirements stages and diagram tooling, Git ignores them and keeps the plan set documents visible', async (t) => {
@@ -139,6 +168,9 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     '.harness/src/workflow/requirements-restart.mjs',
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',
+    '.harness/src/workflow/stakeholder-analysis-gate.mjs',
+    '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
+    '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
     '.codex/internal-skills/skill-execution/references/dispatch.md',
     '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/scripts/harness-fresh-agent.mjs',
@@ -241,7 +273,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
 
   // 1. stakeholder-analysis creates both documents; the requirements draft only holds what the user settled.
   const first = await runStage('stakeholder-analysis', {
-    files: { [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n`, [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 2. 업무\n\n### 요구사항 초안\n\n- 업무 목적: 게시글 삭제 (요청 원문: "게시글 삭제 기능")\n` },
+    files: { [analysis]: stakeholderAnalysisDocument(REQUEST), [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 2. 업무\n\n### 요구사항 초안\n\n- 업무 목적: 게시글 삭제 (요청 원문: "게시글 삭제 기능")\n` },
     artifacts: [artifact(analysis, 'stakeholder_analysis'), artifact(requirements, 'requirements')],
     summary: 'CAND 1건 채택',
   });
