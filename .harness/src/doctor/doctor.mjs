@@ -76,30 +76,24 @@ async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
 
 async function inspectExecutionAssets(root, diagnostics) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
-  // The execution contract directory marks a project that installed the stage runtime.
-  const contract = await lstat(join(root, '.codex/internal-skills/skill-execution')).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
-  if (!contract) return;
+  // The runner schema directory (or, before it moved, the skill-execution contract directory) marks a project that installed the stage runtime.
+  const marker = async (path) => lstat(join(root, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (!await marker('.harness/schemas') && !await marker('.codex/internal-skills/skill-execution')) return;
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
     '.codex/internal-skills/workflow-compose/GUIDE.md',
     '.codex/internal-skills/e2e-test/GUIDE.md',
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
     '.codex/internal-skills/e2e-test/references/failure-learning.md',
+    '.codex/agents/workflow_stage.toml',
     '.codex/agents/tracker_publisher.toml',
     '.codex/agents/pr_author.toml',
-    '.codex/internal-skills/skill-execution/GUIDE.md',
-    '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/workflows/tactical-to-code.yaml',
     '.codex/workflows/frontend-design.yaml',
     ...['frontend-design', 'frontend-figma', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
     ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
-    '.codex/internal-skills/skill-execution/references/input.md',
-    '.codex/internal-skills/skill-execution/references/dispatch.md',
-    '.codex/internal-skills/skill-execution/worker-base.md',
-    '.codex/internal-skills/skill-execution/references/stage-return.md',
-    '.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md',
     '.codex/internal-skills/technology-selection/GUIDE.md',
     '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
     '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
@@ -118,14 +112,13 @@ async function inspectExecutionAssets(root, diagnostics) {
     ...['bootstrap', 'render'].map((name) => `.codex/tools/plantuml-${name}.mjs`),
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
-    '.codex/internal-skills/skill-execution/schemas/input.schema.json',
-    '.codex/internal-skills/skill-execution/schemas/return.schema.json',
-    '.codex/internal-skills/skill-execution/schemas/workflow-compose-result.schema.json',
-    '.codex/internal-skills/skill-execution/schemas/workflow-compose-input.schema.json',
+    ...['input', 'return', 'question', 'workflow-compose-result', 'workflow-compose-input', 'flows/common', 'flows/plan-review', 'flows/spec-review'].map((name) => `.harness/schemas/${name}.schema.json`),
     ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.codex/scripts/harness-${name}.mjs`),
-    '.codex/internal-skills/skill-execution/schemas/flows/common.schema.json',
-    ...['plan-review', 'spec-review'].map((name) => `.codex/internal-skills/skill-execution/schemas/flows/${name}.schema.json`),
   ];
+  // The orchestrator owns the stage coordination references; each installed provider copy carries them.
+  for (const skills of ['.agents/skills', '.claude/skills']) {
+    if (await marker(`${skills}/orchestrator/SKILL.md`)) paths.push(...['coordination', 'dispatch', 'input', 'state', 'workflow-map'].map((name) => `${skills}/orchestrator/references/${name}.md`));
+  }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
     paths.push(...['composer-workspace', 'native-context', 'output-schema', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));

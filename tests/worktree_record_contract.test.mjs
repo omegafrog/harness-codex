@@ -47,7 +47,7 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
 
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
     assert.ok(lock.files[policyPath], 'explicit-only invocation policy is managed');
-    for (const path of ['.harness/src/workflow/stage-checkpoint.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/internal-skills/skill-execution/worker-base.md']) {
+    for (const path of ['.harness/src/workflow/stage-checkpoint.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/agents/workflow_stage.toml', '.harness/schemas/return.schema.json']) {
       assert.ok(lock.files[path], `installer lock includes ${path}`);
       assert.ok((await readFile(join(root, path), 'utf8')).length > 0);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
@@ -101,7 +101,7 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
 
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.path?.endsWith(policyPath) && ['execution_asset_missing', 'installer_unlocked_file'].includes(item.code)), false);
-    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && /stage-listen|stage-result-events|worker-base/.test(item.path)), false);
+    assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && /stage-listen|stage-result-events|workflow_stage|schemas/.test(item.path)), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/spec-me/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/custom/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/code-review/SKILL.md')), false);
@@ -355,7 +355,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    const answerGuide = await readFile(join(root, '.codex/internal-skills/skill-execution/references/input.md'), 'utf8');
+    const answerGuide = await readFile(join(root, '.agents/skills/orchestrator/references/input.md'), 'utf8');
     assert.match(answerGuide, /\{"question_id":"<현재-질문-ID>","answer":/);
     assert.match(answerGuide, /“모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다/);
     const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
@@ -364,7 +364,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(consumerStatus, /consumer-change\.txt/);
     assert.doesNotMatch(consumerStatus, /\.codex\/internal-skills\/|\.agents\/skills\/|\.harness\/src\/|\.io\//);
-    for (const path of ['.codex/internal-skills/skill-execution/references/input.md', '.agents/skills/orchestrator/SKILL.md']) {
+    for (const path of ['.agents/skills/orchestrator/references/input.md', '.agents/skills/orchestrator/SKILL.md']) {
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');

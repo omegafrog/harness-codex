@@ -38,7 +38,3 @@ The main orchestrator spawns the two reviewers as fresh native subagents (`stand
 ## 소유 worktree
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
-
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.

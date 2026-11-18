@@ -29,10 +29,11 @@ workflow 실행 규칙은 각 GUIDE가 소유하며 여기에 복사하지 않�
 
 | 주제 | 정본 |
 |---|---|
-| 작업 입력·`worktree_ref`·stage 실행·질문 반환 | `.codex/internal-skills/skill-execution/GUIDE.md` |
+| 작업 입력·`worktree_ref`·stage 실행 조율 | `.codex/skills/orchestrator/references/coordination.md` |
+| stage 작업자의 반환 계약·질문 반환·작업 경계 | `.harness/src/installer/stage-contract.mjs` (설치기가 각 stage agent profile의 marker 자리에 넣는다) |
 | worktree 생성·유지·종료와 `worktree.json` | `.codex/internal-skills/session-worktree/GUIDE.md`, `.codex/internal-skills/workflow-compose/GUIDE.md` |
 | 진입 workspace preflight | 각 stage GUIDE의 `harness-workspace-preflight.mjs` 단계 (runner는 workspace 등록만 확인) |
-| 실행 중 로그·임시 파일·스크린샷 위치 | `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md` |
+| 실행 중 로그·임시 파일·스크린샷 위치 | `.harness/src/installer/stage-contract.mjs`의 Runtime files 규칙 |
 | tracker lifecycle | `docs/agents/plan-status.md` |
 | 통합 계약 갱신·seal·completion receipt | `.codex/internal-skills/sync-contracts/GUIDE.md` |
 | 기존 Architecture Spec fresh review | `.codex/internal-skills/spec-review/GUIDE.md` |

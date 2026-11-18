@@ -283,7 +283,7 @@ test('a Harness source checkout excludes nothing it owns, including the contract
     execFileSync('git', ['init', '-q', root]);
     const { name } = JSON.parse(await readFile(resolve(sourceRoot, 'package.json'), 'utf8'));
     await writeFile(resolve(root, 'package.json'), JSON.stringify({ name }));
-    for (const path of ['bin/harness-install.mjs', '.harness/src/installer/update.mjs', '.codex/internal-skills/skill-execution/references/workflow-map.md']) {
+    for (const path of ['bin/harness-install.mjs', '.harness/src/installer/update.mjs', '.codex/skills/orchestrator/references/workflow-map.md']) {
       await mkdir(resolve(root, path, '..'), { recursive: true });
       await writeFile(resolve(root, path), '');
     }

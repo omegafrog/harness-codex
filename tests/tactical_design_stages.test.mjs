@@ -38,7 +38,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.match(orchestrator, /요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음/);
   assert.match(orchestrator, /`DEPENDENCY_INCOMPLETE`/);
   assert.match(orchestrator, /restart를 먼저 하고 요구사항 수정은 그 뒤에 한다/);
-  const map = await read('.codex/internal-skills/skill-execution/references/workflow-map.md');
+  const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
   const positions = PRE_SPEC_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage in order');
   assert.match(map, /harness-domain-model-check\.mjs/);
@@ -50,12 +50,12 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.ok(exec.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join('→')), 'the E2E procedure names the tactical flow');
   assert.match(await read('docs/architecture/enforcement.md'), /TACTICAL_DESIGN_STAGES[\s\S]*harness-domain-model-check\.mjs/);
   assert.match(await read('docs/architecture/enforcement.md'), /domain-model-gate\.mjs[\s\S]*FINAL_TACTICAL_STAGE[\s\S]*`gate_error`[\s\S]*`owner_stage`[\s\S]*recordExecutionState/, 'the enforcement map names where the runner rejects a failing last tactical stage');
-  for (const path of ['.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/internal-skills/skill-execution/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`gate_error`/, `${path} tells what the runner returns for a failing tactical gate`);
+  for (const path of ['.codex/skills/orchestrator/references/dispatch.md', '.codex/skills/orchestrator/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`gate_error`/, `${path} tells what the runner returns for a failing tactical gate`);
   assert.match(await read('.codex/internal-skills/domain-model/references/deepening.md'), /No stage runs a gate[\s\S]*`gate_error`[\s\S]*`owner_stage`/);
-  for (const path of ['.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/internal-skills/skill-execution/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`owner_stage`/, `${path} tells the orchestrator which stage owns a failing section`);
+  for (const path of ['.codex/skills/orchestrator/references/dispatch.md', '.codex/skills/orchestrator/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`owner_stage`/, `${path} tells the orchestrator which stage owns a failing section`);
   assert.match(await read('CONTEXT.md'), /\| Consistency Decision \| 일관성 결정 \|/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /요구사항·전술 설계 stage의 문서를 고치라고 지시하면/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/input.md'), /요구사항 또는 전술 설계 stage부터 다시 시작/);
+  assert.match(await read('.codex/skills/orchestrator/references/dispatch.md'), /요구사항·전술 설계 stage의 문서를 고치라고 지시하면/);
+  assert.match(await read('.codex/skills/orchestrator/references/input.md'), /요구사항 또는 전술 설계 stage부터 다시 시작/);
 
   // The requirements template points at the tactical documents and lets only the asking stages add a rule from a user's answer.
   const requirementsTemplate = await read('.codex/internal-skills/requirements-fix/references/template.md');
@@ -600,7 +600,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.equal(revision.prepared.input.context.previous_result_note, undefined, 'a revision of a completed stage is not a retry of an attempt');
 
   // The installed guides tell the stage to re-run the gate before it blocks on an earlier stage, and they stay Harness-owned while the application work stays visible.
-  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.codex/internal-skills/skill-execution/worker-base.md', '.harness/src/workflow/stage-input.mjs'];
+  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.harness/src/workflow/stage-input.mjs'];
   for (const path of owned) {
     assert.equal(await readFile(join(workspace, path), 'utf8'), await read(path), `installed: ${path}`);
     assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
@@ -609,7 +609,9 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.match(rules, /## Relaunch after a block[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>[\s\S]*blocks only on errors that this run still reports for earlier stages/);
   assert.match(rules, /`context-boundary` designs `## 6`/);
   assert.match(await readFile(join(workspace, '.codex/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /이전 실행이 `blocked`였다면[\s\S]*deepening\.md#relaunch-after-a-block/);
-  assert.match(await readFile(join(workspace, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
+  // The stage contract the installer writes into the stage profile carries the same rule.
+  assert.match(await readFile(join(workspace, '.codex/agents/workflow_stage.toml'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
+  assert.match(treeGit('check-ignore', '-v', '.codex/agents/workflow_stage.toml'), /info\/exclude/);
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
   assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');

@@ -54,7 +54,7 @@ test('tactical implementation is ordered after completed tactical design and rem
   for (const item of [workflow, planning]) assert.ok(!Object.values(item.hooks).flat().includes('spec_reviews'), `${item.id} needs no Spec review`);
   assert.ok(workflow.hooks.before_complete.includes('plan_review') && workflow.hooks.before_complete.includes('required_outcome'));
   assert.equal(workflow.stages.some(({ skill }) => skill === 'frontend-design'), false, 'frontend design stays its own workflow');
-  const guide = await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/references/workflow-map.md'), 'utf8');
+  const guide = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/workflow-map.md'), 'utf8');
   assert.match(guide, /별도 `tactical-to-code` workflow/);
   assert.match(guide, /`frontend-design-brief` stage/);
 });

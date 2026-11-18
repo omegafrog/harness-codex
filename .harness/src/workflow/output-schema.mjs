@@ -9,7 +9,7 @@ const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
 const COMMIT_REQUEST_FLOWS = new Set([...IMPLEMENTATION_FLOWS, 'tactical-code']);
 
 export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {
-  const directory = join(root, '.codex/internal-skills/skill-execution/schemas');
+  const directory = join(root, '.harness/schemas');
   const schema = JSON.parse(await readFile(join(directory, 'return.schema.json'), 'utf8'));
   delete schema.properties.execution_id;
   schema.required = schema.required.filter((key) => key !== 'execution_id');

@@ -174,7 +174,7 @@ test('update restores the rewind module of an installed consumer, Doctor require
   assert.equal((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.match(git('check-ignore', '-v', module), /info\/exclude/);
   assert.equal(git('status', '--short', '--untracked-files=all').trim(), '', 'Harness-owned files stay out of Git status');
-  const installed = await readFile(join(primary, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+  const installed = await readFile(join(primary, '.agents/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(installed, /--reopen-for/, 'the installed orchestrator guidance carries the rewind rule');
 });
 

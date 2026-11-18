@@ -354,7 +354,7 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   assert.match(skill, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(skill, /`next\.bind`/);
   assert.match(skill, /Harness 소스나 state 파일을 읽지 않고/);
-  const dispatch = await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+  const dispatch = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(dispatch, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(dispatch, /`--verbose`/);
   assert.match(dispatch, /`why`/);

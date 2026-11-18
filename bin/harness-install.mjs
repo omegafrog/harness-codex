@@ -222,6 +222,9 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/scripts/harness-code-review.mjs",
     ".codex/scripts/harness-review-status.mjs",
     ".harness/src/workflow/plan-review.mjs",
+    ".harness/schemas/input.schema.json",
+    ".harness/schemas/return.schema.json",
+    ".harness/schemas/flows/common.schema.json",
   ]) {
     await stat(join(projectRoot, path));
   }

@@ -83,7 +83,7 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.codex/scripts/harness-spec-review.mjs',
     '.codex/scripts/harness-native-stage.mjs',
     '.agents/skills/orchestrator/SKILL.md',
-    '.codex/internal-skills/skill-execution/references/dispatch.md',
+    '.agents/skills/orchestrator/references/dispatch.md',
   ];
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });

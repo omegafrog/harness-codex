@@ -65,10 +65,6 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
 
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
-
 ## E2E 실행 조건과 실패
 
 plan 구현 단계에서는 최종 E2E 조건을 사용자에게 묻지 않는다. 앱 실행에 필요한 사실(실행 명령, 설정 키와 기본값, 의존 서비스)은 `docs/agents/EXEC.md`에 기록한다. EXEC.md는 이 plan이 아니라 애플리케이션 전체의 실행 안내다. Architecture Spec의 실행 환경(12.7)에 맞춰 쓰고, 새 사실을 추가할 때 그와 어긋나는 기존 문장을 함께 고치며, "이 plan에서는 필요 없음"·"이후 plan이 담당" 같은 plan 시점의 문장을 쓰지 않는다([기본 리뷰 기준](../code-review/references/default-rules.md)의 Execution guide). 마지막 `e2e` plan은 Product Spec 13절 시나리오를 Architecture Spec 12.7 환경에서 실행하는 E2E 테스트 코드와 `execution.json` profile(`purpose: "e2e"`)을 만들고, 테스트가 실행 가능한지(컴파일·발견)까지만 확인한다. 실제 실행은 승인 뒤 fresh `e2e_test_runner`가 한다.

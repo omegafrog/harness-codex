@@ -130,10 +130,6 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 
 reviewer는 source, tests, specs, plans, tracker, configuration을 수정하지 않는다. workspace-write 권한은 process 실행과 임시 browser artifact에만 쓴다.
 
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
-
 ## 테스트·서비스 실행 전제
 
 일반 검증과 E2E 실행 방식은 [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md)을 따른다.

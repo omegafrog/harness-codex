@@ -1,6 +1,6 @@
 # 요청부터 구현 종료까지의 workflow
 
-실행자가 읽는 공통 경로는 [workflow 지도](../../.codex/internal-skills/skill-execution/references/workflow-map.md)다. 이 문서는 source 유지보수자가 정본과 검사 경계를 찾기 위한 안내다.
+실행자가 읽는 공통 경로는 [workflow 지도](../../.codex/skills/orchestrator/references/workflow-map.md)다. 이 문서는 source 유지보수자가 정본과 검사 경계를 찾기 위한 안내다.
 
 ```mermaid
 flowchart TD

@@ -6,9 +6,9 @@ main_session: true
 
 # orchestrator
 
-현재 사용자 요청이 `$orchestrator` 또는 `/orchestrator`로 시작할 때만 메인 세션에서 요청과 현재 상태를 읽고 다음에 실행할 skill을 고른다. 같은 대화의 재개, 자유 입력 답변과 발행 승인에도 매번 호출어를 붙인다. 답변을 실행기에 전달할 때는 호출어 뒤에 적힌 사용자 답변만 사용한다. 그 밖의 일반 요청은 workflow 입력으로 취급하지 않는다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다. 실행 호출은 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+현재 사용자 요청이 `$orchestrator` 또는 `/orchestrator`로 시작할 때만 메인 세션에서 요청과 현재 상태를 읽고 다음에 실행할 skill을 고른다. 같은 대화의 재개, 자유 입력 답변과 발행 승인에도 매번 호출어를 붙인다. 답변을 실행기에 전달할 때는 호출어 뒤에 적힌 사용자 답변만 사용한다. 그 밖의 일반 요청은 workflow 입력으로 취급하지 않는다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다. 실행 호출은 [실행 조율](references/coordination.md)을 따른다.
 
-전체 단계와 정본·판단 경계는 [workflow 지도](../../../.codex/internal-skills/skill-execution/references/workflow-map.md)를 읽는다. 현재 목표·요청 종료 단계·산출물·미해결 gate·사용자 선택 및 provider/session 실행 상태를 정본에서 확인하고 다음 단계를 선택한다. 불충분하면 관련 stage result 또는 산출물을 읽는다. 이미 완료된 절차를 반복하지 않으며 실제 승인·독립 리뷰·실행 전제는 생략하지 않는다.
+전체 단계와 정본·판단 경계는 [workflow 지도](references/workflow-map.md)를 읽는다. 현재 목표·요청 종료 단계·산출물·미해결 gate·사용자 선택 및 provider/session 실행 상태를 정본에서 확인하고 다음 단계를 선택한다. 불충분하면 관련 stage result 또는 산출물을 읽는다. 이미 완료된 절차를 반복하지 않으며 실제 승인·독립 리뷰·실행 전제는 생략하지 않는다.
 
 workflow 외의 직접 요청은 [기능 라우팅](references/capability-routing.md)에서 담당 GUIDE를 찾아 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
 
@@ -57,7 +57,7 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 ## 실행과 단계 전환
 
-선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 `finish` 출력(status·code·요약·artifact 참조)으로만 진행한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)의 공통 절차를 사용한다.
+선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 `finish` 출력(status·code·요약·artifact 참조)으로만 진행한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](references/coordination.md)의 공통 절차를 사용한다.
 
 stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]` 한 번으로 입력 준비와 예약을 마친다. 반환된 경로·`agent_profile`·`binding`으로 서브에이전트를 띄운 뒤 `next.bind`를, 종료하면 `next.finish`를 실행한다. 출력은 기본이 compact이며 `--verbose`는 진단 전용이다. 오류는 `why`와 `next`(명령) 또는 `user_decision`을 가진 JSON 하나이며 그대로 따른다. 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않고, `next`가 없거나 해결되지 않으면 오류를 사용자에게 보고한다.
 
@@ -69,13 +69,13 @@ Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. `w
 
 `to-ticket`이 완료되면 리뷰를 통과한 계획 전체(ticket 목록·의존 순서·각 ticket의 규칙과 검증)를 한국어로 사용자에게 보여주고 발행해도 되는지 묻는다. 사용자가 직접 답한 뒤에만 `tracker-publish`를 선택하며 그 답 원문을 `--approval-answer`로 넘긴다(`launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`). 실행기는 to-ticket 완료 뒤 사용자 입력 기록에 그 답이 있어야만 준비하므로 플래그만으로는 발행되지 않는다. 승인 거부·미응답·계획 수정 요청은 `tracker-publish`를 호출하지 않고 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다. 발행 stage가 완료된 뒤에는 `tactical-code`가 ticket을 구현한다. GitHub tracker mode에서 사용자가 계획 PR을 요청하면 `plan-pr` stage를 `pr_author`로 실행하며, 이미 발행·활성화된 plan set을 요구사항·설계 변경이나 리뷰 판단으로 다시 고친 경우에는 승인을 다시 묻지 않고 바뀐 plan마다 `node .codex/scripts/harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 해당 Issue에 변경 내용을 남긴다.
 
-완료된 전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. `requirements-fix` 수정은 문서를 `draft`로 되돌리므로, 먼저 `bounded-context`부터 `--restart-requirements true`로 restart한 뒤 수정하고 `bounded-context`가 컨텍스트를 다시 확인해 확정하게 한다. `context-boundary` 뒤에는 새 `tactical-to-code` workflow를 시작한다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](../../../.codex/internal-skills/skill-execution/GUIDE.md)을 따른다.
+완료된 전술 설계 stage의 산출물이나 `fixed` `requirements.md`(소유 skill `requirements-fix`)를 사용자가 고치라고 지시하면 해당 소유 skill을 `--user-revision true --feedback '<사용자 지시 원문>'`으로 다시 연다. `requirements-fix` 수정은 문서를 `draft`로 되돌리므로, 먼저 `bounded-context`부터 `--restart-requirements true`로 restart한 뒤 수정하고 `bounded-context`가 컨텍스트를 다시 확인해 확정하게 한다. `context-boundary` 뒤에는 새 `tactical-to-code` workflow를 시작한다. 대기 중이던 질문은 그 지시로 대체된다. 절차는 [실행 조율](references/coordination.md)을 따른다.
 
 Legacy 구현의 E2E 실패가 앱이 아니라 테스트 코드만의 결함으로 확인되면 [테스트 코드 결함 빠른 경로](../../../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md)를 따른다.
 
-사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](../../../.codex/internal-skills/skill-execution/references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
+사용자가 완료된 요구사항 또는 전술 설계 단계부터 다시 시작하도록 지시하면 [실행 입력 준비](references/input.md)의 `--restart-requirements true` 절차를 사용한다. 사용자가 지정한 중단 지점을 넘지 않는다.
 
-stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](../../../.codex/internal-skills/skill-execution/references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다. 전술 stage가 "이 기능을 범위에 포함할까요?" 같은 범위 질문을 반환하면 전달하지 않는다(범위 추가 금지, 요구사항 흐름은 사용자가 명시적으로 다시 시작한다). `to-ticket`은 되돌아가지 않으며 `DESIGN_NOT_FROZEN`은 사용자에게 보고한다. 이 block 뒤 어떤 명령이 거부돼도(`PREVIOUS_RESULT_MISSING`, `RESTART_REFUSED` 등) 오류의 `next`를 그대로 따른다: owner가 기록돼 있으면 `--reopen-for`, 옛 결과라 `owner_stage`가 없으면 block된 stage를 `--feedback`으로 다시 실행해 owner를 반환하게 한다. `--user-revision`·`--restart-requirements`로 우회하거나 사용자에게 묻지 않는다. 전술 단계 중 사용자가 범위를 줄이거나 범위 밖 항목을 빼라고 지시하면 `--user-revision`·`--restart`가 아니라 다음에 실행할 stage의 `--feedback`으로 전달하고 stale stage를 순서대로 다시 실행한다. 구현 설계 문서에 남은 범위 밖 항목은 `tactical-data`의 design-freeze gate가 잡아 owner로 되돌린다.
+stage가 앞 stage의 산출물 부족으로 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면(`result.owner_stage`·`result.dependency_gap`) 사용자에게 묻거나 멈추지 않는다. `finish`의 `next`대로 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 owner를 다시 열고, 완료되면 stale stage를 block된 stage까지 순서대로 다시 실행한다([상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)). 업무 결정은 stage가 반환한 질문만 사용자에게 전달하고 대신 답하지 않는다. 전술 stage가 "이 기능을 범위에 포함할까요?" 같은 범위 질문을 반환하면 전달하지 않는다(범위 추가 금지, 요구사항 흐름은 사용자가 명시적으로 다시 시작한다). `to-ticket`은 되돌아가지 않으며 `DESIGN_NOT_FROZEN`은 사용자에게 보고한다. 이 block 뒤 어떤 명령이 거부돼도(`PREVIOUS_RESULT_MISSING`, `RESTART_REFUSED` 등) 오류의 `next`를 그대로 따른다: owner가 기록돼 있으면 `--reopen-for`, 옛 결과라 `owner_stage`가 없으면 block된 stage를 `--feedback`으로 다시 실행해 owner를 반환하게 한다. `--user-revision`·`--restart-requirements`로 우회하거나 사용자에게 묻지 않는다. 전술 단계 중 사용자가 범위를 줄이거나 범위 밖 항목을 빼라고 지시하면 `--user-revision`·`--restart`가 아니라 다음에 실행할 stage의 `--feedback`으로 전달하고 stale stage를 순서대로 다시 실행한다. 구현 설계 문서에 남은 범위 밖 항목은 `tactical-data`의 design-freeze gate가 잡아 owner로 되돌린다.
 
 요구사항·전술 설계 stage의 순서는 실행기가 결정한다. 새 `spec-me` 실행과 준비된 legacy stage의 재개도 거부된다. 결과 없는 구형 stage는 오류가 안내하는 안전한 discard 경로로만 정리한다. 준비기가 `<stage> cannot start before <앞 stage>`로 거부하면 지침과 다르더라도 오류가 가리킨 앞 stage를 진행한다. 순서를 어기고 시작된 stage가 결과 없이 남았다는 오류에는 오류가 안내한 `--discard-out-of-order true`만 사용하며 state를 직접 고치지 않는다.
 
@@ -87,7 +87,7 @@ gate는 완료 근거를 worktree 정본 기록에서 직접 읽는다. `tactica
 
 메인 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않는다. 고칠 일이 생기면 소유 stage(`implement-wrapper`, `sync-contracts`, `to-ticket`, `tactical-code`)를 시작하거나 `--feedback`으로 재개한다. 메인 세션의 쓰기는 `.io/`와 `docs/agents/`의 사용자 지침·실행 문서(`implementation-guidance.md`, `testing-guidance.md`, `EXEC.md`, `execution.json`)와 `docs/verification/e2e-lessons.md`로 제한되며, PreToolUse hook(`harness-write-guard.mjs`)이 나머지에 대한 `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 쓰기를 거부한다. 거부를 우회하려고 스크립트나 인터프리터로 같은 파일을 쓰지 않는다.
 
-모든 stage는 [실행과 결과](../../../.codex/internal-skills/skill-execution/references/dispatch.md)에 따라 현재 CLI의 native 서브에이전트로 호출한다. 실행 ID를 예약한 뒤 실제 에이전트 결과를 기다리고 정적 형식 검증을 수행한다. 형식 오류는 그 에이전트에게 키·값과 함께 돌려 재작성하게 한다.
+모든 stage는 [실행과 결과](references/dispatch.md)에 따라 현재 CLI의 native 서브에이전트로 호출한다. 실행 ID를 예약한 뒤 실제 에이전트 결과를 기다리고 정적 형식 검증을 수행한다. 형식 오류는 그 에이전트에게 키·값과 함께 돌려 재작성하게 한다.
 반환 상태에 따라 workflow를 전환한다.
 
 | 반환 | 처리 |

@@ -334,10 +334,10 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
   const skill = await read('.codex/skills/orchestrator/SKILL.md');
   assert.match(skill, /launch --stage-id <stage> --take-over true/);
   assert.match(skill, /원래 대화로 돌아가라고 하지 않는다/);
-  const dispatch = await read('.codex/internal-skills/skill-execution/references/dispatch.md');
+  const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /--take-over true/);
   assert.match(dispatch, /다른 Codex 대화/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/input.md'), /--take-over-interrupted true/);
+  assert.match(await read('.codex/skills/orchestrator/references/input.md'), /--take-over-interrupted true/);
   assert.match(await read('docs/architecture/enforcement.md'), /stage-takeover\.mjs[\s\S]*takeOverInterruptedStage/);
 });
 

@@ -245,7 +245,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
 });
 
 test('the orchestrator and the stage-input guide name the order guard and the discard command, and the enforcement map records them', async () => {
-  const input = await read('.codex/internal-skills/skill-execution/references/input.md');
+  const input = await read('.codex/skills/orchestrator/references/input.md');
   assert.match(input, /--discard-out-of-order true/);
   assert.match(input, /cannot start before/);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');

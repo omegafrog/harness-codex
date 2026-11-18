@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { STAGE_CONTRACT, STAGE_CONTRACT_MARKER } from '../.harness/src/installer/stage-contract.mjs';
 
 const sourceRoot = resolve('.');
 const PROMPT_FILE = /\.(md|toml|yaml)$/;
@@ -14,8 +15,8 @@ const PROMPT_FILE = /\.(md|toml|yaml)$/;
 const GENERATED = new Set(['.harness/harness.yaml', '.codex/repository-conventions.md']);
 const BANNED = [
   [/기본 `model_tier`는/, 'a skill declares its model tier in its own document and the runner resolves it'],
-  [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'worker-base.md states the internal GUIDE rule once'],
-  [/`docs\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'use skill-execution/references/runtime-artifact-paths.md'],
+  [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'the stage agent profiles state the internal GUIDE rule once'],
+  [/`docs\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'write the runtime artifact rule itself'],
   // These name runtime steps that no runner executes; GUIDEs must call the real CLIs instead.
   [/workspace gate가 수행|`before_dispatch` workspace gate|runtime plan-review gate|runtime의 `plan_review` gate|기존 scheduler의 `ready_plans`|runIndependentReviewers/, 'before_dispatch gates and the wrapper scheduler are not run; use harness-workspace-preflight.mjs and harness-plan-review.mjs check'],
 ];
@@ -79,21 +80,45 @@ test('installed skill guides and agent profiles reference files that exist', asy
   }
 });
 
-// Agent profiles are pasted next to the stage GUIDE, so rules live in the GUIDE only.
-// These two roles have no single owning GUIDE and keep their own short role rules.
-const PROFILES_WITHOUT_OWNING_GUIDE = new Set(['execution_runner', 'spec_document_writer']);
+// Agent profiles are pasted next to the stage GUIDE, so rules live in the GUIDE only; the shared stage contract is a
+// marker line the installer replaces (.harness/src/installer/stage-contract.mjs).
+// These roles have no single owning GUIDE: workflow_stage runs whichever stage GUIDE the caller hands it.
+const PROFILES_WITHOUT_OWNING_GUIDE = new Set(['execution_runner', 'spec_document_writer', 'workflow_stage']);
 
 test('agent profiles only name their role and point at the GUIDE that owns the rules', async () => {
   const dir = '.codex/agents';
   for (const file of (await readdir(join(sourceRoot, dir))).filter((name) => name.endsWith('.toml'))) {
     const text = await readFile(join(sourceRoot, dir, file), 'utf8');
-    const instructions = /developer_instructions = """\n([\s\S]*?)\n"""/.exec(text)?.[1] || '';
+    // The installer replaces the marker line with the shared stage contract; it is not a rule this profile owns.
+    const instructions = (/developer_instructions = """\n([\s\S]*?)\n"""/.exec(text)?.[1] || '').replace(`\n\n${STAGE_CONTRACT_MARKER}`, '');
     const guides = [...instructions.matchAll(/`(\.codex\/internal-skills\/[^`]+\/GUIDE\.md)`/g)].map(([, path]) => path);
-    assert.ok(guides.length > 0, `${file} must point at its owning GUIDE`);
+    assert.ok(guides.length > 0 || PROFILES_WITHOUT_OWNING_GUIDE.has(file.replace(/\.toml$/, '')), `${file} must point at its owning GUIDE`);
     for (const path of guides) assert.ok(existsSync(join(sourceRoot, path)), `${file}: ${path} is missing`);
     const limit = PROFILES_WITHOUT_OWNING_GUIDE.has(file.replace(/\.toml$/, '')) ? 2000 : 1000;
     assert.ok(Buffer.byteLength(instructions) <= limit, `${file}: move role rules into the GUIDE (${Buffer.byteLength(instructions)} > ${limit} bytes)`);
   }
+});
+
+test('every stage agent profile carries the shared stage contract marker, and an install writes the contract in its place', async () => {
+  const roles = new Set(['workflow_stage', 'execution_runner', 'e2e_test_runner']);
+  for (const file of await readdir(join(sourceRoot, '.codex/workflows'))) {
+    for (const [, role] of (await readFile(join(sourceRoot, '.codex/workflows', file), 'utf8')).matchAll(/role:\s*\[?\s*([a-z_]+)/g)) roles.add(role);
+  }
+  for (const role of roles) assert.match(await readFile(join(sourceRoot, '.codex/agents', `${role}.toml`), 'utf8'), new RegExp(STAGE_CONTRACT_MARKER.replace(/[{}]/g, '\\$&')), `${role} carries the marker`);
+  await mkdir('.io', { recursive: true });
+  const root = await mkdtemp(resolve('.io/stage-contract-'));
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    for (const path of ['.codex/agents/workflow_stage.toml', '.claude/agents/workflow_stage.md', '.codex/agents/spec_reviewer.toml']) {
+      const text = await readFile(join(root, path), 'utf8');
+      assert.ok(text.includes(STAGE_CONTRACT), `${path} carries the contract`);
+      assert.ok(!text.includes(STAGE_CONTRACT_MARKER), `${path} has no marker left`);
+      execFileSync('git', ['check-ignore', '-q', path], { cwd: root });
+    }
+    assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }), '');
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test('the orchestrator dispatches stages to native subagents and returns format errors', async () => {
@@ -121,14 +146,14 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const dispatch = await readFile(join(root, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+    const dispatch = await readFile(join(root, '.agents/skills/orchestrator/references/dispatch.md'), 'utf8');
     assert.match(dispatch, /메인 세션\)는 이 값을 서브에이전트에 전달만 한다/);
     assert.match(dispatch, /`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다|`guide`·`input_path`·`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다/);
     for (const skill of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
       const text = await readFile(join(root, skill), 'utf8').catch(() => null);
       if (text !== null) assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);
     }
-    execFileSync('git', ['check-ignore', '-q', '.codex/internal-skills/skill-execution/references/dispatch.md'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-q', '.agents/skills/orchestrator/references/dispatch.md'], { cwd: root });
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).length, 0);
     assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }

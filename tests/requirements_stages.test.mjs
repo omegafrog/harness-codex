@@ -25,7 +25,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.ok(orchestrator.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the flow in order');
   assert.match(orchestrator, /요구사항 흐름에서 완료되지 않은 첫 stage/);
   assert.match(orchestrator, /`fixed` `requirements\.md`\(소유 skill `requirements-fix`\)/);
-  const map = await read('.codex/internal-skills/skill-execution/references/workflow-map.md');
+  const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
   const positions = REQUIREMENTS_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names the stages in order');
 
@@ -82,7 +82,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /`CONTEXT-MAP\.md` and `CONTEXT\.md` when this stage completes/);
   assert.match(context, /Assign provisional BIZ-scoped glossary entries/);
   assert.match(context, /material meaning conflict/);
-  const dispatch = await read('.codex/internal-skills/skill-execution/references/dispatch.md');
+  const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /fork_turns: "none"/);
   assert.match(dispatch, /상위 대화·도구 출력·문서 본문을 복사하지 않고/);
   const languageGuide = await read('.codex/internal-skills/ubiquitous-language/GUIDE.md');
@@ -187,8 +187,6 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     '.harness/src/workflow/requirements-document-gate.mjs',
     '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
     '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
-    '.codex/internal-skills/skill-execution/references/dispatch.md',
-    '.codex/internal-skills/skill-execution/references/workflow-map.md',
     '.codex/scripts/harness-fresh-agent.mjs',
     '.codex/scripts/harness-setup.mjs',
     TEMPLATE,
@@ -204,6 +202,13 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     assert.ok(lock.files[path], `lock inventory: ${path}`);
     assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
     assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `same content: ${path}`);
+  }
+  // The stage coordination references travel with the orchestrator skill (path rewritten for the provider copy).
+  for (const name of ['dispatch', 'workflow-map']) {
+    const path = `.agents/skills/orchestrator/references/${name}.md`;
+    assert.ok(lock.files[path], `lock inventory: ${path}`);
+    assert.equal(lock.files[path].source_path, `.codex/skills/orchestrator/references/${name}.md`);
+    assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   }
   const setupMap = '.agents/skills/setup/assets/CONTEXT-MAP.md';
   assert.ok(lock.files[setupMap]);
@@ -247,7 +252,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const coverage = join(root, '.codex/internal-skills/requirements-fix/references/coverage.md');
   const contextGuide = join(root, '.codex/internal-skills/bounded-context/GUIDE.md');
   const restartModule = join(root, '.harness/src/workflow/requirements-restart.mjs');
-  const dispatchGuide = join(root, '.codex/internal-skills/skill-execution/references/dispatch.md');
+  const dispatchGuide = join(root, '.agents/skills/orchestrator/references/dispatch.md');
   const freshHook = join(root, '.codex/scripts/harness-fresh-agent.mjs');
   await unlink(template);
   await unlink(renderer);
@@ -259,7 +264,8 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   doctor = await runDoctor({ root, sourceRoot });
   for (const path of [template, renderer, restartModule, dispatchGuide, freshHook]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
-  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md', '.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md', '.codex/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  assert.match(await readFile(dispatchGuide, 'utf8'), /fork_turns: "none"/, 'update restores the orchestrator dispatch reference');
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/requirements.md'), 'utf8'), '# 요구사항 명세\n');
