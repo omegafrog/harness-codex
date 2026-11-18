@@ -275,12 +275,13 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, requirementsApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
-  if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish')) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
+  if (requirementsApproved && stageId !== TACTICAL_DESIGN_STAGES[0]) throw new Error(`Requirements approval is only valid for ${TACTICAL_DESIGN_STAGES[0]}`);
+  if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish' && !requirementsApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
   // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
   if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implementation and frontend ticket stages');
@@ -410,6 +411,18 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
     // to-ticket splits a frozen design: a fresh start (or a re-run after a rewind) needs the design-freeze gate to pass on the current
     // documents. A to-ticket that already recorded a result resumes, answers and revises without the check.
+    // The user approves the fixed requirements before tactical design starts. The first start of domain-model after the
+    // requirements flow (bounded-context fixed requirements.md) needs the user's own reply, logged after bounded-context
+    // finished; a restart of the requirements flow removes domain-model, so changed requirements are approved again.
+    // A skipped stakeholder-analysis writes no requirements.md, and there is nothing to approve.
+    if (stage.skill === TACTICAL_DESIGN_STAGES[0] && plan_set_id && !state.stages?.[stage.skill]) {
+      const fixedAt = state.stages?.['bounded-context']?.finished_at;
+      const { planSetDocument } = await import('./domain-model-gate.mjs');
+      const requirements = await planSetDocument(root, plan_set_id, 'requirements.md');
+      if (requirements.text !== null && !(requirementsApproved && typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: fixedAt ?? '1970-01-01T00:00:00.000Z' }))) {
+        throw new Error('Requirements approval answer was not recorded: show the fixed requirements.md to the user and pass their reply after bounded-context finished');
+      }
+    }
     const ticketEntry = state.stages?.['to-ticket'];
     if (stage.skill === 'to-ticket' && plan_set_id && (!(ticketEntry?.result_ref || ticketEntry?.attempts?.some((attempt) => attempt?.result_ref)) || ticketEntry.stale)) {
       const { designNotFrozen } = await import('./design-freeze-gate.mjs');

@@ -278,6 +278,13 @@ try {
       process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
+    // A requirements stage is accepted (its questions or its completion) only when no BIZ section of requirements.md holds a field twice.
+    const { evaluateRequirementsDocumentGate, requirementsDocumentFailureInstruction } = await import('../../.harness/src/workflow/requirements-document-gate.mjs');
+    const documentGate = await evaluateRequirementsDocumentGate({ root, input, envelope: raw });
+    if (documentGate && !documentGate.ok) {
+      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'requirements_document_check', executionId: id, stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate), outputPath: paths.files.raw }))}\n`);
+      process.exit(1);
+    }
     // The last tactical design stage (context-boundary) is accepted as completed only when the whole tactical-design.md passes the
     // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
     // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,

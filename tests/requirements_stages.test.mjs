@@ -147,6 +147,21 @@ test('the requester is a stakeholder: requested features are settled, and a pers
   assert.match(analysisGuide, /`\[제안: 요청자\(REQUESTER\) · 요청 기능: <기능>\]`/);
 });
 
+test('a BIZ field is written once: a second field of the same name is rejected, placeholders filled in place pass', async () => {
+  const { checkRequirementsDocument } = await import('../.harness/src/workflow/requirements-document-gate.mjs');
+  const biz = (extra = '') => `### BIZ-03 로그인 (SD-02)\n\n- 상태: draft\n- 업무 규칙: 없음 — 후속 stage가 채운다\n- 예외 시나리오:\n  - EX-02 로그인 실패를 알린다 — 출처: answers.json \`q:3\`\n- 이벤트 흐름:\n\n  | 순서 | 행위자 |\n  |---|---|\n  | 1 | 사용자 |\n${extra}- 출처·변경 이력:\n  - event-storming: 반영\n`;
+  const other = '### BIZ-04 게시글 읽기 (SD-03)\n\n- 업무 규칙: 없음 — 후속 stage가 채운다\n- 예외 시나리오: 없음 — 후속 stage가 채운다\n\n## 4. 서브도메인 간 이벤트\n\n- 예외 시나리오: 문서 공통 절의 같은 이름은 BIZ 밖이다\n';
+  const ok = checkRequirementsDocument({ requirements: `# 요구사항 명세\n\n${biz()}\n${other}`, stage: 'event-storming' });
+  assert.deepEqual(ok.errors, [], 'the same field in different BIZ sections, or outside a BIZ, is not a duplicate');
+  // The E2E defect: event-storming appended a second 업무 규칙 and 예외 시나리오 to BIZ-03 instead of filling them in place.
+  const appended = biz('- 업무 규칙:\n  - INV-01 규칙 — 출처: answers.json `q:1`\n- 예외 시나리오:\n  - EX-02 로그인 실패를 알린다\n');
+  const failed = checkRequirementsDocument({ requirements: `# 요구사항 명세\n\n${appended}\n${other}`, stage: 'event-storming' });
+  assert.deepEqual(failed.errors.map(({ code, id, owner_stage }) => [code, id, owner_stage]), [['DUPLICATE_FIELD', 'BIZ-03', 'event-storming'], ['DUPLICATE_FIELD', 'BIZ-03', 'event-storming']]);
+  assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
+  assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
+  assert.match(await read(TEMPLATE), /같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다/);
+});
+
 test('installed consumers get the requirements stages and diagram tooling, Git ignores them and keeps the plan set documents visible', async (t) => {
   await mkdir(resolve(sourceRoot, '.io'), { recursive: true });
   const root = await mkdtemp(resolve(sourceRoot, '.io/requirements-consumer-'));
@@ -169,6 +184,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',
     '.harness/src/workflow/stakeholder-analysis-gate.mjs',
+    '.harness/src/workflow/requirements-document-gate.mjs',
     '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
     '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
     '.codex/internal-skills/skill-execution/references/dispatch.md',
@@ -350,9 +366,16 @@ test('the requirements stages run in order as workflow stages and the tactical d
   // shared definitions it now owns and commits the plan set documents together with the project's context map.
   const fixing = await flow.beginStage('bounded-context');
   await flow.submitStage(fixing, {
-    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n\n- INV-01 작성자가 글을 삭제한다.\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
+    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n\n- INV-01 작성자가 글을 삭제한다.\n- 이벤트 흐름:\n\n  | 순서 | 이벤트 ID | 도메인 이벤트 | 공통 ID |\n  |---|---|---|---|\n  | 1 | EVT-01 | 글이 삭제됨 | - |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
     artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
   });
+  // The E2E defect: bounded-context fixed the document without the sync plan. finish refuses, names the recovery for the same
+  // subagent instead of a bare HARNESS_ERROR, and leaves the stage running.
+  const missingSync = flow.finishStage(fixing);
+  assert.notEqual(missingSync.status, 0);
+  const missingBody = JSON.parse(missingSync.stderr || missingSync.stdout);
+  assert.equal(missingBody.code, 'DOMAIN_SYNC_MISSING', missingSync.stderr);
+  assert.match(missingBody.next[0], /harness-domain\.mjs sync plan/);
   const { planDomainSync } = await import(pathToFileURL(join(workspace, '.harness/src/domain/sync.mjs')));
   const id = 'community.rule.delete-own-post';
   const domainPath = `docs/domain/contexts/community/rules/${id}.md`;
@@ -376,7 +399,18 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me has been removed/);
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
+  // The user approves the fixed requirements before tactical design: bounded-context's finish tells the orchestrator to show them
+  // and ask, and the runner refuses domain-model without the user's own logged reply.
+  assert.match(JSON.parse(fixed.stdout).next, /Show the fixed requirements\.md to the user[\s\S]*--requirements-approved true --approval-answer/);
+  const unapproved = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(unapproved.status, 0);
+  assert.equal(JSON.parse(unapproved.stderr).code, 'PRECONDITION');
+  assert.match(unapproved.stderr, /Requirements approval answer was not recorded/);
+  const claimed = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(claimed.status, 0, 'a bare flag with words the user never said is not approval');
+  const misplaced = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'aggregate-design', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
+  assert.match(misplaced.stderr, /Requirements approval is only valid for domain-model/);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model', ...await flow.approveRequirements('요구사항 좋아요, 승인')]);
   assert.equal(next.input.skill, 'domain-model');
   assert.equal(next.input.context.transition.from_stage, 'bounded-context');
   assert.equal(next.input.context.transition.code, 'OK');

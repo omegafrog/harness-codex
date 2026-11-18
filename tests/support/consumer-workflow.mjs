@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,8 +71,21 @@ export async function consumerWorkflow(t, request) {
   const specDirectory = `docs/specs/${planSetId}`;
   const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
 
-  // The orchestrator's steps before the stage does its own work: prepare, start and bind.
-  async function beginStage(stage, { extraArgs = [] } = {}) {
+  // The user's approval of the fixed requirements, logged as their own input after bounded-context finished.
+  const REQUIREMENTS_APPROVAL = '확정된 요구사항을 승인합니다';
+  async function approveRequirements(text = REQUIREMENTS_APPROVAL) {
+    await mkdir(join(workspace, '.io/runtime/orchestrator'), { recursive: true });
+    await appendFile(join(workspace, '.io/runtime/orchestrator/user-inputs.jsonl'), `${JSON.stringify({ at: new Date(Date.now() + 1000).toISOString(), session_id: 'user', source: 'prompt', text })}\n`);
+    return ['--requirements-approved', 'true', '--approval-answer', text];
+  }
+
+  // The orchestrator's steps before the stage does its own work: prepare, start and bind. The first domain-model start of
+  // these flows carries the user's approval of the fixed requirements (requirements_stages tests the refusal without it).
+  async function beginStage(stage, { extraArgs = [], approve = true } = {}) {
+    if (stage === 'domain-model' && approve && !extraArgs.includes('--requirements-approved') && !extraArgs.includes('--feedback') && !extraArgs.includes('--answer')) {
+      const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
+      if (!state.stages?.['domain-model']) extraArgs = [...extraArgs, ...await approveRequirements()];
+    }
     const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, ...extraArgs]);
     assert.equal(prepared.input.skill, stage);
     assert.equal(prepared.input.scope, request);
@@ -119,5 +132,5 @@ export async function consumerWorkflow(t, request) {
     } else assert.equal(head, before, `${stage} committed nothing`);
     return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
   }
-  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, planSetId, specDirectory, specPath, request };
+  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, approveRequirements, planSetId, specDirectory, specPath, request };
 }
