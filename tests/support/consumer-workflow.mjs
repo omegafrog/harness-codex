@@ -75,7 +75,7 @@ export async function consumerWorkflow(t, request) {
   const REQUIREMENTS_APPROVAL = '확정된 요구사항을 승인합니다';
   async function approveRequirements(text = REQUIREMENTS_APPROVAL) {
     await mkdir(join(workspace, '.io/runtime/orchestrator'), { recursive: true });
-    await appendFile(join(workspace, '.io/runtime/orchestrator/user-inputs.jsonl'), `${JSON.stringify({ at: new Date(Date.now() + 1000).toISOString(), session_id: 'user', source: 'prompt', text })}\n`);
+    await appendFile(join(workspace, '.io/runtime/orchestrator/user-inputs.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), session_id: 'user', source: 'prompt', text })}\n`);
     return ['--requirements-approved', 'true', '--approval-answer', text];
   }
 
@@ -109,7 +109,7 @@ export async function consumerWorkflow(t, request) {
       await mkdir(join(workspace, path, '..'), { recursive: true });
       await writeFile(join(workspace, path), content);
     }
-    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null, owner_stage: null, dependency_gap: null, ...resultExtra, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
+    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind })), questions, review_request: null, owner_stage: null, dependency_gap: null, ...resultExtra, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
   }
 

@@ -5,7 +5,9 @@ import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
-import { WORKTREE_STAGE } from './worktree-stages.mjs';
+import { REQUIREMENTS_REVISION_STAGES, WORKTREE_STAGE, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { markRequirementsRevision, resolveReopen } from './stage-reopen.mjs';
+import { assertRequirementsApproval } from './user-inputs.mjs';
 import { assertTacticalDesignGate } from './domain-model-gate.mjs';
 import { assertStageDomainSync } from '../domain/sync.mjs';
 import { assertDesignFreezeGate } from './design-freeze-gate.mjs';
@@ -118,6 +120,19 @@ export async function recordExecutionState({ root, input, binding, status, code 
       await beforeTransition();
     }
     const now = new Date().toISOString();
+    if (nativeClaim) {
+      const orderViolation = preSpecOrderViolation(state.stages, stage) || tacticalImplementationOrderViolation(state.stages, stage);
+      if (orderViolation) throw new Error(orderViolation);
+      await assertRequirementsApproval({ root, state, stage, planSetId: input.context?.plan_set_id, approval: input.context?.requirements_approval });
+      const revision = input.context?.user_revision && REQUIREMENTS_REVISION_STAGES.includes(stage);
+      if (revision) markRequirementsRevision(state, stage, input.context.requirements_revision_from, input.execution_id, now);
+      if (!revision && previous?.stale && input.context?.revalidation_mark !== previous.stale.reopened_for) throw new Error('Stale execution input: prepare the stage again to revalidate the current upstream result');
+      const reopen = input.context?.reopen;
+      if (reopen?.reason === 'dependency_gap') {
+        const plan = await resolveReopen({ root, session, state, ownerStage: stage, blockedExecutionId: reopen.blocked_execution_id });
+        for (const id of plan.mark) state.stages[id] = { ...state.stages[id], stale: plan.stale };
+      }
+    }
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
     if (instruction_delivery) { entry.instruction_delivery = instruction_delivery; if (instruction_delivery.phase) entry.phase = instruction_delivery.phase; }
@@ -126,6 +141,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
       entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
       if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; delete entry.taken_over; delete entry.stale; }
       if (nativeClaim) entry.native_managed = true;
+      if (nativeClaim && stage === WORKTREE_STAGE.DOMAIN_MODEL && input.context?.requirements_approval?.execution_id) entry.requirements_approval = input.context.requirements_approval.execution_id;
       if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];
     }

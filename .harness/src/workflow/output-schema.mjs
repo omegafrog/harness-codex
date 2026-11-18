@@ -65,13 +65,24 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   if (!schema.required.includes('result')) schema.required.push('result');
   const adapter = await loadProvider(provider);
   const providerSchema = adapter.prepareOutputSchema ? adapter.prepareOutputSchema(schema) : schema;
+  const artifacts = providerSchema.properties.result.properties.artifacts;
+  const previousArtifact = artifacts.items;
+  artifacts.items = {
+    ...previousArtifact,
+    required: previousArtifact.required.filter((key) => key !== 'sha256'),
+    description: 'Provide base, path and kind. Omit sha256; the runner fingerprints artifacts when it saves the result.',
+  };
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try { await writeFile(path, JSON.stringify(providerSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
   catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('Output schema must be a regular unshared file');
-    if (!isDeepStrictEqual(JSON.parse(await readFile(path, 'utf8')), providerSchema)) throw new Error('Existing output schema does not match the execution');
+    const existing = JSON.parse(await readFile(path, 'utf8'));
+    if (isDeepStrictEqual(existing, providerSchema)) return;
+    // A prepared execution may already have the previous schema on disk.
+    artifacts.items = previousArtifact;
+    if (!isDeepStrictEqual(existing, providerSchema)) throw new Error('Existing output schema does not match the execution');
   }
 }
 

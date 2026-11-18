@@ -55,12 +55,20 @@ test('generated output schemas expose questions without a singular result field'
   }
 });
 
-test('reusing an execution schema refuses altered and linked files', async () => {
+test('reusing an execution schema accepts the previous artifact shape and refuses altered or linked files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-schema-reuse-'));
   const path = join(directory, 'schema.json');
   const options = { root: process.cwd(), input: { execution_id: 'check', skill: 'requirements-fix' }, prefix: 'runtime/executions/check', path };
   try {
     await writeOutputSchema(options);
+    const schema = await readJson(path);
+    const artifacts = schema.properties.result.properties.artifacts;
+    assert.deepEqual(artifacts.items.required, ['base', 'path', 'kind']);
+    assert.match(artifacts.items.description, /runner fingerprints artifacts/);
+    artifacts.items = (await readJson(join(schemas, 'flows/common.schema.json'))).properties.artifacts.items;
+    await writeFile(path, JSON.stringify(schema));
+    await writeOutputSchema(options);
+    assert.deepEqual(await readJson(path), schema);
     await writeFile(path, '{}');
     await assert.rejects(writeOutputSchema(options), /does not match/);
     await rm(path);

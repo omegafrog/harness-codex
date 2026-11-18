@@ -101,6 +101,7 @@ try {
     const base = artifact.base === 'workspace' ? opts.root : artifact.base === 'session' ? session : artifact.base === 'control_session' ? (input.context?.control_session_directory || session) : null;
     if (!base) continue;
     await assertWorkspaceTarget(base, artifact.path);
+    artifact.sha256 ??= null;
     const info = await lstat(join(base, artifact.path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
     if (info?.isFile() && !info.isSymbolicLink()) artifact.sha256 = createHash('sha256').update(await readFile(join(base, artifact.path))).digest('hex');
     else if (info?.isDirectory()) artifact.sha256 = null;

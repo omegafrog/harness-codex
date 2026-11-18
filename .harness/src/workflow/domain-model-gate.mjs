@@ -5,13 +5,12 @@
 // so a stage never runs it. Every finding names the stage that owns the failing section (`owner_stage`), so a failure that
 // comes from an earlier stage's section tells which stage to reopen.
 //
-// It holds only what must be true whatever the design: the documents and sections exist, every BIZ/INV/EX is owned by a model
-// and every INV/EX has an enforcing behaviour, every rule that spans Aggregates cites a sourced consistency decision, one
-// transaction changes at most one Aggregate, and Saga/Outbox belong to eventual consistency. Contextual DDD judgement (where
-// an Entity lives, what to merge, what a Domain Service owns, how contexts integrate) belongs to the stage GUIDEs and reviews.
-// Tables are found by their key columns and read tolerantly: an unknown or missing optional column is ignored.
+// Current documents group components by approved Context. The numbered format remains readable for existing plan sets.
+// The gate checks structural ownership and references. Business and DDD judgement belongs to the stage GUIDEs and reviews.
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isDomainSlug } from '../domain/schema.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 import { specArtifactPath } from './worktrees.mjs';
@@ -35,7 +34,7 @@ const cells = (line) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|\s*$/, 
 const field = (row, pattern) => { const key = Object.keys(row).find((name) => pattern.test(name)); return key === undefined ? '' : row[key]; };
 
 // The text with fenced code blocks blanked, so an example inside one is never read as the document.
-const outsideFences = (text) => {
+export const outsideFences = (text) => {
   let fenced = false;
   return String(text).split(/\r?\n/).map((line) => {
     if (/^\s*```/.test(line)) { fenced = !fenced; return ''; }
@@ -75,6 +74,30 @@ export function sections(text) {
 // The rows of every table of the section that has all the key columns.
 export const rowsOf = (section, ...required) => parseTables(section || '').filter((table) => required.every((name) => table.header.includes(name))).flatMap((table) => table.rows);
 
+export const CONTEXT_DESIGN_MARKER = '<!-- tactical-design: context-components-v1 -->';
+const BIZ_ID = /\bBIZ-\d+\b/g;
+const AS_ID = /\bAS-\d+\b/g;
+
+export function readContextDesign(text) {
+  const body = outsideFences(text).join('\n');
+  if (!body.split('\n').some((line) => line.trim() === CONTEXT_DESIGN_MARKER)) return null;
+  const headings = [...body.matchAll(/^##[ \t]+([^\n]+)$/gm)];
+  return headings.flatMap((heading, index) => {
+    const id = /^BC[ \t]+(\S+)$/.exec(heading[1].trim())?.[1];
+    if (!isDomainSlug(id)) return [];
+    const section = body.slice(heading.index, headings[index + 1]?.index ?? body.length);
+    return [{
+      id,
+      section,
+      models: rowsOf(section, '모델', '종류', '식별자', '필드·구성 값', '메서드', '업무'),
+      aggregates: rowsOf(section, 'Aggregate', 'Root', '구성원', '다른 Aggregate 참조'),
+      rules: rowsOf(section, '소유 모델', '규칙', '근거', '담당 메서드'),
+      application: rowsOf(section, 'AS', '메서드', '업무', '호출 순서', '트랜잭션 경계', '사용 인터페이스'),
+      interfaces: rowsOf(section, '인터페이스', '시그니처', '소유 위치', '사용 메서드', '실패 계약'),
+    }];
+  });
+}
+
 export function parseRequirements(text) {
   return {
     business: unique([...String(text).matchAll(/^#{3}\s+(BIZ-\d+)\b/gm)].map((match) => match[1])),
@@ -86,7 +109,148 @@ export function parseRequirements(text) {
 // rule, Domain Service, 외부 시스템) enforces the rule.
 const noBehavior = (value) => isBlank(value) || /^(해당 )?없음(\s*[—–-].*)?$/.test(clean(value));
 
+const linesOf = (value) => String(value ?? '').split(/<br\s*\/?>/i).map(clean);
+const methodName = (value) => clean(value).split('(')[0].split('.').at(-1).trim();
+const methodSignature = /\S+\([^)]*\)\s*(?:→|->)\s*\S/;
+const kindOf = (row) => clean(row['종류']);
+const externalModel = (row) => kindOf(row) === EXTERNAL;
+const domainModel = (row) => /^(?:Entity|VO|Value Object|Domain Service)$/.test(kindOf(row));
+const needsClassDiagram = (context) => context.models.some((row) => /^(?:Entity|VO|Value Object)$/.test(kindOf(row)));
+const classDiagramPath = (id, extension) => `diagrams/${id}.class.${extension}`;
+
+function checkContextDesign(requirements, contexts) {
+  const errors = [];
+  const fail = (owner, code, message, id) => errors.push({ code, message, ...(id ? { id } : {}), owner_stage: owner });
+  const modelFailure = (...args) => fail(WORKTREE_STAGE.DOMAIN_MODEL, ...args);
+  const aggregateFailure = (...args) => fail(WORKTREE_STAGE.AGGREGATE_DESIGN, ...args);
+  const serviceFailure = (...args) => fail(WORKTREE_STAGE.APPLICATION_SERVICE, ...args);
+  const { business, rules } = parseRequirements(requirements);
+  const approvedContexts = new Map(rowsOf(requirements, 'BC', '포함 SD·BIZ', '소유 규칙·데이터').flatMap((row) => {
+    const slug = clean(row.BC).split(/[\s(]/)[0];
+    return isDomainSlug(slug) ? [[slug, ids(row['포함 SD·BIZ'], BIZ_ID)]] : [];
+  }));
+  const covered = new Set();
+  const appIds = new Set();
+  const ruleOwners = new Set();
+  const contextIds = new Set();
+  if (!contexts.length) modelFailure('CONTEXT_MISSING', 'Write at least one ## BC <context-id> section');
+
+  for (const context of contexts) {
+    const { id, section, models, aggregates, rules: mappings, application, interfaces } = context;
+    if (contextIds.has(id)) modelFailure('CONTEXT_DUPLICATE', `${id} is declared more than once`, id);
+    if (approvedContexts.size && !approvedContexts.has(id)) modelFailure('CONTEXT_UNAPPROVED', `${id} is absent from the approved requirements`, id);
+    contextIds.add(id);
+    const localModels = new Map();
+    const localAggregates = new Set(aggregates.map((row) => clean(row.Aggregate)));
+    if (localAggregates.size !== aggregates.length) aggregateFailure('AGGREGATE_DUPLICATE', `${id} declares the same Aggregate more than once`, id);
+    const entityMembership = new Map();
+    const ports = new Map();
+    const usedPorts = new Map();
+
+    if (!models.length) modelFailure('MODEL_MISSING', `${id} has no domain model or external-system owner`, id);
+    for (const row of models) {
+      const name = clean(row['모델']);
+      if (!name || localModels.has(name) || !(domainModel(row) || externalModel(row))) modelFailure('MODEL_INVALID', `${id} must name each model once with a valid model type`, name || id);
+      localModels.set(name, row);
+      const entity = kindOf(row) === 'Entity';
+      const fields = linesOf(row['필드·구성 값']);
+      const identity = clean(row['식별자']);
+      if ((entity && (!identity || !fields.some((field) => field.split(':')[0].trim() === identity)))
+        || ((entity || /^(VO|Value Object)$/.test(kindOf(row))) && !fields.every((field) => /^[^:]+:\s*\S.*\s[—–-]\s\S/.test(field)))) {
+        modelFailure('MODEL_FIELDS_INCOMPLETE', `${name} needs named, typed fields or values with descriptions, including identity for an Entity`, name);
+      }
+      if ((entity || kindOf(row) === 'Domain Service' || externalModel(row)) && !linesOf(row['메서드']).every((method) => methodSignature.test(method))) {
+        fail(kindOf(row) === 'Domain Service' ? WORKTREE_STAGE.DOMAIN_SERVICE : WORKTREE_STAGE.DOMAIN_MODEL, 'MODEL_METHOD_MISSING', `${name} must declare method signatures with inputs and results`, name);
+      }
+    }
+
+    for (const row of aggregates) {
+      const name = clean(row.Aggregate);
+      const root = clean(row.Root);
+      if (!name || kindOf(localModels.get(root) || {}) !== 'Entity') aggregateFailure('AGGREGATE_ROOT_INVALID', `${name || id} must name a local Entity as root`, name || id);
+      for (const member of unique([root, ...names(row['구성원'])]).filter((item) => !noBehavior(item))) {
+        const kind = kindOf(localModels.get(member) || {});
+        if (!/^(Entity|VO|Value Object)$/.test(kind)) aggregateFailure('AGGREGATE_MEMBER_INVALID', `${name} lists undeclared member ${member}`, name);
+        if (kind === 'Entity') entityMembership.set(member, (entityMembership.get(member) || 0) + 1);
+      }
+    }
+    for (const [name, row] of localModels) {
+      if (kindOf(row) === 'Entity' && entityMembership.get(name) !== 1) aggregateFailure('ENTITY_AGGREGATE_INVALID', `${name} must belong to exactly one Aggregate in ${id}`, name);
+    }
+    if (needsClassDiagram(context) && ['puml', 'svg'].some((extension) => !section.includes(`](${classDiagramPath(id, extension)})`))) {
+      aggregateFailure('CLASS_DIAGRAM_MISSING', `${id} must link its class diagram source and rendered SVG`, id);
+    }
+
+    for (const row of mappings) {
+      const name = clean(row['소유 모델']);
+      const model = localModels.get(name);
+      const ruleIds = ids(row['규칙'], RULE_ID);
+      const [rule] = ruleIds;
+      const ruleFailure = model && kindOf(model) === 'Domain Service'
+        ? (...args) => fail(WORKTREE_STAGE.DOMAIN_SERVICE, ...args)
+        : aggregateFailure;
+      if (ruleIds.length !== 1 || !rules.includes(rule)) ruleFailure('RULE_UNKNOWN', `${id} needs one approved rule ID per responsibility row`, rule || id);
+      if (ruleOwners.has(rule)) ruleFailure('RULE_OWNER_DUPLICATE', `${rule} has more than one responsibility row`, rule);
+      if (rule) ruleOwners.add(rule);
+      if (!model || !clean(row['규칙']).replace(RULE_ID, '').trim().replace(/^[-–—:]+$/, '') || !/requirements\.md|answers\.json/.test(row['근거'])) {
+        ruleFailure('RULE_RESPONSIBILITY_INCOMPLETE', `${rule || id} needs a declared local owner, the rule text and its approved source`, rule || id);
+      }
+      if (!model || noBehavior(row['담당 메서드']) || !linesOf(model['메서드']).some((method) => methodName(method) === methodName(row['담당 메서드']))) {
+        ruleFailure('RULE_METHOD_UNKNOWN', `${rule || id} must name a method declared by ${name || 'its model'}`, rule || id);
+      }
+    }
+
+    for (const row of interfaces) {
+      const name = clean(row['인터페이스']);
+      if (ports.has(name) || ['인터페이스', '시그니처', '소유 위치', '사용 메서드', '실패 계약'].some((column) => noBehavior(row[column]))) serviceFailure('INTERFACE_INCOMPLETE', `${id} needs a distinct interface with signature, ownership, consumers and a failure contract`, name || id);
+      ports.set(name, row);
+    }
+    const localBusiness = new Set(models.flatMap((row) => ids(row['업무'], BIZ_ID)));
+    for (const item of localBusiness) {
+      if (!business.includes(item) || (approvedContexts.has(id) && !approvedContexts.get(id).includes(item))) modelFailure('BIZ_WRONG_CONTEXT', `${item} is not assigned to ${id} in the approved requirements`, item);
+    }
+    for (const row of models.filter(externalModel)) {
+      for (const item of ids(row['업무'], BIZ_ID)) {
+        if (!models.some((model) => !externalModel(model) && ids(model['업무'], BIZ_ID).includes(item))) covered.add(item);
+      }
+    }
+    for (const row of application) {
+      const [as] = ids(row.AS, AS_ID);
+      const items = ids(row['업무'], BIZ_ID);
+      if (clean(row.AS) !== as || appIds.has(as) || !methodSignature.test(clean(row['메서드'])) || noBehavior(row['호출 순서']) || !items.length) {
+        serviceFailure('APPLICATION_METHOD_INCOMPLETE', `${id} needs a unique AS ID, method, BIZ and composed calls`, as || id);
+      }
+      appIds.add(as);
+      for (const item of items) {
+        if (!business.includes(item) || !localBusiness.has(item)) serviceFailure('APPLICATION_BUSINESS_UNKNOWN', `${as} does not trace ${item} to a local model`, as);
+        else covered.add(item);
+      }
+      const transaction = clean(row['트랜잭션 경계']);
+      if (!/^없음\s*[—–-]\s*\S/.test(transaction) && !linesOf(row['트랜잭션 경계']).every((line) => {
+        const [, written, steps] = /^T\d+:\s*(.+?)\s+[—–-]\s+(.+)$/.exec(line) || [];
+        return localAggregates.has(written) && /시작.+커밋.+롤백/.test(steps);
+      })) serviceFailure('TRANSACTION_INCOMPLETE', `${as} needs one local write Aggregate, begin, commit and rollback for each transaction, or a reason for no transaction`, as);
+      if (isBlank(row['사용 인터페이스'])) serviceFailure('INTERFACE_USAGE_MISSING', `${as} must list its interfaces or state why none is needed`, as);
+      for (const name of names(row['사용 인터페이스']).filter((item) => !noBehavior(item))) {
+        if (!ports.has(name) || !ids(ports.get(name)['사용 메서드'], AS_ID).includes(as)) serviceFailure('INTERFACE_UNDECLARED', `${as} uses ${name} without a matching local interface contract`, as);
+        if (!usedPorts.has(name)) usedPorts.set(name, new Set());
+        usedPorts.get(name).add(as);
+      }
+    }
+    for (const [name, port] of ports) {
+      const users = ids(port['사용 메서드'], AS_ID);
+      if (!users.length || users.some((as) => !usedPorts.get(name)?.has(as))) serviceFailure('INTERFACE_UNUSED', `${name} must name the local Application Service methods that use it`, name);
+    }
+  }
+  for (const id of approvedContexts.keys()) if (!contextIds.has(id)) modelFailure('CONTEXT_MISSING', `${id} needs a BC section`, id);
+  for (const id of business) if (!covered.has(id)) serviceFailure('BIZ_WITHOUT_APPLICATION_METHOD', `${id} needs an Application Service method or an exclusively external owner`, id);
+  for (const id of rules) if (!ruleOwners.has(id)) aggregateFailure('RULE_NO_OWNER', `${id} has no owning model and method`, id);
+  return errors;
+}
+
 export function checkTacticalDesign({ requirements, tacticalDesign }) {
+  const contexts = readContextDesign(tacticalDesign);
+  if (contexts) return result(checkContextDesign(requirements, contexts));
   const errors = [];
   let owner = stageOfSection(1);
   const fail = (code, message, id) => errors.push({ code, message, ...(id ? { id } : {}), owner_stage: owner });
@@ -200,7 +364,16 @@ export async function checkWorkspaceTacticalDesign({ root, planSetId }) {
   const tacticalDesign = await planSetDocument(root, planSetId, TACTICAL_DESIGN_DOCUMENT);
   const missing = [[requirements, WORKTREE_STAGE.REQUIREMENTS_FIX], [tacticalDesign, TACTICAL_DESIGN_STAGES[0]]].filter(([document]) => document.text === null);
   if (missing.length) return result(missing.map(([document, stage]) => ({ code: 'DOCUMENT_MISSING', message: `${document.path} does not exist; write it at this exact path (resolve it with harness-spec-path.mjs) before the stage returns completed`, owner_stage: stage })));
-  return checkTacticalDesign({ requirements: requirements.text, tacticalDesign: tacticalDesign.text });
+  const { errors } = checkTacticalDesign({ requirements: requirements.text, tacticalDesign: tacticalDesign.text });
+  for (const context of (readContextDesign(tacticalDesign.text) || []).filter(needsClassDiagram)) {
+    const source = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'puml'));
+    const svg = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'svg'));
+    const sourceHash = source.text === null ? null : createHash('sha256').update(source.text).digest('hex');
+    if (!/^\s*@startuml\b/m.test(source.text ?? '') || !/<svg\b/.test(svg.text ?? '') || !svg.text.includes(`<!-- harness-source-sha256: ${sourceHash} -->`)) errors.push({
+      code: 'CLASS_DIAGRAM_ARTIFACT_INVALID', message: `Render ${source.path} to ${svg.path} with the installed PlantUML renderer`, id: context.id, owner_stage: WORKTREE_STAGE.AGGREGATE_DESIGN,
+    });
+  }
+  return result(errors);
 }
 
 // The runner's verdict on a result that claims completion; null when the gate does not apply: any stage but the last of the

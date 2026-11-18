@@ -8,6 +8,7 @@ import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { STAGE_CONTRACT, STAGE_CONTRACT_MARKER } from '../.harness/src/installer/stage-contract.mjs';
+import { outsideFences } from '../.harness/src/workflow/domain-model-gate.mjs';
 
 const sourceRoot = resolve('.');
 const PROMPT_FILE = /\.(md|toml|yaml)$/;
@@ -66,7 +67,8 @@ test('installed skill guides and agent profiles reference files that exist', asy
     const broken = [];
     for (const path of files) {
       const text = await readFile(join(root, path), 'utf8');
-      for (const [, link] of text.matchAll(/\]\(([^)\s#]+)(?:#[^)]*)?\)/g)) {
+      const prose = path.endsWith('.md') ? outsideFences(text).join('\n') : text;
+      for (const [, link] of prose.matchAll(/\]\(([^)\s#]+)(?:#[^)]*)?\)/g)) {
         if (/^(https?|mailto):/.test(link) || link.includes('<')) continue;
         if (!existsSync(normalize(join(root, dirname(path), link)))) broken.push(`${path} -> ${link}`);
       }

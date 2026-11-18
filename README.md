@@ -111,7 +111,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `subdomain-candidates` | 업무(BIZ)를 나누고 서브도메인 후보(SD)로 묶는다. 기존 영역에 먼저 넣고 새 후보는 정말 따로 둘 때만 만든다 | 범위가 크게 갈리는 해석일 때만 | |
 | `ubiquitous-language` | 후보 업무별로 혼동되는 말을 먼저 정해 용어 표(용어·뜻·쓰지 않을 말)를 만들고 문장을 통일한다. 최종 컨텍스트 소속은 `bounded-context`가 검증한다 | 결과를 바꾸는 뜻만 한 묶음 | `CONTEXT.md` |
 | `event-storming` | 도메인 전문가 persona를 다시 실행해 업무별 행위자·명령·도메인 이벤트(과거형 업무 사실)·정책·외부 시스템·hotspot을 낸다. 요청 밖 기능은 범위 밖 관찰로 접는다 | hotspot을 한 묶음으로 | `diagrams/events/`의 SD별·서브도메인 간 PlantUML(`.puml`)과 렌더(`.svg`) |
-| `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고 core·supporting·generic으로 분류한다. 후보가 여기서 확정된다 | 구성과 분류 확인 한 묶음 | |
+| `subdomain-classification` | 업무와 이벤트를 근거로 유지·분리 대안을 비교하고 core·supporting·generic 분류를 정한다 | 경계 선택과 분류는 각각 확인 | |
 | `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate(컨텍스트 소속 제외)를 통과시킨다. 경계를 정하기 전에 요구사항을 완성하려고 `bounded-context` 앞에서 실행하며, 문서는 `draft`로 둔다 | 빈칸만 한 묶음 | |
 | `bounded-context` | 완성된 요구사항으로 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적고, coverage gate 전체를 통과하면 `상태: fixed`로 확정하며 공통 정의를 동기화한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
 
@@ -119,22 +119,21 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 
 #### 전술 설계 흐름
 
-`bounded-context`가 `fixed`로 확정한 뒤 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
+`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model`은 stage 이름이며 `docs/architecture/domain-model.md`는 프로젝트 모델 색인이다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.codex/internal-skills/domain-model/references/template.md`에 있다.
 
-| stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
-|---|---|---|---|
-| `domain-model` | 바운디드 컨텍스트와 맵을 확정 입력으로 받아 서브도메인 분류별 깊이(core 풍부, supporting 규칙에 필요한 만큼, generic 최소·외부 시스템)로 Entity·Value Object 후보를 정하고 모든 업무·규칙·이벤트를 모델에 대응시킨다. 기존 프로젝트면 이 stage만 `code-research`로 기존 모델을 `file:line`과 commit으로 기록한다 | 없음. 근거가 부족하면 `blocked`로 요구사항 수정을 가리킨다 | `docs/architecture/domain-model.md`(`accepted-target` 행) |
-| `aggregate-design` | 함께 지켜야 하는 불변식으로 Aggregate를 묶고 다른 Aggregate는 ID로만 참조한다. 규칙은 Aggregate Root 메서드, Value Object의 규칙, Domain Service 중 자연스러운 소유자가 강제하며 상태와 생애주기가 없는 컨텍스트는 이유를 적고 Aggregate를 두지 않는다. Aggregate에 걸친 규칙은 같은 컨텍스트에서 한 연산이 함께 바꾸는 즉시 일관성이면 병합하고(읽기만 하는 Aggregate는 `조회 전용 Aggregate`에 적어 병합하지 않는다), 컨텍스트가 다른 Aggregate는 병합하지 않고(즉시면 `integration-design`이 동기 확인·호출로 기록) 최종 일관성을 허용하면 분리하며 결정을 출처와 함께 기록한다 | 요구사항이 일관성을 정하지 않을 때 한 묶음(선택지마다 업무 결과) | 같음 |
-| `domain-service` | 어떤 Entity·Value Object도 소유하지 못하는 도메인 판단만 둔다. 조율·transaction·저장·외부 효과는 하지 않는다 | 없음 | 같음 |
-| `application-service` | 호출 순서, transaction 경계(transaction마다 Aggregate 하나), Repository, 외부 효과를 정한다. 도메인 판단은 하지 않는다 | 없음 | 같음 |
-| `integration-design` | 컨텍스트 맵의 관계(판단 소유자)와 일관성 결정에서 명령·응답·이벤트와 통신 방식을 정한다. Saga·Outbox는 최종 일관성으로 기록한 규칙에서만 검토한다 | 업무 결과를 바꾸는 통합 결정만 한 묶음 | 같음 |
-| `context-boundary` | 관계 패턴, 코드 의존 형태와 경계 강제 방식을 근거에 따라 정하고 `CONTEXT-MAP.md`에 반영한다. 배포 방식·프레임워크는 정하지 않는다 | 근거가 선택지를 가르지 못할 때만 질문 | 같음 |
+| stage | 하는 일 |
+|---|---|
+| `domain-model` | 같은 대상을 계속 식별해야 하는 근거를 확인하고 Entity 식별자·필드·메서드, VO 구성 값·제약을 선언한다. 기존 모델 근거는 코드와 확인한 commit을 연결한다 |
+| `aggregate-design` | Aggregate Root, 내부 Entity·VO와 다른 Aggregate의 ID 참조를 정리하고 클래스 다이어그램을 만든다. 요구사항과 사용자 답을 대조해 모델에 규칙과 불변식을 연결한다 |
+| `domain-service` | Entity나 VO에 두기 어려운 도메인 판단을 맡는 서비스와 메서드를 정의한다 |
+| `application-service` | 업무를 수행하는 메서드마다 도메인 호출·저장·외부 효과 순서, 시작·커밋·롤백, 필요한 포트와 실패 결과를 기록한다 |
+| `integration-design` | Application Service가 사용하는 상대 BC의 공개 계약, 동기 응답과 비동기 반응을 대조하고 빠진 설계를 소유 stage로 돌려보낸다 |
+| `context-boundary` | BC별 구성과 의존 경로를 확정 경계·데이터 소유권에 대조하고 최종 검증을 요청한다 |
 
-- 전술 설계·구현 설계 stage(`tactical-technology`·`tactical-ui`·`tactical-api`·`tactical-data` 포함)는 범위를 추가하지 않는다. endpoint·저장 상태·화면 표의 `근거` 열이 `AS-xx`나 요구 ID를 인용해야 하고, 마지막 `tactical-data`가 `completed`를 반환할 때 실행기가 design-freeze gate(`node .codex/scripts/harness-design-freeze-check.mjs --workspace-root <workspace_root>`)로 `UNTRACED_ITEM`(owner는 문서 소유 stage)과 `REQUIREMENT_UNCOVERED`를 한 번 검사한다. `to-ticket`은 gate가 통과해야 시작하고 확정된 설계만 ticket으로 나누며 설계 stage로 되돌아가지 않는다(결함은 `DESIGN_NOT_FROZEN`으로 사용자에게 보고).
-- gate는 한 번만 돌고 stage는 돌리지 않는다. `domain-model`·`aggregate-design`·`domain-service`·`application-service`·`integration-design`은 gate 없이 `completed/OK`로 받아들이고, 마지막 `context-boundary`가 `completed/OK`를 반환할 때 실행기가 `tactical-design.md` 전체를 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <workspace_root>`와 같은 검사로 확인한다(`harness-native-stage.mjs finish`와 상태 기록). 통과하지 못하면 commit·기록 없이 `gate_error`로 되돌린다. 발견 사항마다 `owner_stage`가 잘못된 절을 채운 stage를 가리킨다. `context-boundary` 자신의 절이면 같은 서브에이전트가 고치고, 앞 stage의 절이면 서브에이전트가 `blocked` / `DEPENDENCY_INCOMPLETE`로 그 stage를 가리키며 사용자가 `--restart-requirements`나 `--user-revision`으로 다시 연다. `판정: 생략` 흐름은 문서 없이 통과한다. gate는 반드시 성립해야 하는 기존 여섯 조건과, section 5의 통합 행마다 완전하고 출처가 있는 section 6 경계 결정이 있는지 확인한다. 문서와 `## 1`~`## 6` 절이 있는지, 모든 업무가 모델 또는 외부 시스템 표시에 대응하고 모든 규칙에 소유 모델이 있는지, 모든 규칙에 비어 있지 않은 강제 행위(Aggregate·Entity 메서드, Value Object의 규칙, Domain Service, 외부 시스템 중 어떤 형태든)가 있는지, 둘 이상의 Aggregate에 걸친 규칙이 `즉시`나 `최종`이며 에이전트 제안만이 아닌 출처가 있는 일관성 결정(`CON-xx`)을 인용하는지, 한 transaction이 Aggregate 하나만 바꾸는지, Saga·Outbox가 `최종` 결정에 묶인 통합 행에만 있는지다. 표는 키 열로 찾고 모르는 열은 무시한다. 경계 결정의 DDD 적합성, 병합과 `조회 전용 Aggregate`, Root의 종류, Entity 배치, Domain Service·Application Service·통합 행의 충분성 같은 맥락적 DDD 판단은 gate가 아니라 stage GUIDE와 리뷰가 맡는다.
-- 질문이나 설계 중 새 업무 규칙·예외가 나오면 stage가 `requirements.md`에 INV·EX·AC로 덧붙인다. 앞 stage의 결정이 무효가 되면 덮어쓰지 않고 `blocked` / `DEPENDENCY_INCOMPLETE`에 `owner_stage`와 `dependency_gap`을 적어 반환하고, orchestrator가 사용자에게 묻지 않고 `launch --stage-id <owner> --reopen-for <blocked execution_id>`로 owner를 되돌리지 않은 채 다시 연다. owner 뒤에 끝난 stage는 `stale`로 기록되어 block된 stage까지 순서대로 다시 실행되며, 사용자가 요청한 롤백만 `--restart-requirements`/`--user-revision`을 쓴다. 흐름 순서는 실행기가 확인한다. 앞 stage가 `completed/OK`가 아니면 준비기와 `harness-native-stage.mjs start`가 뒤 stage를 거부하며, 이전 Harness가 순서를 어기고 남긴 결과 없는 stage는 종료를 확인한 뒤 `harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`로 되돌린다.
-- `docs/architecture/domain-model.md`와 `CONTEXT.md`는 프로젝트 소유 문서이며 Git에 노출된다. stage가 변경을 artifact로 보고했을 때만 실행기가 plan set 문서와 함께 commit한다.
-- 전술 설계 완료 뒤 별도 `tactical-to-code` workflow가 구현을 이어간다.
+- 장기 보관할 결정은 프로젝트의 `docs/adr/`를 사용한다. 관련 모델·메서드에서 ADR의 근거로 이동할 수 있다. 클래스 다이어그램과 ADR, 프로젝트 모델 문서는 Git으로 추적한다.
+- 마지막 `context-boundary`가 `completed/OK`를 반환하면 실행기가 `harness-domain-model-check.mjs`로 설계 전체를 검사한다. 검사에 실패하면 작성한 stage를 `owner_stage`로 알려 주는 `gate_error`를 반환한다. 업무 규칙의 의미와 모델 선택 근거는 각 stage와 리뷰에서 확인한다.
+- 요구사항 변경은 가장 이른 소유 stage에서 재개한다. 기존 파일과 유효한 결정은 보존하고 영향받는 산출물을 갱신한다. 사용자가 변경된 확정 요구사항을 승인한 뒤 전술 설계를 재개한다.
+- `tactical-to-code`의 구현 설계는 포트별 인터페이스·구현체 경로, 기술과 조립 지점을 정한다. 마지막 `tactical-data`의 `harness-design-freeze-check.mjs`가 업무 연결과 인프라 구현 연결을 확인하면 `to-ticket`이 시작할 수 있다. 설계 결함은 `DESIGN_NOT_FROZEN`으로 보고한다.
 
 ### 3. `to-ticket`
 
@@ -148,7 +147,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 ✅ 관리자 잠금 해제
 ```
 
-각 ticket에는 소유 INV/EX/AC와 강제 위치·검증 테스트, 접하는 컨텍스트와 6절 경계 규칙(데이터 소유·허용 의존·경계 검사), 의존한 결정, 선행 ticket, 완료 기준이 포함된다. 상류 컨텍스트의 공개 API ticket이 하류 소비 ticket보다 먼저 온다. 계획은 독립 리뷰를 통과한 뒤 사용자가 직접 승인해야만 발행된다.
+각 ticket에는 소유 INV/EX/AC와 강제 위치·검증 테스트, 접하는 컨텍스트의 공개 계약과 호출 포트, 데이터 소유권 및 구현체 연결, 의존한 결정, 선행 ticket, 완료 기준이 포함된다. 상류 컨텍스트의 공개 API ticket이 하류 소비 ticket보다 먼저 온다. 계획은 독립 리뷰를 통과한 뒤 사용자가 직접 승인해야만 발행된다.
 
 GitHub mode에서는 다음 구조를 사용한다.
 

@@ -5,52 +5,12 @@ model_tier: high_performance
 
 # domain-model
 
-## Purpose
+`bounded-context`가 확정한 요구사항을 BC별 도메인 모델로 옮긴다. [공통 절차](references/deepening.md)에 따라 preflight와 문서 경로 확인을 마친 뒤 [전술 설계 템플릿](references/template.md)의 모델 표를 채운다.
 
-First step of the tactical design flow, after `bounded-context` (the last requirements stage) and before `aggregate-design`. Turn the fixed `requirements.md` into Entity and Value Object candidates per bounded context, and map every business activity, rule and event to them. The result is section 1 of `docs/specs/<plan-set-id>/tactical-design.md` and the affected rows of the project's `docs/architecture/domain-model.md`. The bounded contexts and the context map are settled input and are never compared again. This stage runs at the high performance tier because every later stage builds on its model, and it is the only tactical stage that inspects code. The user is not asked: when the evidence is insufficient the stage blocks and points at a requirements revision. A user instruction that names a stage, such as "leave `domain-model` as it is", refers to that stage and its recorded state, never to a file: it does not keep this stage from writing `## 1` of `tactical-design.md`.
+1. 요청 원문, 확정된 `requirements.md`의 BIZ·INV·EX·AC·이벤트·SD·BC, 적용된 사용자 답변, `CONTEXT.md`와 `CONTEXT-MAP.md`, 기존 프로젝트 모델·연결된 ADR을 읽는다. 앞 단계가 확정한 BC 경계와 용어를 사용한다.
+2. 기존 프로젝트에서는 [code-research](../code-research/GUIDE.md)를 읽기 전용 `code_researcher`에게 맡겨 현행 소유 모델, 상태, 강제 메서드, Repository, 트랜잭션의 코드 위치와 commit을 확인한다. 기존 소유자 확장을 먼저 판단한다. 실제 코드와 승인 target을 구분한다. 기존 모델이 없으면 확인한 문서·경로와 함께 해당 사실을 기록한다.
+3. 확정된 BC마다 SD 분류와 규칙에 필요한 깊이로 Entity, Value Object, 외부 시스템을 정의한다. 값이 같은 두 대상을 업무상 구별하거나 값이 바뀐 뒤에도 같은 대상을 가리켜야 하는 규칙·시나리오를 Entity 근거로 인용한다. 별도 생성·수정·삭제 흐름의 유무와 식별 필요성을 각각 확인한다. Entity ID와 타입, 속성 이름·타입·업무 의미, 메서드 입력·결과·효과를 기록한다. Value Object의 구성 속성과 제약 및 포함 위치를 기록한다. 외부 소유 업무에는 실제 공개 계약을 쓴다.
+4. 규칙과 업무를 읽어서 필수 모델이 선언됐는지 점검한다. 규칙 조건, 불변식·예외, 관찰 가능한 결과가 근거에 없는 경우 [공통 반환 규칙](references/deepening.md)을 따른다. 모델을 근거 없이 채우거나 별도의 규칙 목록을 쓰지 않는다.
+5. 영향을 받는 프로젝트 모델 행과 용어 및 지속되는 결정을 [공통 규칙](references/deepening.md#프로젝트-문서)에 따라 갱신한다. 수정한 각 파일을 workspace artifact에 포함하여 `completed / OK`를 반환한다.
 
-## Inputs
-
-- The user request (`scope` of the execution input), read verbatim.
-- `docs/specs/<plan-set-id>/requirements.md` with `상태: fixed`: the `BIZ` sections with `INV`, `EX`, `AC` and event flows, the SD table with its classes, `### 1.1 바운디드 컨텍스트`, `## 3` terms and `## 4` events. `stakeholder-analysis.md` is resolved with `harness-spec-path.mjs`.
-- `CONTEXT-MAP.md` and `CONTEXT.md`, read as settled input; `docs/architecture/domain-model.md` and the ADRs it links, when present.
-- The [tactical-design.md template](references/template.md), which owns the document shape, and the [shared rules](references/deepening.md) for the final gate rules, deepening and returns.
-- [code-research](../code-research/GUIDE.md), delegated to `code_researcher`, for an existing project only.
-
-## Prohibited
-
-- Scope: a model or rule row that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
-- Comparing, splitting or merging bounded contexts again, changing the context map or an SD class. A boundary that looks wrong is an iterative-deepening block, not an edit.
-- Deciding Aggregates, Domain Services, Application Services, persistence, APIs or messages. This stage names models and maps requirements to them.
-- Inspecting code outside the one `code-research` delegation, or reading code to find business terms.
-- Modeling a rule, event or term with no evidence in `requirements.md`, writing a new business rule, or marking an unbuilt model `implemented`.
-- Naming a model with a word that `CONTEXT.md` or the `## 3` table does not cover, or reviving a retired term.
-- Asking the user.
-- Writing anything in `tactical-design.md` but `## 1` and this stage's rows of `## 7`. The later sections belong to the later stages.
-
-## Process
-
-1. Work in the active workspace. Run `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and return `blocked` with its output when it fails. Resolve `requirements.md`, `stakeholder-analysis.md` and `tactical-design.md` with `node .codex/scripts/harness-spec-path.mjs <workspace_root> <file>`.
-2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, record the skip and its evidence path in the summary and return `completed/OK`. When `requirements.md` is not `fixed`, return `blocked` / `INPUT_MISSING`.
-3. On resume, read the previous result and `tactical-design.md`. When section 1 exists, only finish what is missing; on a user revision follow the shared rules.
-4. Establish the existing model. For an existing project, delegate `code-research` to a fresh read-only `code_researcher` with the BC names of `### 1.1` and the `INV`/`EX` IDs, and ask for each BC's current models, their roots or owners, state, enforcement methods, repositories and transaction owners, with `file:line` and the inspected commit. Without existing model documents and code, write `기존 모델 없음 — <확인한 문서와 경로>`. Record both in `### 1.1`; keep documented intent and observed code apart. Reuse an existing owner when it can hold the change, and give the reason when a new model is proposed.
-5. Fix the depth per SD class in `### 1.2`: `core` gets a rich model, `supporting` only what its rules need, `generic` a minimal model or an `외부 시스템` marker that leaves build-versus-buy undecided.
-6. Find the candidates in `### 1.3` from the `BIZ` sections, the event flows and the rules. An Entity has an identity that outlives the events and a lifecycle the requirements describe; a Value Object matters only by its value and is replaced, not changed. Give each its BC, the lifecycle or value meaning, its evidence (BIZ, INV, EX, event) and `현재 상태`. Check each name against `CONTEXT.md`; run a new concept through the language lifecycle as the shared rules say.
-7. Map in `### 1.4`: every `BIZ`, `INV` and `EX`, and every event and glossary term of each BC, to the candidates of that BC. An event that reacts in another subdomain maps to the receiving BC's model. A rule that no candidate can own means a model is missing: add the candidate, or block when the evidence does not support one.
-8. Update the project model rows for the models this stage touched, as the shared rules describe.
-9. Append the decisions of this stage to `## 7`: why each model is an Entity, a Value Object or an external system, what was extended and what alternatives were rejected, each with its source. Section 6 needs at least one row.
-10. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
-
-## Deepening
-
-This stage never adds a business rule. When the evidence is missing or contradictory, return `blocked` / `INPUT_MISSING` naming the `BIZ`, `INV` or `EX` and the revision it needs; when a bounded context or SD class cannot hold the model, return `blocked` / `DEPENDENCY_INCOMPLETE` naming `bounded-context` or `subdomain-classification`. The orchestrator reopens through `--restart-requirements` or a `requirements-fix` user revision as [the shared rules](references/deepening.md) describe. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
-
-## Completion
-
-- Section 1 of `tactical-design.md` carries the existing-model record (or `기존 모델 없음`), the depth per BC, the models with their evidence and the requirement mapping, and section 7 records its decisions with sources.
-- The affected rows of `docs/architecture/domain-model.md` are `implemented` only where code showed it; every other row is `accepted-target`.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. `aggregate-design` reads this section as settled input.
-
-## 공통 도메인 조회
-
-입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.
+사용자가 명시적으로 형식 이동을 요청한 경우에만 [구형 문서 절차](references/template.md#구형-문서)를 적용한다. 기존 번호형 문서의 일반 재개에서는 [기존 템플릿](references/legacy-template.md)의 모델 후보·매핑 및 관련 결정 이력만 갱신한다.

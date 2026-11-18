@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
-const { compactContext, extractVerbose, foreignRunningStage, launchCommand, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { staleStages } = await import(new URL('../../.harness/src/workflow/stage-reopen.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 try {
   const { args, verbose } = extractVerbose(process.argv.slice(2));
@@ -37,7 +38,7 @@ try {
   }
   const stages = Object.fromEntries(Object.entries(state?.stages || {}).map(([id, stage]) => {
     const result = stage.result_ref ? read(join(ctx.root, '.io', stage.result_ref)) : null;
-    return [id, { status: stage.status, code: stage.code || null, execution_id: stage.execution_id, attempts: (stage.attempts || []).length, ...(result ? { summary: (result.summary || '').slice(0, 400), questions: (result.questions || []).map((q) => ({ question_id: q.question_id, title: q.title })), commit_sha: result.commit_sha || undefined } : {}) }];
+    return [id, { status: stage.status, code: stage.code || null, execution_id: stage.execution_id, attempts: (stage.attempts || []).length, ...(stage.stale ? { stale: stage.stale } : {}), ...(result ? { summary: (result.summary || '').slice(0, 400), questions: stage.stale ? [] : (result.questions || []).map((q) => ({ question_id: q.question_id, title: q.title })), commit_sha: result.commit_sha || undefined } : {}) }];
   }));
   let planTickets = [];
   try { planTickets = await (await import(new URL('../../.harness/src/tracker/lifecycle.mjs', import.meta.url).href)).listPlanTickets({ workspace_root: ctx.root, plan_set_id: ctx.plan_set_id }); } catch { planTickets = []; }
@@ -51,11 +52,16 @@ try {
   const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length })) }]));
   const lastTurn = lastOrchestratorTurn(ctx.root);
   const latestStage = Math.max(0, ...Object.values(state?.stages || {}).map((stage) => Date.parse(stage.updated_at || 0) || 0));
+  const staleOrder = staleStages(state);
+  const awaitingApproval = stageId === 'bounded-context' && ctx.plan_set_id && existsSync(join(ctx.root, 'docs/specs', ctx.plan_set_id, 'requirements.md'));
+  const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval)
+    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval) })
+    : null;
   const context = {
     workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, plan_set_id: ctx.plan_set_id, branch: ctx.record?.branch || null,
     current_stage: state?.current_stage || null, workflow_status: state?.status || null,
     // A stage another Codex conversation left running cannot be waited for from this one: the exact way on is here.
-    next: recoveryNext || (() => { const foreign = foreignRunningStage(state); return foreign ? takeoverStep(foreign) : null; })(),
+    next: recoveryNext || (() => { const foreign = foreignRunningStage(state); return foreign ? takeoverStep(foreign) : revalidationNext; })(),
     // The orchestrator's last reply; when it is newer than every stage update it may be a question awaiting the user.
     orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,
     stages,

@@ -1,6 +1,3 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { readSkillSessionJson, resolveSkillSession } from './skill-execution.mjs';
 import { REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, WORKTREE_STAGE, isCurrentStage } from './worktree-stages.mjs';
 import { launchCommand } from './stage-cli.mjs';
@@ -31,7 +28,7 @@ export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, g
 ].join(' ');
 
 // The note a stale stage receives when it is re-run because an upstream stage changed.
-export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_stage} was reopened for ${stale.blocked_stage} and has been completed again, so your previous result is stale. Read the current upstream documents and results, then update your existing output forward: keep every decision that still holds, change only what the upstream change requires, and do not start from scratch. Return completed/OK only when your output matches the current upstream; if it needs a decision the upstream does not settle, return the block or question your guide specifies.`;
+export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_stage} was reopened ${stale.reason === 'user_revision' ? 'for the user’s revision' : `for ${stale.blocked_stage}`} and has been completed again, so your previous result is stale. Read the current upstream documents and results, then update your existing output forward: keep every decision that still holds, change only what the upstream change requires, and do not start from scratch. Return completed/OK only when your output matches the current upstream; if it needs a decision the upstream does not settle, return the block or question your guide specifies.`;
 
 // A blocked result that must name its owner: the stages whose DEPENDENCY_INCOMPLETE can mean "an earlier stage's output is
 // missing or insufficient". tactical-ui is excluded: its DEPENDENCY_INCOMPLETE also hands off to frontend-design-brief.
@@ -39,7 +36,20 @@ export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_
 // bounded-context is included: a boundary that needs a requirement the document lacks names requirements-fix as its owner.
 // to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
 // as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
-export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+
+export function markRequirementsRevision(state, stage, previousExecutionId, executionId, now) {
+  const stages = state.stages;
+  if (stages[stage]?.execution_id !== previousExecutionId) throw new Error('User revision requires the latest execution of its owning stage');
+  if (Object.values(stages).some((entry) => entry?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
+  const external = [...PUBLICATION_STAGES, WORKTREE_STAGE.IMPLEMENT_WRAPPER, WORKTREE_STAGE.IMPLEMENT].find((id) => stages[id]);
+  if (external) throw new Error(`Requirements revision cannot start after ${external} started`);
+  const affected = REWIND_STAGES.slice(REWIND_STAGES.indexOf(stage) + 1).filter((id) => stages[id]);
+  const rerunOrder = [stage, ...affected];
+  for (const id of affected) {
+    stages[id] = { ...stages[id], stale: { owner_stage: stage, blocked_stage: affected.at(-1), reopened_for: executionId, rerun_order: rerunOrder, marked_at: now, reason: 'user_revision' } };
+  }
+}
 
 // Format errors for a finish whose blocked / DEPENDENCY_INCOMPLETE result does not name a valid earlier owner; null otherwise.
 export function dependencyOwnerErrors({ skill, raw }) {
@@ -73,9 +83,9 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   }
   const running = Object.entries(stages).find(([, entry]) => entry?.status === 'running');
   if (running) throw refusal(`Reopen refused: ${running[0]} is still running`, 'A stage cannot be reopened while another stage runs.', [`Wait for its native subagent, then run finish for ${running[1].execution_id}`]);
-  // A to-ticket record that is stale or not completed (blocked, failed, cancelled; typically left from before an earlier rewind)
-  // produced no plan set, so it does not count as started; a current completed to-ticket and any later stage do.
-  const counts = (id) => id === WORKTREE_STAGE.TO_TICKET ? stages[id]?.status === 'completed' && !stages[id].stale : Boolean(stages[id]);
+  // A later stale result already awaits revalidation. Only active downstream results and publication count.
+  const counts = (id) => PUBLICATION_STAGES.includes(id) ? Boolean(stages[id])
+    : id === WORKTREE_STAGE.TO_TICKET ? isCurrentStage(stages[id]) : Boolean(stages[id] && !stages[id].stale);
   const started = [...REWIND_STAGES.slice(blockedIndex + 1), ...PUBLICATION_STAGES].find(counts);
   if (started) throw refusal(`Reopen refused: ${started} has already started`, `Tickets were published or implemented from the plan set (${started} is ${describe(stages[started])}); a forward rewind cannot change what they were built from.`, [], 'Report the gap to the user: changing the design now needs their instruction (--user-revision) or a restart they request.');
   const resultSession = await resolveSkillSession(root, blocked.result_session_directory || session);
@@ -92,25 +102,6 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   const gap = (typeof result.dependency_gap === 'string' && result.dependency_gap.trim()) || result.summary;
   const stale = { owner_stage: ownerStage, blocked_stage: blockedStage, reopened_for: blockedExecutionId, rerun_order: rerunOrder, marked_at: new Date().toISOString() };
   return { owner_stage: ownerStage, blocked_stage: blockedStage, blocked_execution_id: blockedExecutionId, blocked_result_ref: blocked.result_ref, blocked_result_base: resultSession === session ? 'session' : 'control_session', mark: [...mark, blockedStage], stale, feedback: reopenFeedback({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }) };
-}
-
-// Record the stale marks. Runs after the owner's input is prepared, under the state lock, and is idempotent for the same blocked
-// execution; the marks are removed when a stage starts a new execution (recordExecutionState).
-export async function markStagesStale({ session, plan }) {
-  const directory = join(session, 'runtime/orchestrator');
-  const lock = join(directory, '.state.lock');
-  await mkdir(lock);
-  try {
-    const statePath = join(directory, 'state.json');
-    const state = JSON.parse(await readFile(statePath, 'utf8'));
-    const blocked = state.stages?.[plan.blocked_stage];
-    if (blocked?.execution_id !== plan.blocked_execution_id || blocked.status !== 'blocked') throw new Error('Reopen refused: the blocked stage changed while the reopen was prepared');
-    for (const id of plan.mark) if (state.stages[id]) state.stages[id] = { ...state.stages[id], stale: plan.stale };
-    state.updated_at = new Date().toISOString();
-    const temporary = join(directory, `.workflow-${randomUUID()}.json`);
-    try { await writeFile(temporary, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, statePath); }
-    finally { await rm(temporary, { force: true }); }
-  } finally { await rm(lock, { recursive: true }); }
 }
 
 // The stale stages of a state, in flow order; empty when nothing is stale.

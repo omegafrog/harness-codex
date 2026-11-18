@@ -289,7 +289,7 @@ test('installed consumer: a stage blocked by ENVIRONMENT_UNAVAILABLE is retried 
   assert.equal((await state()).stages['application-service'].status, 'running');
 });
 
-test('installed consumer: a stale or unfinished to-ticket record from before a rewind does not block the reopen, a current completed one does', async (t) => {
+test('installed consumer: a second rewind accepts stale downstream results and refuses a current ticket plan or publication', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, invoke } = flow;
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
@@ -306,10 +306,9 @@ test('installed consumer: a stale or unfinished to-ticket record from before a r
   const impl = `docs/implementation/${planSetId}`;
   await runStage('tactical-technology', { files: { [`${impl}/technology.md`]: 'node --test\n' } });
   await runStage('tactical-ui', { expectCommit: false });
-  await runStage('tactical-api', { files: { [`${impl}/api.md`]: '`POST /login`\n' }, summary: 'API' });
-  const ticket = await beginStage('tactical-data');
+  const ticket = await beginStage('tactical-api');
   const blockedId = ticket.prepared.input.execution_id;
-  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: 'tactical-api', dependency_gap: 'logout API가 없다' } });
+  await submitStage(ticket, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: 'tactical-technology', dependency_gap: '인증 연동 기술 계약이 없다' } });
   assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...ticket.base]).code, 'DEPENDENCY_INCOMPLETE');
 
   const seed = async (stages) => {
@@ -320,7 +319,7 @@ test('installed consumer: a stale or unfinished to-ticket record from before a r
   };
   const stale = { owner_stage: 'application-service', blocked_stage: 'tactical-data', reopened_for: 'old', rerun_order: [], marked_at: '2026-01-01T00:00:00.000Z' };
   const refusedStarted = (result) => { assert.notEqual(result.status, 0, result.stdout); assert.match(result.stderr, /to-ticket has already started|tracker-publish has already started/); };
-  const reopen = () => prepare('--stage-id', 'tactical-api', '--reopen-for', blockedId);
+  const reopen = () => prepare('--stage-id', 'tactical-technology', '--reopen-for', blockedId);
 
   // A current completed to-ticket, and any started tracker-publish, still refuse.
   await seed({ 'to-ticket': { status: 'completed', code: 'OK', result_ref: 'runtime/executions/to-ticket/result.json' } });
@@ -328,8 +327,11 @@ test('installed consumer: a stale or unfinished to-ticket record from before a r
   await seed({ 'tracker-publish': { status: 'blocked', code: 'INPUT_MISSING' }, 'to-ticket': { status: 'blocked', code: 'INPUT_MISSING', stale } });
   refusedStarted(reopen());
 
-  // A stale blocked to-ticket left from before a rewind is ignored: the reopen is accepted.
-  await seed({ 'to-ticket': { status: 'blocked', code: 'INPUT_MISSING', stale, result_ref: 'runtime/executions/to-ticket/result.json' } });
-  const accepted = await beginStage('tactical-api', { extraArgs: ['--reopen-for', blockedId] });
-  assert.equal(accepted.prepared.input.context.reopen.owner_stage, 'tactical-api');
+  await seed({
+    'tactical-data': { ...done, stale },
+    'to-ticket': { status: 'blocked', code: 'INPUT_MISSING', stale, result_ref: 'runtime/executions/to-ticket/result.json' },
+  });
+  const accepted = await beginStage('tactical-technology', { extraArgs: ['--reopen-for', blockedId] });
+  assert.equal(accepted.prepared.input.context.reopen.owner_stage, 'tactical-technology');
+  assert.deepEqual((await state()).stages['tactical-data'].stale, stale);
 });

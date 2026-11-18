@@ -67,12 +67,67 @@ const DESIGN = `# 전술 설계
 const API = (rows) => `# API\n\n| Method / path | 요청 | 성공 응답 | 근거 |\n|---|---|---|---|\n${rows.join('\n')}\n`;
 const GOOD_ROWS = ['| `POST /calculations` | `{ "operator": "add" \\| "divide" }` | `200` | AS-01 (BIZ-01) |', '| `POST /auth/signup` | 입력 | `201` | AS-02 (BIZ-02, INV-03) |', '| `POST /auth/login` | 입력 | `200` | AS-03 |'];
 const DATA = '# 데이터\n\n| 소유 컨텍스트 | 저장 상태 | 최소 값 | 근거 |\n|---|---|---|---|\n| 사용자 인증 | 사용자 | 이메일 | AS-02, INV-03 |\n| 계산 | 없음 | - | - |\n';
+const PORT = 'UserRepository | save(user: User) → UserId | auth 도메인 | AS-02 Auth.signup | 저장 실패를 반환한다';
+const CONTEXT_DESIGN = `# 전술 설계
+
+<!-- tactical-design: context-components-v1 -->
+
+## BC calculator
+
+| AS | 메서드 | 업무 | 호출 순서 | 트랜잭션 경계 | 사용 인터페이스 |
+|---|---|---|---|---|---|
+| AS-01 | Calculator.calculate(input: Calculation) → Result | BIZ-01 | 계산한다 | 없음 — 읽기 | 없음 — 순수 계산 |
+
+## BC auth
+
+| AS | 메서드 | 업무 | 호출 순서 | 트랜잭션 경계 | 사용 인터페이스 |
+|---|---|---|---|---|---|
+| AS-02 | Auth.signup(input: Signup) → UserId | BIZ-02 | UserRepository.save(user) | T1: User — 저장 직전에 시작 | UserRepository |
+| AS-03 | Auth.login(input: Credentials) → Session | BIZ-02 | 인증한다 | 없음 — 읽기 | 없음 — 기존 인증 사용 |
+
+| 인터페이스 | 시그니처 | 소유 위치 | 사용 메서드 | 실패 계약 |
+|---|---|---|---|---|
+| ${PORT} |
+
+## BC payment
+
+| 모델 | 종류 | 업무 | 식별자 | 필드·구성 값 | 메서드 |
+|---|---|---|---|---|---|
+| Settlement | 외부 시스템 | BIZ-05 | settlementId | id: SettlementId | settle(input: Settlement) → Result |
+`;
+const DATA_WITH_BINDING = `${DATA}
+## 인프라 바인딩
+
+| 컨텍스트 | 인터페이스 | 시그니처 | 소유 위치 | 사용 메서드 | 실패 계약 | 인터페이스 경로 | 구현체 | 구현체 경로 | 기술·구현 선언 | 조립 위치 | 데이터 매핑 | 트랜잭션 공유 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| auth | ${PORT} | src/auth/domain/user-repository.ts | SqlUserRepository | src/auth/infra/sql-user-repository.ts | PostgreSQL INSERT users | src/server.ts의 wireAuth | User.email → users.email, 오류를 호출 실패로 변환 | AS-02의 T1 DbClient 공유 |
+`;
 const check = (documents) => checkDesignFreeze({ requirements: REQUIREMENTS, tacticalDesign: DESIGN, documents });
 const found = (verdict) => verdict.errors.map((error) => [error.code, error.id, error.owner_stage]);
 
 test('a fully traced design freezes, and tables that hold escaped pipes are still read', () => {
   assert.deepEqual(check({ api: API(GOOD_ROWS), data: DATA }), { ok: true, errors: [] });
   assert.deepEqual(check({}), { ok: true, errors: [] }, 'no API/UI/data tables: nothing to trace');
+});
+
+test('context component design freezes with bindings for its actual outbound interfaces', () => {
+  const checkComponents = (data, tacticalDesign = CONTEXT_DESIGN) => checkDesignFreeze({ requirements: REQUIREMENTS, tacticalDesign, documents: { api: API(GOOD_ROWS), data } });
+  const bindingId = 'auth / UserRepository';
+  assert.deepEqual(checkComponents(DATA_WITH_BINDING), { ok: true, errors: [] });
+  assert.deepEqual(found(checkComponents(DATA)), [['INFRASTRUCTURE_BINDING_MISSING', bindingId, 'tactical-data']]);
+  const incomplete = checkComponents(DATA_WITH_BINDING.replace('src/server.ts의 wireAuth', '미정'));
+  assert.deepEqual(found(incomplete), [['INFRASTRUCTURE_BINDING_INCOMPLETE', bindingId, 'tactical-data']]);
+  assert.match(incomplete.errors[0].message, /조립 위치/);
+  assert.match(checkComponents(DATA_WITH_BINDING.replace('src/auth/infra/sql-user-repository.ts', '../infra/repository.ts')).errors[0].message, /구현체 경로/);
+  assert.deepEqual(found(checkComponents(DATA_WITH_BINDING.replace('AS-02 Auth.signup', 'AS-03 Auth.login'))), [['INFRASTRUCTURE_BINDING_MISMATCH', bindingId, 'tactical-data']]);
+  assert.match(checkComponents(DATA_WITH_BINDING.replace('save(user: User)', 'save(user: *User)')).errors[0].message, /시그니처/);
+  const duplicate = DATA_WITH_BINDING.trim().split('\n').at(-1);
+  assert.deepEqual(found(checkComponents(`${DATA_WITH_BINDING}${duplicate}\n`)), [['INFRASTRUCTURE_BINDING_DUPLICATE', bindingId, 'tactical-data']]);
+  assert.deepEqual(found(checkComponents(`${DATA_WITH_BINDING}${duplicate.replace('UserRepository', 'NewPort')}\n`)), [['INFRASTRUCTURE_BINDING_UNDECLARED', 'auth / NewPort', 'tactical-data']]);
+  const noPort = CONTEXT_DESIGN.replace(/^\| UserRepository .*\n/m, '').replace('UserRepository.save(user) | T1: User — 저장 직전에 시작 | UserRepository', '입력을 검증한다 | 없음 — 조회만 수행 | 없음 — 외부 호출 없음');
+  assert.deepEqual(checkComponents('## 인프라 바인딩\n\n- 판정: 해당 없음 — 외부 호출 없이 계산한다.\n', noPort), { ok: true, errors: [] });
+  assert.deepEqual(found(checkComponents('', noPort)), [['INFRASTRUCTURE_BINDING_MISSING', undefined, 'tactical-data']]);
+  assert.deepEqual(found(checkComponents('\x60\x60\x60md\n## 인프라 바인딩\n\n- 판정: 해당 없음 — 예시\n\x60\x60\x60\n', noPort)), [['INFRASTRUCTURE_BINDING_MISSING', undefined, 'tactical-data']]);
 });
 
 test('an endpoint that no use case serves is UNTRACED_ITEM owned by tactical-api', () => {
@@ -176,8 +231,8 @@ test('to-ticket never rewinds: it is not an owner-naming stage and a DEPENDENCY_
 test('the guidance forbids new scope in every tactical and implementation-design stage', async () => {
   const read = (path) => readFile(join(sourceRoot, path), 'utf8');
   const shared = await read('.codex/internal-skills/domain-model/references/deepening.md');
-  assert.match(shared, /## No new scope[\s\S]*Never ask the user whether a feature[\s\S]*requirements flow/);
-  for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.match(await read(`.codex/internal-skills/${stage}/GUIDE.md`), /deepening\.md#no-new-scope/, stage);
+  assert.match(shared, /요구의 범위를 추가하지 않는다\.[\s\S]*범위 추가는 사용자가 요구사항 단계에서 결정한다/);
+  for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.match(await read(`.codex/internal-skills/${stage}/GUIDE.md`), /deepening\.md/, stage);
   for (const stage of ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) assert.match(await read(`.codex/internal-skills/${stage}/GUIDE.md`), /## 범위 추가 금지[\s\S]*범위 질문/, stage);
   assert.match(await read('.codex/internal-skills/tactical-api/GUIDE.md'), /`근거` 열[\s\S]*UNTRACED_ITEM/);
   const toTicket = await read('.codex/internal-skills/to-ticket/GUIDE.md');
@@ -188,7 +243,15 @@ test('the guidance forbids new scope in every tactical and implementation-design
 test('update restores the design-freeze gate of an installed consumer, Doctor requires it and Git ignores it', async (t) => {
   const { primary } = await consumerWorkflow(t, '계산기 웹 앱을 만든다');
   const git = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
-  const assets = ['.harness/src/workflow/design-freeze-gate.mjs', '.codex/scripts/harness-design-freeze-check.mjs'];
+  const assets = [
+    '.harness/src/workflow/design-freeze-gate.mjs',
+    '.codex/scripts/harness-design-freeze-check.mjs',
+    '.codex/internal-skills/tactical-data/GUIDE.md',
+    '.codex/internal-skills/to-ticket/references/split.md',
+  ];
+  const projectFile = 'docs/contracts/README.md';
+  await mkdir(join(primary, 'docs/contracts'), { recursive: true });
+  await writeFile(join(primary, projectFile), '소비 프로젝트 계약\n');
   for (const path of assets) assert.equal(await readFile(join(primary, path), 'utf8'), await readFile(join(sourceRoot, path), 'utf8'), `a fresh install has ${path}`);
   const lockPath = join(primary, '.codex/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
@@ -203,12 +266,28 @@ test('update restores the design-freeze gate of an installed consumer, Doctor re
     assert.match(git('check-ignore', '-v', path), /info\/exclude/);
   }
   assert.equal((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-  assert.equal(git('status', '--short', '--untracked-files=all').trim(), '', 'Harness-owned files stay out of Git status');
+  assert.equal(git('status', '--short', '--untracked-files=all').trim(), `?? ${projectFile}`, 'only the project-owned file appears in Git status');
+  assert.equal(await readFile(join(primary, projectFile), 'utf8'), '소비 프로젝트 계약\n');
   for (const stage of ['tactical-api', 'tactical-data']) assert.match(await readFile(join(primary, `.codex/internal-skills/${stage}/GUIDE.md`), 'utf8'), /## 범위 추가 금지/, `the installed ${stage} guide forbids new scope`);
-  assert.match(await readFile(join(primary, '.codex/internal-skills/domain-model/references/deepening.md'), 'utf8'), /## No new scope/);
+  assert.match(await readFile(join(primary, '.codex/internal-skills/domain-model/references/deepening.md'), 'utf8'), /요구의 범위를 추가하지 않는다/);
+  const cli = (requirements, tacticalDesign, api, data) => {
+    const args = ['--requirements', requirements, '--tactical-design', tacticalDesign, '--api', api, '--data', data].map((arg) => arg.startsWith('--') ? arg : join(primary, arg));
+    return spawnSync(process.execPath, [join(primary, '.codex/scripts/harness-design-freeze-check.mjs'), ...args], { cwd: primary, encoding: 'utf8' });
+  };
+  const fixture = ['requirements.md', 'tactical-design.md', 'api.md', 'data.md'];
+  for (const [index, content] of [REQUIREMENTS, CONTEXT_DESIGN, API(GOOD_ROWS), DATA_WITH_BINDING.replace('src/server.ts의 wireAuth', '-')].entries()) {
+    await writeFile(join(primary, fixture[index]), content);
+  }
+  const incomplete = cli(...fixture);
+  assert.equal(incomplete.status, 1, incomplete.stderr);
+  assert.deepEqual(found(JSON.parse(incomplete.stdout)), [['INFRASTRUCTURE_BINDING_INCOMPLETE', 'auth / UserRepository', 'tactical-data']]);
+  await writeFile(join(primary, 'data.md'), DATA_WITH_BINDING);
+  const complete = cli(...fixture);
+  assert.equal(complete.status, 0, complete.stderr);
+  assert.deepEqual(JSON.parse(complete.stdout), { ok: true, errors: [] });
 });
 
-test('installed consumer: tactical-data is rejected for an invented endpoint, blocks on its owner, and to-ticket does not start on an unfrozen design', async (t) => {
+test('installed consumer: tactical-data must complete a binding, and to-ticket only starts on a frozen context component design', async (t) => {
   const flow = await consumerWorkflow(t, '커뮤니티 로그인을 구현한다');
   const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, finishStage, invoke } = flow;
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
@@ -221,7 +300,7 @@ test('installed consumer: tactical-data is rejected for an invented endpoint, bl
   const spec = `docs/specs/${planSetId}`;
   await mkdir(join(workspace, spec), { recursive: true });
   await writeFile(join(workspace, spec, 'requirements.md'), REQUIREMENTS);
-  await writeFile(join(workspace, spec, 'tactical-design.md'), DESIGN);
+  await writeFile(join(workspace, spec, 'tactical-design.md'), CONTEXT_DESIGN);
   treeGit('add', 'docs'); treeGit('commit', '-qm', 'design fixtures');
   const impl = `docs/implementation/${planSetId}`;
   const api = `${impl}/api.md`;
@@ -231,7 +310,7 @@ test('installed consumer: tactical-data is rejected for an invented endpoint, bl
   await runStage('tactical-api', { files: { [api]: invented }, summary: 'API 계약' });
 
   const data = await beginStage('tactical-data');
-  await submitStage(data, { files: { [`${impl}/data.md`]: DATA }, summary: '데이터' });
+  await submitStage(data, { files: { [`${impl}/data.md`]: DATA_WITH_BINDING }, summary: '데이터' });
   const rejected = finishStage(data);
   assert.equal(rejected.status, 1, rejected.stdout);
   const verdict = JSON.parse(rejected.stdout);
@@ -249,7 +328,14 @@ test('installed consumer: tactical-data is rejected for an invented endpoint, bl
   const reopened = await beginStage('tactical-api', { extraArgs: ['--reopen-for', data.prepared.input.execution_id] });
   await submitStage(reopened, { files: { [api]: API(GOOD_ROWS) }, summary: 'API 계약에서 로그아웃 제거' });
   assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...reopened.base]).code, 'OK');
-  await runStage('tactical-data', { files: { [`${impl}/data.md`]: DATA }, summary: '데이터' });
+  const binding = await beginStage('tactical-data');
+  await submitStage(binding, { files: { [`${impl}/data.md`]: DATA }, summary: '데이터' });
+  const missingBinding = finishStage(binding);
+  assert.equal(missingBinding.status, 1, missingBinding.stdout);
+  assert.deepEqual(found(JSON.parse(missingBinding.stdout)), [['INFRASTRUCTURE_BINDING_MISSING', 'auth / UserRepository', 'tactical-data']]);
+  assert.equal((await state()).stages['tactical-data'].status, 'running');
+  await submitStage(binding, { files: { [`${impl}/data.md`]: DATA_WITH_BINDING }, summary: '인프라 바인딩 확정' });
+  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...binding.base]).code, 'OK');
   assert.equal(invoke(workspace, 'harness-design-freeze-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command agrees with the runner');
 
   // to-ticket starts on a frozen design, and not once a document changed to add scope after the freeze.

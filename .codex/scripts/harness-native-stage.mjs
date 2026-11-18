@@ -270,6 +270,8 @@ try {
     const { dependencyOwnerErrors, staleStages } = await import('../../.harness/src/workflow/stage-reopen.mjs');
     const ownerErrors = dependencyOwnerErrors({ skill: input.skill, raw });
     if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: ownerErrors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
+    const { assertTacticalRequirementsReadOnly, commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
+    await assertTacticalRequirementsReadOnly(root, input);
     // stakeholder-analysis is accepted (its questions or its completion) only when the requester's features are recorded as settled
     // and no anchored persona candidate was dropped as out of scope. A rejection leaves the stage running for the same subagent.
     const { evaluateStakeholderAnalysisGate, stakeholderAnalysisFailureInstruction } = await import('../../.harness/src/workflow/stakeholder-analysis-gate.mjs');
@@ -310,7 +312,6 @@ try {
       const scope = `${prefix}-${input.context.plan_set_id}`;
       await assertNoUnrecordedNativeReview({ root, scope });
     }
-    const { commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
     await commitStageRequest({ root, rawPath: paths.files.raw });
     try { execFileSync(process.execPath, [join(root, '.codex/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' }); }
     catch (error) { throw new Error(`Result rejected: ${lastJson(error.stderr)?.error || String(error.stderr || error.message).trim()}`); }
@@ -332,6 +333,8 @@ try {
       throw error;
     }
     const staleOrder = envelope.status === 'completed' ? staleStages(await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: 'runtime/orchestrator/state.json' }).catch(() => null)) : null;
-    process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder }))}\n`);
+    const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
+    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent });
+    process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

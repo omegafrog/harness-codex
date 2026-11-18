@@ -5,45 +5,13 @@ model_tier: implementation
 
 # application-service
 
-## Purpose
+확정된 업무의 Use Case를 실제 모델과 포트 호출로 조합한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Application Service·사용 인터페이스를 채운다.
 
-Step of the tactical design flow after `domain-service` and before `integration-design`. For every business activity, design the use case that coordinates the Aggregates and Domain Services: the call order, the transaction boundaries, the repositories and the external effects. It decides nothing about the business. The result is section 4 of `docs/specs/<plan-set-id>/tactical-design.md` and the transaction column of the project's model rows. No persona runs and the user is not asked. A stage name in a user instruction, such as `domain-service` in "keep `domain-service` as it is", refers to that stage and its recorded state, never to a file; `## 4` of `tactical-design.md` is still written here.
+1. 요구사항의 업무별 시나리오·규칙·예외·결과·이벤트 흐름, 적용된 사용자 답변, 모델의 메서드·책임·Aggregate, 관련 ADR과 Context Map의 방향·판단 소유자를 읽는다. 외부 시스템이 업무 전체를 소유하는 BIZ는 외부 시스템의 공개 메서드와 업무 연결로 표현한다.
+2. 각 로컬 Use Case 메서드는 이름·입력 타입·결과 타입과 BIZ ID를 갖는다. 번호가 있는 호출 순서로 도메인 메서드와 포트를 실제 이름으로 호출하고, 규칙 거절, 예외, 외부·저장 실패 때의 반환·후속 행동을 명시한다. 해당 판단은 규칙 책임 표의 모델에게 유지한다. 필요한 모델이나 규칙이 없으면 가장 앞선 소유 stage로 돌아간다.
+3. 각 쓰기 트랜잭션은 변경 Aggregate, 호출 순서에 연결된 정확한 시작·커밋·롤백 조건과 시점을 기록한다. 트랜잭션이 없으면 이유를 기록한다. 여러 독립 트랜잭션이 있다면 순서와 부분 실패 시 업무 결과를 묶어서 기술한다.
+4. 사용 포트마다 실제 이름, 입출력 시그니처, 소유 위치, 사용하는 AS ID, 실패 계약을 작성한다. 필요한 Repository, 외부 호출, 다른 BC 공개 계약, 이벤트 송신, 실제 사용되는 트랜잭션 포트만 적는다. 같은 BC 모델을 직접 호출할 때는 오케스트레이션에 호출 이름을 적는다.
+5. 다른 BC의 동기 호출은 제공자 공개 계약의 입력·결과·정상 시점·실패 행동을 기록한다. 비동기 흐름은 발행과 소비를 송신자·수신자 AS에서 연결하고, 메시지 타입·발행 시점·전달 실패·중복 처리에 대한 근거를 적는다. 외부 BC의 Repository, 데이터 테이블, 내부 타입에 의존하지 않는다. 동기·비동기 선택은 기존 요구와 확정 ADR을 따른다. 업무 결과를 바꾸는 승인 근거가 부족하면 [공통 질문·반환 규칙](../domain-model/references/deepening.md#규칙-근거-확인)을 적용한다.
+6. 영향을 받는 프로젝트 모델 행과 지속되는 결정을 갱신한다. 전술 설계 및 실제로 변경한 프로젝트 문서를 workspace artifact에 기록한다.
 
-## Inputs
-
-- `docs/specs/<plan-set-id>/tactical-design.md` sections 1 to 3 and `requirements.md` (`BIZ`, `INV`, `EX`, `AC`, event flows), resolved with `harness-spec-path.mjs`.
-- `CONTEXT.md` for the terms; `docs/architecture/domain-model.md` for existing use cases and rows.
-- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
-
-## Prohibited
-
-- Scope: a use case or operation that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
-- Inspecting source or test code, or choosing a framework, transaction mechanism, repository technology or message broker.
-- Making a domain decision: a rule, a branch on business state or a calculation belongs to an Aggregate method, a Value Object or a Domain Service. An Application Service calls them and passes the result on.
-- One transaction that changes more than one Aggregate, or reaching into another Aggregate's state instead of its ID.
-- A use case for an activity that an external system owns alone, a pass-through service that adds no coordination, or a repository for anything that is not an Aggregate.
-- Changing sections 1 to 3, or asking the user.
-- Writing anything in `tactical-design.md` but `## 4` and this stage's rows of `## 7`. Sections 1 to 3 are settled input and section 5 belongs to `integration-design`.
-
-## Process
-
-1. Work in the active workspace. Start with `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and return `blocked` with its output if it fails. Find the documents with `node .codex/scripts/harness-spec-path.mjs <workspace_root> <file>`.
-2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, put the skip and its evidence path in the summary and return `completed/OK`. When section 3 is missing, return `blocked` / `INPUT_MISSING`.
-3. On resume, read the previous result and section 4, keep rows already recorded and finish the missing ones.
-4. For each `BIZ` whose models are not all external, list the use cases the normal and exception scenarios need. A reaction to another subdomain's event (`## 4` of `requirements.md`) is its own use case, because it runs in its own transaction.
-5. Write `### 4` one row per use case: the name, its BC, the `BIZ` IDs, the call order using Aggregate, Value Object and Domain Service behaviours exactly as sections 2 and 3 name them, the transaction boundaries, the repositories and the external effects. Load and save through one repository per Aggregate. Write the boundary as `T1: <Aggregate>` per transaction; a reaction that section 2.3 separates by eventual consistency gets its own transaction with its `CON-xx`. A use case that changes no Aggregate (read-only, or in a context without Aggregates) writes `없음 — <이유>`. The read-only check that a `즉시` decision of section 2.3 lists in `조회 전용 Aggregate` is a step of the call order, not a second transaction. Place an external effect (a call to an external system, an event) after the commit it depends on and name it.
-6. Update the project model rows: the transaction and repository of each Aggregate in `데이터 / transaction`, as the shared rules describe. Append the decisions of this stage to `## 7` with sources, using only terms of `CONTEXT.md`.
-7. Return `completed/OK` with `tactical-design.md`, plus `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed.
-
-## Deepening
-
-This stage never adds a business rule. A scenario step that no Aggregate, Value Object or Domain Service behaviour covers, or a use case that would need two Aggregates in one transaction, is not solved here: return `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design` or `domain-service`, or `blocked` / `INPUT_MISSING` when the requirements do not say what the step does. Nothing in earlier sections is edited. The shared rules describe how the orchestrator reopens the earlier stage. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](../domain-model/references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
-
-## Completion
-
-- Section 4 holds a use case for every `BIZ` that an external system does not own alone, each with its call order, its transactions, its repositories and its external effects, and section 7 holds this stage's decisions with sources.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. `integration-design` reads the external effects and the boundaries.
-
-## 공통 도메인 조회
-
-입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.
+기존 번호형 문서는 [기존 템플릿](../domain-model/references/legacy-template.md)의 Application Service 및 관련 결정 이력을 사용한다.

@@ -154,7 +154,7 @@ test('each requirements stage commits docs/specs of its plan set, bounded-contex
 
 // The tactical design stages commit the plan set's documents; the project's model rows and glossary only when the stage
 // reports them, so the project's own edits to those files are never swept into a stage commit.
-test('each tactical design stage commits docs/specs of its plan set, project documents only when reported, and a block that kept a rule commits that rule', async () => {
+test('each tactical stage commits its own design, reported project artifacts, and approved rules on a dependency block', async () => {
   assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
   assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES], 'one ordered list covers the requirements and tactical design flows');
   const root = await mkdtemp(join(tmpdir(), 'tactical-docs-'));
@@ -162,7 +162,9 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
   try {
     git('init', '-q', '-b', 'main');
     await mkdir(join(root, 'docs/architecture'), { recursive: true });
-    await mkdir(join(root, 'docs/specs/set'), { recursive: true });
+    await mkdir(join(root, 'docs/adr'), { recursive: true });
+    await mkdir(join(root, 'docs/specs/set/diagrams'), { recursive: true });
+    await mkdir(join(root, 'docs/specs/other/diagrams'), { recursive: true });
     await writeFile(join(root, 'CONTEXT.md'), '# Context\n');
     await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n');
     await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 모델 색인\n');
@@ -188,16 +190,21 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
     assert.match(git('status', '--short'), /M docs\/architecture\/domain-model\.md/);
     assert.match(git('status', '--short'), /M CONTEXT\.md/);
 
-    // Reported project documents join the commit.
+    // Only the Aggregate stage's reported class diagram and explicitly reported project decisions join this commit.
+    const diagram = 'docs/specs/set/diagrams/community.class';
+    const decision = 'docs/adr/001-publishing-order.md';
+    const untouched = ['docs/adr/user-decision.md', 'docs/specs/set/diagrams/audit.class.svg', 'docs/specs/set/notes.md'];
+    const otherScope = 'docs/specs/other/diagrams/community.class.svg';
+    for (const path of [`${diagram}.puml`, `${diagram}.svg`, decision, otherScope, ...untouched]) await writeFile(join(root, path), 'fixture\n');
     await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 1. 모델 후보\n\n## 2. Aggregate\n');
-    assert.match(await run('aggregate-design', 'completed', listed('docs/architecture/domain-model.md', 'CONTEXT.md')), /^[0-9a-f]{40}$/);
-    assert.deepEqual(lastFiles(), ['CONTEXT.md', 'docs/architecture/domain-model.md', 'docs/specs/set/tactical-design.md']);
+    assert.match(await run('aggregate-design', 'completed', listed('docs/architecture/domain-model.md', 'CONTEXT.md', `${diagram}.puml`, `${diagram}.svg`, decision, otherScope)), /^[0-9a-f]{40}$/);
+    assert.deepEqual(lastFiles(), ['CONTEXT.md', decision, 'docs/architecture/domain-model.md', `${diagram}.puml`, `${diagram}.svg`, 'docs/specs/set/tactical-design.md']);
     assert.equal(lastSubject(), 'aggregate-design: set');
 
     // Only context-boundary may commit the context map.
     await writeFile(join(root, 'CONTEXT-MAP.md'), '# Context map\n\n| 바뀐 관계 |\n');
     await writeFile(join(root, 'docs/specs/set/tactical-design.md'), '# 전술 설계\n\n## 3. Domain Service\n');
-    assert.match(await run('domain-service', 'completed', listed('CONTEXT-MAP.md')), /^[0-9a-f]{40}$/);
+    assert.match(await run('domain-service', 'completed', listed('CONTEXT-MAP.md', 'docs/specs/set/diagrams/audit.class.svg')), /^[0-9a-f]{40}$/);
     assert.deepEqual(lastFiles(), ['docs/specs/set/tactical-design.md']);
     assert.match(git('status', '--short'), /M CONTEXT-MAP\.md/);
 
@@ -216,6 +223,23 @@ test('each tactical design stage commits docs/specs of its plan set, project doc
 
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /M app\.txt$/m, 'application changes stay visible and untouched');
+    for (const path of [...untouched, otherScope]) assert.ok(status.split('\n').includes(`?? ${path}`), `unowned edit stays visible: ${path}`);
+
+    const design = 'docs/specs/set/tactical-design.md';
+    const requirements = 'docs/specs/set/requirements.md';
+    const contextDesign = '# 전술 설계\n\n<!-- tactical-design: context-components-v1 -->\n\n## BC community\n';
+    await writeFile(join(root, design), contextDesign);
+    await run('domain-model');
+    const head = git('rev-parse', 'HEAD');
+    const userEdit = (await readFile(join(root, requirements), 'utf8')) + '\n- 프로젝트가 직접 수정한 값\n';
+    await writeFile(join(root, requirements), userEdit);
+    git('add', '--', requirements);
+    await assert.rejects(run('aggregate-design'), /fixed input.*requirements-fix/);
+    await writeFile(join(root, design), '# 구형 marker로 변경\n\n## 1. 모델 후보\n');
+    await assert.rejects(run('aggregate-design', 'blocked', [], 'DEPENDENCY_INCOMPLETE'), /fixed input.*requirements-fix/);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+    assert.equal(await readFile(join(root, requirements), 'utf8'), userEdit);
+    assert.ok(git('status', '--short').split('\n').includes(`M  ${requirements}`));
     await rm(raw, { force: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

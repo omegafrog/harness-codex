@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { readContextDesign, sections } from './domain-model-gate.mjs';
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, PRE_SPEC_STAGES, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
@@ -66,6 +67,27 @@ const WORKFLOW_DOCUMENTS = {
 
 // The plan set's tactical design document under its current and its legacy name (see migrateLegacyTacticalDesign).
 const tacticalDesignDocuments = (planSetId) => [`docs/specs/${planSetId}/${TACTICAL_DESIGN_DOCUMENT}`, `docs/specs/${planSetId}/${LEGACY_TACTICAL_DESIGN_DOCUMENT}`];
+export const isTacticalClassDiagram = (path, planSetId) => {
+  const scope = `docs/specs/${planSetId}/diagrams/`;
+  return path.startsWith(scope) && /^[a-z0-9]+(?:-[a-z0-9]+)*\.class\.(?:puml|svg)$/.test(path.slice(scope.length));
+};
+const decisionDocument = /^docs\/adr\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
+
+export async function assertTacticalRequirementsReadOnly(root, input) {
+  const planSetId = input?.context?.plan_set_id;
+  if (!TACTICAL_DESIGN_STAGES.includes(input?.skill) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return;
+  const requirements = `docs/specs/${planSetId}/requirements.md`;
+  if (!await git(root, 'status', '--porcelain', '--untracked-files=all', '--', requirements)) return;
+  const documents = [];
+  for (const path of tacticalDesignDocuments(planSetId)) {
+    await assertWorkspaceTarget(root, path);
+    documents.push(await git(root, 'show', `HEAD:${path}`).catch(() => ''),
+      await readFile(join(root, path), 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error)));
+  }
+  // An already-started numbered design keeps the deepening behavior of its original workflow.
+  if (!documents.some((text) => readContextDesign(text) !== null) && documents.some((text) => Object.keys(sections(text)).length)) return;
+  throw new Error(`Tactical design reads ${requirements} as fixed input. Return the requirement change to requirements-fix; workspace changes were preserved.`);
+}
 
 // What a restart of the stage restores. Requirement stages own the whole plan set. A tactical stage owns only the tactical
 // design documents: the rules that its iterative deepening added to requirements.md are the user's decisions and stay.
@@ -111,15 +133,28 @@ export async function commitWorkflowDocuments({ root, input, rawPath, domainPath
   const owned = WORKFLOW_DOCUMENTS[input?.skill];
   const planSetId = input?.context?.plan_set_id;
   if (!owned || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) return null;
+  await assertTacticalRequirementsReadOnly(root, input);
   const envelope = JSON.parse(await readFile(rawPath, 'utf8'));
   // A tactical stage that stops because a rule it added to requirements.md invalidates an earlier stage keeps that rule
   // committed, so the tree is clean for the restart that reopens the earlier stage and the rule survives it.
-  const deepening = TACTICAL_DESIGN_STAGES.includes(input.skill) && envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE';
+  const tactical = TACTICAL_DESIGN_STAGES.includes(input.skill);
+  const deepening = tactical && envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE';
   if (envelope.status !== 'completed' && !deepening) return null;
   // The rename the runner made before this stage ran is part of the same clean-tree guarantee: the restart needs it committed.
   const renamed = deepening && await legacyRenamePending(root, planSetId) ? tacticalDesignDocuments(planSetId) : [];
-  const paths = (deepening ? [`docs/specs/${planSetId}/requirements.md`, ...renamed] : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path)
-    || envelope.result?.artifacts?.some((item) => item.base === 'workspace' && item.path === path));
+  const requirements = `docs/specs/${planSetId}/requirements.md`;
+  const artifacts = new Set((envelope.result?.artifacts || []).filter((item) => item.base === 'workspace' && typeof item.path === 'string').map((item) => item.path));
+  const paths = (deepening ? [requirements, ...renamed]
+    : tactical ? [requirements, ...tacticalDesignDocuments(planSetId), ...PROJECT_DOCUMENTS[input.skill]]
+      : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path) || artifacts.has(path));
+  if (tactical && !deepening) {
+    for (const path of artifacts) {
+      if (!decisionDocument.test(path) && !(input.skill === 'aggregate-design' && isTacticalClassDiagram(path, planSetId))) continue;
+      await assertWorkspaceTarget(root, path);
+      if (!(await lstat(join(root, path))).isFile()) throw new Error(`Tactical artifact must be a regular file: ${path}`);
+      paths.push(path);
+    }
+  }
   if (domainPaths.length && await git(root, 'diff', '--cached', '--name-only', '--', ...domainPaths)) {
     throw new Error('Domain sync paths already have staged changes');
   }

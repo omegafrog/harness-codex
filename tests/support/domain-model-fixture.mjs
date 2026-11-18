@@ -39,7 +39,7 @@ export const REQUIREMENTS = `# 요구사항 명세
 `;
 
 export async function templateDocument(sourceRoot) {
-  const template = await readFile(join(sourceRoot, '.codex/internal-skills/domain-model/references/template.md'), 'utf8');
+  const template = await readFile(join(sourceRoot, '.codex/internal-skills/domain-model/references/legacy-template.md'), 'utf8');
   const document = [...template.matchAll(/````markdown\n([\s\S]*?)\n````/g)].map((match) => match[1]).find((block) => block.startsWith('# 전술 설계'));
   assert.ok(document, 'the template carries the document shape');
   return document;

@@ -1,206 +1,75 @@
 # tactical-design.md 템플릿
 
-`docs/specs/<plan-set-id>/tactical-design.md`는 확정된 `requirements.md`를 전술 설계로 옮기는 plan set 문서다. 여섯 stage가 자기 절만 이어서 채우고, 앞 stage의 절은 다음 stage가 읽기만 한다. 이 문서가 최종 모양의 정본이며 여섯 stage의 GUIDE는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 모델 이름은 `CONTEXT.md`의 현행 용어를 쓴다. 클래스 다이어그램은 이 문서에 넣지 않는다. 문서 이름은 stage가 아니라 흐름을 따른다: `domain-model` 같은 stage 이름은 stage를 가리키며 파일이 아니고, `docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 이 문서와 다른 파일이다. 예전 Harness가 `domain-model.md`로 만든 plan set은 실행기가 stage를 시작하기 전에 `tactical-design.md`로 이름을 바꾼다.
+확정된 `requirements.md`를 바운디드 컨텍스트별 설계로 옮긴다. `requirements.md`와 `CONTEXT-MAP.md`의 동일한 Context ID와 소유권을 따른다. BC 셀이 `community (커뮤니티)`이면 제목은 `## BC community`다. BC 셀에 표시 이름만 있는 기존 요구사항은 Context Map의 확정 ID에 연결한다. 본문은 한국어로 작성하고 ID, 타입, 메서드와 경로의 식별자는 원형을 유지한다. 아래 marker와 표의 열 이름은 실행기의 검증 계약이다.
 
-## 단계별 기입
-
-| stage | 이 문서에서 하는 일 |
+| stage | 각 BC에서 채우는 내용 |
 |---|---|
-| `domain-model` | 문서를 만들고 `## 1. 모델 후보`를 쓴다. 기존 모델 조사, 모델링 깊이, Entity·Value Object·외부 시스템 후보, BIZ·INV·EX의 모델 매핑을 기록한다 |
-| `aggregate-design` | `## 2. Aggregate`를 쓴다. Aggregate, 규칙마다 강제하는 행위, Aggregate에 걸친 규칙의 일관성 결정을 기록한다 |
-| `domain-service` | `## 3. Domain Service`를 쓴다. 어떤 Entity·Value Object도 자연스럽게 소유하지 못하는 도메인 판단만 둔다 |
-| `application-service` | `## 4. Application Service`를 쓴다. 업무마다 호출 순서, transaction 경계, Repository, 외부 효과를 기록한다 |
-| `integration-design` | `## 5. 통합 설계`를 쓴다. 컨텍스트 사이의 명령·응답·이벤트와 통신 방식을 기록한다 |
-| `context-boundary` | `## 6. 컨텍스트 경계`를 쓴다. 각 관계의 모델 보호 패턴, 의존 형태, 경계 강제 방식을 근거와 함께 기록한다 |
-
-모든 stage가 `## 7. 결정 이력`에 자기 결정을 출처와 함께 덧붙인다. 앞 stage가 채우지 않은 절은 문서에 아직 없다. `stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다.
-
-## 작성 규칙
-
-- ID는 `CON-01`(일관성 결정), `DS-01`(Domain Service), `AS-01`(Application Service), `INT-01`(통합), `DEC-01`(결정 이력)이다. 문서 안에서 번호가 유일하고, 한 번 붙인 ID는 바꾸지 않으며 지운 항목의 번호는 다시 쓰지 않는다. BIZ·INV·EX·AC·HS는 `requirements.md`의 ID를 그대로 쓴다.
-- 모든 결정에 출처를 붙인다: `요청 원문`, `CAND-xx 채택`, `answers.json <question_id>`, `INV-xx`·`EX-xx`·`AC-xx`·`BIZ-xx` 같은 요구 ID, `사용자 수정 지시`, `요청 해석(에이전트 제안)`, 기존 모델은 `file:line`과 확인한 commit. 일관성 결정(`CON-xx`)은 에이전트 제안만으로 출처가 될 수 없다. 일관성은 업무 결정이므로 요구에 근거가 없으면 사용자에게 묻고 `answers.json` 출처를 쓴다.
-- 모델링 깊이는 서브도메인 분류가 정한다. `core`는 풍부한 모델, `supporting`은 업무 규칙에 필요한 것만, `generic`은 최소 모델이거나 외부 시스템으로 표시하고 만들지 살지는 정하지 않는다.
-- Entity는 정체성과 생애주기가 있는 것, Value Object는 값이 의미를 갖는 것이다. 기존 소유자를 확장하는 안을 먼저 보고, 새 모델은 기존 소유자가 담지 못하는 이유를 적는다.
-- Aggregate는 함께 지켜야 하는 불변식으로 묶는다. 다른 Aggregate는 ID로만 참조하고 한 transaction은 Aggregate 하나만 바꾼다. BIZ 하나를 Aggregate 하나로 기계적으로 옮기지 않으며 필요 없는 Aggregate를 만들지 않는다. Aggregate가 있으면 Root는 Entity다. 상태와 생애주기가 없는 BC는 Aggregate가 없어도 되며 2.1에 그 이유를 적는다(아래 `Aggregate가 없는 컨텍스트`).
-- Aggregate에 걸친 규칙은 `CON-xx`로 출처와 함께 기록한다. 같은 컨텍스트의 Aggregate 둘 이상을 한 번에 바꿔야 해서 즉시 일관성이 필요하면 하나로 병합하고, 최종 일관성을 허용하면 분리한다. 한 연산이 다른 Aggregate를 조회만 하는 선행 조건 확인은 병합하지 않고 `조회 전용 Aggregate`에 적는다. 컨텍스트가 다른 Aggregate에 걸친 즉시 일관성은 병합하지 않는다. 컨텍스트 경계가 먼저 정해져 있으므로 `## 5`에 동기 확인·호출로 기록한다. Saga·Outbox는 최종 일관성으로 기록한 규칙에서만 검토한다.
-- 같은 규칙을 여러 계층에 복제하지 않는다. 규칙은 소유 모델과 그것을 강제하는 행위 하나에 대응한다. 강제하는 행위는 Entity인 Aggregate Root의 메서드, Value Object의 생성 규칙이나 메서드, Domain Service 중 규칙을 자연스럽게 소유하는 쪽이다. 값이 지키는 규칙을 위해 Entity나 Aggregate를 만들지 않는다.
-- 기술(프레임워크, 저장소, broker, 프로토콜)은 정하지 않는다. 해당 사항이 없는 절에는 `해당 없음 — 이유`를 적는다.
-- 설계 중 새 업무 규칙·예외가 드러나면 이 문서가 아니라 `requirements.md`에 INV·EX·AC로 먼저 덧붙인다. 규칙은 `requirements.md`가 소유하고 이 문서는 그 ID를 모델에 대응시킨다.
-- 어떤 stage도 이 문서를 검사하지 않는다. `context-boundary`가 `completed`를 반환할 때 실행기가 `harness-domain-model-check.mjs`로 문서 전체를 한 번 읽으며, 거부하는 것은 `deepening.md`의 여섯 가지뿐이다. 이 문서의 나머지 규칙은 stage GUIDE와 리뷰가 지키는 지침이다. gate는 표를 키 열(`요구`, `소유 모델`, `강제 행위`, `CON`, `AS`, `트랜잭션 경계`, `INT`)로 찾으므로 그 열 이름을 바꾸지 않고, 모르는 열은 무시한다.
+| `domain-model` | 기존 모델 근거와 모델링 깊이, Entity·Value Object·외부 시스템 선언 및 메서드 계약 |
+| `aggregate-design` | Aggregate 구조, Entity·Value Object·외부 시스템의 규칙 책임, 클래스 다이어그램 |
+| `domain-service` | 자연스럽게 소유할 Entity·Value Object가 없는 도메인 판단의 모델 및 규칙 책임 |
+| `application-service` | 각 업무의 Application Service 메서드와 호출 순서, 트랜잭션, 사용 인터페이스 |
+| `integration-design`, `context-boundary` | 호출과 포트의 정합성을 검토하고 수정이 필요한 경우 소유 stage로 돌려보낸다 |
 
 ## 문서 모양
 
-````markdown
+```markdown
 # 전술 설계
 
-- plan set: `<plan-set-id>`
-- requirements: `requirements.md` (같은 디렉터리, `상태: fixed`)
+<!-- tactical-design: context-components-v1 -->
 
-## 1. 모델 후보
+- 요구사항 [requirements.md](requirements.md)
+- plan set `<plan-set-id>`
 
-### 1.1 기존 모델 조사
+## BC community
 
-기존 모델이 없으면 `기존 모델 없음 — 확인한 문서와 경로`를 적는다. `code-research`는 이 stage만 실행하며 결과를 `file:line`과 확인한 commit과 함께 옮긴다.
+### 도메인 모델
 
-| 기존 모델 | BC | 상태 | 근거(`file:line`) | 확인한 commit |
+BIZ-01은 기존 게시글 모델을 확장한다. 기존 코드 근거는 `src/community/post.ts:12`와 확인한 commit에 연결한다.
+
+| 모델 | 종류 | 업무 | 식별자 | 필드·구성 값 | 메서드 |
+|---|---|---|---|---|---|
+| Post | Entity | BIZ-01 | postId | postId: PostId — 게시글 식별자<br>body: PostBody — 글 본문 | create(postId: PostId, body: PostBody) → Post — 작성된 상태의 게시글을 만든다 |
+| PostBody | Value Object | BIZ-01 | 해당 없음 — 값으로 비교 | text: String — 본문. 비어 있을 수 없음(INV-01) | from(text: String) → PostBody — 빈 본문을 거절한다(INV-01) |
+
+### Aggregate
+
+| Aggregate | Root | 구성원 | 다른 Aggregate 참조 |
+|---|---|---|---|
+| Post | Post | Post, PostBody | 없음 — BIZ-01에 연관 Aggregate 없음 |
+
+클래스 다이어그램 [PlantUML](diagrams/community.class.puml) · [SVG](diagrams/community.class.svg)
+
+### 규칙 책임
+
+| 소유 모델 | 규칙 | 근거 | 담당 메서드 |
+|---|---|---|---|
+| PostBody | INV-01 본문이 비어 있으면 게시글을 작성할 수 없다 | [BIZ-01, INV-01, AC-01](requirements.md#biz-01) | PostBody.from |
+
+### Application Service
+
+| AS | 메서드 | 업무 | 호출 순서 | 트랜잭션 경계 | 사용 인터페이스 |
+|---|---|---|---|---|---|
+| AS-01 | PostApplicationService.create(input: CreatePost) → PostId | BIZ-01 | 1. PostBody.from(input.text). INV-01이면 거절 결과 반환<br>2. Post.create(input.postId, body)<br>3. PostRepository.save(post). 저장 실패는 저장 실패 결과로 반환<br>4. post.postId를 반환 | T1: Post — 시작 3단계 저장 직전 / 커밋 저장 성공 직후·4단계 전 / 롤백 저장 오류 시 | PostRepository |
+
+### 사용 인터페이스
+
+| 인터페이스 | 시그니처 | 소유 위치 | 사용 메서드 | 실패 계약 |
 |---|---|---|---|---|
-| 게시글 | 커뮤니티 | implemented | `src/community/post.ts:12` | 3f2a9c1 |
+| PostRepository | save(post: Post) → void | community 도메인 Repository 포트 | AS-01 PostApplicationService.create | 저장 오류가 발생하면 T1 롤백 후 저장 실패를 반환한다 |
+```
 
-### 1.2 모델링 깊이
+## 작성 기준
 
-| BC | SD | 분류 | 모델링 깊이 | 근거 |
-|---|---|---|---|---|
-| 커뮤니티 | SD-01 | core | 풍부한 모델 | 글의 규칙이 이 요청의 차별점이다 — 출처: requirements.md SD-01 |
-| 신고 | SD-02 | supporting | 규칙에 필요한 것만 | 중복 신고 금지(INV-04)만 모델이 필요하다 |
-| 인증 | SD-03 | generic | 외부 시스템 | 로그인은 흔한 업무이고 만들지 살지는 정하지 않는다 |
+- 확정된 각 BC를 `## BC <context-id>`로 한 번만 쓴다. 식별자는 확정된 소문자 slug를 사용한다. 제목 아래 구성은 실제 설계에 필요한 것만 둔다. 해당 구성이나 클래스 모델이 없으면 이유를 적는다.
+- Entity는 식별자 이름과 타입, 정체성과 생애주기, 업무 상태를 표현하는 필드를 둔다. `식별자`는 필드에 선언한 이름이다. 필드 표기는 `필드: 타입 — 뜻`이고 여러 선언은 `<br>`로 잇는다. 각 메서드에 이름, 타입이 있는 입력, 결과 및 상태 변화·실패 효과를 적는다.
+- Value Object는 ID 대신 값의 의미, 구성 속성·타입·제약, 포함하는 Entity 또는 다른 Value Object를 식별한다. 제약을 강제하는 생성·변환 메서드를 명시한다. Domain Service는 모델 표에 `Domain Service`로 기입하고 상태가 없을 때만 필드 사유를 표시한다. 외부 소유 규칙은 모델 종류를 `외부 시스템`으로 쓰고 실제 공개 메서드나 계약을 선언한다. `업무`는 모델이 책임지는 BIZ를 적는다. BIZ 전체를 외부 시스템이 담당할 때만 그 외부 모델의 BIZ 행으로 Application Service를 대신한다.
+- Aggregate는 Root, Entity·Value Object 멤버, 다른 Aggregate의 식별자 참조를 적는다. 클래스 다이어그램에서 Aggregate 경계와 내부 구성, 멤버의 타입과 메서드, 다른 Aggregate를 참조하는 ID와 방향을 나타낸다. 실제 Aggregate 구조가 없는 BC는 이유 한 줄로 설명한다.
+- 규칙 책임 표의 각 INV·EX에는 실제 규칙 내용, 요구사항·승인 답변 위치, 소유자 하나와 그 모델에 선언된 담당 메서드 하나를 연결한다. 기록 전에 규칙의 발동 조건, 지켜야 할 불변식·예외, 관찰 가능한 결과를 원문과 맞춘다. 필요한 정보가 없거나 상충하면 [소유 stage 반환 규칙](deepening.md)을 따른다.
+- Application Service 행마다 업무 ID, 입력·결과 타입, 분기·실패 처리와 실제 호출 순서를 기록한다. 트랜잭션마다 수정하는 Aggregate 하나와 시작·커밋·롤백 시점을 실행 단계에 연결한다. 트랜잭션이 여러 개면 각 `T<number>: <Aggregate> — 시작 … / 커밋 … / 롤백 …`을 `<br>`로 나눈다. 트랜잭션이 없다면 `없음 — <이유>`를 기록한다. Application Service는 모델의 업무 판단을 호출하고 호출 결과와 외부 효과를 조율한다.
+- 필요한 포트는 `사용 인터페이스`에서 쉼표로 구분한 이름으로 참조한다. 인터페이스 표 각 행에는 동일한 이름, 시그니처, 실제 소유 위치, 사용하는 AS ID, 실패 계약을 둔다. 같은 BC의 모델 직접 호출은 호출 순서에 적는다. 사용 인터페이스가 없다면 `없음 — <이유>`를 적는다.
+- Cross-BC 호출은 관련 AS 행과 사용 포트의 시그니처·실패 계약에 작성한다. 동기라면 호출 대상, 요청·응답, 대기·오류 결과를 적는다. 비동기라면 발행·수신 메서드, 메시지 계약, 발행 시점과 전달 실패·재시도·중복 처리의 근거를 적는다. 데이터와 내부 타입은 소유 BC 안에 둔다.
+- 업무의 일관성이나 경계 선택이 후속 변경에도 적용되는 결정이면 `docs/adr/<decision>.md`에 근거와 결과를 쓰고 해당 BC 요소에서 링크한다. 영향받는 모델 행을 갱신할 때는 [공통 규칙](deepening.md)의 프로젝트 문서 소유권을 따른다.
 
-### 1.3 모델
+## 구형 문서
 
-| 모델 | 종류 | BC | 정체성·생애주기 또는 값의 의미 | 현재 상태 | 근거 |
-|---|---|---|---|---|---|
-| 게시글 | Entity | 커뮤니티 | 게시글 ID로 구분한다. 게시됨에서 삭제됨으로 간다 | implemented | BIZ-01, BIZ-02, INV-02 |
-| 본문 | Value Object | 커뮤니티 | 글자 수 상한이 있는 글 내용이다. 같은 내용이면 같은 값이다 | accepted-target | INV-01 |
-| 신고 | Entity | 신고 | 신고 ID로 구분한다. 접수됨에서 닫힘으로 간다 | accepted-target | BIZ-03, INV-03, INV-04 |
-| 인증 시스템 | 외부 시스템 | 인증 | 로그인과 방문자 판별을 맡는다. 만들지 살지는 미정이다 | accepted-target | BIZ-04, EX-01 |
-
-`종류`는 `Entity`, `Value Object`, `외부 시스템` 중 하나다. `현재 상태`는 확인한 코드가 있는 것만 `implemented`이고 나머지는 `accepted-target`이다.
-
-### 1.4 요구 매핑
-
-모든 BIZ, INV, EX는 소유 모델이 하나 이상 있어야 한다. 이벤트와 용어도 그 컨텍스트의 후보에 연결한다.
-
-| 요구 | BC | 소유 모델 | 근거 |
-|---|---|---|---|
-| BIZ-01 | 커뮤니티 | 게시글, 본문 | 작성은 게시글과 본문을 만든다 |
-| BIZ-02 | 커뮤니티 | 게시글 | 삭제는 게시글 상태를 바꾼다 |
-| BIZ-03 | 신고 | 신고 | 신고를 접수한다 |
-| BIZ-04 | 인증 | 인증 시스템 | 로그인은 외부 시스템이 맡는다 |
-| INV-01 | 커뮤니티 | 본문 | 글자 수는 값이 정한다 |
-| INV-02 | 커뮤니티 | 게시글 | 작성자 확인은 게시글의 생애주기 규칙이다 |
-| INV-03 | 커뮤니티 | 게시글, 신고 | 삭제가 신고 처리에 영향을 준다 |
-| INV-04 | 신고 | 신고 | 같은 회원의 같은 글 신고를 막는다 |
-| EX-01 | 인증 | 인증 시스템 | 방문자 판별은 외부 시스템이 한다 |
-| 이벤트: 게시글이 삭제됨 | 커뮤니티 | 게시글 | event-storming `## 4` |
-| 용어: 게시글 | 커뮤니티 | 게시글 | CONTEXT.md |
-
-## 2. Aggregate
-
-### 2.1 Aggregate
-
-| Aggregate | BC | Root | 정체성 | 구성원 | 주요 행위 | 다른 Aggregate 참조 |
-|---|---|---|---|---|---|---|
-| 게시글 | 커뮤니티 | 게시글 | 게시글 ID | 게시글, 본문 | `게시글.작성()`, `게시글.삭제()` | 작성자는 회원 ID로만 가진다 |
-| 신고 | 신고 | 신고 | 신고 ID | 신고 | `신고.접수()`, `신고.닫기()` | 대상은 게시글 ID로만 가진다 |
-
-### 2.2 규칙 강제
-
-| 요구 | Aggregate | 강제 행위 | 일관성 범위 |
-|---|---|---|---|
-| INV-01 | 게시글 | `게시글.작성()` | Aggregate 안 |
-| INV-02 | 게시글 | `게시글.삭제()` | Aggregate 안 |
-| INV-03 | 게시글, 신고 | `게시글.삭제()`, `신고.닫기()` | CON-01 |
-| INV-04 | 신고 | Domain Service | Aggregate 안 |
-| EX-01 | - | 외부 시스템: 인증 시스템 | Aggregate 안 |
-
-`강제 행위`는 그 Aggregate의 `주요 행위`에 적는 root 메서드, 소유 모델이 Value Object일 때 `Value Object: <모델>` 또는 `Value Object: <모델>.<행위>()`, `Domain Service`(뒤 stage가 채운다), 또는 소유 모델이 외부 시스템일 때 `외부 시스템: <모델>`이다. Value Object가 Aggregate 구성원이면 `Aggregate` 칸에 그 Aggregate를 적고, 어느 Aggregate에도 속하지 않으면 `-`를 적는다. 둘 이상의 Aggregate에 걸친 규칙은 `일관성 범위`에 `CON-xx`를 적는다.
-
-### 2.3 일관성 결정
-
-| CON | 규칙 | 걸친 Aggregate | 조회 전용 Aggregate | 일관성 | 결정 | 근거·출처 |
-|---|---|---|---|---|---|---|
-| CON-01 | INV-03 | 게시글, 신고 | - | 최종 | 분리: 게시글이 삭제된 뒤 신고를 닫는다. 삭제는 신고가 닫히기를 기다리지 않는다 | answers.json `<question_id>` |
-
-`일관성`은 `즉시`나 `최종`이다. `즉시`는 같은 컨텍스트의 Aggregate를 한 연산이 함께 바꿀 때 `결정`에 `병합`을 쓰고 `걸친 Aggregate`에 합친 Aggregate 하나만 적는다. `조회 전용 Aggregate`는 연산이 읽기만 하는 Aggregate이며 없으면 `-`다. `최종`은 둘 이상의 Aggregate를 적고 분리를 뜻한다. 각 선택이 업무에 미치는 결과를 `결정`에 적는다.
-
-## 3. Domain Service
-
-| DS | 이름 | BC | 책임 | 사용 모델 | 강제 규칙 | 행위 | 자연 소유자가 없는 이유 |
-|---|---|---|---|---|---|---|---|
-| DS-01 | 중복 신고 판정 | 신고 | 같은 회원이 같은 게시글을 이미 신고했는지 판정한다 | 신고 | INV-04 | `중복 신고 판정.판정()` | 신고 하나는 다른 신고의 이력을 알지 못한다 |
-
-Domain Service는 `2.2`에서 `Domain Service`로 넘긴 규칙만 맡고 조율·transaction·저장·외부 효과는 하지 않는다. 없으면 `해당 없음 — 이유`를 적는다.
-
-## 4. Application Service
-
-| AS | 이름 | BC | 업무 | 호출 순서 | 트랜잭션 경계 | Repository | 외부 효과 |
-|---|---|---|---|---|---|---|---|
-| AS-01 | 게시글 작성 | 커뮤니티 | BIZ-01 | 방문자 확인(인증 시스템) → `게시글.작성()` → 저장 | T1: 게시글 | 게시글 | 없음 |
-| AS-02 | 게시글 삭제 | 커뮤니티 | BIZ-02 | `게시글.삭제()` → 저장 → 게시글이 삭제됨 발행 | T1: 게시글 | 게시글 | 게시글이 삭제됨 이벤트 |
-| AS-03 | 삭제된 글의 신고 닫기 | 신고 | BIZ-02 | 게시글이 삭제됨 수신 → `신고.닫기()` → 저장 | T2: 신고 (CON-01) | 신고 | 없음 |
-| AS-04 | 신고 접수 | 신고 | BIZ-03 | `중복 신고 판정.판정()` → `신고.접수()` → 저장 | T1: 신고 | 신고 | 없음 |
-
-`트랜잭션 경계`는 `T1: 게시글; T2: 신고 (CON-01)`처럼 transaction마다 Aggregate 하나만 적고 최종 일관성으로 나눈 경계에는 그 `CON-xx`를 붙인다. 조회만 하거나 Aggregate를 바꾸지 않으면(Aggregate가 없는 BC 포함) `없음 — 이유`를 적는다. 외부 시스템만 쓰는 업무는 이 표에 없어도 된다.
-
-## 5. 통합 설계
-
-| INT | 상류 BC | 하류 BC | 명령 | 응답 | 이벤트 | 통신 방식 | 일관성 결정 | Saga·Outbox | 근거·출처 |
-|---|---|---|---|---|---|---|---|---|---|
-| INT-01 | 커뮤니티 | 신고 | 없음 | 없음 | 게시글이 삭제됨 | 비동기 이벤트 | CON-01 | Outbox: 삭제와 같은 transaction에 이벤트를 기록한다 | CONTEXT-MAP.md `## 3` 커뮤니티 → 신고, answers.json `<question_id>` |
-
-`통신 방식`은 업무가 요구하는 동기·비동기 성격이다. broker·프로토콜·프레임워크는 정하지 않는다. `Saga·Outbox`는 `최종`으로 기록한 `CON-xx`가 있는 행에서만 선택하고 선택하지 않으면 `없음 — 이유`를 적는다. 컨텍스트가 다른 Aggregate에 걸친 `즉시` `CON-xx`는 동기 행이 하나 있어야 한다(아래 `일관성 결정과 컨텍스트`).
-
-## 6. 컨텍스트 경계
-
-| 상류 BC | 하류 BC | 관계 패턴 | 코드 의존 | 경계 강제 | 데이터 소유·타입 경계 | 근거·출처 |
-|---|---|---|---|---|---|
-| 커뮤니티 | 신고 | 관계 패턴은 근거가 말해 주는 경우에만 기록 | section 5에서 쓰는 코드 의존 형태 | 코드 경계에 적합한 검사 방식, 미정이면 근거와 함께 미정 | 각 컨텍스트가 자기 데이터 소유, 다른 테이블·Repository 접근과 내부 타입 전달 금지 | CONTEXT-MAP.md `## 3`, INT-01 |
-
-관계가 이 plan set에서 사용되지 않으면 같은 열을 가진 빈 표를 두고 `해당 없음 — 확인한 근거`를 적는다. 근거가 없거나 문서가 모호하면 생략하지 않고 미정으로 적거나 필요한 결정을 사용자에게 묻는다. 관계 방향은 Context Map의 방향을 그대로 쓴다. 코드 의존은 관계마다 상류 공개 API 의존, 하류 포트와 조립 어댑터(ACL), 프로세스 안 이벤트 등 근거에 맞게 적고, 순환 의존은 허용하지 않는다. 데이터 소유권은 각 컨텍스트에 두며 다른 컨텍스트의 테이블·Repository와 내부 타입은 경계를 넘지 않는다. 배포 방식이 결정되지 않았다면 이를 고정하지 않고, 모듈/패키지 분리는 Architecture의 근거에 맡긴다. 특정 프레임워크, 프로토콜, 브로커, Saga, Outbox, 분산 트랜잭션은 여기서 선택하지 않는다.
-
-## 7. 결정 이력
-
-| DEC | stage | 대상 | 결정 | 비교한 대안 | 출처 |
-|---|---|---|---|---|---|
-| DEC-01 | domain-model | 게시글 | 기존 게시글 모델을 확장한다 | 새 게시물 모델 | `src/community/post.ts:12`, BIZ-01 |
-| DEC-02 | aggregate-design | CON-01 | 게시글과 신고를 분리하고 최종 일관성을 쓴다 | 하나로 병합 | answers.json `<question_id>` |
-| DEC-03 | domain-service | DS-01 | 중복 신고 판정을 Domain Service로 둔다 | 신고 Aggregate에 이력 보관 | INV-04 |
-| DEC-04 | application-service | AS-03 | 신고 닫기를 별도 transaction으로 둔다 | 삭제와 같은 transaction | CON-01 |
-| DEC-05 | integration-design | INT-01 | 이벤트로 전달한다 | 동기 호출 | answers.json `<question_id>`, CONTEXT-MAP.md `## 3` |
-````
-
-## 일관성 결정과 컨텍스트
-
-`즉시`가 무엇을 요구하는지는 걸친 Aggregate가 같은 컨텍스트인지, 한 연산이 바꾸는지 읽기만 하는지에 따라 다르다. 컨텍스트 경계는 이미 확정된 입력이므로 병합으로 깨지 않는다.
-
-| 상황 | 기록 |
-|---|---|
-| 같은 컨텍스트의 Aggregate 둘 이상을 한 연산이 함께 바꾼다 | 하나로 병합한다. `결정`에 `병합`을 쓰고 `걸친 Aggregate`에 합친 Aggregate 하나만 적는다. 병합하지 않고 둘을 적는 것은 설계 오류다 |
-| 한 연산이 같은 컨텍스트의 다른 Aggregate를 선행 조건으로 읽기만 한다 | 병합하지 않는다. 읽기만 하는 Aggregate를 `걸친 Aggregate`와 `조회 전용 Aggregate`에 적는다 |
-| 컨텍스트가 다른 Aggregate에 걸친다(바꾸든 읽기만 하든) | 병합하지 않는다. 각 컨텍스트의 Aggregate를 모두 `걸친 Aggregate`에 적고 읽기만 하는 쪽은 `조회 전용 Aggregate`에도 적는다. `aggregate-design`은 `일관성`을 `즉시`로 기록하고, `integration-design`이 `## 5`에 이 `CON-xx`를 `일관성 결정`에 인용하고 `통신 방식`이 동기(`동기 확인`, `동기 호출`)이며 `근거·출처`가 있는 행을 적는다. `Saga·Outbox`는 `없음 — 이유`다. 이 행이 없으면 `integration-design`의 설계가 빠진 것이다 |
-| 늦어도 되는 반응이다 | 분리하고 `최종`으로 기록한다. 컨텍스트가 다르면 `## 5` 행이 그 `CON-xx`를 인용한다 |
-
-예를 들어 커뮤니티 컨텍스트가 요청마다 인증 컨텍스트의 현재 인증 상태를 확인하면 `걸친 Aggregate`는 `사용자, 커뮤니티 글`, `조회 전용 Aggregate`는 `사용자`, `일관성`은 `즉시`이고, `## 5`의 행은 `통신 방식`을 `동기 확인`으로 적는다. 사용자와 커뮤니티 글을 하나로 병합하지 않는다. 그 `CON-xx`를 `일관성 범위`에 적은 `2.2`의 규칙 행은 규칙이 바꾸는 Aggregate를 적고, 읽기만 하는 Aggregate는 적어도 되고 빼도 된다.
-
-## Aggregate가 없는 컨텍스트
-
-상태와 생애주기가 없는 BC는 Aggregate를 만들지 않는다. 예를 들어 계산 요청과 결과를 값(Value Object)으로만 다루는 계산기에는 지킬 상태가 없고, 규칙(지원하는 연산, 0으로 나누기)은 값이 만들어질 때 값이 강제한다. Root가 될 Entity를 만들어 내지 않는다. 이 BC는 2.1의 Aggregate 표 뒤에 `BC`와 `Aggregate 없음 사유` 표로 이유를 적고, 2.2의 `강제 행위`에 Value Object를 적는다. 이유를 적지 않은 BC는 설계가 빠진 것이다. 외부 시스템만 있는 BC는 적지 않아도 된다. 문서 전체에 Aggregate가 하나도 없으면 2.1에 `해당 없음 — 이유`를 적어도 된다. Aggregate가 하나라도 있으면 Root는 Entity이고 모든 Entity는 Aggregate 하나에 속한다.
-
-````markdown
-### 2.1 Aggregate
-
-| Aggregate | BC | Root | 정체성 | 구성원 | 주요 행위 | 다른 Aggregate 참조 |
-|---|---|---|---|---|---|---|
-
-| BC | Aggregate 없음 사유 |
-|---|---|
-| 계산기 | 상태와 생애주기가 없다. 계산 요청과 결과는 값으로만 존재한다 |
-
-### 2.2 규칙 강제
-
-| 요구 | Aggregate | 강제 행위 | 일관성 범위 |
-|---|---|---|---|
-| INV-01 | - | Value Object: 계산 요청.생성() | 값 안 |
-| EX-02 | - | Value Object: 계산 요청.생성() | 값 안 |
-````
-
-## 프로젝트 문서 `docs/architecture/domain-model.md`
-
-프로젝트가 소유하는 현재 모델 기준 문서다. 이 plan set의 승인 target을 반영하되 영향받는 모델 행만 갱신하고 다른 행은 그대로 둔다. Git에 노출되는 프로젝트 문서이며 Harness 설치 산출물이 아니다.
-
-| Context / 모델 ID | 상태 | Root / 소유 코드 | 규칙 ID → enforcement | 데이터 / transaction | 공개 계약 / 통신 | deployment / extraction trigger | 근거 |
-|---|---|---|---|---|---|---|---|
-
-- 한 행은 Entity 하나(Aggregate Root이거나 구성원) 또는 외부 시스템 하나다. Value Object는 그것을 쓰는 Entity 행의 `Root / 소유 코드` 칸에 `VO: 이름`으로 적는다. 쓰는 Entity가 없는 Value Object(Aggregate가 없는 BC)는 자기 행을 가지며 `Root / 소유 코드`에 `VO`를 적는다. `Context / 모델 ID`는 `<BC> / <모델>` 형식이다.
-- `상태`는 `implemented`와 `accepted-target`을 구분한다. 확인한 코드가 있는 행만 `implemented`이며 설계 승인만으로 `implemented`로 쓰지 않는다. 구현 완료는 이 stage들이 아니라 구현 뒤 `sync-contracts`가 반영한다.
-- 열은 stage가 나눠 채운다. `domain-model`은 `상태`, `Root / 소유 코드`(기존 `file:line`이나 `미정`)와 `근거`를, `aggregate-design`은 `Root / 소유 코드`와 `규칙 ID → enforcement`, `데이터 / transaction`의 Aggregate 경계를, `domain-service`는 Domain Service가 맡은 `규칙 ID → enforcement`를, `application-service`는 `데이터 / transaction`의 transaction·Repository를, `integration-design`은 `공개 계약 / 통신`을 채운다. `deployment / extraction trigger`는 이 stage들이 정하지 않으며 기존 값을 그대로 둔다.
-- `근거`에는 `docs/specs/<plan-set-id>/tactical-design.md`의 해당 절을 연결한다. 모델 문서에 표가 없으면 이 표를 새 절로 더하고 기존 본문은 지우지 않는다. 같은 행을 다른 plan set이 고치고 있으면 상대의 변경을 덮어쓰지 않는다.
+marker 없이 이미 작성된 번호형 문서는 [기존 템플릿](legacy-template.md)으로 이어간다. `domain-model`은 직접 받은 수정 피드백이나 `input_refs`의 `upstream_user_revision`이 가리키는 사용자 수정 원문에서 형식 이동 지시를 확인한다. 지시가 있으면 기존 문서의 ID·행동·승인 근거를 보존하며 BC별 구성으로 제자리 이동한다. 기존 결정 중 후속 작업이 참조할 것은 ADR로 옮겨 현행 요소에서 링크한다. 이후 stage는 자기 요소의 근거와 계약을 확인하고, 빠진 사실을 소유 stage로 돌린다.

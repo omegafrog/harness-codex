@@ -28,7 +28,7 @@ Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. �
 
 실패나 사용자 답변 뒤 새로운 실행을 준비하면 이전 결과와 입력을 제공받은 새 서브에이전트가 이어간다. 다른 CLI의 세션 ID를 넘기지 않는다. 단계별 독립 리뷰와 실제 E2E의 별도 승인 및 역할 요구사항은 해당 GUIDE를 따른다.
 
-사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항·설계 변경 뒤 독립 리뷰와 영향 ticket을 재검토한다.
+사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항 수정은 가장 앞선 소유 stage에서 시작한다. 시작과 함께 뒤 단계의 영향받는 결과를 `stale`로 기록한다. 기존 문서와 실행 결과를 읽어 보완하고 `bounded-context`가 완료되면 현재 요구사항을 사용자에게 다시 보여 주고 승인받는다.
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 준비기가 만든 `answers.json`을 확인한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
 
@@ -38,7 +38,7 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 
 1. `finish`가 출력한 `next`의 명령 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`를 실행한다. 다른 옵션은 함께 쓰지 않는다. 실행기는 해당 stage의 최신 결과가 `blocked` / `DEPENDENCY_INCOMPLETE`이고 그 `owner_stage`가 요청한 stage일 때만 허용한다(그 뒤 stage가 이미 시작됐거나 발행됐으면 거부).
 2. 문서와 산출물은 되돌리지 않는다. owner stage는 `dependency_gap_result` 입력과 gap 설명을 feedback으로 받아 기존 산출물을 앞으로 고친다. owner 뒤에 이미 `completed`였던 stage와 block된 stage는 상태에 `stale`로 기록되어 `completed/OK`로 인정되지 않는다.
-3. owner가 완료되면 `finish` 출력의 `next`가 남은 stale stage를 알려 준다. owner 다음 stage부터 block된 stage까지 `launch --stage-id <stage>`를 순서대로 실행한다(옵션 불필요, 실행기가 "상위가 바뀌었으니 기존 산출물을 갱신하라"는 안내를 자동으로 붙인다). 순서를 어기면 오류가 다음 stage를 가리킨다. `tracker-publish`·`tactical-code`는 stale 상태에서 시작할 수 없다.
+3. owner가 완료되면 `finish` 출력의 `next`가 남은 stale stage를 알려 준다. owner 다음 stage부터 block된 stage까지 `launch --stage-id <stage>`를 순서대로 실행한다(옵션 불필요, 실행기가 "상위가 바뀌었으니 기존 산출물을 갱신하라"는 안내를 자동으로 붙인다). 순서를 어기면 오류가 다음 stage를 가리킨다. `bounded-context` 완료 뒤에는 남은 stale 결과가 있어도 실제 사용자 승인부터 받는다. `tracker-publish`·`tactical-code`는 stale 상태에서 시작할 수 없다.
 4. 마지막 전술 설계 stage(`context-boundary`)가 다시 완료될 때 전술 gate가, `tactical-data`가 다시 완료될 때 design-freeze gate가 다시 한 번 실행된다. `to-ticket`은 이 되돌아가기를 쓰지 않는다: 확정된 설계만 나누며 설계 결함은 `DESIGN_NOT_FROZEN`으로 사용자에게 보고한다.
 5. 같은 gap으로 owner를 되돌린 결과가 다시 같은 block이면 새 근거 없이 반복하지 않고 사용자에게 보고한다.
 
@@ -47,6 +47,6 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 ### 환경 block 재시도와 범위 축소 지시
 
 - 현재 stage가 `blocked` / `ENVIRONMENT_UNAVAILABLE`이면 사용자에게 기다리라고 하지 않고 `launch --stage-id <그 stage> --feedback '<환경에서 바뀐 것, 그 사이 받은 사용자 지시>'`로 다시 실행한다. stage가 workspace preflight를 다시 실행해 전제를 재확인한다. 같은 원인으로 다시 막힐 때만 사용자에게 보고한다. 이 block 뒤 `STAGE_ORDER`·`PREVIOUS_RESULT_MISSING`·`PREVIOUS_UNRESOLVED`·`USER_REVISION_REFUSED`·`REVISION_TARGET`·`RESTART_REFUSED`·`FEEDBACK_REFUSED`·`REOPEN_REFUSED`·`DISCARD_REFUSED`가 나오면 오류의 `next`가 이 재실행을 가리키며, 다른 stage를 시작하거나 `--user-revision`·`--restart`를 쓰지 않는다.
-- 전술 단계에서 사용자가 범위를 줄이거나 범위 밖 항목을 빼라고 지시하면 `--user-revision`·`--restart`를 쓰지 않고 그 지시를 다음에 실행할 stage의 `--feedback`으로 전달한다. stale stage는 순서대로 다시 실행한다. 구현 설계 문서에 남은 범위 밖 항목은 `tactical-data`의 design-freeze gate가 잡아 owner stage로 되돌린다.
+- 전술 단계에서 사용자가 확정 범위의 축소나 보완을 지시하면 가장 앞선 요구사항 소유 stage를 `--user-revision`으로 다시 연다. 문서와 산출물은 그대로 두고 영향을 받는 부분과 후속 결과를 다시 확인한다.
 
 `DEPENDENCY_INCOMPLETE` block 뒤 `PREVIOUS_RESULT_MISSING`·`RESTART_REFUSED`·order guard·user-revision 거부가 나오면 그 오류의 `next`가 이 경로를 가리킨다. `result.owner_stage`가 있으면 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`, 없으면(이전 Harness가 기록한 결과) `launch --stage-id <blocked stage> --feedback 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'`로 block된 stage를 다시 실행해 owner를 반환받는다. 요약 문장에서 owner를 추정하지 않고, `--user-revision`·`--restart-requirements`를 쓰거나 사용자에게 기다리라고 말하지 않는다.

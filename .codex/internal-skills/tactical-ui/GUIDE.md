@@ -13,7 +13,7 @@ model_tier: low_performance
 
 ## 범위 추가 금지
 
-이 stage는 화면·흐름을 추가하지 않는다. 화면과 흐름은 `requirements.md`의 BIZ/INV/EX/AC와 `tactical-design.md` 4절의 `AS-xx`에 추적되어야 하며, 추적되지 않는 화면(요구에 없는 로그아웃·설정·관리 화면 등)은 handoff하지 않는다. "이 화면을 범위에 포함할까요?" 같은 범위 질문도 하지 않는다. `ui-handoff.md`나 결과에 화면 표를 적는다면 `화면`·`근거` 열을 두고 행마다 `AS-xx`나 요구 ID를 적는다. 요구를 덮을 use case가 없으면 `application-service`를 owner로 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다.
+이 stage는 화면·흐름을 추가하지 않는다. 화면과 흐름은 `requirements.md`의 BIZ/INV/EX/AC와 `tactical-design.md`의 Application Service 메서드(`AS-xx`)에 추적되어야 하며, 추적되지 않는 화면(요구에 없는 로그아웃·설정·관리 화면 등)은 handoff하지 않는다. "이 화면을 범위에 포함할까요?" 같은 범위 질문도 하지 않는다. `ui-handoff.md`나 결과에 화면 표를 적는다면 `화면`·`근거` 열을 두고 행마다 `AS-xx`나 요구 ID를 적는다. 요구를 덮을 use case가 없으면 `application-service`를 owner로 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다.
 
 ## 독립 workflow handoff
 

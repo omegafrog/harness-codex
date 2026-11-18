@@ -3,7 +3,7 @@
 // sends it reading Harness source. So the default output holds only what the next step needs (ids, paths, status, the
 // next command, and the payloads that must be relayed), `--verbose` prints the full detail, and every error names what
 // happened, why, and the exact next command or the decision the user must make.
-import { PRE_SPEC_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
 import { cliContext, orchestratorState } from './cli-context.mjs';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -158,10 +158,10 @@ export function compactContext(context) {
 
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 const REQUIREMENTS_APPROVAL_ARGS = "--requirements-approved true --approval-answer '<the user's reply verbatim>'";
-export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null }) {
-  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user and do not answer business questions for them. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. When it completes, re-run each stale stage in order up to ${stageId} (${launchCommand('<stale-stage>')}; the runner names the next one if you start the wrong one). Only a question returned by one of these stages goes to the user.`;
-  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${launchCommand(staleOrder[0])}; the last is the stage that was blocked. Do not ask the user.`;
-  if (status === 'completed' && stageId === 'bounded-context') return `The requirements are fixed. Show the fixed requirements.md to the user (every BIZ with its rules, exceptions and completion conditions, the subdomains and the bounded contexts) and ask whether to approve them before tactical design. Only after the user's own approval: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}. A requested change goes back with --user-revision on requirements-fix (restart bounded-context first).`;
+export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true }) {
+  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
+  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the fixed requirements.md to the user (every BIZ with its rules, exceptions and completion conditions, the subdomains and the bounded contexts) and ask whether to approve them before tactical design. Only after the user's own approval: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}. For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage.`;
+  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${launchCommand(staleOrder[0])}. Do not ask the user for approval of this stage.`;
   if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. Only after the user's own reply: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
@@ -175,7 +175,7 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   return `Resolve ${executionId} per the orchestrator skill.`;
 }
 
-export function compactFinished({ envelope, stageId, executionId, staleOrder = null }) {
+export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true }) {
   return {
     status: envelope.status,
     code: envelope.code,
@@ -183,7 +183,7 @@ export function compactFinished({ envelope, stageId, executionId, staleOrder = n
     stage_id: stageId,
     result_ref: envelope.result_ref,
     result: compactResult(envelope.result),
-    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder }),
+    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent }),
   };
 }
 
@@ -377,7 +377,9 @@ const RULES = [
   }) },
   { re: /^DESIGN_NOT_FROZEN/, explain: ({ message }) => ({ code: 'DESIGN_NOT_FROZEN', why: `${message} to-ticket never reopens a design stage and no scope question is asked to the user.`, next: [launchCommand('tactical-data'), 'node .codex/scripts/harness-design-freeze-check.mjs --workspace-root <workspace root>'], decision: 'If the gate keeps failing, report its errors (owner_stage, code) to the user and wait; a scope change is made only through the requirements flow the user restarts.' }) },
   { re: /^Dependency incomplete: (\S+)/, explain: ({ m, state }) => { const resume = resumeStage(m[1], entryOf(state, m[1]), state); return { code: 'DEPENDENCY_INCOMPLETE', why: `${m[1]} must be completed before this stage; it is ${describe(entryOf(state, m[1]))}.`, next: resume.steps, decision: resume.decision }; } },
-  { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision reopens a finished stage and only exists for the user's own correction, so it needs --feedback with the user's instruction verbatim, and only requirements-fix, a tactical design stage, to-ticket or implement-wrapper can be reopened${stage ? ` (${stage} was requested)` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, do not use --user-revision; run the stage normally.' }) },
+  { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision needs --feedback with the user's instruction verbatim and a stage that can be revised (${[...REQUIREMENTS_REVISION_STAGES, 'a tactical design stage', 'to-ticket', 'implement-wrapper'].join(', ')})${stage ? `. Requested: ${stage}` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, run the stage normally.' }) },
+  { re: /^Requirements revision cannot start after/, explain: ({ message }) => ({ code: 'USER_REVISION_REFUSED', why: message, decision: 'Report the published or implemented work affected by the correction to the user.' }) },
+  { re: /^User revision requires the latest execution|^Stale execution input/, explain: ({ message, stage }) => ({ code: 'STAGE_ORDER', why: message, next: [CONTEXT, launchCommand(stage || '<stage-id>')] }) },
   { re: /^User revision requires a completed stage or one waiting on its question/, explain: ({ stage, state }) => ({ code: 'USER_REVISION_REFUSED', why: `${stage || 'The stage'} is ${describe(entryOf(state, stage))}; only a completed stage, or one waiting on its question, can be reopened by the user.`, next: [`To run it normally (not as a user revision): ${launchCommand(stage || '<stage-id>')}`, `To see its state: ${CONTEXT}`] }) },
   { re: /^User revision cannot start while another stage is running/, explain: ({ state }) => {
     const running = Object.entries(state?.stages || {}).find(([, entry]) => entry?.status === 'running');
@@ -436,7 +438,7 @@ const RULES = [
     code: 'FEEDBACK_REFUSED',
     why: `--feedback only continues a stage that failed, was cancelled, was blocked, asked for a review or a matching revision, or was interrupted; ${stage || 'this stage'} is ${describe(entryOf(state, stage))}.`,
     next: [
-      `If the user wants to change a completed stage: ${launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)} (only requirements-fix, tactical design stages, to-ticket, implement-wrapper)`,
+      `If the user wants to change a completed stage: ${launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)} (requirements revision stages, tactical design stages, to-ticket and implement-wrapper)`,
       `If it waits for the user's answer: ${launchCommand(stage || '<stage-id>', ANSWER_ARG)}`,
       `State: ${CONTEXT}`,
     ],
