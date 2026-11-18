@@ -72,8 +72,8 @@ export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.UBIQUITOUS_LANGUAGE,
   WORKTREE_STAGE.EVENT_STORMING,
   WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION,
-  WORKTREE_STAGE.BOUNDED_CONTEXT,
   WORKTREE_STAGE.REQUIREMENTS_FIX,
+  WORKTREE_STAGE.BOUNDED_CONTEXT,
 ]);
 
 // The plan set document that the tactical design stages fill, one section each. It is named for the flow, not for the first
@@ -88,7 +88,7 @@ export const currentTacticalDesignPath = (path) => typeof path === 'string'
   ? path.replace(/^(docs\/specs\/[A-Za-z0-9][A-Za-z0-9._-]*\/)domain-model\.md$/, `$1${TACTICAL_DESIGN_DOCUMENT}`)
   : path;
 
-// The tactical design flow runs after requirements-fix, one stage per step. Every stage fills its own
+// The tactical design flow runs after the requirements flow (bounded-context fixes requirements.md), one stage per step. Every stage fills its own
 // section of the plan set's tactical-design.md, so the runner commits and stores them alike.
 export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.DOMAIN_MODEL,

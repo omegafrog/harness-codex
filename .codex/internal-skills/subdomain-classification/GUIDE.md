@@ -7,7 +7,7 @@ model_tier: implementation
 
 ## Purpose
 
-Step of the requirements flow after `event-storming` and before `bounded-context`. Check the boundaries of the subdomain candidates against the event flows, classify each subdomain as core, supporting or generic with a rationale, and have the user confirm the set and the classification in one batch. This is where the candidates stop being hypotheses. No persona runs. Only the business grouping is judged here; bounded contexts, modules and technology are not.
+Step of the requirements flow after `event-storming` and before `requirements-fix`. Check the boundaries of the subdomain candidates against the event flows, classify each subdomain as core, supporting or generic with a rationale, and have the user confirm the set and the classification in one batch. This is where the candidates stop being hypotheses. No persona runs. Only the business grouping is judged here; bounded contexts, modules and technology are not.
 
 ## Inputs
 
@@ -40,7 +40,7 @@ Step of the requirements flow after `event-storming` and before `bounded-context
 
 - Every SD row has `분류` of `core`, `supporting` or `generic`, a `근거` and `상태: confirmed`; the set was confirmed by the user's answers.
 - Any change to the set is backed by event evidence, and the diagrams and `## 4` agree with it.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `bounded-context` reads the confirmed subdomains and their classes.
+- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. `requirements-fix` and then `bounded-context` read the confirmed subdomains and their classes.
 
 ## 공통 도메인 조회
 

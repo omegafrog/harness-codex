@@ -35,9 +35,10 @@ export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_
 
 // A blocked result that must name its owner: the stages whose DEPENDENCY_INCOMPLETE can mean "an earlier stage's output is
 // missing or insufficient". tactical-ui is excluded: its DEPENDENCY_INCOMPLETE also hands off to frontend-design-brief.
+// bounded-context is included: a boundary that needs a requirement the document lacks names requirements-fix as its owner.
 // to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
 // as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
-export const OWNER_REQUIRED_STAGES = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
 
 // Format errors for a finish whose blocked / DEPENDENCY_INCOMPLETE result does not name a valid earlier owner; null otherwise.
 export function dependencyOwnerErrors({ skill, raw }) {

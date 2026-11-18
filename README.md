@@ -8,7 +8,7 @@
 
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
-- 요구사항 흐름 — 새 기능이면 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `bounded-context` → `requirements-fix`가 하나의 `requirements.md`를 단계별로 채워 확정
+- 요구사항 흐름 — 새 기능이면 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context`가 하나의 `requirements.md`를 단계별로 채워 확정
 - 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
 - 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → (사용자 발행 승인) `tracker-publish` → `tactical-code` 순서로 결정·ticket 분할·발행·ticket별 구현과 테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
 - `to-ticket` — 완료된 tactical design과 구현 결정을 바운디드 컨텍스트·업무별 vertical ticket(의존 순서, 소유 규칙과 검증 테스트, 컨텍스트 경계 포함)으로 분할하고 독립 리뷰
@@ -23,8 +23,8 @@
 $setup
   ↓
 stakeholder-analysis → subdomain-candidates → ubiquitous-language
-  → event-storming → subdomain-classification → bounded-context
-  → requirements-fix → 확정된 requirements.md
+  → event-storming → subdomain-classification → requirements-fix
+  → bounded-context → 확정된 requirements.md
   ↓
 domain-model → aggregate-design → domain-service
   → application-service → integration-design → context-boundary → tactical-design.md
@@ -73,7 +73,7 @@ gh-open-pr → 사용자 Merge
 
 ### 2. 요구사항 흐름
 
-새 기능이면 아래 요구사항 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `requirements-fix`가 확정한다. 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다.
+새 기능이면 아래 요구사항 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `bounded-context`가 확정한다. 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다.
 
 ```text
 사용자 요청
@@ -112,14 +112,14 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `ubiquitous-language` | 후보 업무별로 혼동되는 말을 먼저 정해 용어 표(용어·뜻·쓰지 않을 말)를 만들고 문장을 통일한다. 최종 컨텍스트 소속은 `bounded-context`가 검증한다 | 결과를 바꾸는 뜻만 한 묶음 | `CONTEXT.md` |
 | `event-storming` | 도메인 전문가 persona를 다시 실행해 업무별 행위자·명령·도메인 이벤트(과거형 업무 사실)·정책·외부 시스템·hotspot을 낸다. 요청 밖 기능은 범위 밖 관찰로 접는다 | hotspot을 한 묶음으로 | `diagrams/events/`의 SD별·서브도메인 간 PlantUML(`.puml`)과 렌더(`.svg`) |
 | `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고 core·supporting·generic으로 분류한다. 후보가 여기서 확정된다 | 구성과 분류 확인 한 묶음 | |
-| `bounded-context` | 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적는다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
-| `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate를 통과하면 `상태: fixed`로 확정한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 빈칸만 한 묶음 | |
+| `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate(컨텍스트 소속 제외)를 통과시킨다. 경계를 정하기 전에 요구사항을 완성하려고 `bounded-context` 앞에서 실행하며, 문서는 `draft`로 둔다 | 빈칸만 한 묶음 | |
+| `bounded-context` | 완성된 요구사항으로 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적고, coverage gate 전체를 통과하면 `상태: fixed`로 확정하며 공통 정의를 동기화한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
 
 `stakeholder-analysis`가 생략을 판정하면 뒤 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`와 바운디드 컨텍스트는 이후 전술 설계 및 구현의 입력이다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
 
 #### 전술 설계 흐름
 
-`requirements-fix`가 `fixed`로 확정한 뒤 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
+`bounded-context`가 `fixed`로 확정한 뒤 아래 여섯 stage가 순서대로 `docs/specs/<plan-set-id>/tactical-design.md`를 이어서 채운다. 한 stage가 자기 절만 쓰고 앞 stage의 절은 읽기만 한다. 문서 이름은 흐름을 따르며 `domain-model` 같은 stage 이름은 파일이 아니라 stage를 가리킨다(`docs/architecture/domain-model.md`는 프로젝트의 모델 색인으로 다른 파일이다). 예전 Harness가 `domain-model.md`로 만든 진행 중 plan set은 실행기가 전술 stage를 준비할 때 `tactical-design.md`로 이름을 바꾸고(`git mv`와 같은 rename이며 다음 전술 stage commit에 포함, restart도 처리한다). 템플릿은 `.codex/internal-skills/domain-model/references/template.md`가 소유한다. Entity·Value Object 후보와 모델링 깊이, Aggregate와 일관성 결정, Domain Service, Application Service, 통합 설계와 컨텍스트 경계 절, 출처가 붙은 결정 이력을 담는다. 클래스 다이어그램은 아직 없다.
 
 | stage | 하는 일 | 사용자 질문 | 추가로 쓰는 문서 |
 |---|---|---|---|

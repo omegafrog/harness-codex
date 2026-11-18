@@ -28,7 +28,7 @@ const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 test('the tactical stages follow the requirements flow in one ordered list, and the orchestrator, the map, the README and every guide agree on it', async () => {
   assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
   assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES]);
-  assert.equal(PRE_SPEC_STAGES.at(REQUIREMENTS_STAGES.length - 1), 'requirements-fix');
+  assert.equal(PRE_SPEC_STAGES.at(REQUIREMENTS_STAGES.length - 1), 'bounded-context');
   for (const stage of TACTICAL_DESIGN_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   assert.deepEqual(Object.keys(STAGE_TIERS).sort(), [...PRE_SPEC_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code'].sort(), 'every stage in the pre-spec and tactical implementation flows has a declared tier in the shared fixture');
 
@@ -277,7 +277,7 @@ const withNewRule = (document) => document
   .replace('| EX-01 | 인증 | 인증 시스템 | 방문자 판별은 외부 시스템이 한다 |\n', (row) => `${row}| INV-05 | 신고 | 신고 | 닫는 기한은 신고의 규칙이다 |\n`)
   .replace('| INV-04 | 신고 | Domain Service | Aggregate 안 |\n', (row) => `${row}| INV-05 | 신고 | \`신고.닫기()\` | Aggregate 안 |\n`);
 
-test('the tactical stages run after requirements-fix and are accepted section by section, deepen the requirements and restart without losing the added rule, and the last one passes the whole gate', async (t) => {
+test('the tactical stages run after the requirements flow and are accepted section by section, deepen the requirements and restart without losing the added rule, and the last one passes the whole gate', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, planSetId, specDirectory, specPath } = flow;
   const requirements = specPath('requirements.md');
@@ -289,17 +289,17 @@ test('the tactical stages run after requirements-fix and are accepted section by
   // The requirements flow ends with a fixed requirements.md that carries the rules the design maps.
   const markers = { 'stakeholder-analysis': { [analysis]: '# Stakeholder 분석\n', [requirements]: draft('stakeholder-analysis') } };
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   assert.deepEqual(treeGit('log', '--format=%s', '-7').trim().split('\n'), [...REQUIREMENTS_STAGES].reverse().map((stage) => `${stage}: ${planSetId}`));
 
-  // 1. domain-model follows requirements-fix, writes section 1 and the project rows, and the runner commits them with the reported glossary.
+  // 1. domain-model follows the last requirements stage (bounded-context), writes section 1 and the project rows, and the runner commits them with the reported glossary.
   const first = await runStage('domain-model', {
     files: { [tacticalDesign]: upTo(document, 1), 'docs/architecture/domain-model.md': projectModel('v1'), 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 |\n' },
     artifacts: [art(tacticalDesign, 'tactical_design'), art('docs/architecture/domain-model.md', 'model_index'), art('CONTEXT.md', 'glossary')],
   });
-  assert.equal(first.prepared.input.context.transition.from_stage, 'requirements-fix');
+  assert.equal(first.prepared.input.context.transition.from_stage, 'bounded-context');
   assert.ok(first.prepared.input.input_refs.some((reference) => reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(first.files, ['CONTEXT.md', 'docs/architecture/domain-model.md', tacticalDesign].sort(), 'a section 1 alone is accepted: no gate runs before the last stage');
 
@@ -415,7 +415,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   };
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // Work of the application that the stages never touch.
@@ -564,7 +564,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   const artifacts = [art(tacticalDesign, 'tactical_design')];
   const document = await templateDocument(sourceRoot);
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
@@ -634,7 +634,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   const restartArgs = (stage) => ['--stage-id', stage, '--restart-requirements', 'true'];
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // The earlier Harness wrote and committed the document as domain-model.md, next to the project's own model index.
@@ -708,7 +708,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   // 6. A restart to the first tactical stage, whose checkpoint predates the document, removes it under both names.
   treeGit('stash', 'push', '--', 'app.txt');
   const first = invoke(workspace, 'harness-prepare-input.mjs', restartArgs('domain-model'));
-  assert.equal(first.previous_stage, 'requirements-fix');
+  assert.equal(first.previous_stage, 'bounded-context');
   assert.equal(existsSync(join(workspace, current)), false);
   assert.equal(existsSync(join(workspace, legacy)), false);
   assert.deepEqual(visible(), [` D ${current}`, ` D ${projectIndex}`].sort());

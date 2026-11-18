@@ -1,6 +1,6 @@
 # Tactical design stages: shared rules
 
-`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design` and `context-boundary` run in this order after `requirements-fix`. Each fills its own section of `docs/specs/<plan-set-id>/tactical-design.md` ([template](template.md)) and the project model rows it owns. This reference owns what the six stages share; each GUIDE owns its own decisions.
+`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design` and `context-boundary` run in this order after the requirements flow (its last stage, `bounded-context`, fixes `requirements.md`). Each fills its own section of `docs/specs/<plan-set-id>/tactical-design.md` ([template](template.md)) and the project model rows it owns. This reference owns what the six stages share; each GUIDE owns its own decisions.
 
 ## Start
 

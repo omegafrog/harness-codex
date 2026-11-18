@@ -19,7 +19,7 @@ const fenced = (text, language) => [...text.matchAll(new RegExp('```' + language
 
 test('the requirements.md template, the stage guides and the orchestrator agree on the flow and the shape', async () => {
   // The flow order lives in one list; the orchestrator and the workflow map name the stages in that order.
-  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'bounded-context', 'requirements-fix']);
+  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'requirements-fix', 'bounded-context']);
   for (const stage of REQUIREMENTS_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
   assert.ok(orchestrator.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the flow in order');
@@ -103,7 +103,13 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(events, /`stakeholder_persona`/);
   assert.match(events, /A render failure blocks completion/);
   assert.match(await read('.codex/internal-skills/stakeholder-persona/GUIDE.md'), /^## Events mode$/m);
-  assert.match(await read('.codex/internal-skills/requirements-fix/GUIDE.md'), /automatically/);
+  // requirements-fix completes the requirements before the boundaries; bounded-context, the last stage, fixes the document.
+  const fix = await read('.codex/internal-skills/requirements-fix/GUIDE.md');
+  assert.match(fix, /after `subdomain-classification` and before `bounded-context`/);
+  assert.match(fix, /The document stays `draft`/);
+  assert.match(context, /^Last step of the requirements flow, after `requirements-fix`/m);
+  assert.match(context, /set its `상태` to `fixed` automatically/);
+  assert.match(context, /`result\.owner_stage: requirements-fix`/);
   assert.ok((await read('.codex/internal-skills/requirements-fix/references/coverage.md')).includes('확정 조건'));
 
   // The Product guide and the DDD guide treat requirements.md as a fixed input.
@@ -301,18 +307,19 @@ test('the requirements stages run in order as workflow stages and the tactical d
   });
   assert.deepEqual(classified.files, [requirements]);
 
-  // 6. bounded-context commits the plan set documents together with the project's context map.
-  const contexts = await runStage('bounded-context', {
-    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
-    artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
-  });
-  assert.deepEqual(contexts.files, ['CONTEXT-MAP.md', 'CONTEXT.md', requirements]);
-
-  // 7. requirements-fix fixes the document automatically and the runner commits it.
-  const fixing = await flow.beginStage('requirements-fix');
-  await flow.submitStage(fixing, {
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n- INV-01 작성자가 글을 삭제한다.\n' },
+  // 6. requirements-fix fills the open rows before the boundaries are decided; the document stays draft.
+  const filled = await runStage('requirements-fix', {
+    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n- INV-01 작성자가 글을 삭제한다.\n' },
     artifacts: [artifact(requirements, 'requirements')],
+  });
+  assert.deepEqual(filled.files, [requirements]);
+
+  // 7. bounded-context decides the contexts from the completed requirements, fixes the document automatically, syncs the
+  // shared definitions it now owns and commits the plan set documents together with the project's context map.
+  const fixing = await flow.beginStage('bounded-context');
+  await flow.submitStage(fixing, {
+    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n\n- INV-01 작성자가 글을 삭제한다.\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
+    artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
   });
   const { planDomainSync } = await import(pathToFileURL(join(workspace, '.harness/src/domain/sync.mjs')));
   const id = 'community.rule.delete-own-post';
@@ -327,8 +334,9 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const fixed = flow.finishStage(fixing);
   assert.equal(fixed.status, 0, fixed.stderr);
   assert.equal(JSON.parse(fixed.stdout).status, 'completed');
-  assert.match(treeGit('show', '--name-only', '--format=', 'HEAD'), /domain-links\.json/);
-  assert.ok(treeGit('show', '--name-only', '--format=', 'HEAD').includes(domainPath));
+  const fixCommit = treeGit('show', '--name-only', '--format=', 'HEAD');
+  for (const path of ['CONTEXT-MAP.md', 'CONTEXT.md', requirements, domainPath]) assert.ok(fixCommit.includes(path), `${path} is committed with bounded-context`);
+  assert.match(fixCommit, /domain-links\.json/);
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /상태: fixed/);
 
   // The tactical design flow follows the last requirements stage and receives the fixed document as an input reference;
@@ -338,7 +346,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(premature.stderr, /spec-me has been removed/);
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
   assert.equal(next.input.skill, 'domain-model');
-  assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
+  assert.equal(next.input.context.transition.from_stage, 'bounded-context');
   assert.equal(next.input.context.transition.code, 'OK');
   assert.ok(next.input.input_refs.some((reference) => reference.base === 'workspace' && reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(treeGit('log', '--format=%s', '-7').trim().split('\n'), [...REQUIREMENTS_STAGES].reverse().map((stage) => `${stage}: ${planSetId}`));
@@ -382,19 +390,20 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(legacyOrder.stderr, /earlier stage order/);
   treeGit('reset', '--hard', 'HEAD^');
   const restart = invoke(workspace, 'harness-prepare-input.mjs', restartArgs);
-  assert.equal(restart.previous_stage, 'subdomain-classification');
+  assert.equal(restart.previous_stage, 'requirements-fix');
   assert.equal(existsSync(join(workspace, domainPath)), false);
   assert.equal(existsSync(join(workspace, specPath('domain-links.json'))), false);
   assert.ok(existsSync(join(restart.backup, 'state.json')));
   const restored = await readFile(join(workspace, requirements), 'utf8');
-  assert.match(restored, /confirmed/);
+  assert.match(restored, /상태: draft/);
+  assert.match(restored, /INV-01/, 'the completed requirements are kept');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
-  assert.equal(state.current_stage, 'subdomain-classification');
+  assert.equal(state.current_stage, 'requirements-fix');
   assert.equal(state.stages['bounded-context'], undefined);
-  assert.equal(state.stages['requirements-fix'], undefined);
+  assert.equal(state.stages['requirements-fix'].status, 'completed', 'the completed requirements interview is retained');
   assert.equal(state.stages['ubiquitous-language'].status, 'completed', 'earlier vocabulary is retained');
   const fresh = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'bounded-context']);
-  assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
+  assert.equal(fresh.input.context.transition.from_stage, 'requirements-fix');
 });
 
 test('a skipped stakeholder-analysis makes later stages record the skip, then tactical-to-code follows tactical design', async (t) => {

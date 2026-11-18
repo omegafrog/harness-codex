@@ -50,4 +50,4 @@ model_tier: high_performance
 
 입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.
 
-사용자 답변으로 확정된 요구사항과 공통 정의 또는 매핑이 바뀌었으면 `requirements-fix`의 공통 정의 동기화 절차와 같은 실행별 `domain-sync.json`을 준비한다. 이전 Context의 소유 ID를 새 Context에 재사용하지 않는다.
+사용자 답변으로 확정된 요구사항과 공통 정의 또는 매핑이 바뀌었으면 `bounded-context`의 공통 정의 동기화 절차와 같은 실행별 `domain-sync.json`을 준비한다. 이전 Context의 소유 ID를 새 Context에 재사용하지 않는다.

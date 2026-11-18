@@ -1,6 +1,6 @@
 # requirements-fix coverage checklist
 
-`requirements-fix`가 인터뷰 전에 분류하고 확정 전에 다시 확인하는 목록이다. 제품 spec topic 대신 `requirements.md`의 BIZ 필드가 기준이다. 분류는 [grill-with-docs](../../grill-with-docs/GUIDE.md)의 네 값을 쓴다: `SETTLED`, `PARTIAL`, `UNRESOLVED`, `NOT_APPLICABLE`(구체 이유 필수).
+`requirements-fix`가 인터뷰 전에 분류하고 넘기기 전에 다시 확인하며, `bounded-context`가 확정 전에 전체를 다시 확인하는 목록이다. 제품 spec topic 대신 `requirements.md`의 BIZ 필드가 기준이다. 분류는 [grill-with-docs](../../grill-with-docs/GUIDE.md)의 네 값을 쓴다: `SETTLED`, `PARTIAL`, `UNRESOLVED`, `NOT_APPLICABLE`(구체 이유 필수).
 
 ## BIZ마다 분류하는 행
 
@@ -22,7 +22,7 @@
 | 우선순위·트레이드오프 | 업무끼리 충돌하는 경우가 없거나 앞서는 쪽이 정해졌다 | 충돌할 때 앞서는 업무 |
 | 업무 상태·전이 | 상태를 가진 대상마다 상태와 전이가 정해졌다. 상태가 없으면 `NOT_APPLICABLE` | 빠진 상태·전이 조건 |
 | E2E 시나리오 | 핵심 BIZ를 끝까지 따라가는 흐름이 있고 모든 단계가 INV·AC·BIZ에서 나온다 | 시나리오에 필요한데 요구에 없는 동작을 넣을지 |
-| 서브도메인·바운디드 컨텍스트 | SD 표가 `confirmed`이고 분류가 있으며, 모든 BIZ가 `### 1.1` 표의 컨텍스트 하나에 속한다. 이 둘은 앞선 stage에서 사용자가 정했으므로 다시 묻지 않는다 | 표에서 빠진 BIZ |
+| 서브도메인·바운디드 컨텍스트 | SD 표가 `confirmed`이고 분류가 있으며, 모든 BIZ가 `### 1.1` 표의 컨텍스트 하나에 속한다. SD는 앞선 stage에서 사용자가 정했으므로 다시 묻지 않는다. 컨텍스트 소속은 `requirements-fix` 뒤에 `bounded-context`가 정하고 이 행을 확인하므로 `requirements-fix`는 분류하지 않는다 | 표에서 빠진 BIZ |
 | 용어 | 문장이 `## 3` 용어 표의 말만 쓰고, 컨텍스트마다 뜻이 다른 말은 컨텍스트별 줄이 있다 | 표에 없는 새 혼용어의 뜻 |
 | 서브도메인 간 이벤트 | `## 4` 표의 받는 쪽 반응이 받는 BIZ의 규칙·예외와 맞는다 | 반응이 정해지지 않은 이벤트 |
 

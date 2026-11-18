@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TD
   A[요청과 현행 계약 확인] --> B[setup 및 worktree 준비]
-  B --> C[요구사항 흐름: stakeholder-analysis부터 requirements-fix]
+  B --> C[요구사항 흐름: stakeholder-analysis부터 requirements-fix, bounded-context]
   C --> D[전술 설계 흐름: domain-model부터 context-boundary]
   D --> E1[tactical-to-code: technology, UI, API, data]
   E1 --> F[to-ticket: 컨텍스트·BIZ별 ticket 분할과 독립 리뷰]
