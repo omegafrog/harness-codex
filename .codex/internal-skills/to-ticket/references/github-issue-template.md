@@ -1,6 +1,6 @@
 # GitHub Issue 본문 템플릿
 
-`to-ticket`이 GitHub mode에서 만드는 Project draft item은 아래 두 형식으로 작성한다. 구현을 시작할 때 Project draft를 저장소 Issue로 변환한다. 대괄호 placeholder는 계획 단계에서 확인 가능한 실제 값으로 치환한다.
+`to-ticket`이 준비하고 `tracker-publish`가 승인 후 발행하는 GitHub Issue 본문은 아래 두 형식으로 작성한다. 대괄호 placeholder는 계획 단계에서 확인 가능한 실제 값으로 치환한다.
 
 제목과 목적은 사람이 작업 결과와 이유를 바로 이해할 수 있도록 쓴다. 수용 기준은 사용자 행동과 관찰 결과를 먼저 쓰고 INV/EX/AC 식별자는 문장 끝에 둔다. 실행 위치와 토큰 예산은 본문 뒤의 접이식 실행 정보에 보존한다. 원본 ticket의 모든 필수 테스트와 비테스트 검증을 보존한다. 상위·선행 ticket은 canonical plan ID로 연결하며 미게시 설계 문서를 접근 가능한 링크처럼 표시하지 않는다.
 
@@ -121,7 +121,7 @@ Planned
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 ticket만 표현한다.
 - 상태는 `Planned`로 고정한다. 분류 label은 `activate`가 Issue 변환 뒤 적용하는 `harness:plan-set` 또는 `harness:plan`만 사용하며, tracker 상태와 label을 혼동하지 않는다.
-- Project draft 상태는 `Planned`로 설정한다. 저장소 Issue 상태는 이 단계에서 만들지 않는다.
+- Issue는 사용자가 발행을 승인한 뒤 저장소에 직접 생성한다.
 - 의존성은 canonical plan ID를 사용한다. Issue 번호·URL을 추측하지 않는다.
 - parent의 설계 문서 경로는 실제 존재하는 non-empty 파일이어야 한다.
 - parent에 넣는 모든 SVG는 실제 존재하는 non-empty `.svg` 파일이어야 한다.

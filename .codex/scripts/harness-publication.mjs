@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
 const { updatePublication } = await import('../../.harness/src/tracker/publication.mjs');
-const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
+const { resolveCommandContext } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 
 try {
   const [action, ...args] = process.argv.slice(2);
   const options = { action };
   for (let i = 0; i < args.length; i += 2) {
-    const key = { '--root': 'root', '--plan-set': 'planSetId', '--plan': 'planId', '--item': 'itemId' }[args[i]];
+    const key = { '--root': 'root', '--plan-set': 'planSetId', '--plan': 'planId' }[args[i]];
     if (!key || !args[i + 1] || Object.hasOwn(options, key) && key !== 'root') throw new Error('Invalid publication argument');
     options[key] = args[i + 1];
   }

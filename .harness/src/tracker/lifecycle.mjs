@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { sessionOutputPath } from '../workflow/session-output.mjs';
+import { sessionDirectory, sessionOutputPath } from '../workflow/session-output.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
 
 const exec = promisify(execFile);
@@ -152,17 +152,30 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
   }
   if (config.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
   const settings = config.github;
-  const { project } = await githubProjectMetadata(root, settings, run, {});
+  if (!/^[\w.-]+\/[\w.-]+$/.test(settings.repository || '')) throw new Error('Invalid configured GitHub repository');
+  const receipt = sessionOutputPath(root, `runtime/to-ticket/${planSetId}-issues.json`, { create: false });
+  const saved = await readFile(receipt, 'utf8').catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (saved !== null) {
+    const { repository, tickets } = JSON.parse(saved);
+    if (repository === settings.repository) {
+      if (!Array.isArray(tickets) || new Set(tickets.map((ticket) => ticket.plan_id)).size !== tickets.length) throw new Error('Invalid Issue links');
+      for (const ticket of tickets) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticket.plan_id)) throw new Error('Invalid linked plan ID');
+        githubReference(config, ticket.ticket_ref);
+      }
+      return tickets;
+    }
+  }
   const tickets = new Map();
-  let cursor = null;
-  const cursors = new Set();
-  do {
-    const query = `query { node(id:${JSON.stringify(project.id)}) { ... on ProjectV2 { items(first:100, after:${JSON.stringify(cursor)}) { pageInfo { hasNextPage endCursor } nodes { content { __typename ... on Issue { number url body } } } } } } }`;
-    const response = await json(run, 'gh', ['api', 'graphql', '-f', `query=${query}`], root);
-    const page = response.data?.node?.items;
-    if (response.errors?.length || !Array.isArray(page?.nodes) || typeof page.pageInfo?.hasNextPage !== 'boolean') throw new Error('Incomplete Project ticket response');
-    for (const { content } of page.nodes) {
-      if (content?.__typename !== 'Issue') continue;
+  const pages = await json(run, 'gh', ['api', '--paginate', '--slurp', `repos/${settings.repository}/issues?state=all&per_page=100`], root);
+  if (!Array.isArray(pages) || !pages.every(Array.isArray)) throw new Error('Incomplete repository Issue response');
+  for (const page of pages) {
+    for (const issue of page) {
+      if (issue.pull_request) continue;
+      const content = { ...issue, url: issue.html_url };
       for (const match of (content.body || '').matchAll(/<!-- harness-plan ([^\n]*?) -->/g)) {
         let identity;
         try { identity = JSON.parse(match[1]); } catch { throw new Error('Invalid plan identity in Project Issue'); }
@@ -172,36 +185,11 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
         tickets.set(identity.plan_id, { plan_id: identity.plan_id, ticket_ref: `${settings.repository}#${content.number}` });
       }
     }
-    cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
-    if (page.pageInfo.hasNextPage && (!cursor || cursors.has(cursor))) throw new Error('Invalid Project pagination');
-    cursors.add(cursor);
-  } while (cursor);
-  // Older publications can be identified only by a unique match to their reviewed publication body.
-  const planDirectory = resolve(root, 'docs/plans', planSetId);
-  const names = await readdir(planDirectory).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
-  const missing = names.filter((name) => name.endsWith('.md') && name !== 'plans.md' && !tickets.has(name.slice(0, -3)));
-  if (missing.length) {
-    const { inspectPublication } = await import('./publication.mjs');
-    // Publication bodies exist only for a reviewed plan set. Local drafts that are unreviewed, stale or unreadable cannot match a
-    // legacy publication, and they must not fail the preflight of stages that never publish (only tracker-publish and tactical-code
-    // need them, through preparePublicationDrafts).
-    const { inspectPlanSet } = await import('../workflow/plan-review.mjs');
-    const reviewed = await inspectPlanSet({ root, planSetId, phase: 'planning' }).then((review) => review.status === 'pass', () => false);
-    let publication;
-    try { if (reviewed) publication = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) }); }
-    catch (error) { if (error.code !== 'ENOENT' && error.code !== 'PUBLICATION_NOT_READY') throw error; }
-    for (const item of publication?.items || []) {
-      if (item.plan_id === '@parent' || tickets.has(item.plan_id) || item.content?.__typename !== 'Issue' || !item.body_matches) continue;
-      const { number, url } = item.content;
-      if (!Number.isSafeInteger(number) || number <= 0 || url !== `https://github.com/${settings.repository}/issues/${number}`) throw new Error('Invalid legacy plan Issue identity');
-      tickets.set(item.plan_id, { plan_id: item.plan_id, ticket_ref: `${settings.repository}#${number}` });
-    }
   }
   return [...tickets.values()].sort((a, b) => a.plan_id.localeCompare(b.plan_id));
 }
 
-// Canonical tracker status of every plan of a plan set, read from the configured tracker (never from a model's report).
-// local-markdown: the plan document's own frontmatter status. github: the Workflow Status of the mapped Issue. A plan without a mapped ticket is reported with ticket_ref null; unreadable trackers throw.
+// Local tickets use frontmatter. GitHub tickets use verified implementation commits for readiness.
 export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run = defaultRun } = {}) {
   if (!planSetId || !Array.isArray(planIds)) throw new Error('A plan set ID and its plan IDs are required');
   const config = await projectConfig(root);
@@ -215,12 +203,13 @@ export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set
   }
   if (config?.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
   const mapped = new Map((await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run })).map((ticket) => [ticket.plan_id, ticket]));
-  const refs = planIds.map((planId) => mapped.get(planId)?.ticket_ref).filter(Boolean);
-  const statuses = refs.length ? await githubTickets(root, config, refs, run, {}) : new Map();
-  return planIds.map((planId) => {
-    const ticket = mapped.get(planId);
-    return { plan_id: planId, ticket_ref: ticket?.ticket_ref ?? null, status: ticket ? statuses.get(ticket.ticket_ref).status : null };
-  });
+  const { implementedTickets } = await import('../workflow/tactical-tickets.mjs');
+  const completed = await implementedTickets({ root, session: sessionDirectory(root), planSetId });
+  return planIds.map((planId) => ({
+    plan_id: planId,
+    ticket_ref: mapped.get(planId)?.ticket_ref ?? null,
+    status: completed.has(planId) ? 'completed' : 'planned',
+  }));
 }
 
 // Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
@@ -260,11 +249,18 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
       if (refs.some((ref) => !tickets.some((ticket) => ticket.plan_id === expected_plan_id.slice(separator + 1) && ticket.ticket_ref === ref))) throw new Error('Ticket does not belong to the expected plan');
     }
     const context = {};
-    const statuses = config.mode === 'github' && refs.length ? await githubTickets(root, config, refs, run, context) : null;
+    let statuses = null;
+    if (config.mode === 'github' && refs.length) {
+      for (const ref of refs) githubReference(config, ref);
+      try { statuses = await githubTickets(root, config, refs, run, context); }
+      catch (error) { return { status: 'pass', reason: 'project_status_unavailable', warnings: [error.message], violations: [], tickets: [] }; }
+    }
     const tickets = [];
     for (const ref of refs) tickets.push({ ref, status: (statuses ? statuses.get(ref) : await readTracker(root, config, ref, run, context)).status });
     return { status: 'pass', reason: refs.length ? 'tracker_tickets_current' : 'no_managed_tracker_tickets', violations: [], tickets };
-  } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', violations: [error.message] }; }
+  } catch (error) {
+    return { status: 'fail', reason: 'tracker_status_unresolved', violations: [error.message] };
+  }
 }
 
 // Records a note on the ticket (for example what an implementation-only repair changed) without touching the plan.
@@ -297,7 +293,14 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     if (check.status !== 'pass') throw new Error(check.violations.join('; '));
   }
   const context = {};
-  let tracker = await readTracker(root, config, ref, run, context), tracker_updated = false;
+  if (config.mode === 'github') githubReference(config, ref);
+  let tracker_updated = false;
+  let tracker;
+  try { tracker = await readTracker(root, config, ref, run, context); }
+  catch (error) {
+    if (config.mode !== 'github') throw error;
+    return { status: 'pass', reason: 'project_status_unavailable', ticket_ref: ref, warnings: [error.message], tracker_updated };
+  }
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
   try {
@@ -337,6 +340,6 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     if (config.mode === 'github') await forgetProjectMetadata(context);
     const result = { status: 'fail', reason: 'tracker_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Read the latest tracker status before retrying', evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
-    return result;
+    return config.mode === 'github' ? { ...result, status: 'pass', reason: 'project_sync_unavailable', warnings: result.violations, violations: [] } : result;
   } finally { await writer.close(); }
 }

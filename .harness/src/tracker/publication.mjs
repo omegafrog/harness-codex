@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { inspectPlanSet, snapshotPlanSet } from '../workflow/plan-review.mjs';
-import { TRACKER_STATES } from './lifecycle.mjs';
 
 const exec = promisify(execFile);
 const defaultRun = async (args, cwd) => (await exec('gh', args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
@@ -23,7 +22,7 @@ export async function preparePublicationDrafts({ root, planSetId }) {
   const snapshot = await snapshotPlanSet({ root, planSetId });
   const review = await inspectPlanSet({ root, planSetId, phase: 'planning' });
   if (review.status !== 'pass' || !snapshot.execution_workspace) throw Object.assign(new Error('Publication bodies require a reviewed plan set and canonical execution workspace'), { code: 'PUBLICATION_NOT_READY' });
-  // Only GitHub publication turns plans into Issue drafts; a local-markdown plan file is already its own ticket.
+  // GitHub needs an Issue body; a local-markdown plan is already its own ticket.
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch(() => ''));
   if (config.tracker?.mode !== 'github') return [];
   const drafts = [];
@@ -56,83 +55,42 @@ const marker = (set, plan) => `<!-- harness-plan ${JSON.stringify({ plan_set_id:
 export async function inspectPublication({ root, planSetId, run = defaultRun }) {
   const tracker = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker;
   if (tracker?.mode !== 'github') throw new Error('Project publication requires GitHub tracker mode');
-  const settings = tracker.github;
-  if (!/^[\w-]+$/.test(settings?.project_owner || '') || !Number.isInteger(settings.project_number) || settings.project_number <= 0 || !settings.status_field || settings.status_field === 'Status') throw new Error('Invalid configured GitHub project');
-  const get = async (args) => JSON.parse(await run(args, root));
-  const project = await get(['project', 'view', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json']);
-  const fields = await get(['project', 'field-list', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json', '--limit', '100']);
-  const field = fields.fields?.filter((f) => f.name === settings.status_field && f.type === 'ProjectV2SingleSelectField');
-  if (!project.id || fields.totalCount > fields.fields?.length || field?.length !== 1) throw new Error('Incomplete or ambiguous Project metadata');
-  const planned = field[0].options?.filter((o) => o.name === 'Planned');
-  const nodes = [];
-  let cursor = null;
-  const cursors = new Set();
-  do {
-    const query = `query { node(id:${JSON.stringify(project.id)}) { ... on ProjectV2 { items(first:100, after:${JSON.stringify(cursor)}) { pageInfo { hasNextPage endCursor } nodes { id content { __typename ... on DraftIssue { title body } ... on Issue { title body number url } } fieldValues(first:100) { pageInfo { hasNextPage } nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { id } } } } } } } } } }`;
-    const response = await get(['api', 'graphql', '-f', `query=${query}`]);
-    const page = response.data?.node?.items;
-    if (response.errors?.length || !Array.isArray(page?.nodes) || typeof page.pageInfo?.hasNextPage !== 'boolean') throw new Error('Incomplete Project publication response');
-    nodes.push(...page.nodes);
-    cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
-    if (page.pageInfo.hasNextPage && (!cursor || cursors.has(cursor))) throw new Error('Invalid Project pagination');
-    cursors.add(cursor);
-  } while (cursor);
+  const repository = tracker.github?.repository;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Invalid configured GitHub repository');
   const drafts = await preparePublicationDrafts({ root, planSetId });
+  const pages = JSON.parse(await run(['api', '--paginate', '--slurp', `repos/${repository}/issues?state=all&per_page=100`], root));
+  if (!Array.isArray(pages) || !pages.every(Array.isArray)) throw new Error('Incomplete repository Issue response');
+  const issues = pages.flat().filter((issue) => !issue.pull_request);
   const items = [];
   for (const draft of drafts) {
     const body = await readFile(sessionOutputPath(root, draft.body_path, { create: false }), 'utf8');
     const identity = marker(planSetId, draft.plan_id);
-    const matches = nodes.filter((n) => n?.content && (n.content.body?.includes(identity) || normalizeBody(n.content.body || '') === normalizeBody(body)));
-    if (matches.length > 1) throw new Error(`Duplicate Project items for plan: ${draft.plan_id}`);
-    const node = matches[0];
-    if (node) {
-      if (node.fieldValues?.pageInfo?.hasNextPage !== false) throw new Error('Incomplete Project item status');
-      const statuses = node.fieldValues.nodes.filter((v) => v.field?.id === field[0].id);
-      items.push({ ...draft, item_id: node.id, content: node.content, status: statuses.length === 1 ? statuses[0].name : null, identity_matches: node.content.body?.includes(identity) || false, body_matches: normalizeBody(node.content.body || '') === normalizeBody(body) });
-    } else items.push({ ...draft, item_id: null });
+    const matches = issues.filter((issue) => issue.body?.includes(identity) || normalizeBody(issue.body || '') === normalizeBody(body));
+    if (matches.length > 1) throw new Error(`Duplicate Issues for plan: ${draft.plan_id}`);
+    const issue = matches[0];
+    if (issue && (!Number.isSafeInteger(issue.number) || issue.number <= 0 || issue.html_url !== `https://github.com/${repository}/issues/${issue.number}`)) throw new Error('Invalid published Issue identity');
+    items.push({ ...draft, item_id: issue?.number ?? null, content: issue ? { __typename: 'Issue', number: issue.number, url: issue.html_url } : null });
   }
-  if (new Set(items.filter((i) => i.item_id).map((i) => i.item_id)).size !== items.filter((i) => i.item_id).length) throw new Error('One Project item matches multiple plans');
-  const matchedIds = new Set(items.map((item) => item.item_id));
-  if (nodes.some((node) => ['DraftIssue', 'Issue'].includes(node.content?.__typename) && !matchedIds.has(node.id) && (node.content.body?.includes(planSetId) || node.content.title?.includes(planSetId)))) throw new Error('Unidentified Project item references this plan set; resolve duplicates before publishing');
-  return { plan_set_id: planSetId, project_id: project.id, status_field_id: field[0].id, planned_option_id: planned?.length === 1 ? planned[0].id : null, items };
+  const numbers = items.flatMap((item) => item.item_id ? [item.item_id] : []);
+  if (new Set(numbers).size !== numbers.length) throw new Error('One Issue matches multiple plans');
+  return { plan_set_id: planSetId, repository, items };
 }
 
-export async function updatePublication({ root, planSetId, planId, action, itemId, run = defaultRun }) {
-  if (!['inspect', 'begin', 'record', 'publish', 'activate'].includes(action)) throw new Error('Invalid publication action');
+export async function updatePublication({ root, planSetId, planId, action, run = defaultRun }) {
   if (action === 'inspect') return inspectPublication({ root, planSetId, run });
-  if (action === 'activate') return activatePublication({ root, planSetId });
+  if (action === 'activate') return activatePublication({ root, planSetId, run: (_command, args, cwd) => run(args, cwd) });
+  if (action !== 'publish') throw new Error('Invalid publication action');
   const lock = sessionOutputPath(root, 'runtime/to-ticket/publication.lock');
   await mkdir(lock);
   try {
     const state = await inspectPublication({ root, planSetId, run });
-    const item = state.items.find((i) => i.plan_id === planId);
+    const item = state.items.find((entry) => entry.plan_id === planId);
     if (!item) throw new Error('Plan does not belong to the reviewed plan set');
-    if (action === 'record') {
-      if (!item.item_id || item.item_id !== itemId || !item.body_matches) throw new Error('Creation response does not match the actual Project item');
-      return { status: 'verified', ...item };
-    }
-    if (action === 'begin') return { ...item, status: item.item_id ? 'already_created' : 'pending' };
-    if (item.item_id && item.content.__typename === 'Issue') {
-      if (item.identity_matches || item.body_matches) return { ...item, status: 'already_published' };
-      throw new Error(`Converted Issue identity does not match the reviewed publication body: ${planId}`);
-    }
-    if (!state.planned_option_id) throw new Error('Planned Project status option is unavailable');
-    if (item.item_id && item.content.__typename !== 'DraftIssue') throw new Error('Project item is already converted to an Issue');
-    if (item.item_id && !item.body_matches) throw new Error(`Project body differs from reviewed publication body: ${planId}`);
-    let id = item.item_id;
-    if (!id) {
-      const body = await readFile(sessionOutputPath(root, item.body_path, { create: false }), 'utf8');
-      const title = await publicationTitle(root, planSetId, planId);
-      const mutation = `mutation { addProjectV2DraftIssue(input:{projectId:${JSON.stringify(state.project_id)},title:${JSON.stringify(title)},body:${JSON.stringify(body)}}) { projectItem { id } } }`;
-      const response = JSON.parse(await run(['api', 'graphql', '-f', `query=${mutation}`], root));
-      id = response.data?.addProjectV2DraftIssue?.projectItem?.id;
-      if (response.errors?.length || !id) throw new Error('Ambiguous creation response; inspect the Project before retrying');
-    }
-    const mutation = `mutation { updateProjectV2ItemFieldValue(input:{projectId:${JSON.stringify(state.project_id)},itemId:${JSON.stringify(id)},fieldId:${JSON.stringify(state.status_field_id)},value:{singleSelectOptionId:${JSON.stringify(state.planned_option_id)}}}) { projectV2Item { id } } }`;
-    const response = JSON.parse(await run(['api', 'graphql', '-f', `query=${mutation}`], root));
-    if (response.errors?.length || response.data?.updateProjectV2ItemFieldValue?.projectV2Item?.id !== id) throw new Error('Project status update failed');
-    const verified = (await inspectPublication({ root, planSetId, run })).items.find((i) => i.plan_id === planId);
-    if (verified.item_id !== id || !verified.body_matches || verified.status !== 'Planned') throw new Error('Published Project item verification failed');
+    if (item.item_id) return { ...item, status: 'already_published' };
+    const title = await publicationTitle(root, planSetId, planId);
+    const url = (await run(['issue', 'create', '--repo', state.repository, '--title', title, '--body-file', sessionOutputPath(root, item.body_path, { create: false })], root)).trim();
+    const verified = (await inspectPublication({ root, planSetId, run })).items.find((entry) => entry.plan_id === planId);
+    if (!verified?.item_id || verified.content.url !== url) throw new Error('Issue creation did not verify; inspect repository Issues before retrying');
     return { ...verified, status: 'published' };
   } finally { await rm(lock, { recursive: true }); }
 }
@@ -143,19 +101,6 @@ export async function publicationTitle(root, planSetId, planId) {
   const title = source.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]?.trim();
   if (!title) throw new Error(`Publication title heading is missing: ${path}`);
   return `${planId === '@parent' ? '[Harness Plan Set]' : '[Harness Plan]'} ${title}`;
-}
-
-export async function verifyDraftPublication({ root, planSetId, run = defaultRun }) {
-  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).tracker;
-  if (config?.mode !== 'github') return;
-  const state = await inspectPublication({ root, planSetId, run });
-  const issueStatuses = new Set(Object.values(TRACKER_STATES).map(([label]) => label));
-  for (const item of state.items) {
-    if (item.content?.__typename === 'Issue') {
-      if (!item.item_id || !(item.identity_matches || item.body_matches) || !issueStatuses.has(item.status)) throw new Error(`Converted Project Issue identity or status is unresolved: ${item.plan_id}`);
-    } else if (!item.item_id || !item.body_matches || item.content?.__typename !== 'DraftIssue' || item.status !== 'Planned') throw new Error(`Draft publication is missing, changed or not Planned: ${item.plan_id}`);
-  }
-  return state;
 }
 
 const defaultCommand = async (command, args, cwd) => (await exec(command, args, { cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 })).stdout;
@@ -191,34 +136,10 @@ export async function activatePublication({ root, planSetId, run = defaultComman
   }
   const repository = config.tracker?.github?.repository;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Configured GitHub repository is required to activate the plan set');
-  let state = await inspectPublication({ root, planSetId, run: gh });
+  const state = await inspectPublication({ root, planSetId, run: gh });
   const missing = state.items.filter((item) => !item.item_id).map((item) => item.plan_id);
-  if (missing.length) throw new Error(`Publish these plans before activation: ${missing.join(', ')}`);
-  const drafts = state.items.filter((item) => item.content?.__typename === 'DraftIssue');
-  if (drafts.length) {
-    const repositoryId = (await ghJson(['repo', 'view', repository, '--json', 'id'])).id;
-    if (!repositoryId) throw new Error('Repository ID is unavailable');
-    for (const item of drafts) {
-      const mutation = `mutation { convertProjectV2DraftIssueItemToIssue(input:{itemId:${JSON.stringify(item.item_id)},repositoryId:${JSON.stringify(repositoryId)}}) { item { id } } }`;
-      let response;
-      try { response = JSON.parse(await gh(['api', 'graphql', '-f', `query=${mutation}`], root)); } catch (error) { response = { errors: [{ message: error.message }] }; }
-      // An unclear response is resolved by reading the Project again, never by converting a second time.
-      const current = (await inspectPublication({ root, planSetId, run: gh })).items.find((entry) => entry.plan_id === item.plan_id);
-      if (current?.content?.__typename !== 'Issue') throw new Error(`Draft conversion did not produce an Issue for ${item.plan_id}: ${(response.errors || []).map((error) => error.message).join('; ') || 'no Issue in the Project item'}`);
-    }
-    state = await inspectPublication({ root, planSetId, run: gh });
-  }
+  if (missing.length) throw new Error(`Published Issues are missing for: ${missing.join(', ')}`);
   const byPlan = new Map(state.items.map((item) => [item.plan_id, item]));
-  for (const item of state.items) {
-    if (item.content?.__typename !== 'Issue' || !item.content.number) throw new Error(`Project item is not an Issue: ${item.plan_id}`);
-    if (!(item.identity_matches || item.body_matches)) throw new Error(`Issue body does not match the reviewed plan: ${item.plan_id}`);
-    if (!item.status) {
-      if (!state.planned_option_id) throw new Error('Planned Project status option is unavailable');
-      const mutation = `mutation { updateProjectV2ItemFieldValue(input:{projectId:${JSON.stringify(state.project_id)},itemId:${JSON.stringify(item.item_id)},fieldId:${JSON.stringify(state.status_field_id)},value:{singleSelectOptionId:${JSON.stringify(state.planned_option_id)}}}) { projectV2Item { id } } }`;
-      const response = JSON.parse(await gh(['api', 'graphql', '-f', `query=${mutation}`], root));
-      if (response.errors?.length) throw new Error(`Setting Planned failed for ${item.plan_id}`);
-    }
-  }
   const [owner, name] = repository.split('/');
   const taxonomyLabels = [
     ['harness:plan-set', 'Harness generated plan set'],
@@ -248,23 +169,39 @@ export async function activatePublication({ root, planSetId, run = defaultComman
     const response = JSON.parse(await gh(['api', 'graphql', '-f', `query=mutation { addSubIssue(input:{issueId:${JSON.stringify(parentIssue.id)},subIssueId:${JSON.stringify(childId)}}) { subIssue { id } } }`], root));
     if (response.errors?.length) throw new Error(`Linking ${child.plan_id} under the parent failed: ${response.errors.map((error) => error.message).join('; ')}`);
   }
+  const warnings = [];
+  const settings = config.tracker.github;
+  for (const item of state.items) {
+    try {
+      await gh(['project', 'item-add', String(settings.project_number), '--owner', settings.project_owner, '--url', item.content.url], root);
+    } catch (error) {
+      warnings.push(error.message);
+      break;
+    }
+  }
   const refs = state.items.map((item) => `${repository}#${item.content.number}`);
+  const path = sessionOutputPath(root, `runtime/to-ticket/${planSetId}-issues.json`);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  const tickets = children.map((item) => ({ plan_id: item.plan_id, ticket_ref: `${repository}#${item.content.number}` })).sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+  try {
+    await writeFile(temporary, JSON.stringify({ repository, tickets }), { flag: 'wx', mode: 0o600 });
+    await rename(temporary, path);
+  } finally { await rm(temporary, { force: true }); }
   const { inspectTrackerSync } = await import('./lifecycle.mjs');
   const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
   if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
-  return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), tracker_check: check };
+  return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), tracker_check: check, warnings: [...warnings, ...(check.warnings || [])] };
 }
 
-// tracker-publish is complete only when implementation can start: every plan is an Issue in the Project and the
-// tracker check passes.
+// Verify the plan-to-Issue mapping without consulting the Project.
 export async function verifyActivatedPublication({ root, planSetId, run = defaultCommand }) {
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   if (config.tracker?.mode !== 'github') return;
-  const state = await inspectPublication({ root, planSetId, run: (args, cwd) => run('gh', args, cwd) });
-  const pending = state.items.filter((item) => item.content?.__typename !== 'Issue').map((item) => item.plan_id);
-  if (pending.length) throw new Error(`Plans are not activated as Issues yet (run harness-publication.mjs activate): ${pending.join(', ')}`);
-  const { inspectTrackerSync } = await import('./lifecycle.mjs');
-  const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: state.items.map((item) => `${config.tracker.github.repository}#${item.content.number}`), run });
-  if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
-  return state;
+  const { listPlanTickets } = await import('./lifecycle.mjs');
+  const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run });
+  const snapshot = await snapshotPlanSet({ root, planSetId });
+  const mapped = new Set(tickets.map((ticket) => ticket.plan_id));
+  const missing = snapshot.plans.filter((plan) => !mapped.has(plan.id)).map((plan) => plan.id);
+  if (missing.length) throw new Error(`Published Issues are missing for: ${missing.join(', ')}`);
+  return tickets;
 }

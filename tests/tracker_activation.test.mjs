@@ -10,7 +10,7 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 // tracker-publish activates the published plan set so implementation can start: drafts become Issues, children
 // become sub-issues of the parent. A rerun only
 // completes what is missing, and the result passes the same tracker check implementation uses.
-test('installed tracker activation converts drafts and links sub-issues once', async () => {
+test('installed tracker activation links directly published Issues despite Project failure', async () => {
   const sourceRoot = resolve('.');
   await mkdir('.io/runtime', { recursive: true });
   const directory = await mkdtemp(resolve('.io/runtime/tracker-activation-'));
@@ -43,29 +43,22 @@ test('installed tracker activation converts drafts and links sub-issues once', a
     await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
     const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
 
-    // A fake GitHub Project and repository that change as the commands run.
     const items = [];
-    for (const [index, draft] of prepared.entries()) items.push({ id: `item-${index}`, status: 'Planned', content: { __typename: 'DraftIssue', title: draft.plan_id, body: (await readFile(join(root, '.io', draft.body_path), 'utf8')).replace(/\n+$/, '') } });
-    const issues = new Map(); // number -> { id, subIssues: Set }
-    const calls = { convert: 0, subIssue: 0, labels: new Set(), appliedLabels: [] };
-    const fields = { totalCount: 1, fields: [{ id: 'status', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: name, name })) }] };
+    const issues = new Map();
+    for (const [index, draft] of prepared.entries()) {
+      const number = 100 + index;
+      items.push({ number, html_url: `https://github.com/owner/repo/issues/${number}`, body: await readFile(join(root, '.io', draft.body_path), 'utf8') });
+      issues.set(number, { id: `issue-${number}`, subIssues: new Set() });
+    }
+    const calls = { subIssue: 0, labels: new Set(), appliedLabels: [] };
     const run = async (command, args) => {
       if (command === 'gh') {
+        if (args[0] === 'project') throw new Error('Project rate limit');
         if (args[0] === 'label' && args[1] === 'list') return JSON.stringify([...calls.labels].map((name) => ({ name })));
         if (args[0] === 'label' && args[1] === 'create') { calls.labels.add(args[2]); return ''; }
+        if (args[0] === 'api' && args[1] === '--paginate') return JSON.stringify([items]);
         if (args[0] === 'issue' && args[1] === 'edit') { calls.appliedLabels.push([args[2], args[args.indexOf('--add-label') + 1]]); return ''; }
-        if (args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project' });
-        if (args[0] === 'project' && args[1] === 'field-list') return JSON.stringify(fields);
-        if (args[0] === 'repo') return JSON.stringify({ id: 'repo-id' });
         const query = args.find((arg) => arg.startsWith('query='))?.slice(6) || '';
-        if (query.includes('convertProjectV2DraftIssueItemToIssue')) {
-          calls.convert++;
-          const item = items.find((entry) => entry.id === JSON.parse(query.match(/itemId:("[^"]+")/)[1]));
-          const number = 100 + items.indexOf(item);
-          item.content = { ...item.content, __typename: 'Issue', number, url: `https://github.com/owner/repo/issues/${number}` };
-          issues.set(number, { id: `issue-${number}`, subIssues: new Set() });
-          return JSON.stringify({ data: { convertProjectV2DraftIssueItemToIssue: { item: { id: item.id } } } });
-        }
         if (query.includes('addSubIssue')) {
           calls.subIssue++;
           const [, parentId, childId] = query.match(/issueId:"([^"]+)",subIssueId:"([^"]+)"/);
@@ -77,33 +70,31 @@ test('installed tracker activation converts drafts and links sub-issues once', a
           const issue = issues.get(number);
           return JSON.stringify({ data: { repository: { issue: { id: issue.id, subIssues: { nodes: [...issue.subIssues].map((id) => ({ id })) } } } } });
         }
-        if (query.includes('issue_0:issue')) {
-          const repository = Object.fromEntries([...query.matchAll(/issue_(\d+):issue\(number:(\d+)\)/g)].map(([, index, number]) => [`issue_${index}`, { state: 'OPEN', projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: `item-${number}`, project: { id: 'project' }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: items.find((item) => item.content.number === Number(number)).status, field: { id: 'status' } }] } }] } }]));
-          return JSON.stringify({ data: { repository } });
-        }
-        if (query.includes('items(first:100')) return JSON.stringify({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: items.map((item) => ({ id: item.id, content: item.content, fieldValues: { pageInfo: { hasNextPage: false }, nodes: [{ name: item.status, field: { id: 'status' } }] } })) } } } });
         throw new Error(`Unexpected gh query: ${query.slice(0, 80)}`);
       }
       throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
     };
 
-    await assert.rejects(verifyActivatedPublication({ root, planSetId: 'example', run }), /not activated as Issues yet/);
     const result = await activatePublication({ root, planSetId: 'example', run });
     assert.equal(result.status, 'activated');
+    assert.match(result.warnings[0], /Project rate limit/);
     assert.deepEqual(result.issues.map((issue) => issue.number), [100, 101, 102]);
-    assert.equal(calls.convert, 3);
     assert.deepEqual([...calls.labels].sort(), ['harness:intake', 'harness:plan', 'harness:plan-set']);
     assert.deepEqual(calls.appliedLabels, [['100', 'harness:plan-set'], ['101', 'harness:plan'], ['102', 'harness:plan']]);
     assert.deepEqual([...issues.get(100).subIssues].sort(), ['issue-101', 'issue-102']);
-    await verifyActivatedPublication({ root, planSetId: 'example', run });
-    items[1].content.body = items[1].content.body.replace(/<!-- harness-plan [^\n]* -->/, '').trimEnd();
+    await verifyActivatedPublication({ root, planSetId: 'example', run: async () => { throw new Error('unexpected GitHub call'); } });
+    const { syncTrackerStatus } = await import(runtime('tracker/lifecycle.mjs'));
+    const warning = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#101', status: 'in-progress', run: async () => { throw new Error('rate limit'); } });
+    assert.equal(warning.status, 'pass');
+    assert.equal(warning.tracker_updated, false);
+    assert.match(warning.warnings[0], /rate limit/);
+    items[1].body = items[1].body.replace(/<!-- harness-plan [^\n]* -->/, '').trimEnd();
     assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'example', run }), [
       { plan_id: 'auth', ticket_ref: 'owner/repo#101' }, { plan_id: 'posts', ticket_ref: 'owner/repo#102' },
-    ], 'a unique reviewed body identifies a markerless legacy Issue');
+    ], 'the recorded Issue link survives removal of the Issue body marker');
 
-    // A rerun converts, links and creates nothing more.
+    // A rerun adds no duplicate links.
     await activatePublication({ root, planSetId: 'example', run });
-    assert.equal(calls.convert, 3);
     assert.equal(calls.subIssue, 2);
     assert.equal(calls.labels.size, 3, 'reruns do not recreate taxonomy labels');
     assert.equal(calls.appliedLabels.length, 6, 'reruns safely reapply labels');

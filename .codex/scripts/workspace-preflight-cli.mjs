@@ -13,14 +13,9 @@ export async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd
   }
   if (!options.workspaceRoot || (options.deferTrackerSync && options.forImplementation) || (options.forE2e && (options.deferTrackerSync || options.forImplementation))) throw new Error("Usage: harness-workspace-preflight.mjs --workspace-root <absolute-workspace-root> [--for-implementation | --defer-tracker-sync | --for-e2e] [--json]");
   const result = await inspectWorkspace({ workspaceRoot: options.workspaceRoot, cwd });
-  if (result.valid && options.forE2e) result.tracker_sync = { status: "not_required", reason: "e2e_workspace_integrity_only" };
-  if (result.valid && options.deferTrackerSync) result.tracker_sync = { status: "deferred", reason: "to_ticket_batch_publish" };
-  if (result.valid && !options.deferTrackerSync && !options.forE2e) {
-    const installed = new URL("../../.harness/src/tracker/lifecycle.mjs", import.meta.url);
-    const { inspectTrackerSync } = await import(installed.href);
-    result.tracker_sync = await inspectTrackerSync({ workspace_root: result.workspace_root });
-    if (result.tracker_sync.status !== "pass") { result.valid = false; result.reason = result.tracker_sync.reason; }
-  }
+  if (result.valid) result.tracker_sync = options.deferTrackerSync
+    ? { status: "deferred", reason: "to_ticket_batch_publish" }
+    : { status: "not_required", reason: options.forE2e ? "e2e_workspace_integrity_only" : "workspace_integrity_only" };
   if (result.valid && options.forImplementation) {
     const installed = new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url);
     const { inspectProjectReadiness } = await import(installed.href);

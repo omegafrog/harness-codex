@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -10,6 +11,7 @@ const refs = [`${repository}#1`, `${repository}#2`];
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'tracker-mirror-'));
+  execFileSync('git', ['init', '-q', root]);
   await mkdir(join(root, '.codex'), { recursive: true });
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), `tracker:\n  mode: github\n  github:\n    repository: ${repository}\n    project_owner: omegafrog\n    project_number: 1\n    status_field: Workflow Status\n`);
@@ -18,8 +20,12 @@ async function fixture() {
     if (command === 'gh' && args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project-id' });
     if (command === 'gh' && args[0] === 'project' && args[1] === 'field-list') return JSON.stringify({ totalCount: 1, fields: [{ id: 'field-id', name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ id: name, name })) }] });
     if (command === 'gh' && args[0] === 'api') {
+      if (args[1] === '--paginate') return JSON.stringify([[[1, 'calculator'], [2, 'e2e']].map(([number, plan_id]) => ({
+        number, html_url: `https://github.com/${repository}/issues/${number}`,
+        body: `<!-- harness-plan ${JSON.stringify({ plan_set_id: 'set', plan_id })} -->`,
+      }))]);
       const query = args.find((arg) => arg.startsWith('query='));
-      if (query.includes('node(id:')) return JSON.stringify({ data: { node: { items: { pageInfo: { hasNextPage: false }, nodes: [[1, 'calculator'], [2, 'e2e']].map(([number, plan_id]) => ({ content: { __typename: 'Issue', number, url: `https://github.com/${repository}/issues/${number}`, body: `<!-- harness-plan ${JSON.stringify({ plan_set_id: 'set', plan_id })} -->` } })) } } } });
+
       const issues = [...query.matchAll(/issue_(\d+):issue\(number:(\d+)\)/g)];
       const tickets = Object.fromEntries(issues.map(([, index, number]) => [`issue_${index}`, {
         state: 'OPEN',
@@ -55,7 +61,7 @@ test('tickets are checked against the plan a stage implements', async () => {
       { plan_id: 'calculator', ticket_ref: refs[0] }, { plan_id: 'e2e', ticket_ref: refs[1] },
     ]);
     assert.deepEqual(await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run }), [
-      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' }, { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' }, { plan_id: 'unmapped', ticket_ref: null, status: null },
+      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' }, { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' }, { plan_id: 'unmapped', ticket_ref: null, status: 'planned' },
     ]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

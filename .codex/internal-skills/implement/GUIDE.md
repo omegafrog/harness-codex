@@ -9,7 +9,7 @@ model_tier: implementation
 
 이 실행은 split plan 하나를 구현하고 `action_required/REVIEW_REQUIRED`로 반환한다. 구현 리뷰는 구현 context를 공유하지 않는 fresh reviewer stage(`standards_reviewer`·`spec_reviewer`)가 수행하며, 구현자는 자기 diff를 리뷰하거나 reviewer를 직접 호출하지 않는다.
 
-runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fixed point·코드 수정 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`을 실행해 workspace·tracker sync·project readiness의 실제 pass를 확인하고, 실패하면 편집하지 않고 그 결과를 `blocked`로 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
+runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fixed point·코드 수정 전에 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`을 실행해 workspace와 project readiness를 확인하고, 실패하면 편집하지 않고 그 결과를 `blocked`로 반환한다. 구현 agent는 setup 복구 절차를 호출하지 않는다.
 
 ## 작업 위치
 

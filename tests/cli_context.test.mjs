@@ -61,6 +61,9 @@ test('E2E workspace preflight checks Git registration without requiring tracker 
     assert.equal(report.valid, true);
     assert.equal(report.worktree_registered, true);
     assert.deepEqual(report.tracker_sync, { status: 'not_required', reason: 'e2e_workspace_integrity_only' });
+    const normal = run(workspace, 'harness-workspace-preflight.mjs', '--workspace-root', workspace, '--json');
+    assert.equal(normal.status, 0, normal.stderr);
+    assert.deepEqual(JSON.parse(normal.stdout).tracker_sync, { status: 'not_required', reason: 'workspace_integrity_only' });
     assert.notEqual(run(workspace, 'harness-workspace-preflight.mjs', '--workspace-root', workspace, '--for-e2e', '--for-implementation', '--json').status, 0);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

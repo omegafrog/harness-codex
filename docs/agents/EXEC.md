@@ -114,7 +114,9 @@ node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket o
 
 GitHub mode는 configured Project/Workflow Status의 네 option을 확인하고 exact Issue project item만 변경한다. 기본 Status도 실행 상태에 맞추며 Issue closure는 변경하지 않는다. local-markdown mode는 configured directory 안의 ticket YAML frontmatter 상태를 바꾸고 본문을 보존한다. 참조 누락·중복·권한/API 실패는 오류다.
 
-부분 성공은 `<session_directory>/runtime/tracker-sync/` journal에 기록한다. 실패 시 tracker의 실제 상태를 확인하고 재시도한다. `check`는 외부 상태를 변경하지 않는다. workflow 시작 preflight·dispatch와 종료 명령은 tracker_sync를 실제 검사한다. legacy 데이터는 migration하지 않는다.
+GitHub 발행은 승인된 본문으로 저장소 Issue를 직접 만든다. 활성화 시 plan 연결은 세션의 `runtime/to-ticket/<plan-set-id>-issues.json`에 저장한다. Project 등록·조회 실패는 경고다.
+
+부분 성공은 `<session_directory>/runtime/tracker-sync/` journal에 기록한다. 실패 시 tracker의 실제 상태를 확인하고 재시도한다. `check`는 외부 상태를 변경하지 않는다. workspace preflight는 tracker를 조회하지 않으며 dispatch와 종료 명령은 tracker_sync를 검사한다. legacy 데이터는 migration하지 않는다.
 
 GitHub 보드 UI는 group-by/filter를 configured Workflow Status로 선택하고 기본 Status 열을 숨긴다. view 설정은 `gh project item-edit`의 상태 갱신과 별개이며 이 CLI는 지원하지 않는 view 변경을 수행했다고 보고하지 않는다. 기존 보드·item 데이터는 이번 변경으로 재작성하지 않는다.
 

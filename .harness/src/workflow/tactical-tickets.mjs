@@ -54,7 +54,7 @@ export async function assertTicketStartable({ root, planSetId, planId, resume = 
 
 // The tickets whose tactical-code execution finished completed/OK with a commit that HEAD contains, read from the
 // workflow state and the stored executions only.
-export async function implementedTickets({ root, session }) {
+export async function implementedTickets({ root, session, planSetId }) {
   const state = await readSkillSessionJson({ root, session_directory: session, path: 'runtime/orchestrator/state.json' }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
   const entry = state?.stages?.['tactical-code'];
   const done = new Map();
@@ -62,7 +62,7 @@ export async function implementedTickets({ root, session }) {
     if (attempt.status !== 'completed' || attempt.code !== 'OK' || !attempt.result_ref) continue;
     const input = await readExecutionInput({ root, execution_id: attempt.execution_id });
     const result = await readSkillSessionJson({ root, session_directory: session, path: attempt.result_ref });
-    if (input.context?.plan_id && /^[0-9a-f]{40}$/.test(result.commit_sha || '')) {
+    if ((!planSetId || input.context?.plan_set_id === planSetId) && input.context?.plan_id && /^[0-9a-f]{40}$/.test(result.commit_sha || '')) {
       const reachable = await git(root, 'merge-base', '--is-ancestor', result.commit_sha, 'HEAD').then(() => true, () => false);
       if (reachable) done.set(input.context.plan_id, result.commit_sha);
     }
@@ -79,7 +79,7 @@ export async function deriveTacticalOutcome({ root, planSetId, session, run }) {
   if (!tickets.length) return blocked('tickets_missing');
   const open = tickets.filter((ticket) => ticket.status !== 'completed').map((ticket) => ticket.plan_id);
   if (open.length) return blocked('tickets_not_completed', { open_tickets: open });
-  const implemented = await implementedTickets({ root, session });
+  const implemented = await implementedTickets({ root, session, planSetId });
   const missing = tickets.filter((ticket) => !implemented.has(ticket.plan_id)).map((ticket) => ticket.plan_id);
   if (missing.length) return blocked('tickets_without_implementation_commit', { missing_tickets: missing });
   return pass('every_ticket_implemented', { tickets: tickets.map((ticket) => ({ plan_id: ticket.plan_id, commit: implemented.get(ticket.plan_id) })) });

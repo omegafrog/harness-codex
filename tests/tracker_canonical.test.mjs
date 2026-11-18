@@ -22,16 +22,14 @@ test('local tracker resolves prerequisites and changes status without invoking a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('GitHub plan mapping reads issue identities from the configured Project without Beads', async () => {
+test('GitHub plan mapping reads issue identities directly from repository Issues', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-tracker-'));
   try {
     await mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
     const run = async (command, args) => {
       assert.equal(command, 'gh');
-      if (args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project' });
-      if (args[0] === 'project' && args[1] === 'field-list') return JSON.stringify({ fields: [{ name: 'Workflow Status', type: 'ProjectV2SingleSelectField', options: ['Planned', 'In Progress', 'Blocked', 'Done'].map((name) => ({ name })) }] });
-      if (args[0] === 'api') return JSON.stringify({ data: { node: { items: { pageInfo: { hasNextPage: false }, nodes: [{ content: { __typename: 'Issue', number: 42, url: 'https://github.com/owner/repo/issues/42', body: '<!-- harness-plan {"plan_set_id":"set","plan_id":"P1"} -->' } }] } } } });
+      if (args[0] === 'api' && args[1] === '--paginate') return JSON.stringify([[{ number: 42, html_url: 'https://github.com/owner/repo/issues/42', body: '<!-- harness-plan {"plan_set_id":"set","plan_id":"P1"} -->' }]]);
       throw new Error(`unexpected command ${args}`);
     };
     assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run }), [{ plan_id: 'P1', ticket_ref: 'owner/repo#42' }]);

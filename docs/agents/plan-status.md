@@ -4,7 +4,7 @@
 
 선택된 tracker가 canonical 상태를 저장한다.
 
-- `github` mode: parent Issue는 전체 작업을, child Issue는 split plan을 나타낸다. child Issue의 GitHub Project `Workflow Status`가 canonical source다.
+- `github` mode: parent Issue는 전체 작업을, child Issue는 split plan을 나타낸다. 발행 시 plan과 child Issue 번호의 연결을 세션에 저장한다. 구현 완료는 성공한 실행 기록과 현재 HEAD에 포함된 구현 커밋으로 판정한다. GitHub Project `Workflow Status`는 보조 표시다.
 - `local-markdown` mode: ticket 파일의 상태가 canonical source다. plan 문서는 구현 계약과 실행 기록을 보조한다.
 
 ## Canonical 상태
@@ -16,7 +16,7 @@
 
 GitHub mode 매핑:
 
-| Canonical 상태 | GitHub Project `Workflow Status` |
+| 구현 상태 | GitHub Project 보조 표시 |
 |---|---|
 | `planned` | `Planned` |
 | `in-progress` | `In Progress` |
@@ -57,7 +57,7 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 
 - 하나의 split plan은 하나의 child Issue 또는 하나의 local ticket에 대응한다.
 - GitHub mode의 child Issue 본문은 split plan 본문이다.
-- parent/child Issue 연결과 상태의 공식 source는 GitHub다. `docs/plans/<plan-set-id>/plans.md`는 해당 plan set의 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다. 각 plan set은 고유 디렉토리를 사용하고 `docs/plans/plans.md`에는 쓰지 않는다.
+- parent/child Issue 연결의 공식 source는 GitHub Issues다. `docs/plans/<plan-set-id>/plans.md`는 해당 plan set의 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다. 각 plan set은 고유 디렉토리를 사용하고 `docs/plans/plans.md`에는 쓰지 않는다.
 - parent/child 연결은 Markdown 링크가 아니라 GitHub Sub-issues API 관계여야 한다. `gh` CLI의 `--parent`, `--add-sub-issue` 옵션은 사용하지 않는다. child를 `gh issue create`로 만든 뒤 Issue `id`를 얻어 `gh api --method POST repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues -F sub_issue_id=<CHILD-ISSUE-ID>`로 연결한다. 기존 child를 재연결할 때만 `-F replace_parent=true`를 사용한다. 연결 후 부모의 `/sub_issues`와 child의 `/parent` REST endpoint를 확인한다.
 - plan-set integration PR은 하나만 만들고, 본문에는 parent와 모든 child에 대한 closing keyword를 각각 넣는다. 개별 split plan 완료 시 child Issue 상태는 `Done`으로 전환하되 Issue는 닫지 않는다. 모든 split plan이 terminal 상태가 된 뒤에만 integration PR을 생성하며, PR이 repository default branch에 merge되면 GitHub가 Issue를 닫는다.
 - 선택하지 않은 configured tracker에는 상태·dependency를 기록하지 않는다.
@@ -65,6 +65,6 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 
 ## 상태 확인과 갱신
 
-`harness-tracker.mjs sync`는 선택된 tracker의 상태를 변경하고 재조회한다. 시작과 완료 gate는 `tracker_sync`로 tracker를 확인한다. 실패 시 오류를 해결하고 재시도한다.
+`harness-tracker.mjs sync`는 선택된 tracker의 상태를 변경하고 재조회한다. GitHub Project 조회나 동기화 실패는 경고로 반환한다. workspace preflight는 tracker를 조회하지 않는다.
 
 GitHub 보드는 configured Workflow Status로 group/filter하며 기본 Status는 workflow 판단에서 제외한다. 기본 Status 열 숨김은 view 설정으로 안내하고 field 자체나 기존 item 상태는 삭제하지 않는다. Done은 구현·검증 완료이며 Issue closure는 integration PR merge lifecycle이다.
