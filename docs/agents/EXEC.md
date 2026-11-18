@@ -323,3 +323,5 @@ Harness black-box 관찰자는 내부 stage 실패나 모델 자체 복구를 �
 정적 실행 위치·발행 본문 생성의 설치 소비자 회귀는 `node --test tests/execution_workspace.test.mjs`로 실행한다. 일반 회귀이며 실제 workflow E2E의 대체가 아니다.
 
 발행 상태 회귀는 `node --test tests/execution_workspace.test.mjs`로 검사한다. configured Project를 유일한 발행 상태로 조회하며 기존 publish-state.json 변조·본문 끝 개행·중복 항목·본문 변조와 설치/업데이트 Git 가시성을 확인한다.
+
+GitHub 티켓의 사전 점검과 상태 변경은 Project ID, Workflow Status/Status 필드와 옵션 ID를 Worktree의 `.io/runtime/tracker-cache/`에 최대 1시간 보관한다. 티켓의 실제 상태는 매번 GitHub에서 읽는다. 필드 불일치나 쓰기 실패 시 캐시를 버려 다음 실행에서 다시 조회한다. 캐시가 없으면 최초 메타데이터 조회에 GitHub 호출 한도가 필요하다.

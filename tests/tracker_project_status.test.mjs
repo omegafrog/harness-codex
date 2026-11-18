@@ -16,8 +16,9 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     { id: 'status', name: 'Status', type: 'ProjectV2SingleSelectField', options: ['Todo', 'In Progress', 'Done'].map((name) => ({ id: `status-${name}`, name })) },
   ];
   const values = new Map([['workflow', 'Planned'], ['status', 'Todo']]);
-  const edits = [];
+  const edits = [], calls = [];
   const run = async (command, args) => {
+    calls.push(args.slice(0, 2).join(' '));
     if (command === 'gh' && args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project-id' });
     if (command === 'gh' && args[0] === 'project' && args[1] === 'field-list') return JSON.stringify({ totalCount: fields.length, fields });
     if (command === 'gh' && args[0] === 'api') return JSON.stringify({ data: { repository: { issue_0: { state: 'OPEN', projectItems: { pageInfo: { hasNextPage: false }, nodes: [{ id: 'item-id', project: { id: 'project-id' }, fieldValues: { pageInfo: { hasNextPage: false }, nodes: fields.map((field) => ({ name: values.get(field.id), field: { id: field.id } })) } }] } } } } });
@@ -53,9 +54,20 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     assert.equal(current.project_status, 'In Progress');
     assert.equal(current.issue_state, 'OPEN');
     assert.equal((await inspectTrackerSync({ workspace_root: root, ticket_refs: ['owner/repo#1'], run })).status, 'pass');
+    assert.equal(calls.filter((call) => call === 'project view').length, 1);
+    assert.equal(calls.filter((call) => call === 'project field-list').length, 1);
+    values.set('workflow', 'Blocked');
+    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).canonical_status, 'blocked');
+    assert.equal(calls.filter((call) => call === 'project field-list').length, 1);
+    fields[0].id = 'workflow-recreated';
+    values.set(fields[0].id, 'Planned');
+    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).status, 'fail');
+    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).canonical_status, 'planned');
+    assert.equal(calls.filter((call) => call === 'project field-list').length, 2);
+
     const gitStatus = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
     assert.match(gitStatus, /consumer-change\.txt/);
-    assert.doesNotMatch(gitStatus, /\.harness\/src\//);
+    assert.doesNotMatch(gitStatus, /\.harness\/src\/|\.io\//);
     execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/src/tracker/lifecycle.mjs']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

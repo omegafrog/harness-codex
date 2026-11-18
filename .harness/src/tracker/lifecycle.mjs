@@ -36,8 +36,32 @@ async function localTicket(root, config, ref) {
   if (!Object.hasOwn(TRACKER_STATES, status)) throw new Error(`Unsupported local status: ${status}`);
   return { path, content, frontmatter: frontmatter[0], status };
 }
+const PROJECT_METADATA_TTL_MS = 60 * 60 * 1000;
+const nonemptyId = (value) => typeof value === 'string' && value.length > 0;
+function validCachedMetadata(value, settings) {
+  const validField = (field, name, options) => nonemptyId(field?.id) && field.name === name &&
+    Array.isArray(field.options) && options.every((option) => field.options.filter((item) => item?.name === option && nonemptyId(item.id)).length === 1);
+  return nonemptyId(value?.project?.id) &&
+    validField(value.field, settings.status_field, Object.values(TRACKER_STATES).flat()) &&
+    (value.statusField === null || validField(value.statusField, 'Status', ['Todo', 'In Progress', 'Done']));
+}
+
+async function forgetProjectMetadata(context) {
+  if (context.projectMetadataPath) await unlink(context.projectMetadataPath).catch(() => {});
+}
+
 async function githubProjectMetadata(root, settings, run, context) {
   if (!context.githubProjectMetadata) context.githubProjectMetadata = (async () => {
+    const key = createHash('sha256').update(JSON.stringify([process.env.GH_HOST || 'github.com', settings.repository, settings.project_owner, settings.project_number, settings.status_field])).digest('hex');
+    const path = sessionOutputPath(root, `runtime/tracker-cache/project-v1-${key}.json`);
+    context.projectMetadataPath = path;
+    try {
+      const { saved_at: saved, metadata } = JSON.parse(await readFile(path, 'utf8'));
+      const age = Date.now() - saved;
+      if (Number.isFinite(saved) && age >= 0 && age < PROJECT_METADATA_TTL_MS && validCachedMetadata(metadata, settings)) return metadata;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
+    }
     let project, fields;
     try { project = await json(run, 'gh', ['project', 'view', String(settings.project_number), '--owner', settings.project_owner, '--format', 'json'], root); }
     catch (error) { throw new Error(`GitHub configured project view failed (${settings.project_owner}/${settings.project_number}): ${error.message}`); }
@@ -48,7 +72,15 @@ async function githubProjectMetadata(root, settings, run, context) {
     for (const [name] of Object.values(TRACKER_STATES)) single(field.options.filter((o) => o.name === name), `Status option ${name}`);
     const statusField = settings.status_field === 'Status' ? null : fields.fields.find((f) => f.name === 'Status' && f.type === 'ProjectV2SingleSelectField') || null;
     if (statusField) for (const name of ['Todo', 'In Progress', 'Done']) single(statusField.options.filter((o) => o.name === name), `Status option ${name}`);
-    return { project, field, statusField };
+    const metadata = { project, field, statusField };
+    if (validCachedMetadata(metadata, settings)) {
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify({ saved_at: Date.now(), metadata }), { flag: 'wx', mode: 0o600 });
+        await rename(temporary, path);
+      } finally { await unlink(temporary).catch(() => {}); }
+    }
+    return metadata;
   })();
   return context.githubProjectMetadata;
 }
@@ -86,7 +118,12 @@ async function githubTickets(root, config, refs, run, context) {
     if (response.errors?.length) throw new Error(`GitHub batched issue query failed: ${response.errors.map((error) => error.message).filter(Boolean).join('; ') || 'API returned errors'}`);
     const repository = response.data?.repository;
     if (!repository) throw new Error('GitHub batched issue query returned no repository');
-    batch.forEach((item, index) => results.set(item.ref, githubIssueStatus(repository[`issue_${index}`], item.ref, project, field, statusField)));
+    try {
+      batch.forEach((item, index) => results.set(item.ref, githubIssueStatus(repository[`issue_${index}`], item.ref, project, field, statusField)));
+    } catch (error) {
+      if (/^(Configured project item|Configured status value|Project Status value):/.test(error.message)) await forgetProjectMetadata(context);
+      throw error;
+    }
   }
   return results;
 }
@@ -297,6 +334,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     await writer.append('tracker_sync', result, { critical: true });
     return result;
   } catch (error) {
+    if (config.mode === 'github') await forgetProjectMetadata(context);
     const result = { status: 'fail', reason: 'tracker_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Read the latest tracker status before retrying', evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
     return result;
