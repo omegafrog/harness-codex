@@ -61,6 +61,8 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]` 한 번으로 입력 준비와 예약을 마친다. 반환된 경로·`agent_profile`·`binding`으로 서브에이전트를 띄운 뒤 `next.bind`를, 종료하면 `next.finish`를 실행한다. 출력은 기본이 compact이며 `--verbose`는 진단 전용이다. 오류는 `why`와 `next`(명령) 또는 `user_decision`을 가진 JSON 하나이며 그대로 따른다. 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않고, `next`가 없거나 해결되지 않으면 오류를 사용자에게 보고한다.
 
+Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. `wait_agent`처럼 알림만 기다리는 도구는 응답을 받은 뒤 `list_agents`에서 그 ID의 상태를 확인한다. 빈 응답이면 다시 확인하고, 실행 중이면 턴을 끝내지 않고 계속 기다린다.
+
 기존 workflow를 재개할 때 먼저 `node .codex/scripts/harness-context.mjs`를 실행한다. 같은 Codex 대화가 시작한 현재 stage의 중단이 확인되면 실행기가 실패로 기록하고 `next`로 같은 stage의 재실행 명령을 반환한다.
 
 다른 Codex 대화가 시작한 stage가 대화 종료로 `running`에 멈춰 있으면(`harness-context`의 `next`, `inspect`의 `session: other`, `STAGE_RUNNING` 오류가 알려 준다) 사용자를 원래 대화로 돌아가라고 하지 않는다. 안내된 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> --take-over true` 한 번만 실행하고 반환을 그대로 따른다. 실행기가 이전 대화와 agent의 종료를 확인하지 못하면 이유와 `next`·`user_decision`을 반환하며, `fail`이나 state 수정으로 우회하지 않는다.
