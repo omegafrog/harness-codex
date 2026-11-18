@@ -26,6 +26,8 @@ stage는 현재 worktree에서 `node .codex/scripts/harness-native-stage.mjs lau
 
 Codex에서는 같은 부모 대화의 `collaboration.list_agents` 또는 `wait_agent` 결과에서 `inspect`의 agent ID와 일치하는 실제 상태를 먼저 확인한다. 반환된 ID가 `/root/<이름>`이고 저장된 ID가 `<이름>`인 경우에만 그 전체 경로를 사용한다. 사용 가능한 경우 같은 호스트의 `mcp__codex_tui__read_thread`로 부모 생성 기록에 대조된 `thread_id`와 마지막 turn 결과를 확인할 수도 있다. `running` 또는 `active`는 계속 기다린다. 실제 `completed`이면 `finish`, 실제 `failed`이면 오류 원문을 보존해 `fail`을 실행한다. `notLoaded`, 누락된 agent, 다른 호스트의 상태 또는 과거의 완료 기록은 현재 종료를 증명하지 않는다. Claude에서는 현재 부모 대화의 native agent 상태와 도구가 전달한 종료 결과를 확인한다. 같은 agent가 이후 재개될 수 있으므로 과거 task-notification과 시작·종료 hook 관찰만으로 현재 종료를 추정하지 않는다.
 
+기존 workflow를 재개할 때 `harness-context.mjs`를 먼저 실행한다. 원래 Codex 부모 대화의 현재 native stage가 `running`이고 해당 자식 transcript에서 중단이 확인되며 반환 파일이 없으면, 실행기가 `failed/EXECUTION_ERROR`를 기록하고 이전 입력과 사용자 답변을 이어받는 재실행 명령을 `next`로 반환한다.
+
 원래 Codex 부모 대화에서 `collaboration.list_agents`를 호출할 수 있으면, 그 도구가 반환한 JSON 객체 전체를 수정하지 않고 표준 입력으로 `node .codex/scripts/harness-native-stage.mjs reconcile --execution-id <execution_id>`에 전달한다. 준비기는 저장된 agent ID와 현재 부모 session을 대조하고, 종료 상태는 해당 자식의 마지막 turn 기록과 일치할 때만 반영한다. 목록에서 agent가 사라졌어도 일치하는 자식 transcript의 마지막 turn이 `interrupted`로 확인되면 실행기를 통해 실패로 기록한다. `running`이면 해당 agent를 기다리고, `unknown`이면 추측하거나 중복 실행하지 않는다. `completed`의 결과는 기존 `finish`와 같은 형식·보안 검증을 거치며, 실제 `failed` 또는 `interrupted`는 실패 사유를 기록한다. 유효한 output 파일이 없는 읽기 전용 agent는 host의 완료 응답 원문을 출력으로 사용한다. 형식 오류는 같은 agent에게 반환해 수정하게 한다. 사용자가 중단한 경우 `reconcile`로 재개하지 말고 실제 종료를 확인한 뒤 `cancel`을 사용한다. 다른 세션에서 host 목록을 만들거나 응답을 지어내지 않는다.
 
 `finish` 성공은 형식 검증 후 정본 결과를 기록한다. 보안 경계, workspace·실행 ID, 실제 승인과 결과 참조의 검증은 그대로 적용한다. 반환된 status와 code에 따라 사용자 질문·리뷰·다음 stage로 전환한다. 질문의 원문과 실제 사용자 답을 보존한다. 사용자 요청으로 중단된 경우 늦게 도착한 결과로 진행을 재개하지 않는다.

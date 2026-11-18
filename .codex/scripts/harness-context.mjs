@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// One read of the current workflow: worktree, plan set, stage states, plans with their Issues, and the latest
+// Current workflow: worktree, plan set, stage states, plans with their Issues, and the latest
 // result of each stage. Use it instead of reading worktree.json, state.json or result files one by one.
 //   node .codex/scripts/harness-context.mjs [--root DIR | --worktree-ref FILE] [--verbose]
 // By default finished stages are one short entry and empty fields are left out; --verbose prints everything, indented.
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
-const { compactContext, extractVerbose, foreignRunningStage, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { compactContext, extractVerbose, foreignRunningStage, launchCommand, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 try {
   const { args, verbose } = extractVerbose(process.argv.slice(2));
@@ -19,7 +21,20 @@ try {
     const observed = await inspectStartupState({ workspaceRoot: ctx.root, sessionId: process.env.CODEX_THREAD_ID || null, provider: process.env.HARNESS_PROVIDER_ID || 'codex' });
     worktrees = { session_worktrees: observed.session_worktrees, workflows: observed.matching_workflows, worktree_candidates: observed.worktree_candidates, issues: observed.issues, decision_hint: observed.decision_hint, omitted_workflow_count: observed.omitted_workflow_count, omitted_worktree_candidate_count: observed.omitted_worktree_candidate_count };
   }
-  const state = orchestratorState(ctx.root);
+  let state = orchestratorState(ctx.root);
+  let recoveryNext = null;
+  const stageId = state?.current_stage;
+  const entry = state?.stages?.[stageId];
+  if (ctx.worktree_ref && state?.orchestrator_provider === 'codex' && state.orchestrator_session_id
+      && state.orchestrator_session_id === process.env.CODEX_THREAD_ID
+      && entry?.status === 'running' && entry.native_managed && entry.native_agent_id && !entry.result_ref) {
+    const runner = fileURLToPath(new URL('./harness-native-stage.mjs', import.meta.url));
+    const recovered = JSON.parse(execFileSync(process.execPath, [runner, 'recover-interrupted', '--execution-id', entry.execution_id], { cwd: ctx.root, encoding: 'utf8' }));
+    if (recovered.status === 'failed') {
+      state = orchestratorState(ctx.root);
+      recoveryNext = launchCommand(stageId, "--feedback 'The previous native agent was interrupted. Continue with the saved input and user answers.'");
+    }
+  }
   const stages = Object.fromEntries(Object.entries(state?.stages || {}).map(([id, stage]) => {
     const result = stage.result_ref ? read(join(ctx.root, '.io', stage.result_ref)) : null;
     return [id, { status: stage.status, code: stage.code || null, execution_id: stage.execution_id, attempts: (stage.attempts || []).length, ...(result ? { summary: (result.summary || '').slice(0, 400), questions: (result.questions || []).map((q) => ({ question_id: q.question_id, title: q.title })), commit_sha: result.commit_sha || undefined } : {}) }];
@@ -40,7 +55,7 @@ try {
     workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, plan_set_id: ctx.plan_set_id, branch: ctx.record?.branch || null,
     current_stage: state?.current_stage || null, workflow_status: state?.status || null,
     // A stage another Codex conversation left running cannot be waited for from this one: the exact way on is here.
-    next: (() => { const foreign = foreignRunningStage(state); return foreign ? takeoverStep(foreign) : null; })(),
+    next: recoveryNext || (() => { const foreign = foreignRunningStage(state); return foreign ? takeoverStep(foreign) : null; })(),
     // The orchestrator's last reply; when it is newer than every stage update it may be a question awaiting the user.
     orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,
     stages,

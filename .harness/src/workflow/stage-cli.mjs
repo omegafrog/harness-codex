@@ -410,10 +410,7 @@ const RULES = [
       const id = /finish --execution-id (\S+)/.exec(reason)?.[1] || context.executionId || entryOf(state, stage)?.execution_id;
       return { ...base, next: [id ? nativeCommand('finish', id) : `${CONTEXT} shows its execution_id; then run finish for it`] };
     }
-    if (/conversation started .+ itself/.test(reason)) {
-      const id = entryOf(state, stage)?.execution_id;
-      return { ...base, next: id ? [`Wait for its native subagent to end, then: ${nativeCommand('finish', id)}`, `If its state is unclear: ${nativeCommand('inspect', id)}`] : [CONTEXT] };
-    }
+    if (/conversation started .+ itself/.test(reason)) return { ...base, next: [CONTEXT] };
     if (/must be the current native stage|is not recorded|another stage is running/.test(reason)) return { ...base, next: [CONTEXT], decision: 'The stage is not an interrupted run this conversation can take over; read its state and continue from it, or report the refusal to the user.' };
     if (/CODEX_THREAD_ID/.test(reason)) return { ...base, decision: 'Run the command from the Codex conversation that orchestrates this workflow (Codex sets CODEX_THREAD_ID there). If this is not a Codex CLI session, ask the user to continue in the conversation that started the stage.' };
     if (/only a stage that a Codex conversation/.test(reason)) return { ...base, decision: 'Ask the user to continue in the conversation that started this stage; another provider cannot verify that the run ended.' };

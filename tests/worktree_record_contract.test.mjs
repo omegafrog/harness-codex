@@ -1504,10 +1504,18 @@ test('installed compose starts in an existing linked worktree without replacing 
     await recordCodexTurn('interrupted-agent', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'interrupted');
     assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'running' }]).stdout).status, 'running');
     assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }, { agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }]).stdout).status, 'unknown');
-    const interrupted = reconcile(interruptedArgs, []);
-    assert.equal(interrupted.status, 0, interrupted.stderr);
-    assert.equal(JSON.parse(interrupted.stdout).status, 'failed');
-    assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).stages.grilling.status, 'failed');
+    const beforeRecovery = git(workspace, 'status', '--short', '--untracked-files=all');
+    const contextArgs = [join(workspace, '.codex/scripts/harness-context.mjs')];
+    const statusContext = (env) => JSON.parse(execFileSync(process.execPath, contextArgs, { cwd: workspace, env, encoding: 'utf8' }));
+    assert.equal(statusContext({ ...hostEnv, CODEX_THREAD_ID: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }).stages.grilling.status, 'running');
+    const resumeContext = statusContext(hostEnv);
+    assert.equal(resumeContext.stages.grilling.status, 'failed');
+    assert.equal(resumeContext.stages.grilling.code, 'EXECUTION_ERROR');
+    assert.match(resumeContext.next, /launch --stage-id grilling --feedback/);
+    const launched = JSON.parse(execFileSync(process.execPath, [...native, 'launch', '--stage-id', 'grilling', '--feedback', 'Continue after verified interruption', '--verbose'], { cwd: workspace, env: { ...process.env, CODEX_THREAD_ID: hostEnv.CODEX_THREAD_ID }, encoding: 'utf8' }));
+    assert.notEqual(launched.input.execution_id, interruptedInput.input.execution_id);
+    assert.ok(launched.input.input_refs.some(({ kind }) => kind === 'previous_execution_input'));
+    assert.equal(git(workspace, 'status', '--short', '--untracked-files=all'), beforeRecovery);
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
 

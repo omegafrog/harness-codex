@@ -143,7 +143,7 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await releaseAgent();
   const own0 = refusal(run(NATIVE, takeover, old));
   assert.match(own0.why, /started stakeholder-analysis itself/, 'the conversation that started it waits instead');
-  assert.equal(own0.next[0], `Wait for its native subagent to end, then: node .codex/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
+  assert.deepEqual(own0.next, ['node .codex/scripts/harness-context.mjs']);
   await untouched(entry);
   const unset = spawnSync(process.execPath, [join(workspace, '.codex/scripts', NATIVE), ...takeover], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' } });
   assert.match(refusal(unset).why, /CODEX_THREAD_ID/);

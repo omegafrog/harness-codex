@@ -84,7 +84,7 @@ try {
     if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
     opts[key] = args[i + 1];
   }
-  if (!['start', 'inspect', 'reconcile', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
+  if (!['start', 'inspect', 'reconcile', 'recover-interrupted', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
   errorContext.executionId = opts['execution-id'];
   // --root and --worktree-ref are optional: the current worktree supplies them, and an explicit value must match it.
   const commandContext = resolveCommandContext({ root: opts.root, worktreeRef: opts['worktree-ref'] });
@@ -168,6 +168,17 @@ try {
       await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: opts['agent-id'] });
       process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: opts['agent-id'] })}\n`);
       process.exit(0);
+    }
+    if (action === 'recover-interrupted') {
+      if (binding.provider !== 'codex' || !input.context?.orchestrator_session_id || process.env.CODEX_THREAD_ID !== input.context.orchestrator_session_id) throw new Error('Recovery requires the original Codex parent session');
+      const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+      const outcome = await readNativeCodexOutcome({ root, parentSessionId: input.context.orchestrator_session_id, stage: current });
+      if (outcome?.status !== 'interrupted' || existsSync(paths.files.raw)) {
+        process.stdout.write(`${JSON.stringify({ status: 'unchanged', execution_id: id })}\n`);
+        process.exit(0);
+      }
+      action = 'fail';
+      opts.reason = 'Native agent was interrupted by the host';
     }
     if (action === 'reconcile') {
       if (binding.provider !== 'codex' || !input.context?.orchestrator_session_id || process.env.CODEX_THREAD_ID !== input.context.orchestrator_session_id) throw new Error('Reconciliation requires the original Codex parent session');
