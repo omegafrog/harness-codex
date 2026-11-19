@@ -1,5 +1,7 @@
 # 서브에이전트 실행과 결과
 
+## 실행 배정
+
 stage는 현재 worktree에서 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]` 한 번으로 시작한다. 준비 옵션은 `harness-prepare-input.mjs`와 같다(`--answer`·`--feedback`·`--user-revision`·`--plan` 등). `--plan <ticket-id>`는 `tactical-code`가 ticket 하나를 구현할 때 쓰고(`harness-context.mjs`의 `ready_tickets`에서 고른다), `tracker-publish`는 `--publication-approved true --approval-answer '<사용자 답 원문>'`을 함께 받는다. `launch`는 입력을 준비한 뒤 `start`와 같이 출력 schema를 만들고 실행을 원자적으로 예약한다. 중복 예약이나 이미 실행 중인 stage는 중단한다. 반환된 `agent_profile`, `binding`, `guide`, `input_path`, `schema_path`와 `next.bind`·`next.finish`를 사용한다. 새 실행이 없는 경우(일부 답만 도착했거나 실행 중인 stage에 답을 저장한 경우)에는 준비기의 `waiting_for_*` 결과만 반환한다. 입력 준비와 예약을 따로 하는 `harness-prepare-input.mjs`와 `harness-native-stage.mjs start --execution-id <execution_id>`도 같은 계약으로 유지된다. 이 명령들은 현재 worktree에서 `--root`와 `--worktree-ref`를 스스로 찾으므로 붙이지 않는다.
 
 출력은 기본이 compact다. `prepare`는 `execution_id`·`stage_id`·`next`만, `finish`는 `status`·`code`·`result_ref`·`next`와 요약·artifact(`kind`·`path`)·질문·리뷰 요청·`commit_sha`만 담고, `harness-context.mjs`는 끝난 stage를 한 줄로 줄인다. 전체 입력·해시·`result` 원문은 `--verbose`로만 출력하며 진단이 아니면 쓰지 않는다. 오류는 모두 `error`(무슨 일), `code`, `why`(이유)와 실행할 `next` 명령 또는 사용자에게 받을 `user_decision`을 가진 JSON 하나다. `next`를 그대로 따르고 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않는다. 오류 `code`는 `STAGE_ORDER`·`NOT_RUNNING`·`PREVIOUS_RESULT_MISSING`·`PREVIOUS_UNRESOLVED`·`REVISION_TARGET`·`REVISION_REPEATED`·`USER_REVISION_REFUSED`·`RESTART_REFUSED`·`DISCARD_REFUSED`·`FEEDBACK_REFUSED`·`ANSWER_REFUSED`·`STAGE_RUNNING`·`NOT_BOUND`·`INPUT_NOT_FOUND`·`WRONG_WORKSPACE`·`FORMAT_ERROR`·`GATE_ERROR`·`RESULT_REJECTED`·`COMMIT_BLOCKED` 등이며 알 수 없는 오류도 `next`나 `user_decision`을 가진다.
@@ -9,6 +11,8 @@ stage가 정해졌으면 파일 조회를 시작하기 전에 `launch`부터 실
 새 `execution_id`마다 반환된 `agent_profile`의 새 native 작업자를 시작한다. Codex는 `spawn_agent`에 `fork_turns: "none"`을 주고, 이름을 지정할 수 있으면 실행마다 다른 이름을 쓴다. Claude Code는 명시적 `subagent_type`으로 fresh `Agent`를 시작하며 필요하면 백그라운드로 실행한다. 이미 bind된 작업자에게 다음 실행을 맡길 수 없다. 작업자 ID 반환과 메시지 전달, 지정 profile의 sandbox·권한, `binding`의 모델과 effort를 현재 CLI에서 적용할 수 있을 때 시작한다. 보조 조사도 지명된 profile에 질문과 필요한 파일 범위만 맡긴다. 부모 이력이나 산출물 본문을 붙여 넣지 않는다. 작업자는 실제 ID를 받으면 반환된 `guide`·`input_path`·`schema_path`와 제공된 경우 `answers_path`·`feedback_path`를 읽는다. `workspace_root`, `execution_id`, bind한 실제 `agent_id`와 bind의 `receive_command`를 함께 건넨다. 별도의 공통 지침은 설치된 profile에서 읽는다.
 
 현재 전술 설계 양식은 작업자가 `completed/OK`를 제출할 때 소유 부분을 검증한다. `domain-model`은 모델 필드·메서드·업무 연결, `aggregate-design`은 Aggregate 구조·담당 규칙·클래스 다이어그램, `domain-service`는 남은 규칙 책임, `application-service`는 업무 커버리지·호출·트랜잭션·포트를 본다. `context-boundary`에서는 문서 전체를 다시 확인한다. 이전 번호식 문서는 기존 마지막 gate를 사용한다. `gate_error`는 결과나 commit을 남기지 않으며, 오류를 같은 작업자에게 돌려준다. 자기 산출물의 오류는 그 자리에서 고치고 다시 제출한다. 앞 stage의 오류는 `owner_stage`와 `dependency_gap`을 갖춘 `blocked/DEPENDENCY_INCOMPLETE`로 제출해 실제 소유자에게 보낸다.
+
+## 작업자 대기와 실행 복구
 
 서브에이전트 도구가 실패나 취소를 확인한 경우에만 `node .codex/scripts/harness-native-stage.mjs fail --execution-id <execution_id> --reason <실제 실패>`로 실패를 기록한다. 사용자가 중단을 명시하고 서브에이전트의 종료가 확인된 경우에는 같은 명령의 `cancel`을 사용한다. 도구 반환 없이 에이전트가 종료했다고 추정하지 않는다. 세션 중단으로 agent의 상태가 불명확하면 자동 재실행하지 않는다. 같은 대화에서는 기존 세션의 실제 상태를 확인하고, 다른 Codex 대화가 시작한 stage(`inspect`의 `session`이 `other`이거나 `harness-context`가 `next`로 안내)는 그 대화로 돌아가지 않고 아래 인계를 쓴다.
 
@@ -24,13 +28,17 @@ stage가 정해졌으면 파일 조회를 시작하기 전에 `launch`부터 실
 
 원래 Codex 부모 대화에서 `collaboration.list_agents`를 호출할 수 있으면, 그 도구의 실제 JSON 응답이 있을 때만 객체 전체를 수정하지 않고 표준 입력으로 `node .codex/scripts/harness-native-stage.mjs reconcile --execution-id <execution_id>`에 전달한다. 준비기는 저장된 agent ID와 현재 부모 session을 대조하고, 종료 상태는 해당 자식의 마지막 turn 기록과 일치할 때만 반영한다. 목록에서 agent가 사라졌어도 일치하는 자식 transcript의 마지막 turn이 `interrupted`로 확인되면 실행기를 통해 실패로 기록한다. `running`이면 해당 agent를 기다리고, `unknown`이면 추측하거나 중복 실행하지 않는다. `completed`의 결과는 기존 `finish`와 같은 형식·보안 검증을 거치며, 실제 `failed` 또는 `interrupted`는 실패 사유를 기록한다. 유효한 output 파일이 없는 읽기 전용 agent는 host의 완료 응답 원문을 출력으로 사용한다. 형식 오류는 같은 agent에게 반환해 수정하게 한다. 사용자가 중단한 경우 `reconcile`로 재개하지 말고 실제 종료를 확인한 뒤 `cancel`을 사용한다. 다른 세션에서 host 목록을 만들거나 응답을 지어내지 않는다.
 
+## 결과 처리
+
 `finish` 성공은 형식 검증 후 정본 결과를 기록한다. 보안 경계, workspace·실행 ID, 실제 승인과 결과 참조의 검증은 그대로 적용한다. 반환된 status와 code에 따라 사용자 질문·리뷰·다음 stage로 전환한다. 질문의 원문과 실제 사용자 답을 보존한다. 사용자 요청으로 중단된 경우 늦게 도착한 결과로 진행을 재개하지 않는다.
 
 실패나 사용자 답변 뒤 새 실행을 예약하면 새 작업자가 이전 결과와 입력을 참조한다. 실행이 유지되는 형식 수정과 컨텍스트 압축은 기존 작업자에게 전달한다. 다른 CLI의 세션 ID를 넘기지 않는다. 단계별 독립 리뷰와 실제 E2E의 별도 승인 및 역할 요구사항은 해당 GUIDE를 따른다.
 
-사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항 수정은 가장 앞선 소유 stage에서 시작한다. 시작과 함께 뒤 단계의 영향받는 결과를 `stale`로 기록한다. 기존 문서와 실행 결과를 읽어 보완하고 `bounded-context`가 완료되면 현재 요구사항을 사용자에게 다시 보여 주고 승인받는다.
+사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항 수정은 가장 앞선 소유 stage에서 시작한다. 업무 발굴·범위 누락은 `subdomain-candidates`, 업무 묶음·서브도메인 분류는 `subdomain-classification`, 규칙·예외·완료 조건은 `requirements-fix`, Context 책임·관계는 `bounded-context`가 맡는다. 시작과 함께 뒤 단계의 영향받는 결과를 `stale`로 기록한다. 기존 문서와 실행 결과를 읽어 보완하고 `bounded-context`가 완료되면 현재 요구사항을 사용자에게 다시 보여 주고 승인받는다.
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 새 실행이 반환한 `answers_path`를 작업자에게 전달한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
+
+결과가 `SPEC_REVISION_REQUIRED`·`PLAN_REVISION_REQUIRED`·`IMPLEMENTATION_REVISION_REQUIRED`이면 각각 `requirements-fix`·`to-ticket`·영향받는 plan의 `implement-wrapper`를 준비한다. 반환이 지시한 전환에는 `--user-revision`을 붙이지 않는다. 이 옵션은 사용자의 직접 수정 지시에서 사용한다. 반환된 업무 결정만 질문하고, 전술 설계 단계의 범위 추가 질문은 소유 단계에 돌려준다. 제품 문서의 commit은 해당 stage 실행기의 기록을 사용한다.
 
 ## 컨텍스트 압축
 
@@ -60,3 +68,9 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 - 전술 단계에서 사용자가 확정 범위의 축소나 보완을 지시하면 가장 앞선 요구사항 소유 stage를 `--user-revision`으로 다시 연다. 문서와 산출물은 그대로 두고 영향을 받는 부분과 후속 결과를 다시 확인한다.
 
 `DEPENDENCY_INCOMPLETE` block 뒤 `PREVIOUS_RESULT_MISSING`·`RESTART_REFUSED`·order guard·user-revision 거부가 나오면 그 오류의 `next`가 이 경로를 가리킨다. `result.owner_stage`가 있으면 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`, 없으면(이전 Harness가 기록한 결과) `launch --stage-id <blocked stage> --feedback 'Re-check the blocker and return owner_stage and dependency_gap naming the earlier stage that must change.'`로 block된 stage를 다시 실행해 owner를 반환받는다. 요약 문장에서 owner를 추정하지 않고, `--user-revision`·`--restart-requirements`를 쓰거나 사용자에게 기다리라고 말하지 않는다.
+
+## Workflow 완료
+
+요청 범위의 마지막 stage가 완료되면 `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --worktree-id <worktree.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow`를 실행한다. `--base-ref`는 workflow를 시작할 때 보존한 `git rev-parse HEAD`다. 계획·발행까지 요청했으면 `to-ticket`, Spec 기반 legacy 구현이면 `implement-wrapper`, 새 전술 설계의 구현까지면 `tactical-to-code`를 지정한다. 중간 완료 gate에는 `--final-workflow`를 붙이지 않는다.
+
+gate는 worktree에 기록된 실행·commit·tracker 상태와 해당 workflow의 리뷰·E2E·계약 근거를 직접 확인한다. 상태 파일을 만들거나 넘기지 않는다. 결과가 `in-progress`이면 `verdict.checks`의 `reason`과 `details`가 가리키는 작업을 처리한 뒤 다시 확인한다. 완료 gate가 통과해야 전체 완료를 보고한다.

@@ -359,7 +359,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     assert.match(answerGuide, /\{"question_id":"<현재-질문-ID>","answer":/);
     assert.match(answerGuide, /“모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다/);
     const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
-    assert.match(installedOrchestrator, /사용자가 질문 묶음에 대해 “모두 추천”이라고 답하면 그 답은 보여준 해당 묶음에만 적용한다/);
+    assert.match(installedOrchestrator, /references\/input\.md#사용자-답변으로-재개/);
     await writeFile(join(root, 'consumer-change.txt'), 'visible application change');
     const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(consumerStatus, /consumer-change\.txt/);
@@ -518,7 +518,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const missingRuntime = await runDoctor({ root, sourceRoot });
     assert.ok(missingRuntime.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/.harness/src/workflow/composer-workspace.mjs')));
     await writeFile(installedComposerRuntime, composerRuntime);
-    assert.match(await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8'), /workflow_ref.*null/);
+    assert.match(await readFile(join(root, '.agents/skills/orchestrator/references/workflow-map.md'), 'utf8'), /workflow_ref.*null/);
     await writeFile(join(root, 'application-change.txt'), 'preserved');
     await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
     const consumerStatus = git('status', '--short', '--untracked-files=all');

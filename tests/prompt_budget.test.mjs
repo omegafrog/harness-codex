@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { STAGE_CONTRACT, STAGE_CONTRACT_MARKER } from '../.harness/src/installer/stage-contract.mjs';
 import { outsideFences } from '../.harness/src/workflow/domain-model-gate.mjs';
@@ -125,11 +126,12 @@ test('every stage agent profile carries the shared stage contract marker, and an
 
 test('the orchestrator dispatches stages to native subagents and returns format errors', async () => {
   const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
-  assert.match(skill, /native 서브에이전트로 호출한다/);
-  assert.match(skill, /형식 오류는 그 에이전트에게 키·값과 함께/);
+  assert.ok(Buffer.byteLength(skill) <= 6 * 1024, 'the explicitly invoked entry point fits the prompt budget');
+  assert.match(skill, /fresh native 서브에이전트를 시작한다/);
+  assert.match(skill, /`format_error`나 `gate_error`는 같은 작업자에게 돌려준다/);
   assert.doesNotMatch(skill, /harness-agent-run\.mjs/);
   assert.doesNotMatch(skill, /백그라운드 실행 뒤 반복 상태 조회 없이 턴을 끝내고|listener 경로/);
-  assert.match(skill, /실제 완료를 기다리고 결과를 검증한 뒤/);
+  assert.match(skill, /실제 에이전트 결과를 기다리고 `next\.finish`로 검증한다/);
 });
 
 test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {
@@ -158,9 +160,17 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     const stakeholder = await readFile(join(root, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'), 'utf8');
     assert.match(stakeholder, /Use those exact paths to check, read or write either file/);
     for (const skill of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
-      const text = await readFile(join(root, skill), 'utf8').catch(() => null);
-      if (text !== null) assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);
+      const text = await readFile(join(root, skill), 'utf8');
+      assert.ok(Buffer.byteLength(text) <= 6 * 1024, skill);
+      assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);
+      for (const [, path, anchor] of text.matchAll(/\]\((references\/[^)#]+\.md)(?:#([^)]+))?\)/g)) {
+        const reference = await readFile(join(root, dirname(skill), path), 'utf8');
+        if (anchor) assert.ok([...reference.matchAll(/^#+ (.+)$/gm)].some(([, title]) => title.toLowerCase().replaceAll(' ', '-') === anchor), `${path}#${anchor}`);
+      }
     }
+    const requiredReference = join(root, '.claude/skills/orchestrator/references/implementation.md');
+    await rm(requiredReference);
+    assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === requiredReference));
     execFileSync('git', ['check-ignore', '-q', '.agents/skills/orchestrator/references/dispatch.md'], { cwd: root });
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).length, 0);
     assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);

@@ -121,7 +121,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   ];
   // The orchestrator owns the stage coordination references; each installed provider copy carries them.
   for (const skills of ['.agents/skills', '.claude/skills']) {
-    if (await marker(`${skills}/orchestrator/SKILL.md`)) paths.push(...['coordination', 'dispatch', 'input', 'state', 'workflow-map'].map((name) => `${skills}/orchestrator/references/${name}.md`));
+    if (await marker(`${skills}/orchestrator/SKILL.md`)) paths.push(...['capability-routing', 'coordination', 'dispatch', 'implementation', 'input', 'state', 'workflow-map'].map((name) => `${skills}/orchestrator/references/${name}.md`));
   }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));

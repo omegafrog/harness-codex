@@ -34,11 +34,12 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.deepEqual(Object.keys(STAGE_TIERS).sort(), [...PRE_SPEC_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code'].sort(), 'every stage in the pre-spec and tactical implementation flows has a declared tier in the shared fixture');
 
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.ok(orchestrator.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the tactical flow in order');
-  assert.match(orchestrator, /전술 설계 흐름에서 완료되지 않은 첫 stage/);
-  assert.match(orchestrator, /요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음/);
-  assert.match(orchestrator, /`DEPENDENCY_INCOMPLETE`/);
+  assert.match(orchestrator, /references\/workflow-map\.md/);
+  assert.match(orchestrator, /references\/dispatch\.md#상위-stage-되돌아가기/);
   const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
+  assert.ok(map.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the tactical flow in order');
+  assert.match(map, /전술 설계가 모두 `completed\/OK`인 뒤 별도 `tactical-to-code` workflow/);
+  assert.match(map, /`blocked\/DEPENDENCY_INCOMPLETE`/);
   const positions = PRE_SPEC_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage in order');
   assert.match(map, /harness-domain-model-check\.mjs/);

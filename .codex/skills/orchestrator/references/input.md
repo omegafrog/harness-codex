@@ -15,6 +15,8 @@ compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestra
 
 ## 사용자 답변으로 재개
 
+질문의 `title`과 선택지 `label`은 원문 그대로 보여 준다. `decision_kind: "technology"`이면 각 선택지의 `evidence`에 있는 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. 보충 설명은 질문과 분리한다.
+
 `USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 사용자가 선택지에 조건을 덧붙였거나 직접 설명했으면 선택지 ID 대신 사용자의 답 원문 전체를 `answer`로 넘긴다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.
 
 ```bash

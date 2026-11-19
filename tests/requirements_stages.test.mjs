@@ -19,15 +19,16 @@ const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 const fenced = (text, language) => [...text.matchAll(new RegExp('```' + language + '\\n([\\s\\S]*?)\\n```', 'g'))].map((match) => match[1]);
 
 test('the requirements.md template, the stage guides and the orchestrator agree on the flow and the shape', async () => {
-  // The flow order lives in one list; the orchestrator and the workflow map name the stages in that order.
+  // The orchestrator entry links the map, which owns the detailed stage order.
   assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'requirements-fix', 'bounded-context']);
   for (const stage of REQUIREMENTS_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.ok(orchestrator.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the flow in order');
-  assert.match(orchestrator, /요구사항 흐름에서 완료되지 않은 첫 stage/);
-  assert.match(orchestrator, /업무 묶음·서브도메인 분류는 `subdomain-classification`/);
+  assert.match(orchestrator, /references\/workflow-map\.md#요구사항과-승인/);
+  assert.match(await read('.codex/skills/orchestrator/references/dispatch.md'), /업무 묶음·서브도메인 분류는 `subdomain-classification`/);
   assert.doesNotMatch(orchestrator, /먼저 `bounded-context`부터 `--restart-requirements true`/);
   const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
+  assert.ok(map.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the flow in order');
+  assert.match(map, /launch --stage-id domain-model --requirements-approved true --approval-answer/);
   const positions = REQUIREMENTS_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names the stages in order');
 
