@@ -6,11 +6,11 @@ main_session: true
 
 # orchestrator
 
-현재 사용자 요청이 `$orchestrator` 또는 `/orchestrator`로 시작할 때만 메인 세션에서 요청과 현재 상태를 읽고 다음에 실행할 skill을 고른다. 같은 대화의 재개, 자유 입력 답변과 발행 승인에도 매번 호출어를 붙인다. 답변을 실행기에 전달할 때는 호출어 뒤에 적힌 사용자 답변만 사용한다. 그 밖의 일반 요청은 workflow 입력으로 취급하지 않는다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다. 실행 호출은 [실행 조율](references/coordination.md)을 따른다.
+현재 사용자 요청이 `$orchestrator` 또는 `/orchestrator`로 시작할 때만 메인 세션에서 요청과 현재 상태를 읽고 다음에 실행할 skill을 고른다. 같은 대화의 재개, 자유 입력 답변과 발행 승인에도 매번 호출어를 붙인다. 답변을 실행기에 전달할 때는 호출어 뒤에 적힌 사용자 답변만 사용한다. 그 밖의 일반 요청은 workflow 입력으로 취급하지 않는다. 각 skill의 작업 절차와 산출물 규칙은 해당 skill 문서가 소유한다. 이 문서에는 skill 선택과 단계 전환 기준만 둔다.
 
-전체 단계와 정본·판단 경계는 [workflow 지도](references/workflow-map.md)를 읽는다. 현재 목표·요청 종료 단계·산출물·미해결 gate·사용자 선택 및 provider/session 실행 상태를 정본에서 확인하고 다음 단계를 선택한다. 불충분하면 관련 stage result 또는 산출물을 읽는다. 이미 완료된 절차를 반복하지 않으며 실제 승인·독립 리뷰·실행 전제는 생략하지 않는다.
+현재 요청과 시작 훅이 제시한 상태를 대조한 뒤 해당 절차만 읽는다. 새 workflow 생성은 [workflow-compose GUIDE](../../../.codex/internal-skills/workflow-compose/GUIDE.md), 확인된 stage의 실행은 [실행과 결과](references/dispatch.md)를 따른다. 현재 요청에 맞는 다음 명령이 시작 훅이나 실행기 출력에 있으면 그대로 사용한다. 다음 전환을 정할 정보가 부족할 때 [workflow 지도](references/workflow-map.md)에서 필요한 부분을 확인한다. 실제 승인·독립 리뷰·실행 전제는 지킨다.
 
-workflow 외의 직접 요청은 [기능 라우팅](references/capability-routing.md)에서 담당 GUIDE를 찾아 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
+[기능 라우팅](references/capability-routing.md)은 workflow 외의 직접 요청에만 읽고 거기서 지정한 GUIDE를 실행한다. 내부 GUIDE를 공개 스킬처럼 호출하거나 등록하지 않는다.
 
 Harness 설치·업데이트·진단 요청은 새 제품 작업이 아니다. 다른 workflow 후보나 `compose_candidate`보다 먼저 [Harness Maintenance](../../../.codex/internal-skills/harness-maintenance/GUIDE.md)를 현재 checkout에서 실행한다. 설치 업데이트만 요청한 경우 `workflow-compose`와 worktree 생성을 실행하지 않는다.
 
@@ -59,11 +59,11 @@ hook의 `input_worktree_ref`는 현재 디렉터리에 있는 worktree만 가리
 
 선택한 skill의 실행 위치는 정본 worktree 기록에서 확인한다. `worktree_ref`만 실행 입력으로 전달하고 나머지 위치 정보는 skill이 정본에서 읽게 한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 `finish` 출력(status·code·요약·artifact 참조)으로만 진행한다. 입력 준비, 실행기 호출, 부모 대화 재개는 [실행 조율](references/coordination.md)의 공통 절차를 사용한다.
 
-stage는 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]` 한 번으로 입력 준비와 예약을 마친다. 반환된 경로·`agent_profile`·`binding`으로 서브에이전트를 띄운 뒤 `next.bind`를, 종료하면 `next.finish`를 실행한다. 출력은 기본이 compact이며 `--verbose`는 진단 전용이다. 오류는 `why`와 `next`(명령) 또는 `user_decision`을 가진 JSON 하나이며 그대로 따른다. 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않고, `next`가 없거나 해결되지 않으면 오류를 사용자에게 보고한다.
+stage가 정해졌으면 첫 실행 호출은 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> [준비 옵션]`이다. 이 한 번의 호출이 입력 준비와 예약을 마친다. 반환된 경로·`agent_profile`·`binding`으로 서브에이전트를 띄운 뒤 `next.bind`를, 종료하면 `next.finish`를 실행한다. 출력은 기본이 compact이며 `--verbose`는 진단 전용이다. 오류는 `why`와 `next`(명령) 또는 `user_decision`을 가진 JSON 하나이며 그대로 따른다. 원인을 찾으려고 Harness 소스나 state 파일을 읽지 않고, `next`가 없거나 해결되지 않으면 오류를 사용자에게 보고한다.
 
-Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. `wait_agent`처럼 알림만 기다리는 도구는 응답을 받은 뒤 `list_agents`에서 그 ID의 상태를 확인한다. 빈 응답이면 다시 확인하고, 실행 중이면 턴을 끝내지 않고 계속 기다린다.
+Codex native agent의 종료는 [실행과 결과의 대기 절차](references/dispatch.md)로 확인한다.
 
-기존 workflow를 재개할 때 먼저 `node .codex/scripts/harness-context.mjs`를 실행한다. 같은 Codex 대화가 시작한 현재 stage의 중단이 확인되면 실행기가 실패로 기록하고 `next`로 같은 stage의 재실행 명령을 반환한다.
+시작 훅으로 다음 동작을 확정할 수 없거나 현재 stage의 중단을 조정해야 할 때 `node .codex/scripts/harness-context.mjs`를 한 번 실행한다. 같은 Codex 대화가 시작한 현재 stage의 중단이 확인되면 실행기가 실패로 기록하고 `next`로 같은 stage의 재실행 명령을 반환한다.
 
 다른 Codex 대화가 시작한 stage가 대화 종료로 `running`에 멈춰 있으면(`harness-context`의 `next`, `inspect`의 `session: other`, `STAGE_RUNNING` 오류가 알려 준다) 사용자를 원래 대화로 돌아가라고 하지 않는다. 안내된 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage> --take-over true` 한 번만 실행하고 반환을 그대로 따른다. 실행기가 이전 대화와 agent의 종료를 확인하지 못하면 이유와 `next`·`user_decision`을 반환하며, `fail`이나 state 수정으로 우회하지 않는다.
 

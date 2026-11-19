@@ -27,7 +27,7 @@ test('installed workflow commands require cwd inside the target worktree', async
   await protectLocalInstallArtifacts(primary, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
   await (await import('node:fs/promises')).mkdir(join(primary, '.harness'), { recursive: true });
-  await writeFile(join(primary, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
+  await writeFile(join(primary, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n    implementation_model: example\n    implementation_reasoning_effort: medium\n');
   await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
   for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
@@ -47,20 +47,24 @@ test('installed workflow commands require cwd inside the target worktree', async
     assert.notEqual(result.status, 0, result.stdout);
     return result.stderr;
   };
+  const promptHook = (workspace, prompt) => {
+    const result = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-orchestrator-hook.mjs')], {
+      cwd: workspace, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: workspace, session_id: sessionId, prompt }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+  };
   const compose = (slug) => ok(primary, 'harness-compose-workspace.mjs', ['--root', primary, '--execution-id', `compose-${slug}`, '--plan-set-id', slug, '--request', `${slug} feature`, '--orchestrator-provider', 'codex', '--orchestrator-session-id', sessionId]);
   const a = compose('alpha'), b = compose('beta');
 
   await t.test('primary checkout can compose, but its prompt is not routed into linked worktrees', async () => {
-    const submitted = spawnSync(process.execPath, [join(primary, '.codex/scripts/harness-orchestrator-hook.mjs')], {
-      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: '$orchestrator approve everything' }),
-    });
-    assert.equal(submitted.status, 0, submitted.stderr);
-    const context = JSON.parse(submitted.stdout).hookSpecificOutput.additionalContext;
+    const context = promptHook(primary, '$orchestrator approve everything');
     const observed = JSON.parse(context.match(/Observed state \(read-only worktree\.json\/orchestrator files and Git CLI\): ([\s\S]*?)\. Progress snapshot:/)[1]);
     assert.equal(observed.decision_hint, 'worktree_required');
     assert.equal(observed.input_worktree_ref, null);
     assert.equal(observed.input_routing, 'unbound');
     assert.equal(observed.session_worktrees.length, 0);
+    assert.doesNotMatch(context, /harness-native-stage\.mjs launch|references\/dispatch\.md/);
     assert.deepEqual(new Set(observed.worktree_candidates.map((candidate) => candidate.worktree_ref)), new Set([a.worktree_ref, b.worktree_ref]));
     for (const tree of [a, b]) assert.equal(existsSync(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl')), false);
 
@@ -72,6 +76,19 @@ test('installed workflow commands require cwd inside the target worktree', async
     assert.match(claudeContext, /current working directory is inside that worktree/);
     assert.match(claudeContext, /change directory to its workspace_root before invoking the orchestrator/);
     for (const tree of [a, b]) assert.equal(existsSync(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl')), false);
+  });
+
+  await t.test('the composed worktree gets the first launch command and the installed worker paths', () => {
+    const context = promptHook(b.workspace, '$orchestrator 계속 진행해');
+    assert.match(context, /references\/dispatch\.md, then run node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id stakeholder-analysis/);
+    assert.doesNotMatch(context, /workflow-compose\/GUIDE\.md|references\/(?:coordination|workflow-map|capability-routing)\.md/);
+    const started = ok(b.workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', 'stakeholder-analysis']);
+    assert.equal(started.guide, join(b.workspace, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'));
+    assert.ok(existsSync(started.input_path));
+    assert.ok(existsSync(started.schema_path));
+    const resume = promptHook(b.workspace, '$orchestrator 계속 진행해');
+    assert.match(resume, /For workflow resumption, read .*references\/dispatch\.md/);
+    assert.doesNotMatch(resume, /launch --stage-id stakeholder-analysis/);
   });
 
   await t.test('root and worktree-ref cannot bypass cwd; local worktree can prepare and dispatch', async () => {
@@ -99,23 +116,31 @@ test('installed workflow commands require cwd inside the target worktree', async
     await writeFile(join(primary, 'docs/agents/EXEC.md'), 'project execution notes\n');
     await mkdir(join(primary, 'docs/contracts'), { recursive: true });
     await writeFile(join(primary, 'docs/contracts/project-notes.md'), 'project-owned\n');
-    const managed = '.harness/src/workflow/cli-context.mjs';
+    const managed = [
+      '.harness/src/workflow/cli-context.mjs',
+      '.harness/src/workflow/startup-state.mjs',
+      '.codex/scripts/harness-orchestrator-hook.mjs',
+      '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs',
+      '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
+    ];
     const lockPath = join(primary, '.codex/harness-lock.json'), lock = await json(lockPath);
     const old = 'export const previousVersion = true;\n';
     const hash = createHash('sha256').update(old).digest('hex');
-    await writeFile(join(primary, managed), old);
-    lock.files[managed] = { ...lock.files[managed], installed_sha256: hash, upstream_sha256: hash };
+    for (const path of managed) {
+      await writeFile(join(primary, path), old);
+      lock.files[path] = { ...lock.files[path], installed_sha256: hash, upstream_sha256: hash };
+    }
     await writeFile(lockPath, JSON.stringify(lock));
     await updateProject({ sourceRoot, targetRoot: primary });
-    assert.equal(await readFile(join(primary, managed), 'utf8'), await readFile(join(sourceRoot, managed), 'utf8'));
-    const installedPath = join(primary, '.harness/src/workflow/cli-context.mjs');
+    for (const path of managed) assert.equal(await readFile(join(primary, path), 'utf8'), await readFile(join(sourceRoot, path), 'utf8'));
+    const installedPath = join(primary, managed[0]);
     assert.equal((await readFile(installedPath, 'utf8')).includes('change directory first'), true);
     const doctor = await runDoctor({ root: primary, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     const status = git(primary, 'status', '--short', '--untracked-files=all');
     assert.match(status, /app\.txt/); assert.match(status, /docs\/agents\/EXEC\.md/); assert.match(status, /docs\/contracts\/project-notes\.md/);
     assert.doesNotMatch(status, /\.io\/|\.codex\/|\.harness\/src\//);
-    for (const path of [managed, '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
+    for (const path of [...managed, '.agents/skills/orchestrator/references/dispatch.md', '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
     const installed = await import(`${pathToFileURL(installedPath).href}?consumer=${randomUUID()}`);
     assert.equal(typeof installed.resolveCommandContext, 'function');
   });

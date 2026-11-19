@@ -85,6 +85,8 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/internal-skills/e2e-test/GUIDE.md',
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
     '.codex/internal-skills/e2e-test/references/failure-learning.md',
+    '.codex/internal-skills/e2e-telemetry/GUIDE.md',
+    '.codex/internal-skills/e2e-telemetry/scripts/report.mjs',
     '.codex/agents/workflow_stage.toml',
     '.codex/agents/tracker_publisher.toml',
     '.codex/agents/pr_author.toml',

@@ -151,6 +151,10 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     const dispatch = await readFile(join(root, '.agents/skills/orchestrator/references/dispatch.md'), 'utf8');
     assert.match(dispatch, /메인 세션\)는 이 값을 서브에이전트에 전달만 한다/);
     assert.match(dispatch, /`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다|`guide`·`input_path`·`schema_path`의 파일과 stage 산출물\(Spec·plan·코드\) 본문은 읽지 않는다/);
+    assert.match(dispatch, /파일 조회를 시작하기 전에 `launch`부터 실행한다/);
+    assert.match(dispatch, /타임아웃이나 빈 응답이 오면 바로 다시 기다린다\. 실제 알림을 받았거나 재개 직후 기존 agent 상태를 복구해야 할 때 `collaboration\.list_agents`/);
+    const stakeholder = await readFile(join(root, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'), 'utf8');
+    assert.match(stakeholder, /Use those exact paths to check, read or write either file/);
     for (const skill of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
       const text = await readFile(join(root, skill), 'utf8').catch(() => null);
       if (text !== null) assert.match(text, /GUIDE·schema·산출물 본문을 읽지 않고/);

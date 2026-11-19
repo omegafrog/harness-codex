@@ -297,6 +297,8 @@ codex exec resume --json --model gpt-6-luna \
 
 로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
 
+사용량과 호출 분석을 함께 보고할 실행에서는 `HARNESS_E2E_TELEMETRY=1`을 지정하거나 사용자 요청의 분석 선택을 runner에 전달한다. `0` 또는 미설정의 기본 동작은 분석 끔이다. 같은 run의 재개에 선택값을 유지한다. 켜진 실행은 종료·실패·승인 대기 지점의 Codex 기록을 [E2E 사용량 분석](../../.codex/internal-skills/e2e-telemetry/GUIDE.md)으로 집계하여 해당 run의 `telemetry.md`와 `telemetry.json`을 보고한다.
+
 ### Orchestrator 작업 실행
 
 메인 orchestrator는 [실행 조율 지침](../../.codex/skills/orchestrator/references/coordination.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.

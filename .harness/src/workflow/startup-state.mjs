@@ -217,6 +217,34 @@ export function orchestratorInputTarget(observed) {
   return (observed.session_worktrees || []).find((record) => record.workspace_root === observed.workspace_root) || null;
 }
 
+export function startupProcedure({ observed, progress, orchestrator, composer }) {
+  switch (observed.decision_hint) {
+    case 'maintenance_candidate':
+      return 'Follow .codex/internal-skills/harness-maintenance/GUIDE.md in the current checkout.';
+    case 'setup_candidate':
+      return 'Follow the setup procedure for the current checkout.';
+    case 'worktree_required':
+      return 'For continuation, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. Never select by newest record. A distinct new workflow follows the composition route in the orchestrator skill.';
+    case 'inspect_required':
+      return 'Report the observed record mismatch or follow its recovery procedure.';
+    case 'compose_candidate':
+      return `For a new workflow, read ${composer} and compose with a fresh execution ID. Pass the current provider and session ID. Verify the invocation result and binding. From the primary checkout, verify against the pre-creation Git list and stop after giving the new absolute workspace path. In an existing linked worktree, verify that the returned workspace is current and continue there.`;
+    case 'resume_candidate': {
+      const dispatch = join(dirname(orchestrator), 'references/dispatch.md');
+      const firstStage = observed.input_routing === 'local' && progress && progress.worktree_ref === observed.input_worktree_ref
+        && !progress.workflow_id && progress.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE
+        && progress.stages.length === 1 && progress.stages[0].id === WORKTREE_STAGE.WORKFLOW_COMPOSE
+        && progress.stages[0].status === 'completed';
+      if (firstStage) {
+        return `For a plain continuation of the composed workflow, read ${dispatch}, then run node .codex/scripts/harness-native-stage.mjs launch --stage-id ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS} in the current worktree. Use the returned guide, input and schema paths only to brief the stage worker. A different user request follows the relevant route in the orchestrator skill.`;
+      }
+      return `For workflow resumption, read ${dispatch} and use the current worktree's harness-context.mjs when the next action needs confirmation.`;
+    }
+    default:
+      return '';
+  }
+}
+
 // Progress is a projection of orchestrator decisions, never a workflow transition.
 export async function refreshWorkflowProgress(observed, event) {
   if (observed.matching_workflow_count > 1 && !observed.issues.length) {

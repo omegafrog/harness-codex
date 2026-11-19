@@ -488,8 +488,8 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     for (const startupContext of [context, claudeContext]) {
       assert.match(startupContext, /change directory to that worktree before invoking the orchestrator/);
       assert.match(startupContext, /change directory to its workspace_root/);
-      assert.match(startupContext, /fresh execution ID/);
-      assert.match(startupContext, /compose with a fresh execution ID/i);
+      assert.match(startupContext, /A distinct new workflow follows the composition route/);
+      assert.doesNotMatch(startupContext, /references\/(?:coordination|dispatch)\.md/);
       assert.match(startupContext, /Never select by newest record/);
     }
     assert.ok(context.includes('계산기'));
