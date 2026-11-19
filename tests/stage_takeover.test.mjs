@@ -172,6 +172,9 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await writeAgent();
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'refusals leave the tree clean');
+  const foreignBinding = JSON.stringify({ provider: 'claude-code', model: 'sonnet', reasoning_effort: 'medium' });
+  assert.match(refusal(run(NATIVE, [...takeover, '--stage-binding', foreignBinding]), 'INSTALL_OR_BINDING').error, /requested stage binding/);
+  await untouched(entry);
 
   // The takeover: the run is recorded as interrupted, this conversation owns the workflow, and the stage runs again.
   const taken = ok(run(NATIVE, takeover));
@@ -263,16 +266,21 @@ test('installed consumer: the two steps and a repeated command are safe, and a s
   assert.equal(failed.native_finished, true);
   assert.equal((await readState()).status, 'failed');
   assert.equal((await readdir(join(f.session, 'runtime/restarts'))).filter((name) => name.startsWith('takeover-')).length, 1);
-  const again = ok(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true']));
+  const requestedBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+  const bindingArgs = ['--stage-binding', JSON.stringify(requestedBinding)];
+  const again = ok(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true', ...bindingArgs]));
   assert.equal(again.already_taken_over, true);
   assert.equal(again.execution_id, launched.execution_id);
+  assert.equal(again.next, `${first.next} --stage-binding '${bindingArgs[1]}'`);
   assert.equal((await readdir(join(f.session, 'runtime/restarts'))).filter((name) => name.startsWith('takeover-')).length, 1, 'repeating archives nothing');
   // Another conversation cannot reuse this conversation's takeover.
   assert.equal(refusal(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true'], randomUUID())).code, 'TAKEOVER_REFUSED');
   // The failed stage reads as an interrupted one everywhere else: context, and a launch with `--take-over true` that continues.
   assert.equal(ok(run('harness-context.mjs', [])).stages[STAGE].status, 'failed');
-  const relaunched = ok(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true']));
+  const relaunched = ok(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true', ...bindingArgs]));
   assert.equal(relaunched.status, 'launched');
+  const { model_tier, ...binding } = relaunched.binding;
+  assert.deepEqual(binding, requestedBinding);
   assert.equal(relaunched.taken_over.previous_execution_id, launched.execution_id);
   assert.equal((await readState()).stages[STAGE].execution_id, relaunched.execution_id);
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');

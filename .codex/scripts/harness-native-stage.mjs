@@ -28,7 +28,7 @@ const childFailure = (child, context = {}) => {
   return error;
 };
 
-// `--take-over true` is the only option besides --stage-id: it returns the stage's id, or null without the flag.
+// Stage-binding validation is handled separately before taking over the requested stage.
 function takeOverStage(args) {
   const index = args.indexOf('--take-over');
   if (index < 0) return null;
@@ -43,15 +43,18 @@ function takeOverStage(args) {
 function launchStage(requestedArgs, verbose) {
   const scripts = fileURLToPath(new URL('.', import.meta.url));
   const run = (script, scriptArgs) => spawnSync(process.execPath, [join(scripts, script), ...scriptArgs], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  const takeOverId = takeOverStage(requestedArgs);
+  const bindingIndex = requestedArgs.indexOf('--stage-binding');
+  const bindingArgs = bindingIndex < 0 ? [] : requestedArgs.slice(bindingIndex, bindingIndex + 2);
+  if (bindingIndex >= 0 && (!bindingArgs[1] || bindingArgs[1].startsWith('--') || requestedArgs.lastIndexOf('--stage-binding') !== bindingIndex)) throw new Error('Invalid argument: --stage-binding requires one JSON value');
+  const takeOverId = takeOverStage(requestedArgs.filter((_, i) => bindingIndex < 0 || (i !== bindingIndex && i !== bindingIndex + 1)));
   let args = requestedArgs, taken = null;
   if (takeOverId) {
     errorContext.stageId = takeOverId;
-    const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true']);
+    const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true', ...bindingArgs]);
     if (takeover.status !== 0) throw childFailure(takeover);
     taken = lastJson(takeover.stdout);
     if (!taken) throw new Error('harness-prepare-input.mjs printed no result');
-    args = ['--stage-id', takeOverId, '--feedback', TAKEOVER_FEEDBACK];
+    args = ['--stage-id', takeOverId, '--feedback', TAKEOVER_FEEDBACK, ...bindingArgs];
   }
   const prepare = run('harness-prepare-input.mjs', [...args, '--verbose']);
   if (prepare.status !== 0) throw childFailure(prepare);
@@ -104,7 +107,7 @@ try {
   if (input.session_directory !== session || input.context?.worktree_ref !== opts['worktree-ref'] || input.context?.parent_execution_id || input.skill === 'workflow-compose') throw new Error('Invalid native stage workspace or input');
   errorContext.stageId = input.context?.stage_id || input.skill;
   const { workflow, stage } = await resolveWorkflowStage({ root, input });
-  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null, executionProvider: input.context?.provider || null });
+  const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null, executionProvider: input.context?.provider || null, requestedStageBinding: input.context?.requested_stage_binding });
   if ((input.context?.provider && input.context.provider !== binding.provider) || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== binding.provider) || (input.context?.resume_provider && input.context.resume_provider !== binding.provider)) throw new Error('Execution provider must match the orchestrator and binding');
   const paths = stageExecutionPaths(root, id);
   if (action === 'start') {
@@ -166,7 +169,8 @@ try {
       const foreign = foreignRunningStage(workflowState, here);
       const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
       const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
-      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
+      const observed = codexOutcome?.outcome;
+      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(input.context?.requested_stage_binding ? { requested_binding: input.context.requested_stage_binding, ...(observed?.model ? { observed_binding: { model: observed.model, reasoning_effort: observed.reasoning_effort } } : {}) } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
       process.exit(0);
     }
     if (action === 'bind') {
@@ -261,6 +265,11 @@ try {
       } finally { await file.close(); }
       process.stdout.write(`${JSON.stringify({ status: 'received', execution_id: id })}\n`);
       process.exit(0);
+    }
+    if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
+      const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+      const observed = await readNativeCodexOutcome({ root, parentSessionId: input.context?.orchestrator_session_id, stage: current });
+      if (observed?.model !== binding.model || observed?.reasoning_effort !== binding.reasoning_effort) throw new Error(`Requested stage binding mismatch: expected ${binding.model}/${binding.reasoning_effort}, observed ${observed?.model || 'unknown'}/${observed?.reasoning_effort || 'unknown'}`);
     }
     const schema = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.schema });
     let format, raw;

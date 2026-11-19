@@ -82,8 +82,8 @@ function validate(value, schema, path = '$') {
 }
 
 // A skill's tier comes from its own document (see skill-declaration.mjs) and a workflow stage may override it with another
-// setup tier; the model and effort are always the active provider's agents.<provider>.<tier>_* values written by setup.
-export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null }) {
+// setup tier. An explicit stage binding takes priority over the workflow binding and provider setup defaults.
+export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null, requestedStageBinding = null }) {
   const declaration = await readSkillDeclaration({ root, skill });
   requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
   let tier = declaration.model_tier;
@@ -119,7 +119,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   requireValue(['codex', 'claude-code'].includes(provider), 'Invalid execution provider');
   const settings = providerAgents(config, provider);
   const model = settings[keys.model], effort = settings[keys.reasoning_effort];
-  const override = supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);
+  const override = requestedStageBinding ? parseWorkflowBinding(requestedStageBinding) : supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);
   requireValue(!override || override.provider === provider, 'Execution binding provider mismatch');
   assertSingleProvider(config, override, provider);
   if (recordedBinding && supplied && recordedBinding.provider === supplied.provider) {

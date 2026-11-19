@@ -12,6 +12,8 @@ stage가 정해졌으면 파일 조회를 시작하기 전에 `launch`부터 실
 
 Codex의 Harness 작업자 프로필은 `skills.include_instructions = false`로 자동 스킬 목록을 생략한다. 작업자는 배정된 GUIDE와 현재 단계에서 필요한 참조를 경로로 연다. 사용자가 배정된 작업에 외부 스킬을 명시했다면 해당 스킬 파일의 경로도 전달한다.
 
+사용자가 이번 실행의 모델과 reasoning effort를 정하면 해당 stage를 `--stage-binding '{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}'` 형식으로 준비한다. provider는 현재 workflow와 일치해야 한다. `--take-over true`로 이어받을 때도 같은 옵션을 전달한다. 이 값은 해당 실행에만 저장하고 worktree의 binding과 setup 설정은 유지한다. 여러 stage에 적용하라는 요청이면 범위에 해당하는 각 `launch`에 넘긴다. Codex `spawn_agent`에는 반환된 `binding.model`과 `binding.reasoning_effort`를 그대로 넣는다. 상위 세션의 실제 모델과 effort가 둘 다 일치하면 Codex의 상속도 사용할 수 있다. 현재 도구로 지정값을 적용할 수 없으면 멈추고 그 제한을 사용자에게 알린다. Codex `finish`는 지정값과 실제 작업자 기록이 일치한 결과만 받는다.
+
 현재 전술 설계 양식은 작업자가 `completed/OK`를 제출할 때 소유 부분을 검증한다. `domain-model`은 모델 필드·메서드·업무 연결, `aggregate-design`은 Aggregate 구조·담당 규칙·클래스 다이어그램, `domain-service`는 남은 규칙 책임, `application-service`는 업무 커버리지·호출·트랜잭션·포트를 본다. `context-boundary`에서는 문서 전체를 다시 확인한다. 이전 번호식 문서는 기존 마지막 gate를 사용한다. `gate_error`는 결과나 commit을 남기지 않으며, 오류를 같은 작업자에게 돌려준다. 자기 산출물의 오류는 그 자리에서 고치고 다시 제출한다. 앞 stage의 오류는 `owner_stage`와 `dependency_gap`을 갖춘 `blocked/DEPENDENCY_INCOMPLETE`로 제출해 실제 소유자에게 보낸다.
 
 ## 작업자 대기와 실행 복구

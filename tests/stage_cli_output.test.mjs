@@ -2,6 +2,7 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -38,6 +39,62 @@ const runPrinted = (workspace, command, agentId = 'agent-1') => {
 const SKIP = (analysis) => `생략: stakeholder-analysis 판정 생략 (${analysis})`;
 const SKIPPED = (analysis) => ({ files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
 const question = { question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null };
+
+test('an installed stage honors an explicit model and effort and refuses a mismatched Codex worker', async (t) => {
+  const { workspace, tree, treeGit, specPath, submitStage } = await consumerWorkflow(t, REQUEST);
+  const record = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
+  const priorBinding = { provider: 'codex', model: 'codex-workflow', reasoning_effort: 'low' };
+  record.workflow_binding = priorBinding;
+  await writeFile(tree.worktree_ref, JSON.stringify(record));
+  const { session_id: parentId } = record.agent_sessions.orchestrator;
+  const selected = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+  const stage = 'stakeholder-analysis';
+  const launched = ok(exec(workspace, NATIVE, ['launch', '--stage-id', stage, '--stage-binding', JSON.stringify(selected)]));
+  const { model_tier, ...binding } = launched.binding;
+  assert.deepEqual(binding, selected);
+  assert.deepEqual(JSON.parse(await readFile(tree.worktree_ref, 'utf8')).workflow_binding, priorBinding);
+  const agent = 'bound-worker';
+  ok(runPrinted(workspace, launched.next.bind, agent));
+  await submitStage({ stage, started: launched }, SKIPPED(specPath('stakeholder-analysis.md')));
+  const head = treeGit('rev-parse', 'HEAD');
+  refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
+
+  const sessions = join(process.env.CODEX_HOME, 'sessions');
+  const thread = randomUUID();
+  const rollout = (id, events) => writeFile(join(sessions, `rollout-fixture-${id}.jsonl`), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+  await mkdir(sessions, { recursive: true });
+  await rollout(parentId, [
+    { type: 'session_meta', payload: { id: parentId, cwd: workspace } },
+    { type: 'event_msg', timestamp: new Date().toISOString(), payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: `/root/${agent}`, agent_thread_id: thread } } },
+  ]);
+  const worker = (model, effort) => rollout(thread, [
+    { type: 'session_meta', payload: { id: thread, cwd: workspace, parent_thread_id: parentId, source: { subagent: { thread_spawn: { parent_thread_id: parentId, depth: 1, agent_path: `/root/${agent}` } } } } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+    { type: 'turn_context', payload: { turn_id: 'turn', model, effort } },
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn', last_agent_message: 'fixture complete' } },
+  ]);
+  for (const [model, effort] of [['gpt-6.2-astra', 'medium'], ['gpt-6-luna', 'low']]) {
+    await worker(model, effort);
+    const mismatch = refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
+    assert.ok(mismatch.why.includes(`observed ${model}/${effort}`));
+    assert.equal(treeGit('rev-parse', 'HEAD'), head);
+  }
+  await worker(selected.model, selected.reasoning_effort);
+  const inspected = ok(exec(workspace, NATIVE, ['inspect', '--execution-id', launched.execution_id]));
+  assert.deepEqual(inspected.requested_binding, selected);
+  assert.deepEqual(inspected.observed_binding, { model: selected.model, reasoning_effort: selected.reasoning_effort });
+  assert.equal(ok(runPrinted(workspace, launched.next.finish)).code, 'OK');
+  assert.equal(treeGit('status', '--short', '-uall'), '');
+  const asset = '.codex/scripts/harness-native-stage.mjs';
+  await unlink(join(workspace, asset));
+  assert.ok((await runDoctor({ root: workspace })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === join(workspace, asset)));
+  await writeFile(join(workspace, 'app.txt'), 'application edit\n');
+  await updateProject({ sourceRoot, targetRoot: workspace });
+  assert.equal(await readFile(join(workspace, asset), 'utf8'), await readFile(join(sourceRoot, asset), 'utf8'));
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application edit\n');
+  assert.equal(treeGit('status', '--short', '-uall'), ' M app.txt\n');
+  for (const path of [asset, '.harness/schemas/input.schema.json']) assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/);
+});
 
 test('the stage commands print only what the next step needs, and --verbose prints the full detail', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
