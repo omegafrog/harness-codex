@@ -295,6 +295,8 @@ codex exec resume --json --model gpt-6-luna \
 
 실제 resume 인자, cwd, prompt, 반환 코드는 해당 E2E의 `resume-<stage>-invocation.json`에 기록한다. stage의 실제 provider와 서브에이전트 ID는 워크트리 `.io/worktree.json`의 `agent_sessions`와 `runtime/orchestrator/state.json`의 `native_agent_id`, 실행별 `subagents.jsonl`을 함께 보존해 대조한다.
 
+사용자가 이번 실행에서 UI를 보류하거나 승인한 계획에 UI 변경이 없으면 `tactical-ui`에서 적용 여부만 기록한 뒤 `tactical-api`와 `tactical-data`를 진행한다. UI가 포함되면 핵심 화면·흐름에 대한 사용자 결정을 기록한 후 독립 frontend design을 시작한다. 설치 소비자의 보류·인계 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/tactical_implementation_stages.test.mjs`로 검사한다.
+
 로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
 
 사용량과 호출 분석을 함께 보고할 실행에서는 `HARNESS_E2E_TELEMETRY=1`을 지정하거나 사용자 요청의 분석 선택을 runner에 전달한다. `0` 또는 미설정의 기본 동작은 분석 끔이다. 같은 run의 재개에 선택값을 유지한다. 켜진 실행은 종료·실패·승인 대기 지점의 Codex 기록을 [E2E 사용량 분석](../../.codex/internal-skills/e2e-telemetry/GUIDE.md)으로 집계하여 해당 run의 `telemetry.md`와 `telemetry.json`을 보고한다.

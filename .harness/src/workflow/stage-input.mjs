@@ -281,7 +281,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for a requirements revision stage, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
   if (requirementsApproved && stageId !== TACTICAL_DESIGN_STAGES[0]) throw new Error(`Requirements approval is only valid for ${TACTICAL_DESIGN_STAGES[0]}`);
-  if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish' && !requirementsApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
+  if ((repairReceipt || (approvalAnswer && !['tracker-publish', 'frontend-design-brief'].includes(stageId) && !requirementsApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
   // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
   if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implementation and frontend ticket stages');
@@ -355,6 +355,15 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
   const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
   const frontendDesignHandoff = stageId === 'frontend-design-brief' && lastStage === 'tactical-ui' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
+  if (frontendDesignHandoff && !await userSaidAfter({ root, text: approvalAnswer, since: state.stages['workflow-compose'].started_at || state.stages['workflow-compose'].finished_at })) {
+    const error = 'Frontend direction answer was not recorded';
+    throw Object.assign(new Error(error), { explained: { error, code: 'USER_DECISION_REQUIRED', why: 'A UI handoff needs the user’s recorded decision on the screens and flow.', user_decision: 'Agree on the screens and flow with the user, then pass the actual reply via --approval-answer. If UI is deferred, resume tactical-ui with the user’s reply via --feedback.' } });
+  }
+  const deferredFrontend = stageId === 'tactical-ui' && lastStage === 'frontend-design-brief'
+    && ['failed', 'cancelled', 'completed'].includes(last?.status)
+    && target?.status === 'blocked' && !target.stale && target.code === 'DEPENDENCY_INCOMPLETE' && target.result_ref
+    && feedback !== null && await userSaidAfter({ root, text: feedback, since: target.finished_at });
+  if (deferredFrontend) await assertExecutionStopped(last);
   const frontendCorrection = stageId === 'frontend-implementation' && lastStage === 'frontend-visual-review' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
   if (frontendCorrection) {
     const reviewInput = await readExecutionInput({ root, execution_id: last.execution_id });
@@ -365,7 +374,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const reopensCompletedWork = userRevision && target?.result_ref
     && (requirementsRevision && !(last?.code === 'ENVIRONMENT_UNAVAILABLE' || last?.code === 'DEPENDENCY_INCOMPLETE')
       || target.status === 'completed' && target.code === 'OK' && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status)));
-  if (!reopenPlan && !frontendDesignHandoff && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  if (!reopenPlan && !frontendDesignHandoff && !deferredFrontend && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -702,6 +711,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
+  if (frontendDesignHandoff) input.context.frontend_direction_approval = { answer: approvalAnswer };
   if (requirementsRevision) input.context.requirements_revision_from = previous.execution_id;
   if (staleMark) {
     input.context.revalidation_mark = staleMark.reopened_for;

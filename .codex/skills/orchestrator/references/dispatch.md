@@ -32,6 +32,12 @@ Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. �
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 준비기가 만든 `answers.json`을 확인한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
 
+## UI 적용과 보류
+
+승인된 작업 계획에 UI 변경이 없거나 사용자가 이번 실행에서 UI를 보류하면 프런트엔드 스킬을 호출하지 않는다. `tactical-ui`에 근거를 기록한 뒤 API·데이터 설계로 진행한다. 이미 `tactical-ui`가 차단됐으면 사용자의 보류 원문을 `harness-native-stage.mjs launch --stage-id tactical-ui --feedback <사용자 원문>`으로 전달한다. 이미 실행한 `frontend-design-brief`가 기록상 running이면 먼저 `inspect`로 실제 작업자 종료를 확인한다. 중단 또는 실패가 확인되면 기존 절차대로 그 종료를 기록한 뒤 `tactical-ui`로 돌아간다. 보류된 브리프를 복구하거나 결과를 만들어 완료 처리하지 않는다.
+
+UI가 적용되면 확정 요구사항과 Application Service를 기준으로 핵심 화면·흐름을 사용자와 합의한다. 기존 승인 계획에 해당 결정이 있으면 다시 묻지 않는다. `tactical-ui`에 브리프가 필요한 경우 합의한 사용자 답변 원문을 `harness-native-stage.mjs launch --stage-id frontend-design-brief --approval-answer <사용자 원문>`으로 전달한다. `frontend-implementation`과 `frontend-visual-review`는 발행된 `frontend: true` ticket이 준비된 경우에만 실행한다.
+
 ## 상위 stage 되돌아가기
 
 stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage`(앞 stage 중 빈틈을 소유한 가장 앞 stage)와 `result.dependency_gap`(무엇이 비었는지)이 반드시 있다. `finish`는 이를 검사해 없거나 앞 stage가 아니면 `format_error`로 같은 서브에이전트에 돌려보낸다. 이 block은 사용자 결정이 아니므로 **사용자에게 묻지 않고** 다음 순서로 자동 진행한다. 업무 결정은 이 과정에서도 사용자 질문(`USER_DECISION_REQUIRED`)으로만 오며, orchestrator가 대신 답하지 않는다.
