@@ -53,7 +53,7 @@ const FORMER_REGISTRY = [
 ];
 
 // Skills added after the registry was retired; each declares its tier in its own document from the start.
-const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'tactical-api', 'tactical-code', 'tactical-data', 'tactical-technology', 'tactical-ui', 'ubiquitous-language'];
+const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'e2e-telemetry', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'tactical-api', 'tactical-code', 'tactical-data', 'tactical-technology', 'tactical-ui', 'ubiquitous-language'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
