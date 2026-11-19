@@ -37,16 +37,16 @@ test('GitHub plan mapping reads issue identities directly from repository Issues
 });
 
 test('installer backs up and retires old Beads hooks while preserving project hooks', async () => {
-  const { syncOrchestratorHook, inspectOrchestratorHook } = await import('../.harness/src/installer/orchestrator-hook.mjs');
+  const { retireProjectHooks, inspectRetiredProjectHooks } = await import('../.harness/src/installer/orchestrator-hook.mjs');
   const { readFile, readdir } = await import('node:fs/promises');
   const root = await mkdtemp(join(tmpdir(), 'harness-hooks-'));
   try {
     await mkdir(join(root, '.codex'), { recursive: true });
     const original = JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ command: 'bd codex-hook SessionStart', type: 'command' }, { command: 'custom', type: 'command' }] }] } });
     await writeFile(join(root, '.codex/hooks.json'), original);
-    assert.equal((await inspectOrchestratorHook(root)).retired_hooks, 1);
-    await syncOrchestratorHook(root, { noBackup: true });
-    assert.equal((await inspectOrchestratorHook(root)).retired_hooks, 0);
+    assert.equal((await inspectRetiredProjectHooks(root)).beads, 1);
+    await retireProjectHooks(root);
+    assert.equal((await inspectRetiredProjectHooks(root)).beads, 0);
     const hooks = JSON.parse(await readFile(join(root, '.codex/hooks.json'), 'utf8'));
     assert.deepEqual(hooks.hooks.SessionStart[0].hooks, [{ command: 'custom', type: 'command' }]);
     const backup = (await readdir(join(root, '.codex/installer-backups')))[0];

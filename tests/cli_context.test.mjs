@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { codexTranscript } from './support/codex-user-prompt.mjs';
 
 const scripts = fileURLToPath(new URL('../.codex/scripts/', import.meta.url));
 const run = (cwd, script, ...args) => spawnSync(process.execPath, [join(scripts, script), ...args], { cwd, encoding: 'utf8' });
@@ -22,7 +23,8 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     await writeFile(join(root, 'docs/agents/EXEC.md'), '');
     await writeFile(join(root, 'docs/plans/set/plans.md'), '# Plans\n');
     await writeFile(join(root, 'docs/plans/set/auth.md'), '# auth\n');
-    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'set' }));
+    const sessionId = 'c5c669a2-2967-4831-98db-63a24954e857';
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: sessionId, workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'set', agent_sessions: { orchestrator: { provider: 'codex', session_id: sessionId, execution_id: 'compose-1' } } }));
     await writeFile(join(root, '.io/runtime/orchestrator/state.json'), JSON.stringify({ schema_version: 1, workflow_ref: null, status: 'running', current_stage: 'to-ticket', stages: { 'to-ticket': { status: 'completed', code: 'OK', execution_id: 'to-ticket-1' } } }));
     // From a subdirectory, with no --root or --plan-set.
     const snapshot = run(join(root, 'src'), 'harness-plan-review.mjs', 'snapshot');
@@ -36,10 +38,14 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     assert.equal(context.current_stage, 'to-ticket');
     assert.deepEqual(context.plans, ['auth']);
     assert.equal(context.stages['to-ticket'].status, 'completed');
-    // A question the orchestrator asked in conversation is kept by the Stop hook and shown here.
-    const stop = spawnSync(process.execPath, [join(scripts, 'harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'Stop', cwd: root, session_id: 'orchestrator', last_assistant_message: '댓글로 기록할까요?' }) });
+    // Read the final assistant reply from the provider transcript.
+    const transcript = await codexTranscript(root);
+    await appendFile(transcript, JSON.stringify({
+      type: 'response_item', timestamp: new Date().toISOString(),
+      payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: '댓글로 기록할까요?' }] },
+    }) + '\n');
     const turn = JSON.parse(run(root, 'harness-context.mjs').stdout).orchestrator_last_turn;
-    assert.equal(turn?.message, '댓글로 기록할까요?', `status=${stop.status} stdout=${stop.stdout} stderr=${stop.stderr}`);
+    assert.equal(turn?.message, '댓글로 기록할까요?');
     assert.equal(turn.after_latest_stage, true);
     // A delivered turn's reply, written by codex -o, wins when it is newer.
     await new Promise((resolve) => setTimeout(resolve, 20));

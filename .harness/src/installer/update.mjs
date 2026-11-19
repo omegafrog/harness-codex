@@ -6,7 +6,7 @@ import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./lock.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
-import { syncOrchestratorHook } from './orchestrator-hook.mjs';
+import { retireProjectHooks } from './orchestrator-hook.mjs';
 import { migrateAgentsText } from '../workflow/agent-config.mjs';
 import { transformSourceContent } from './transforms.mjs';
 import { LEGACY_ASSETS, RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from './legacy-assets.mjs';
@@ -103,7 +103,9 @@ async function discoverSourceDescriptors(sourceRoot) {
   for (const directory of [".codex/workflows", ".codex/schemas"]) {
     for (const sourcePath of await listDirectoryFiles(sourceRoot, directory, (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   }
-  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs") && entry.name !== "harness-orchestrator-hook.mjs")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  // The runner reads the stage input and return schemas from here; stage agents receive a composed schema per execution.
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".schema.json"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath));
     if (sourcePath === ".harness/src/contracts/contracts.mjs") descriptors.push(sourceDescriptor(sourcePath, ".harness/contracts.mjs"));
@@ -427,13 +429,9 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     }
     await writeFile(configPath, migrated.text);
   }
-  if (scope !== 'agents' && await lstat(resolve(targetRoot, '.codex/scripts/harness-orchestrator-hook.mjs')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    // A workspace without its own project hook (a worktree created with the user-level Codex hook) keeps relying on it,
-    // so an update does not add a project hook that Codex would ask to review again.
-    const projectHook = await readFile(resolve(targetRoot, '.codex/hooks.json'), 'utf8').then((text) => text.includes('harness-orchestrator-hook.mjs'), () => false);
-    const userHook = !projectHook && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
-    await syncOrchestratorHook(targetRoot, { noBackup, register: activeProvider !== 'claude-code' && !userHook });
-    if (activeProvider !== 'codex') await syncInstalledClaudeHook(targetRoot, { noBackup });
+  if (scope === 'all') {
+    await retireProjectHooks(targetRoot);
+    await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };
 }
@@ -495,7 +493,7 @@ async function removeEmptyTree(root, directory) {
 // The Claude hook installer is itself a Claude provider file, so it is loaded only where it was installed.
 export async function syncInstalledClaudeHook(targetRoot, options = {}) {
   const module = await import("../../../.claude/harness/installer/claude-orchestrator-hook.mjs").catch((error) => error.code === "ERR_MODULE_NOT_FOUND" ? null : Promise.reject(error));
-  if (module && await lstat(resolve(targetRoot, ".claude/harness/scripts/harness-claude-orchestrator-hook.mjs")).then(() => true, () => false)) await module.syncClaudeOrchestratorHook(targetRoot, options);
+  if (module && await lstat(resolve(targetRoot, ".claude/harness/installer/claude-orchestrator-hook.mjs")).then(() => true, () => false)) await module.syncClaudeOrchestratorHook(targetRoot, options);
 }
 
 async function removeEmptyLegacyRuntimeDirectories(root, directory) {

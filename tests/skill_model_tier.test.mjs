@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { AGENT_TIERS, tierSettingKeys } from '../.harness/src/workflow/agent-config.mjs';
 import { resolveSkillBinding } from '../.harness/src/workflow/skill-execution.mjs';
 import { listDeclaredSkills, parseSkillDeclaration, readSkillDeclaration, stripSkillDeclaration } from '../.harness/src/workflow/skill-declaration.mjs';
@@ -53,7 +53,7 @@ const FORMER_REGISTRY = [
 ];
 
 // Skills added after the registry was retired; each declares its tier in its own document from the start.
-const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'tactical-api', 'tactical-code', 'tactical-data', 'tactical-technology', 'tactical-ui', 'ubiquitous-language'];
+const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'e2e-telemetry', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'tactical-api', 'tactical-code', 'tactical-data', 'tactical-technology', 'tactical-ui', 'ubiquitous-language'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 const guide = (tier, body = '# skill\n') => `---\nmodel_tier: ${tier}\n---\n${body}`;
@@ -91,6 +91,8 @@ async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skill
     await writeFile(join(root, path), stripped);
     lock.files[path].installed_sha256 = lock.files[path].upstream_sha256 = sha256(stripped);
   }
+  // A consumer from before the stage contract moved still had the skill-execution directory around the registry.
+  await mkdir(dirname(join(root, BINDINGS)), { recursive: true });
   await writeFile(join(root, BINDINGS), bindings);
   if (locked) lock.files[BINDINGS] = { installed_sha256: sha256(bindings), upstream_sha256: sha256(bindings), source_path: BINDINGS };
   await writeFile(lockPath, JSON.stringify(lock, null, 2));
@@ -128,7 +130,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   for (const [skill, tier] of Object.entries({ 'tactical-technology': 'low_performance', 'tactical-ui': 'low_performance', 'tactical-api': 'low_performance', 'tactical-data': 'low_performance', 'tactical-code': 'implementation' })) {
     assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   }
-  assert.equal((await readdir(join(sourceRoot, '.codex/internal-skills/skill-execution'))).includes('bindings.json'), false);
+  await assert.rejects(readdir(join(sourceRoot, '.codex/internal-skills/skill-execution')), { code: 'ENOENT' }, 'no shared skill-execution skill remains');
 });
 
 test("a skill's tier comes from its own declaration and maps to agents.<provider>.<tier>_model", async () => {
@@ -218,9 +220,9 @@ test('a review request can name any skill that declares a tier and the generated
     await mkdir(join(root, '.codex/agents'), { recursive: true });
     await writeFile(join(root, '.codex/agents/plan_reviewer.toml'), 'name = "plan_reviewer"\n');
     // writeOutputSchema reads the return schemas under the root, so give the fixture a copy of the two it needs.
-    const schemas = join(sourceRoot, '.codex/internal-skills/skill-execution/schemas');
-    await mkdir(join(root, '.codex/internal-skills/skill-execution/schemas/flows'), { recursive: true });
-    for (const name of ['return.schema.json', 'flows/common.schema.json']) await writeFile(join(root, '.codex/internal-skills/skill-execution/schemas', name), await readFile(join(schemas, name)));
+    const schemas = join(sourceRoot, '.harness/schemas');
+    await mkdir(join(root, '.harness/schemas/flows'), { recursive: true });
+    for (const name of ['return.schema.json', 'flows/common.schema.json']) await writeFile(join(root, '.harness/schemas', name), await readFile(join(schemas, name)));
     await mkdir(join(root, '.codex/skills/main'), { recursive: true });
     await writeFile(join(root, '.codex/skills/main/SKILL.md'), '---\nname: main\nmain_session: true\n---\n');
     const path = join(root, 'schema.json');
@@ -241,8 +243,8 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
     }
   };
   for (const directory of ['.harness', '.codex', '.claude', 'bin']) await walk(directory);
-  assert.deepEqual(offenders.filter((path) => path !== '.codex/harness-lock.json'), ['.codex/internal-skills/skill-execution/schemas/input.schema.json']);
-  const schema = JSON.parse(await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/schemas/input.schema.json'), 'utf8'));
+  assert.deepEqual(offenders.filter((path) => path !== '.codex/harness-lock.json'), ['.harness/schemas/input.schema.json']);
+  const schema = JSON.parse(await readFile(join(sourceRoot, '.harness/schemas/input.schema.json'), 'utf8'));
   const retired = schema.properties.context.properties.subagent_binding;
   assert.match(retired.description, /Retired: no runner writes this any more/);
   assert.ok(!(schema.properties.context.required || []).includes('subagent_binding'), 'old inputs that carry it stay valid, new ones need not');

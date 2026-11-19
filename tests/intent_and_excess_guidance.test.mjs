@@ -82,8 +82,8 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.harness/src/workflow/stage-checkpoint.mjs',
     '.codex/scripts/harness-spec-review.mjs',
     '.codex/scripts/harness-native-stage.mjs',
-    '.agents/skills/orchestrator/SKILL.md',
-    '.codex/internal-skills/skill-execution/references/dispatch.md',
+    ...['.agents', '.claude'].flatMap((provider) => ['SKILL.md', 'references/coordination.md', 'references/dispatch.md', 'references/input.md', 'references/workflow-map.md']
+      .map((path) => `${provider}/skills/orchestrator/${path}`)),
   ];
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });

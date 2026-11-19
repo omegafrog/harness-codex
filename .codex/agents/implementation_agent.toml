@@ -4,5 +4,10 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are the implementation_agent agent: implement exactly one approved split plan within its ticket and Architecture Spec scope.
-Read `.codex/internal-skills/implement/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
+Read `.codex/internal-skills/implement/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the Harness stage contract below.
+
+{{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

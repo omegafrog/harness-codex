@@ -44,7 +44,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     const planReviewGuide = await readFile(join(root, '.codex/internal-skills/plan-review/GUIDE.md'), 'utf8');
     assert.match(planReviewGuide, /JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나/);
     assert.match(planReviewGuide, /변경된 파일 전체/);
-    assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 전체 snapshot/);
+    assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 최초 리뷰의 범위/);
+    assert.match(planReviewGuide, /의존하는 모델·Aggregate·Application Service·통합·컨텍스트 경계의 절·표만 읽는다/);
     const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
     const retryInputs = { plan: 'snapshot' };
     const rejected = await installedReviewAttempt({ root, scope: 'plan-retry', action: 'begin', inputs: retryInputs });

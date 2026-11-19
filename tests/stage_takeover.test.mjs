@@ -10,7 +10,7 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { TAKEOVER_FEEDBACK, explainError, foreignRunningStage } from '../.harness/src/workflow/stage-cli.mjs';
 import { PRE_SPEC_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
-import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
+import { consumerWorkflow, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 const STAGE = 'stakeholder-analysis';
@@ -55,8 +55,11 @@ async function interruptedWorkflow(t, { stage = STAGE, before = null, bind = tru
   let answers;
   if (asked) {
     ok(printed(workspace, launched.next.bind.replace('<agent_id>', 'analysis-agent-1'), old));
-    await flow.submitStage({ stage, started: launched }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
+    await flow.submitStage({ stage, started: launched }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question], files: { [analysis]: stakeholderAnalysisDocument(REQUEST) } });
     assert.equal(ok(printed(workspace, launched.next.finish, old)).code, 'USER_DECISION_REQUIRED');
+    // The runner checked the waiting document. This fixture is about the takeover of the resumed run, which requires a clean
+    // project tree, so the uncommitted question-time document is removed here.
+    await rm(join(workspace, analysis));
     launched = ok(run(NATIVE, ['launch', '--stage-id', stage, '--answer', 'no'], old));
     answers = await readFile(join(session, 'runtime/executions', launched.execution_id, 'answers.json'), 'utf8');
   }
@@ -169,6 +172,9 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await writeAgent();
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'refusals leave the tree clean');
+  const foreignBinding = JSON.stringify({ provider: 'claude-code', model: 'sonnet', reasoning_effort: 'medium' });
+  assert.match(refusal(run(NATIVE, [...takeover, '--stage-binding', foreignBinding]), 'INSTALL_OR_BINDING').error, /requested stage binding/);
+  await untouched(entry);
 
   // The takeover: the run is recorded as interrupted, this conversation owns the workflow, and the stage runs again.
   const taken = ok(run(NATIVE, takeover));
@@ -260,16 +266,21 @@ test('installed consumer: the two steps and a repeated command are safe, and a s
   assert.equal(failed.native_finished, true);
   assert.equal((await readState()).status, 'failed');
   assert.equal((await readdir(join(f.session, 'runtime/restarts'))).filter((name) => name.startsWith('takeover-')).length, 1);
-  const again = ok(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true']));
+  const requestedBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+  const bindingArgs = ['--stage-binding', JSON.stringify(requestedBinding)];
+  const again = ok(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true', ...bindingArgs]));
   assert.equal(again.already_taken_over, true);
   assert.equal(again.execution_id, launched.execution_id);
+  assert.equal(again.next, `${first.next} --stage-binding '${bindingArgs[1]}'`);
   assert.equal((await readdir(join(f.session, 'runtime/restarts'))).filter((name) => name.startsWith('takeover-')).length, 1, 'repeating archives nothing');
   // Another conversation cannot reuse this conversation's takeover.
   assert.equal(refusal(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true'], randomUUID())).code, 'TAKEOVER_REFUSED');
   // The failed stage reads as an interrupted one everywhere else: context, and a launch with `--take-over true` that continues.
   assert.equal(ok(run('harness-context.mjs', [])).stages[STAGE].status, 'failed');
-  const relaunched = ok(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true']));
+  const relaunched = ok(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true', ...bindingArgs]));
   assert.equal(relaunched.status, 'launched');
+  const { model_tier, ...binding } = relaunched.binding;
+  assert.deepEqual(binding, requestedBinding);
   assert.equal(relaunched.taken_over.previous_execution_id, launched.execution_id);
   assert.equal((await readState()).stages[STAGE].execution_id, relaunched.execution_id);
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');
@@ -329,12 +340,11 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
 
   const read = (path) => readFile(join(sourceRoot, path), 'utf8');
   const skill = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(skill, /launch --stage-id <stage> --take-over true/);
-  assert.match(skill, /원래 대화로 돌아가라고 하지 않는다/);
-  const dispatch = await read('.codex/internal-skills/skill-execution/references/dispatch.md');
-  assert.match(dispatch, /--take-over true/);
-  assert.match(dispatch, /다른 Codex 대화/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/input.md'), /--take-over-interrupted true/);
+  assert.match(skill, /실행 배정·결과 확인·중단된 실행 복구.*references\/dispatch\.md/);
+  const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
+  assert.match(dispatch, /launch --stage-id <stage> --take-over true/);
+  assert.match(dispatch, /다른 Codex 대화[^\n]*그 대화로 돌아가지 않고 아래 인계를 쓴다/);
+  assert.match(await read('.codex/skills/orchestrator/references/input.md'), /--take-over-interrupted true/);
   assert.match(await read('docs/architecture/enforcement.md'), /stage-takeover\.mjs[\s\S]*takeOverInterruptedStage/);
 });
 

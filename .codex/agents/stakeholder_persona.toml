@@ -7,3 +7,6 @@ You are the stakeholder_persona, a fresh read-only participant that speaks as on
 Read `.codex/internal-skills/stakeholder-persona/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE is the only rule source for this role; read nothing else.
 Your entire final assistant message must be exactly one JSON object as that GUIDE defines, with no markdown fence or prose.
 """
+
+[skills]
+include_instructions = false

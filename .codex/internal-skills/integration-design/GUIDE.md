@@ -5,53 +5,11 @@ model_tier: high_performance
 
 # integration-design
 
-## Purpose
+BC별 Application Service와 사용 포트가 요구된 통합을 구현할 수 있는지 검토한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 확정 요구사항, 승인 답변, Context Map, 관련 ADR과 [전술 설계](../domain-model/references/template.md)를 읽는다.
 
-Integration step of the tactical design flow, after `application-service` and before `context-boundary`. Specify how the bounded contexts exchange what the business needs: the commands, responses and events, and the communication style of each relationship. The inputs are the relationships of `CONTEXT-MAP.md` (with the context that owns the decision, `판단 소유자`) and the consistency decisions of `aggregate-design`. The result is section 5 of `docs/specs/<plan-set-id>/tactical-design.md` and the communication column of the project's model rows. This stage runs at the high performance tier because the choice between a synchronous answer and a later reaction changes what users observe. It asks the user when an integration decision changes the business outcome. It chooses no broker, protocol or framework. An instruction that names a stage, for example "do not touch `application-service`", refers to that stage and its recorded state, never to a file: this stage writes `## 5` of `tactical-design.md` all the same.
+- 요구된 동기 호출에 실제 메서드·포트·요청·응답·오류 처리가 있고 호출자가 필요한 시점에 결과를 받는지 확인한다.
+- 비동기 흐름의 발행·수신 메서드가 같은 메시지 계약을 따르는지, transaction과 발행 순서 및 실패 결과가 요구와 일치하는지 확인한다.
+- 관계·판단 소유권이 틀리면 `bounded-context`, 일관성 근거가 틀리면 `aggregate-design`, 호출·포트가 빠졌으면 `application-service`의 가장 앞선 소유자로 반환한다. 관계 그래프의 기술 선택은 구현 설계에서 한다.
+- 확인 결과와 근거를 요약에 기록하고 `completed / OK`를 반환한다. BC별 통합 사실은 기존 AS 행과 사용 포트가 소유한다.
 
-## Inputs
-
-- The user request (`scope` of the execution input), read verbatim.
-- `docs/specs/<plan-set-id>/tactical-design.md` sections 1 to 4 (the `CON-xx` decisions and the external effects of the use cases) and `requirements.md`, resolved with `harness-spec-path.mjs`.
-- `CONTEXT-MAP.md` `## 3`: each relationship's upstream, downstream, responsibilities, communication contract and `판단 소유자`. It is read-only here; `bounded-context` owns it.
-- `CONTEXT.md` for the terms; `docs/architecture/domain-model.md` for the existing communication of the affected rows.
-- The [tactical-design.md template](../domain-model/references/template.md), which owns the section shape, and the [shared rules](../domain-model/references/deepening.md) for the final gate rules, deepening and returns.
-
-## Prohibited
-
-- Scope: an integration row that traces to no existing requirement ID, or a question whether a feature belongs in scope ([No new scope](../domain-model/references/deepening.md#no-new-scope)).
-- Inspecting source or test code, or choosing a broker, protocol, serialization, framework or deployment unit. Technology choice belongs to `tactical-technology`.
-- Editing `CONTEXT-MAP.md`, adding a relationship the map and the decisions do not evidence, or reassigning a `판단 소유자`.
-- Considering Saga or Outbox for a rule that `aggregate-design` did not record as eventual consistency, or applying one to a same-context reaction that needs none.
-- Reading a consumer's repository, table or internal type, or sharing a model between contexts; a message carries the business information the receiving context needs and nothing of the sender's internals.
-- Asking about an integration choice that the contract, `INV`, `EX` or `AC` already settles, or presenting a recommendation as the user's decision.
-- Writing anything in `tactical-design.md` but `## 5`, this stage's rows of `## 7` and the mapping rows that Deepening allows in `### 1.4` and `### 2.2`. Sections 1 to 4 are settled input.
-
-## Process
-
-1. Work in the active workspace. Run the preflight `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` before anything else and, on failure, return `blocked` with its output. Resolve the plan set documents with `node .codex/scripts/harness-spec-path.mjs <workspace_root> <file>`.
-2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, put the skip and its evidence path in the summary and return `completed/OK`. When section 4 is missing, return `blocked` / `INPUT_MISSING`.
-3. On resume, read the previous result, section 5 and the actual answers. Continue at step 6 when answers exist and keep decisions already recorded. A previous `blocked` result is evidence of that attempt, not the current state; keep recorded decisions and continue section 5 from the current inputs.
-4. List the integrations. Take each `CONTEXT-MAP.md` `## 3` relationship whose contexts own models of this plan set, every `최종` and every `즉시` decision of section 2.3 whose Aggregates sit in different contexts, and every event that section 4 publishes to another context. A relationship that the plan set does not exercise stays out. When a needed relationship is missing or its contract contradicts a decision, return `blocked` / `DEPENDENCY_INCOMPLETE` naming `bounded-context`.
-5. Specify each integration in `### 5`: the upstream and downstream contexts, the commands the downstream receives and the responses it returns, the events it reacts to, each named in the glossary's language and carrying the business information that the contract names. Use the `판단 소유자` to place the decision: the owner's context accepts, rejects or finalizes, and the other side carries the owner's outcome. A `미정` owner is a gap to settle by evidence or by the question below.
-6. Settle the communication style from the business: a response that the caller needs before it can continue is synchronous; a reaction that may follow later is asynchronous. A `즉시` decision across contexts is never merged and is always synchronous: write an integration row that cites its `CON-xx` in `일관성 결정`, whose `통신 방식` is `동기 확인` (the caller only reads the other context's state, the `조회 전용 Aggregate` of the decision) or `동기 호출`, with its source and `Saga·Outbox` as `없음 — <reason>`; do not ask the user about it. When the contract can only be asynchronous, the decision contradicts section 2.3: return `blocked` / `DEPENDENCY_INCOMPLETE` naming `aggregate-design`. A style that the contract, `INV`, `EX`, `AC` or the `CON-xx` decision settles is recorded with that source. Ask in one batch, in Korean, only when the choice changes what the business observes, for example whether the caller must get a confirmed answer at once or may be told later, what the user sees when the downstream is unavailable, or who decides when the contexts disagree. One question per integration titled with its relationship, an option per choice with its business consequence, a recommended option and a rationale. Return `action_required` / `USER_DECISION_REQUIRED`.
-7. Choose Saga or Outbox only for rows that cite an eventual-consistency `CON-xx`: whether a compensation or a reliable publication is needed to keep that decision true, and what happens on failure. Every other row writes `없음`. With answers, record them in the user's wording with the source `answers.json` and the `question_id`; ask again only when an answer is ambiguous.
-8. Update the project model rows (`공개 계약 / 통신`), append the decisions of this stage to `## 7` with their sources, and use only terms of `CONTEXT.md`, as the shared rules describe. When the plan set has one context and no relationship, write `해당 없음 — <이유>` in section 5 and record that decision.
-9. Return `completed/OK` with `tactical-design.md`, plus `requirements.md`, `docs/architecture/domain-model.md` and `CONTEXT.md` when each changed. The runner, not this stage, then runs the final gate after `context-boundary` (see Final gate).
-
-## Deepening
-
-An answer can reveal a business rule or exception that `requirements.md` lacks (for example what happens when the downstream rejects): add it to the owning `BIZ` as `INV` or `EX` with its `AC`, the `answers.json` source and a history line, and map it by appending rows to `### 1.4` and `### 2.2`, as the shared rules describe. When it needs a new model, Aggregate, consistency decision, Domain Service or use case, or invalidates an earlier decision, return `blocked` / `DEPENDENCY_INCOMPLETE` naming the earliest stage to reopen and change nothing in its section. A missing or contradicting relationship names `bounded-context`. The shared rules describe how the orchestrator reopens the earlier stage. Every such block names the earliest owning stage and the gap in the result fields that [the shared rules](../domain-model/references/deepening.md#automatic-rewind-to-the-owner) describe; the orchestrator then reopens that stage by itself without asking the user.
-
-## Following stage
-
-`context-boundary` follows this stage and owns the single final gate of the tactical flow. This stage returns its own section and artifacts without running the whole-document gate. The later gate assigns findings here to `integration-design` when section 5 is the source; `context-boundary` follows the shared restart rules and does not edit section 5.
-
-## Completion
-
-- Section 5 holds an integration row, with its upstream, downstream, messages, communication style and source, for every relationship of the plan set and every cross-context consistency decision (a synchronous row for each `즉시`, an asynchronous one for each `최종`); a choice that changes the business outcome carries the user's answer as its source. Section 7 holds this stage's decisions with sources.
-- The runner commits `docs/specs/<plan-set-id>/` when this stage completes. It adds `docs/architecture/domain-model.md` and `CONTEXT.md` only when this stage names them as artifacts. The `tactical-to-code` workflow consumes the completed tactical design.
-
-## 공통 도메인 조회
-
-입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.
+기존 번호형 문서를 재개할 때는 [기존 템플릿](../domain-model/references/legacy-template.md)의 통합 및 관련 결정 이력을 완성한다. 구형 일관성 행의 출처와 통신 근거를 그대로 사용한다.

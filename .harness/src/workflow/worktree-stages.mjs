@@ -72,9 +72,10 @@ export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.UBIQUITOUS_LANGUAGE,
   WORKTREE_STAGE.EVENT_STORMING,
   WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION,
-  WORKTREE_STAGE.BOUNDED_CONTEXT,
   WORKTREE_STAGE.REQUIREMENTS_FIX,
+  WORKTREE_STAGE.BOUNDED_CONTEXT,
 ]);
+export const REQUIREMENTS_REVISION_STAGES = Object.freeze(REQUIREMENTS_STAGES.slice(1).filter((id) => ![WORKTREE_STAGE.UBIQUITOUS_LANGUAGE, WORKTREE_STAGE.EVENT_STORMING].includes(id)));
 
 // The plan set document that the tactical design stages fill, one section each. It is named for the flow, not for the first
 // stage: a user instruction about the `domain-model` stage then cannot read as an instruction about a file.
@@ -88,7 +89,7 @@ export const currentTacticalDesignPath = (path) => typeof path === 'string'
   ? path.replace(/^(docs\/specs\/[A-Za-z0-9][A-Za-z0-9._-]*\/)domain-model\.md$/, `$1${TACTICAL_DESIGN_DOCUMENT}`)
   : path;
 
-// The tactical design flow runs after requirements-fix, one stage per step. Every stage fills its own
+// The tactical design flow runs after the requirements flow (bounded-context fixes requirements.md), one stage per step. Every stage fills its own
 // section of the plan set's tactical-design.md, so the runner commits and stores them alike.
 export const TACTICAL_DESIGN_STAGES = Object.freeze([
   WORKTREE_STAGE.DOMAIN_MODEL,
@@ -155,7 +156,8 @@ const hasRecordedResult = (entry) => Boolean(entry?.result_ref || entry?.attempt
 export function nextRequiredPreSpecStage(stages, stageId) {
   const index = stageId === WORKTREE_STAGE.SPEC_ME ? PRE_SPEC_STAGES.length : PRE_SPEC_STAGES.indexOf(stageId);
   // A stale stage is re-run in order: the resume exemption does not apply to it.
-  if (index < 0 || (hasRecordedResult(stages?.[stageId]) && !stages[stageId].stale)) return null;
+  if (index < 0) return null;
+  if (hasRecordedResult(stages?.[stageId]) && !stages[stageId].stale && !PRE_SPEC_STAGES.slice(0, index).some((id) => stages?.[id]?.stale)) return null;
   if (stageId === WORKTREE_STAGE.SPEC_ME && !PRE_SPEC_STAGES.some((id) => stages?.[id])) return null;
   return PRE_SPEC_STAGES.slice(0, index).find((id) => !isCurrentStage(stages?.[id])) ?? null;
 }

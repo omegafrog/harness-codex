@@ -16,7 +16,7 @@ const json = (value) => JSON.stringify(value, null, 2) + '\n';
 const readOptional = (root, path) => readDomainFile(root, path).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
 const TYPES = { BIZ: 'biz', INV: 'rule', EX: 'exception', AC: null, EVT: 'event', POL: 'policy', TRN: 'transition', SD: 'subdomain' };
 const PLAN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-export const isDomainSyncStage = (skill) => ['requirements-fix', 'domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].includes(skill);
+export const isDomainSyncStage = (skill) => ['bounded-context', 'domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].includes(skill);
 export const domainSyncPath = (id) => `runtime/executions/${id}/domain-sync.json`;
 const specPath = (id, file) => {
   if (!PLAN_ID.test(id || '')) throw new Error('Invalid domain sync Plan Set ID');
@@ -160,7 +160,7 @@ export async function assertStageDomainSync(root, input) {
       if (await readOptional(root, path) !== after) throw new Error(`Domain sync has not been applied: ${path}`);
     }
   }
-  if (!plan && input.skill === 'requirements-fix') {
+  if (!plan && input.skill === 'bounded-context') {
     const requirements = await readOptional(root, specPath(input.context.plan_set_id, 'requirements.md'));
     if (requirements && /\| 이벤트 ID \|.*\| 공통 ID \|/.test(requirements)
         && await readOptional(root, specPath(input.context.plan_set_id, 'domain-links.json')) === null) {

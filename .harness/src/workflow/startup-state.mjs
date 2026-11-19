@@ -44,29 +44,6 @@ export async function bindOrchestratorSession({ root, provider, sessionId }) {
   return recordWorkflowSession({ workspace_root: root, repository_root: record.return_root, key: 'orchestrator', session_id: sessionId, execution_id: 'orchestrator-prompt', provider });
 }
 
-// A conversation keeps its earlier conclusions after Harness is updated. When the installed files changed since this
-// session last prompted, tell the orchestrator to re-read the guides before trusting what it decided earlier.
-export async function harnessUpdateNotice({ root, sessionId }) {
-  if (!sessionId) return null;
-  const { createHash } = await import('node:crypto');
-  const { mkdir, writeFile, rename } = await import('node:fs/promises');
-  let lock;
-  try { lock = await readFile(join(root, '.codex/harness-lock.json')); } catch { return null; }
-  const current = createHash('sha256').update(lock).digest('hex').slice(0, 12);
-  let session;
-  try { session = sessionDirectory(root, { create: false }); } catch { return null; }
-  const path = 'runtime/orchestrator/harness-seen.json';
-  let seen = {};
-  try { seen = JSON.parse(await readFile(join(session, path), 'utf8')); } catch { seen = {}; }
-  if (seen[sessionId] === current) return null;
-  await assertWorkspaceTarget(session, path);
-  await mkdir(join(session, 'runtime/orchestrator'), { recursive: true, mode: 0o700 });
-  const temporary = join(session, `${path}.${process.pid}.tmp`);
-  await writeFile(temporary, JSON.stringify({ ...seen, [sessionId]: current }), { mode: 0o600 });
-  await rename(temporary, join(session, path));
-  return seen[sessionId] ? `Harness was updated since this conversation last ran (installed files ${seen[sessionId]} -> ${current}). Conclusions you reached earlier about what Harness can or cannot do may be outdated: re-read the relevant GUIDE or reference before relying on them.` : null;
-}
-
 export async function inspectStartupState({ workspaceRoot, sessionId = null, provider = 'codex', codexSessionId = null }) {
   sessionId ||= codexSessionId;
   const root = await realpath(workspaceRoot);
@@ -217,6 +194,34 @@ export function orchestratorInputTarget(observed) {
   return (observed.session_worktrees || []).find((record) => record.workspace_root === observed.workspace_root) || null;
 }
 
+export function startupProcedure({ observed, progress, orchestrator, composer }) {
+  switch (observed.decision_hint) {
+    case 'maintenance_candidate':
+      return 'Follow .codex/internal-skills/harness-maintenance/GUIDE.md in the current checkout.';
+    case 'setup_candidate':
+      return 'Follow the setup procedure for the current checkout.';
+    case 'worktree_required':
+      return 'For continuation, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. Never select by newest record. A distinct new workflow follows the composition route in the orchestrator skill.';
+    case 'inspect_required':
+      return 'Report the observed record mismatch or follow its recovery procedure.';
+    case 'compose_candidate':
+      return `For a new workflow, read ${composer} and compose with a fresh execution ID. Pass the current provider and session ID. Verify the invocation result and binding. From the primary checkout, verify against the pre-creation Git list and stop after giving the new absolute workspace path. In an existing linked worktree, verify that the returned workspace is current and continue there.`;
+    case 'resume_candidate': {
+      const dispatch = join(dirname(orchestrator), 'references/dispatch.md');
+      const firstStage = observed.input_routing === 'local' && progress && progress.worktree_ref === observed.input_worktree_ref
+        && !progress.workflow_id && progress.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE
+        && progress.stages.length === 1 && progress.stages[0].id === WORKTREE_STAGE.WORKFLOW_COMPOSE
+        && progress.stages[0].status === 'completed';
+      if (firstStage) {
+        return `For a plain continuation of the composed workflow, read ${dispatch}, then run node .codex/scripts/harness-native-stage.mjs launch --stage-id ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS} in the current worktree. Use the returned guide, input and schema paths only to brief the stage worker. A different user request follows the relevant route in the orchestrator skill.`;
+      }
+      return `For workflow resumption, read ${dispatch} and use the current worktree's harness-context.mjs when the next action needs confirmation.`;
+    }
+    default:
+      return '';
+  }
+}
+
 // Progress is a projection of orchestrator decisions, never a workflow transition.
 export async function refreshWorkflowProgress(observed, event) {
   if (observed.matching_workflow_count > 1 && !observed.issues.length) {
@@ -263,4 +268,30 @@ export async function refreshWorkflowProgress(observed, event) {
     await rename(temporary, join(session, path));
   } finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
   return progress;
+}
+
+// Claude's live registry ties the session to an ancestor process, not to whichever transcript was updated last.
+export async function currentClaudeSession(root) {
+  if (process.platform !== 'linux') return null;
+  const { readlink } = await import('node:fs/promises');
+  const base = process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || '', '.claude');
+  const workspace = await realpath(root);
+  let machine, domain;
+  try {
+    machine = (await readFile('/etc/machine-id', 'utf8').catch(() => readFile('/var/lib/dbus/machine-id', 'utf8'))).trim();
+    domain = `linux:${machine}:${await readlink('/proc/self/ns/pid')}`;
+  } catch { return null; }
+  let pid = process.ppid;
+  const seen = new Set();
+  while (pid > 1 && !seen.has(pid)) {
+    seen.add(pid);
+    let stat;
+    try { stat = (await readFile(`/proc/${pid}/stat`, 'utf8')).split(') ').at(-1).split(' '); } catch { break; }
+    let entry;
+    try { entry = JSON.parse(await readFile(join(base, 'sessions', `${pid}.json`), 'utf8')); } catch { entry = null; }
+    const comm = await readFile(`/proc/${pid}/comm`, 'utf8').then((value) => value.trim(), () => '');
+    if (comm === 'claude' && entry?.pid === pid && entry.pidDomain === domain && entry.procStart === stat[19] && entry.cwd === workspace && /^[0-9a-f-]{36}$/i.test(entry.sessionId || '')) return entry.sessionId;
+    pid = Number(stat[1]);
+  }
+  return null;
 }

@@ -2,6 +2,7 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -39,6 +40,62 @@ const SKIP = (analysis) => `생략: stakeholder-analysis 판정 생략 (${analys
 const SKIPPED = (analysis) => ({ files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
 const question = { question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null };
 
+test('an installed stage honors an explicit model and effort and refuses a mismatched Codex worker', async (t) => {
+  const { workspace, tree, treeGit, specPath, submitStage } = await consumerWorkflow(t, REQUEST);
+  const record = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
+  const priorBinding = { provider: 'codex', model: 'codex-workflow', reasoning_effort: 'low' };
+  record.workflow_binding = priorBinding;
+  await writeFile(tree.worktree_ref, JSON.stringify(record));
+  const { session_id: parentId } = record.agent_sessions.orchestrator;
+  const selected = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
+  const stage = 'stakeholder-analysis';
+  const launched = ok(exec(workspace, NATIVE, ['launch', '--stage-id', stage, '--stage-binding', JSON.stringify(selected)]));
+  const { model_tier, ...binding } = launched.binding;
+  assert.deepEqual(binding, selected);
+  assert.deepEqual(JSON.parse(await readFile(tree.worktree_ref, 'utf8')).workflow_binding, priorBinding);
+  const agent = 'bound-worker';
+  ok(runPrinted(workspace, launched.next.bind, agent));
+  await submitStage({ stage, started: launched }, SKIPPED(specPath('stakeholder-analysis.md')));
+  const head = treeGit('rev-parse', 'HEAD');
+  refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
+
+  const sessions = join(process.env.CODEX_HOME, 'sessions');
+  const thread = randomUUID();
+  const rollout = (id, events) => writeFile(join(sessions, `rollout-fixture-${id}.jsonl`), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+  await mkdir(sessions, { recursive: true });
+  await rollout(parentId, [
+    { type: 'session_meta', payload: { id: parentId, cwd: workspace } },
+    { type: 'event_msg', timestamp: new Date().toISOString(), payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: `/root/${agent}`, agent_thread_id: thread } } },
+  ]);
+  const worker = (model, effort) => rollout(thread, [
+    { type: 'session_meta', payload: { id: thread, cwd: workspace, parent_thread_id: parentId, source: { subagent: { thread_spawn: { parent_thread_id: parentId, depth: 1, agent_path: `/root/${agent}` } } } } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+    { type: 'turn_context', payload: { turn_id: 'turn', model, effort } },
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn', last_agent_message: 'fixture complete' } },
+  ]);
+  for (const [model, effort] of [['gpt-6.2-astra', 'medium'], ['gpt-6-luna', 'low']]) {
+    await worker(model, effort);
+    const mismatch = refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
+    assert.ok(mismatch.why.includes(`observed ${model}/${effort}`));
+    assert.equal(treeGit('rev-parse', 'HEAD'), head);
+  }
+  await worker(selected.model, selected.reasoning_effort);
+  const inspected = ok(exec(workspace, NATIVE, ['inspect', '--execution-id', launched.execution_id]));
+  assert.deepEqual(inspected.requested_binding, selected);
+  assert.deepEqual(inspected.observed_binding, { model: selected.model, reasoning_effort: selected.reasoning_effort });
+  assert.equal(ok(runPrinted(workspace, launched.next.finish)).code, 'OK');
+  assert.equal(treeGit('status', '--short', '-uall'), '');
+  const asset = '.codex/scripts/harness-native-stage.mjs';
+  await unlink(join(workspace, asset));
+  assert.ok((await runDoctor({ root: workspace })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === join(workspace, asset)));
+  await writeFile(join(workspace, 'app.txt'), 'application edit\n');
+  await updateProject({ sourceRoot, targetRoot: workspace });
+  assert.equal(await readFile(join(workspace, asset), 'utf8'), await readFile(join(sourceRoot, asset), 'utf8'));
+  assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application edit\n');
+  assert.equal(treeGit('status', '--short', '-uall'), ' M app.txt\n');
+  for (const path of [asset, '.harness/schemas/input.schema.json']) assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/);
+});
+
 test('the stage commands print only what the next step needs, and --verbose prints the full detail', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, tree, specPath, runStage, beginStage, submitStage } = flow;
@@ -70,7 +127,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
 
   // bind and finish.
   const bound = ok(exec(workspace, NATIVE, ['bind', '--execution-id', prepared.execution_id, '--agent-id', 'agent-1']));
-  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1' });
+  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1', receive_command: `node .codex/scripts/${NATIVE} receive --execution-id ${prepared.execution_id} --agent-id 'agent-1'` });
   await submitStage({ stage, started }, { summary: SKIP(analysis) });
   const finishOutput = exec(workspace, NATIVE, ['finish', '--execution-id', prepared.execution_id]);
   const finished = ok(finishOutput);
@@ -160,6 +217,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const next = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'subdomain-candidates']));
   assert.equal(next.from_stage, 'stakeholder-analysis');
   assert.equal(next.from_code, 'OK');
+  refusal(runPrinted(workspace, next.next.bind, '/root/analysis-agent'), 'FRESH_AGENT_REQUIRED');
   await submitStage({ stage: 'subdomain-candidates', started: next }, { summary: SKIP(analysis) });
   const bound = runPrinted(workspace, next.next.bind);
   assert.equal(bound.status, 0, bound.stderr);
@@ -167,7 +225,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
 
   // A launch that needs the user instead of a new run (a partial answer batch) reports it and starts nothing.
   const asked = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'ubiquitous-language']));
-  ok(runPrinted(workspace, asked.next.bind));
+  ok(runPrinted(workspace, asked.next.bind, 'language-agent'));
   await submitStage({ stage: 'ubiquitous-language', started: asked }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
   const waiting = ok(runPrinted(workspace, asked.next.finish));
   assert.equal(waiting.code, 'USER_DECISION_REQUIRED');
@@ -176,6 +234,10 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const resumed = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'ubiquitous-language', '--answer', 'no']));
   assert.equal(resumed.status, 'launched');
   assert.equal(resumed.answered, true);
+  assert.equal(JSON.parse(await readFile(resumed.answers_path, 'utf8'))[0].answer, 'no');
+  assert.equal(resumed.feedback_path, undefined);
+  refusal(runPrinted(workspace, resumed.next.bind, 'language-agent'), 'FRESH_AGENT_REQUIRED');
+  ok(runPrinted(workspace, resumed.next.bind, 'language-answer-agent'));
   assert.equal(treeGit('status', '--short', '--untracked-files=all').replace(/^ M app\.txt\n?/m, '').trim(), '');
 });
 
@@ -282,7 +344,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   const unusable = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_RESULT_MISSING');
   assert.match(unusable.error, /subdomain-candidates is running/);
   assert.match(ids(unusable), new RegExp(`finish --execution-id ${flowRun.execution_id}`));
-  ok(runPrinted(workspace, flowRun.next.bind));
+  ok(runPrinted(workspace, flowRun.next.bind, 'candidate-agent'));
   await submitStage({ stage: 'subdomain-candidates', started: flowRun }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
   ok(runPrinted(workspace, flowRun.next.finish));
   const unresolved = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_UNRESOLVED');
@@ -354,7 +416,7 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   assert.match(skill, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(skill, /`next\.bind`/);
   assert.match(skill, /Harness 소스나 state 파일을 읽지 않고/);
-  const dispatch = await readFile(join(sourceRoot, '.codex/internal-skills/skill-execution/references/dispatch.md'), 'utf8');
+  const dispatch = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(dispatch, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(dispatch, /`--verbose`/);
   assert.match(dispatch, /`why`/);

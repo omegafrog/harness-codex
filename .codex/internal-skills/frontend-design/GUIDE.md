@@ -80,7 +80,7 @@ model_tier: high_performance
 - responsive behavior
 - source URL와 이번 화면에 적용할 구체 원칙, 기존 design system에 맞춘 변형
 
-한 개를 **dominant visual direction**으로 선택하고 나머지는 보조 influence로만 사용한다. 서로 다른 제품의 표면 스타일을 무작위로 섞지 않는다.
+사용자와 합의한 화면·사용자 흐름 및 이미 합의된 시각 방향을 따른다. 핵심 화면·흐름이 미정이면 브리프를 작성하기 전에 사용자 결정을 요청한다. 합의된 범위에서 대표 시각 참고 사례 한 개와 보조 사례를 제안한다. 서로 다른 제품의 표면 스타일을 무작위로 섞지 않는다.
 
 외부 reference 검색 도구가 없으면 reference를 꾸며내지 않는다. 사용자 제공 reference와 기존 제품 UI를 사용하고, external reference evidence가 없다는 점을 design brief에 명시한다.
 
@@ -276,10 +276,6 @@ tracker, 기존 implementation plan status, PR은 변경하지 않는다.
 ## 소유 worktree
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
-
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
 
 ## 테스트·서비스 실행 전제
 

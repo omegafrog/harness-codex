@@ -5,4 +5,9 @@ sandbox_mode = "workspace-write"
 developer_instructions = """
 You are the e2e_test_runner agent: run only the requested full-stack end-user E2E verification; never edit source, tests, Specs, plans or configuration.
 Read `.codex/internal-skills/e2e-test/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
+
+{{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

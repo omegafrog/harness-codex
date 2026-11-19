@@ -183,6 +183,7 @@ export async function discoverHarnessOwnedFiles(root) {
     [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".codex/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".harness/src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".schema.json")],
   ];
   const assertOwnedFile = async (relativePath) => {
     const path = resolve(root, relativePath);

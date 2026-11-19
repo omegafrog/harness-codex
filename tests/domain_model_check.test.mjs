@@ -288,7 +288,7 @@ test('only a stakeholder-analysis that decided to skip lets the gate pass withou
   assert.deepEqual((await checkWorkspaceTacticalDesign({ root: executed, planSetId: 'set' })).errors.map((error) => error.code), ['DOCUMENT_MISSING', 'DOCUMENT_MISSING']);
 });
 
-test('the runner gates only the completed result of the last tactical stage, with the whole document', async (t) => {
+test('a legacy numbered design retains the final whole-document check', async (t) => {
   const document = await templateDocument();
   const input = (skill, planSetId = 'set') => ({ skill, context: planSetId ? { plan_set_id: planSetId } : {} });
   const failingDocument = document.replace(/^(\| CON-01 \|.*\| )answers\.json `<question_id>` \|$/m, '$1에이전트 제안 |');
@@ -307,13 +307,12 @@ test('the runner gates only the completed result of the last tactical stage, wit
     return true;
   });
 
-  // The earlier stages are accepted without a gate even when the document is incomplete or wrong; blocks and questions never reach it.
+  // Legacy partial documents defer the findings until the last stage.
   for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]) {
-    assert.equal(await evaluateTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
-    assert.equal(await assertTacticalDesignGate({ root, input: input(stage), envelope: completed }), null, stage);
+    assert.deepEqual(await assertTacticalDesignGate({ root, input: input(stage), envelope: completed }), { stage, ok: true, skipped: true, errors: [] });
   }
   const partial = await planSetWorkspace(t, { 'requirements.md': REQUIREMENTS, 'tactical-design.md': upTo(document, 1) });
-  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]) assert.equal(await assertTacticalDesignGate({ root: partial, input: input(stage), envelope: completed }), null, `${stage} with only section 1`);
+  for (const stage of [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN]) assert.equal((await assertTacticalDesignGate({ root: partial, input: input(stage), envelope: completed })).skipped, true, `${stage} with only section 1`);
   for (const envelope of [{ status: 'blocked', code: 'INPUT_MISSING' }, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }, { status: 'failed', code: 'EXECUTION_ERROR' }]) assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY), envelope }), null, envelope.code);
   assert.equal(await evaluateTacticalDesignGate({ root, input: input('requirements-fix'), envelope: completed }), null, 'another stage');
   assert.equal(await evaluateTacticalDesignGate({ root, input: input(CONTEXT_BOUNDARY, null), envelope: completed }), null, 'no plan set');

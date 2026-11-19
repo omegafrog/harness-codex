@@ -15,7 +15,7 @@ import { readSkillDeclaration } from './skill-declaration.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { currentTacticalDesignPath } from './worktree-stages.mjs';
 
-const CONTRACT = '.codex/internal-skills/skill-execution';
+const SCHEMAS = '.harness/schemas';
 const execFileAsync = promisify(execFile);
 const CODES = {
   completed: ['OK'],
@@ -82,8 +82,8 @@ function validate(value, schema, path = '$') {
 }
 
 // A skill's tier comes from its own document (see skill-declaration.mjs) and a workflow stage may override it with another
-// setup tier; the model and effort are always the active provider's agents.<provider>.<tier>_* values written by setup.
-export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null }) {
+// setup tier. An explicit stage binding takes priority over the workflow binding and provider setup defaults.
+export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null, requestedStageBinding = null }) {
   const declaration = await readSkillDeclaration({ root, skill });
   requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
   let tier = declaration.model_tier;
@@ -119,7 +119,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   requireValue(['codex', 'claude-code'].includes(provider), 'Invalid execution provider');
   const settings = providerAgents(config, provider);
   const model = settings[keys.model], effort = settings[keys.reasoning_effort];
-  const override = supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);
+  const override = requestedStageBinding ? parseWorkflowBinding(requestedStageBinding) : supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);
   requireValue(!override || override.provider === provider, 'Execution binding provider mismatch');
   assertSingleProvider(config, override, provider);
   if (recordedBinding && supplied && recordedBinding.provider === supplied.provider) {
@@ -252,7 +252,7 @@ async function resolveInputWorktree(root, input) {
 
 export async function validateSkillInput({ root, input }) {
   input = await resolveInputWorktree(root, input);
-  validate(input, await json(join(root, CONTRACT, 'schemas/input.schema.json')));
+  validate(input, await json(join(root, SCHEMAS, 'input.schema.json')));
   if (input.skill === 'tracker-publish') requireValue(input.context?.publication_approved === true, 'User publication approval is required');
   if (input.skill === 'tracker-publish' && input.context?.worktree_ref) {
     const { preparePublicationDrafts } = await import('../tracker/publication.mjs');
@@ -261,7 +261,7 @@ export async function validateSkillInput({ root, input }) {
     requireValue(Array.isArray(supplied) && supplied.length === expected.length && expected.every((item) => supplied.some((candidate) => candidate.plan_id === item.plan_id && candidate.body_path === item.body_path && candidate.body_sha256 === item.body_sha256)), 'Publication body references must match static runner output');
   }
   if (input.skill === 'workflow-compose') {
-    validate(input, await json(join(root, CONTRACT, 'schemas/workflow-compose-input.schema.json')));
+    validate(input, await json(join(root, SCHEMAS, 'workflow-compose-input.schema.json')));
     requireValue(isAbsolute(input.context?.worktree_ref || '') && basename(input.context.worktree_ref) === 'worktree.json', 'Compose requires a canonical worktree reference');
     requireValue(typeof input.context?.plan_set_id === 'string' && input.context?.stage_id === 'workflow-compose', 'Compose context is incomplete');
   }
@@ -285,16 +285,16 @@ export async function validateSkillInput({ root, input }) {
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
     requireValue(request.target_commit === head && Array.isArray(request.scenarios) && request.scenarios.length > 0 && request.scenarios.every((item) => typeof item === 'string' && item.trim()) && profile?.purpose === 'e2e' && Number.isInteger(request.timeout_ms) && request.timeout_ms > 0 && profile.timeout_ms === request.timeout_ms, 'E2E request does not match the current commit or profile');
-    const inputs = (await readFile(join(session, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    const { userSaidAfter } = await import('./user-inputs.mjs');
     const orchestratorId = input.context.orchestrator_session_id || input.context.codex_session_id;
-    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId), 'E2E request approval was not recorded');
+    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && await userSaidAfter({ root, text: request.approval_answer, sessionId: orchestratorId, provider: input.context.orchestrator_provider || 'codex', allowHistoricalOwner: true }), 'E2E request approval was not recorded');
   }
 }
 
 // reopening: 사용자 수정으로 다시 열 완료 stage는 고칠 대상 Spec의 현재 리뷰를 요구하지 않는다.
 export async function validateSkillReturn({ root, input, envelope, reopening = false }) {
   input = await resolveInputWorktree(root, input);
-  const schemas = await Promise.all(['input', 'return'].map((name) => json(join(root, CONTRACT, 'schemas', `${name}.schema.json`))));
+  const schemas = await Promise.all(['input', 'return'].map((name) => json(join(root, SCHEMAS, `${name}.schema.json`))));
   const flow = input.skill;
   const flowSchema = flow === 'workflow-compose' ? 'workflow-compose-result.schema.json' : `flows/${['spec-review', 'plan-review'].includes(flow) ? flow : 'common'}.schema.json`;
   validate(input, schemas[0]); validate(envelope, schemas[1]);
@@ -307,7 +307,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   if (envelope.result_ref === null) {
     requireValue(envelope.status === 'failed' && envelope.code === 'ARTIFACT_WRITE_FAILED', 'Only artifact-write failures may omit result_ref');
     if (envelope.result) {
-      const failureSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
+      const failureSchema = await json(join(root, SCHEMAS, flowSchema));
       validate(envelope.result, failureSchema);
       for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(envelope.result[key] === envelope[key], `Return result ${key} mismatch`);
     }
@@ -319,7 +319,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   // A stage may hand the independent review to its caller, which dispatches the reviewer for the waiting stage.
   const callerDispatchesReviewer = true;
   requireValue(callerDispatchesReviewer || !(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');
-  const resultSchema = await json(join(root, CONTRACT, 'schemas', flowSchema));
+  const resultSchema = await json(join(root, SCHEMAS, flowSchema));
   const schemaResult = structuredClone(result);
   if (schemaResult.review_request) {
     const request = schemaResult.review_request;
@@ -412,7 +412,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   const resultQuestions = result.questions?.length ? result.questions : undefined;
   if (resultQuestions !== undefined) {
     requireValue(['REVIEW_REQUIRED', 'USER_DECISION_REQUIRED'].includes(envelope.code) && Array.isArray(resultQuestions) && resultQuestions.length > 0, 'Question batch requires a waiting decision or review');
-    const schema = await json(join(root, CONTRACT, 'schemas/question.schema.json'));
+    const schema = await json(join(root, SCHEMAS, 'question.schema.json'));
     for (const [index, question] of resultQuestions.entries()) {
       validate(question, schema);
       requireValue(question.question_id === `${input.execution_id}:${index + 1}`, 'Invalid deterministic question ID');

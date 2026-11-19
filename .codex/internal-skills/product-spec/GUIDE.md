@@ -30,7 +30,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 
 This is a phase-local guide. Read it when the Product phase begins; do not preload Architecture, review, or diagram instructions while interviewing.
 
-새 기능은 `requirements-fix`가 확정한 `requirements.md`와 전술 설계로 진행하며 이 절차로 Product Spec을 새로 쓰지 않는다. 이 문서는 기존 Product Spec을 승인 근거로 읽거나 사용자가 명시적으로 고치라고 한 경우에만 아래 절차로 수정하고, 범위 승인 규칙·원문 보존·질문 묶음 규칙은 `requirements-fix`와 리뷰 단계가 참조한다.
+새 기능은 `bounded-context`가 확정한 `requirements.md`와 전술 설계로 진행한다. 이 문서는 기존 Product Spec을 승인 근거로 확인할 때 읽고, 사용자가 명시적으로 고치라고 하면 아래 절차를 적용한다. 리뷰 단계는 여기의 범위 승인 규칙을 참조한다.
 
 1. MUST read `references/topics.md` before starting the interview.
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.

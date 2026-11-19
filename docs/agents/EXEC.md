@@ -28,10 +28,15 @@
 
 ## Harness 원본 저장소의 설치 동작
 
+- Harness 동작을 수정하면 관리 자산 discovery·변환부터 신규 설치, 갱신, Doctor 진단, Git 제외까지 확인한다. 소비자 소유 지침과 설정은 설치기가 안전한 템플릿으로 다루는 경우에만 설치 대상으로 추가한다. Harness 관리 생성물은 소유권에 따라 `.git/info/exclude` 또는 `.gitignore`에서 제외하고, 설치 소비자의 동작과 `git status`를 회귀 검사한다.
+- 커밋한 Harness 변경을 소비자에 적용하기 전에 configured upstream에 push하고 해당 branch에서 커밋을 조회한다. 소비자 갱신과 Doctor 확인 뒤 source commit과 소비자 결과를 보고한다.
+- 설치·갱신 뒤 정리가 필요하면 `git status --short`의 모든 경로를 Harness 생성물과 프로젝트 소유 파일로 확인한다. 추적된 수정과 untracked 파일을 모두 백업하고, 소유권을 확인해 열거한 Harness 생성물만 제거한다. `git check-ignore -v`로 대표 생성물의 제외 규칙을 확인하고 `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/**`의 Git 가시성을 보존한다. 정리 뒤 `git status --short`와 백업을 다시 검증한다.
 - 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`, `harness-update`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
 - 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node --test tests/workflow_completion_retention.test.mjs`로 실행한다. 서버·외부 인프라는 필요하지 않다.
+- Codex 작업자 스킬 목록 설정의 신규 설치·갱신, Doctor 갱신 진단 및 Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/prompt_budget.test.mjs`로 확인한다. 서버·외부 모델은 필요하지 않다.
+- 실행별 모델·reasoning effort 우선순위와 Codex 작업자 기록 대조는 `env -u CODEX_HOME node --import ./tests/support/isolated-codex-home.mjs --test tests/stage_cli_output.test.mjs`로 검사한다. 임시 설치 소비자와 테스트용 기록을 사용한다.
 
 - 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
@@ -50,9 +55,9 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 
 운영 시 primary checkout에서 compose에 실제 `--orchestrator-provider`·`--orchestrator-session-id`를 전달한다. 생성 검증 후 절대 workspace 경로를 사용자에게 보여 주고 멈춘다. 사용자가 그 worktree로 이동해 같은 대화에서 orchestrator를 다시 호출한 뒤 첫 stage를 시작한다. workflow 명령은 현재 worktree에서 실행하며 primary checkout에서 `--root`·`--worktree-ref`로 다른 worktree를 지정하면 거부한다. 결과를 다른 cwd에서 받으면 결과의 worktree로 이동한 다음 이어 간다.
 
-사용자 입력은 hook을 실행한 현재 worktree에만 기록한다. primary checkout에서는 다른 workflow로 입력을 전달하지 않으며, 답변·재개는 target worktree로 이동해 orchestrator를 호출한다. Codex 사용자 수준 write-guard hook 명령이 갱신되었으므로 실제 consumer 업데이트 후 Doctor에서 신뢰 상태를 확인하며 필요한 경우 `/hooks`에서 변경된 hook을 검토·신뢰한다.
+승인·답변은 현재 워크트리에 연결된 provider 대화 기록에서 확인한다. primary checkout에서 답변·재개가 들어오면 대상 워크트리로 이동하도록 안내한다. Codex 사용자 수준 서브에이전트 식별·쓰기 보호 훅은 Doctor로 신뢰 상태를 확인한다.
 
-아래 계산기 E2E는 primary checkout에서 첫 요청으로 worktree를 만들고, 첫 호출이 stage를 실행하지 않은 채 검증된 경로를 반환하는지 확인한다. 그 경로에서 두 번째 `codex exec`를 시작해 새 기능의 첫 stage인 `stakeholder-analysis`로 진입하고 요구사항 흐름(`stakeholder-analysis`→`subdomain-candidates`→`ubiquitous-language`→`event-storming`→`subdomain-classification`→`bounded-context`→`requirements-fix`)과 전술 설계 흐름(`domain-model`→`aggregate-design`→`domain-service`→`application-service`→`integration-design`→`context-boundary`)을 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 이어지는지 관찰한다. 자유 입력으로 계속 진행하거나 답변할 때는 해당 worktree에서 매번 `$orchestrator` 또는 `/orchestrator`로 시작한다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 source push 후 실제 consumer 갱신 순서를 유지한다.
+아래 계산기 E2E는 primary checkout에서 첫 요청으로 worktree를 만들고, 첫 호출이 stage를 실행하지 않은 채 검증된 경로를 반환하는지 확인한다. 그 경로에서 두 번째 `codex exec`를 시작해 새 기능의 첫 stage인 `stakeholder-analysis`로 진입하고 요구사항 흐름(`stakeholder-analysis`→`subdomain-candidates`→`ubiquitous-language`→`event-storming`→`subdomain-classification`→`requirements-fix`→`bounded-context`)과 전술 설계 흐름(`domain-model`→`aggregate-design`→`domain-service`→`application-service`→`integration-design`→`context-boundary`)을 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 이어지는지 관찰한다. 자유 입력으로 계속 진행하거나 답변할 때는 해당 worktree에서 매번 `$orchestrator` 또는 `/orchestrator`로 시작한다. 앱·모델 E2E는 별도 요청/실행 범위이며 관찰자의 승인 대행·실패 후 자동 재실행 금지와 source push 후 실제 consumer 갱신 순서를 유지한다.
 
 - 용어/구형 경로의 작은 Luna 검증 결과와 한계는 `docs/verification/luna-workflow-check.md`에 기록했다. 임시 프로젝트는 세션 디렉터리의 tmp/에서 실행하며 별도 서버/인프라가 필요하지 않다. 프로젝트를 재사용할 때 실제 존재와 Git root를 확인하고 `npm test`를 실행한다. 이름만으로 이전 결과나 현재 상태를 신뢰하지 않는다.
 
@@ -73,7 +78,8 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 - implement-wrapper 최종 완료 gate가 정본 기록(리뷰 evidence·E2E receipt·tracker·제거 목록·checkpoint)에서 도출되는지는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/implement_wrapper_completion.test.mjs`로 검사한다. 임시 consumer에 설치하고 계획 리뷰·plan별 코드 리뷰·`harness-exec.mjs` receipt·계약 seal을 실제 코드로 만든 뒤 상태 파일 없이 통과, 기록별 누락 차단, 직접 쓴 `passed: true` 무시, 설치·갱신·Doctor·Git 가시성을 확인한다. 서버·인프라를 띄우지 않는다.
 - implement-wrapper의 순차 실행·통합 리뷰·최종 E2E 승인/실패 중단 지침 배포 검사는 `node --test tests/implement_wrapper_consumer.test.mjs`로 실행한다. 임시 consumer의 신규 설치·구버전 관리 자산 갱신·native 링크·Doctor 누락 진단·프로젝트 파일 Git 가시성을 확인한다. 서버·인프라나 실제 E2E를 실행하지 않는다.
 - Harness eval 계약의 집중 검사는 `npm test`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.
-- 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 설치기는 Ponytail plugin 준비를 위해 Codex/network를 사용할 수 있으므로 실제 실행 권한과 의존성을 먼저 확인한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
+- 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
+- Ponytail 구현 원칙은 `implement`, `tactical-code`, `frontend-implement`의 GUIDE에서 코드 변경 전에 읽는다. 예전 설치에서 Codex 사용자 설정의 `[plugins."ponytail@ponytail"]`이 켜져 있으면 `enabled = false`로 변경하고 새 세션에 적용한다. 설치·갱신은 사용자 설정을 보존한다. 소비자 회귀는 `env -u CODEX_HOME node --import ./tests/support/isolated-codex-home.mjs --test tests/prompt_budget.test.mjs tests/provider_install.test.mjs`로 확인한다.
 - 진단: 원본 루트를 cwd로 `node bin/harness-doctor.mjs --project <consumer 경로> --json`. `passed`, diagnostics와 exit code를 함께 확인한다.
 - workspace 검사: 검사할 저장소를 cwd로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <절대 worktree 경로> --json`. 관리형 workflow는 등록된 linked worktree를 사용한다.
 - suite 검증: 원본 루트를 cwd로 `node bin/harness-eval.mjs run --suite <설정된 suite ID>`. `.harness/harness.yaml`, suite manifests, 인증 및 recording profile을 확인하고 `evaluate-harness`를 따른다. 모델 실행 비용이 발생할 수 있으며 일반 suite를 blind 비교라고 부르지 않는다.
@@ -182,7 +188,7 @@ reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> -
 
 ## 설치·업데이트 회귀 검사와 스킬 갱신
 
-native `.codex/hooks.json`의 `UserPromptSubmit`에는 `harness-orchestrator-hook.mjs`가 등록된다. 명령 hook은 canonical `worktree.json`·같은 Codex session ID의 orchestrator 상태와 Git worktree 등록·경로·branch를 읽기 전용으로 대조하고 `resume_candidate`, `compose_candidate`, `inspect_required`를 전달한다. 기록 생성·legacy 이전·복구·Git 변경은 수행하지 않는다. 새 요청 여부는 메인이 메시지와 관측 상태를 함께 보고 판단하며, 생성 작업은 workflow-compose subagent에 맡긴다. installer는 다른 hook을 보존하고 해당 등록만 동기화하며 변경 전 설정을 session에 백업한다. Doctor가 등록 누락·손상을 진단한다. Claude Code provider 설정은 `PreToolUse`의 Agent admission과 lifecycle hook을 설치하며, `harness-agent-admission.mjs`는 reviewer dispatch를, `harness-agent-event.mjs`는 native 시작/종료 identity와 최종 응답 기록을 담당한다. 두 CLI script는 managed assets로 fresh install/update되며 Doctor 필수 자산으로 검사된다. 새 Codex hook은 `/hooks`에서 신뢰 검토를 거쳐야 실행된다. protocol·신뢰 규칙은 [공식 hook 문서](https://learn.chatgpt.com/docs/hooks)를 따른다.
+`node .codex/scripts/harness-context.mjs --entry`는 현재 디렉터리의 Git 등록과 정본 `worktree.json`을 확인해 workflow 진입·재개를 안내한다. 승인 지점에서는 현재 대화의 provider 기록으로 사용자 응답을 확인한다. 프로젝트 갱신은 이전 시작 훅을 백업한 뒤 등록을 제거한다. Codex 사용자 전역 등록은 다른 checkout도 이용하므로 해당 checkout을 갱신한 뒤 Codex의 `$setup`에서 정리한다. Claude Code의 Agent admission과 서브에이전트 lifecycle, Codex의 subagent identity와 쓰기 보호는 별도 훅으로 유지한다.
 
 setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-skill-execution.mjs budget --root <workspace_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
 
@@ -238,15 +244,17 @@ setup CLI는 OpenTelemetry Collector·VictoriaLogs·VictoriaMetrics 사용 여�
 
 ### 소비자 테스트 저장소의 workflow 재실행
 
-Claude Code를 비대화식 메인 orchestrator로 실행하거나 기존 Claude 대화를 재개할 때는 대상 저장소 또는 worktree를 cwd로 두고 `node .claude/harness/scripts/harness-claude-orchestrator.mjs '/orchestrator <요청>'` 또는 `node .claude/harness/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '/orchestrator <계속할 요청>'`을 사용한다. 이 실행기는 매번 `claude -p --permission-mode bypassPermissions`를 명시한다. 메인 Claude의 승인 확인을 우회하므로 사용자가 승인한 작업에만 사용한다. 각 workflow stage의 sandbox와 permission mode는 별도 실행기·profile이 계속 결정한다.
+Claude Code를 비대화식 메인 orchestrator로 실행하거나 기존 Claude 대화를 재개할 때는 대상 저장소 또는 worktree를 cwd로 두고 `node .claude/harness/scripts/harness-claude-orchestrator.mjs '/orchestrator <요청>'` 또는 `node .claude/harness/scripts/harness-claude-orchestrator.mjs --resume '<session-id>' '/orchestrator <계속할 요청>'`을 사용한다. 이 실행기는 매번 `claude -p --permission-mode bypassPermissions`를 명시한다. 메인 Claude의 승인 확인을 우회하므로 사용자가 승인한 작업에만 사용한다. 각 workflow stage의 sandbox와 permission mode는 별도 실행기·profile이 계속 결정한다. Claude 세션 확인은 현재 Linux의 실행 중인 provider 세션 기록을 사용한다. 진입 결과가 `session_verified: false`이면 세션 확인이 필요한 workflow는 대기한다.
 
 사용자가 소비자 workflow 재실행을 요청하면 `/home/jiwoo/workspace/harness-test`가 Git `main`의 clean 상태인지, 설치된 Harness 버전과 Doctor 결과가 적절한지 먼저 확인한다. 기존 linked worktree 정리는 명시적으로 요청된 경우에만 수행한다. 삭제 전 각 worktree의 tracked·untracked 변경과 `.io`를 포함한 전체 내용을 백업하고 백업을 검증한다. 다른 저장소의 worktree는 건드리지 않는다.
 
 workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 lock을 만들고 linked worktree를 생성한다. 이 테스트의 **상위 `codex exec`는 쓰기 제한이 없는 환경에서** `--sandbox danger-full-access`로 실행한다. 바깥 sandbox가 Git 공통 디렉터리 쓰기를 막으면 이 옵션만으로 해제되지 않으므로 실행 전 쓰기 가능 여부를 확인하고, 막혀 있으면 재시도나 상태 수정 없이 사유를 보고한다. stage 실행은 각 스킬의 기존 실행 계약을 따른다.
 
-이 테스트에서는 `.codex/hooks.json`의 Harness hook이 신뢰되지 않으면 `codex exec`의 JSON `thread.started`에 ID가 있어도 orchestrator 대화에 startup hook의 `codex_session_id`가 전달되지 않을 수 있다. 2026-11-02 Codex CLI 0.166.0에서 일반 실행은 hook 관측값이 없었고, 같은 진단에 `--dangerously-bypass-hook-trust`를 추가하면 hook 관측의 ID가 `thread.started.thread_id`와 일치했다. 테스트 전에 hook 명령과 내용을 검토하고 Codex의 `/hooks`에서 신뢰를 승인한다. 명시적으로 검토한 자동화에서 신뢰 설정을 사용할 수 없다면 상위 `codex exec`에만 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 이 옵션은 활성 hook 전체의 신뢰 확인을 우회하므로 검토하지 않은 hook이 있으면 사용하지 않는다. 로그의 `thread.started`만으로 hook이 실행됐다고 판단하거나 ID를 임의 주입하지 않는다.
+Codex 테스트 전에 `/hooks`에서 서브에이전트 식별 훅의 신뢰 상태를 확인한다. 현재 대화 ID와 워크트리는 `harness-context.mjs --entry`에서 대조하며, 관찰 로그의 `thread.started` 값을 임의로 주입하지 않는다. 명시적으로 검토한 자동화에서 신뢰 설정을 사용할 수 없다면 상위 `codex exec`에만 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 이 옵션은 활성 훅 전체의 신뢰 확인을 우회한다.
 
 ## Harness workflow E2E 정본 시나리오
+
+정본 소비자 저장소는 `/home/jiwoo/workspace/harness-test`다. 다른 세션에서도 이 저장소를 사용하고, 경로가 없으면 `git@github.com:omegafrog/harness-test.git`의 checkout을 찾거나 다시 clone한다.
 
 2026-11-05 사용자 지시: Harness를 테스트하라고 요청받으면 아래 black-box E2E를 기본 실행한다. 단위 테스트·설치 fixture·eval replay로 대체하지 않는다. 테스트 대상·원문 프롬프트·시작/종료 단계를 임의로 줄이거나 다른 작은 기능으로 바꾸지 않는다.
 
@@ -264,15 +272,17 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
    ```
    관찰자를 Claude Code 안에서 띄우면 `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID` 같은 `CLAUDE*` 환경 변수가 `codex exec`로 상속되고, Harness의 provider 감지(`runtimeAgentProvider`)가 Codex 실행을 `claude-code`로 판정해 setup·binding이 다른 provider 설정을 읽는다. `codex exec`와 `codex exec resume`은 항상 `env $(env | grep -o '^CLAUDE[A-Z_]*' | sed 's/^/-u /') codex exec ...`처럼 `CLAUDE*` 변수를 모두 제거하고 실행한다.
 4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 같은 기능의 기존 worktree가 있으면 이어가기와 새 workflow 선택 질문을 기대하며 관찰자가 답을 만들지 않는다. 실제 사용자가 새 시작을 선택하면 이번 생성 명령의 execution ID와 worktree 참조를 생성 전 Git 목록·canonical `worktree.json`·요청 binding과 대조한다. 관련 후보가 없으면 새 workflow가 준비되는지 확인한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
-5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. 요구사항 흐름의 일곱 stage(`stakeholder-analysis`부터 `requirements-fix`까지)와 전술 설계 흐름의 여섯 stage(`domain-model`부터 `context-boundary`까지)를 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 진행하는지 관찰한다. 구현 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
+5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. 요구사항 흐름의 일곱 stage(`stakeholder-analysis`부터 `bounded-context`까지)와 전술 설계 흐름의 여섯 stage(`domain-model`부터 `context-boundary`까지)를 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 진행하는지 관찰한다. 구현 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
 6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
-7. 첫 실행의 workflow 생성과 응답 위치, 두 번째 실행의 요구사항 흐름(`requirements.md`의 `fixed` 확정, 이벤트 다이어그램, `CONTEXT-MAP.md`·`CONTEXT.md` 갱신)과 전술 설계 흐름(`tactical-design.md`의 여섯 절과 `context-boundary` 완료 때 실행기가 한 번 실행하는 전체 gate `harness-domain-model-check.mjs` 통과, 프로젝트 소유 `docs/architecture/domain-model.md` 행의 `accepted-target` 상태)·독립 `tactical-to-code` 진입, 기술·화면·API·데이터 결정과 구현 산출물, 단위 테스트 및 완료 결과를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
+7. 첫 실행의 workflow 생성과 응답 위치를 검증한다. 요구사항에서는 서브도메인 경계를 나누거나 유지하는 이유와 실제 승인 기록, 이벤트 다이어그램, `CONTEXT-MAP.md`·`CONTEXT.md` 갱신, 승인된 `fixed` 상태를 확인한다. 사용자가 이후 수정을 요청한 경우 영향받은 단계만 다시 열리고, 무관한 업무·식별자와 산출물이 보존되며, 새 바운디드 컨텍스트 승인 전에는 전술 설계에 들어가지 않는지 확인한다. 전술 설계에서는 `tactical-design.md`의 BC별 Entity·VO와 Aggregate 관계, 다이어그램, 모델별 업무 규칙, Application Service 메서드별 호출·트랜잭션·통합, outbound 인터페이스, 해당 결정의 별도 ADR을 확인한다. `context-boundary`의 `harness-domain-model-check.mjs` 통과와 `docs/architecture/domain-model.md`의 `accepted-target` 상태도 대조한다. 독립 `tactical-to-code`에서는 기술·화면·API·데이터 결정, port의 구체 구현체와 조립 위치, 설계 동결 gate, 구현 산출물·단위 테스트·완료 결과를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
+
+Codex E2E에서는 자동 압축 임계값 140,000 토큰을 비교값으로 사용한다. 아래 세 명령의 `-c model_auto_compact_token_limit=140000`과 `-c features.subagent_default_context_limits=false`는 상위 오케스트레이터와 native 하위 작업자에 같은 설정을 전달한다. 각 스레드는 자기 활성 컨텍스트로 압축 시점을 판단한다. 일반 프로젝트는 자체 Codex 설정이나 모델 기본값을 사용한다. 비교 실행마다 실제 인자를 보존하고 압축 관측·캐시 입력·비캐시 입력·출력과 단계 결과를 함께 확인한다.
 
 ```bash
-codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false --sandbox danger-full-access \
   -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해'
 
-codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false --sandbox danger-full-access \
   -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해'
 ```
 
@@ -287,6 +297,7 @@ export TMPDIR="$HARNESS_SESSION_DIR/tmp" TMP="$HARNESS_SESSION_DIR/tmp" TEMP="$H
 node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKFLOW_BINDING); if(b.provider!=="codex" || b.model!=="gpt-6-luna" || b.reasoning_effort!=="medium" || !p.isAbsolute(e.HARNESS_SESSION_DIR) || [e.TMPDIR,e.TMP,e.TEMP].some(x=>x!==p.join(e.HARNESS_SESSION_DIR,"tmp"))) process.exit(1)' || exit 1
 mkdir -p "$TMPDIR" || exit 1
 codex exec resume --json --model gpt-6-luna \
+  -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false \
   -c 'model_reasoning_effort="medium"' \
   -c 'approval_policy="never"' \
   -c 'sandbox_mode="danger-full-access"' \
@@ -295,13 +306,17 @@ codex exec resume --json --model gpt-6-luna \
 
 실제 resume 인자, cwd, prompt, 반환 코드는 해당 E2E의 `resume-<stage>-invocation.json`에 기록한다. stage의 실제 provider와 서브에이전트 ID는 워크트리 `.io/worktree.json`의 `agent_sessions`와 `runtime/orchestrator/state.json`의 `native_agent_id`, 실행별 `subagents.jsonl`을 함께 보존해 대조한다.
 
+사용자가 이번 실행에서 UI를 보류하거나 승인한 계획에 UI 변경이 없으면 `tactical-ui`에서 적용 여부만 기록한 뒤 `tactical-api`와 `tactical-data`를 진행한다. UI가 포함되면 핵심 화면·흐름에 대한 사용자 결정을 기록한 후 독립 frontend design을 시작한다. 설치 소비자의 보류·인계 회귀는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/tactical_implementation_stages.test.mjs`로 검사한다.
+
 로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
+
+사용량과 호출 분석을 함께 보고할 실행에서는 `HARNESS_E2E_TELEMETRY=1`을 지정하거나 사용자 요청의 분석 선택을 runner에 전달한다. `0` 또는 미설정의 기본 동작은 분석 끔이다. 같은 run의 재개에 선택값을 유지한다. 켜진 실행은 종료·실패·승인 대기 지점의 provider 기록을 [E2E 사용량 분석](../../.codex/internal-skills/e2e-telemetry/GUIDE.md)으로 집계해 `telemetry.md`와 `telemetry.json`을 보고한다. Claude Code의 별도 비교 실행에서 140,000 토큰을 사용하려면 부모 프로세스를 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=140000`으로 실행하고 수집 명령에 `--provider claude-code`를 넘긴다. 각 provider의 토큰과 캐시 기록은 같은 provider에서 전후를 비교한다.
 
 ### Orchestrator 작업 실행
 
-메인 orchestrator는 [실행 조율 지침](../../.codex/internal-skills/skill-execution/GUIDE.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 중첩 작업의 startup hook 재진입은 `HARNESS_SKILL_EXECUTION_ID`로 생략하고 오류 로그는 해당 execution의 session에 보존한다.
+메인 orchestrator는 [실행 조율 지침](../../.codex/skills/orchestrator/references/coordination.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 오류 로그는 해당 execution의 session에 보존한다.
 
-stage 실행은 `.codex/internal-skills/skill-execution/references/dispatch.md`에 따라 native 서브에이전트를 시작하고 종료를 기다린다. `harness-native-stage.mjs`가 출력 형식과 실행 상태를 확인하고 결과를 기록한다.
+stage 실행은 `.codex/skills/orchestrator/references/dispatch.md`에 따라 native 서브에이전트를 시작하고 종료를 기다린다. 서브에이전트의 작업 규칙은 agent profile의 `Harness stage contract`에 있어 공통 문서를 따로 읽지 않는다. 결과 JSON은 `bind`가 돌려준 `receive_command`의 표준 입력으로 제출한다. 실행기는 현재 실행과 실제 작업자 ID를 확인해 출력 파일을 정한다. `finish`는 출력 형식과 실행 상태를 검증하고 결과를 기록한다.
 
 
 결과는 `harness-native-stage.mjs finish`의 반환값과 정본 실행 상태에서 확인한다. 실패나 중단이 확인되기 전에는 같은 stage를 다시 시작하지 않는다.

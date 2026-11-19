@@ -4,8 +4,9 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readdir, readFile, readlink, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { PRE_SPEC_STAGES, nextRequiredPreSpecStage } from './worktree-stages.mjs';
-import { restartDocuments } from './stage-commit.mjs';
+import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, nextRequiredPreSpecStage } from './worktree-stages.mjs';
+import { isTacticalClassDiagram, restartDocuments } from './stage-commit.mjs';
+import { planSetDocument, readContextDesign } from './domain-model-gate.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
 import { readNativeCodexOutcome } from './native-context.mjs';
 import { assertExecutionStopped } from './execution-state.mjs';
@@ -37,24 +38,34 @@ export async function restartRequirements({ root, session, stageId }) {
       }
     }
     if (git('status', '--porcelain', '--untracked-files=all').trim()) throw new Error('Restart requires a clean project worktree and index');
+    const verification = ['integration-design', 'context-boundary'].includes(stageId)
+      && readContextDesign((await planSetDocument(root, record.plan_set_id, 'tactical-design.md')).text) !== null;
     const history = git('log', '--format=%H%x09%s').trim().split('\n').map((line) => line.split('\t'));
     const target = `${stageId}: ${record.plan_set_id}`;
     let position = history.findIndex(([, subject]) => subject === target);
-    if (position < 0) throw new Error('Restart checkpoint commit not found');
-    const later = new Set(PRE_SPEC_STAGES.slice(index).map((id) => `${id}: ${record.plan_set_id}`));
-    if (history.slice(0, position + 1).some(([, subject]) => !later.has(subject))) throw new Error('Unrelated or later commits prevent requirements restart; a workflow created with an earlier stage order must be reviewed before restarting');
-    // A user revision commits its stage again, so the checkpoint is the oldest commit of the unbroken run of these stages.
-    while (position + 1 < history.length && later.has(history[position + 1][1])) position += 1;
-    const base = git('rev-parse', `${history[position][0]}^`).trim();
+    let base = git('rev-parse', 'HEAD').trim();
+    if (!verification) {
+      if (position < 0) throw new Error('Restart checkpoint commit not found');
+      const later = new Set(PRE_SPEC_STAGES.slice(index).map((id) => `${id}: ${record.plan_set_id}`));
+      if (history.slice(0, position + 1).some(([, subject]) => !later.has(subject))) throw new Error('Unrelated or later commits prevent requirements restart; a workflow created with an earlier stage order must be reviewed before restarting');
+      // A user revision commits its stage again, so the checkpoint is the oldest commit of the unbroken run of these stages.
+      while (position + 1 < history.length && later.has(history[position + 1][1])) position += 1;
+      base = git('rev-parse', `${history[position][0]}^`).trim();
+    }
     const paths = restartDocuments(stageId, record.plan_set_id);
-    if (!['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].includes(stageId)) {
+    if (TACTICAL_DESIGN_STAGES.includes(stageId)) {
+      const diagramPaths = history.slice(0, position + 1).flatMap(([sha, subject]) => subject === `aggregate-design: ${record.plan_set_id}`
+        ? git('diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', '-z', sha, '--', `docs/specs/${record.plan_set_id}/diagrams`).split('\0')
+        : []);
+      paths.push(...new Set(diagramPaths.filter((path) => isTacticalClassDiagram(path, record.plan_set_id))));
+    } else {
       const ownedDomainPaths = history.slice(0, position + 1).flatMap(([sha]) =>
         git('diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', '-z', sha, '--', 'docs/domain').split('\0').filter(Boolean));
       paths.push(...new Set(ownedDomainPaths));
     }
 
     // --no-renames: a document renamed since the checkpoint must list both its old and its new path, or the old one is not restored.
-    changed = git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);
+    if (!verification) changed = git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD', '--', ...paths).split('\0').filter(Boolean);
     if (changed.some((path) => !paths.some((p) => path === p || path.startsWith(`${p}/`)))) throw new Error('Invalid checkpoint path');
     archive = join(session, 'runtime/restarts', `requirements-${randomUUID()}`);
     await mkdir(archive, { recursive: true, mode: 0o700 });

@@ -76,10 +76,10 @@ test('an installed consumer retires spec-me and requires tactical design before 
   refused('integration-design', 'domain-model');
   const state = JSON.parse(await readFile(stateFile, 'utf8'));
   assert.equal(state.stages['spec-me'], undefined);
-  assert.equal(state.current_stage, 'requirements-fix');
+  assert.equal(state.current_stage, 'bounded-context');
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   const next = JSON.parse(prepare('--stage-id', 'domain-model').stdout);
-  assert.equal(next.input.context.transition.from_stage, 'requirements-fix', 'the flow itself continues with domain-model');
+  assert.equal(next.input.context.transition.from_stage, 'bounded-context', 'the flow itself continues with domain-model');
 
   // The tactical stages complete, then tactical-to-code becomes eligible.
   for (const stage of TACTICAL_DESIGN_STAGES) await skipped(stage);
@@ -200,18 +200,18 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   assert.equal(result.status, 'ready');
   assert.equal(result.stage_id, 'spec-me');
   assert.equal(result.execution_id, entry.execution_id);
-  assert.equal(result.previous_stage, 'requirements-fix');
+  assert.equal(result.previous_stage, 'bounded-context');
   const recovered = await readState();
   assert.equal(recovered.stages['spec-me'], undefined);
-  assert.equal(recovered.current_stage, 'requirements-fix');
+  assert.equal(recovered.current_stage, 'bounded-context');
   assert.equal(recovered.status, 'waiting');
-  assert.equal(recovered.stages['requirements-fix'].status, 'completed');
-  assert.equal(JSON.parse(await readFile(recordFile, 'utf8')).current_stage, 'requirements-fix');
+  assert.equal(recovered.stages['bounded-context'].status, 'completed');
+  assert.equal(JSON.parse(await readFile(recordFile, 'utf8')).current_stage, 'bounded-context');
   const backup = JSON.parse(await readFile(join(result.backup, 'state.json'), 'utf8'));
   assert.equal(backup.stages['spec-me'].execution_id, entry.execution_id, 'the old state is archived');
-  assert.equal(JSON.parse(await readFile(join(result.backup, 'worktree.json'), 'utf8')).current_stage, 'requirements-fix');
+  assert.equal(JSON.parse(await readFile(join(result.backup, 'worktree.json'), 'utf8')).current_stage, 'bounded-context');
   assert.equal(JSON.parse(await readFile(join(result.backup, 'discard.json'), 'utf8')).stage, 'spec-me');
-  assert.equal(JSON.parse(await readFile(join(session, 'runtime/orchestrator/progress.json'), 'utf8')).current_stage, 'requirements-fix', 'the progress view follows');
+  assert.equal(JSON.parse(await readFile(join(session, 'runtime/orchestrator/progress.json'), 'utf8')).current_stage, 'bounded-context', 'the progress view follows');
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'no project commit was made');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'the Harness-owned backup and state stay out of Git');
   treeGit('check-ignore', '-v', relative(workspace, join(result.backup, 'state.json')));
@@ -219,7 +219,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   assert.equal(script(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']).status !== 0, true, 'spec-me is still refused after the recovery');
   const resumed = script(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
   assert.equal(resumed.status, 0, resumed.stderr);
-  assert.equal(JSON.parse(resumed.stdout).input.context.transition.from_stage, 'requirements-fix', 'the workflow continues with the flow');
+  assert.equal(JSON.parse(resumed.stdout).input.context.transition.from_stage, 'bounded-context', 'the workflow continues with the flow');
   assert.equal(JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')).stages['domain-model'], undefined, 'preparing records no stage until it starts');
 
   // A bound agent is verified through its own transcript, as for a restart: still running refuses, interrupted discards.
@@ -232,7 +232,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   await agentTranscript(thread, '/root/spec-me-agent', { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-1' } }, { type: 'event_msg', payload: { type: 'turn_aborted', turn_id: 'turn-1' } });
   const bound = JSON.parse(discard().stdout);
   assert.equal(bound.verified, 'native agent interrupted');
-  assert.equal((await readState()).current_stage, 'requirements-fix');
+  assert.equal((await readState()).current_stage, 'bounded-context');
 
   // A stage that the native runner already recorded as failed is discarded without transcripts.
   await claim({ status: 'failed', code: 'EXECUTION_ERROR', reason: 'Native agent was interrupted by the host', native_finished: true, finished_at: new Date().toISOString() });
@@ -244,12 +244,12 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   assert.equal((await readdir(join(session, 'runtime/restarts'))).filter((name) => name.startsWith('out-of-order-')).length, 3, 'each discard keeps its own archive');
 });
 
-test('the orchestrator and the stage-input guide name the order guard and the discard command, and the enforcement map records them', async () => {
-  const input = await read('.codex/internal-skills/skill-execution/references/input.md');
+test('the orchestrator links the input guide that owns the stage order guard and discard command', async () => {
+  const input = await read('.codex/skills/orchestrator/references/input.md');
   assert.match(input, /--discard-out-of-order true/);
   assert.match(input, /cannot start before/);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(orchestrator, /--discard-out-of-order true/);
+  assert.match(orchestrator, /references\/input\.md/);
   const enforcement = await read('docs/architecture/enforcement.md');
   assert.match(enforcement, /preSpecOrderViolation[\s\S]*discardOutOfOrderStage/);
   const prepare = await read('.codex/scripts/harness-prepare-input.mjs');

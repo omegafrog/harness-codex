@@ -63,8 +63,8 @@ Planned
 ## 대상
 
 - 컨텍스트(BC): [이름]
-- 업무(BIZ)와 Application Service: [BIZ-xx, AS-xx]
-- 접하는 다른 컨텍스트: [이름과 INT-xx 또는 `없음`]
+- 업무(BIZ)와 Application Service: [BIZ-xx, AS-xx 및 메서드 이름]
+- 접하는 다른 컨텍스트: [대상 컨텍스트와 호출하는 메서드의 통합 결정 또는 `없음`]
 
 ## 범위
 
@@ -80,7 +80,7 @@ Planned
 
 ## 의존한 결정
 
-- [technology/api/data/UI design 결정 요약 또는 `해당 없음 — 이유`]
+- [technology/api/data/UI design 결정 요약. outbound 인터페이스를 사용하면 data.md의 컨텍스트와 바인딩 행을 인용한다. 없으면 `해당 없음 — 이유`]
 
 ## 완료 기준
 

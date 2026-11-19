@@ -46,10 +46,9 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.match(implementGuide, /구현자는 자기 diff를 리뷰하거나 reviewer를 직접 호출하지 않는다/);
     assert.doesNotMatch(implementGuide, /`code-review`를 `review_fixed_point`에 대해 실행/);
     assert.match(await read('.agents/skills/orchestrator/references/implementation.md'), /구현 context를 공유하지 않는 fresh `standards_reviewer`·`spec_reviewer`/);
-    const dispatch = await read('.codex/internal-skills/skill-execution/references/dispatch.md');
-    assert.match(dispatch, /sandbox 및 권한을 유지한다/);
-    assert.match(dispatch, /지정된 권한을 적용할 수 없으면 실행하지 말고 실패/);
-    assert.match(dispatch, /실제 서브에이전트의 종료를 native 도구로 기다린다/);
+    const dispatch = await read('.agents/skills/orchestrator/references/dispatch.md');
+    assert.match(dispatch, /지정 profile의 sandbox·권한[^\n]*현재 CLI에서 적용할 수 있을 때 시작한다/);
+    assert.match(dispatch, /대상 ID와 현재 상태가 포함된 native 완료·실패·질문 통지를 사용한다/);
     for (const match of wrapper.matchAll(/\]\(([^)]+\.md)\)/g)) {
       await readFile(resolve(root, '.codex/internal-skills/implement-wrapper', match[1]));
     }
@@ -75,7 +74,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
     assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /harness-plan-review\.mjs check --root <workspace_root> --plan-set <plan-set-id> --phase dispatch --plan <plan-id>/);
     assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /harness-workspace-preflight\.mjs --workspace-root <workspace_root> --for-implementation --json/);
-    assert.match(await read('.claude/skills/orchestrator/SKILL.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);
+    assert.match(await read('.claude/skills/orchestrator/references/dispatch.md'), /--worktree-id <worktree\.json의 worktree_id> --base-ref <시작 commit SHA> --final-workflow/);
     assert.match(e2eGuide, /실제 답변 참조를 확인하고, 누락되거나 달라졌으면 서버\/인프라를 시작하지 않고/);
     assert.match(e2eGuide, /caller도 코드·테스트·profile을 자동 수정하거나 자동 재실행하지 않고/);
     assert.match(await read('.codex/internal-skills/e2e-test/references/failure-learning.md'), /사용자가 재실행을 지시하면 시도 횟수와 관계없이 따른다/);
@@ -100,7 +99,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     }
     assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /unrequested_behavior/);
     assert.match(await read('.codex/internal-skills/code-review/references/repair.md'), /next_action: user-decision/);
-    assert.ok(JSON.parse(await read('.codex/internal-skills/skill-execution/schemas/flows/common.schema.json')).properties.unplanned_additions);
+    assert.ok(JSON.parse(await read('.harness/schemas/flows/common.schema.json')).properties.unplanned_additions);
     assert.match(await read('.claude/skills/orchestrator/references/implementation.md'), /user_questions\[\]\.question/);
     assert.match(await read('.claude/agents/spec_reviewer.md'), /exactly one JSON object/);
     assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /- 충분한 수준:/);
@@ -114,7 +113,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
     assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);
     assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting \|\| \(crossStageRevision/);
-    assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /--user-revision true/);
+    assert.match(await read('.agents/skills/orchestrator/references/dispatch.md'), /--user-revision true/);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   };

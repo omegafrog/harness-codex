@@ -61,6 +61,13 @@ export const planDesignCandidates = (planSetId) => [
 const legacySpecPaths = (planSetId) => [`docs/specs/${planSetId}/product-spec.md`, `docs/specs/${planSetId}/architecture-spec.md`];
 const exists = (root, path) => safeFile(root, path).then(() => true, (error) => (error.code === 'ENOENT' ? false : Promise.reject(error)));
 
+export async function planDesignPaths({ root, planSetId }) {
+  requireValue(ID.test(planSetId || ''), 'Valid plan-set ID is required');
+  const paths = [];
+  for (const path of planDesignCandidates(planSetId)) if (await exists(root, path)) paths.push(path);
+  return paths;
+}
+
 async function discoverPlans({ root, base }) {
   const entries = await readdir(join(root, base), { withFileTypes: true });
   const plans = [];
@@ -90,8 +97,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
   }
   const base = `docs/plans/${planSetId}`;
   const indexFile = await safeFile(root, `${base}/plans.md`);
-  const designPaths = [];
-  for (const path of planDesignCandidates(planSetId)) if (await exists(root, path)) designPaths.push(path);
+  const designPaths = await planDesignPaths({ root, planSetId });
   const session = sessionDirectory(root, { create: false });
   const statePath = join(session, 'runtime/orchestrator/state.json');
   const hasState = await lstat(statePath).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });

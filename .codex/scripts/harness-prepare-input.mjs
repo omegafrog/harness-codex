@@ -11,7 +11,7 @@ const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchCommand, stage
 const errorContext = { script: 'prepare', stageId: undefined, root: undefined, mode: null };
 try {
   const { args: rawArgs, verbose } = extractVerbose(process.argv.slice(2));
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure', 'reopen-for']);
+  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'requirements-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure', 'reopen-for', 'stage-binding']);
   const options = {};
   for (let i = 0; i < rawArgs.length; i += 2) {
     const key = rawArgs[i]?.replace(/^--/, '');
@@ -56,6 +56,13 @@ try {
     }
     return provider;
   };
+  const { parseWorkflowBinding, modelBelongsToProvider } = await import(new URL('providers/index.mjs', base));
+  let requestedStageBinding;
+  try { requestedStageBinding = parseWorkflowBinding(options['stage-binding']); }
+  catch { throw new Error('Invalid argument: --stage-binding must be JSON with provider, model and reasoning_effort'); }
+  const assertRequestedProvider = (provider) => {
+    if (requestedStageBinding && (requestedStageBinding.provider !== provider || !modelBelongsToProvider(provider, requestedStageBinding.model))) throw new Error('Execution provider must match the requested stage binding');
+  };
   if (options['restart-requirements'] !== undefined) {
     if (options['restart-requirements'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'restart-requirements'].includes(key))) throw new Error('Requirements restart must be requested alone');
     const { restartRequirements } = await import(new URL('requirements-restart.mjs', base));
@@ -72,22 +79,24 @@ try {
     process.exit(0);
   }
   if (options['take-over-interrupted'] !== undefined) {
-    if (options['take-over-interrupted'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'take-over-interrupted'].includes(key))) throw new Error('Taking over an interrupted stage must be requested alone');
-    await assertCodexHookTrusted();
+    if (options['take-over-interrupted'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'take-over-interrupted', 'stage-binding'].includes(key))) throw new Error('Taking over an interrupted stage must be requested alone');
+    assertRequestedProvider(await assertCodexHookTrusted());
     const { takeOverInterruptedStage } = await import(new URL('stage-takeover.mjs', base));
     const taken = await takeOverInterruptedStage({ root, session: worktreeSession, stageId: options['stage-id'] });
-    process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `--feedback '${TAKEOVER_FEEDBACK}'`)}` })}\n`);
+    const requestedArgs = requestedStageBinding ? ` --stage-binding '${JSON.stringify(requestedStageBinding)}'` : '';
+    process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `--feedback '${TAKEOVER_FEEDBACK}'${requestedArgs}`)}` })}\n`);
     process.exit(0);
   }
   await resolveSkillSession(root, session);
-  const stageProvider = await assertCodexHookTrusted();
+  assertRequestedProvider(await assertCodexHookTrusted());
   const recordedOrchestrator = record.agent_sessions?.orchestrator;
   const orchestrator = recordedOrchestrator ? { ...recordedOrchestrator, provider: recordedOrchestrator.provider || 'codex' } : state.orchestrator_session_id ? { session_id: state.orchestrator_session_id, provider: state.orchestrator_provider || 'codex' } : state.codex_session_id ? { session_id: state.codex_session_id, provider: 'codex' } : null;
   const codexSessionId = orchestrator?.provider === 'codex' ? orchestrator.session_id : null;
   if (options['publication-approved'] !== undefined && options['publication-approved'] !== 'true') throw new Error('publication-approved must be true');
+  if (options['requirements-approved'] !== undefined && options['requirements-approved'] !== 'true') throw new Error('requirements-approved must be true');
   if (options.restart !== undefined && options.restart !== 'true') throw new Error('restart must be true');
   if (options['user-revision'] !== undefined && options['user-revision'] !== 'true') throw new Error('user-revision must be true');
-  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, e2eRequest: options['e2e-request'] ?? null, testDefectFailure: options['test-defect-failure'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', restart: options.restart === 'true', reopenFor: options['reopen-for'] ?? null });
+  const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, e2eRequest: options['e2e-request'] ?? null, testDefectFailure: options['test-defect-failure'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', requirementsApproved: options['requirements-approved'] === 'true', restart: options.restart === 'true', reopenFor: options['reopen-for'] ?? null, requestedStageBinding });
   process.stdout.write(`${JSON.stringify(verbose ? prepared : compactPrepared(prepared))}\n`);
 } catch (error) {
   writeError(process.stderr, error, errorContext);

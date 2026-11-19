@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { lstat, realpath, readdir, readFile, stat } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -106,28 +105,6 @@ async function assertSafeDirectory(projectRoot, path, label) {
 
 const pathSeparator = process.platform === "win32" ? "\\" : "/";
 
-function runCodex(args) {
-  const executable = process.platform === "win32" ? "codex.cmd" : "codex";
-  const result = spawnSync(executable, args, { encoding: "utf8" });
-  if (result.error) throw new Error(`Unable to run Codex plugin command: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(`Codex plugin command failed (${args.join(" ")}): ${result.stderr || result.stdout}`);
-  return result.stdout;
-}
-
-function installPonytailPlugin() {
-  const marketplaceUrl = "https://github.com/DietrichGebert/ponytail.git";
-  const marketplaceResult = JSON.parse(runCodex(["plugin", "marketplace", "list", "--json"]));
-  const existing = marketplaceResult.marketplaces?.find((marketplace) => marketplace.name === "ponytail");
-  if (existing && existing.marketplaceSource?.source !== marketplaceUrl) {
-    throw new Error(`Codex marketplace 'ponytail' already points to a different source: ${existing.marketplaceSource?.source || existing.root}`);
-  }
-  if (!existing) runCodex(["plugin", "marketplace", "add", "DietrichGebert/ponytail"]);
-
-  const pluginResult = JSON.parse(runCodex(["plugin", "list", "--json"]));
-  const installed = pluginResult.installed?.some((plugin) => plugin.pluginId === "ponytail@ponytail" && plugin.enabled === true);
-  if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
-}
-
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     const providers = options.provider || "all";
@@ -194,6 +171,7 @@ async function verify(projectRoot, options) {
 async function verifyManagedRuntime(projectRoot) {
   for (const path of [
     ".github/pull_request_template.md",
+    ".codex/internal-skills/implement/references/ponytail.md",
     ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
@@ -214,12 +192,17 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/workflow/domain-model-gate.mjs",
     ".codex/scripts/harness-design-freeze-check.mjs",
     ".harness/src/workflow/design-freeze-gate.mjs",
+    ".harness/src/workflow/stakeholder-analysis-gate.mjs",
+    ".harness/src/workflow/requirements-document-gate.mjs",
     ".harness/src/stakeholders/cards.mjs",
     ".codex/scripts/harness-write-guard.mjs",
     ".harness/src/workflow/contract-review.mjs",
     ".codex/scripts/harness-code-review.mjs",
     ".codex/scripts/harness-review-status.mjs",
     ".harness/src/workflow/plan-review.mjs",
+    ".harness/schemas/input.schema.json",
+    ".harness/schemas/return.schema.json",
+    ".harness/schemas/flows/common.schema.json",
   ]) {
     await stat(join(projectRoot, path));
   }
@@ -260,8 +243,6 @@ async function main() {
     const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, provider: options.provider, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
-    installPonytailPlugin();
-
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
     if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
@@ -299,6 +280,7 @@ async function noteCodexUserHooks(projectRoot, options) {
     if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
     const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
     const trust = await inspectCodexHookTrust();
+    if (trust.retired_startup) console.log("A retired Harness orchestrator hook remains in the Codex user hooks. Run $setup with the Codex provider after updating any other Harness checkout that still uses this hook.");
     if (trust.write_guard !== "trusted") console.log(`Codex user hook "Guarding Harness orchestrator writes" is ${trust.write_guard}: run $setup (codex provider) to register it, then trust it in /hooks, so the orchestrator main session cannot edit product code, tests or contracts.`);
   } catch { /* the notice is advisory; Doctor reports the same state */ }
 }

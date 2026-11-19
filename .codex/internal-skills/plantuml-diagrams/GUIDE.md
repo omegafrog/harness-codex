@@ -51,6 +51,12 @@ Spec diagram stage가 선언한 `product_diagram_required` 및 `architecture_dia
 - [ ] `.puml`에서 SVG를 로컬 렌더했다.
 - [ ] Spec Markdown의 SVG 링크와 내용 일치를 검토했다.
 
+## 전술 클래스 다이어그램
+
+`aggregate-design`이 확정한 BC별 Entity·Value Object에 맞춰 `docs/specs/<plan-set-id>/diagrams/<bc>.class.puml`과 같은 이름의 SVG를 작성한다. Aggregate는 이름이 있는 경계로 표시하고 그 안에 Root·Entity·Value Object, 타입과 메서드, 포함 관계를 표시한다. Aggregate 사이에는 실제 ID 참조와 방향을 표시한다. Aggregate가 없는 BC의 Value Object도 그 구성과 관계를 표시한다. `tactical-design.md`의 해당 `## BC <context-id>` 아래 두 파일에 상대 링크를 둔다. Entity와 Value Object가 모두 없으면 해당 BC에 이유를 기록한다.
+
+전술 설계에서는 `aggregate-design` 담당자가 확정된 모델을 기준으로 원본을 작성하고 로컬 renderer를 실행한다. 이미 검증된 JAR의 경로를 `--jar`로 넘긴다. 설치된 소비자는 `node .codex/tools/plantuml-render.mjs --workspace <workspace_root> --jar <verified_jar> <class.puml>`을 사용하고 source repo는 `bin/plantuml-render.mjs`를 사용한다. 렌더 결과와 모델·링크가 일치하면 원본과 SVG를 workspace artifact에 실어 보고한다.
+
 ## 통합 계약 다이어그램
 
 `sync-contracts/references/format.md`에 따라 `docs/contracts/diagrams/`의 현행 DDD·class·기능별 sequence·state 원본과 SVG도 같은 diagram_creator가 유지한다. DDD 구조는 전체 외부 시스템·Context·Aggregate·root/entity/VO·domain service/method·composition service/method를 실제 owner 경계 안에 **이름만** 표시하고 `[[../architecture.md#<stable-id> <이름>]]`으로 상세 section에 연결한다. class 그림은 속성과 타입·메서드·관계를 담는다. 모든 활성 기능은 sequence가 필요하고, 상태/class가 적용되지 않을 때만 근거를 manifest에 기록한다. 근거 없이 관점을 생략하지 않는다.

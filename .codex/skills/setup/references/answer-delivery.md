@@ -16,7 +16,7 @@
 
 CLI가 `CODEX_THREAD_ID`와 `CODEX_HOME`으로 현재 대화 기록을 찾아 `session_meta`의 ID와 `cwd`를 검증한다. 스킬이 경로를 검색하거나 대화 내용을 직접 해석하지 않는다. 기록이나 접수 확인이 없으면 오류를 보고한다.
 
-Harness의 `UserPromptSubmit` hook은 `event.prompt`를, 질문 도구 `PostToolUse` 경로는 `event.tool_response` 또는 `event.tool_output`을 읽는다. 기존 질문 도구 matcher는 `AskUserQuestion`과 `request_user_input`이며 async 도구는 포함하지 않는다. 실제 대화 기록은 사용자 메시지 형태를 증명하지만, 이 메시지가 같은 구조로 hook payload에 전달된다는 실측 근거는 없다. 따라서 hook에 async 자동 수신이나 설정 재개를 추가하지 않는다. 스킬은 경로 인자 없이 `--receive-rollout`을 실행한다. CLI가 실제 사용자 응답을 모두 읽어 해당 배치의 항목을 수집한다. 별도 답변 파일은 만들지 않는다. 수신 명령은 다음 설정 실행이나 파일 적용을 시작하지 않는다.
+스킬은 경로 인자 없이 `--receive-rollout`을 실행한다. CLI가 실제 사용자 응답을 모두 읽어 해당 배치의 항목을 수집한다. 별도 답변 파일은 만들지 않는다. 수신 명령은 다음 설정 실행이나 파일 적용을 시작하지 않는다.
 
 답변은 `.io/runtime/setup/<setup-id>/answers.json`의 현재 배치에 누적한다. 표시 인자·호출 ID·항목 대응·수신 답·종료 상태를 함께 보존하므로 부분 응답 뒤 대화가 끊겨도 `--status`로 누락을 확인할 수 있다. 이전 폼의 응답과 중단 후 응답은 진행 근거가 아니다. 실제 UI에서의 수동 재검증과 설치 소비자 fixture 회귀는 별도로 구분한다.
 

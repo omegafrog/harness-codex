@@ -528,7 +528,7 @@ test('installed consumer: the derived gate ships through install and update, sta
     assert.doesNotMatch(status, /\.io\/|\.harness\/src|\.codex\//);
     assert.equal(status.includes('implementation-completion'), false);
     // The orchestrator guidance no longer hands the gate a state file for implementation completion.
-    for (const path of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
+    for (const path of ['.agents/skills/orchestrator/references/dispatch.md', '.claude/skills/orchestrator/references/dispatch.md']) {
       const guide = await readFile(join(f.root, path), 'utf8');
       assert.match(guide, /--base-ref <시작 commit SHA> --final-workflow`/);
       assert.doesNotMatch(guide, /--final-workflow \[--state/);

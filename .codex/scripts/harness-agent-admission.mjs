@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { sessionOutputPath } from '../../.harness/src/workflow/session-output.mjs';
 import { normalizeReviewContent } from '../../.harness/src/workflow/review-delta.mjs';
+import { FRESH_AGENT_TYPES } from './harness-fresh-agent.mjs';
 
 function deny(reason) {
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })}\n`);
@@ -26,6 +27,10 @@ try {
   const isReviewer = isSpecReviewer || isPlanReviewer || isContractReviewer;
   const { nativeHookContext } = await import('../../.harness/src/workflow/native-context.mjs');
   const native = process.env.HARNESS_REVIEW_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.agent_id, event.parent_agent_id, event.session_id].filter(Boolean), { mainSession: !event.agent_id });
+  if ((FRESH_AGENT_TYPES.includes(type) && (tool.resume || tool.fork || tool.fork_context)) || (native && (!type || type === 'fork'))) {
+    deny('This Harness assignment requires a new Agent with an explicit profile and only the assigned input references. Continue a bound execution by messaging its existing agent.');
+    process.exit(0);
+  }
   if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_SKILL_EXECUTION_ID || !native)) process.exit(0);
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;

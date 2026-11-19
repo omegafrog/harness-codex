@@ -1,6 +1,6 @@
 # requirements.md 템플릿
 
-`docs/specs/<plan-set-id>/requirements.md`는 새 기능 요청의 요구사항을 한 문서에 모아 가는 living spec이다. 여러 stage가 이어서 채우고 `requirements-fix`가 확정한다. 이 문서가 최종 모양의 정본이며 다른 stage는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 해당 사항이 없는 절에는 `해당 없음 — 이유`를 적는다.
+`docs/specs/<plan-set-id>/requirements.md`는 새 기능 요청의 요구사항을 한 문서에 모아 가는 living spec이다. 여러 stage가 이어서 채우고 마지막 `bounded-context`가 확정한다. 이 문서가 최종 모양의 정본이며 다른 stage는 이 템플릿을 링크한다. 사람이 읽는 문서이므로 한국어로 쓰고 ID, JSON 키, 경로, CLI 명령은 원형을 유지한다. 해당 사항이 없는 절에는 `해당 없음 — 이유`를 적는다.
 
 ## 단계별 기입
 
@@ -11,9 +11,9 @@
 | `ubiquitous-language` | 후보 업무의 혼동되는 용어를 먼저 정하고 `## 3`과 `CONTEXT.md`에 범위·근거를 기록한다. 실제 BC 소속은 나중에 검증한다 |
 | `event-storming` | BIZ별 이벤트 흐름 표, `## 4`, `## 5`, hotspot 답에서 나온 업무 규칙·예외, 다이어그램 링크를 쓴다 |
 | `subdomain-classification` | 이벤트 근거로 서브도메인 경계를 검증하고, 사용자 확인을 받아 SD 표의 `분류`·`근거`·`상태`를 `confirmed`로 쓴다. 경계가 바뀌면 BIZ 배치와 이벤트 다이어그램도 고친다 |
-| `bounded-context` | `### 1.1` 바운디드 컨텍스트 표를 쓴다. 같은 stage가 `CONTEXT-MAP.md`와 용어의 최종 BC 소속을 갱신한다 |
-| `requirements-fix` | 남은 빈칸을 인터뷰로 채우고 완료 조건과 `## 6`을 쓴 뒤, coverage gate를 통과하면 `상태`를 `fixed`로 바꾼다 |
-| `domain-model`부터 `context-boundary`까지 | 이 문서를 확정 입력으로 읽고 [tactical-design.md 템플릿](../../domain-model/references/template.md)의 문서를 채운다. 질문을 하는 stage(`aggregate-design`, `integration-design`, `context-boundary`)는 사용자의 답에서 새 업무 규칙·예외가 나오면 해당 BIZ에 INV·EX·AC만 덧붙인다 |
+| `requirements-fix` | 남은 빈칸을 인터뷰로 채우고 완료 조건과 `## 6`을 쓴 뒤 coverage gate(바운디드 컨텍스트 행 제외)를 통과시킨다. `상태`는 `draft`로 둔다 |
+| `bounded-context` | 빈칸이 채워진 요구사항을 근거로 `### 1.1` 바운디드 컨텍스트 표를 쓴다. 같은 stage가 `CONTEXT-MAP.md`와 용어의 최종 BC 소속을 갱신하고, coverage gate 전체를 통과하면 `상태`를 `fixed`로 바꾼다 |
+| `domain-model`부터 `context-boundary`까지 | 이 문서를 확정 입력으로 읽고 [tactical-design.md 템플릿](../../domain-model/references/template.md)의 문서를 채운다. 업무 조건·예외·결과가 빠졌으면 해당 BIZ와 근거를 `requirements-fix`에 반환한다 |
 
 `stakeholder-analysis`가 `판정: 생략`이면 이 문서를 만들지 않는다. 뒤의 여섯 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 결과 요약에 기록한 뒤 `completed/OK`를 반환하며, 이후 필요한 구현 흐름은 별도로 판단한다.
 
@@ -22,13 +22,14 @@
 - ID는 `SD-01`(서브도메인 후보), `BIZ-01`(업무), `INV-01`(업무 규칙), `EX-01`(예외 시나리오), `AC-01`(완료 조건), `HS-01`(hotspot)이다. INV·EX·AC·HS는 BIZ와 무관하게 문서 전체에서 번호가 유일하다. 한 번 붙인 ID는 바꾸지 않으며 지운 항목의 번호는 다시 쓰지 않는다.
 - 모든 항목 끝에 출처를 붙인다: `요청 원문`, `CAND-xx 채택`, `answers.json`, `요청 해석(에이전트 제안)`. `answers.json` 출처에는 사용자 답변의 `question_id`를 함께 적는다. 에이전트 판단을 사용자 결정 출처로 쓰지 않는다.
 - 항목 상태는 출처가 정한다. 에이전트 제안만 근거인 항목은 `draft`, 요청 원문·채택 후보·사용자 답변이 근거인 항목은 사용자 확정이다. 문서가 `fixed`가 되면 모두 확정으로 본다.
-- 문서 상태는 `draft`와 `fixed`뿐이고 BIZ의 `상태`도 같다. SD의 `상태`는 후보인 `draft`, 사용자가 경계와 분류를 확인한 `confirmed`, 문서 확정 때 `fixed`다. `confirmed`는 `subdomain-classification`만, `fixed`는 `requirements-fix`만 쓴다.
+- 문서 상태는 `draft`와 `fixed`뿐이고 BIZ의 `상태`도 같다. SD의 `상태`는 후보인 `draft`, 사용자가 경계와 분류를 확인한 `confirmed`, 문서 확정 때 `fixed`다. `confirmed`는 `subdomain-classification`만, `fixed`는 `bounded-context`만 쓴다.
 - 업무 단위(BIZ)는 행위자가 한 번에 끝내는 업무 하나다. 정상 시나리오는 그 업무의 시작부터 끝까지이고, 규칙·예외·완료 조건은 그 업무에 속한다.
 - 기각·보류한 후보와 `요청 범위 밖 관찰`은 이 문서에 쓰지 않는다. 사용자의 새 결정이 있어야 들어온다.
 - 바운디드 컨텍스트의 비교 기준은 [ddd-design](../../ddd-design/GUIDE.md)의 경계 규칙이 정본이며 이 문서에 다시 적지 않는다.
 - 업무와 전략적 경계만 다룬다. bounded context는 `bounded-context` stage만 정하며, 모듈·저장 방식·프레임워크·통신 방식은 쓰지 않는다.
+- BIZ의 각 필드(`업무 규칙`, `예외 시나리오`, `이벤트 흐름` 등)는 BIZ마다 한 번만 둔다. 필드를 채울 때는 그 필드의 기존 줄(`없음 — 후속 stage가 채운다` 포함)을 그 자리에서 바꾸며, 같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다. 고치기 전에 해당 BIZ 절을 다시 읽고, 패치 hunk는 `@@ ### BIZ-xx <업무명>`처럼 BIZ 제목을 문맥으로 둔다. 빈칸 줄과 표 머리줄은 BIZ마다 같아서 제목 없는 hunk는 다른 BIZ에 맞거나 실패한다. 실행기는 요구사항 stage가 질문을 반환하거나 완료할 때 한 BIZ에 같은 필드가 두 번 있으면 거부한다.
 - 확정 뒤 변경은 사용자의 명시적 수정 지시로만 한다. 그 지시는 출처 `사용자 수정 지시`로 `출처·변경 이력`에 원문과 함께 남긴다.
-- 전술 설계 stage가 자기 질문에 대한 사용자의 답으로 얻은 새 규칙·예외는 출처 `answers.json`과 `question_id`로 해당 BIZ에 INV·EX와 AC를 덧붙일 수 있다. 기존 항목은 고치지 않으며 번호는 문서 전체에서 이어 쓰고 `출처·변경 이력`에 그 stage 이름과 함께 한 줄을 남긴다.
+- 전술 설계에서 기존 승인 범위를 바꾸는 결정이 나오면 `requirements-fix`가 수정 근거를 검토한다. 요구 변경은 `bounded-context`의 확정과 사용자 승인을 받은 뒤 설계에 반영한다.
 
 ## 문서 모양
 
@@ -60,9 +61,9 @@
 
 | BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |
 |---|---|---|---|---|---|
-| 커뮤니티 | SD-01(BIZ-01, BIZ-02), SD-02(BIZ-03) | 글과 그에 대한 신고 처리를 한 언어로 다룬다 | INV-01, INV-02: 게시글과 신고 | 기존 컨텍스트 확장: CONTEXT-MAP의 "커뮤니티". 신고 용어가 게시글과 같은 뜻이다 — 출처: answers.json `<question_id>` | 신고를 별도 컨텍스트로 분리: 용어와 규칙 소유가 같아 합치는 쪽이 낫다 |
+| community (커뮤니티) | SD-01(BIZ-01, BIZ-02), SD-02(BIZ-03) | 글과 그에 대한 신고 처리를 한 언어로 다룬다 | INV-01, INV-02: 게시글과 신고 | 기존 컨텍스트 확장: CONTEXT-MAP의 "커뮤니티". 신고 용어가 게시글과 같은 뜻이다 — 출처: answers.json `<question_id>` | 신고를 별도 컨텍스트로 분리: 용어와 규칙 소유가 같아 합치는 쪽이 낫다 |
 
-`근거`는 기존 컨텍스트에 먼저 넣었는지, 어떤 경계 기준이 결과를 갈랐는지와 출처를 적는다. `비교한 대안`에는 합친 안과 나눈 안을 공정하게 적는다.
+`BC`의 소문자 slug는 `CONTEXT-MAP.md`의 Context ID와 일치해야 한다. `근거`는 기존 컨텍스트에 먼저 넣었는지, 어떤 경계 기준이 결과를 갈랐는지와 출처를 적는다. `비교한 대안`에는 합친 안과 나눈 안을 공정하게 적는다.
 
 ## 2. 업무
 

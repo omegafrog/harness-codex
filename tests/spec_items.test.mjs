@@ -122,7 +122,7 @@ test('the orchestrator and the E2E guide point at the test-defect fast path', as
   assert.match(fast, /단언을 약하게 만들지 않는다/);
   assert.match(fast, /3회 미만/);
   assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /references\/test-defect-fast-path\.md/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /test-defect-fast-path\.md/);
+  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /test-defect-fast-path\.md/);
 });
 
 // Ending the orchestrator's turn aborts the sub-agents it started, so the E2E runner reported nothing.
@@ -183,7 +183,7 @@ test('an unsealed contract is deferred in the final review and the orchestrator 
   const implementation = await read('.codex/skills/orchestrator/references/implementation.md');
   assert.match(implementation, /최종 E2E 통과 → `sync-contracts` stage → 완료 gate다/);
   assert.match(implementation, /orchestrator는 `docs\/contracts\/`를 직접 작성·수정·seal하지 않는다/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /\| `sync-contracts` \|/);
+  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /계약 동기화[^\n]*references\/implementation\.md/);
   assert.match(await read('.codex/internal-skills/sync-contracts/GUIDE.md'), /## Stage로 실행/);
   assert.match(await read('.harness/src/workflow/stage-input.mjs'), /stageId === 'sync-contracts' && \(state\.stages\?\.\['implement-wrapper'\]/);
 });

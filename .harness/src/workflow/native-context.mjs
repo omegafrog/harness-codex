@@ -66,8 +66,8 @@ export async function resolveNativeCodexThread({ root, parentSessionId, stage })
   } finally { await handle.close(); }
 }
 
-export async function readNativeCodexOutcome({ root, parentSessionId, stage }) {
-  const threadId = await resolveNativeCodexThread({ root, parentSessionId, stage });
+export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
+  const threadId = resolvedThreadId || await resolveNativeCodexThread({ root, parentSessionId, stage });
   if (!threadId) return null;
   const { findRollout } = await import('./providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
@@ -78,7 +78,7 @@ export async function readNativeCodexOutcome({ root, parentSessionId, stage }) {
     const info = await handle.stat();
     if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe Codex agent transcript');
     const lines = createInterface({ input: createReadStream(path, { fd: handle.fd, autoClose: false }), crlfDelay: Infinity });
-    let first = true, turn = null, outcome = null;
+    let first = true, turn = null, outcome = null, turnBinding = null;
     const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
     for await (const line of lines) {
       let entry;
@@ -90,16 +90,20 @@ export async function readNativeCodexOutcome({ root, parentSessionId, stage }) {
         if (entry.type !== 'session_meta' || metadata?.id !== threadId || metadata.cwd !== workspace || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) return null;
         continue;
       }
+      if (turn && entry.type === 'turn_context' && entry.payload?.turn_id === turn) {
+        const { model, effort } = entry.payload;
+        if (model && effort) turnBinding = { model, reasoning_effort: effort };
+      }
       if (entry.type !== 'event_msg') continue;
       const event = entry.payload || {};
-      if (event.type === 'task_started' && typeof event.turn_id === 'string') { turn = event.turn_id; outcome = { status: 'running', thread_id: threadId }; }
+      if (event.type === 'task_started' && typeof event.turn_id === 'string') { turn = event.turn_id; turnBinding = null; outcome = { status: 'running', thread_id: threadId }; }
       else if (turn && event.turn_id === turn && event.type === 'task_complete') {
         outcome = event.error
           ? typeof event.error.message === 'string' && event.error.message.trim() ? { status: 'failed', thread_id: threadId, error: event.error.message } : null
           : typeof event.last_agent_message === 'string' ? { status: 'completed', thread_id: threadId, output: event.last_agent_message } : null;
       } else if (turn && event.turn_id === turn && event.type === 'turn_aborted') outcome = { status: 'interrupted', thread_id: threadId };
     }
-    return outcome;
+    return outcome && turnBinding ? { ...outcome, ...turnBinding } : outcome;
   } finally { await handle.close(); }
 }
 

@@ -34,14 +34,45 @@ export const samePath = (a, b) => resolve(a) === resolve(b);
 
 function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } }
 
-// The orchestrator's latest reply: from the Stop hook (last-turn.json) or a delivered turn's output (last-turn.txt).
-export function lastOrchestratorTurn(root) {
+// Reconcile the provider transcript with explicitly delivered and legacy turns without reviving an answered question.
+export async function lastOrchestratorTurn(root) {
+  const record = readJson(join(root, '.io/worktree.json'));
+  const owner = record?.agent_sessions?.orchestrator;
   const dir = join(root, '.io/runtime/orchestrator');
-  const hook = readJson(join(dir, 'last-turn.json'));
   let delivered = null;
-  try { const path = join(dir, 'last-turn.txt'); delivered = { at: statSync(path).mtime.toISOString(), message: readFileSync(path, 'utf8') }; } catch { delivered = null; }
-  const candidates = [hook, delivered].filter((item) => item?.at && typeof item.message === 'string' && item.message.trim());
-  return candidates.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0] || null;
+  try { const path = join(dir, 'last-turn.txt'); delivered = { at: statSync(path).mtime.toISOString(), message: readFileSync(path, 'utf8') }; } catch { /* No delivered turn. */ }
+  if (owner?.provider === 'codex' && owner.session_id) {
+    const { findRollout } = await import('./providers/codex.mjs');
+    const { readFile } = await import('node:fs/promises');
+    const path = await findRollout(join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'sessions'), owner.session_id);
+    if (path) {
+      try {
+        const rows = (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
+        if (rows[0]?.type === 'session_meta' && rows[0].payload?.id === owner.session_id && !rows[0].payload?.parent_thread_id && !rows[0].payload?.source?.subagent) {
+          let last = null, cwd = rows[0].payload?.cwd, latestEvidence = 0;
+          const forms = new Set();
+          for (const row of rows) {
+            if (row.type === 'turn_context' && typeof row.payload?.cwd === 'string') { cwd = row.payload.cwd; if (cwd !== root) { last = null; latestEvidence = Date.parse(row.timestamp) || latestEvidence; } }
+            if (cwd !== root) continue;
+            const p = row.payload || {};
+            if (row.type !== 'response_item') continue;
+            if (p.type === 'function_call' && /^(?:functions\.)?request_user_input$/.test(p.name || '')) forms.add(p.call_id);
+            if (p.type === 'function_call_output' && forms.has(p.call_id)) { last = null; latestEvidence = Date.parse(row.timestamp) || latestEvidence; }
+            if (p.type !== 'message') continue;
+            if (p.role === 'user' && p.internal_chat_message_metadata_passthrough?.content_item_kinds?.includes('user.text')) { last = null; latestEvidence = Date.parse(row.timestamp) || latestEvidence; }
+            if (p.role === 'assistant' && p.phase === 'final_answer') {
+              const message = (p.content || []).filter((item) => item.type === 'output_text').map((item) => item.text).join('\n');
+              if (message) { last = { at: row.timestamp, message }; latestEvidence = Date.parse(row.timestamp) || latestEvidence; }
+            }
+          }
+          return delivered && Date.parse(delivered.at) > latestEvidence ? delivered : last;
+        }
+      } catch { /* A missing or incomplete transcript cannot establish a pending turn. */ }
+    }
+  }
+  const legacy = readJson(join(dir, 'last-turn.json'));
+  if (legacy?.session_id !== owner?.session_id || !owner?.session_id) return delivered;
+  return delivered && Date.parse(delivered.at) > Date.parse(legacy.at) ? delivered : legacy;
 }
 
 export function orchestratorState(root) { return readJson(join(root, '.io/runtime/orchestrator/state.json')); }

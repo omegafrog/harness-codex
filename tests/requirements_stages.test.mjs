@@ -2,6 +2,7 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,21 +12,23 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { WORKTREE_STAGE, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
-import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
+import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 
 const TEMPLATE = '.codex/internal-skills/requirements-fix/references/template.md';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 const fenced = (text, language) => [...text.matchAll(new RegExp('```' + language + '\\n([\\s\\S]*?)\\n```', 'g'))].map((match) => match[1]);
 
 test('the requirements.md template, the stage guides and the orchestrator agree on the flow and the shape', async () => {
-  // The flow order lives in one list; the orchestrator and the workflow map name the stages in that order.
-  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'bounded-context', 'requirements-fix']);
+  // The orchestrator entry links the map, which owns the detailed stage order.
+  assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'requirements-fix', 'bounded-context']);
   for (const stage of REQUIREMENTS_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.ok(orchestrator.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the flow in order');
-  assert.match(orchestrator, /요구사항 흐름에서 완료되지 않은 첫 stage/);
-  assert.match(orchestrator, /`fixed` `requirements\.md`\(소유 skill `requirements-fix`\)/);
-  const map = await read('.codex/internal-skills/skill-execution/references/workflow-map.md');
+  assert.match(orchestrator, /references\/workflow-map\.md#요구사항과-승인/);
+  assert.match(await read('.codex/skills/orchestrator/references/dispatch.md'), /업무 묶음·서브도메인 분류는 `subdomain-classification`/);
+  assert.doesNotMatch(orchestrator, /먼저 `bounded-context`부터 `--restart-requirements true`/);
+  const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
+  assert.ok(map.includes(REQUIREMENTS_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the flow in order');
+  assert.match(map, /launch --stage-id domain-model --requirements-approved true --approval-answer/);
   const positions = REQUIREMENTS_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names the stages in order');
 
@@ -73,7 +76,8 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/internal-skills/ubiquitous-language/GUIDE.md'), /provisional BIZ scope/);
   const classification = await read('.codex/internal-skills/subdomain-classification/GUIDE.md');
   assert.match(classification, /`core`[\s\S]*`generic`[\s\S]*`supporting`/);
-  assert.match(classification, /in one batch/);
+  assert.match(classification, /한 묶음의 한국어 질문/);
+  assert.match(classification, /현재 후보를 유지하도록 권장해도 사용자의 경계 승인을 받는다/);
   assert.match(classification, /A render failure blocks completion/);
   const context = await read('.codex/internal-skills/bounded-context/GUIDE.md');
   assert.match(context, /\[ddd-design\]\(\.\.\/ddd-design\/GUIDE\.md\)/, 'the boundary rule is linked, not copied');
@@ -82,9 +86,9 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /`CONTEXT-MAP\.md` and `CONTEXT\.md` when this stage completes/);
   assert.match(context, /Assign provisional BIZ-scoped glossary entries/);
   assert.match(context, /material meaning conflict/);
-  const dispatch = await read('.codex/internal-skills/skill-execution/references/dispatch.md');
+  const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /fork_turns: "none"/);
-  assert.match(dispatch, /상위 대화·도구 출력·문서 본문을 복사하지 않고/);
+  assert.match(dispatch, /부모 이력이나 산출물 본문을 붙여 넣지 않는다/);
   const languageGuide = await read('.codex/internal-skills/ubiquitous-language/GUIDE.md');
   assert.match(languageGuide, /after `subdomain-candidates` and before `event-storming`/);
   assert.match(languageGuide, /Do not rewrite every sentence/);
@@ -98,18 +102,75 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.codex/skills/setup/assets/CONTEXT-MAP.md'), /^\| Upstream \| Downstream \| Upstream 책임 \| Downstream 책임 \| 통신 계약 \| 판단 소유자 \| 상태·근거 \|\n\|---\|---\|---\|---\|---\|---\|---\|$/m);
   assert.match(context, /mark unspecified details as undecided/);
   assert.match(context, /pattern only when supported by evidence/);
+  // The user sees which stakeholder each candidate question came from, by role and participant ID.
+  const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
+  assert.match(analysisGuide, /Start each question title with the stakeholders it came from, each by the role and ID of the participant table/);
+  assert.match(analysisGuide, /`\[제안: 도메인 전문가\(LENS-DOMAIN\), 결제 담당자\(SH-01\)\]`/);
   const events = await read('.codex/internal-skills/event-storming/GUIDE.md');
   assert.match(events, /`mode: events`/);
   assert.match(events, /`stakeholder_persona`/);
   assert.match(events, /A render failure blocks completion/);
   assert.match(await read('.codex/internal-skills/stakeholder-persona/GUIDE.md'), /^## Events mode$/m);
-  assert.match(await read('.codex/internal-skills/requirements-fix/GUIDE.md'), /automatically/);
-  assert.ok((await read('.codex/internal-skills/requirements-fix/references/coverage.md')).includes('확정 조건'));
+  // requirements-fix completes the requirements before the boundaries; bounded-context, the last stage, fixes the document.
+  const fix = await read('.codex/internal-skills/requirements-fix/GUIDE.md');
+  assert.match(fix, /after `subdomain-classification` and before `bounded-context`/);
+  assert.match(fix, /The document stays `draft`/);
+  assert.match(context, /^Last step of the requirements flow, after `requirements-fix`/m);
+  assert.match(context, /set its `상태` to `fixed` automatically/);
+  assert.match(context, /`result\.owner_stage: requirements-fix`/);
+  const coverage = await read('.codex/internal-skills/requirements-fix/references/coverage.md');
+  assert.match(coverage, /확정 조건/);
+  assert.doesNotMatch(`${fix}\n${coverage}`, /product-spec\/GUIDE\.md|grill-with-docs|how-to-grill/);
 
   // The Product guide and the DDD guide treat requirements.md as a fixed input.
   assert.match(await read('.codex/internal-skills/product-spec/GUIDE.md'), /`상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /requirements\.md` when present/);
   assert.match(await read('.codex/internal-skills/ddd-design/GUIDE.md'), /do not compare the boundaries again/);
+});
+
+test('the requester is a stakeholder: requested features are settled, and a persona candidate anchored in the request is never dropped as out of scope', async () => {
+  const { checkStakeholderAnalysis } = await import('../.harness/src/workflow/stakeholder-analysis-gate.mjs');
+  const request = '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해.';
+  const participants = '| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청 기능 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n';
+  const features = (decision = '확정', phrase = '커뮤니티 기능') => `| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 커뮤니티 | "${phrase}" | REQUESTER | ${decision} | 요청 원문 | q:4 |\n`;
+  const observation = (anchor) => `| 제안자 | 관찰 | 요청 앵커 | 근거 |\n|---|---|---|---|\n| LENS-DOMAIN | 게시물 작성자만 수정한다 | "${anchor}" | 근거 |\n`;
+  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis }).errors.map(({ code }) => code);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('결제 기능')}`), [], 'an observation anchored outside the request is kept out of scope');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('유저 인증과 커뮤니티 기능')}`), ['ANCHORED_CANDIDATE_EXCLUDED'], 'the E2E defect: an anchored community candidate was moved out of scope');
+  assert.deepEqual(codes(`# 분석\n\n${features()}`), ['REQUESTER_MISSING']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}`), ['REQUESTED_FEATURES_MISSING']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('대기')}`), ['REQUESTED_FEATURE_ASKED'], 'a requested feature is never asked for adoption');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('확정', '게시판 기능')}`), ['REQUESTED_FEATURE_NOT_QUOTED']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n| 제안자 | 관찰 | 근거 |\n|---|---|---|\n| LENS-DOMAIN | 관찰 | 근거 |\n`), ['OBSERVATION_ANCHOR_MISSING']);
+  assert.ok(checkStakeholderAnalysis({ request, analysis: '# 분석\n\n- 판정: 생략\n' }).ok, 'a skipped analysis is not checked');
+
+  // The guides carry the same rules: subdomain-candidates never asks about a requested feature and rewinds instead.
+  const candidates = await read('.codex/internal-skills/subdomain-candidates/GUIDE.md');
+  assert.match(candidates, /다른 활동의 규칙·예외·정책·상태 전이에 묻힌 동작도 확인한다/);
+  assert.match(candidates, /`result\.owner_stage: stakeholder-analysis`/);
+  const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
+  assert.match(analysisGuide, /This is the only reason a candidate leaves the candidate table/);
+  assert.match(analysisGuide, /`\[제안: 요청자\(REQUESTER\) · 요청 기능: <기능>\]`/);
+});
+
+test('a BIZ field is written once: a second field of the same name is rejected, placeholders filled in place pass', async () => {
+  const { checkRequirementsDocument } = await import('../.harness/src/workflow/requirements-document-gate.mjs');
+  const biz = (extra = '') => `### BIZ-03 로그인 (SD-02)\n\n- 상태: draft\n- 업무 규칙: 없음 — 후속 stage가 채운다\n- 예외 시나리오:\n  - EX-02 로그인 실패를 알린다 — 출처: answers.json \`q:3\`\n- 이벤트 흐름:\n\n  | 순서 | 행위자 |\n  |---|---|\n  | 1 | 사용자 |\n${extra}- 출처·변경 이력:\n  - event-storming: 반영\n`;
+  const other = '### BIZ-04 게시글 읽기 (SD-03)\n\n- 업무 규칙: 없음 — 후속 stage가 채운다\n- 예외 시나리오: 없음 — 후속 stage가 채운다\n\n## 4. 서브도메인 간 이벤트\n\n- 예외 시나리오: 문서 공통 절의 같은 이름은 BIZ 밖이다\n';
+  const ok = checkRequirementsDocument({ requirements: `# 요구사항 명세\n\n${biz()}\n${other}`, stage: 'event-storming' });
+  assert.deepEqual(ok.errors, [], 'the same field in different BIZ sections, or outside a BIZ, is not a duplicate');
+  // The E2E defect: event-storming appended a second 업무 규칙 and 예외 시나리오 to BIZ-03 instead of filling them in place.
+  const appended = biz('- 업무 규칙:\n  - INV-01 규칙 — 출처: answers.json `q:1`\n- 예외 시나리오:\n  - EX-02 로그인 실패를 알린다\n');
+  const failed = checkRequirementsDocument({ requirements: `# 요구사항 명세\n\n${appended}\n${other}`, stage: 'event-storming' });
+  assert.deepEqual(failed.errors.map(({ code, id, owner_stage }) => [code, id, owner_stage]), [['DUPLICATE_FIELD', 'BIZ-03', 'event-storming'], ['DUPLICATE_FIELD', 'BIZ-03', 'event-storming']]);
+  assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
+  assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
+  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}`;
+  const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
+  assert.equal(complete(fixed).ok, true);
+  assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);
+  assert.equal(complete(fixed.replace('AC-01 세션이 생성된다', 'AC-01 TODO')).ok, false);
+  assert.match(await read(TEMPLATE), /같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다/);
 });
 
 test('installed consumers get the requirements stages and diagram tooling, Git ignores them and keeps the plan set documents visible', async (t) => {
@@ -130,11 +191,15 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
 
   const managed = [
     ...REQUIREMENTS_STAGES.slice(1).map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.harness/src/workflow/output-schema.mjs',
+    '.codex/scripts/harness-result.mjs',
     '.harness/src/workflow/requirements-restart.mjs',
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',
-    '.codex/internal-skills/skill-execution/references/dispatch.md',
-    '.codex/internal-skills/skill-execution/references/workflow-map.md',
+    '.harness/src/workflow/stakeholder-analysis-gate.mjs',
+    '.harness/src/workflow/requirements-document-gate.mjs',
+    '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
+    '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
     '.codex/scripts/harness-fresh-agent.mjs',
     '.codex/scripts/harness-setup.mjs',
     TEMPLATE,
@@ -150,6 +215,13 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     assert.ok(lock.files[path], `lock inventory: ${path}`);
     assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
     assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `same content: ${path}`);
+  }
+  // The stage coordination references travel with the orchestrator skill (path rewritten for the provider copy).
+  for (const name of ['dispatch', 'workflow-map']) {
+    const path = `.agents/skills/orchestrator/references/${name}.md`;
+    assert.ok(lock.files[path], `lock inventory: ${path}`);
+    assert.equal(lock.files[path].source_path, `.codex/skills/orchestrator/references/${name}.md`);
+    assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   }
   const setupMap = '.agents/skills/setup/assets/CONTEXT-MAP.md';
   assert.ok(lock.files[setupMap]);
@@ -191,27 +263,33 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const template = join(root, TEMPLATE);
   const renderer = join(root, '.codex/tools/plantuml-render.mjs');
   const coverage = join(root, '.codex/internal-skills/requirements-fix/references/coverage.md');
+  const schemaModule = join(root, '.harness/src/workflow/output-schema.mjs');
   const contextGuide = join(root, '.codex/internal-skills/bounded-context/GUIDE.md');
   const restartModule = join(root, '.harness/src/workflow/requirements-restart.mjs');
-  const dispatchGuide = join(root, '.codex/internal-skills/skill-execution/references/dispatch.md');
+  const dispatchGuide = join(root, '.agents/skills/orchestrator/references/dispatch.md');
   const freshHook = join(root, '.codex/scripts/harness-fresh-agent.mjs');
   await unlink(template);
   await unlink(renderer);
+  await unlink(schemaModule);
   await writeFile(coverage, 'locally edited coverage\n');
   await writeFile(contextGuide, 'outdated guide\n');
   await unlink(restartModule);
   await unlink(dispatchGuide);
   await unlink(freshHook);
   doctor = await runDoctor({ root, sourceRoot });
-  for (const path of [template, renderer, restartModule, dispatchGuide, freshHook]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
+  for (const path of [template, renderer, restartModule, dispatchGuide, freshHook, schemaModule]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
-  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md', '.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  for (const path of [TEMPLATE, '.codex/tools/plantuml-render.mjs', '.codex/internal-skills/requirements-fix/references/coverage.md', '.codex/internal-skills/bounded-context/GUIDE.md', '.codex/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/output-schema.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  assert.match(await readFile(dispatchGuide, 'utf8'), /fork_turns: "none"/, 'update restores the orchestrator dispatch reference');
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/requirements.md'), 'utf8'), '# 요구사항 명세\n');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
   assert.equal(await readFile(join(root, 'CONTEXT-MAP.md'), 'utf8'), '# 소비자 소유 관계\n');
-  assert.match(git('status', '--short', '--untracked-files=all'), /\?\? docs\/specs\/community\/requirements\.md/);
+  const updatedStatus = git('status', '--short', '--untracked-files=all');
+  assert.match(updatedStatus, /\?\? docs\/specs\/community\/requirements\.md/);
+  assert.match(updatedStatus, /^ M app\.txt$/m);
+  assert.doesNotMatch(updatedStatus, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//);
 });
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
@@ -235,7 +313,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
 
   // 1. stakeholder-analysis creates both documents; the requirements draft only holds what the user settled.
   const first = await runStage('stakeholder-analysis', {
-    files: { [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n`, [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 2. 업무\n\n### 요구사항 초안\n\n- 업무 목적: 게시글 삭제 (요청 원문: "게시글 삭제 기능")\n` },
+    files: { [analysis]: stakeholderAnalysisDocument(REQUEST), [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 2. 업무\n\n### 요구사항 초안\n\n- 업무 목적: 게시글 삭제 (요청 원문: "게시글 삭제 기능")\n` },
     artifacts: [artifact(analysis, 'stakeholder_analysis'), artifact(requirements, 'requirements')],
     summary: 'CAND 1건 채택',
   });
@@ -284,36 +362,58 @@ test('the requirements stages run in order as workflow stages and the tactical d
     artifacts: [artifact(requirements, 'requirements'), artifact(analysis, 'stakeholder_analysis'), artifact(`${specDirectory}/diagrams/events`, 'event_diagrams')],
   });
   assert.deepEqual(resumed.files, [analysis, requirements, ...Object.keys(eventFiles).sort()].sort());
+  const resumedResult = JSON.parse(await readFile(join(workspace, '.io', resumed.finished.result_ref), 'utf8'));
+  assert.equal(resumedResult.artifacts.find(({ kind }) => kind === 'event_diagrams').sha256, null);
   assert.ok(resumed.prepared.input.input_refs.some((reference) => reference.kind === 'previous_execution_result'), 'the resumed stage reads its previous result');
   const answers = JSON.parse(await readFile(join(dirname(resumed.started.output_path), 'answers.json'), 'utf8'));
   assert.deepEqual(answers.map((entry) => [entry.question_id, entry.answer]), [[questionId, 'no']], 'the stage receives the actual answer under the identified question');
 
   // 5. subdomain-classification confirms the set and the classes with the user, then commits the plan set documents only.
-  const classQuestion = { question_id: 'class-1', title: '[SD-01] 게시판의 분류는 무엇인가요?', options: [{ id: 'core', label: 'core', consequence: '이 요청의 차별점이다', evidence: [] }, { id: 'supporting', label: 'supporting', consequence: '필요하지만 차별되지 않는다', evidence: [] }], recommended_option_id: 'core', rationale: '글 삭제가 요청의 핵심이다', decision_kind: null };
+  const classQuestion = { question_id: 'draft-classification', title: '[서브도메인 분류] SD-01 게시판의 분류는 무엇인가요?', options: [{ id: 'core', label: 'core', consequence: '이 요청의 차별점이다', evidence: [] }, { id: 'supporting', label: 'supporting', consequence: '필요하지만 차별되지 않는다', evidence: [] }], recommended_option_id: 'core', rationale: '글 삭제가 요청의 핵심이다', decision_kind: null };
+  const boundaryQuestion = { question_id: 'draft-boundary', title: '[서브도메인 경계] SD-01 글 삭제를 게시판에 둘까요?', options: [{ id: 'keep', label: '게시판에 유지', consequence: '글 작성과 삭제를 같은 업무 영역이 소유한다', evidence: [] }, { id: 'split', label: '별도 운영 영역으로 분리', consequence: '삭제의 판단을 운영 영역이 소유한다', evidence: [] }], recommended_option_id: 'keep', rationale: '글의 소유권은 작성자에게 있다', decision_kind: null };
   const classifying = await runStage('subdomain-classification', {
-    status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '분류 질문', questions: [classQuestion], expectCommit: false,
+    status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '경계와 분류 질문', questions: [boundaryQuestion, classQuestion], expectCommit: false,
   });
-  assert.ok(classifying.finished.result.questions[0].question_id);
+  const [boundary, classification] = classifying.finished.result.questions;
+  assert.deepEqual([boundary.title, classification.title], [boundaryQuestion.title, classQuestion.title]);
+  const answersArg = (question, answer) => ['--answer', JSON.stringify([{ question_id: question.question_id, answer }])];
+  const waitingForBoundary = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-classification', ...answersArg(classification, 'core')]);
+  assert.ok(waitingForBoundary.waiting_for_answers);
   const classified = await runStage('subdomain-classification', {
-    extraArgs: ['--answer', 'core'],
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 1. 서브도메인 후보\n\n| SD | 이름 | 업무 범위 | 포함 업무 | 핵심 용어 후보 | 분리 이유(가설) | 분류 | 근거 | 상태 |\n|---|---|---|---|---|---|---|---|---|\n| SD-01 | 게시판 | 글 삭제 | BIZ-01 | 게시글 | 기존 영역 확장: 커뮤니티 | core | 요청의 핵심이다 — 출처: answers.json | confirmed |\n' },
+    extraArgs: answersArg(boundary, 'keep'),
+    files: { [requirements]: `# 요구사항 명세\n\n- 상태: draft\n\n## 1. 서브도메인 후보\n\n| SD | 이름 | 업무 범위 | 포함 업무 | 핵심 용어 후보 | 분리 이유(가설) | 분류 | 근거 | 상태 |\n|---|---|---|---|---|---|---|---|---|\n| SD-01 | 게시판 | 글 삭제 | BIZ-01 | 게시글 | 기존 영역 확장: 커뮤니티 | core | 요청의 핵심이다 — 출처: answers.json ${classification.question_id} | confirmed |\n\n- 경계: 게시판에 유지 — 출처: answers.json ${boundary.question_id}\n` },
     artifacts: [artifact(requirements, 'requirements')],
   });
   assert.deepEqual(classified.files, [requirements]);
 
-  // 6. bounded-context commits the plan set documents together with the project's context map.
-  const contexts = await runStage('bounded-context', {
-    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
-    artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
-  });
-  assert.deepEqual(contexts.files, ['CONTEXT-MAP.md', 'CONTEXT.md', requirements]);
-
-  // 7. requirements-fix fixes the document automatically and the runner commits it.
-  const fixing = await flow.beginStage('requirements-fix');
-  await flow.submitStage(fixing, {
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n- INV-01 작성자가 글을 삭제한다.\n' },
+  // 6. requirements-fix fills the open rows before the boundaries are decided; the document stays draft.
+  const filled = await runStage('requirements-fix', {
+    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n- INV-01 작성자가 글을 삭제한다.\n' },
     artifacts: [artifact(requirements, 'requirements')],
   });
+  assert.deepEqual(filled.files, [requirements]);
+  const directory = dirname(filled.started.output_path);
+  const raw = JSON.parse(await readFile(filled.started.output_path, 'utf8'));
+  const saved = JSON.parse(await readFile(join(directory, 'result.json'), 'utf8'));
+  const sha256 = createHash('sha256').update(await readFile(join(workspace, requirements))).digest('hex');
+  assert.deepEqual(raw.result.artifacts, [{ base: 'workspace', path: requirements, kind: 'requirements' }]);
+  assert.deepEqual(saved.artifacts, [{ ...raw.result.artifacts[0], sha256 }]);
+  for (const path of ['output.json', 'return.schema.json', 'result.json']) assert.match(treeGit('check-ignore', '-v', `.io/runtime/executions/${filled.finished.execution_id}/${path}`), /info\/exclude/);
+
+  // 7. bounded-context decides the contexts from the completed requirements, fixes the document automatically, syncs the
+  // shared definitions it now owns and commits the plan set documents together with the project's context map.
+  const fixing = await flow.beginStage('bounded-context');
+  await flow.submitStage(fixing, {
+    files: { 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 (커뮤니티) |\n', [requirements]: '# 요구사항 명세\n\n- 상태: fixed\n\n### 1.1 바운디드 컨텍스트\n\n| BC | 포함 SD·BIZ | 책임 | 소유 규칙·데이터 | 근거 | 비교한 대안 |\n|---|---|---|---|---|---|\n| 커뮤니티 | SD-01(BIZ-01) | 글 삭제 | INV-01 | 기존 컨텍스트 확장 | 분리 안 |\n\n- INV-01 작성자가 글을 삭제한다.\n- 이벤트 흐름:\n\n  | 순서 | 이벤트 ID | 도메인 이벤트 | 공통 ID |\n  |---|---|---|---|\n  | 1 | EVT-01 | 글이 삭제됨 | - |\n', 'CONTEXT-MAP.md': '# 컨텍스트 맵\n\n| Bounded Context | Context ID | 책임 | 주 입력 | 주 출력 | 비고 |\n|---|---|---|---|---|---|\n| 커뮤니티 | community | 글 삭제 | 삭제 요청 | 게시글이 삭제됨 | accepted-target, SD-01 core |\n' },
+    artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT-MAP.md', 'context_map'), artifact('CONTEXT.md', 'glossary')],
+  });
+  // The E2E defect: bounded-context fixed the document without the sync plan. finish refuses, names the recovery for the same
+  // subagent instead of a bare HARNESS_ERROR, and leaves the stage running.
+  const missingSync = flow.finishStage(fixing);
+  assert.notEqual(missingSync.status, 0);
+  const missingBody = JSON.parse(missingSync.stderr || missingSync.stdout);
+  assert.equal(missingBody.code, 'DOMAIN_SYNC_MISSING', missingSync.stderr);
+  assert.match(missingBody.next[0], /harness-domain\.mjs sync plan/);
   const { planDomainSync } = await import(pathToFileURL(join(workspace, '.harness/src/domain/sync.mjs')));
   const id = 'community.rule.delete-own-post';
   const domainPath = `docs/domain/contexts/community/rules/${id}.md`;
@@ -327,8 +427,9 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const fixed = flow.finishStage(fixing);
   assert.equal(fixed.status, 0, fixed.stderr);
   assert.equal(JSON.parse(fixed.stdout).status, 'completed');
-  assert.match(treeGit('show', '--name-only', '--format=', 'HEAD'), /domain-links\.json/);
-  assert.ok(treeGit('show', '--name-only', '--format=', 'HEAD').includes(domainPath));
+  const fixCommit = treeGit('show', '--name-only', '--format=', 'HEAD');
+  for (const path of ['CONTEXT-MAP.md', 'CONTEXT.md', requirements, domainPath]) assert.ok(fixCommit.includes(path), `${path} is committed with bounded-context`);
+  assert.match(fixCommit, /domain-links\.json/);
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /상태: fixed/);
 
   // The tactical design flow follows the last requirements stage and receives the fixed document as an input reference;
@@ -336,21 +437,31 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me has been removed/);
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model']);
+  // The user approves the fixed requirements before tactical design: bounded-context's finish tells the orchestrator to show them
+  // and ask, and the runner refuses domain-model without the user's own logged reply.
+  assert.match(JSON.parse(fixed.stdout).next, /Show the fixed requirements\.md to the user[\s\S]*--requirements-approved true --approval-answer/);
+  const unapproved = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(unapproved.status, 0);
+  assert.equal(JSON.parse(unapproved.stderr).code, 'PRECONDITION');
+  assert.match(unapproved.stderr, /Requirements approval answer was not recorded/);
+  const claimed = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(claimed.status, 0, 'a bare flag with words the user never said is not approval');
+  const misplaced = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'aggregate-design', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
+  assert.match(misplaced.stderr, /Requirements approval is only valid for domain-model/);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model', ...await flow.approveRequirements('요구사항 좋아요, 승인')]);
   assert.equal(next.input.skill, 'domain-model');
-  assert.equal(next.input.context.transition.from_stage, 'requirements-fix');
+  assert.equal(next.input.context.transition.from_stage, 'bounded-context');
   assert.equal(next.input.context.transition.code, 'OK');
   assert.ok(next.input.input_refs.some((reference) => reference.base === 'workspace' && reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(treeGit('log', '--format=%s', '-7').trim().split('\n'), [...REQUIREMENTS_STAGES].reverse().map((stage) => `${stage}: ${planSetId}`));
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the runner never commits the project-owned card');
 
-  // A fixed document changes only on an explicit user revision, which reopens requirements-fix and no other requirements stage.
+  // Preparing a partial revision leaves the current requirements in place.
   const revision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'requirements-fix', '--feedback', '삭제는 작성자만 한다고 바꿔 줘', '--user-revision', 'true']);
   assert.equal(revision.input.skill, 'requirements-fix');
   assert.equal(revision.input.context.user_revision, true);
-  const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper/);
+  const reviseBusiness = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-candidates', '--feedback', '별도로 완료되는 업무를 확인해 줘', '--user-revision', 'true']);
+  assert.equal(reviseBusiness.input.skill, 'subdomain-candidates');
 
   // Restart preserves the old state and returns to the checkpoint before bounded-context.
   const restartArgs = ['--stage-id', 'bounded-context', '--restart-requirements', 'true'];
@@ -382,19 +493,70 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(legacyOrder.stderr, /earlier stage order/);
   treeGit('reset', '--hard', 'HEAD^');
   const restart = invoke(workspace, 'harness-prepare-input.mjs', restartArgs);
-  assert.equal(restart.previous_stage, 'subdomain-classification');
+  assert.equal(restart.previous_stage, 'requirements-fix');
   assert.equal(existsSync(join(workspace, domainPath)), false);
   assert.equal(existsSync(join(workspace, specPath('domain-links.json'))), false);
   assert.ok(existsSync(join(restart.backup, 'state.json')));
   const restored = await readFile(join(workspace, requirements), 'utf8');
-  assert.match(restored, /confirmed/);
+  assert.match(restored, /상태: draft/);
+  assert.match(restored, /INV-01/, 'the completed requirements are kept');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
-  assert.equal(state.current_stage, 'subdomain-classification');
+  assert.equal(state.current_stage, 'requirements-fix');
   assert.equal(state.stages['bounded-context'], undefined);
-  assert.equal(state.stages['requirements-fix'], undefined);
+  assert.equal(state.stages['requirements-fix'].status, 'completed', 'the completed requirements interview is retained');
   assert.equal(state.stages['ubiquitous-language'].status, 'completed', 'earlier vocabulary is retained');
   const fresh = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'bounded-context']);
-  assert.equal(fresh.input.context.transition.from_stage, 'subdomain-classification');
+  assert.equal(fresh.input.context.transition.from_stage, 'requirements-fix');
+
+  const fixedDocument = (rule) => `# 요구사항 명세\n\n- 상태: fixed\n\n### BIZ-01 게시글 삭제 (SD-01)\n\n- 업무 규칙: INV-01 ${rule}\n`;
+  const initialRule = '작성자만 자기 글을 삭제한다.';
+  await runStage('bounded-context', { files: { [requirements]: fixedDocument(initialRule) }, artifacts: [artifact(requirements, 'requirements')] });
+  const firstApprovalArgs = await flow.approveRequirements('첫 번째 요구사항을 승인합니다');
+  const staleStart = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model', ...firstApprovalArgs]);
+  const tacticalDesign = specPath('tactical-design.md');
+  const design = await runStage('domain-model', {
+    extraArgs: firstApprovalArgs,
+    files: { [tacticalDesign]: '# 전술 설계\n\n## 1. Domain Model\n\nBIZ-01 / INV-01 게시글 삭제\n' },
+    artifacts: [artifact(tacticalDesign, 'tactical_design')],
+  });
+  const applicationFile = 'docs/agents/EXEC.md';
+  await writeFile(join(workspace, applicationFile), '# 프로젝트 실행 설정\n');
+  const headBeforeRevision = treeGit('rev-parse', 'HEAD');
+  const designBeforeRevision = await readFile(join(workspace, tacticalDesign), 'utf8');
+  const gitBeforeRevision = treeGit('status', '--short', '--untracked-files=all');
+  assert.match(gitBeforeRevision, / M docs\/agents\/EXEC\.md/);
+  const revise = '작성자와 운영자가 각자 권한에 따라 지울 수 있게 고쳐 줘';
+  const rerun = await flow.beginStage('requirements-fix', { extraArgs: ['--user-revision', 'true', '--feedback', revise] });
+  assert.equal(treeGit('rev-parse', 'HEAD'), headBeforeRevision);
+  assert.equal(await readFile(join(workspace, requirements), 'utf8'), fixedDocument(initialRule));
+  assert.equal(await readFile(join(workspace, tacticalDesign), 'utf8'), designBeforeRevision);
+  assert.equal(treeGit('status', '--short', '--untracked-files=all'), gitBeforeRevision);
+  const duringRevision = invoke(workspace, 'harness-context.mjs', []);
+  assert.equal(duringRevision.stages['domain-model'].stale.owner_stage, 'requirements-fix');
+  assert.equal(duringRevision.stages['subdomain-classification'].stale, undefined);
+  const revisedRule = '작성자와 운영자가 각자 권한에 따라 지운다.';
+  await flow.submitStage(rerun, { files: { [requirements]: fixedDocument(revisedRule).replace('상태: fixed', '상태: draft') }, artifacts: [artifact(requirements, 'requirements')] });
+  const rerunResult = flow.finishStage(rerun);
+  assert.equal(rerunResult.status, 0, rerunResult.stderr);
+  assert.match(JSON.parse(rerunResult.stdout).next, /--stage-id bounded-context/);
+  const fixedAgain = await runStage('bounded-context', { files: { [requirements]: fixedDocument(revisedRule) }, artifacts: [artifact(requirements, 'requirements')] });
+  assert.match(fixedAgain.finished.next, /Show the fixed requirements\.md to the user/);
+  assert.match(invoke(workspace, 'harness-context.mjs', []).next, /Show the fixed requirements\.md to the user/);
+  const command = (file, args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts', file), ...args], { cwd: workspace, encoding: 'utf8' });
+  for (const args of [[], firstApprovalArgs]) {
+    const refused = command('harness-native-stage.mjs', ['launch', '--stage-id', 'domain-model', ...args]);
+    assert.notEqual(refused.status, 0, refused.stdout);
+    assert.match(refused.stderr, /Requirements approval answer was not recorded/);
+  }
+  const oldPrepared = command('harness-native-stage.mjs', ['start', '--execution-id', staleStart.input.execution_id]);
+  assert.notEqual(oldPrepared.status, 0, oldPrepared.stdout);
+  assert.match(oldPrepared.stderr, /Requirements approval answer was not recorded/);
+  const reapproved = await flow.beginStage('domain-model', { extraArgs: await flow.approveRequirements('수정된 요구사항을 승인합니다') });
+  assert.ok(reapproved.prepared.input.input_refs.some((reference) => reference.kind === 'upstream_user_revision'));
+  const revisedState = JSON.parse(await readFile(statePath, 'utf8'));
+  assert.equal(revisedState.stages['domain-model'].requirements_approval, fixedAgain.finished.execution_id);
+  assert.equal(revisedState.stages['domain-model'].attempts[0].execution_id, design.finished.execution_id, 'the previous design execution is still available');
+  assert.equal(await readFile(join(workspace, applicationFile), 'utf8'), '# 프로젝트 실행 설정\n');
 });
 
 test('a skipped stakeholder-analysis makes later stages record the skip, then tactical-to-code follows tactical design', async (t) => {

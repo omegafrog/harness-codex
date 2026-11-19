@@ -1,34 +1,111 @@
 import { existsSync } from 'node:fs';
-import { appendFile, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { sessionOutputPath } from './session-output.mjs';
+import { planSetDocument } from './domain-model-gate.mjs';
+import { isHarnessUpdateRequest, orchestratorRequest } from './request-routing.mjs';
+import { isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
-// The orchestrator's own words cannot prove that the user decided something. The provider runs these hooks with the
-// user's actual input, so the session keeps a log of it: prompts (UserPromptSubmit) and answers to the provider's
-// question tool (PostToolUse of AskUserQuestion / request_user_input). Decisions are checked against this log.
-const LOG = 'runtime/orchestrator/user-inputs.jsonl';
-const QUESTION_TOOLS = /^(AskUserQuestion|request_user_input)$/i;
-
-export function userInputText(event) {
-  if (event?.hook_event_name === 'UserPromptSubmit' && typeof event.prompt === 'string') return { source: 'prompt', text: event.prompt };
-  if (event?.hook_event_name === 'PostToolUse' && QUESTION_TOOLS.test(event.tool_name || '')) return { source: 'question_tool', text: JSON.stringify(event.tool_response ?? event.tool_output ?? '') };
-  return null;
-}
-
-export async function recordUserInput({ root, event, now = new Date() }) {
-  const input = userInputText(event);
-  if (!input || !input.text.trim() || !existsSync(join(root, '.io/worktree.json'))) return false;
-  await appendFile(sessionOutputPath(root, LOG), `${JSON.stringify({ at: now.toISOString(), session_id: event.session_id || null, ...input })}\n`, { mode: 0o600 });
-  return true;
-}
-
-export async function userSaidAfter({ root, text, since }) {
+// Approval evidence is read from the provider's own transcript, never from an assistant-written argument.
+export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false }) {
   const wanted = String(text || '').trim();
-  if (!wanted) return false;
-  let log;
-  try { log = await readFile(sessionOutputPath(root, LOG, { create: false }), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
-  const after = Date.parse(since);
-  return log.split('\n').filter(Boolean).some((line) => {
-    try { const entry = JSON.parse(line); return Date.parse(entry.at) >= after && String(entry.text).includes(wanted); } catch { return false; }
-  });
+  if (!wanted || !Number.isFinite(Date.parse(since)) || (until && !Number.isFinite(Date.parse(until)))) return false;
+  let record;
+  try { record = JSON.parse(await readFile(join(root, '.io/worktree.json'), 'utf8')); } catch { return false; }
+  const owner = record.agent_sessions?.orchestrator;
+  sessionId ||= owner?.session_id;
+  provider ||= owner?.provider || 'codex';
+  if (!sessionId || (!allowHistoricalOwner && (owner?.session_id !== sessionId || (owner?.provider || 'codex') !== provider)) || !/^[0-9a-f-]{36}$/i.test(sessionId)) return false;
+  const { realpath, open } = await import('node:fs/promises');
+  const { constants } = await import('node:fs');
+  let path;
+  if (provider === 'codex') {
+    const { findRollout } = await import('./providers/codex.mjs');
+    path = await findRollout(join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'sessions'), sessionId);
+  } else if (provider === 'claude-code') {
+    const { readdir } = await import('node:fs/promises');
+    const projects = join(process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || '', '.claude'), 'projects');
+    const dirs = await readdir(projects, { withFileTypes: true }).catch(() => []);
+    const paths = dirs.filter((entry) => entry.isDirectory()).map((entry) => join(projects, entry.name, `${sessionId}.jsonl`)).filter(existsSync);
+    if (paths.length === 1) path = paths[0];
+  }
+  if (!path) return false;
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
+  if (!handle) return false;
+  let rows;
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.nlink !== 1) return false;
+    const lines = (await handle.readFile('utf8')).split('\n');
+    lines.pop(); // A concurrent writer may still be appending the last record.
+    rows = lines.filter(Boolean).map((line) => JSON.parse(line));
+  } catch { return false; } finally { await handle.close(); }
+  const workspace = await realpath(root);
+  const calls = new Set(), asyncCalls = new Map(), accepted = new Set();
+  if (provider === 'codex') {
+    const meta = rows[0];
+    if (meta?.type !== 'session_meta' || meta.payload?.id !== sessionId || meta.payload?.parent_thread_id || meta.payload?.source?.subagent) return false;
+  }
+  let codexCwd = rows[0]?.payload?.cwd;
+  for (const row of rows) {
+    if (provider === 'codex' && row.type === 'turn_context' && typeof row.payload?.cwd === 'string') { if (codexCwd !== row.payload.cwd) { calls.clear(); asyncCalls.clear(); accepted.clear(); } codexCwd = row.payload.cwd; }
+    const at = Date.parse(row.timestamp);
+    const p = row.payload || {};
+    if (provider === 'codex' && codexCwd === workspace && row.type === 'response_item' && p.type === 'function_call' && /^(?:functions\.)?request_user_input$/.test(p.name || '')) calls.add(p.call_id);
+    if (provider === 'codex' && codexCwd === workspace && row.type === 'response_item' && p.type === 'function_call' && /^(?:functions\.)?request_user_input_async$/.test(p.name || '')) { try { const questions = JSON.parse(p.arguments).questions; if (Array.isArray(questions)) asyncCalls.set(p.call_id, questions.length); } catch { /* Invalid calls cannot own replies. */ } }
+    if (provider === 'codex' && row.type === 'response_item' && p.type === 'function_call_output' && asyncCalls.has(p.call_id)) { try { if (JSON.parse(p.output).accepted === true) accepted.add(p.call_id); } catch { /* Ignore invalid acknowledgements. */ } }
+    if (provider === 'claude-code' && row.type === 'assistant' && row.sessionId === sessionId && row.cwd === workspace && !row.isSidechain) {
+      for (const item of row.message?.content || []) if (item.type === 'tool_use' && item.name === 'AskUserQuestion') calls.add(item.id);
+    }
+    if (!Number.isFinite(at) || at < Date.parse(since) || (until && at > Date.parse(until))) continue;
+    let texts = [];
+    if (provider === 'codex' && codexCwd === workspace && row.type === 'response_item') {
+      if (p.type === 'message' && p.role === 'user') {
+        const kinds = p.internal_chat_message_metadata_passthrough?.content_item_kinds;
+        if (Array.isArray(kinds)) {
+          for (const [index, item] of (p.content || []).entries()) {
+            if (kinds[index] !== 'user.text' || item.type !== 'input_text' || typeof item.text !== 'string') continue;
+            if (!item.text.trim().startsWith('<send_user_message_question_reply>')) {
+              const request = orchestratorRequest(item.text);
+              if (request && !isHarnessUpdateRequest(request)) texts.push(request);
+              continue;
+            }
+            try {
+              const wrapped = item.text.trim().match(/^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/);
+              const replies = JSON.parse(wrapped?.[1] || 'null');
+              for (const reply of replies) { const id = JSON.parse(reply.questionItemId); if (Array.isArray(id) && id[0] === 'request_user_input_async' && accepted.has(id[1]) && Number.isInteger(id[2]) && id[2] >= 0 && id[2] < asyncCalls.get(id[1]) && typeof reply.answer === 'string') texts.push(reply.answer); }
+            } catch { /* Malformed form replies are not approval evidence. */ }
+          }
+        }
+      } else if (p.type === 'function_call_output' && calls.has(p.call_id)) {
+        try { texts = Object.values(JSON.parse(p.output).answers || {}).flatMap((item) => Array.isArray(item?.answers) ? item.answers : []); } catch { /* An invalid result cannot prove a decision. */ }
+      }
+    } else if (provider === 'claude-code' && row.type === 'user' && row.sessionId === sessionId && row.cwd === workspace && !row.isSidechain && !row.isMeta) {
+      const content = row.message?.content;
+      if (typeof content === 'string') {
+        const command = content.match(/<command-name>([^<]*)<\/command-name>/);
+        const args = content.match(/<command-args>([\s\S]*?)<\/command-args>/);
+        const request = command ? (command[1] === '/orchestrator' ? args?.[1] : null) : orchestratorRequest(content);
+        if (request && !isHarnessUpdateRequest(request)) texts = [request];
+      }
+      else if (Array.isArray(content) && content.some((item) => item.type === 'tool_result' && calls.has(item.tool_use_id) && !item.is_error)) texts = Object.values(row.toolUseResult?.answers || {}).filter((item) => typeof item === 'string');
+    }
+    if (texts.some((value) => typeof value === 'string' && value.trim() === wanted)) return true;
+  }
+  return false;
+}
+
+export async function assertRequirementsApproval({ root, state, stage, planSetId, approval = null }) {
+  if (!planSetId || !TACTICAL_DESIGN_STAGES.includes(stage)) return;
+  const fixed = state.stages?.['bounded-context'];
+  const design = state.stages?.['domain-model'];
+  const { text } = await planSetDocument(root, planSetId, 'requirements.md');
+  if (text === null) return; // stakeholder-analysis skipped the requirements flow.
+  const current = isCurrentStage(fixed) && fixed.execution_id && fixed.finished_at;
+  if (current && !design?.stale && !approval) {
+    if (design?.requirements_approval === fixed.execution_id) return;
+    // Older versions did not record the approval receipt. Their first domain-model launch enforced the user reply.
+    if (!design?.requirements_approval && !fixed.attempts?.length && Date.parse(design?.started_at || design?.finished_at) >= Date.parse(fixed.finished_at)) return;
+  }
+  if (current && stage === 'domain-model' && approval?.execution_id === fixed.execution_id && typeof approval.answer === 'string' && await userSaidAfter({ root, text: approval.answer, since: fixed.finished_at })) return;
+  throw new Error('Requirements approval answer was not recorded: show the fixed requirements.md to the user and pass their reply after bounded-context finished');
 }

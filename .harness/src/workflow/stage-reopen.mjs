@@ -1,15 +1,14 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { readSkillSessionJson, resolveSkillSession } from './skill-execution.mjs';
 import { REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, WORKTREE_STAGE, isCurrentStage } from './worktree-stages.mjs';
 import { launchCommand } from './stage-cli.mjs';
+import { execFile } from 'node:child_process';
+import { isDeepStrictEqual, promisify } from 'node:util';
 
 // Forward rewind. A stage that returns blocked / DEPENDENCY_INCOMPLETE names the earlier stage that owns the gap
 // (`result.owner_stage`). The runner reopens that owner without rolling anything back: documents and artifacts stay, the owner
 // edits its own output forward, and every stage between the owner and the blocked stage that already finished is marked
-// `stale` in the orchestrator state. A stale stage no longer counts as completed/OK for the order guards (`isCurrentStage`), so
-// the stages must be re-run in order up to the blocked one. `--restart-requirements` is the separate, destructive rollback.
+// `stale` in the orchestrator state. After the owner completes, unchanged inputs and outputs can release completed stages.
+// `--restart-requirements` is the separate, destructive rollback.
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // Stages after to-ticket never rewind: publication and implementation have already used the plan set.
@@ -19,6 +18,29 @@ const refusal = (message, why, next, userDecision) => Object.assign(new Error(me
   explained: { error: message, code: 'REOPEN_REFUSED', why, ...(next?.length ? { next } : {}), ...(userDecision ? { user_decision: userDecision } : {}) },
 });
 const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.code}` : ''}${entry.stale ? ' (stale)' : ''}` : 'not started';
+const git = promisify(execFile);
+
+export async function revalidationTree(root) {
+  try {
+    if ((await git('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root })).stdout) return null;
+    return (await git('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root })).stdout.trim();
+  } catch { return null; }
+}
+
+export async function retainUnchangedStages({ root, session, state, owner, rewindId, resultRef, resultSession }) {
+  if (!owner.revalidation_tree || owner.revalidation_tree !== await revalidationTree(root)) return;
+  const prior = owner.attempts?.at(-1);
+  if (prior?.status !== 'completed' || prior.code !== 'OK' || !prior.result_ref || !resultRef) return;
+  const read = async (path, directory) => readSkillSessionJson({ root, session_directory: directory || session, path })
+    .catch(() => null);
+  const [before, after] = await Promise.all([read(prior.result_ref, prior.result_session_directory), read(resultRef, resultSession)]);
+  if (!before || !after || before.artifacts?.some((item) => item.base !== 'workspace') || after.artifacts?.some((item) => item.base !== 'workspace')) return;
+  const durable = ({ execution_id, commit_request, commit_sha, ...result }) => result;
+  if (!isDeepStrictEqual(durable(before), durable(after))) return;
+  for (const entry of Object.values(state.stages)) {
+    if (entry.stale?.reopened_for === rewindId && entry.status === 'completed' && entry.code === 'OK') delete entry.stale;
+  }
+}
 
 // The note a reopened owner receives as its feedback. It is internal agent input, so it is English.
 export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }) => [
@@ -27,17 +49,32 @@ export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, g
   `Its result is listed in the input as dependency_gap_result; read it, but re-check the gap against the current documents before acting on it.`,
   `Your earlier output and every committed document stay in place. Edit your own section, decisions and artifacts forward to close the gap: keep every decision the gap does not touch, do not start from scratch and do not delete earlier work.`,
   `Close only the gap. A business decision that the requirements do not settle is not yours to make: return the question or INPUT_MISSING as your guide says.`,
-  `After you complete, the stages ${rerunOrder.slice(1).join(' → ')} are re-run in order to pick up your change.`,
+  `After you complete, the remaining stale stages from ${rerunOrder.slice(1).join(' → ')} are re-run in order.`,
 ].join(' ');
 
 // The note a stale stage receives when it is re-run because an upstream stage changed.
-export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_stage} was reopened for ${stale.blocked_stage} and has been completed again, so your previous result is stale. Read the current upstream documents and results, then update your existing output forward: keep every decision that still holds, change only what the upstream change requires, and do not start from scratch. Return completed/OK only when your output matches the current upstream; if it needs a decision the upstream does not settle, return the block or question your guide specifies.`;
+export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_stage} was reopened ${stale.reason === 'user_revision' ? 'for the user’s revision' : `for ${stale.blocked_stage}`} and has been completed again, so your previous result is stale. Read the current upstream documents and results, then update your existing output forward: keep every decision that still holds, change only what the upstream change requires, and do not start from scratch. Return completed/OK only when your output matches the current upstream; if it needs a decision the upstream does not settle, return the block or question your guide specifies.`;
 
 // A blocked result that must name its owner: the stages whose DEPENDENCY_INCOMPLETE can mean "an earlier stage's output is
 // missing or insufficient". tactical-ui is excluded: its DEPENDENCY_INCOMPLETE also hands off to frontend-design-brief.
+// subdomain-candidates is included: a requested feature without content to cut a BIZ from names stakeholder-analysis.
+// bounded-context is included: a boundary that needs a requirement the document lacks names requirements-fix as its owner.
 // to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
 // as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
-export const OWNER_REQUIRED_STAGES = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+
+export function markRequirementsRevision(state, stage, previousExecutionId, executionId, now) {
+  const stages = state.stages;
+  if (stages[stage]?.execution_id !== previousExecutionId) throw new Error('User revision requires the latest execution of its owning stage');
+  if (Object.values(stages).some((entry) => entry?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
+  const external = [...PUBLICATION_STAGES, WORKTREE_STAGE.IMPLEMENT_WRAPPER, WORKTREE_STAGE.IMPLEMENT].find((id) => stages[id]);
+  if (external) throw new Error(`Requirements revision cannot start after ${external} started`);
+  const affected = REWIND_STAGES.slice(REWIND_STAGES.indexOf(stage) + 1).filter((id) => stages[id]);
+  const rerunOrder = [stage, ...affected];
+  for (const id of affected) {
+    stages[id] = { ...stages[id], stale: { owner_stage: stage, blocked_stage: affected.at(-1), reopened_for: executionId, rerun_order: rerunOrder, marked_at: now, reason: 'user_revision' } };
+  }
+}
 
 // Format errors for a finish whose blocked / DEPENDENCY_INCOMPLETE result does not name a valid earlier owner; null otherwise.
 export function dependencyOwnerErrors({ skill, raw }) {
@@ -71,9 +108,9 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   }
   const running = Object.entries(stages).find(([, entry]) => entry?.status === 'running');
   if (running) throw refusal(`Reopen refused: ${running[0]} is still running`, 'A stage cannot be reopened while another stage runs.', [`Wait for its native subagent, then run finish for ${running[1].execution_id}`]);
-  // A to-ticket record that is stale or not completed (blocked, failed, cancelled; typically left from before an earlier rewind)
-  // produced no plan set, so it does not count as started; a current completed to-ticket and any later stage do.
-  const counts = (id) => id === WORKTREE_STAGE.TO_TICKET ? stages[id]?.status === 'completed' && !stages[id].stale : Boolean(stages[id]);
+  // A later stale result already awaits revalidation. Only active downstream results and publication count.
+  const counts = (id) => PUBLICATION_STAGES.includes(id) ? Boolean(stages[id])
+    : id === WORKTREE_STAGE.TO_TICKET ? isCurrentStage(stages[id]) : Boolean(stages[id] && !stages[id].stale);
   const started = [...REWIND_STAGES.slice(blockedIndex + 1), ...PUBLICATION_STAGES].find(counts);
   if (started) throw refusal(`Reopen refused: ${started} has already started`, `Tickets were published or implemented from the plan set (${started} is ${describe(stages[started])}); a forward rewind cannot change what they were built from.`, [], 'Report the gap to the user: changing the design now needs their instruction (--user-revision) or a restart they request.');
   const resultSession = await resolveSkillSession(root, blocked.result_session_directory || session);
@@ -90,25 +127,6 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   const gap = (typeof result.dependency_gap === 'string' && result.dependency_gap.trim()) || result.summary;
   const stale = { owner_stage: ownerStage, blocked_stage: blockedStage, reopened_for: blockedExecutionId, rerun_order: rerunOrder, marked_at: new Date().toISOString() };
   return { owner_stage: ownerStage, blocked_stage: blockedStage, blocked_execution_id: blockedExecutionId, blocked_result_ref: blocked.result_ref, blocked_result_base: resultSession === session ? 'session' : 'control_session', mark: [...mark, blockedStage], stale, feedback: reopenFeedback({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }) };
-}
-
-// Record the stale marks. Runs after the owner's input is prepared, under the state lock, and is idempotent for the same blocked
-// execution; the marks are removed when a stage starts a new execution (recordExecutionState).
-export async function markStagesStale({ session, plan }) {
-  const directory = join(session, 'runtime/orchestrator');
-  const lock = join(directory, '.state.lock');
-  await mkdir(lock);
-  try {
-    const statePath = join(directory, 'state.json');
-    const state = JSON.parse(await readFile(statePath, 'utf8'));
-    const blocked = state.stages?.[plan.blocked_stage];
-    if (blocked?.execution_id !== plan.blocked_execution_id || blocked.status !== 'blocked') throw new Error('Reopen refused: the blocked stage changed while the reopen was prepared');
-    for (const id of plan.mark) if (state.stages[id]) state.stages[id] = { ...state.stages[id], stale: plan.stale };
-    state.updated_at = new Date().toISOString();
-    const temporary = join(directory, `.workflow-${randomUUID()}.json`);
-    try { await writeFile(temporary, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, statePath); }
-    finally { await rm(temporary, { force: true }); }
-  } finally { await rm(lock, { recursive: true }); }
 }
 
 // The stale stages of a state, in flow order; empty when nothing is stale.

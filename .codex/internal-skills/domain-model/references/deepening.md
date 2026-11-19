@@ -1,97 +1,34 @@
-# Tactical design stages: shared rules
+# 전술 설계 단계 공통 규칙
 
-`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design` and `context-boundary` run in this order after `requirements-fix`. Each fills its own section of `docs/specs/<plan-set-id>/tactical-design.md` ([template](template.md)) and the project model rows it owns. This reference owns what the six stages share; each GUIDE owns its own decisions.
+`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design`, `context-boundary` 순으로 진행한다. 같은 `tactical-design.md`의 BC별 구성 요소를 소유 stage가 채우고 마지막 두 stage가 검토한다. 문서 구조는 [템플릿](template.md)을 따른다.
 
-## Start
+## 진입과 재개
 
-- Run the preflight and resolve every plan set document with `harness-spec-path.mjs`, as the stage GUIDE says. The input is `requirements.md` with `상태: fixed`; when it is missing or still `draft`, return `blocked` / `INPUT_MISSING`.
-- When `stakeholder-analysis.md` has `판정: 생략`, none of the six stages writes anything: record the skip and its evidence path in the summary and return `completed/OK`.
-- On resume, read the previous result, the sections already written and the actual answers; keep every decision already recorded and continue at the first step whose output is missing. A previous `blocked` result is evidence of that attempt only (see Relaunch after a block).
-- Earlier sections are settled input. Read them and never edit them, except through a user revision of the stage that owns them.
-- The document is `docs/specs/<plan-set-id>/tactical-design.md`, named for the flow and not for a stage. A stage writes only its own section and its rows of `## 7` there, and a user instruction that names a stage (`domain-model`, `aggregate-design`, ...) refers to that stage's work and recorded state, never to a file: "leave `domain-model` as it is" means do not reopen that stage, and it does not stop a later stage from writing its own section. `docs/architecture/domain-model.md` is a different file, the project's model index.
-- A plan set that an earlier Harness started may hold the document as `domain-model.md`. The runner renames it to `tactical-design.md` (as `git mv` does, committed with the next tactical stage) before a tactical stage runs, so a stage never renames, copies or recreates it and always finds `tactical-design.md`.
+- workspace preflight를 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`으로 실행하고 실패하면 해당 출력으로 차단한다. `node .codex/scripts/harness-spec-path.mjs <workspace_root> <file>`로 요구사항, 이해관계자 분석 및 전술 설계 경로를 찾는다.
+- `stakeholder-analysis.md`가 `판정: 생략`이면 근거 경로와 함께 `completed / OK`를 반환한다. `requirements.md`가 없거나 `상태: fixed`가 아니면 `blocked / INPUT_MISSING`을 반환한다.
+- 재개 시 이전 결과, 이미 작성된 설계와 실제 승인 답변을 읽고 빠진 작업부터 이어간다. `context.user_revision`은 지정된 요소만 수정한다. 형식 이동은 [구형 문서 절차](template.md#구형-문서)를 따른다. 예전 문서명 `domain-model.md`의 경로 이전은 실행기가 담당한다.
+- 운영 중 사용자 요구의 범위를 추가하지 않는다. 모든 요소는 기존 `BIZ`, `INV`, `EX` 또는 `AC`에 추적돼야 한다. 범위 추가는 사용자가 요구사항 단계에서 결정한다.
 
-## Terms
+<a id="no-new-scope"></a>
+## 규칙 근거 확인
 
-Model, service and message names use the terms of `CONTEXT.md` and the `## 3` table of `requirements.md`. A new concept that no term covers goes through the [language lifecycle](../../domain-modeling/references/language-lifecycle.md): add or update the entry in `CONTEXT.md` with its context and the plan set's `tactical-design.md` as source, never reviving a retired term. List `CONTEXT.md` among the artifacts only when this stage changed it, because the runner commits it only then.
+`requirements.md`의 해당 업무, 규칙, 예외, 완료 조건, 이벤트 흐름을 읽고 연결된 승인·수정 답변 원문(`answers.json`, `question_id`)을 대조한다. 규칙의 발동 조건, 불변식이나 예외, 성공·실패 결과 중 빠진 정보가 있으면 문서의 소유 stage로 반환한다. 같은 판단을 모델 표·책임 표·Application Service에 여러 번 정의하지 않는다. 책임 표에서 정의하고 나머지 요소는 메서드와 요구 ID로 연결한다.
 
-## Project model rows
+이미 확정된 동작의 사실이 불충분하거나 충돌하면 가장 앞선 소유 stage와 부족한 사실 및 근거를 기록한다. 요구사항 자체에 조건·예외·결과가 빠졌으면 `requirements-fix`, 관계와 결정 소유자가 불명확하면 `bounded-context`에 반환한다. Aggregate 일관성이나 호출 실패 시 사용자에게 보이는 결과처럼 설계를 바꾸는 업무 판단은 확정 근거를 먼저 찾는다. `aggregate-design`과 `application-service`는 이미 승인된 범위 안에서 실제 설계 선택이 남았을 때만 업무 결과의 차이, 권장안과 이유를 한 묶음의 한국어 질문으로 `action_required / USER_DECISION_REQUIRED`를 반환할 수 있다. 답변이 고정 요구사항을 바꾸거나 규칙·예외를 추가하면 답변 근거와 함께 `requirements-fix`로 반환한다. 변경된 요구사항은 다시 확정하고 사용자 승인을 받은 뒤 전술 설계에 반영한다.
 
-`docs/architecture/domain-model.md` is a project document. Update only the rows of the models this stage touched and the columns this stage owns (see the [template](template.md)), keep every other row and the surrounding text, and mark new rows `accepted-target`. Write `implemented` only for what a `code-research` result shows in code, with `file:line`; an unbuilt model is never `implemented`. List the file among the artifacts when it changed.
+## 프로젝트 문서
 
-## Final gate
+- 용어는 `CONTEXT.md`와 요구사항 용어 표에서 찾는다. 새 개념에는 [용어 생애주기](../../domain-modeling/references/language-lifecycle.md)를 적용한다.
+- `docs/architecture/domain-model.md`에 영향받는 모델 행만 반영하고 기존 프로젝트 본문을 보존한다. 코드에서 확인한 내용은 경로·행·commit과 함께 `implemented`, 나머지 설계는 `accepted-target`으로 표기한다. 모델·Root·강제 위치·통신 등은 해당 BC 설계 행의 링크로 연결한다.
+- 지속되는 결정은 적용된 요소에서 `docs/adr/`의 구체적인 Markdown 파일이나 문서 절을 링크한다. 이미 같은 결정을 담은 ADR이 있으면 그 위치를 사용한다. 새로 기록할 때 결정, 근거(요구·답변 ID), 결과와 영향을 받는 경계를 적고 문서의 다른 결정을 보존한다. 실제로 바꾼 ADR·프로젝트 문서·클래스 다이어그램 파일은 결과의 workspace artifact에 개별 경로를 싣는다.
+- `domain_context_pack`이 있으면 먼저 후보를 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로, 후보가 부족하면 `discover` 또는 `search`로 조회한다. 사용한 공통 정의 ID를 근거로 남긴다.
 
-No stage runs a gate, and the runner accepts every tactical stage before `context-boundary` as `completed` / `OK` without one. The whole `tactical-design.md` is checked once, when `context-boundary` returns `completed` / `OK`: `harness-native-stage.mjs finish` runs `node .codex/scripts/harness-domain-model-check.mjs` on `requirements.md` and sections 1 to 6 before it commits or records anything, and the state command and a recovery record refuse to record `context-boundary` as completed while it fails. The gate holds only what must be true whatever the design, finds tables by their key columns and ignores columns it does not know. Every stage writes toward these checks:
+<a id="automatic-rewind-to-the-owner"></a>
+## 소유 stage로 반환
 
-- the documents exist and sections `## 1` to `## 6` are present;
-- every `BIZ` maps to a model or an `외부 시스템` marker in `### 1.4`, and every `INV` and `EX` to an owning model;
-- every `INV` and `EX` has a non-empty enforcing behaviour in `### 2.2`, in any form: an Aggregate or Entity method, a Value Object's rule (`Value Object: <모델>` or `Value Object: <모델>.<행위>()`), a Domain Service or an `외부 시스템`;
-- every rule that spans more than one Aggregate (its `### 2.2` row or a decision that lists it names two or more) cites a consistency decision `CON-xx` of `### 2.3` whose `일관성` is `즉시` or `최종` and whose source is not an agent proposal;
-- a transaction boundary of section 4 changes at most one Aggregate;
-- Saga and Outbox appear in section 5 only on a row that cites a `최종` decision.
+`blocked / DEPENDENCY_INCOMPLETE`의 `result.owner_stage`에 가장 앞선 **이전** 소유 stage를, `result.dependency_gap`에 그 stage가 변경할 요소·누락·근거를 기록한다. 실행기는 `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`로 해당 stage를 다시 열고 뒤 stage를 순서대로 갱신한다. 수정과 무관한 확정 결정은 유지한다. 반환하는 stage는 소유 stage의 요소를 쓰지 않는다. 이전 문서명 이동은 반환 중에도 실행기가 보존한다.
 
-The rest is design judgement that the stage GUIDEs and the reviews own; the gate never rejects it, so each stage keeps to it by its own guide:
+<a id="relaunch-after-a-block"></a>
+## 최종 검증과 차단 후 재개
 
-- A Root is an Entity and every Entity belongs to exactly one Aggregate. A bounded context of Value Objects or without a state lifecycle has no Aggregate and says why in `### 2.1`; no Entity or Aggregate is created only to hold a rule that a value owns.
-- `즉시` merges only Aggregates of one bounded context that one operation changes together; an Aggregate that the operation only reads goes in `조회 전용 Aggregate`. A `즉시` decision across bounded contexts is never merged: an `INT` row of section 5 cites the `CON-xx` with a synchronous `통신 방식` and a `근거·출처` (`integration-design`).
-- A rule row of `### 2.2` names the Aggregates its rule changes, and a decision's `규칙` lists the rules it decides.
-- A Domain Service exists only for a rule that `### 2.2` hands over, and every handed-over rule has one; no service takes a rule that an Aggregate or a Value Object enforces.
-- Every `BIZ` that an external system does not own alone has an Application Service, and every use case names its transaction or `없음 — <이유>`.
-- Every eventual-consistency decision across contexts has an integration row, and each integration row names its upstream, downstream and `통신 방식`.
-- Every stage leaves at least one decision row of its own in section 7, with its source.
-
-A failing gate comes back from `finish` as `gate_error` and `context-boundary` stays `running`. Every error carries `owner_stage`, the stage whose section is wrong, and the errors are ordered from the earliest stage. The caller hands the errors to the `context-boundary` subagent:
-
-- Errors owned by `integration-design` are reported as earlier-stage findings; only `context-boundary` repairs section 6 and its rows of section 7, never by editing `requirements.md` or an earlier section only to make the gate pass.
-- An error owned by an earlier stage is not repaired by `context-boundary`: earlier sections are settled input. The subagent returns `blocked` / `DEPENDENCY_INCOMPLETE` naming the earliest `owner_stage` with the errors as evidence, changing nothing else (it restores `tactical-design.md` to the content it had when the stage started, its committed content, so the restart finds a clean tree), and the orchestrator reopens that stage automatically ([Automatic rewind to the owner](#automatic-rewind-to-the-owner)). A forward rewind rolls nothing back, so the restore of `tactical-design.md` stays only to keep the block free of this stage's partial edits.
-
-A flow whose `stakeholder-analysis.md` says `판정: 생략` passes without documents. `blocked` and `action_required` results are never gated.
-
-## No new scope
-
-No tactical design stage (`domain-model`, `aggregate-design`, `domain-service`, `application-service`, `integration-design`, `context-boundary`) and no implementation-design stage (`tactical-technology`, `tactical-ui`, `tactical-api`, `tactical-data`) adds scope. Every model, rule row, use case, integration, endpoint, screen and stored entity traces to a requirement ID (`BIZ`, `INV`, `EX`, `AC`) that already exists in `requirements.md`, and an item that traces to none is not created. A request, an earlier stage's proposal or a convenient neighbour (for example logout beside login, a session query, an admin screen) is not a requirement.
-
-- Never ask the user whether a feature, use case, operation, endpoint or screen should be in scope ("이 기능을 범위에 포함할까요?"). Scope changes belong to the requirements flow, which only the user restarts explicitly (`--restart-requirements true` or a `requirements-fix` user revision).
-- A requirement that the design does not cover is a design gap, not a scope question: go back to the stage that owns the missing piece (`blocked` / `DEPENDENCY_INCOMPLETE` with `owner_stage`, as below).
-- An item that exists but traces to no requirement is removed by the stage that owns it. The design-freeze gate (`harness-design-freeze-check.mjs`) checks this when `tactical-data` completes and `to-ticket` does not start while it fails; `to-ticket` only splits the frozen design and never reopens a stage.
-- The user questions of `aggregate-design`, `integration-design` and `context-boundary` decide consistency, integration or boundary choices of behaviour that is already in scope, never whether the behaviour exists. Iterative deepening below adds an `INV`/`EX` only to an existing `BIZ`, never a new capability.
-
-## Iterative deepening
-
-Design work can show that the requirements or an earlier stage missed something. The stage never papers over it.
-
-1. A new business rule or exception surfaced by a question's answer or by this stage's design work enters `requirements.md` before this stage's own section depends on it. Only the stages that may ask the user (`aggregate-design`, `integration-design`, `context-boundary`) add one, and only from the user's answer or instruction in this stage's own batch. Add `INV-xx` or `EX-xx` to the owning `BIZ` with the next unused number, an `AC-xx` that observes it, the source `answers.json` with the `question_id`, and one line in that `BIZ`'s `출처·변경 이력` naming this stage. Never edit an existing item, and never reuse a number.
-2. The new rule must reach the mapping tables the final gate reads. When existing models, Aggregates and behaviours can own it, append rows for it to `### 1.4` and, past `aggregate-design`, to `### 2.2`, never changing an existing row, and add a `DEC` row naming the rule. Anything beyond rows of those two tables (a new or changed model, Aggregate, consistency decision, Domain Service or use case) belongs to an earlier stage and is step 4.
-3. A stage that may not ask (`domain-model`, `domain-service`, `application-service`) never adds a rule on its own judgement. When the evidence is missing or contradictory, return `blocked` / `INPUT_MISSING`: the summary names the `BIZ`, `INV` or `EX`, what is missing and that the requirements need a revision. The orchestrator reports it, and the user's revision is a `requirements-fix` user revision, after which the stage resumes with `--feedback`.
-4. When the new rule, an answer or the design work invalidates a decision of an earlier tactical stage, return `blocked` / `DEPENDENCY_INCOMPLETE` instead of overwriting that stage's section. The summary names the earliest stage to reopen, the decision, the evidence (IDs, rows, the answer) and the new rule when there is one. Leave the earlier section and every other file untouched except the rule added to `requirements.md`, which the runner commits for this block so the working tree stays clean and the rule survives the restart.
-5. The orchestrator does not ask the user: it reopens the owner automatically, as [Automatic rewind to the owner](#automatic-rewind-to-the-owner) describes. `--restart-requirements true` (the runner restores its tactical documents but keeps `requirements.md`, drops it and every later stage from the state) and `--user-revision true --feedback <instruction>` remain the paths for a rollback or a correction the user asks for. A requirements revision that also needs a restart comes after the restart.
-
-## Automatic rewind to the owner
-
-A `blocked` / `DEPENDENCY_INCOMPLETE` result names the gap's owner in the result: `owner_stage` is the earliest earlier stage whose output is missing or insufficient, and `dependency_gap` says what that stage must add or change (the missing row, operation, call, boundary or decision, with its evidence). `finish` refuses the block without both. The orchestrator then runs `launch --stage-id <owner_stage> --reopen-for <blocked execution_id>` without asking the user.
-
-- The owner receives the gap as feedback and the blocked result as `dependency_gap_result`. It edits its own section, decisions and artifacts forward: committed documents are never rolled back, decisions the gap does not touch stay, and it does not start from scratch. A business decision the requirements do not settle is still a user question (`USER_DECISION_REQUIRED`), never an answer the stage or the orchestrator invents.
-- Stages after the owner that had completed, and the blocked stage, are recorded as stale and re-run in order up to the blocked stage. Each receives a note that its upstream changed: it updates its existing section (keeping decisions that still hold, changing only what the upstream change requires) and returns `completed/OK` only when it matches the current upstream.
-- The final gate runs once, when `context-boundary` completes again.
-
-## Relaunch after a block
-
-A stage relaunched with `--feedback` or a user revision after a `blocked` result reads that result (`context.previous_result_note`) as evidence of the earlier attempt, never as the current state: the documents, Harness or the gate may have changed since, as the user's instruction often says. Gate errors and blockers it names are not facts to repeat.
-
-- Before it blocks on an earlier stage's error, the stage re-runs the current gate on the current documents: `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <absolute workspace root>`. This is a read-only look at the verdict, not a gate of its own.
-- It blocks only on errors that this run still reports for earlier stages, with that output as the evidence. Errors it owns are repaired; errors that no longer appear are dropped.
-- When nothing is left for an earlier stage, the previous block no longer holds: the stage does its own work (`context-boundary` designs `## 6`) and returns by the table below. Another blocker, such as a missing input, is re-checked the same way before it is repeated.
-
-## User revision
-
-When the input carries `context.user_revision`, change only the rows the instruction names, record the instruction verbatim as a `DEC` row with the source `사용자 수정 지시`. When a later stage's section already depends on a changed row, list those stages in the summary as `영향받는 이후 stage`: the orchestrator then restarts from this stage instead of leaving them stale, and the rerun reaches the final gate at `context-boundary`.
-
-## Returns
-
-| Situation | Return |
-|---|---|
-| The section is written (`context-boundary`: the runner's final gate then decides) | `completed` / `OK` with the artifacts this stage wrote |
-| A user decision is needed (`aggregate-design`, `integration-design`, `context-boundary` only) | `action_required` / `USER_DECISION_REQUIRED`, one batch, in Korean, with each option's business consequence, a recommended option and its rationale |
-| `requirements.md` is not fixed, or evidence is missing for a stage that may not ask | `blocked` / `INPUT_MISSING` |
-| An earlier tactical decision is invalidated | `blocked` / `DEPENDENCY_INCOMPLETE` |
-| Skip | `completed` / `OK` without writing |
+실행기는 `context-boundary`의 `completed / OK`가 제출되면 `harness-domain-model-check.mjs`로 고정 요구와 설계 문서의 정합성을 확인한 뒤 완료를 기록한다. 실패한 결과에 `gate_error`와 각 finding의 `owner_stage`가 반환된다. 차단된 stage를 재개할 때는 이전 오류를 참고하되 현재 문서에서 `node .codex/scripts/harness-domain-model-check.mjs --workspace-root <absolute workspace root>`를 실행하여 여전히 발생하는 오류를 근거로 삼는다. 소유 stage에서 바로 고칠 수 있는 오류는 수정하고, 앞 단계가 담당하는 오류는 위 반환 규칙을 적용한다.

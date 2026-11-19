@@ -15,6 +15,8 @@ model_tier: low_performance
 
 적용성이 확인되지 않은 UI/API/database를 가정하지 않는다. 요구와 전술 설계로 UI/API/data 저장이 명확하지 않으면 해당 영역은 미정으로 남기고 후속 계약 stage가 확인한다. 근거·답변이 없는 기술은 선택했다고 쓰지 않는다.
 
+컨텍스트별 Application Service가 사용하는 outbound 인터페이스를 확인해, 필요한 저장·외부 통신·메시징·트랜잭션의 구현 기술과 재사용할 기존 도구를 결정한다. 인터페이스의 코드 위치·구현체·조립은 `tactical-data`가 정하므로 그 결정에 필요한 기술과 기존 조립 관례를 `technology.md`에 남긴다.
+
 ## 범위 추가 금지
 
 기술 선택은 확정된 요구와 설계를 구현하는 수단만 정한다. 요구에 추적되지 않는 기능·화면·endpoint·데이터를 기술 결정의 부산물로 만들지 않고, 범위 질문도 하지 않는다. 선택 근거는 `requirements.md`의 BIZ/INV/EX/AC나 `tactical-design.md`의 `AS-xx`·`CON-xx`를 인용한다.

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateProject } from '../../.harness/src/installer/update.mjs';
+import { codexUserPrompt } from './codex-user-prompt.mjs';
 import { protectLocalInstallArtifacts } from '../../.harness/src/installer/local-exclude.mjs';
 
 export const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -36,6 +37,9 @@ export const STAGE_TIERS = {
 // The agent profile each tactical implementation stage runs under; every other stage runs as a plain workflow stage.
 const STAGE_PROFILES = { 'to-ticket': 'to_ticket', 'tracker-publish': 'tracker_publisher', 'tactical-code': 'tactical_implementation_agent' };
 export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high', low_performance: 'codex-light' };
+// A stakeholder-analysis.md that passes the runner's check: the requester is a participant and the requested feature is
+// recorded as the requester's settled requirement, quoted from the request.
+export const stakeholderAnalysisDocument = (request, feature = request) => `# Stakeholder 분석\n\n> ${request}\n\n## 3. 참여자\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 기능은 요청자가 정한 요구사항이다 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n\n### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| ${feature} | "${feature}" | REQUESTER | 확정 | 요청 원문 | - |\n`;
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
 export async function consumerWorkflow(t, request) {
@@ -68,8 +72,20 @@ export async function consumerWorkflow(t, request) {
   const specDirectory = `docs/specs/${planSetId}`;
   const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
 
-  // The orchestrator's steps before the stage does its own work: prepare, start and bind.
-  async function beginStage(stage, { extraArgs = [] } = {}) {
+  // The user's approval of the fixed requirements, logged as their own input after bounded-context finished.
+  const REQUIREMENTS_APPROVAL = '확정된 요구사항을 승인합니다';
+  async function approveRequirements(text = REQUIREMENTS_APPROVAL) {
+    await codexUserPrompt(workspace, text);
+    return ['--requirements-approved', 'true', '--approval-answer', text];
+  }
+
+  // The orchestrator's steps before the stage does its own work: prepare, start and bind. The first domain-model start of
+  // these flows carries the user's approval of the fixed requirements (requirements_stages tests the refusal without it).
+  async function beginStage(stage, { extraArgs = [], approve = true } = {}) {
+    if (stage === 'domain-model' && approve && !extraArgs.includes('--requirements-approved') && !extraArgs.includes('--feedback') && !extraArgs.includes('--answer')) {
+      const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
+      if (!state.stages?.['domain-model']) extraArgs = [...extraArgs, ...await approveRequirements()];
+    }
     const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, ...extraArgs]);
     assert.equal(prepared.input.skill, stage);
     assert.equal(prepared.input.scope, request);
@@ -83,7 +99,7 @@ export async function consumerWorkflow(t, request) {
     assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
     const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
     assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
-    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${stage}-agent`]);
+    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${prepared.input.execution_id}-agent`]);
     return { stage, prepared, started, base };
   }
 
@@ -93,7 +109,7 @@ export async function consumerWorkflow(t, request) {
       await mkdir(join(workspace, path, '..'), { recursive: true });
       await writeFile(join(workspace, path), content);
     }
-    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind, sha256: '0'.repeat(64) })), questions, review_request: null, owner_stage: null, dependency_gap: null, ...resultExtra, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
+    const result = { schema_version: 1, skill: stage, status, code, summary, artifacts: artifacts.map(({ path, kind }) => ({ base: 'workspace', path, kind })), questions, review_request: null, owner_stage: null, dependency_gap: null, ...resultExtra, ...(commit_request ? { commit_request } : stage === 'tactical-code' ? { commit_request: null } : {}) };
     await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: stage, status, code, result }));
   }
 
@@ -116,5 +132,5 @@ export async function consumerWorkflow(t, request) {
     } else assert.equal(head, before, `${stage} committed nothing`);
     return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
   }
-  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, planSetId, specDirectory, specPath, request };
+  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, approveRequirements, planSetId, specDirectory, specPath, request };
 }

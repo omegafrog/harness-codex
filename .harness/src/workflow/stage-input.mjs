@@ -16,14 +16,14 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
-import { markStagesStale, resolveReopen, staleFeedback } from './stage-reopen.mjs';
+import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { markRequirementsRevision, resolveReopen, staleFeedback } from './stage-reopen.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 import { assertTicketStartable } from './tactical-tickets.mjs';
-import { userSaidAfter } from './user-inputs.mjs';
+import { assertRequirementsApproval, userSaidAfter } from './user-inputs.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
-const USER_REVISION_STAGES = new Set(['requirements-fix', ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
+const USER_REVISION_STAGES = new Set([...REQUIREMENTS_REVISION_STAGES, ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
 // The stages that run once per plan of the published plan set.
 const PLAN_STAGES = new Set(['implement-wrapper', 'tactical-code', 'frontend-implementation', 'frontend-visual-review']);
 
@@ -275,12 +275,13 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, requirementsApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null, requestedStageBinding = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
-  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for requirements-fix, a tactical design stage, to-ticket or implement-wrapper');
+  if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for a requirements revision stage, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
-  if ((repairReceipt || (approvalAnswer && stageId !== 'tracker-publish')) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
+  if (requirementsApproved && stageId !== TACTICAL_DESIGN_STAGES[0]) throw new Error(`Requirements approval is only valid for ${TACTICAL_DESIGN_STAGES[0]}`);
+  if ((repairReceipt || (approvalAnswer && !['tracker-publish', 'frontend-design-brief'].includes(stageId) && !requirementsApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
   // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
   if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implementation and frontend ticket stages');
@@ -295,15 +296,16 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (state.schema_version !== 1 || state.stages?.['workflow-compose']?.status !== 'completed') throw new Error('Worktree preparation is incomplete');
   if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
   // Forward rewind: the owner named by a later stage's blocked / DEPENDENCY_INCOMPLETE result is relaunched with that gap as its
-  // feedback. Nothing is rolled back; the stale marks of the stages after it are recorded once its input exists.
+  // feedback. The state claim marks downstream results stale in the same transaction that starts the owner.
   let reopenPlan = null;
   if (reopenFor !== null) {
-    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .codex/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
+    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .codex/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
     reopenPlan = await resolveReopen({ root, session, state, ownerStage: stageId, blockedExecutionId: reopenFor });
     feedback = reopenPlan.feedback;
   }
   // A stage marked stale by a rewind is re-run with a note that its upstream changed.
-  const staleMark = reopenPlan || restart ? null : state.stages?.[stageId]?.stale ?? null;
+  const staleMark = reopenPlan || restart || userRevision ? null : state.stages?.[stageId]?.stale ?? null;
+  if (staleMark && answer !== null) throw new Error('Invalid, duplicate, or stale answer: relaunch the stage to revalidate its previous questions');
   if (staleMark && feedback === null && answer === null) feedback = staleFeedback(stageId, staleMark);
   // The requirements and tactical design flow runs in order. This is the one place that decides it, so a stale orchestrator cannot skip a stage.
   const orderViolation = preSpecOrderViolation(state.stages, stageId);
@@ -312,8 +314,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (tacticalImplementationViolation) throw new Error(tacticalImplementationViolation);
   if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
   if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
-  // The orchestrator's own words cannot prove that the user approved: the user's reply to the reviewed plan set must be in
-  // the log of the user's actual inputs, written after to-ticket finished. A bare flag publishes nothing.
+  // The provider transcript must contain the user's reply after the reviewed plan set finished.
   if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z' }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
@@ -353,15 +354,26 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
   const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
   const frontendDesignHandoff = stageId === 'frontend-design-brief' && lastStage === 'tactical-ui' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
+  if (frontendDesignHandoff && !await userSaidAfter({ root, text: approvalAnswer, since: state.stages['workflow-compose'].started_at || state.stages['workflow-compose'].finished_at })) {
+    const error = 'Frontend direction answer was not recorded';
+    throw Object.assign(new Error(error), { explained: { error, code: 'USER_DECISION_REQUIRED', why: 'A UI handoff needs the user’s recorded decision on the screens and flow.', user_decision: 'Agree on the screens and flow with the user, then pass the actual reply via --approval-answer. If UI is deferred, resume tactical-ui with the user’s reply via --feedback.' } });
+  }
+  const deferredFrontend = stageId === 'tactical-ui' && lastStage === 'frontend-design-brief'
+    && ['failed', 'cancelled', 'completed'].includes(last?.status)
+    && target?.status === 'blocked' && !target.stale && target.code === 'DEPENDENCY_INCOMPLETE' && target.result_ref
+    && feedback !== null && await userSaidAfter({ root, text: feedback, since: target.finished_at });
+  if (deferredFrontend) await assertExecutionStopped(last);
   const frontendCorrection = stageId === 'frontend-implementation' && lastStage === 'frontend-visual-review' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
   if (frontendCorrection) {
     const reviewInput = await readExecutionInput({ root, execution_id: last.execution_id });
     if (reviewInput.context?.plan_id !== planId) throw new Error('Frontend review belongs to a different ticket');
     input_refs.push({ base: 'session', path: last.result_ref, kind: 'frontend_review_feedback' });
   }
-  const reopensCompletedWork = userRevision && target?.status === 'completed' && target.code === 'OK'
-    && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status));
-  if (!reopenPlan && !frontendDesignHandoff && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  const requirementsRevision = userRevision && REQUIREMENTS_REVISION_STAGES.includes(stageId);
+  const reopensCompletedWork = userRevision && target?.result_ref
+    && (requirementsRevision && !(last?.code === 'ENVIRONMENT_UNAVAILABLE' || last?.code === 'DEPENDENCY_INCOMPLETE')
+      || target.status === 'completed' && target.code === 'OK' && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status)));
+  if (!reopenPlan && !frontendDesignHandoff && !deferredFrontend && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -397,6 +409,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let executionWorkspace;
   let publicationDrafts;
   let plan_set_id;
+  const requirementsApproval = requirementsApproved ? { execution_id: state.stages?.['bounded-context']?.execution_id, answer: approvalAnswer } : null;
   if (worktree_ref) {
     if (!worktree_ref.endsWith('/worktree.json')) throw new Error('Invalid canonical worktree reference');
     const directory = worktree_ref.slice(0, -'/worktree.json'.length);
@@ -410,6 +423,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
     // to-ticket splits a frozen design: a fresh start (or a re-run after a rewind) needs the design-freeze gate to pass on the current
     // documents. A to-ticket that already recorded a result resumes, answers and revises without the check.
+    await assertRequirementsApproval({ root, state, stage: stageId, planSetId: plan_set_id, approval: requirementsApproval });
     const ticketEntry = state.stages?.['to-ticket'];
     if (stage.skill === 'to-ticket' && plan_set_id && (!(ticketEntry?.result_ref || ticketEntry?.attempts?.some((attempt) => attempt?.result_ref)) || ticketEntry.stale)) {
       const { designNotFrozen } = await import('./design-freeze-gate.mjs');
@@ -490,10 +504,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const userRevisionWaiting = userRevision && previous?.result_ref && (previous.status === 'completed' && previous.code === 'OK' || previous.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED');
   if (userRevision && !userRevisionWaiting) throw new Error('User revision requires a completed stage or one waiting on its question');
   if (userRevision && Object.values(state.stages).some((item) => item?.status === 'running')) throw new Error('User revision cannot start while another stage is running');
+  if (requirementsRevision) markRequirementsRevision(structuredClone(state), stageId, previous.execution_id, null, null);
   let conversation = {};
   let interruptedAnswers;
   // The owner of a gap, or a stage a rewind marked stale, is a finished stage that is edited forward from its own result.
-  const reopenedForward = Boolean(reopenPlan) || Boolean(staleMark && previous?.status === 'completed' && previous.code === 'OK');
+  const reopenedForward = Boolean(reopenPlan) || Boolean(staleMark && previous?.result_ref && (previous.status === 'completed' && previous.code === 'OK' || previous.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED'));
   const crossStageRevision = transition && lastStage !== stageId && REVISION_TARGETS[transition.code] === stageId;
   if (reopenedForward) {
     const prefix = `runtime/executions/${previous.execution_id}`;
@@ -504,7 +519,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code) throw new Error('Feedback target does not match stage state');
     const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
     input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' }, { base: 'session', path: previous.result_ref, kind: 'previous_execution_result' });
-    if (reopenPlan) input_refs.push({ base: reopenPlan.blocked_result_base, path: reopenPlan.blocked_result_ref, kind: 'dependency_gap_result' });
+    if (reopenPlan) {
+      const blockedPath = (await findExecutionInput(root, reopenPlan.blocked_execution_id)).path;
+      input_refs.push({ base: 'session', path: blockedPath.slice('.io/'.length), kind: 'dependency_gap_input' }, { base: reopenPlan.blocked_result_base, path: reopenPlan.blocked_result_ref, kind: 'dependency_gap_result' });
+      const answers = `runtime/executions/${reopenPlan.blocked_execution_id}/answers.json`;
+      const blockedSession = reopenPlan.blocked_result_base === 'session' ? taskSession : session;
+      if (await lstat(join(blockedSession, answers)).then((info) => info.isFile(), (error) => { if (error.code === 'ENOENT') return false; throw error; })) input_refs.push({ base: reopenPlan.blocked_result_base, path: answers, kind: 'dependency_gap_answers' });
+    }
     conversation = {
       previous_result_ref: previous.result_ref,
       reopen: reopenPlan
@@ -537,7 +558,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (review.review_input?.implementation_commit_sha !== head || (receipt.head && receipt.head !== head)) throw new Error('E2E failure target commit is stale');
       const plan = await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`), 'utf8');
       if (!plan.includes(`\`${receipt.profile_id}\``)) throw new Error('E2E failure profile does not match the plan');
-      const inputs = (await readFile(join(taskSession, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
       const orchestratorId = orchestratorSession?.session_id || codexSessionId;
       if (testDefectFailure) {
         if (!/^runtime\/e2e\/[A-Za-z0-9._-]+\/failure\.json$/.test(testDefectFailure)) throw new Error('Invalid test defect evidence reference');
@@ -545,7 +565,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         const copy = await readSkillSessionJson({ root, session_directory: taskSession, path: testDefectFailure.replace(/failure\.json$/, 'receipt.json') });
         if (receipt.status !== 'failed' || receipt.phase !== 'command' || failure.status !== 'failed' || failure.profile_id !== receipt.profile_id || failure.target_commit !== head || !Array.isArray(failure.failures) || !failure.failures.length || !isDeepStrictEqual(copy, receipt)) throw new Error('Test defect evidence does not match the failed E2E run');
       }
-      if (!orchestratorId || !inputs.some((item) => item.text === approvalAnswer && item.session_id === orchestratorId && (testDefectFailure ? Date.parse(item.at) <= Date.parse(receipt.started_at) : Date.parse(item.at) > Date.parse(receipt.finished_at)))) throw new Error('E2E repair approval was not recorded for this failure');
+      if (!orchestratorId || !await userSaidAfter({ root, text: approvalAnswer, sessionId: orchestratorId, provider, ...(testDefectFailure ? { until: receipt.started_at } : { since: new Date(Date.parse(receipt.finished_at) + 1).toISOString() }) })) throw new Error('E2E repair approval was not recorded for this failure');
       for (const [path, hash] of Object.entries(receipt.config_hashes || {})) {
         await assertWorkspaceTarget(root, path);
         if (createHash('sha256').update(await readFile(join(root, path))).digest('hex') !== hash) throw new Error(`E2E failure receipt is stale: ${path}`);
@@ -589,11 +609,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}) };
   }
   let deferredAnswers = null;
-  if (!userRevision && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
+  if (!userRevision && !staleMark && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {
     deferredAnswers = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/executions/${previous.execution_id}/deferred-answers.json` }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     if (deferredAnswers && (!Array.isArray(deferredAnswers) || deferredAnswers.some((entry) => !entry || Object.keys(entry).sort().join(',') !== 'answer,question_id' || typeof entry.question_id !== 'string' || !entry.question_id.trim() || typeof entry.answer !== 'string' || !entry.answer.trim()) || new Set(deferredAnswers.map((entry) => entry.question_id)).size !== deferredAnswers.length)) throw new Error('Invalid deferred answers');
   }
-  if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting) || answer !== null) {
+  if ((previous?.code === 'USER_DECISION_REQUIRED' && !userRevisionWaiting && !staleMark) || answer !== null) {
     if (answer === null && !deferredAnswers) throw new Error('User answer required before resuming this stage');
     if (previous?.status !== 'waiting') throw new Error('Stage is not waiting for a response');
     const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
@@ -631,9 +651,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
     if (profile?.purpose !== 'e2e' || profile.timeout_ms !== request.timeout_ms) throw new Error('E2E request does not match the execution profile');
-    const inputs = (await readFile(join(taskSession, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
     const orchestratorId = orchestratorSession?.session_id || codexSessionId;
-    if (!orchestratorId || !inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId)) throw new Error('E2E request approval was not recorded');
+    if (!orchestratorId || !await userSaidAfter({ root, text: request.approval_answer, sessionId: orchestratorId, provider })) throw new Error('E2E request approval was not recorded');
     input_refs.push({ base: 'session', path: e2eRequest, kind: 'approved_e2e_request', sha256: createHash('sha256').update(await readFile(join(taskSession, e2eRequest))).digest('hex') });
   }
   let plan_review_admission;
@@ -645,7 +664,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
-  if (stageId === 'to-ticket') {
+  if (stageId === 'to-ticket' && plan_set_id) {
+    const { planDesignPaths } = await import('./plan-review.mjs');
+    for (const path of await planDesignPaths({ root, planSetId: plan_set_id })) {
+      if (!input_refs.some((reference) => reference.base === 'workspace' && reference.path === path)) input_refs.push({ base: 'workspace', path });
+    }
     const ui = state.stages?.['tactical-ui'];
     if (ui?.status === 'completed' && ui.code === 'OK' && ui.result_ref) {
       const result = await readSkillSessionJson({ root, session_directory: taskSession, path: ui.result_ref });
@@ -685,13 +708,19 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const domainPack = await prepareDomainContextPack({ root, stage: stageId, request: prepared.scope, feedback, answers: Array.isArray(answer) ? answer : [] });
   if (domainPack) input_refs.push(domainPack);
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
+  if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
+  if (frontendDesignHandoff) input.context.frontend_direction_approval = { answer: approvalAnswer };
+  if (requirementsRevision) input.context.requirements_revision_from = previous.execution_id;
+  if (staleMark) {
+    input.context.revalidation_mark = staleMark.reopened_for;
+    if (staleMark.reason === 'user_revision') input_refs.push({ base: 'session', path: `runtime/executions/${staleMark.reopened_for}/feedback.json`, kind: 'upstream_user_revision' });
+  }
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
-  if (reopenPlan) await markStagesStale({ session: taskSession, plan: reopenPlan });
   if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });
   const paths = stageExecutionPaths(root, execution_id);
   if (paths.session !== taskSession) throw new Error('Execution session does not match workspace');

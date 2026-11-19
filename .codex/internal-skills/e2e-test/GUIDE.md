@@ -36,13 +36,11 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 
 적용 lesson ID, 실패별 evidence/원인 가설/예방 조치 필요 여부와 `tests.e2e_failures` 입력, 활성 워크트리 경로, 정확한 실행 명령, 시작한 서비스와 endpoint, polling 간격 및 timeout, 결과 증거, 프로세스 종료 여부, artifact cleanup 결과를 보고한다. 환경이 준비되지 않았거나 cleanup을 입증할 수 없으면 통과로 처리하지 않는다.
 
+실행별 사용량 분석은 기본적으로 꺼진다. 사용자가 분석을 켜도록 요청했거나 `HARNESS_E2E_TELEMETRY=1`이면 [E2E 사용량 분석](../e2e-telemetry/GUIDE.md)을 적용한다. 사용자가 끄도록 요청하면 환경보다 우선한다. 승인 대기나 실패에서도 현 지점까지 측정할 수 있다. 보고서 수집 실패는 별도로 보고하고 E2E 결과와 재개 조건을 유지한다.
+
 ## 소유 worktree
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
-
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
 
 ## 테스트·서비스 실행 전제
 

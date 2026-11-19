@@ -10,11 +10,11 @@
 
 기존 승인 계획의 경로 문자열은 과거 표시 정보로만 보존한다. 실제 소비자인 보존 workflow의 승인 snapshot을 임의로 덮어쓰지 않으며 runtime은 그 값을 읽어 실행하지 않는다. 다음 계획 재작성 때 이 구형 필드를 제거한다. 발행용 session 사본은 정적 실행기가 현행 실행 정보로 생성하며 canonical 업무 계획·리뷰 hash를 변경하지 않는다.
 
-ticket의 테스트 계약은 소유한 규칙의 비즈니스 로직 단위 테스트와 6절 경계 강제 검사만 정의한다. 사용자 경로 E2E는 ticket이 아니라 사용자가 요청한 별도 `e2e-test` stage가 소유하며 `docs/agents/EXEC.md`와 `execution.json` profile을 쓴다. 실제 실행 준비와 필수 gate는 각 실행 단계에서 확인한다.
+ticket의 테스트 계약은 소유한 규칙의 비즈니스 로직 단위 테스트와 전술 설계의 컨텍스트 경계 강제 검사만 정의한다. 사용자 경로 E2E는 ticket이 아니라 사용자가 요청한 별도 `e2e-test` stage가 소유하며 `docs/agents/EXEC.md`와 `execution.json` profile을 쓴다. 실제 실행 준비와 필수 gate는 각 실행 단계에서 확인한다.
 
 ## 계획 시
 
-각 ticket의 `소유 규칙과 검증` 표에는 소유 BIZ·INV·EX·AC, 강제 위치와 사용자가 확인할 기대 결과를 적는다. 별도 대응표, ledger, requirement-to-code/test chain은 만들지 않는다. 검증 테스트에는 소유 업무 규칙의 조건·행위·기대 결과를 검증하는 단위 테스트만 기록하고, 업무 로직 변경이 없으면 테스트를 추가하지 않는다. 컨텍스트 경계 검사는 `tactical-design.md` 6절이 정한 방식으로 적는다. ticket에는 E2E를 배정하지 않는다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy` 문자열에 포함해 canonical renderer가 보존하게 한다.
+각 ticket의 `소유 규칙과 검증` 표에는 소유 BIZ·INV·EX·AC, 강제 위치와 사용자가 확인할 기대 결과를 적는다. 별도 대응표, ledger, requirement-to-code/test chain은 만들지 않는다. 검증 테스트에는 소유 업무 규칙의 조건·행위·기대 결과를 검증하는 단위 테스트만 기록하고, 업무 로직 변경이 없으면 테스트를 추가하지 않는다. 컨텍스트 경계 검사는 `tactical-design.md`의 컨텍스트 경계 결정이 정한 방식으로 적는다. ticket에는 E2E를 배정하지 않는다. GitHub 구조 입력에서는 기존 `acceptance_criteria`, `test_contract.unit_policy` 문자열에 포함해 canonical renderer가 보존하게 한다.
 
 Live agent 확인이 필요한 경우에는 사전 승인한 task와 task/environment budget, trace/correlation ID로 볼 결과를 함께 고정한다. UI stub은 request/stream/loading/done 같은 안정 상태만 검증하며 live 품질로 표시하지 않는다.
 

@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## What it does
 
-`grill-with-docs` runs a coverage-driven interview. In batch mode (`requirements-fix`), it batches independent decisions; other callers use one decision at a time. It offers recommended answers and keeps vocabulary and durable decisions current.
+`grill-with-docs` runs a coverage-driven interview. It batches independent decisions when the calling procedure requests batch mode. It offers recommended answers and keeps vocabulary and durable decisions current.
 
 It incorporates the question selection and interaction contract of [grilling](../../../.codex/internal-skills/grilling/GUIDE.md) and the documentation responsibilities of `domain-modeling`. The interview loop below applies that shared question policy to documented coverage.
 

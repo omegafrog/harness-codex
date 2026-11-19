@@ -27,19 +27,28 @@ export const REQUIREMENTS = `# 요구사항 명세
 - 업무 규칙:
   - INV-02 게시글은 작성자만 삭제할 수 있다 — 출처: 요청 원문
   - INV-03 게시글이 삭제되면 그 글의 미처리 신고를 닫는다 — 출처: answers.json \`q-report\`
+- 예외 시나리오: 해당 없음 — 인증 거절은 외부 인증 계약에 있다.
+- 완료 조건:
+  - AC-02 삭제한 글과 미처리 신고가 각각 닫힌 상태가 된다 — 출처: 요청 원문
 
 ### BIZ-03 신고 접수 (SD-02)
 
 - 업무 규칙:
   - INV-04 한 회원은 같은 게시글을 한 번만 신고할 수 있다 — 출처: CAND-03 채택
+- 예외 시나리오: 해당 없음 — 신고 중복 거절을 INV-04에서 정했다.
+- 완료 조건:
+  - AC-03 중복 신고 요청을 받아도 한 건만 남는다 — 출처: CAND-03 채택
 
 ### BIZ-04 로그인 (SD-03)
 
-- 업무 규칙: 없음
+- 업무 규칙: 없음 — 자격 확인은 외부 인증이 결정한다.
+- 예외 시나리오: 해당 없음 — 실패 처리는 외부 인증 계약이 소유한다.
+- 완료 조건:
+  - AC-04 외부 인증 결과에 따라 로그인 여부가 반환된다 — 출처: 요청 원문
 `;
 
 export async function templateDocument(sourceRoot) {
-  const template = await readFile(join(sourceRoot, '.codex/internal-skills/domain-model/references/template.md'), 'utf8');
+  const template = await readFile(join(sourceRoot, '.codex/internal-skills/domain-model/references/legacy-template.md'), 'utf8');
   const document = [...template.matchAll(/````markdown\n([\s\S]*?)\n````/g)].map((match) => match[1]).find((block) => block.startsWith('# 전술 설계'));
   assert.ok(document, 'the template carries the document shape');
   return document;

@@ -1,11 +1,11 @@
 # 요청부터 구현 종료까지의 workflow
 
-실행자가 읽는 공통 경로는 [workflow 지도](../../.codex/internal-skills/skill-execution/references/workflow-map.md)다. 이 문서는 source 유지보수자가 정본과 검사 경계를 찾기 위한 안내다.
+실행자가 읽는 공통 경로는 [workflow 지도](../../.codex/skills/orchestrator/references/workflow-map.md)다. 이 문서는 source 유지보수자가 정본과 검사 경계를 찾기 위한 안내다.
 
 ```mermaid
 flowchart TD
   A[요청과 현행 계약 확인] --> B[setup 및 worktree 준비]
-  B --> C[요구사항 흐름: stakeholder-analysis부터 requirements-fix]
+  B --> C[요구사항 흐름: stakeholder-analysis부터 requirements-fix, bounded-context]
   C --> D[전술 설계 흐름: domain-model부터 context-boundary]
   D --> E1[tactical-to-code: technology, UI, API, data]
   E1 --> F[to-ticket: 컨텍스트·BIZ별 ticket 분할과 독립 리뷰]

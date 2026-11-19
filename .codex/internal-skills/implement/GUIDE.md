@@ -17,6 +17,7 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 
 ## 읽을 문서
 
+- 코드 변경 전 [Ponytail 구현 원칙](references/ponytail.md)을 읽는다.
 - 편집 전 `<workspace_root>/docs/agents/implementation-guidance.md`, 테스트를 계획·작성·선택·실행하기 전 `<workspace_root>/docs/agents/testing-guidance.md`와 [test-writing guidance](../testing-guidance/GUIDE.md). 이 파일들은 활성 workspace의 프로젝트 memory이며 managed workflow에서 원본 checkout의 사본으로 대체하지 않는다. 범위 안의 지침만 적용하고 승인 Spec·실행 계약과 충돌하면 진행 전에 보고한다.
 - 코드를 쓰기 전에 반드시: [model continuity contract](../ddd-design/references/model-continuity.md)의 계층 책임 규칙(도메인 불변식은 도메인 메서드, application은 트랜잭션·작업 순서, web/api는 HTTP·DTO 검증·세션, infrastructure는 저장·전송; 한 규칙을 여러 계층에 복제하지 않음)과 Architecture Spec의 Domain·Aggregate·Application Service·File and Module Structure 절, 그리고 plan의 `계층 배치`. 리뷰어도 같은 기준으로 판정한다. 처음부터 이 배치대로 구현하고, 수정할 때도 지적된 곳만이 아니라 같은 기준을 지킨다.
 - 영향받는 [model continuity contract](../ddd-design/references/model-continuity.md)의 나머지 절, plan의 [execution evidence contract](../../../.codex/internal-skills/to-ticket/references/execution-evidence.md), [공통 검증 정책](../../../.codex/internal-skills/e2e-test/references/verification-policy.md).
@@ -64,10 +65,6 @@ runner는 stage 시작 전 workspace 등록만 확인한다. tracker 전환·fix
 ## 소유 worktree
 
 상위 workflow가 전달한 worktree를 그대로 쓰고 소유권·종료를 다루지 않는다. 직접 소유한 실행이면 [session-worktree](../../../.codex/internal-skills/session-worktree/GUIDE.md)를 따른다.
-
-## 실행 산출물 경로
-
-실행 중 생기는 로그·임시 파일·스크린샷은 [실행 산출물 경로](../../../.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md)를 따른다.
 
 ## E2E 실행 조건과 실패
 

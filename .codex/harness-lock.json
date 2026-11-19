@@ -877,6 +877,12 @@
       "source_path": ".codex/internal-skills/implement/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
+    ".codex/internal-skills/implement/references/ponytail.md": {
+      "installed_sha256": "6cfa600a4dd7d9cfc48e78c0176a7535affe8e07755165a6efeda4e2027b4756",
+      "upstream_sha256": "6cfa600a4dd7d9cfc48e78c0176a7535affe8e07755165a6efeda4e2027b4756",
+      "source_path": ".codex/internal-skills/implement/references/ponytail.md",
+      "source_transform": "project-local-paths-v1"
+    },
     ".codex/internal-skills/implementation-guidance/GUIDE.md": {
       "installed_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
       "upstream_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
@@ -1112,11 +1118,6 @@
       "installed_sha256": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
       "upstream_sha256": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
       "source_path": ".codex/scripts/harness-knowledge.mjs"
-    },
-    ".codex/scripts/harness-orchestrator-hook.mjs": {
-      "installed_sha256": "1d1487287acd7de6a556aa95ae83b5b61f5c88c8ffbe87901d82ee81968df490",
-      "upstream_sha256": "1d1487287acd7de6a556aa95ae83b5b61f5c88c8ffbe87901d82ee81968df490",
-      "source_path": ".codex/scripts/harness-orchestrator-hook.mjs"
     },
     ".codex/scripts/harness-plan-review.mjs": {
       "installed_sha256": "786cb581ef4fa66628f60df6c2f31c4e26ad3133530c9a85b4aed7c771819d4a",

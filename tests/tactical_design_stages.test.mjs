@@ -2,6 +2,7 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,33 +13,33 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { checkTacticalDesign } from '../.harness/src/workflow/domain-model-gate.mjs';
 import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
-import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot } from './support/consumer-workflow.mjs';
+import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { READ_ONLY_REQUIREMENTS, READ_ONLY_DOCUMENT, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument, upTo } from './support/domain-model-fixture.mjs';
 
 const TEMPLATE = '.codex/internal-skills/domain-model/references/template.md';
+const LEGACY_TEMPLATE = '.codex/internal-skills/domain-model/references/legacy-template.md';
 const DEEPENING = '.codex/internal-skills/domain-model/references/deepening.md';
 const GATE = '.codex/scripts/harness-domain-model-check.mjs';
 const GATE_LIBRARY = '.harness/src/workflow/domain-model-gate.mjs';
 const README_PATH = 'README.md';
 const TACTICAL_TIERS = { 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance' };
-const ASKING = ['aggregate-design', 'integration-design', 'context-boundary'];
 const FINAL_STAGE = 'context-boundary';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 
 test('the tactical stages follow the requirements flow in one ordered list, and the orchestrator, the map, the README and every guide agree on it', async () => {
   assert.deepEqual(TACTICAL_DESIGN_STAGES, ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
   assert.deepEqual(PRE_SPEC_STAGES, [...REQUIREMENTS_STAGES, ...TACTICAL_DESIGN_STAGES]);
-  assert.equal(PRE_SPEC_STAGES.at(REQUIREMENTS_STAGES.length - 1), 'requirements-fix');
+  assert.equal(PRE_SPEC_STAGES.at(REQUIREMENTS_STAGES.length - 1), 'bounded-context');
   for (const stage of TACTICAL_DESIGN_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   assert.deepEqual(Object.keys(STAGE_TIERS).sort(), [...PRE_SPEC_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code'].sort(), 'every stage in the pre-spec and tactical implementation flows has a declared tier in the shared fixture');
 
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.ok(orchestrator.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the orchestrator names the tactical flow in order');
-  assert.match(orchestrator, /전술 설계 흐름에서 완료되지 않은 첫 stage/);
-  assert.match(orchestrator, /요구사항·전술 설계 흐름이 끝났고 구현 요청이 있음/);
-  assert.match(orchestrator, /`DEPENDENCY_INCOMPLETE`/);
-  assert.match(orchestrator, /restart를 먼저 하고 요구사항 수정은 그 뒤에 한다/);
-  const map = await read('.codex/internal-skills/skill-execution/references/workflow-map.md');
+  assert.match(orchestrator, /references\/workflow-map\.md/);
+  assert.match(orchestrator, /references\/dispatch\.md#상위-stage-되돌아가기/);
+  const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
+  assert.ok(map.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the tactical flow in order');
+  assert.match(map, /전술 설계가 모두 `completed\/OK`인 뒤 별도 `tactical-to-code` workflow/);
+  assert.match(map, /`blocked\/DEPENDENCY_INCOMPLETE`/);
   const positions = PRE_SPEC_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage in order');
   assert.match(map, /harness-domain-model-check\.mjs/);
@@ -50,112 +51,29 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.ok(exec.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join('→')), 'the E2E procedure names the tactical flow');
   assert.match(await read('docs/architecture/enforcement.md'), /TACTICAL_DESIGN_STAGES[\s\S]*harness-domain-model-check\.mjs/);
   assert.match(await read('docs/architecture/enforcement.md'), /domain-model-gate\.mjs[\s\S]*FINAL_TACTICAL_STAGE[\s\S]*`gate_error`[\s\S]*`owner_stage`[\s\S]*recordExecutionState/, 'the enforcement map names where the runner rejects a failing last tactical stage');
-  for (const path of ['.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/internal-skills/skill-execution/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`gate_error`/, `${path} tells what the runner returns for a failing tactical gate`);
-  assert.match(await read('.codex/internal-skills/domain-model/references/deepening.md'), /No stage runs a gate[\s\S]*`gate_error`[\s\S]*`owner_stage`/);
-  for (const path of ['.codex/internal-skills/skill-execution/references/dispatch.md', '.codex/internal-skills/skill-execution/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`owner_stage`/, `${path} tells the orchestrator which stage owns a failing section`);
-  assert.match(await read('CONTEXT.md'), /\| Consistency Decision \| 일관성 결정 \|/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/dispatch.md'), /요구사항·전술 설계 stage의 문서를 고치라고 지시하면/);
-  assert.match(await read('.codex/internal-skills/skill-execution/references/input.md'), /요구사항 또는 전술 설계 stage부터 다시 시작/);
+  for (const path of ['.codex/skills/orchestrator/references/dispatch.md', '.codex/skills/orchestrator/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`gate_error`/, `${path} tells what the runner returns for a failing tactical gate`);
+  assert.match(await read(DEEPENING), /`gate_error`[\s\S]*`owner_stage`/);
+  for (const path of ['.codex/skills/orchestrator/references/dispatch.md', '.codex/skills/orchestrator/references/state.md', '.codex/skills/orchestrator/SKILL.md', README_PATH]) assert.match(await read(path), /`owner_stage`/, `${path} tells the orchestrator which stage owns a failing section`);
+  assert.match(await read('.codex/skills/orchestrator/references/dispatch.md'), /요구사항·전술 설계 stage의 문서를 고치라고 지시하면/);
+  assert.match(await read('.codex/skills/orchestrator/references/input.md'), /요구사항 또는 전술 설계 stage부터 다시 시작/);
 
-  // The requirements template points at the tactical documents and lets only the asking stages add a rule from a user's answer.
-  const requirementsTemplate = await read('.codex/internal-skills/requirements-fix/references/template.md');
-  assert.match(requirementsTemplate, /\| `domain-model`부터 `context-boundary`까지 \|/);
-  assert.match(requirementsTemplate, /질문을 하는 stage\(`aggregate-design`, `integration-design`, `context-boundary`\)/);
-
-  // The template owns the document shape the gate reads.
-  const document = await templateDocument(sourceRoot);
-  assert.deepEqual([...document.matchAll(/^## (.+)$/gm)].map((match) => match[1]), ['1. 모델 후보', '2. Aggregate', '3. Domain Service', '4. Application Service', '5. 통합 설계', '6. 컨텍스트 경계', '7. 결정 이력']);
-  assert.match(document, /^\| 모델 \| 종류 \| BC \| 정체성·생애주기 또는 값의 의미 \| 현재 상태 \| 근거 \|$/m);
-  assert.match(document, /^\| 요구 \| BC \| 소유 모델 \| 근거 \|$/m);
-  assert.match(document, /^\| CON \| 규칙 \| 걸친 Aggregate \| 조회 전용 Aggregate \| 일관성 \| 결정 \| 근거·출처 \|$/m);
-  assert.match(document, /^\| DEC \| stage \| 대상 \| 결정 \| 비교한 대안 \| 출처 \|$/m);
   const template = await read(TEMPLATE);
-  assert.match(template, /^\| Context \/ 모델 ID \| 상태 \| Root \/ 소유 코드 \| 규칙 ID → enforcement \| 데이터 \/ transaction \| 공개 계약 \/ 통신 \| deployment \/ extraction trigger \| 근거 \|$/m, 'the project model row format is the model-continuity one');
-  assert.match(template, /`accepted-target`/);
-  assert.doesNotMatch(template, /classDiagram|@startuml/, 'no class diagram yet');
-  // An enforcing behaviour is a Root method, a Value Object's rule or a Domain Service, and a context with no state lifecycle has no Aggregate.
-  assert.match(template, /Value Object: <모델>` 또는 `Value Object: <모델>\.<행위>\(\)`/);
-  assert.match(template, /^## Aggregate가 없는 컨텍스트$/m);
-  const snippet = [...template.matchAll(/````markdown\n([\s\S]*?)\n````/g)].map((match) => match[1]).find((block) => block.startsWith('### 2.1 Aggregate'));
-  assert.ok(snippet, 'the template shows how a context without an Aggregate is written');
-  const withSnippet = (text) => STATELESS_DOCUMENT.replace(/### 2\.1 Aggregate[\s\S]*?(?=### 2\.3)/, `${text}\n\n`);
-  assert.deepEqual(checkTacticalDesign({ requirements: STATELESS_REQUIREMENTS, tacticalDesign: withSnippet(snippet) }), { ok: true, errors: [] }, 'the gate accepts the no-Aggregate example of the template');
-  assert.deepEqual(checkTacticalDesign({ requirements: STATELESS_REQUIREMENTS, tacticalDesign: withSnippet(snippet.replace(/^\| (?:INV|EX)-\d+ \|.*\n?/gm, '')) }).errors.map((error) => error.code), ['RULE_NO_ENFORCEMENT', 'RULE_NO_ENFORCEMENT'], 'and refuses it once no behaviour enforces the rules');
+  assert.match(template, /<!-- tactical-design: context-components-v1 -->/);
+  assert.match(template, /^## BC community$/m);
+  assert.match(template, /\| 소유 모델 \| 규칙 \| 근거 \| 담당 메서드 \|/);
+  assert.match(template, /diagrams\/community\.class\.svg/);
+  assert.match(template, /docs\/adr\//);
+  assert.doesNotMatch(template, /^## [1-7]\./m);
+  const legacy = await templateDocument(sourceRoot);
+  assert.match(legacy, /^## 6\. 컨텍스트 경계$/m);
+  assert.match(legacy, /^## 7\. 결정 이력$/m);
 
-  // Each stage guide links the shared documents, keeps its own boundary and returns through the common contract.
-  for (const stage of TACTICAL_DESIGN_STAGES) {
+  for (const [stage, tier] of Object.entries(TACTICAL_TIERS)) {
     const guide = await read(`.codex/internal-skills/${stage}/GUIDE.md`);
-    assert.match(guide, new RegExp(`^---\\nmodel_tier: ${TACTICAL_TIERS[stage]}\\n---\\n<!-- 내부 workflow 전용`), `${stage} declares its tier and stays internal`);
+    assert.ok(guide.startsWith(`---\nmodel_tier: ${tier}\n---\n`), `${stage} declares its tier`);
     assert.match(guide, /domain-model\/references\/template\.md|\(references\/template\.md\)/, `${stage} links the template`);
-    assert.match(guide, /domain-model\/references\/deepening\.md|\(references\/deepening\.md\)/, `${stage} links the shared rules`);
-    const sections = stage === 'context-boundary' ? ['## 목적', '## 입력', '## 금지 사항', '## 절차', '## 심화', '## 완료 조건'] : ['## Purpose', '## Inputs', '## Prohibited', '## Process', '## Deepening', '## Completion'];
-    for (const part of sections) assert.ok(guide.includes(part), `${stage} has ${part}`);
-    assert.match(guide, /harness-workspace-preflight\.mjs/, `${stage} runs the preflight`);
-    assert.match(guide, /harness-spec-path\.mjs/, `${stage} resolves paths with the helper`);
-    assert.match(guide, /`판정: 생략`/, `${stage} records a skip`);
-    assert.match(guide, stage === 'context-boundary' ? /Runner는 `CONTEXT-MAP\.md`를 변경 artifact로 보고한 경우에만/ : /The runner commits `docs\/specs\/<plan-set-id>\/`/, `${stage} says what the runner commits`);
-    // The gate runs once, in the runner, when the last stage completes: only that guide speaks of it and no stage runs it.
-    if (stage === FINAL_STAGE) {
-      assert.match(guide, /## 최종 gate/);
-      assert.match(guide, /Runner는 이 stage가 `completed\/OK`를 반환한 뒤에만 전술 gate를 실행한다/);
-      assert.match(guide, /6절/);
-      assert.match(guide, /`gate_error`[\s\S]*`owner_stage`/);
-      assert.match(guide, /이 stage 소유 오류는 여기서 고칠 수 있다/);
-      assert.match(guide, /이전 stage 오류[\s\S]*`blocked` \/ `DEPENDENCY_INCOMPLETE`/);
-      assert.match(guide, /`--restart-requirements true` (?:or|또는) `--user-revision true --feedback`/);
-    } else assert.doesNotMatch(guide, /harness-domain-model-check|gate_error|owner_stage|--stage|gate passes|^## Final gate/im, `${stage} does not run or describe a gate of its own`);
-    assert.match(guide, /`DEPENDENCY_INCOMPLETE`|`INPUT_MISSING`/, `${stage} says how it blocks`);
-    assert.match(guide, /requirements\.md/, `${stage} reads the requirements`);
-    // The document is named for the flow, never for a stage: a stage writes only its own section, and a user instruction that
-    // names a stage is read as the stage, not as a file.
-    assert.match(guide, stage === 'context-boundary' ? /`tactical-design\.md`에서는 `## 6`/ : /Writing anything in `tactical-design\.md` but `## \d`/, `${stage} writes only its own section of the tactical design`);
-    assert.match(guide, stage === 'context-boundary' ? /파일이 아니라 이 stage와 기록된 상태/ : /refers to that stage and its recorded state, never to a file/, `${stage} reads a stage name as a stage`);
-    assert.doesNotMatch(guide, /(?<!architecture\/)domain-model\.md/, `${stage} never names the legacy document`);
-    assert.doesNotMatch(guide, /ddd-design|spec-me\/GUIDE|architecture-spec/, `${stage} does not depend on the older design guides`);
-    if (ASKING.includes(stage)) {
-      assert.match(guide, /`action_required` \/ `USER_DECISION_REQUIRED`/, `${stage} may ask`);
-      if (stage === 'context-boundary') {
-        assert.match(guide, /질문을 한국어 한 번의 묶음으로/);
-        assert.match(guide, /권장안과 이유/);
-      } else {
-        assert.match(guide, /in Korean/, `${stage} asks in Korean`);
-        assert.match(guide, /a recommended option/, `${stage} recommends an option`);
-        assert.match(guide, /one batch/, `${stage} asks in one batch`);
-      }
-      assert.match(guide, /`answers\.json`/, `${stage} records the answer source`);
-      assert.match(guide, stage === 'context-boundary' ? /`INV` 또는 `EX`와 `AC`/ : /`INV` or `EX` with its `AC`/, `${stage} adds a discovered rule to the requirements`);
-    } else {
-      assert.doesNotMatch(guide, /`USER_DECISION_REQUIRED`/, `${stage} never asks`);
-      assert.match(guide, /never adds a business rule|never add|Asking the user/, `${stage} adds no rule and asks nothing`);
-    }
-    if (stage === 'domain-model') assert.match(guide, /code-research\/GUIDE\.md/); else assert.doesNotMatch(guide, /code-research/, `${stage} does not run code-research`);
+    assert.match(guide, /references\/deepening\.md|\(references\/deepening\.md\)/, `${stage} uses the shared preflight and input rules`);
   }
-  const model = await read('.codex/internal-skills/domain-model/GUIDE.md');
-  assert.match(model, /기존 모델 없음/);
-  assert.match(model, /`core` gets a rich model, `supporting` only what its rules need, `generic` a minimal model or an `외부 시스템` marker/);
-  assert.match(model, /build-versus-buy undecided/);
-  assert.match(model, /language lifecycle/);
-  assert.match(model, /`accepted-target`/);
-  const aggregate = await read('.codex/internal-skills/aggregate-design/GUIDE.md');
-  assert.match(aggregate, /Mapping one `BIZ` to one Aggregate mechanically/);
-  assert.match(aggregate, /merge and record it/);
-  assert.match(aggregate, /referenced by ID only, and one transaction changes one Aggregate/);
-  assert.match(aggregate, /the business consequence/);
-  assert.match(aggregate, /Inventing an Entity or an Aggregate only so that a rule has a Root/);
-  assert.match(aggregate, /`Value Object: <모델>` or `Value Object: <모델>\.<행위>\(\)`/);
-  assert.match(aggregate, /`BC` \/ `Aggregate 없음 사유` table of `### 2\.1`/);
-  const service = await read('.codex/internal-skills/domain-service/GUIDE.md');
-  assert.match(service, /Orchestration, transaction boundaries, persistence, repository calls, publishing events or any external effect/);
-  assert.match(service, /Taking a rule that an Aggregate method or a Value Object already enforces/);
-  const application = await read('.codex/internal-skills/application-service/GUIDE.md');
-  assert.match(application, /Making a domain decision/);
-  assert.match(application, /One transaction that changes more than one Aggregate/);
-  const integration = await read('.codex/internal-skills/integration-design/GUIDE.md');
-  assert.match(integration, /Saga or Outbox/);
-  assert.match(integration, /`판단 소유자`/);
-  assert.match(integration, /whether the caller must get a confirmed answer at once/);
-  const deepening = await read(DEEPENING);
-  for (const text of ['`--restart-requirements true`', '`--user-revision true --feedback', '`blocked` / `DEPENDENCY_INCOMPLETE`', '`blocked` / `INPUT_MISSING`', 'harness-domain-model-check.mjs', '`영향받는 이후 stage`', 'language-lifecycle.md']) assert.ok(deepening.includes(text), `the shared rules say ${text}`);
 
   // Only the flow list decides the order: the package runs the tests that guard it.
   const scripts = JSON.parse(await read('package.json')).scripts.test;
@@ -181,7 +99,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
 
   const managed = [
     ...TACTICAL_DESIGN_STAGES.map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    TEMPLATE, DEEPENING, GATE,
+    TEMPLATE, LEGACY_TEMPLATE, DEEPENING, GATE,
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',
     '.harness/src/workflow/stage-input.mjs',
@@ -231,7 +149,50 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   await writeFile(join(root, 'docs/specs/community/tactical-design.md'), READ_ONLY_DOCUMENT);
   assert.equal(gate().status, 0, `a read-only Aggregate, an unmerged immediate decision and a Value Object context pass: ${gate().stdout}`);
   await writeFile(join(root, 'docs/specs/community/requirements.md'), REQUIREMENTS);
-  await writeFile(join(root, 'docs/specs/community/tactical-design.md'), document);
+  const current = /```markdown\n([\s\S]+?)\n```/.exec(await read(TEMPLATE))[1];
+  const currentRequirements = `# 요구사항
+
+### BIZ-01 게시글 작성
+
+- INV-01 본문이 비어 있으면 게시글을 작성할 수 없다.
+`;
+  const currentPath = 'docs/specs/community/tactical-design.md';
+  await writeFile(join(root, 'docs/specs/community/requirements.md'), currentRequirements);
+  await writeFile(join(root, currentPath), current);
+  assert.equal(gate().status, 0, gate().stdout);
+  await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
+  assert.equal(JSON.parse(gate().stdout).errors[0].code, 'RULE_METHOD_UNKNOWN');
+  await writeFile(join(root, currentPath), current.replace('postId: PostId — 게시글 식별자<br>', ''));
+  assert.equal(JSON.parse(gate().stdout).errors[0].code, 'MODEL_FIELDS_INCOMPLETE');
+  await writeFile(join(root, currentPath), current.replace(/^\| AS-01.*\n/m, ''));
+  assert.ok(JSON.parse(gate().stdout).errors.some(({ code }) => code === 'BIZ_WITHOUT_APPLICATION_METHOD'));
+  await writeFile(join(root, currentPath), current.replace('/ 롤백 저장 오류 시', ''));
+  assert.equal(JSON.parse(gate().stdout).errors[0].code, 'TRANSACTION_INCOMPLETE');
+  await writeFile(join(root, currentPath), current);
+  const installedGate = await import(pathToFileURL(join(root, GATE_LIBRARY)));
+  const workspaceGate = () => installedGate.checkWorkspaceTacticalDesign({ root, planSetId: 'community' });
+  const stageGate = (skill) => installedGate.evaluateTacticalDesignGate({ root, input: { skill, context: { plan_set_id: 'community' } }, envelope: { status: 'completed', code: 'OK' } });
+  await writeFile(join(root, currentPath), current.replace('postId: PostId — 게시글 식별자<br>', ''));
+  assert.deepEqual((await stageGate('domain-model')).errors.map(({ code }) => code), ['MODEL_FIELDS_INCOMPLETE']);
+  await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
+  assert.ok((await stageGate('aggregate-design')).errors.some(({ code }) => code === 'RULE_METHOD_UNKNOWN'));
+  assert.equal((await stageGate('domain-model')).ok, true, 'a later stage owns rule bindings');
+  await writeFile(join(root, currentPath), current.replace('/ 롤백 저장 오류 시', ''));
+  assert.equal((await stageGate('application-service')).errors[0].code, 'TRANSACTION_INCOMPLETE');
+  await writeFile(join(root, currentPath), current);
+  assert.equal((await stageGate('aggregate-design')).errors[0].code, 'CLASS_DIAGRAM_ARTIFACT_INVALID');
+  assert.equal((await workspaceGate()).errors[0].code, 'CLASS_DIAGRAM_ARTIFACT_INVALID');
+  const diagrams = 'docs/specs/community/diagrams';
+  await mkdir(join(root, diagrams));
+  const plantUml = '@startuml\nclass Post\nclass PostBody\nPost *-- PostBody\n@enduml\n';
+  const sourceHash = createHash('sha256').update(plantUml).digest('hex');
+  await writeFile(join(root, diagrams, 'community.class.puml'), plantUml);
+  await writeFile(join(root, diagrams, 'community.class.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>\n');
+  assert.equal((await workspaceGate()).errors[0].code, 'CLASS_DIAGRAM_ARTIFACT_INVALID');
+  await writeFile(join(root, diagrams, 'community.class.svg'), `<svg xmlns="http://www.w3.org/2000/svg"></svg>\n<!-- harness-source-sha256: ${sourceHash} -->\n`);
+  assert.equal((await workspaceGate()).ok, true);
+  await mkdir(join(root, 'docs/adr'));
+  await writeFile(join(root, 'docs/adr/post.md'), '# 게시글 도메인 판단\n');
 
   // Plan set documents, the project's model rows and the glossary are project-owned and stay visible next to application changes.
   await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 소비자 모델 색인\n\n| 커뮤니티 / 게시글 | accepted-target |\n');
@@ -239,6 +200,8 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /\?\? docs\/specs\/community\/tactical-design\.md/);
   assert.match(status, /\?\? docs\/specs\/community\/requirements\.md/);
+  assert.match(status, /\?\? docs\/adr\/post\.md/);
+  assert.match(status, /\?\? docs\/specs\/community\/diagrams\/community\.class\.svg/);
   assert.match(status, /^ M docs\/architecture\/domain-model\.md$/m, 'the project model document is project-owned');
   assert.match(status, /^ M CONTEXT\.md$/m, 'the glossary is project-owned');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
@@ -248,7 +211,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   // Doctor accepts the installation, reports a missing tactical asset, and update restores it without touching project documents.
   let doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-  const removed = [TEMPLATE, DEEPENING, GATE, GATE_LIBRARY, '.codex/internal-skills/aggregate-design/GUIDE.md'];
+  const removed = [TEMPLATE, LEGACY_TEMPLATE, DEEPENING, GATE, GATE_LIBRARY, '.codex/internal-skills/aggregate-design/GUIDE.md'];
   for (const path of removed) await unlink(join(root, path));
   await writeFile(join(root, '.codex/internal-skills/integration-design/GUIDE.md'), 'outdated guide\n');
   doctor = await runDoctor({ root, sourceRoot });
@@ -262,7 +225,9 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   for (const path of outdated) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `updated: ${path}`);
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-  assert.equal(await readFile(join(root, 'docs/specs/community/tactical-design.md'), 'utf8'), document);
+  assert.equal(await readFile(join(root, currentPath), 'utf8'), current);
+  assert.equal(await readFile(join(root, 'docs/adr/post.md'), 'utf8'), '# 게시글 도메인 판단\n');
+  assert.equal((await workspaceGate()).ok, true);
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
   assert.equal(await readFile(join(root, 'CONTEXT-MAP.md'), 'utf8'), '# 소비자 소유 관계\n');
   assert.match(git('status', '--short', '--untracked-files=all'), /\?\? docs\/specs\/community\/tactical-design\.md/);
@@ -277,7 +242,7 @@ const withNewRule = (document) => document
   .replace('| EX-01 | 인증 | 인증 시스템 | 방문자 판별은 외부 시스템이 한다 |\n', (row) => `${row}| INV-05 | 신고 | 신고 | 닫는 기한은 신고의 규칙이다 |\n`)
   .replace('| INV-04 | 신고 | Domain Service | Aggregate 안 |\n', (row) => `${row}| INV-05 | 신고 | \`신고.닫기()\` | Aggregate 안 |\n`);
 
-test('the tactical stages run after requirements-fix and are accepted section by section, deepen the requirements and restart without losing the added rule, and the last one passes the whole gate', async (t) => {
+test('the tactical stages run after the requirements flow and are accepted section by section, deepen the requirements and restart without losing the added rule, and the last one passes the whole gate', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, treeGit, invoke, runStage, planSetId, specDirectory, specPath } = flow;
   const requirements = specPath('requirements.md');
@@ -287,19 +252,19 @@ test('the tactical stages run after requirements-fix and are accepted section by
   const document = await templateDocument(sourceRoot);
 
   // The requirements flow ends with a fixed requirements.md that carries the rules the design maps.
-  const markers = { 'stakeholder-analysis': { [analysis]: '# Stakeholder 분석\n', [requirements]: draft('stakeholder-analysis') } };
+  const markers = { 'stakeholder-analysis': { [analysis]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft('stakeholder-analysis') } };
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   assert.deepEqual(treeGit('log', '--format=%s', '-7').trim().split('\n'), [...REQUIREMENTS_STAGES].reverse().map((stage) => `${stage}: ${planSetId}`));
 
-  // 1. domain-model follows requirements-fix, writes section 1 and the project rows, and the runner commits them with the reported glossary.
+  // 1. domain-model follows the last requirements stage (bounded-context), writes section 1 and the project rows, and the runner commits them with the reported glossary.
   const first = await runStage('domain-model', {
     files: { [tacticalDesign]: upTo(document, 1), 'docs/architecture/domain-model.md': projectModel('v1'), 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 |\n' },
     artifacts: [art(tacticalDesign, 'tactical_design'), art('docs/architecture/domain-model.md', 'model_index'), art('CONTEXT.md', 'glossary')],
   });
-  assert.equal(first.prepared.input.context.transition.from_stage, 'requirements-fix');
+  assert.equal(first.prepared.input.context.transition.from_stage, 'bounded-context');
   assert.ok(first.prepared.input.input_refs.some((reference) => reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(first.files, ['CONTEXT.md', 'docs/architecture/domain-model.md', tacticalDesign].sort(), 'a section 1 alone is accepted: no gate runs before the last stage');
 
@@ -372,13 +337,12 @@ test('the tactical stages run after requirements-fix and are accepted section by
   assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'tactical-technology receives the tactical document as an input reference');
   assert.equal(last.finished.status, 'completed');
 
-  // A completed tactical stage changes only on an explicit user revision; an earlier requirements stage still does not.
+  // A completed stage can be reopened for a forward user revision at the stage that owns the change.
   const tacticalRevision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-service', '--feedback', '중복 판정 기준을 하루로 바꿔 줘', '--user-revision', 'true']);
   assert.equal(tacticalRevision.input.skill, 'domain-service');
   assert.equal(tacticalRevision.input.context.user_revision, true);
-  const refused = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'subdomain-candidates', '--feedback', '다시', '--user-revision', 'true'], { cwd: workspace, encoding: 'utf8' });
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /User revision requires feedback for requirements-fix, a tactical design stage/);
+  const requirementsRevision = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-candidates', '--feedback', '댓글 업무의 경계를 검토해 줘', '--user-revision', 'true']);
+  assert.equal(requirementsRevision.input.context.user_revision, true);
 });
 
 test('a skipped stakeholder-analysis makes the tactical stages record the skip without writing, and tactical-technology follows context-boundary', async (t) => {
@@ -415,7 +379,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   };
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // Work of the application that the stages never touch.
@@ -564,7 +528,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   const artifacts = [art(tacticalDesign, 'tactical_design')];
   const document = await templateDocument(sourceRoot);
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
@@ -600,16 +564,17 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.equal(revision.prepared.input.context.previous_result_note, undefined, 'a revision of a completed stage is not a retry of an attempt');
 
   // The installed guides tell the stage to re-run the gate before it blocks on an earlier stage, and they stay Harness-owned while the application work stays visible.
-  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.codex/internal-skills/skill-execution/worker-base.md', '.harness/src/workflow/stage-input.mjs'];
+  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.harness/src/workflow/stage-input.mjs'];
   for (const path of owned) {
     assert.equal(await readFile(join(workspace, path), 'utf8'), await read(path), `installed: ${path}`);
     assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   }
   const rules = await readFile(join(workspace, DEEPENING), 'utf8');
-  assert.match(rules, /## Relaunch after a block[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>[\s\S]*blocks only on errors that this run still reports for earlier stages/);
-  assert.match(rules, /`context-boundary` designs `## 6`/);
-  assert.match(await readFile(join(workspace, '.codex/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /이전 실행이 `blocked`였다면[\s\S]*deepening\.md#relaunch-after-a-block/);
-  assert.match(await readFile(join(workspace, '.codex/internal-skills/skill-execution/worker-base.md'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
+  assert.match(rules, /## 최종 검증과 차단 후 재개[\s\S]*현재 문서[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>/);
+  assert.match(await readFile(join(workspace, '.codex/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /deepening\.md#relaunch-after-a-block/);
+  // The stage contract the installer writes into the stage profile carries the same rule.
+  assert.match(await readFile(join(workspace, '.codex/agents/workflow_stage.toml'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
+  assert.match(treeGit('check-ignore', '-v', '.codex/agents/workflow_stage.toml'), /info\/exclude/);
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
   assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
@@ -634,7 +599,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   const restartArgs = (stage) => ['--stage-id', stage, '--restart-requirements', 'true'];
 
   for (const stage of REQUIREMENTS_STAGES) {
-    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: '# Stakeholder 분석\n', [requirements]: draft(stage) } : { [requirements]: stage === 'requirements-fix' ? REQUIREMENTS : draft(stage) };
+    const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
   }
   // The earlier Harness wrote and committed the document as domain-model.md, next to the project's own model index.
@@ -708,7 +673,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   // 6. A restart to the first tactical stage, whose checkpoint predates the document, removes it under both names.
   treeGit('stash', 'push', '--', 'app.txt');
   const first = invoke(workspace, 'harness-prepare-input.mjs', restartArgs('domain-model'));
-  assert.equal(first.previous_stage, 'requirements-fix');
+  assert.equal(first.previous_stage, 'bounded-context');
   assert.equal(existsSync(join(workspace, current)), false);
   assert.equal(existsSync(join(workspace, legacy)), false);
   assert.deepEqual(visible(), [` D ${current}`, ` D ${projectIndex}`].sort());
