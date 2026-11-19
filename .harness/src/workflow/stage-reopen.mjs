@@ -1,12 +1,14 @@
 import { readSkillSessionJson, resolveSkillSession } from './skill-execution.mjs';
 import { REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, WORKTREE_STAGE, isCurrentStage } from './worktree-stages.mjs';
 import { launchCommand } from './stage-cli.mjs';
+import { execFile } from 'node:child_process';
+import { isDeepStrictEqual, promisify } from 'node:util';
 
 // Forward rewind. A stage that returns blocked / DEPENDENCY_INCOMPLETE names the earlier stage that owns the gap
 // (`result.owner_stage`). The runner reopens that owner without rolling anything back: documents and artifacts stay, the owner
 // edits its own output forward, and every stage between the owner and the blocked stage that already finished is marked
-// `stale` in the orchestrator state. A stale stage no longer counts as completed/OK for the order guards (`isCurrentStage`), so
-// the stages must be re-run in order up to the blocked one. `--restart-requirements` is the separate, destructive rollback.
+// `stale` in the orchestrator state. After the owner completes, unchanged inputs and outputs can release completed stages.
+// `--restart-requirements` is the separate, destructive rollback.
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // Stages after to-ticket never rewind: publication and implementation have already used the plan set.
@@ -16,6 +18,29 @@ const refusal = (message, why, next, userDecision) => Object.assign(new Error(me
   explained: { error: message, code: 'REOPEN_REFUSED', why, ...(next?.length ? { next } : {}), ...(userDecision ? { user_decision: userDecision } : {}) },
 });
 const describe = (entry) => entry ? `${entry.status}${entry.code ? `/${entry.code}` : ''}${entry.stale ? ' (stale)' : ''}` : 'not started';
+const git = promisify(execFile);
+
+export async function revalidationTree(root) {
+  try {
+    if ((await git('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root })).stdout) return null;
+    return (await git('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root })).stdout.trim();
+  } catch { return null; }
+}
+
+export async function retainUnchangedStages({ root, session, state, owner, rewindId, resultRef, resultSession }) {
+  if (!owner.revalidation_tree || owner.revalidation_tree !== await revalidationTree(root)) return;
+  const prior = owner.attempts?.at(-1);
+  if (prior?.status !== 'completed' || prior.code !== 'OK' || !prior.result_ref || !resultRef) return;
+  const read = async (path, directory) => readSkillSessionJson({ root, session_directory: directory || session, path })
+    .catch(() => null);
+  const [before, after] = await Promise.all([read(prior.result_ref, prior.result_session_directory), read(resultRef, resultSession)]);
+  if (!before || !after || before.artifacts?.some((item) => item.base !== 'workspace') || after.artifacts?.some((item) => item.base !== 'workspace')) return;
+  const durable = ({ execution_id, commit_request, commit_sha, ...result }) => result;
+  if (!isDeepStrictEqual(durable(before), durable(after))) return;
+  for (const entry of Object.values(state.stages)) {
+    if (entry.stale?.reopened_for === rewindId && entry.status === 'completed' && entry.code === 'OK') delete entry.stale;
+  }
+}
 
 // The note a reopened owner receives as its feedback. It is internal agent input, so it is English.
 export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }) => [
@@ -24,7 +49,7 @@ export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, g
   `Its result is listed in the input as dependency_gap_result; read it, but re-check the gap against the current documents before acting on it.`,
   `Your earlier output and every committed document stay in place. Edit your own section, decisions and artifacts forward to close the gap: keep every decision the gap does not touch, do not start from scratch and do not delete earlier work.`,
   `Close only the gap. A business decision that the requirements do not settle is not yours to make: return the question or INPUT_MISSING as your guide says.`,
-  `After you complete, the stages ${rerunOrder.slice(1).join(' → ')} are re-run in order to pick up your change.`,
+  `After you complete, the remaining stale stages from ${rerunOrder.slice(1).join(' → ')} are re-run in order.`,
 ].join(' ');
 
 // The note a stale stage receives when it is re-run because an upstream stage changed.

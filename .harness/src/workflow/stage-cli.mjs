@@ -312,6 +312,7 @@ const stageAfter = (previous) => {
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
 // user must decide); the fallback keeps that true for errors this table does not know.
 const RULES = [
+  { re: /^Native subagent already served another execution/, explain: ({ context }) => ({ code: 'FRESH_AGENT_REQUIRED', why: 'Every new execution requires a fresh native worker in this provider session.', next: ['Spawn the assigned profile without forking or resuming a previous agent.', nativeCommand('bind', context.executionId, '--agent-id <new_agent_id>')] }) },
   { re: /^spec-me has been removed/, explain: ({ message }) => ({ code: 'WORKFLOW_RETIRED', why: message, next: [
     'For new-feature implementation, complete the requirements and tactical design flows, then continue with tactical-to-code.',
     `If an older spec-me stage is recorded without a result, and its native run and orchestrator session have ended, recover it with: ${PREPARE} --stage-id spec-me --discard-out-of-order true`,

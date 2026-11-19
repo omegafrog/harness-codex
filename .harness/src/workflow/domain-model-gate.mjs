@@ -1,9 +1,6 @@
 // Deterministic gate of the tactical design flow (domain-model, aggregate-design, domain-service, application-service,
-// integration-design). It checks the plan set's whole tactical-design.md against the fixed requirements.md, once: the runner
-// runs it when the last stage of the flow, context-boundary, reports completed/OK (`harness-native-stage.mjs finish` before
-// anything is committed, and `recordExecutionState` for every other path that records the stage). No earlier stage is gated,
-// so a stage never runs it. Every finding names the stage that owns the failing section (`owner_stage`), so a failure that
-// comes from an earlier stage's section tells which stage to reopen.
+// integration-design). Check the sections each stage owns before accepting its result, then check the whole design at
+// context-boundary. Findings identify the stage that owns the failing section.
 //
 // Current documents group components by approved Context. The numbered format remains readable for existing plan sets.
 // The gate checks structural ownership and references. Business and DDD judgement belongs to the stage GUIDEs and reviews.
@@ -12,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDomainSlug } from '../domain/schema.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
+import { LEGACY_TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 import { specArtifactPath } from './worktrees.mjs';
 
 // Section N of tactical-design.md is filled by the Nth stage of the flow; section 7 is decision history.
@@ -99,9 +96,10 @@ export function readContextDesign(text) {
 }
 
 export function parseRequirements(text) {
+  const body = outsideFences(text).join('\n');
   return {
-    business: unique([...String(text).matchAll(/^#{3}\s+(BIZ-\d+)\b/gm)].map((match) => match[1])),
-    rules: unique([...String(text).matchAll(/^\s*[-*]\s+(INV-\d+|EX-\d+)\b/gm)].map((match) => match[1])),
+    business: unique([...body.matchAll(/^#{3}\s+(BIZ-\d+)\b/gm)].map((match) => match[1])),
+    rules: unique([...body.matchAll(/^[ \t]*[-*][ \t]+(?:(?:업무 규칙|예외 시나리오)[ \t]*[:：][ \t]+)?(INV-\d+|EX-\d+)\b/gm)].map((match) => match[1])),
   };
 }
 
@@ -156,10 +154,11 @@ function checkContextDesign(requirements, contexts) {
       const fields = linesOf(row['필드·구성 값']);
       const identity = clean(row['식별자']);
       if ((entity && (!identity || !fields.some((field) => field.split(':')[0].trim() === identity)))
-        || ((entity || /^(VO|Value Object)$/.test(kindOf(row))) && !fields.every((field) => /^[^:]+:\s*\S.*\s[—–-]\s\S/.test(field)))) {
+        || ((entity || /^(VO|Value Object)$/.test(kindOf(row))) && (!fields.length || !fields.every((field) => /^[^:]+:\s*\S.*\s[—–-]\s\S/.test(field))))) {
         modelFailure('MODEL_FIELDS_INCOMPLETE', `${name} needs named, typed fields or values with descriptions, including identity for an Entity`, name);
       }
-      if ((entity || kindOf(row) === 'Domain Service' || externalModel(row)) && !linesOf(row['메서드']).every((method) => methodSignature.test(method))) {
+      const methods = linesOf(row['메서드']);
+      if ((entity || kindOf(row) === 'Domain Service' || externalModel(row)) && (!methods.length || !methods.every((method) => methodSignature.test(method)))) {
         fail(kindOf(row) === 'Domain Service' ? WORKTREE_STAGE.DOMAIN_SERVICE : WORKTREE_STAGE.DOMAIN_MODEL, 'MODEL_METHOD_MISSING', `${name} must declare method signatures with inputs and results`, name);
       }
     }
@@ -244,7 +243,7 @@ function checkContextDesign(requirements, contexts) {
   }
   for (const id of approvedContexts.keys()) if (!contextIds.has(id)) modelFailure('CONTEXT_MISSING', `${id} needs a BC section`, id);
   for (const id of business) if (!covered.has(id)) serviceFailure('BIZ_WITHOUT_APPLICATION_METHOD', `${id} needs an Application Service method or an exclusively external owner`, id);
-  for (const id of rules) if (!ruleOwners.has(id)) aggregateFailure('RULE_NO_OWNER', `${id} has no owning model and method`, id);
+  for (const id of rules) if (!ruleOwners.has(id)) fail(WORKTREE_STAGE.DOMAIN_SERVICE, 'RULE_NO_OWNER', `${id} has no owning model and method after Aggregate and Domain Service responsibilities have been assigned`, id);
   return errors;
 }
 
@@ -357,15 +356,26 @@ export async function planSetDocument(root, planSetId, name) {
 }
 
 // The gate on the plan set's documents of a workspace: what the command and the runner both run.
-export async function checkWorkspaceTacticalDesign({ root, planSetId }) {
+export async function checkWorkspaceTacticalDesign({ root, planSetId, stage = FINAL_TACTICAL_STAGE }) {
   const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
   const requirements = await planSetDocument(root, planSetId, 'requirements.md');
   const tacticalDesign = await planSetDocument(root, planSetId, TACTICAL_DESIGN_DOCUMENT);
+  if (stage !== FINAL_TACTICAL_STAGE && tacticalDesign.text === null && requirements.text !== null) {
+    const legacy = await planSetDocument(root, planSetId, LEGACY_TACTICAL_DESIGN_DOCUMENT);
+    if (Object.keys(sections(legacy.text)).length) return { ok: true, skipped: true, errors: [] };
+  }
   const missing = [[requirements, WORKTREE_STAGE.REQUIREMENTS_FIX], [tacticalDesign, TACTICAL_DESIGN_STAGES[0]]].filter(([document]) => document.text === null);
   if (missing.length) return result(missing.map(([document, stage]) => ({ code: 'DOCUMENT_MISSING', message: `${document.path} does not exist; write it at this exact path (resolve it with harness-spec-path.mjs) before the stage returns completed`, owner_stage: stage })));
+  const contexts = readContextDesign(tacticalDesign.text);
+  // Older numbered plan sets have their original completion gate and no component-table ownership contract.
+  if (!contexts && stage !== FINAL_TACTICAL_STAGE) {
+    if (Object.keys(sections(tacticalDesign.text)).length || !/^## 2\. 업무\s*$/m.test(requirements.text)) return { ok: true, skipped: true, errors: [] };
+    return result([{ code: 'CONTEXT_DESIGN_FORMAT_MISSING', message: `${TACTICAL_DESIGN_DOCUMENT} must use the Context component template and its marker`, owner_stage: WORKTREE_STAGE.DOMAIN_MODEL }]);
+  }
   const { errors } = checkTacticalDesign({ requirements: requirements.text, tacticalDesign: tacticalDesign.text });
-  for (const context of (readContextDesign(tacticalDesign.text) || []).filter(needsClassDiagram)) {
+  const diagrams = stage === WORKTREE_STAGE.AGGREGATE_DESIGN || stage === FINAL_TACTICAL_STAGE ? (contexts || []).filter(needsClassDiagram) : [];
+  for (const context of diagrams) {
     const source = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'puml'));
     const svg = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'svg'));
     const sourceHash = source.text === null ? null : createHash('sha256').update(source.text).digest('hex');
@@ -373,23 +383,23 @@ export async function checkWorkspaceTacticalDesign({ root, planSetId }) {
       code: 'CLASS_DIAGRAM_ARTIFACT_INVALID', message: `Render ${source.path} to ${svg.path} with the installed PlantUML renderer`, id: context.id, owner_stage: WORKTREE_STAGE.AGGREGATE_DESIGN,
     });
   }
-  return result(errors);
+  return result(stage === FINAL_TACTICAL_STAGE ? errors : errors.filter((error) => error.owner_stage === stage));
 }
 
-// The runner's verdict on a result that claims completion; null when the gate does not apply: any stage but the last of the
-// flow, or a status other than completed. The stage identity and the plan set come from the stored input, never from the model.
+// Use the stored stage identity and plan set when accepting a successful result.
 export async function evaluateTacticalDesignGate({ root, input, envelope }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
-  if (stage !== FINAL_TACTICAL_STAGE || envelope?.status !== 'completed' || !planSetId) return null;
-  return { stage, ...(await checkWorkspaceTacticalDesign({ root, planSetId })) };
+  if (!TACTICAL_DESIGN_STAGES.includes(stage) || envelope?.status !== 'completed' || envelope?.code !== 'OK' || !planSetId) return null;
+  return { stage, ...(await checkWorkspaceTacticalDesign({ root, planSetId, stage })) };
 }
 
 // What the caller does with a rejection. A finding of the returning stage's own section is repaired by that stage; a finding
 // that names an earlier stage is a settled section the stage may not edit, so the stage blocks and the earlier stage reopens.
 export function gateFailureInstruction(verdict) {
   const earlier = unique(verdict.errors.map((error) => error.owner_stage)).filter((stage) => stage !== verdict.stage);
-  const head = `The runner ran the tactical design gate (harness-domain-model-check.mjs) once on the whole ${TACTICAL_DESIGN_DOCUMENT} for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running.`;
+  const scope = verdict.stage === FINAL_TACTICAL_STAGE ? `the whole ${TACTICAL_DESIGN_DOCUMENT}` : `the sections and artifacts owned by ${verdict.stage}`;
+  const head = `The runner ran the tactical design gate (harness-domain-model-check.mjs) once on ${scope} for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running.`;
   if (!earlier.length) return `${head} Return these errors to the same subagent so it repairs its own section and decision rows of ${TACTICAL_DESIGN_DOCUMENT} (never requirements.md or an earlier section only to make the gate pass) and rewrites its output file if its summary or artifacts change, then run finish again.`;
   return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in sections of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return the errors to the same subagent so it returns blocked / DEPENDENCY_INCOMPLETE with result.owner_stage ${earlier[0]} (the earliest stage to reopen) and result.dependency_gap holding these errors as the evidence, without editing any earlier section, restores ${TACTICAL_DESIGN_DOCUMENT} to the content it had when the stage started, which is its committed content (the restart needs a clean tree) and rewrites its output file, then run finish again. The orchestrator then reopens ${earlier[0]} itself with --reopen-for and re-runs the stale stages in order, without asking the user.`;
 }
@@ -402,7 +412,6 @@ export class TacticalGateError extends Error {
   }
 }
 
-// The last tactical stage is accepted as completed only when the whole tactical-design.md passes the gate.
 export async function assertTacticalDesignGate(options) {
   const verdict = await evaluateTacticalDesignGate(options);
   if (verdict && !verdict.ok) throw new TacticalGateError(verdict);

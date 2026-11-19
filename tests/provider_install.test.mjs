@@ -75,13 +75,27 @@ test('install --provider claude-code carries no Codex skill root and registers t
     for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop']) assert.equal(settings.hooks[event].length, 1, event);
     assert.match(settings.hooks.SubagentStart[0].hooks[0].command, /harness-agent-event\.mjs/);
     assert.match(settings.hooks.UserPromptSubmit[0].hooks[0].command, /\.claude\/harness\/scripts\/harness-claude-orchestrator-hook\.mjs/);
+    const admission = settings.hooks.PreToolUse.find((entry) => entry.matcher === 'Agent').hooks[0].command;
+    const agent = (tool_input) => spawnSync('sh', ['-c', admission], {
+      cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: 'utf8',
+      input: JSON.stringify({ cwd: root, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input }),
+    });
+    assert.equal(JSON.parse(agent({ subagent_type: 'workflow_stage', resume: 'old-agent' }).stdout).hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(JSON.parse(agent({ subagent_type: 'code_researcher', fork_context: true }).stdout).hookSpecificOutput.permissionDecision, 'deny');
+    assert.equal(agent({ subagent_type: 'workflow_stage', prompt: 'Use the assigned input' }).stdout, '');
     assert.equal(existsSync(join(root, '.codex/hooks.json')), false, 'no Codex hook file for a Claude-only install');
     execFileSync('git', ['-C', root, 'check-ignore', '-q', '.claude/harness/providers/claude-code.mjs']);
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     assert.equal((await loadProvider('claude-code')).id, 'claude-code');
+    await writeFile(join(root, 'app.txt'), 'application change\n');
+    await rm(join(root, '.codex/scripts/harness-agent-admission.mjs'));
+    assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('harness-agent-admission.mjs')));
     await updateProject({ sourceRoot, targetRoot: root });
     assert.deepEqual(present(root, ['.agents/skills/orchestrator/SKILL.md']), []);
-    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '', 'no Harness-managed path, including the contract runner, shows up in git status');
+    assert.equal(execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' }), '?? app.txt\n');
+    assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'application change\n');
+    assert.match(await readFile(join(root, '.claude/skills/orchestrator/references/dispatch.md'), 'utf8'), /새 native 작업자/);
+    assert.equal(JSON.parse(agent({ subagent_type: 'workflow_stage', resume: 'old-agent' }).stdout).hookSpecificOutput.permissionDecision, 'deny');
     assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/, 'the contract runner is excluded like every other managed file');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 // Codex PreToolUse hook: refuse to start an agent that Harness requires to be fresh with a forked conversation.
-// A reviewer, E2E runner or stakeholder persona that inherits the caller's turns is not independent, and it costs the whole history.
-export const FRESH_AGENT_TYPES = ['workflow_stage', 'standards_reviewer', 'spec_reviewer', 'spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'e2e_test_runner', 'stakeholder_persona'];
+export const FRESH_AGENT_TYPES = [
+  'code_researcher', 'contract_reviewer', 'diagram_creator', 'e2e_test_runner', 'execution_runner',
+  'frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer', 'human_approver',
+  'implementation_agent', 'knowledge_claim_extractor', 'knowledge_principle_reviewer',
+  'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author',
+  'spec_adversarial_reviewer', 'spec_reviewer', 'stakeholder_persona', 'standards_reviewer',
+  'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage',
+];
 
 export function freshAgentDecision(event) {
   if (event?.hook_event_name !== 'PreToolUse' || !/spawn_agent$/.test(event.tool_name || '')) return null;

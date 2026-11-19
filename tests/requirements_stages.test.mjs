@@ -87,7 +87,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /material meaning conflict/);
   const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /fork_turns: "none"/);
-  assert.match(dispatch, /상위 대화·도구 출력·문서 본문을 복사하지 않고/);
+  assert.match(dispatch, /부모 이력이나 산출물 본문을 붙여 넣지 않는다/);
   const languageGuide = await read('.codex/internal-skills/ubiquitous-language/GUIDE.md');
   assert.match(languageGuide, /after `subdomain-candidates` and before `event-storming`/);
   assert.match(languageGuide, /Do not rewrite every sentence/);
@@ -164,6 +164,11 @@ test('a BIZ field is written once: a second field of the same name is rejected, 
   assert.deepEqual(failed.errors.map(({ code, id, owner_stage }) => [code, id, owner_stage]), [['DUPLICATE_FIELD', 'BIZ-03', 'event-storming'], ['DUPLICATE_FIELD', 'BIZ-03', 'event-storming']]);
   assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
   assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
+  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}`;
+  const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
+  assert.equal(complete(fixed).ok, true);
+  assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);
+  assert.equal(complete(fixed.replace('AC-01 세션이 생성된다', 'AC-01 TODO')).ok, false);
   assert.match(await read(TEMPLATE), /같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다/);
 });
 

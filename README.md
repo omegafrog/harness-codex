@@ -9,7 +9,7 @@
 - `$orchestrator` — 모델·effort를 지정한 subagent로 skill을 실행하고 상태 코드·결과 파일로 workflow 진행과 회귀를 결정
 - 최초 작업 요청은 `UserPromptSubmit` hook이 메인 orchestrator에 전달하며, `workflow-compose` subagent가 요청별 workflow를 생성한 뒤 작업 skill을 실행한다.
 - 요구사항 흐름 — 새 기능이면 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context`가 하나의 `requirements.md`를 단계별로 채워 확정
-- 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 마지막 stage가 끝날 때 실행기가 문서 전체를 결정론적 gate로 한 번 검사
+- 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 소유 부분을 완료 전에 검사하며, 마지막 stage에서 문서 전체를 검사
 - 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → (사용자 발행 승인) `tracker-publish` → `tactical-code` 순서로 결정·ticket 분할·발행·ticket별 구현과 테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
 - `to-ticket` — 완료된 tactical design과 구현 결정을 바운디드 컨텍스트·업무별 vertical ticket(의존 순서, 소유 규칙과 검증 테스트, 컨텍스트 경계 포함)으로 분할하고 독립 리뷰
 - `implement-wrapper` — Spec 기반 legacy 계획에서 orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환

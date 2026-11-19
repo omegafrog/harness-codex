@@ -99,7 +99,7 @@ export async function consumerWorkflow(t, request) {
     assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
     const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
     assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
-    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${stage}-agent`]);
+    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${prepared.input.execution_id}-agent`]);
     return { stage, prepared, started, base };
   }
 

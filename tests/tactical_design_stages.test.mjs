@@ -170,6 +170,16 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   await writeFile(join(root, currentPath), current);
   const installedGate = await import(pathToFileURL(join(root, GATE_LIBRARY)));
   const workspaceGate = () => installedGate.checkWorkspaceTacticalDesign({ root, planSetId: 'community' });
+  const stageGate = (skill) => installedGate.evaluateTacticalDesignGate({ root, input: { skill, context: { plan_set_id: 'community' } }, envelope: { status: 'completed', code: 'OK' } });
+  await writeFile(join(root, currentPath), current.replace('postId: PostId — 게시글 식별자<br>', ''));
+  assert.deepEqual((await stageGate('domain-model')).errors.map(({ code }) => code), ['MODEL_FIELDS_INCOMPLETE']);
+  await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
+  assert.ok((await stageGate('aggregate-design')).errors.some(({ code }) => code === 'RULE_METHOD_UNKNOWN'));
+  assert.equal((await stageGate('domain-model')).ok, true, 'a later stage owns rule bindings');
+  await writeFile(join(root, currentPath), current.replace('/ 롤백 저장 오류 시', ''));
+  assert.equal((await stageGate('application-service')).errors[0].code, 'TRANSACTION_INCOMPLETE');
+  await writeFile(join(root, currentPath), current);
+  assert.equal((await stageGate('aggregate-design')).errors[0].code, 'CLASS_DIAGRAM_ARTIFACT_INVALID');
   assert.equal((await workspaceGate()).errors[0].code, 'CLASS_DIAGRAM_ARTIFACT_INVALID');
   const diagrams = 'docs/specs/community/diagrams';
   await mkdir(join(root, diagrams));

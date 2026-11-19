@@ -6,7 +6,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
 import { REQUIREMENTS_REVISION_STAGES, WORKTREE_STAGE, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
-import { markRequirementsRevision, resolveReopen } from './stage-reopen.mjs';
+import { markRequirementsRevision, resolveReopen, retainUnchangedStages, revalidationTree } from './stage-reopen.mjs';
 import { assertRequirementsApproval } from './user-inputs.mjs';
 import { assertTacticalDesignGate } from './domain-model-gate.mjs';
 import { assertStageDomainSync } from '../domain/sync.mjs';
@@ -67,7 +67,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
   const orchestratorProvider = input.context?.orchestrator_provider || (codexSessionId ? 'codex' : null);
   const stage = input.context?.stage_id || input.skill;
   if ((orchestratorSessionId && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(orchestratorSessionId)) || (orchestratorProvider && !['codex', 'claude-code'].includes(orchestratorProvider)) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(stage)) throw new Error('Invalid orchestrator session or stage ID');
-  // Every path that records a stage as completed ends here, so the last tactical design stage (context-boundary) cannot be
+  // Every path that records a stage as completed ends here, so the requirements and tactical design gates cannot be
   // accepted without the gate on the whole tactical-design.md. The earlier tactical stages are not gated.
   // The design-freeze gate likewise guards the last implementation-design stage (tactical-data) before to-ticket may split the design.
   // stakeholder-analysis likewise records the requester's features as settled and drops no anchored candidate.
@@ -94,12 +94,21 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (state && input.context?.workflow_ref && state.workflow_ref !== input.context.workflow_ref) throw new Error('Workflow reference mismatch');
     if (status === 'running' && input.skill === 'workflow-compose' && state && ACTIVE_WORKFLOW_STATES.has(state.status) && state.stages?.[stage]?.status !== 'running') throw new Error('Workflow already active');
     state ||= { schema_version: 1, workflow_ref: null, stages: {} };
+    const previousParent = state.orchestrator_session_id || null;
     if (input.context?.worktree_ref) delete state.codex_session_id;
     else if (codexSessionId) state.codex_session_id = codexSessionId;
     if (orchestratorSessionId) { state.orchestrator_session_id = orchestratorSessionId; state.orchestrator_provider = orchestratorProvider; }
     const previous = state.stages?.[stage];
     if (nativeTerminalAgentId !== null && (status === 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || previous.native_agent_id !== nativeTerminalAgentId)) throw new Error('Native stage changed before terminal transition');
     if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId))) throw new Error('Native subagent binding mismatch');
+    if (nativeAgentId !== null) {
+      const parent = orchestratorSessionId || previousParent;
+      const identity = (id) => binding.provider === 'codex' ? id?.replace(/^\/root\//, '') : id;
+      const reused = Object.values(state.stages).some((entry) => [entry, ...(entry.attempts || [])].some((attempt) =>
+        attempt.execution_id !== input.execution_id && (attempt.native_agent_session_id ?? previousParent) === parent
+        && identity(attempt.native_agent_id) === identity(nativeAgentId)));
+      if (reused) throw new Error('Native subagent already served another execution in this session; start a fresh agent with a new ID');
+    }
     if (nativeClaim && previous?.status === 'running') throw new Error('Stage already running; check the native subagent before retrying');
     if (status === 'running' && previous?.status === 'running' && previous.execution_id !== input.execution_id) {
       await assertExecutionStopped(previous);
@@ -120,6 +129,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
       await beforeTransition();
     }
     const now = new Date().toISOString();
+    let rewindTree;
     if (nativeClaim) {
       const orderViolation = preSpecOrderViolation(state.stages, stage) || tacticalImplementationOrderViolation(state.stages, stage);
       if (orderViolation) throw new Error(orderViolation);
@@ -132,6 +142,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
         const plan = await resolveReopen({ root, session, state, ownerStage: stage, blockedExecutionId: reopen.blocked_execution_id });
         for (const id of plan.mark) state.stages[id] = { ...state.stages[id], stale: plan.stale };
       }
+      if (revision || reopen?.reason === 'dependency_gap') rewindTree = await revalidationTree(root);
     }
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
@@ -139,13 +150,21 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;
       entry.started_at = previous?.execution_id === input.execution_id && previous.status === 'running' ? previous.started_at || now : now;
-      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.finished_at; delete entry.taken_over; delete entry.stale; }
+      if (previous?.execution_id !== input.execution_id) { delete entry.native_managed; delete entry.native_finished; delete entry.native_agent_id; delete entry.native_agent_session_id; delete entry.finished_at; delete entry.taken_over; delete entry.stale; delete entry.revalidation_tree; }
       if (nativeClaim) entry.native_managed = true;
+      if (rewindTree) entry.revalidation_tree = rewindTree;
       if (nativeClaim && stage === WORKTREE_STAGE.DOMAIN_MODEL && input.context?.requirements_approval?.execution_id) entry.requirements_approval = input.context.requirements_approval.execution_id;
-      if (nativeAgentId !== null) entry.native_agent_id = nativeAgentId;
+      if (nativeAgentId !== null) {
+        entry.native_agent_id = nativeAgentId;
+        entry.native_agent_session_id = orchestratorSessionId || previousParent;
+      }
       if (previous && previous.execution_id !== input.execution_id) entry.attempts = [...(previous.attempts || []), Object.fromEntries(Object.entries(previous).filter(([key]) => key !== 'attempts'))];
     }
     else { entry.finished_at = now; if (entry.native_managed) entry.native_finished = true; }
+    if (status === 'completed' && code === 'OK' && entry.revalidation_tree) {
+      await retainUnchangedStages({ root, session, state, owner: entry, rewindId: input.context?.reopen?.blocked_execution_id || input.execution_id, resultRef: result_ref, resultSession: input.session_directory });
+      delete entry.revalidation_tree;
+    }
     state.stages = { ...state.stages, [stage]: entry };
     state.status = input.skill === 'workflow-compose' && status === 'completed' ? (priorWorkflowStatus || 'created') : status === 'completed' || status === 'action_required' ? 'waiting' : status;
     if (status === 'action_required') entry.status = 'waiting';

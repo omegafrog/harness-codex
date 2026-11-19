@@ -29,6 +29,7 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
   const dir = await mkdtemp(join(tmpdir(), 'e2e-telemetry-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const root = join(dir, 'consumer'), codexHome = join(dir, 'codex');
+  const claudeHome = join(dir, 'claude');
   const sessions = join(codexHome, 'sessions', '2026', '11', '19');
   await mkdir(root);
   await mkdir(sessions, { recursive: true });
@@ -54,14 +55,17 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
     call('4', 'exec_command', 'npm test'),
     call('5', 'list_agents'), output('5', 'unchanged'),
     call('6', 'list_agents'), output('6', 'unchanged'),
+    call('7', 'exec_command', "rg 'node --test|npm test' docs"),
   ]);
   await rollout(child, [
     event('session_meta', { id: child, parent_thread_id: main }),
     compaction(main, 'main-compaction'), compaction(child, 'own-compaction'), tokens(child, 'child', 4),
+    call('3', 'exec_command', 'npm test'),
+    call('7', 'exec_command', 'cat another'),
   ]);
   const run = (enabled, id, extra = []) => JSON.parse(execFileSync(process.execPath, [
     join(root, script), '--root', root, '--run-id', id, ...extra,
-  ], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_E2E_TELEMETRY: enabled, CODEX_HOME: codexHome } }));
+  ], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_E2E_TELEMETRY: enabled, CODEX_HOME: codexHome, CLAUDE_CONFIG_DIR: claudeHome } }));
   const reportPath = (id) => join(root, '.io/runtime/e2e', id, 'telemetry.json');
 
   assert.deepEqual(run('0', 'off', ['--thread', 'intentionally-invalid']), { status: 'disabled' });
@@ -72,14 +76,40 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
   const report = JSON.parse(reportText);
   assert.equal(report.threads.length, 2);
   assert.deepEqual(report.tokens, { input_tokens: 14, cached_input_tokens: 4, output_tokens: 6, reasoning_output_tokens: 2 });
-  assert.equal(report.calls, 6);
+  assert.equal(report.calls, 8);
+  assert.equal(report.copied_calls_excluded, 1);
   assert.equal(report.compactions, 2);
   assert.equal(report.threads[0].compactions.length, 1);
   assert.deepEqual(report.threads[1].compactions, [{ line: 3, turn_id: 'stage-turn', at: now }]);
-  assert.deepEqual(report.candidates, { read: 1, missing_path: 1, search: 1, test: 2, repeated_command: 1, unchanged_agent_list: 1 });
+  assert.deepEqual(report.candidates, { read: 2, missing_path: 1, search: 2, test: 2, repeated_command: 1, unchanged_agent_list: 1 });
   assert.doesNotMatch(reportText, /CANARY_PRIVATE_PATH|CANARY_PRIVATE_SUMMARY|npm test/);
   assert.equal(run('1', 'partial', ['--thread', main, '--thread', missing]).status, 'partial');
   assert.equal(JSON.parse(await readFile(reportPath('partial'), 'utf8')).missing[0].thread_id, missing);
+
+  const claudeProject = join(claudeHome, 'projects', 'project');
+  const subagents = join(claudeProject, main, 'subagents');
+  await mkdir(subagents, { recursive: true });
+  const claudeEntry = (type, fields) => ({ type, sessionId: main, timestamp: now, ...fields });
+  const bash = { type: 'tool_use', name: 'Bash', id: 'claude-call', input: { command: "rg 'npm test' CANARY_PRIVATE_PATH" } };
+  const usage = { input_tokens: 3, cache_read_input_tokens: 7, cache_creation_input_tokens: 2, output_tokens: 2 };
+  const assistant = (id, content, overrides = {}) => claudeEntry('assistant', { ...overrides, message: { id, content, usage } });
+  await writeFile(join(claudeProject, `${main}.jsonl`), [
+    assistant('same', [bash]),
+    claudeEntry('assistant', { message: { id: 'same', content: [], usage: { output_tokens: 5 } } }),
+  ].map(JSON.stringify).join('\n'));
+  await writeFile(join(subagents, 'agent-a1.jsonl'), [
+    assistant('same', [bash], { agentId: 'a1' }),
+    assistant('own', [{ ...bash, id: 'own-call', input: { command: 'env CI=1 node --import ./setup.mjs --test test.mjs' } }], { agentId: 'a1' }),
+    claudeEntry('system', { agentId: 'a1', subtype: 'compact_boundary', uuid: 'compact', content: 'CANARY_PRIVATE_SUMMARY' }),
+  ].map(JSON.stringify).join('\n'));
+  assert.equal(run('1', 'claude', ['--provider', 'claude-code', '--thread', main, '--since', now]).status, 'complete');
+  const claudeText = await readFile(reportPath('claude'), 'utf8');
+  const claude = JSON.parse(claudeText);
+  assert.deepEqual(claude.tokens, { input_tokens: 24, cached_input_tokens: 14, cache_creation_input_tokens: 4, output_tokens: 7 });
+  assert.deepEqual(claude.candidates, { search: 1, test: 1 });
+  assert.equal(claude.copied_calls_excluded, 1);
+  assert.equal(claude.compactions, 1);
+  assert.doesNotMatch(claudeText, /CANARY_PRIVATE_PATH|CANARY_PRIVATE_SUMMARY|npm test/);
   const invalid = spawnSync(process.execPath, [join(root, script), '--root', root, '--run-id', '../outside'], {
     env: { ...process.env, HARNESS_E2E_TELEMETRY: '1' }, encoding: 'utf8',
   });

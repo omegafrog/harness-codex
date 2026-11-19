@@ -70,7 +70,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
 
   // bind and finish.
   const bound = ok(exec(workspace, NATIVE, ['bind', '--execution-id', prepared.execution_id, '--agent-id', 'agent-1']));
-  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1' });
+  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1', receive_command: `node .codex/scripts/${NATIVE} receive --execution-id ${prepared.execution_id} --agent-id 'agent-1'` });
   await submitStage({ stage, started }, { summary: SKIP(analysis) });
   const finishOutput = exec(workspace, NATIVE, ['finish', '--execution-id', prepared.execution_id]);
   const finished = ok(finishOutput);
@@ -160,6 +160,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const next = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'subdomain-candidates']));
   assert.equal(next.from_stage, 'stakeholder-analysis');
   assert.equal(next.from_code, 'OK');
+  refusal(runPrinted(workspace, next.next.bind, '/root/analysis-agent'), 'FRESH_AGENT_REQUIRED');
   await submitStage({ stage: 'subdomain-candidates', started: next }, { summary: SKIP(analysis) });
   const bound = runPrinted(workspace, next.next.bind);
   assert.equal(bound.status, 0, bound.stderr);
@@ -167,7 +168,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
 
   // A launch that needs the user instead of a new run (a partial answer batch) reports it and starts nothing.
   const asked = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'ubiquitous-language']));
-  ok(runPrinted(workspace, asked.next.bind));
+  ok(runPrinted(workspace, asked.next.bind, 'language-agent'));
   await submitStage({ stage: 'ubiquitous-language', started: asked }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
   const waiting = ok(runPrinted(workspace, asked.next.finish));
   assert.equal(waiting.code, 'USER_DECISION_REQUIRED');
@@ -176,6 +177,10 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const resumed = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'ubiquitous-language', '--answer', 'no']));
   assert.equal(resumed.status, 'launched');
   assert.equal(resumed.answered, true);
+  assert.equal(JSON.parse(await readFile(resumed.answers_path, 'utf8'))[0].answer, 'no');
+  assert.equal(resumed.feedback_path, undefined);
+  refusal(runPrinted(workspace, resumed.next.bind, 'language-agent'), 'FRESH_AGENT_REQUIRED');
+  ok(runPrinted(workspace, resumed.next.bind, 'language-answer-agent'));
   assert.equal(treeGit('status', '--short', '--untracked-files=all').replace(/^ M app\.txt\n?/m, '').trim(), '');
 });
 
@@ -282,7 +287,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   const unusable = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_RESULT_MISSING');
   assert.match(unusable.error, /subdomain-candidates is running/);
   assert.match(ids(unusable), new RegExp(`finish --execution-id ${flowRun.execution_id}`));
-  ok(runPrinted(workspace, flowRun.next.bind));
+  ok(runPrinted(workspace, flowRun.next.bind, 'candidate-agent'));
   await submitStage({ stage: 'subdomain-candidates', started: flowRun }, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', questions: [question] });
   ok(runPrinted(workspace, flowRun.next.finish));
   const unresolved = refusal(exec(workspace, PREPARE, ['--stage-id', 'implement-wrapper', '--plan', 'any-plan']), 'PREVIOUS_UNRESOLVED');

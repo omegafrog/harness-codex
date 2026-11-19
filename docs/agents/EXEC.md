@@ -302,7 +302,7 @@ codex exec resume --json --model gpt-6-luna \
 
 로그·stderr·마지막 응답·프로세스 종료 코드·artifact snapshot/cleanup 결과는 Harness source session의 `runtime/e2e/<run_id>/`에 단계별로 보존한다. 생성 worktree의 정본 `.io`와 최종 source·Spec·계획·계약·다이어그램은 테스트 산출물로 보존한다. 임의 timeout으로 살아 있는 workflow를 끊지 않고, 명시된 제한이 만료되면 timeout으로 보고하며 자동 재시도하지 않는다.
 
-사용량과 호출 분석을 함께 보고할 실행에서는 `HARNESS_E2E_TELEMETRY=1`을 지정하거나 사용자 요청의 분석 선택을 runner에 전달한다. `0` 또는 미설정의 기본 동작은 분석 끔이다. 같은 run의 재개에 선택값을 유지한다. 켜진 실행은 종료·실패·승인 대기 지점의 Codex 기록을 [E2E 사용량 분석](../../.codex/internal-skills/e2e-telemetry/GUIDE.md)으로 집계하여 해당 run의 `telemetry.md`와 `telemetry.json`을 보고한다.
+사용량과 호출 분석을 함께 보고할 실행에서는 `HARNESS_E2E_TELEMETRY=1`을 지정하거나 사용자 요청의 분석 선택을 runner에 전달한다. `0` 또는 미설정의 기본 동작은 분석 끔이다. 같은 run의 재개에 선택값을 유지한다. 켜진 실행은 종료·실패·승인 대기 지점의 provider 기록을 [E2E 사용량 분석](../../.codex/internal-skills/e2e-telemetry/GUIDE.md)으로 집계해 `telemetry.md`와 `telemetry.json`을 보고한다. Claude Code의 별도 비교 실행에서 140,000 토큰을 사용하려면 부모 프로세스를 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=140000`으로 실행하고 수집 명령에 `--provider claude-code`를 넘긴다. 각 provider의 토큰과 캐시 기록은 같은 provider에서 전후를 비교한다.
 
 ### Orchestrator 작업 실행
 

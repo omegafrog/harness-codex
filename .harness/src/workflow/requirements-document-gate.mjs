@@ -1,37 +1,63 @@
-// Deterministic shape check of requirements.md when a requirements stage returns its questions or completes.
-// Every BIZ section holds each field once: a stage fills a field by replacing its line in place (for example the
-// `없음 — 후속 stage가 채운다` placeholder), never by appending a second field of the same name. An E2E event-storming run
-// appended a second `- 업무 규칙:`, `- 예외 시나리오:` and `- 이벤트 흐름:` to one BIZ and then failed to merge them with
-// patches built from a stale view of the file; this check rejects such a document before it is committed.
-import { planSetDocument } from './domain-model-gate.mjs';
-import { REQUIREMENTS_STAGES } from './worktree-stages.mjs';
+// Check BIZ field uniqueness before result acceptance and require defined INV, EX and AC entries at coverage completion.
+import { outsideFences, planSetDocument } from './domain-model-gate.mjs';
+import { REQUIREMENTS_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const BIZ_HEADING = /^###[ \t]+(BIZ-\d+)\b/;
 const FIELD = /^- ([^:：\n]+?)\s*[:：]/;
 const SECTION_END = /^#{1,3}[ \t]/;
 
-export function checkRequirementsDocument({ requirements, stage }) {
+export function checkRequirementsDocument({ requirements, stage, complete = false }) {
   const errors = [];
+  const lines = outsideFences(requirements);
+  const coverage = complete && [WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT].includes(stage)
+    && lines.some((line) => /^## 2\. 업무\s*$/.test(line));
+  const identifiers = new Set();
+  const report = (code, message) => errors.push({ code, id: biz, message, owner_stage: code === 'DUPLICATE_FIELD' ? stage : WORKTREE_STAGE.REQUIREMENTS_FIX });
   let biz = null;
+  let hasBusiness = false;
   let fields = new Map();
   const close = () => {
-    for (const [label, lines] of fields) {
-      if (lines.length > 1) errors.push({ code: 'DUPLICATE_FIELD', id: biz, message: `${biz} has the field "${label}" ${lines.length} times (lines ${lines.join(', ')}). Fill a field by replacing its existing line in place; merge the duplicates into the first one and remove the rest. Re-read the ${biz} section before patching and anchor each patch hunk on its heading (@@ ### ${biz} ...).`, owner_stage: stage });
+    for (const [label, positions] of fields) {
+      if (positions.length > 1) report('DUPLICATE_FIELD', `${biz} has the field "${label}" ${positions.length} times (lines ${positions.map((index) => index + 1).join(', ')}). Merge the duplicate into the existing field and anchor the patch on its heading (@@ ### ${biz} ...).`);
+    }
+    if (!coverage) return;
+    const positions = [...fields.values()].map(([index]) => index).filter(Number.isInteger).sort((a, b) => a - b);
+    for (const [label, prefix] of [['업무 규칙', 'INV'], ['예외 시나리오', 'EX'], ['완료 조건', 'AC']]) {
+      if (fields.get(label)?.length > 1) continue;
+      const index = fields.get(label)?.[0];
+      const end = positions.find((position) => position > index) ?? lines.findIndex((line, position) => position > index && SECTION_END.test(line));
+      const content = index === undefined ? '' : [lines[index].replace(FIELD, ''), ...lines.slice(index + 1, end < 0 ? lines.length : end)].join('\n').trim();
+      if (prefix !== 'AC' && /^(?:[-*]\s+)?(?:해당 )?없음\s+[—–-]\s+(?!후속(?:\s|$))\S[^\n]*$/.test(content)) continue;
+      const items = content.split('\n').filter((line) => line.trim());
+      const itemPattern = new RegExp(`^\\s*(?:[-*]\\s+)?(${prefix}-\\d+)\\s+(.+)$`);
+      if (!items.length || items.some((line) => !itemPattern.test(line))) {
+        report('BIZ_REQUIREMENT_INCOMPLETE', `${biz} needs defined ${prefix} entries in ${label}${prefix === 'AC' ? '' : ' or an explicit reason it does not apply'}. Give each entry its stable ID and the actual rule, outcome or observable condition.`);
+      }
+      for (const line of items) {
+        const match = itemPattern.exec(line);
+        if (!match) continue;
+        const [, id, description] = match;
+        if (identifiers.has(id)) report('BIZ_REQUIREMENT_DUPLICATE_ID', `${biz} reuses ${id}; use one distinct ID per entry across requirements.md.`);
+        identifiers.add(id);
+        if (/^(?:[-–—_]+|TBD|TODO|미정|없음(?:\s*—\s*후속.*)?)(?:\s*—\s*출처:.*)?$/i.test(description.trim())) report('BIZ_REQUIREMENT_INCOMPLETE', `${biz} ${id} still has a placeholder in ${label}.`);
+      }
     }
   };
-  String(requirements ?? '').split(/\r?\n/).forEach((line, index) => {
+  lines.forEach((line, index) => {
     const heading = BIZ_HEADING.exec(line);
     if (heading || (biz && SECTION_END.test(line))) {
       if (biz) close();
       biz = heading ? heading[1] : null;
+      if (heading) hasBusiness = true;
       fields = new Map();
       return;
     }
     if (!biz) return;
     const field = FIELD.exec(line);
-    if (field) fields.set(field[1].trim(), [...(fields.get(field[1].trim()) || []), index + 1]);
+    if (field) fields.set(field[1].trim(), [...(fields.get(field[1].trim()) || []), index]);
   });
   if (biz) close();
+  if (coverage && !hasBusiness) report('BIZ_REQUIREMENT_INCOMPLETE', 'requirements.md needs a BIZ section for each confirmed business use case.');
   return { ok: errors.length === 0, errors };
 }
 
@@ -42,10 +68,10 @@ export async function evaluateRequirementsDocumentGate({ root, input, envelope }
   if (!REQUIREMENTS_STAGES.includes(stage) || !planSetId || !['completed', 'action_required'].includes(envelope?.status)) return null;
   const requirements = await planSetDocument(root, planSetId, 'requirements.md');
   if (requirements.text === null) return null;
-  return { stage, ...checkRequirementsDocument({ requirements: requirements.text, stage }) };
+  return { stage, ...checkRequirementsDocument({ requirements: requirements.text, stage, complete: envelope.status === 'completed' && envelope.code === 'OK' }) };
 }
 
-export const requirementsDocumentFailureInstruction = (verdict) => `The runner checked requirements.md for ${verdict.stage} and found a BIZ field written twice. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it re-reads each named BIZ section, merges the duplicate field into the first occurrence in place, rewrites its output file if needed, then run finish again.`;
+export const requirementsDocumentFailureInstruction = (verdict) => `The runner checked requirements.md for ${verdict.stage}. Nothing was committed or recorded, and the stage is still running. Return the errors to the same subagent. Merge duplicate fields into the first occurrence in place and anchor each patch on the named BIZ heading. Correct owned fields, ask the user for any open business decision in scope, or return blocked / DEPENDENCY_INCOMPLETE for an earlier owner named in the errors. Resubmit using the same execution and run finish again.`;
 
 export class RequirementsDocumentError extends Error {
   constructor(verdict) {

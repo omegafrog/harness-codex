@@ -123,7 +123,10 @@ try {
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);
     const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow, stage });
     await recordExecutionState({ root, input, binding, status: 'running', nativeClaim: true });
-    const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding };
+    const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding,
+      ...(existsSync(paths.files.answers) ? { answers_path: paths.files.answers } : {}),
+      ...(existsSync(paths.files.feedback) ? { feedback_path: paths.files.feedback } : {}),
+    };
     process.stdout.write(`${JSON.stringify(verbose ? started : compactStarted(started, { executionId: id }))}\n`);
   } else {
     const state = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' });
@@ -131,11 +134,15 @@ try {
     if (current?.status !== 'running' || current.execution_id !== id || !current.native_managed) throw new Error('Native stage is not running for this execution');
     if (action === 'inspect') {
       let observation = null;
-      let threadId = null;
+      let codexOutcome = null;
+      const workflowState = state.state || state;
       if (binding.provider === 'codex' && current.native_agent_id) {
-        const { resolveNativeCodexThread } = await import('../../.harness/src/workflow/native-context.mjs');
-        threadId = await resolveNativeCodexThread({ root, parentSessionId: (state.state || state).orchestrator_session_id, stage: current });
+        const { resolveNativeCodexThread, readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+        const target = { root, parentSessionId: workflowState.orchestrator_session_id, stage: current };
+        const threadId = await resolveNativeCodexThread(target);
+        if (threadId) codexOutcome = { thread_id: threadId, outcome: await readNativeCodexOutcome(target, threadId).catch(() => null) };
       }
+      const threadId = codexOutcome?.thread_id || null;
       const relative = `runtime/executions/${id}/native-observations.jsonl`;
       await assertWorkspaceTarget(session, relative);
       let file;
@@ -154,10 +161,8 @@ try {
       finally { if (file) await file.close(); }
       // Which conversation owns the run, what the agent's own transcript says, and the next step when another (ended)
       // conversation started it: this one cannot wait for or finish an agent it did not spawn, so it takes the stage over.
-      const workflowState = state.state || state;
       const here = process.env.CODEX_THREAD_ID || null;
-      let nativeOutcome = null;
-      if (threadId) nativeOutcome = (await (await import('../../.harness/src/workflow/native-context.mjs')).readNativeCodexOutcome({ root, parentSessionId: workflowState.orchestrator_session_id, stage: current }).catch(() => null))?.status || null;
+      const nativeOutcome = codexOutcome?.outcome?.status || null;
       const foreign = foreignRunningStage(workflowState, here);
       const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
       const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
@@ -282,17 +287,14 @@ try {
       process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
-    // A requirements stage is accepted (its questions or its completion) only when no BIZ section of requirements.md holds a field twice.
+    // Check BIZ field shape and, at requirements completion, the rule, exception and acceptance entries.
     const { evaluateRequirementsDocumentGate, requirementsDocumentFailureInstruction } = await import('../../.harness/src/workflow/requirements-document-gate.mjs');
     const documentGate = await evaluateRequirementsDocumentGate({ root, input, envelope: raw });
     if (documentGate && !documentGate.ok) {
       process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'requirements_document_check', executionId: id, stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate), outputPath: paths.files.raw }))}\n`);
       process.exit(1);
     }
-    // The last tactical design stage (context-boundary) is accepted as completed only when the whole tactical-design.md passes the
-    // gate, checked once before anything is committed or recorded; no earlier stage is gated. A rejection leaves the stage running;
-    // every error names the stage that owns the failing section (`owner_stage`), the caller returns the errors to the same subagent,
-    // and the same finish runs again.
+    // Check component ownership at each stage and the whole design at context-boundary before committing anything.
     const { evaluateTacticalDesignGate, gateFailureInstruction } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
     const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
     if (gate && !gate.ok) {
@@ -334,7 +336,8 @@ try {
       await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
       throw error;
     }
-    const staleOrder = envelope.status === 'completed' ? staleStages(await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: 'runtime/orchestrator/state.json' }).catch(() => null)) : null;
+    const updated = envelope.status === 'completed' ? await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' }).catch(() => null) : null;
+    const staleOrder = updated ? staleStages(updated.state || updated) : null;
     const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
     const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);

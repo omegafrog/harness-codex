@@ -21,10 +21,10 @@ compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestra
 node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage-id> --answer '[{"question_id":"<현재-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"}]'
 ```
 
-한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 `launch`가 새 실행을 예약해 `answered: true`와 함께 반환하므로 native 서브에이전트를 호출한다. 준비기만 실행했다면 `harness-native-stage.mjs start`로 예약한다. 같은 provider면 기존 대화를 재개하고, 다른 provider면 새 대화에서 이전 결과와 답변을 읽는다. 모든 답이 모이기 전에는 이미 전달한 답을 고칠 수 있다. 같은 `question_id`의 새 답이 이전 답을 대체하며, 한 번의 호출에 같은 ID를 두 번 담지 않는다. 모든 답이 모여 `decision-answers.json`이 기록된 뒤에는 다른 답으로 바꿀 수 없다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
+한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 `launch`가 새 실행을 예약해 `answered: true`와 함께 반환하므로 native 서브에이전트를 호출한다. 준비기만 실행했다면 `harness-native-stage.mjs start`로 예약한다. provider와 관계없이 새 실행에는 새 작업자가 이전 결과와 전달받은 답변을 읽는다. 모든 답이 모이기 전에는 이미 전달한 답을 고칠 수 있다. 같은 `question_id`의 새 답이 이전 답을 대체하며, 한 번의 호출에 같은 ID를 두 번 담지 않는다. 모든 답이 모여 `decision-answers.json`이 기록된 뒤에는 다른 답으로 바꿀 수 없다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
 
 실행 중 `--answer`가 도착하면 준비기는 질문 ID와 답을 보존하고 `waiting_for_running_stage: true`를 반환한다. 새 실행을 만들지 않는다. 기존 에이전트의 실제 종료를 확인하고 `finish` 또는 `fail`을 처리한다. `finish` 결과가 질문 대기이면 `launch --stage-id <stage-id>`를 다시 실행한다. 보존된 답은 해당 질문 ID를 검증해 수집하며 다시 묻지 않는다. 실패 후 재개할 때는 `deferred_user_answers_unverified` 입력으로 보존하며 기존 질문과 대조하기 전에는 적용하지 않는다.
 
 “모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다. 이후 새 결과의 질문에는 새 사용자 답변이 필요하다. 단, 사용자가 앞으로의 질문에도 적용하도록 명시적으로 위임한 경우에는 그 범위에 따른다.
 
-질문을 반환한 실행의 `decision-answers.json`은 그 질문에 대한 확정 답변이다. 재개 실행의 `answers.json`은 그 실행에 전달된 입력 답변이다. 두 경로를 혼동해 존재하지 않는 파일을 근거로 인용하지 않는다. 수정 반환으로 같은 stage를 재개할 때는 `--feedback`에 구체적인 수정 지적을 전달한다. 같은 provider는 session을 재개하고 다른 provider는 새 session에서 이전 결과를 읽는다.
+질문을 반환한 실행의 `decision-answers.json`은 그 질문에 대한 확정 답변이다. 재개 실행의 `answers.json`은 그 실행에 전달된 입력 답변이다. 재개 실행은 답변과 피드백이 있을 때만 `answers_path`·`feedback_path`를 반환한다. 이 절대 경로와 입력에 명시된 참조를 사용한다. 수정 반환으로 같은 stage를 재개할 때는 `--feedback`에 구체적인 수정 지적을 전달한다. 새 작업자가 해당 실행의 입력과 이전 결과를 읽는다.

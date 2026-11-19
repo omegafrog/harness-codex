@@ -66,8 +66,8 @@ export async function resolveNativeCodexThread({ root, parentSessionId, stage })
   } finally { await handle.close(); }
 }
 
-export async function readNativeCodexOutcome({ root, parentSessionId, stage }) {
-  const threadId = await resolveNativeCodexThread({ root, parentSessionId, stage });
+export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
+  const threadId = resolvedThreadId || await resolveNativeCodexThread({ root, parentSessionId, stage });
   if (!threadId) return null;
   const { findRollout } = await import('./providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);

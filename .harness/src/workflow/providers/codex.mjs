@@ -21,7 +21,7 @@ export function codexSubagentHook() {
   };
 }
 
-// Refuses a forked start of a reviewer or E2E runner before it runs. Codex hook matchers do not match spawn_agent, so
+// Refuses a forked start of a Harness agent before it runs. Codex hook matchers do not match spawn_agent, so
 // the shell filter keeps node off every other tool call. Optional: without trust, the later fork checks still apply.
 const FRESH_AGENT_STATUS = 'Checking Harness fresh agent';
 export function codexFreshAgentHook() {
