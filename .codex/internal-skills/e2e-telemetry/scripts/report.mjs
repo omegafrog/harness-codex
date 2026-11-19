@@ -61,8 +61,8 @@ async function inspectRollout(path, id, parent, since) {
     if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe transcript');
     stream = file.createReadStream({ autoClose: false });
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
-    const record = { thread_id: id, parent_thread_id: parent, rollout: path, role: null, tokens: {}, calls: [], children: [], invalid_lines: 0 };
-    const responses = new Set(), calls = new Map(), commandsSeen = new Set(), listingsSeen = new Set();
+    const record = { thread_id: id, parent_thread_id: parent, rollout: path, role: null, tokens: {}, calls: [], compactions: [], children: [], invalid_lines: 0 };
+    const responses = new Set(), calls = new Map(), commandsSeen = new Set(), listingsSeen = new Set(), compactionsSeen = new Set();
     let metadata = false, fallback = null, lineNumber = 0, turn = null;
     for await (const line of lines) {
       lineNumber += 1;
@@ -83,9 +83,17 @@ async function inspectRollout(path, id, parent, since) {
         addTokens(record.tokens, item.usage);
       }
       if (entry.type === 'event_msg' && item.type === 'token_count') fallback = item.info?.total_token_usage || fallback;
-      if (entry.type === 'event_msg' && item.type === 'item_completed' && item.item?.type === 'SubAgentActivity'
-          && item.item.kind === 'started' && THREAD_ID.test(item.item.agent_thread_id || '')) {
-        record.children.push(item.item.agent_thread_id);
+      if (entry.type === 'event_msg' && item.type === 'item_completed') {
+        const activity = item.item;
+        if (activity?.type === 'SubAgentActivity' && (!item.thread_id || item.thread_id === id)
+            && ['started', 'interacted', 'completed'].includes(activity.kind) && THREAD_ID.test(activity.agent_thread_id || '')) {
+          record.children.push(activity.agent_thread_id);
+        }
+        // The paired `compacted` record carries summary text, and a history fork can copy a parent's events.
+        if (activity?.type === 'ContextCompaction' && item.thread_id === id && typeof activity.id === 'string' && !compactionsSeen.has(activity.id)) {
+          compactionsSeen.add(activity.id);
+          record.compactions.push({ line: lineNumber, turn_id: label(item.turn_id), at: entry.timestamp });
+        }
       }
       if (entry.type !== 'response_item') continue;
       if (CALL.has(item.type) && !calls.has(item.call_id || item.id)) {
@@ -147,11 +155,12 @@ async function measure(roots, since) {
     }
   }
   const status = !threads.length ? 'unavailable' : missing.length || threads.some((thread) => !thread.token_source || thread.invalid_lines) ? 'partial' : 'complete';
-  return { status, since: since === null ? null : new Date(since).toISOString(), tokens, tools, candidates, missing, threads };
+  const compactions = threads.reduce((count, thread) => count + thread.compactions.length, 0);
+  return { status, since: since === null ? null : new Date(since).toISOString(), tokens, tools, candidates, missing, compactions, threads };
 }
 
 function markdown(report) {
-  const { status, tokens, threads, calls, tools, candidates, missing } = report;
+  const { status, tokens, threads, calls, tools, candidates, missing, compactions } = report;
   const format = (value) => value === undefined ? '수집 불가' : value.toLocaleString('ko-KR');
   const uncached = tokens.input_tokens !== undefined && tokens.cached_input_tokens !== undefined
     ? tokens.input_tokens - tokens.cached_input_tokens : undefined;
@@ -162,14 +171,15 @@ function markdown(report) {
     '- 입력 ' + format(tokens.input_tokens) + ' · 캐시 입력 ' + format(tokens.cached_input_tokens) + ' · 출력 ' + format(tokens.output_tokens) + ' · 추론 출력 ' + format(tokens.reasoning_output_tokens),
     '- 캐시 제외 입력 ' + format(uncached),
     '- 모델 도구 호출 ' + (threads.length ? format(calls) + '회' : '수집 불가'),
+    '- 컨텍스트 압축 관측 ' + (threads.length ? format(compactions) + '회' : '수집 불가'),
     ...Object.entries(tools).map(([key, count]) => '  - ' + key + ' ' + count + '회'),
     ...Object.entries(candidates).map(([key, count]) => '- 검토 후보 ' + key + ' ' + count + '회'),
     '',
     ...threads.length ? [
-      '| 스레드 | 역할 | 입력 | 캐시 입력 | 출력 | 도구 호출 |',
-      '|---|---|---:|---:|---:|---:|',
+      '| 스레드 | 역할 | 입력 | 캐시 입력 | 출력 | 도구 호출 | 압축 관측 |',
+      '|---|---|---:|---:|---:|---:|---:|',
       ...threads.map((thread) => [thread.thread_id, thread.role || '상위', format(thread.tokens.input_tokens),
-        format(thread.tokens.cached_input_tokens), format(thread.tokens.output_tokens), thread.calls.length].join(' | ')).map((row) => '| ' + row + ' |'),
+        format(thread.tokens.cached_input_tokens), format(thread.tokens.output_tokens), thread.calls.length, thread.compactions.length].join(' | ')).map((row) => '| ' + row + ' |'),
       '',
     ] : [],
     '캐시 입력은 전체 입력에 포함된다. 후보 유형은 같은 호출에서 겹칠 수 있다.',

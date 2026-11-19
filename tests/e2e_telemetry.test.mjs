@@ -23,6 +23,7 @@ const tokens = (id, response_id, input_tokens, timestamp) => event('token_usage_
 }, timestamp);
 const call = (call_id, name, cmd = '') => event('response_item', { type: 'function_call', name, call_id, arguments: JSON.stringify({ cmd }) });
 const output = (call_id, text) => event('response_item', { type: 'function_call_output', call_id, output: text });
+const compaction = (thread_id, id, timestamp) => event('event_msg', { type: 'item_completed', thread_id, turn_id: 'stage-turn', item: { type: 'ContextCompaction', id } }, timestamp);
 
 test('installed E2E telemetry switches off cleanly and counts observed roots and subagents without copying tool content', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'e2e-telemetry-'));
@@ -41,7 +42,11 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
     event('session_meta', { id: main }),
     tokens(main, 'outside', 99, earlier), included, included,
     event('event_msg', { type: 'token_count', info: { total_token_usage: { input_tokens: 999 } } }),
-    event('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_thread_id: child } }),
+    event('event_msg', { type: 'item_completed', thread_id: main, item: { type: 'SubAgentActivity', kind: 'started', agent_thread_id: child } }, earlier),
+    event('event_msg', { type: 'item_completed', thread_id: main, item: { type: 'SubAgentActivity', kind: 'interacted', agent_thread_id: child } }),
+    compaction(main, 'old-compaction', earlier),
+    event('compacted', { message: 'CANARY_PRIVATE_SUMMARY' }),
+    compaction(main, 'main-compaction'), compaction(main, 'main-compaction'),
     call('1', 'exec_command', 'cat CANARY_PRIVATE_PATH'),
     output('1', 'cat: CANARY_PRIVATE_PATH: No such file or directory'),
     call('2', 'exec_command', 'rg --files docs'),
@@ -50,7 +55,10 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
     call('5', 'list_agents'), output('5', 'unchanged'),
     call('6', 'list_agents'), output('6', 'unchanged'),
   ]);
-  await rollout(child, [event('session_meta', { id: child, parent_thread_id: main }), tokens(child, 'child', 4)]);
+  await rollout(child, [
+    event('session_meta', { id: child, parent_thread_id: main }),
+    compaction(main, 'main-compaction'), compaction(child, 'own-compaction'), tokens(child, 'child', 4),
+  ]);
   const run = (enabled, id, extra = []) => JSON.parse(execFileSync(process.execPath, [
     join(root, script), '--root', root, '--run-id', id, ...extra,
   ], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_E2E_TELEMETRY: enabled, CODEX_HOME: codexHome } }));
@@ -65,8 +73,11 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
   assert.equal(report.threads.length, 2);
   assert.deepEqual(report.tokens, { input_tokens: 14, cached_input_tokens: 4, output_tokens: 6, reasoning_output_tokens: 2 });
   assert.equal(report.calls, 6);
+  assert.equal(report.compactions, 2);
+  assert.equal(report.threads[0].compactions.length, 1);
+  assert.deepEqual(report.threads[1].compactions, [{ line: 3, turn_id: 'stage-turn', at: now }]);
   assert.deepEqual(report.candidates, { read: 1, missing_path: 1, search: 1, test: 2, repeated_command: 1, unchanged_agent_list: 1 });
-  assert.doesNotMatch(reportText, /CANARY_PRIVATE_PATH|npm test/);
+  assert.doesNotMatch(reportText, /CANARY_PRIVATE_PATH|CANARY_PRIVATE_SUMMARY|npm test/);
   assert.equal(run('1', 'partial', ['--thread', main, '--thread', missing]).status, 'partial');
   assert.equal(JSON.parse(await readFile(reportPath('partial'), 'utf8')).missing[0].thread_id, missing);
   const invalid = spawnSync(process.execPath, [join(root, script), '--root', root, '--run-id', '../outside'], {

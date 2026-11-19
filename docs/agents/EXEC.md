@@ -268,11 +268,13 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
 6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
 7. 첫 실행의 workflow 생성과 응답 위치를 검증한다. 요구사항에서는 서브도메인 경계를 나누거나 유지하는 이유와 실제 승인 기록, 이벤트 다이어그램, `CONTEXT-MAP.md`·`CONTEXT.md` 갱신, 승인된 `fixed` 상태를 확인한다. 사용자가 이후 수정을 요청한 경우 영향받은 단계만 다시 열리고, 무관한 업무·식별자와 산출물이 보존되며, 새 바운디드 컨텍스트 승인 전에는 전술 설계에 들어가지 않는지 확인한다. 전술 설계에서는 `tactical-design.md`의 BC별 Entity·VO와 Aggregate 관계, 다이어그램, 모델별 업무 규칙, Application Service 메서드별 호출·트랜잭션·통합, outbound 인터페이스, 해당 결정의 별도 ADR을 확인한다. `context-boundary`의 `harness-domain-model-check.mjs` 통과와 `docs/architecture/domain-model.md`의 `accepted-target` 상태도 대조한다. 독립 `tactical-to-code`에서는 기술·화면·API·데이터 결정, port의 구체 구현체와 조립 위치, 설계 동결 gate, 구현 산출물·단위 테스트·완료 결과를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
 
+Codex E2E에서는 자동 압축 임계값 140,000 토큰을 비교값으로 사용한다. 아래 세 명령의 `-c model_auto_compact_token_limit=140000`과 `-c features.subagent_default_context_limits=false`는 상위 오케스트레이터와 native 하위 작업자에 같은 설정을 전달한다. 각 스레드는 자기 활성 컨텍스트로 압축 시점을 판단한다. 일반 프로젝트는 자체 Codex 설정이나 모델 기본값을 사용한다. 비교 실행마다 실제 인자를 보존하고 압축 관측·캐시 입력·비캐시 입력·출력과 단계 결과를 함께 확인한다.
+
 ```bash
-codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false --sandbox danger-full-access \
   -C /home/jiwoo/workspace/harness-test '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해'
 
-codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' --sandbox danger-full-access \
+codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false --sandbox danger-full-access \
   -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해'
 ```
 
@@ -287,6 +289,7 @@ export TMPDIR="$HARNESS_SESSION_DIR/tmp" TMP="$HARNESS_SESSION_DIR/tmp" TEMP="$H
 node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKFLOW_BINDING); if(b.provider!=="codex" || b.model!=="gpt-6-luna" || b.reasoning_effort!=="medium" || !p.isAbsolute(e.HARNESS_SESSION_DIR) || [e.TMPDIR,e.TMP,e.TEMP].some(x=>x!==p.join(e.HARNESS_SESSION_DIR,"tmp"))) process.exit(1)' || exit 1
 mkdir -p "$TMPDIR" || exit 1
 codex exec resume --json --model gpt-6-luna \
+  -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false \
   -c 'model_reasoning_effort="medium"' \
   -c 'approval_policy="never"' \
   -c 'sandbox_mode="danger-full-access"' \

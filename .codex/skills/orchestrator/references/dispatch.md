@@ -32,6 +32,10 @@ Codex에서 대기 도구가 agent ID를 받으면 `bind`한 ID를 넘긴다. �
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 준비기가 만든 `answers.json`을 확인한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
 
+## Codex 컨텍스트 압축
+
+Codex는 각 native 스레드의 활성 컨텍스트 사용량에 따라 압축한다. 압축은 stage 전환이 아니다. 같은 실행과 작업자 ID를 유지하고 정상 종료까지 기다린다. 첨부된 산출물이나 사용자 결정을 다시 찾을 때는 해당 작업자의 입력에 있는 참조를 사용한다.
+
 ## UI 적용과 보류
 
 승인된 작업 계획에 UI 변경이 없거나 사용자가 이번 실행에서 UI를 보류하면 프런트엔드 스킬을 호출하지 않는다. `tactical-ui`에 근거를 기록한 뒤 API·데이터 설계로 진행한다. 이미 `tactical-ui`가 차단됐으면 사용자의 보류 원문을 `harness-native-stage.mjs launch --stage-id tactical-ui --feedback <사용자 원문>`으로 전달한다. 이미 실행한 `frontend-design-brief`가 기록상 running이면 먼저 `inspect`로 실제 작업자 종료를 확인한다. 중단 또는 실패가 확인되면 기존 절차대로 그 종료를 기록한 뒤 `tactical-ui`로 돌아간다. 보류된 브리프를 복구하거나 결과를 만들어 완료 처리하지 않는다.
