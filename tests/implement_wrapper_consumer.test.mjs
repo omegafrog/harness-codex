@@ -47,9 +47,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.doesNotMatch(implementGuide, /`code-review`를 `review_fixed_point`에 대해 실행/);
     assert.match(await read('.agents/skills/orchestrator/references/implementation.md'), /구현 context를 공유하지 않는 fresh `standards_reviewer`·`spec_reviewer`/);
     const dispatch = await read('.agents/skills/orchestrator/references/dispatch.md');
-    assert.match(dispatch, /sandbox 및 권한을 유지한다/);
-    assert.match(dispatch, /지정된 권한을 적용할 수 없으면 실행하지 말고 실패/);
-    assert.match(dispatch, /실제 서브에이전트의 종료를 native 도구로 기다린다/);
+    assert.match(dispatch, /지정 profile의 sandbox·권한[^\n]*현재 CLI에서 적용할 수 있을 때 시작한다/);
+    assert.match(dispatch, /대상 ID와 현재 상태가 포함된 native 완료·실패·질문 통지를 사용한다/);
     for (const match of wrapper.matchAll(/\]\(([^)]+\.md)\)/g)) {
       await readFile(resolve(root, '.codex/internal-skills/implement-wrapper', match[1]));
     }
