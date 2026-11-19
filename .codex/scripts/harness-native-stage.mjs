@@ -14,7 +14,7 @@ import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
-import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchResult, compactPrepared, nativeCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
@@ -161,12 +161,13 @@ try {
       const foreign = foreignRunningStage(workflowState, here);
       const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
       const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
-      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(next ? { next } : {}) })}\n`);
+      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
       process.exit(0);
     }
     if (action === 'bind') {
-      await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: opts['agent-id'] });
-      process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: opts['agent-id'] })}\n`);
+      const agentId = opts['agent-id'];
+      await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: agentId });
+      process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: agentId, receive_command: nativeReceiveCommand(id, agentId) })}\n`);
       process.exit(0);
     }
     if (action === 'recover-interrupted') {
@@ -264,12 +265,13 @@ try {
       else if (error instanceof SyntaxError) format = { valid: false, errors: [{ path: '$', rule: 'json', expected: 'valid JSON', value: null, message: error.message }] };
       else throw error;
     }
-    if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: format.errors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
+    const formatDetails = { executionId: id, agentId: current.native_agent_id, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose };
+    if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ ...formatDetails, errors: format.errors }))}\n`); process.exit(1); }
     // A blocked / DEPENDENCY_INCOMPLETE result of a later flow stage must name the earlier stage that owns the gap, so the
     // orchestrator can reopen it by itself. The stage stays running and the subagent corrects its output.
     const { dependencyOwnerErrors, staleStages } = await import('../../.harness/src/workflow/stage-reopen.mjs');
     const ownerErrors = dependencyOwnerErrors({ skill: input.skill, raw });
-    if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ executionId: id, errors: ownerErrors, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose }))}\n`); process.exit(1); }
+    if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ ...formatDetails, errors: ownerErrors }))}\n`); process.exit(1); }
     const { assertTacticalRequirementsReadOnly, commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
     await assertTacticalRequirementsReadOnly(root, input);
     // stakeholder-analysis is accepted (its questions or its completion) only when the requester's features are recorded as settled

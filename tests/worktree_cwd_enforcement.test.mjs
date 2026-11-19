@@ -122,6 +122,8 @@ test('installed workflow commands require cwd inside the target worktree', async
       '.codex/scripts/harness-orchestrator-hook.mjs',
       '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs',
       '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
+      '.codex/scripts/harness-native-stage.mjs',
+      '.harness/src/workflow/stage-cli.mjs',
     ];
     const lockPath = join(primary, '.codex/harness-lock.json'), lock = await json(lockPath);
     const old = 'export const previousVersion = true;\n';
@@ -130,9 +132,15 @@ test('installed workflow commands require cwd inside the target worktree', async
       await writeFile(join(primary, path), old);
       lock.files[path] = { ...lock.files[path], installed_sha256: hash, upstream_sha256: hash };
     }
+    const profiles = ['.codex/agents/workflow_stage.toml', '.claude/agents/workflow_stage.md'];
+    for (const path of profiles) {
+      await writeFile(join(primary, path), old);
+      lock.files[path] = { ...lock.files[path], installed_sha256: hash, upstream_sha256: hash };
+    }
     await writeFile(lockPath, JSON.stringify(lock));
     await updateProject({ sourceRoot, targetRoot: primary });
     for (const path of managed) assert.equal(await readFile(join(primary, path), 'utf8'), await readFile(join(sourceRoot, path), 'utf8'));
+    for (const path of profiles) assert.match(await readFile(join(primary, path), 'utf8'), /exact .*receive_command.*via stdin/);
     const installedPath = join(primary, managed[0]);
     assert.equal((await readFile(installedPath, 'utf8')).includes('change directory first'), true);
     const doctor = await runDoctor({ root: primary, sourceRoot });
@@ -140,7 +148,7 @@ test('installed workflow commands require cwd inside the target worktree', async
     const status = git(primary, 'status', '--short', '--untracked-files=all');
     assert.match(status, /app\.txt/); assert.match(status, /docs\/agents\/EXEC\.md/); assert.match(status, /docs\/contracts\/project-notes\.md/);
     assert.doesNotMatch(status, /\.io\/|\.codex\/|\.harness\/src\//);
-    for (const path of [...managed, '.agents/skills/orchestrator/references/dispatch.md', '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
+    for (const path of [...managed, ...profiles, '.agents/skills/orchestrator/references/dispatch.md', '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
     const installed = await import(`${pathToFileURL(installedPath).href}?consumer=${randomUUID()}`);
     assert.equal(typeof installed.resolveCommandContext, 'function');
   });

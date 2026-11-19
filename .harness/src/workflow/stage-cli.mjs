@@ -19,6 +19,7 @@ const NO_SOURCE = 'Do not read Harness source or state files to diagnose this; f
 
 export const launchCommand = (stage, extra = '') => `${NATIVE} launch --stage-id ${stage}${extra ? ` ${extra}` : ''}`;
 export const nativeCommand = (action, executionId, extra = '') => `${NATIVE} ${action} --execution-id ${executionId}${extra ? ` ${extra}` : ''}`;
+export const nativeReceiveCommand = (executionId, agentId) => nativeCommand('receive', executionId, `--agent-id '${agentId.replaceAll("'", "'\\''")}'`);
 export const contextCommand = () => CONTEXT;
 
 // The feedback a taken-over stage resumes with. It is internal agent input, so it is English, and it holds no quote
@@ -188,7 +189,7 @@ export function compactFinished({ envelope, stageId, executionId, staleOrder = n
 }
 
 // format_error: the paths, rules and expectations go back to the same subagent, so each value is clipped.
-export function formatErrorResult({ executionId, errors, schemaPath, outputPath, verbose }) {
+export function formatErrorResult({ executionId, agentId, errors, schemaPath, outputPath, verbose }) {
   return {
     status: 'format_error',
     execution_id: executionId,
@@ -196,10 +197,11 @@ export function formatErrorResult({ executionId, errors, schemaPath, outputPath,
     ...(!verbose && errors.length > 20 ? { errors_omitted: errors.length - 20 } : {}),
     schema_path: schemaPath,
     output_path: outputPath,
+    receive_command: nativeReceiveCommand(executionId, agentId),
     code: 'FORMAT_ERROR',
     why: 'The stage output does not match its schema; the stage is still running and nothing was recorded.',
     next: [
-      'Send errors (path, rule, expected, value) to the same subagent and ask it to re-read schema_path and rewrite output_path; do not edit the output yourself.',
+      'Send errors (path, rule, expected, value), schema_path and the exact receive_command to the same subagent. Ask it to correct its JSON and submit it for this execution; never compose or move output yourself. For a read-only subagent, relay its corrected final JSON to receive_command unchanged.',
       `Then run again: ${nativeCommand('finish', executionId)}`,
       'If the same errors come back after the rewrite, report them to the user and stop.',
     ],
