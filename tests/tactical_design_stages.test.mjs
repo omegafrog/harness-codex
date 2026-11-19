@@ -47,7 +47,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.ok(readme.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')));
   assert.match(readme, /#### 전술 설계 흐름/);
   for (const stage of TACTICAL_DESIGN_STAGES) assert.ok(readme.includes(`| \`${stage}\` |`), `${stage} has a README row`);
-  const exec = await read('docs/agents/EXEC.md');
+  const exec = await read('.harness/agents/EXEC.md');
   assert.ok(exec.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join('→')), 'the E2E procedure names the tactical flow');
   assert.match(await read('docs/architecture/enforcement.md'), /TACTICAL_DESIGN_STAGES[\s\S]*harness-domain-model-check\.mjs/);
   assert.match(await read('docs/architecture/enforcement.md'), /domain-model-gate\.mjs[\s\S]*FINAL_TACTICAL_STAGE[\s\S]*`gate_error`[\s\S]*`owner_stage`[\s\S]*recordExecutionState/, 'the enforcement map names where the runner rejects a failing last tactical stage');
@@ -122,9 +122,9 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.PRE_SPEC_STAGES], PRE_SPEC_STAGES);
   const installedCommit = await import(pathToFileURL(join(root, '.harness/src/workflow/stage-commit.mjs')));
-  assert.deepEqual(installedCommit.restartDocuments('domain-model', 'x'), ['docs/specs/x/tactical-design.md', 'docs/specs/x/domain-model.md', 'docs/architecture/domain-model.md', 'CONTEXT.md', 'CONTEXT-MAP.md'], 'a restart restores the document under its current and its legacy name');
+  assert.deepEqual(installedCommit.restartDocuments('domain-model', 'x'), ['docs/specs/x/tactical-design.md', 'docs/specs/x/domain-model.md', 'CONTEXT.md', 'CONTEXT-MAP.md'], 'a restart restores the document under its current and its legacy name');
   assert.equal(typeof installedCommit.migrateLegacyTacticalDesign, 'function', 'the installed runner carries the legacy rename');
-  assert.deepEqual(installedCommit.restartDocuments('bounded-context', 'x'), ['docs/specs/x', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/architecture/domain-model.md']);
+  assert.deepEqual(installedCommit.restartDocuments('bounded-context', 'x'), ['docs/specs/x', 'CONTEXT.md', 'CONTEXT-MAP.md']);
 
   // The installed gate runs from the consumer on the template's own example, and on a context without an Aggregate.
   const document = await templateDocument(sourceRoot);
@@ -195,7 +195,8 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   await writeFile(join(root, 'docs/adr/post.md'), '# 게시글 도메인 판단\n');
 
   // Plan set documents, the project's model rows and the glossary are project-owned and stay visible next to application changes.
-  await writeFile(join(root, 'docs/architecture/domain-model.md'), '# 소비자 모델 색인\n\n| 커뮤니티 / 게시글 | accepted-target |\n');
+  const existingIndex = '# 소비자 모델 색인\n\n| 커뮤니티 / 게시글 | accepted-target |\n';
+  await writeFile(join(root, 'docs/architecture/domain-model.md'), existingIndex);
   await writeFile(join(root, 'CONTEXT.md'), '# 프로젝트 컨텍스트\n\n- 신고\n');
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /\?\? docs\/specs\/community\/tactical-design\.md/);
@@ -205,7 +206,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   assert.match(status, /^ M docs\/architecture\/domain-model\.md$/m, 'the project model document is project-owned');
   assert.match(status, /^ M CONTEXT\.md$/m, 'the glossary is project-owned');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
   for (const path of ['docs/specs/community/tactical-design.md', 'docs/architecture/domain-model.md', 'CONTEXT.md', 'CONTEXT-MAP.md']) assert.throws(() => git('check-ignore', '-q', path), `not ignored: ${path}`);
 
   // Doctor accepts the installation, reports a missing tactical asset, and update restores it without touching project documents.
@@ -226,6 +227,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, currentPath), 'utf8'), current);
+  assert.equal(await readFile(join(root, 'docs/architecture/domain-model.md'), 'utf8'), existingIndex);
   assert.equal(await readFile(join(root, 'docs/adr/post.md'), 'utf8'), '# 게시글 도메인 판단\n');
   assert.equal((await workspaceGate()).ok, true);
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
@@ -234,6 +236,13 @@ test('installed consumers get the tactical design assets, Git ignores them and k
 });
 
 const draft = (marker) => `# 요구사항 명세\n\n- 상태: draft\n\n<!-- ${marker} -->\n`;
+async function useLegacyRequirementsContract(workspace) {
+  const path = join(workspace, '.io/runtime/orchestrator/state.json');
+  if (!existsSync(path)) return;
+  const state = JSON.parse(await readFile(path, 'utf8'));
+  for (const stageState of Object.values(state.stages || {})) delete stageState.requirements_contract_version;
+  await writeFile(path, JSON.stringify(state));
+}
 const projectModel = (version) => `# 모델 색인\n\n| Context / 모델 ID | 상태 | Root / 소유 코드 | 규칙 ID → enforcement | 데이터 / transaction | 공개 계약 / 통신 | deployment / extraction trigger | 근거 |\n|---|---|---|---|---|---|---|---|\n| 커뮤니티 / 게시글 | accepted-target | ${version} | - | - | - | - | docs/specs |\n`;
 const question = (id, title) => ({ question_id: id, title, options: [{ id: 'a', label: '첫째', consequence: '첫째 결과', evidence: [] }, { id: 'b', label: '둘째', consequence: '둘째 결과', evidence: [] }], recommended_option_id: 'a', rationale: '요구사항이 그렇게 말한다', decision_kind: null });
 // The rule a design answer adds to the owning BIZ, and the rows that map it.
@@ -256,27 +265,28 @@ test('the tactical stages run after the requirements flow and are accepted secti
   for (const stage of REQUIREMENTS_STAGES) {
     const files = stage === 'stakeholder-analysis' ? markers[stage] : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+    if (stage === 'stakeholder-analysis') await useLegacyRequirementsContract(workspace);
   }
   assert.deepEqual(treeGit('log', '--format=%s', '-7').trim().split('\n'), [...REQUIREMENTS_STAGES].reverse().map((stage) => `${stage}: ${planSetId}`));
 
-  // 1. domain-model follows the last requirements stage (bounded-context), writes section 1 and the project rows, and the runner commits them with the reported glossary.
+  // 1. domain-model follows the last requirements stage (bounded-context), writes section 1, which is committed with the reported glossary.
   const first = await runStage('domain-model', {
-    files: { [tacticalDesign]: upTo(document, 1), 'docs/architecture/domain-model.md': projectModel('v1'), 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 |\n' },
-    artifacts: [art(tacticalDesign, 'tactical_design'), art('docs/architecture/domain-model.md', 'model_index'), art('CONTEXT.md', 'glossary')],
+    files: { [tacticalDesign]: upTo(document, 1), 'CONTEXT.md': '# 프로젝트 컨텍스트\n\n| Post | 게시글 |\n' },
+    artifacts: [art(tacticalDesign, 'tactical_design'), art('CONTEXT.md', 'glossary')],
   });
   assert.equal(first.prepared.input.context.transition.from_stage, 'bounded-context');
   assert.ok(first.prepared.input.input_refs.some((reference) => reference.path === requirements && reference.kind === 'requirements'));
-  assert.deepEqual(first.files, ['CONTEXT.md', 'docs/architecture/domain-model.md', tacticalDesign].sort(), 'a section 1 alone is accepted: no gate runs before the last stage');
+  assert.deepEqual(first.files, ['CONTEXT.md', tacticalDesign].sort(), 'a section 1 alone is accepted: no gate runs before the last stage');
 
   // 2. aggregate-design asks its consistency decision in one batch, then records the answer with its source.
   const asked = await runStage('aggregate-design', { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '일관성 질문 1건', questions: [question('con-1', '[INV-03] 게시글을 지우면 신고는 언제 닫혀야 하나요?')], expectCommit: false });
   assert.equal(asked.finished.result.questions.length, 1);
   const aggregated = await runStage('aggregate-design', {
     extraArgs: ['--answer', 'b'],
-    files: { [tacticalDesign]: upTo(document, 2), 'docs/architecture/domain-model.md': projectModel('v2') },
-    artifacts: [art(tacticalDesign, 'tactical_design'), art('docs/architecture/domain-model.md', 'model_index')],
+    files: { [tacticalDesign]: upTo(document, 2) },
+    artifacts: [art(tacticalDesign, 'tactical_design')],
   });
-  assert.deepEqual(aggregated.files, ['docs/architecture/domain-model.md', tacticalDesign].sort(), 'the glossary stays out of a stage that did not report it');
+  assert.deepEqual(aggregated.files, [tacticalDesign], 'the glossary stays out of a stage that did not report it');
   assert.deepEqual(JSON.parse(await readFile(join(dirname(aggregated.started.output_path), 'answers.json'), 'utf8')).map((entry) => entry.answer), ['b']);
 
   // 3. domain-service blocks for missing evidence without writing; the user may revise the fixed requirements while it is blocked, and it resumes.
@@ -314,7 +324,7 @@ test('the tactical stages run after the requirements flow and are accepted secti
   assert.ok(existsSync(join(restart.backup, 'state.json')));
   assert.match(await readFile(join(workspace, requirements), 'utf8'), /INV-05/, 'the rule added by the blocked stage survives');
   assert.doesNotMatch(await readFile(join(workspace, tacticalDesign), 'utf8'), /^## 2\./m, 'the tactical document is back at the end of domain-model');
-  assert.match(await readFile(join(workspace, 'docs/architecture/domain-model.md'), 'utf8'), /\| v1 \|/);
+  assert.equal(existsSync(join(workspace, 'docs/architecture/domain-model.md')), false);
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.current_stage, 'domain-model');
   for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.equal(state.stages[stage], undefined, `${stage} is reopened`);
@@ -322,10 +332,10 @@ test('the tactical stages run after the requirements flow and are accepted secti
   // Without its mapping the new rule is an unowned rule, found by the one gate that runs when the last stage completes (step 7).
 
   // 7. The reopened stages run again with the rule mapped, and tactical-technology follows the last one once the whole document passes the gate.
-  const rerun = async (stage, level, extra = {}) => runStage(stage, {
-    files: { [tacticalDesign]: withNewRule(upTo(document, level)), ...extra.files }, artifacts: [art(tacticalDesign, 'tactical_design'), ...(extra.artifacts || [])],
+  const rerun = (stage, level) => runStage(stage, {
+    files: { [tacticalDesign]: withNewRule(upTo(document, level)) }, artifacts: [art(tacticalDesign, 'tactical_design')],
   });
-  await rerun('aggregate-design', 2, { files: { 'docs/architecture/domain-model.md': projectModel('v3') }, artifacts: [art('docs/architecture/domain-model.md', 'model_index')] });
+  await rerun('aggregate-design', 2);
   await rerun('domain-service', 3);
   await rerun('application-service', 4);
   await rerun('integration-design', 5);
@@ -375,12 +385,13 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   const visible = () => treeGit('status', '--short', '--untracked-files=all').split('\n').filter(Boolean).sort();
   const assertVisibility = (expected, label) => {
     assert.deepEqual(visible(), expected.sort(), label);
-    assert.doesNotMatch(visible().join('\n'), /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, `${label}: Harness-managed files stay out of the status`);
+    assert.doesNotMatch(visible().join('\n'), /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, `${label}: Harness-managed files stay out of the status`);
   };
 
   for (const stage of REQUIREMENTS_STAGES) {
     const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+    if (stage === 'stakeholder-analysis') await useLegacyRequirementsContract(workspace);
   }
   // Work of the application that the stages never touch.
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
@@ -530,6 +541,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   for (const stage of REQUIREMENTS_STAGES) {
     const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+    if (stage === 'stakeholder-analysis') await useLegacyRequirementsContract(workspace);
   }
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
   for (const [index, stage] of TACTICAL_DESIGN_STAGES.slice(0, 5).entries()) await runStage(stage, { files: { [tacticalDesign]: upTo(document, index + 1) }, artifacts });
@@ -577,7 +589,7 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.match(treeGit('check-ignore', '-v', '.codex/agents/workflow_stage.toml'), /info\/exclude/);
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n');
 });
 
@@ -594,16 +606,29 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   const visible = () => treeGit('status', '--short', '--untracked-files=all').split('\n').filter(Boolean).sort();
   const assertVisibility = (expected, label) => {
     assert.deepEqual(visible(), expected.sort(), label);
-    assert.doesNotMatch(visible().join('\n'), /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, `${label}: Harness-managed files stay out of the status`);
+    assert.doesNotMatch(visible().join('\n'), /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, `${label}: Harness-managed files stay out of the status`);
   };
   const restartArgs = (stage) => ['--stage-id', stage, '--restart-requirements', 'true'];
 
   for (const stage of REQUIREMENTS_STAGES) {
     const files = stage === 'stakeholder-analysis' ? { [specPath('stakeholder-analysis.md')]: stakeholderAnalysisDocument('게시글 삭제 기능을 추가해줘'), [requirements]: draft(stage) } : { [requirements]: stage === 'bounded-context' ? REQUIREMENTS : draft(stage) };
     await runStage(stage, { files, artifacts: [art(requirements, 'requirements')] });
+    if (stage === 'stakeholder-analysis') {
+      for (const path of [statePath, join(workspace, '.io/runtime/orchestrator/workflow.json')]) {
+        if (!existsSync(path)) continue;
+        const legacyState = JSON.parse(await readFile(path, 'utf8'));
+        const state = legacyState.state || legacyState;
+        for (const stageState of Object.values(state.stages || {})) delete stageState.requirements_contract_version;
+        await writeFile(path, JSON.stringify(legacyState));
+      }
+    }
   }
-  // The earlier Harness wrote and committed the document as domain-model.md, next to the project's own model index.
-  await runStage('domain-model', { files: { [legacy]: upTo(document, 1), [projectIndex]: projectModel('v1') }, artifacts: [art(legacy, 'tactical_design'), art(projectIndex, 'model_index')] });
+  // Simulate the extra file committed by the earlier Harness in the same stage.
+  await runStage('domain-model', { files: { [legacy]: upTo(document, 1) }, artifacts: [art(legacy, 'tactical_design')] });
+  await mkdir(join(workspace, 'docs/architecture'), { recursive: true });
+  await writeFile(join(workspace, projectIndex), projectModel('v1'));
+  treeGit('add', '--', projectIndex);
+  treeGit('commit', '--amend', '--no-edit', '-q');
   assert.deepEqual(treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort(), [projectIndex, legacy].sort());
   await writeFile(join(workspace, 'app.txt'), 'ongoing application change\n');
   assertVisibility([' M app.txt'], 'before the migration');
@@ -615,8 +640,16 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   assert.equal(await readFile(join(workspace, projectIndex), 'utf8'), projectModel('v1'), 'the project model index is never renamed');
   assertVisibility([' M app.txt', `R  ${legacy} -> ${current}`], 'the rename is staged and application changes stay visible and untouched');
 
-  // 2. The stage writes its own section under the current name; the stage commit carries the rename, so history follows the file.
-  await submitStage(aggregate, { files: { [current]: upTo(document, 2) }, artifacts: [art(current, 'tactical_design')] });
+  // 2. Reject the retired output, then commit the design on the same attempt.
+  const files = { [current]: upTo(document, 2) };
+  const artifacts = [art(current, 'tactical_design')];
+  const headBefore = treeGit('rev-parse', 'HEAD');
+  await submitStage(aggregate, { files, artifacts: [...artifacts, art(projectIndex, 'model_index')] });
+  const retired = finishStage(aggregate);
+  assert.notEqual(retired.status, 0);
+  assert.match(retired.stderr, /Record model design in the plan set/);
+  assert.equal(treeGit('rev-parse', 'HEAD'), headBefore);
+  await submitStage(aggregate, { files, artifacts });
   const accepted = finishStage(aggregate);
   assert.equal(accepted.status, 0, accepted.stdout || accepted.stderr);
   assert.equal(treeGit('log', '-1', '--format=%s').trim(), `aggregate-design: ${planSetId}`);
@@ -676,7 +709,8 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   assert.equal(first.previous_stage, 'bounded-context');
   assert.equal(existsSync(join(workspace, current)), false);
   assert.equal(existsSync(join(workspace, legacy)), false);
-  assert.deepEqual(visible(), [` D ${current}`, ` D ${projectIndex}`].sort());
+  assert.deepEqual(visible(), [` D ${current}`]);
+  assert.equal(await readFile(join(workspace, projectIndex), 'utf8'), projectModel('v1'));
   treeGit('stash', 'pop');
 
   // Harness-owned files stay ignored, and the plan set documents and the project model index stay visible to Git.

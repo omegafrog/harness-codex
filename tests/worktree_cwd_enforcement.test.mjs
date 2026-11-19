@@ -29,11 +29,11 @@ test('installed workflow commands require cwd inside the target worktree', async
   await (await import('node:fs/promises')).mkdir(join(primary, '.harness'), { recursive: true });
   await writeFile(join(primary, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n    implementation_model: example\n    implementation_reasoning_effort: medium\n');
   await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git(primary, 'add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
+  git(primary, 'add', 'app.txt', 'docs', '.harness/agents', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git(primary, 'commit', '-qm', 'baseline');
 
   const invoke = (cwd, script, args = [], env = {}) => spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
@@ -101,7 +101,7 @@ test('installed workflow commands require cwd inside the target worktree', async
 
   await t.test('fresh install, update, Doctor and Git visibility keep managed files out of commits', async () => {
     await writeFile(join(primary, 'app.txt'), 'application change\n');
-    await writeFile(join(primary, 'docs/agents/EXEC.md'), 'project execution notes\n');
+    await writeFile(join(primary, '.harness/agents/EXEC.md'), 'project execution notes\n');
     await mkdir(join(primary, 'docs/contracts'), { recursive: true });
     await writeFile(join(primary, 'docs/contracts/project-notes.md'), 'project-owned\n');
     const managed = [
@@ -134,7 +134,7 @@ test('installed workflow commands require cwd inside the target worktree', async
     const doctor = await runDoctor({ root: primary, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     const status = git(primary, 'status', '--short', '--untracked-files=all');
-    assert.match(status, /app\.txt/); assert.match(status, /docs\/agents\/EXEC\.md/); assert.match(status, /docs\/contracts\/project-notes\.md/);
+    assert.match(status, /app\.txt/); assert.match(status, /\.harness\/agents\/EXEC\.md/); assert.match(status, /docs\/contracts\/project-notes\.md/);
     assert.doesNotMatch(status, /\.io\/|\.codex\/|\.harness\/src\//);
     for (const path of [...managed, ...profiles, '.agents/skills/orchestrator/references/dispatch.md', '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
     const installed = await import(`${pathToFileURL(installedPath).href}?consumer=${randomUUID()}`);

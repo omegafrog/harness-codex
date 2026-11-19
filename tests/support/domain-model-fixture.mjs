@@ -91,7 +91,7 @@ export const STATELESS_DOCUMENT = `# 전술 설계
 
 ### 1.1 기존 모델 조사
 
-기존 모델 없음 — docs/architecture/domain-model.md가 없다
+기존 모델 없음 — 현행 계약과 코드에서 확인한 모델이 없다
 
 ### 1.2 모델링 깊이
 

@@ -74,8 +74,8 @@ test('installed consumers retire the old startup scripts and registrations while
   const claudeOld = { type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-claude-orchestrator-hook.mjs"', timeout: 10 };
   await writeFile(codexSettings, JSON.stringify({ hooks: Object.fromEntries(startupEvents.map((event) => [event, groups(codexOld, unrelated)])) }));
   await writeFile(claudeSettings, JSON.stringify({ ...originalClaude, hooks: { ...originalClaude.hooks, ...Object.fromEntries(startupEvents.map((event) => [event, groups(claudeOld, unrelated)])) } }));
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), 'project owned\n');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), 'project owned\n');
   await writeFile(join(root, 'app.txt'), 'application owned\n');
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'retired_orchestrator_hook'));
 
@@ -94,7 +94,7 @@ test('installed consumers retire the old startup scripts and registrations while
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code }) => ['execution_asset_missing', 'retired_orchestrator_hook', 'orchestrator_hook_missing', 'claude_orchestrator_hook_missing'].includes(code)), []);
-  assert.equal(git('status', '--short', '--untracked-files=all'), '?? app.txt\n?? docs/agents/EXEC.md\n');
-  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned\n');
+  assert.equal(git('status', '--short', '--untracked-files=all'), '?? .harness/agents/EXEC.md\n?? app.txt\n');
+  assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), 'project owned\n');
   for (const path of [runtime, '.codex/hooks.json', '.claude/settings.local.json', '.io/runtime/orchestrator/state.json']) git('check-ignore', '-v', path);
 });

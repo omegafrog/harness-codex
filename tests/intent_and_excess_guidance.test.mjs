@@ -60,10 +60,10 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
   git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture');
   await writeFile(resolve(root, 'app.txt'), 'ongoing application change\n');
   const projectFiles = {
-    'docs/agents/EXEC.md': 'project execution instructions\n',
-    'docs/agents/execution.json': '{"profiles":{}}\n',
-    'docs/agents/implementation-guidance.md': 'project implementation preferences\n',
-    'docs/agents/testing-guidance.md': 'project testing preferences\n',
+    '.harness/agents/EXEC.md': 'project execution instructions\n',
+    '.harness/agents/execution.json': '{"profiles":{}}\n',
+    '.harness/agents/implementation-guidance.md': 'project implementation preferences\n',
+    '.harness/agents/testing-guidance.md': 'project testing preferences\n',
     'docs/contracts/product.md': 'project product contract\n',
   };
   for (const [path, content] of Object.entries(projectFiles)) {

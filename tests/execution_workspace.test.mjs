@@ -45,8 +45,8 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const plans = join(root, 'docs/plans/example');
   const specs = join(root, 'docs/specs/example');
   const drafts = join(root, '.io/runtime/to-ticket/drafts');
-  for (const path of [plans, specs, drafts, join(root, 'docs/agents')]) await mkdir(path, { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+  for (const path of [plans, specs, drafts, join(root, '.harness/agents')]) await mkdir(path, { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), '');
   const legacy = `# Slice\n- workspace_root: \`${primary}\`\n- workspace_branch: \`main\`\nDo business work.\n`;
   await writeFile(join(plans, 'slice.md'), legacy);
   await writeFile(join(plans, 'plans.md'), '# Plans\n');
@@ -101,10 +101,10 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   await writeFile(join(root, 'app.js'), 'application owned');
   await updateProject({ sourceRoot, targetRoot: root });
   assert.equal(await readFile(join(root, 'app.js'), 'utf8'), 'application owned');
-  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), '');
+  assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), '');
   await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
   const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
-  assert.ok(status.includes('app.js') && status.includes('docs/agents/EXEC.md') && status.includes('docs/plans/example/slice.md'));
+  assert.ok(status.includes('app.js') && status.includes('.harness/agents/EXEC.md') && status.includes('docs/plans/example/slice.md'));
   assert.ok(!status.includes('.harness/src/') && !status.includes('.codex/agents/'));
   execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/src/workflow/worktrees.mjs', '.harness/src/tracker/publication.mjs', '.io/runtime/to-ticket/publication-bodies/parent.md']);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);

@@ -39,7 +39,7 @@ const STAGE_PROFILES = { 'to-ticket': 'to_ticket', 'tracker-publish': 'tracker_p
 export const MODELS = { implementation: 'codex-implementation', high_performance: 'codex-high', low_performance: 'codex-light' };
 // A stakeholder-analysis.md that passes the runner's check: the requester is a participant and the requested feature is
 // recorded as the requester's settled requirement, quoted from the request.
-export const stakeholderAnalysisDocument = (request, feature = request) => `# Stakeholder 분석\n\n> ${request}\n\n## 3. 참여자\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 기능은 요청자가 정한 요구사항이다 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n\n### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| ${feature} | "${feature}" | REQUESTER | 확정 | 요청 원문 | - |\n`;
+export const stakeholderAnalysisDocument = (request, feature = request) => `# Stakeholder 분석\n\n> ${request}\n\n## 3. 참여자\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 기능은 요청자가 정한 요구사항이다 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n\n### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| ${feature} | "${feature}" | REQUESTER | 확정 | 요청 원문 | - |\n\n### 요청 행동과 결정\n\n| ACT | 요청 기능 | 행위자 | 행동 | 종류 | 결정 | 근거/answer ID | BIZ |\n|---|---|---|---|---|---|---|---|\n| ACT-01 | ${feature} | 사용자 | 요청한 결과를 완료한다 | 명시 | 포함 | 요청 원문 | BIZ-01 |\n`;
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
 export async function consumerWorkflow(t, request) {
@@ -54,11 +54,11 @@ export async function consumerWorkflow(t, request) {
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
   await writeFile(join(primary, '.harness/harness.yaml'), SETUP);
   await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
+  git('add', 'app.txt', 'docs', '.harness/agents', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git('commit', '-qm', 'baseline');
   const invoke = (cwd, script, args = [], input) => {
     const result = spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', input });

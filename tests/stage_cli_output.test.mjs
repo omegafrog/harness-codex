@@ -208,7 +208,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   await writeFile(join(workspace, 'app.txt'), 'application change in progress\n');
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m);
-  assert.doesNotMatch(status, /\.io\/|\.harness\/|\.codex\/|\.claude\/|\.agents\//);
+  assert.doesNotMatch(status, /\.io\/|\.harness\/(?!agents\/)|\.codex\/|\.claude\/|\.agents\//);
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application change in progress\n');
   for (const path of ['.harness/src/workflow/stage-cli.mjs', '.codex/scripts/harness-native-stage.mjs', '.io/runtime/orchestrator/state.json']) assert.match(treeGit('check-ignore', '-v', path), /exclude/, path);
   assert.equal(primaryGit('status', '--short', '--untracked-files=all').trim(), '');

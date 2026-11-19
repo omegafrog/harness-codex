@@ -14,6 +14,7 @@ import { providerAgents, tierSettingKeys } from './agent-config.mjs';
 import { readSkillDeclaration } from './skill-declaration.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { currentTacticalDesignPath } from './worktree-stages.mjs';
+import { currentProjectAgentPath, EXECUTION_MANIFEST, executionManifestDigest } from './project-agent-paths.mjs';
 
 const SCHEMAS = '.harness/schemas';
 const execFileAsync = promisify(execFile);
@@ -208,7 +209,7 @@ async function readReference(root, reference, sessionRoot, controlSessionRoot = 
   await assertWorkspaceTarget(base, relativePath);
   let path = resolve(base, relativePath);
   // A finished stage of an earlier Harness recorded the tactical design under its legacy name; the runner renamed the file.
-  const renamed = reference.base === 'workspace' ? currentTacticalDesignPath(parts.join('/')) : null;
+  const renamed = reference.base === 'workspace' ? currentProjectAgentPath(currentTacticalDesignPath(parts.join('/'))) : null;
   if (renamed && renamed !== parts.join('/') && !existsSync(path)) { await assertWorkspaceTarget(base, renamed); path = resolve(base, renamed); }
   const info = await lstat(path);
   if (allowDirectory && info.isDirectory()) return null;
@@ -280,7 +281,7 @@ export async function validateSkillInput({ root, input }) {
     requireValue(input.context?.agent_profile === 'e2e_test_runner' && requests.length === 1, 'E2E requires one approved request and a dedicated runner');
     const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
     const head = (await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' })).stdout.trim();
-    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    const manifestText = await readFile(join(root, EXECUTION_MANIFEST));
     requireValue(request.manifest_sha256 === createHash('sha256').update(manifestText).digest('hex'), 'E2E request execution profile has changed');
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
@@ -338,7 +339,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
     const receipt = JSON.parse(await readReference(root, receipts[0], session, controlSession));
     const cleanup = JSON.parse(await readReference(root, cleanups[0], session, controlSession));
-    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && receipt.config_hashes?.['docs/agents/execution.json'] === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
+    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && executionManifestDigest(receipt) === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
     requireValue(cleanup.status === 'passed', 'E2E cleanup is not verified');
   }
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {

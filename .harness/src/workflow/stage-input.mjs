@@ -16,10 +16,11 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
 import { markRequirementsRevision, resolveReopen, staleFeedback } from './stage-reopen.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 import { assertTicketStartable } from './tactical-tickets.mjs';
+import { currentProjectAgentPath, EXECUTION_MANIFEST, executionManifestDigest } from './project-agent-paths.mjs';
 import { assertRequirementsApproval, userSaidAfter } from './user-inputs.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
@@ -552,7 +553,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         if (testDefectFailure && !e2eReturn.result.artifacts.some((item) => item.base === 'session' && item.path === testDefectFailure && item.kind === 'e2e_failure')) throw new Error('Test defect evidence is not owned by the failed E2E stage');
       }
       if (!['failed', 'blocked', 'interrupted'].includes(receipt.status) || !receipt.profile_id || !receipt.finished_at) throw new Error('E2E failure receipt is not a finished failure');
-      if (!/^[a-f0-9]{64}$/.test(receipt.config_hashes?.['docs/agents/execution.json'] || '')) throw new Error('E2E failure receipt lacks profile evidence');
+      if (!/^[a-f0-9]{64}$/.test(executionManifestDigest(receipt) || '')) throw new Error('E2E failure receipt lacks profile evidence');
       const review = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/reviews/implementation-${planId}-evidence.json` });
       const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
       if (review.review_input?.implementation_commit_sha !== head || (receipt.head && receipt.head !== head)) throw new Error('E2E failure target commit is stale');
@@ -646,7 +647,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const request = await readSkillSessionJson({ root, session_directory: taskSession, path: e2eRequest });
     const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     if (request.target_commit !== head || !Array.isArray(request.scenarios) || !request.scenarios.length || !request.scenarios.every((item) => typeof item === 'string' && item.trim()) || !request.approval_answer || !request.profile_id || !Number.isInteger(request.timeout_ms) || request.timeout_ms <= 0) throw new Error('E2E request target, scenarios, approval or timeout is invalid');
-    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    const manifestText = await readFile(join(root, EXECUTION_MANIFEST));
     if (request.manifest_sha256 !== createHash('sha256').update(manifestText).digest('hex')) throw new Error('E2E request execution profile has changed');
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
@@ -708,7 +709,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const domainPack = await prepareDomainContextPack({ root, stage: stageId, request: prepared.scope, feedback, answers: Array.isArray(answer) ? answer : [] });
   if (domainPack) input_refs.push(domainPack);
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  const requirementsContractVersion = stageId === WORKTREE_STAGE.STAKEHOLDER_ANALYSIS ? 1 : state.stages?.[WORKTREE_STAGE.STAKEHOLDER_ANALYSIS]?.requirements_contract_version;
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(requirementsContractVersion === 1 ? { requirements_contract_version: 1 } : {}), ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
@@ -717,6 +719,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (staleMark) {
     input.context.revalidation_mark = staleMark.reopened_for;
     if (staleMark.reason === 'user_revision') input_refs.push({ base: 'session', path: `runtime/executions/${staleMark.reopened_for}/feedback.json`, kind: 'upstream_user_revision' });
+  }
+  for (const reference of input.input_refs) {
+    if (reference.base === 'workspace') reference.path = currentProjectAgentPath(reference.path);
   }
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   await validateSkillInput({ root, input });

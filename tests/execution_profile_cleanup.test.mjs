@@ -13,18 +13,18 @@ async function createWorkspace({ prepareCode = 0, commandCode = 0, cleanupCode =
   execFileSync('git', ['-C', root, 'config', 'user.name', 'Test']);
   execFileSync('git', ['-C', root, 'commit', '--allow-empty', '-qm', 'baseline']);
   await mkdir(join(root, '.io'), { recursive: true });
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), 'execution contract\n');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), 'execution contract\n');
   const cleanupMarker = join(root, 'cleanup-ran');
   const script = (code, marker) => [process.execPath, '-e', `process.exitCode=${code};${marker ? `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'done')` : ''}`];
-  await writeFile(join(root, 'docs/agents/execution.json'), JSON.stringify({
+  await writeFile(join(root, '.harness/agents/execution.json'), JSON.stringify({
     schema_version: 1,
     profiles: {
       test: {
         purpose: 'e2e',
         command: script(commandCode),
         required_env: ['DATABASE_NAME'],
-        config_inputs: ['docs/agents/EXEC.md'],
+        config_inputs: ['.harness/agents/EXEC.md'],
         prepare: [script(prepareCode)],
         verify_config: [script(0)],
         cleanup: [script(cleanupCode), script(0, cleanupMarker)],

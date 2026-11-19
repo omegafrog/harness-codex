@@ -47,7 +47,7 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
 }
 
 export async function inspectProjectReadiness({ workspace_root } = {}) {
-  const paths = ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html'];
+  const paths = ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html'];
   const violations = [];
   if (!isAbsolute(workspace_root || '')) violations.push('Absolute workspace_root is required');
   else for (const path of paths) {

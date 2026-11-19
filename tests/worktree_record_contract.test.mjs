@@ -106,10 +106,10 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/spec-me/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/custom/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/code-review/SKILL.md')), false);
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution guide');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution guide');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.match(status, /\.agents\/skills\/custom\/SKILL\.md/);
     assert.doesNotMatch(status, /\.codex\/internal-skills\/|\.codex\/scripts\/harness-stage-listen|\.harness\/src\/workflow\/stage-result-events|\.claude\/skills\/orchestrator\/|\.io\/installer-backups/);
     execFileSync('git', ['check-ignore', '-v', '.codex/internal-skills/e2e-test/GUIDE.md'], { cwd: root });
@@ -132,7 +132,7 @@ async function seedSetup(root) {
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
   await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(root, path, '..'), { recursive: true });
     await writeFile(join(root, path), '');
   }
@@ -177,16 +177,16 @@ test('consumer update retires writer receipt runtime and preserves project files
       lock.files[path].upstream_sha256 = hash;
     }
     await writeFile(lockPath, JSON.stringify(lock));
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned\n');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     for (const path of oldPaths) {
       assert.ok(result.retired.includes(path));
       await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
     }
-    assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project-owned\n');
+    assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), 'project-owned\n');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.harness\/src\//);
     execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-native-stage.mjs'], { cwd: root });
     const runner = await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'), 'utf8');
@@ -226,7 +226,7 @@ test('installed readiness checks required files without validating their content
     assert.equal((await checkRetirement({ retirement: { workspace_root: root, removed_paths: ['src', '.codex/harness-runtime/src'] } })).status, 'pass');
     await assert.rejects(readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md')), { code: 'ENOENT' });
     const installedGuidance = await readFile(join(root, '.codex/internal-skills/implementation-guidance/GUIDE.md'), 'utf8');
-    assert.match(installedGuidance, /<workspace_root>\/docs\/agents\/implementation-guidance\.md/);
+    assert.match(installedGuidance, /<workspace_root>\/\.harness\/agents\/implementation-guidance\.md/);
     assert.match(installedGuidance, /workflow branch when committed and pushed/);
     await assert.rejects(readFile(join(root, '.codex/internal-skills/spec-me/references/adversarial-spec-review.md')), { code: 'ENOENT' });
     const installedSpecReview = await readFile(join(root, '.codex/internal-skills/spec-review/GUIDE.md'), 'utf8');
@@ -280,13 +280,13 @@ test('installed readiness checks required files without validating their content
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'blocked');
-    for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+    for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
       await mkdir(join(root, path, '..'), { recursive: true });
       await writeFile(join(root, path), '');
     }
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'pass');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC.md/);
+    assert.match(status, /\.harness\/agents\/EXEC.md/);
     assert.doesNotMatch(status, /\.codex|\.agents|\.harness\/src/);
     assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
     assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
@@ -319,12 +319,12 @@ test('installed setup writes reusable guidance to the active linked worktree', a
     git(root, 'init', '-q', '-b', 'main');
     git(root, 'config', 'user.name', 'Contract');
     git(root, 'config', 'user.email', 'contract@example.test');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
     const original = '# Implementation guidance\n\n## Active guidance\n\n';
     const testOriginal = '# Testing guidance\n\n## Active guidance\n\n';
-    await writeFile(join(root, 'docs/agents/implementation-guidance.md'), original);
-    await writeFile(join(root, 'docs/agents/testing-guidance.md'), testOriginal);
-    git(root, 'add', 'docs/agents');
+    await writeFile(join(root, '.harness/agents/implementation-guidance.md'), original);
+    await writeFile(join(root, '.harness/agents/testing-guidance.md'), testOriginal);
+    git(root, 'add', '.harness/agents');
     git(root, '-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Add workspace memory');
     git(root, 'worktree', 'add', '-q', '-b', 'memory-worktree', workspace);
 
@@ -335,14 +335,14 @@ test('installed setup writes reusable guidance to the active linked worktree', a
     const helper = join(workspace, '.codex/scripts/harness-victorialogs.mjs');
     execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--port', '19428', '--retention-days', '7'], { cwd: workspace, stdio: 'pipe' });
 
-    const activeGuidance = await readFile(join(workspace, 'docs/agents/implementation-guidance.md'), 'utf8');
+    const activeGuidance = await readFile(join(workspace, '.harness/agents/implementation-guidance.md'), 'utf8');
     assert.match(activeGuidance, /opentelemetry-local-observability-v2/);
-    assert.equal(await readFile(join(root, 'docs/agents/implementation-guidance.md'), 'utf8'), original);
-    assert.equal(await readFile(join(root, 'docs/agents/testing-guidance.md'), 'utf8'), testOriginal);
+    assert.equal(await readFile(join(root, '.harness/agents/implementation-guidance.md'), 'utf8'), original);
+    assert.equal(await readFile(join(root, '.harness/agents/testing-guidance.md'), 'utf8'), testOriginal);
     const worktreeStatus = git(workspace, 'status', '--short', '--untracked-files=all').toString('utf8');
-    assert.match(worktreeStatus, /docs\/agents\/implementation-guidance\.md/);
-    assert.match(worktreeStatus, /docs\/agents\/testing-guidance\.md/);
-    assert.match(worktreeStatus, /docs\/agents\/EXEC\.md/);
+    assert.match(worktreeStatus, /\.harness\/agents\/implementation-guidance\.md/);
+    assert.match(worktreeStatus, /\.harness\/agents\/testing-guidance\.md/);
+    assert.match(worktreeStatus, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(worktreeStatus, /\.codex\/scripts\/harness-victorialogs\.mjs/);
     assert.throws(() => execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--shared-guidance-root', root], { cwd: workspace, stdio: 'pipe' }));
   } finally { await rm(parent, { recursive: true, force: true }); }
@@ -394,8 +394,8 @@ test('compose preserves a failed worktree when project preparation is incomplete
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
-    await rm(join(root, 'docs/agents/EXEC.md'));
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    await rm(join(root, '.harness/agents/EXEC.md'));
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
     assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
     const worktrees = git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
@@ -429,7 +429,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await symlink(selectedWorktrees, selectedLink, 'dir');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), `${await readFile(join(root, '.harness/harness.yaml'), 'utf8')}\nworktrees:\n  directory: ${JSON.stringify(selectedLink)}\n`);
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('commit', '-m', 'setup baseline');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     const compose = (executionId) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', executionId], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
@@ -515,17 +515,17 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(installedComposerRuntime, composerRuntime);
     assert.match(await readFile(join(root, '.agents/skills/orchestrator/references/workflow-map.md'), 'utf8'), /workflow_ref.*null/);
     await writeFile(join(root, 'application-change.txt'), 'preserved');
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     const consumerStatus = git('status', '--short', '--untracked-files=all');
     assert.match(consumerStatus, /application-change\.txt/);
-    assert.match(consumerStatus, /docs\/agents\/EXEC\.md/);
-    assert.doesNotMatch(consumerStatus, /\.codex\/|\.harness\/|\.io\//);
+    assert.match(consumerStatus, /\.harness\/agents\/EXEC\.md/);
+    assert.doesNotMatch(consumerStatus, /\.codex\/|\.harness\/(?!agents\/)|\.io\//);
     for (const path of ['.codex/internal-skills/workflow-compose/GUIDE.md', '.codex/scripts/harness-context.mjs', '.harness/src/workflow/composer-workspace.mjs', '.io/worktree.json']) {
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     assert.equal(await readFile(join(root, 'application-change.txt'), 'utf8'), 'preserved');
     await rm(join(root, 'application-change.txt'));
-    await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), '');
     const invalidStage = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'product'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(invalidStage.status, 0);
     assert.match(invalidStage.stderr, /Unregistered skill: product/);
@@ -921,12 +921,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: implementationRef });
     const receiptRef = 'runtime/execution/failure-1/receipt.json';
     await mkdir(join(tree.session_directory, 'runtime/execution/failure-1'), { recursive: true });
-    const profilePath = join(tree.workspace, 'docs/agents/execution.json');
-    await mkdir(join(tree.workspace, 'docs/agents'), { recursive: true });
+    const profilePath = join(tree.workspace, '.harness/agents/execution.json');
+    await mkdir(join(tree.workspace, '.harness/agents'), { recursive: true });
     const previousProfile = await readFile(profilePath).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     const profileContent = JSON.stringify({ profiles: { 'calculator-community-e2e': { purpose: 'e2e', timeout_ms: 300000 } } });
     await writeFile(profilePath, profileContent);
-    await writeFile(join(tree.session_directory, receiptRef), JSON.stringify({ status: 'blocked', profile_id: 'calculator-community-e2e', finished_at: '2026-01-01T00:00:00Z', config_hashes: { 'docs/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } }));
+    await writeFile(join(tree.session_directory, receiptRef), JSON.stringify({ status: 'blocked', profile_id: 'calculator-community-e2e', finished_at: '2026-01-01T00:00:00Z', config_hashes: { '.harness/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } }));
     await writeFile(join(tree.session_directory, 'runtime/reviews/implementation-slice-evidence.json'), JSON.stringify({ review_input: { implementation_commit_sha: git('rev-parse', 'HEAD').trim() } }));
     await codexUserPrompt(tree.workspace, '승인', { at: '2026-01-02T00:00:00Z' });
     const revisionArgs = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice', '--user-revision', 'true', '--feedback', '설정을 수정하세요', '--repair-receipt', receiptRef, '--approval-answer', '승인'];
@@ -954,7 +954,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.throws(() => execFileSync(process.execPath, [...e2eArgs, '--e2e-request', e2eRequestRef], { cwd: tree.workspace, stdio: 'pipe' }), /execution profile has changed/);
     const fastReceiptRef = 'runtime/execution/failure-2/receipt.json';
     const fastFailureRef = 'runtime/e2e/run-2/failure.json';
-    const fastReceipt = { status: 'failed', phase: 'command', profile_id: 'calculator-community-e2e', head: git('rev-parse', 'HEAD').trim(), started_at: '2026-01-03T00:00:00Z', finished_at: '2026-01-03T00:01:00Z', config_hashes: { 'docs/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } };
+    const fastReceipt = { status: 'failed', phase: 'command', profile_id: 'calculator-community-e2e', head: git('rev-parse', 'HEAD').trim(), started_at: '2026-01-03T00:00:00Z', finished_at: '2026-01-03T00:01:00Z', config_hashes: { '.harness/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } };
     await mkdir(join(tree.session_directory, 'runtime/execution/failure-2'), { recursive: true });
     await mkdir(join(tree.session_directory, 'runtime/e2e/run-2'), { recursive: true });
     await writeFile(join(tree.session_directory, fastReceiptRef), JSON.stringify(fastReceipt));
@@ -1056,7 +1056,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
-    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     // A binding for a different provider than the current orchestrator is refused before creating a worktree.
@@ -1109,7 +1109,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     const mismatched = { ...next.input, execution_id: 'provider-mismatch', context: { ...next.input.context, orchestrator_provider: 'claude-code' } };
     await writeExecutionInput(tree.workspace, mismatched, tree.plan_set_id);
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-native-stage.mjs'), 'start', '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
-    await rm(join(tree.workspace, 'docs/agents/EXEC.md'));
+    await rm(join(tree.workspace, '.harness/agents/EXEC.md'));
     await assert.rejects(validateSkillReturn({ root: tree.workspace, input: found.input, envelope }), /Project preparation incomplete/);
     await assert.rejects(readFile(join(root, '.io', 'runtime', 'orchestrator', 'workflow.json')), { code: 'ENOENT' });
     const { lstat } = await import('node:fs/promises');
@@ -1190,7 +1190,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
-    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git(root, 'commit', '-qm', 'setup baseline');
     git(root, 'worktree', 'add', '-qb', 'existing', workspace);
     await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });

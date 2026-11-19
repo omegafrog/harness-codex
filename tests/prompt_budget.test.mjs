@@ -20,7 +20,7 @@ const GENERATED = new Set(['.harness/harness.yaml', '.codex/repository-conventio
 const BANNED = [
   [/기본 `model_tier`는/, 'a skill declares its model tier in its own document and the runner resolves it'],
   [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'the stage agent profiles state the internal GUIDE rule once'],
-  [/`docs\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'write the runtime artifact rule itself'],
+  [/`\.harness\/agents\/EXEC\.md`의 세션 파일 출력 경계를 따른다/, 'write the runtime artifact rule itself'],
   // These name runtime steps that no runner executes; GUIDEs must call the real CLIs instead.
   [/workspace gate가 수행|`before_dispatch` workspace gate|runtime plan-review gate|runtime의 `plan_review` gate|기존 scheduler의 `ready_plans`|runIndependentReviewers/, 'before_dispatch gates and the wrapper scheduler are not run; use harness-workspace-preflight.mjs and harness-plan-review.mjs check'],
 ];

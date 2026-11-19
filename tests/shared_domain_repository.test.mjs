@@ -80,7 +80,7 @@ test('installed repository round trips definitions, validates references and pre
   await rm(join(root, indexPath));
   assert.throws(() => domain('index', '--check'), /out of date/);
   domain('index');
-  assert.doesNotMatch(gitStatus(), /\.io\/|\.codex\/|\.harness\//);
+  assert.doesNotMatch(gitStatus(), /\.io\/|\.codex\/|\.harness\/(?!agents\/)/);
 
   assert.ok(!(await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'));
   await writeDomainDocument(root, { metadata: { ...metadata, references: ['order.event.unknown'] }, body });

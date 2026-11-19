@@ -119,7 +119,7 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /^M app\.txt$/m);
   assert.match(status, /\?\? docs\/implementation\/demo\/technology\.md/);
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.agents\/|\.claude\/|\.io\//);
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.agents\/|\.claude\/|\.io\//);
 
   const retiredPaths = ['.codex/workflows/spec-me.yaml', '.codex/internal-skills/spec-me/GUIDE.md', '.codex/agents/spec_document_writer.toml', '.claude/agents/spec_document_writer.md'];
   for (const path of retiredPaths) {
@@ -189,7 +189,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
   await writeFile(join(root, notes), 'a note the user keeps next to the old guide\n');
   await writeFile(lockPath, JSON.stringify(lock));
   const projectDocuments = {
-    'docs/agents/EXEC.md': 'project execution notes\n',
+    '.harness/agents/EXEC.md': 'project execution notes\n',
     'docs/contracts/product.md': 'project product contract\n',
     'docs/specs/demo/product-spec.md': '# existing approved Product Spec\n',
     'docs/specs/demo/architecture-spec.md': '# existing approved Architecture Spec\n',
@@ -213,7 +213,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
   assert.match(status, /^M app\.txt$/m);
   assert.match(status, /\?\? \.codex\/internal-skills\/spec-me\/notes\.md/, 'the user-owned note stays visible to Git');
   for (const path of Object.keys(projectDocuments)) assert.match(status, new RegExp(`\\?\\? ${path.replaceAll('.', '\\.')}`), `${path} stays visible`);
-  assert.doesNotMatch(status, /\.agents\/|\.claude\/|\.harness\/|\.io\/|installer-backups/);
+  assert.doesNotMatch(status, /\.agents\/|\.claude\/|\.harness\/(?!agents\/)|\.io\/|installer-backups/);
   for (const path of Object.keys(previous)) assert.doesNotMatch(status, new RegExp(path.replaceAll('.', '\\.')), `${path} is not left behind as a change`);
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), []);
@@ -265,7 +265,7 @@ test('installed decisions are committed alone and the ticket stages wait for the
       const schema = JSON.parse(await readFile(begun.started.schema_path, 'utf8'));
       assert.ok(schema.properties.result.required.includes('summary'));
       assert.equal(Object.hasOwn(schema.properties, 'summary'), false);
-      await flow.submitStage(begun, { files: { [path]: content, 'docs/agents/EXEC.md': '검증 명령: npm test\n' }, summary: '기술 결정 완료' });
+      await flow.submitStage(begun, { files: { [path]: content, '.harness/agents/EXEC.md': '검증 명령: npm test\n' }, summary: '기술 결정 완료' });
       const output = JSON.parse(await readFile(begun.started.output_path, 'utf8'));
       await writeFile(join(begun.started.output_path, '..', 'result.json'), JSON.stringify(output));
       delete output.result.summary;
@@ -297,7 +297,7 @@ test('installed decisions are committed alone and the ticket stages wait for the
     }
     if (stage === 'tactical-technology') technologyCommit = result.files;
   }
-  assert.ok(technologyCommit.includes('docs/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
+  assert.ok(technologyCommit.includes('.harness/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
 
   // The decisions alone do not start code: the ticket split and the user-approved publication come first. The ticket-by-ticket
   // run of tactical-code (profile, binding, one commit per ticket) is covered by tactical_ticket_flow.test.mjs.
@@ -425,5 +425,5 @@ test('installed frontend design is dispatched independently and its brief enters
   await writeFile(join(flow.workspace, '.io', brief.path), '변경됨\n');
   await assert.rejects(snapshotPlanSet({ root: flow.workspace, planSetId: flow.planSetId }), /brief changed/);
   assert.match(flow.treeGit('status', '--short', '--untracked-files=all'), /docs\/plans/);
-  assert.doesNotMatch(flow.treeGit('status', '--short', '--untracked-files=all'), /\.io\/|\.harness\//);
+  assert.doesNotMatch(flow.treeGit('status', '--short', '--untracked-files=all'), /\.io\/|\.harness\/(?!agents\/)/);
 });

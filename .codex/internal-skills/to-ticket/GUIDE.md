@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## Plan authoring stage
 
-The canonical entrypoint is `.codex/internal-skills/to-ticket/GUIDE.md`, already supplied by the runner. Do not require or search for a public `skills/to-ticket/SKILL.md` copy. `AGENTS.md` and `docs/agents/EXEC.md` provide project guidance when present; their absence or empty content is not a plan-authoring prerequisite. Do not return `DEPENDENCY_INCOMPLETE`, invoke setup, or create filler guidance solely for those files. Preserve the actual workspace identity, the settled tactical design and decision documents, decision evidence and planning gates. Describe necessary implementation/runtime preparation in the tickets; actual service/E2E launch readiness is checked when that execution begins.
+The canonical entrypoint is `.codex/internal-skills/to-ticket/GUIDE.md`, already supplied by the runner. Do not require or search for a public `skills/to-ticket/SKILL.md` copy. `AGENTS.md` and `.harness/agents/EXEC.md` provide project guidance when present; their absence or empty content is not a plan-authoring prerequisite. Do not return `DEPENDENCY_INCOMPLETE`, invoke setup, or create filler guidance solely for those files. Preserve the actual workspace identity, the settled tactical design and decision documents, decision evidence and planning gates. Describe necessary implementation/runtime preparation in the tickets; actual service/E2E launch readiness is checked when that execution begins.
 
 The static runner supplies `context.execution_workspace`. Do not author workspace paths or branch metadata in tickets or tracker drafts; the publication input preparer generates execution metadata and body file paths.
 

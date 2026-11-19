@@ -61,7 +61,7 @@ export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_
 // bounded-context is included: a boundary that needs a requirement the document lacks names requirements-fix as its owner.
 // to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
 // as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
-export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.EVENT_STORMING, WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
 
 export function markRequirementsRevision(state, stage, previousExecutionId, executionId, now) {
   const stages = state.stages;

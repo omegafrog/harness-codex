@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { inspectPlanSet } from '../workflow/plan-review.mjs';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
+import { currentProjectAgentPath } from '../workflow/project-agent-paths.mjs';
 
 const REPAIRABLE_KINDS = new Set([
   "implementation_defect",
@@ -39,7 +40,7 @@ const REPOSITORY_STANDARD_PATHS = [
   ".codex/internal-skills/code-review/references/default-rules.md",
   ".codex/internal-skills/testing-guidance/GUIDE.md",
   ".codex/internal-skills/ddd-design/",
-  "docs/agents/",
+  ".harness/agents/",
   "docs/architecture/",
   "docs/contracts/",
 ];
@@ -355,7 +356,7 @@ function basisPath(reviewInput, basis) {
   if (basis.source === "product_spec") return reviewInput.product_spec_path;
   if (basis.source === "architecture_spec") return reviewInput.architecture_spec_path;
   if (basis.source === "canonical_plan") return reviewInput.canonical_plan?.reference || null;
-  const path = typeof basis.path === "string" ? basis.path : "";
+  const path = typeof basis.path === "string" ? currentProjectAgentPath(basis.path) : "";
   const safe = path && !path.startsWith("/") && !path.split(/[\\/]/).includes("..");
   return safe && REPOSITORY_STANDARD_PATHS.some((allowed) => allowed.endsWith("/") ? path.startsWith(allowed) : path === allowed) ? path : null;
 }

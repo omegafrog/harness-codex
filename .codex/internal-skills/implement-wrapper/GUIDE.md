@@ -4,7 +4,7 @@ model_tier: implementation
 
 # implement-wrapper
 
-plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다. 최종 E2E는 마지막 `e2e` plan이 Spec의 시나리오(Product 13절)와 환경(Architecture 12.7)으로 테스트와 profile을 만들고, 모든 plan 구현과 통합 리뷰 뒤 fresh runner가 한 번 실행한다. `e2e` plan을 구현할 때도 E2E를 직접 실행하지 않는다. 구현하면서 알게 된 앱 실행 사실(실행 명령, 필요한 설정 키와 기본값, 의존 서비스)은 `docs/agents/EXEC.md`에 기록만 한다.
+plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다. 최종 E2E는 마지막 `e2e` plan이 Spec의 시나리오(Product 13절)와 환경(Architecture 12.7)으로 테스트와 profile을 만들고, 모든 plan 구현과 통합 리뷰 뒤 fresh runner가 한 번 실행한다. `e2e` plan을 구현할 때도 E2E를 직접 실행하지 않는다. 구현하면서 알게 된 앱 실행 사실(실행 명령, 필요한 설정 키와 기본값, 의존 서비스)은 `.harness/agents/EXEC.md`에 기록만 한다.
 
 입력의 `context.plan_id`로 배정된 승인 plan 하나만 구현한다. 리뷰 지적을 고치는 수정 재개에서는 plan 문서를 바꾸지 않고, 고친 내용을 `harness-tracker.mjs comment`로 Issue에만 기록한다. 다른 plan을 스스로 고르지 않는다. 배정된 plan이 이미 `Done`이어도 먼저 `harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`로 현재 리뷰를 확인한다. 리뷰가 필요하면 기존 fixed point와 현재 commit을 보존해 `REVIEW_REQUIRED`를 반환하고, 검토가 유효할 때만 변경 없이 `completed/OK`로 반환한다. 단 실행 입력에 `feedback.json`이 있으면 이 종료 규칙을 적용하지 않는다. plan이 `Done`이거나 HEAD가 이미 리뷰된 commit이어도 피드백이 요구한 수정을 한다(orchestrator가 티켓을 다시 열고 시작한다). 피드백이 있는데 파일을 하나도 바꾸지 않은 채 `completed/OK`로 끝내지 않는다. 피드백대로 고칠 수 없으면 그 이유와 필요한 입력을 `blocked/INPUT_MISSING`으로 반환한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 

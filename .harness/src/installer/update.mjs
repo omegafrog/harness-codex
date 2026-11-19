@@ -9,6 +9,7 @@ import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { retireProjectHooks } from './orchestrator-hook.mjs';
 import { migrateAgentsText } from '../workflow/agent-config.mjs';
 import { transformSourceContent } from './transforms.mjs';
+import { migrateProjectAgentFiles } from './project-agent-files.mjs';
 import { LEGACY_ASSETS, RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from './legacy-assets.mjs';
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
@@ -416,6 +417,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   if (scope !== 'agents') removed_directories.push(...await pruneEmptySkillDirectories(targetRoot, new Set([...internalSkillNames, ...RETIRED_SKILL_NAMES, ...descriptors.map((descriptor) => /^\.(?:agents|claude)\/skills\/([^/]+)\//.exec(descriptor.target_path)?.[1]).filter(Boolean)])));
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, upstream_version: await harnessVersion(sourceRoot), files: nextFiles });
+  const project_agent_files = scope === 'all' ? await migrateProjectAgentFiles(targetRoot) : { moved: [], conflicts: [] };
+  for (const { from, to } of project_agent_files.conflicts) skipped.push({ path: from, status: `project_guidance_conflict_with ${to}` });
   await writeLockFile(targetRoot, lockPath, nextLock);
   // harness.yaml belongs to the project, so it is only rewritten to move older flat model keys under agents.<provider>.
   const configPath = resolve(targetRoot, '.harness/harness.yaml');
@@ -433,7 +436,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     await retireProjectHooks(targetRoot);
     await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
-  return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory };
+  return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory, project_agent_files };
 }
 
 // Managed roots are the first two path segments (for example `.agents/skills`); the root itself is kept.

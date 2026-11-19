@@ -146,6 +146,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
+    if (input.context?.requirements_contract_version === 1) entry.requirements_contract_version = 1;
     if (instruction_delivery) { entry.instruction_delivery = instruction_delivery; if (instruction_delivery.phase) entry.phase = instruction_delivery.phase; }
     if (status === 'running') {
       if (input.skill === 'workflow-compose' && priorWorkflowStatus) entry.prior_workflow_status = priorWorkflowStatus;

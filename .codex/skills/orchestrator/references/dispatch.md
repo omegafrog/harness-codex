@@ -38,7 +38,7 @@ Codex의 Harness 작업자 프로필은 `skills.include_instructions = false`로
 
 실패나 사용자 답변 뒤 새 실행을 예약하면 새 작업자가 이전 결과와 입력을 참조한다. 실행이 유지되는 형식 수정과 컨텍스트 압축은 기존 작업자에게 전달한다. 다른 CLI의 세션 ID를 넘기지 않는다. 단계별 독립 리뷰와 실제 E2E의 별도 승인 및 역할 요구사항은 해당 GUIDE를 따른다.
 
-사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항 수정은 가장 앞선 소유 stage에서 시작한다. 업무 발굴·범위 누락은 `subdomain-candidates`, 업무 묶음·서브도메인 분류는 `subdomain-classification`, 규칙·예외·완료 조건은 `requirements-fix`, Context 책임·관계는 `bounded-context`가 맡는다. 시작과 함께 뒤 단계의 영향받는 결과를 `stale`로 기록한다. 기존 문서와 실행 결과를 읽어 보완하고 `bounded-context`가 완료되면 현재 요구사항을 사용자에게 다시 보여 주고 승인받는다.
+사용자가 완료된 `to-ticket` 산출물이나 요구사항·전술 설계 stage의 문서를 고치라고 지시하면 `harness-prepare-input.mjs --feedback <사용자 지시 원문> --user-revision true`로 준비한다. 뒤 stage의 대기 질문은 그 지시로 대체되며 사용자 지시를 agent 판단으로 만들어 내지 않는다. 요구사항 수정은 가장 앞선 소유 stage에서 시작한다. 행동 범위 결정은 `stakeholder-analysis`, 업무 발굴·BIZ 연결은 `subdomain-candidates`, 업무 묶음·서브도메인 분류는 `subdomain-classification`, 규칙·예외·완료 조건은 `requirements-fix`, Context 책임·관계는 `bounded-context`가 맡는다. 시작과 함께 뒤 단계의 영향받는 결과를 `stale`로 기록한다. 기존 문서와 실행 결과를 읽어 보완하고 `bounded-context`가 완료되면 현재 요구사항을 사용자에게 다시 보여 주고 승인받는다.
 
 실패한 stage와 사용자가 취소한 stage는 실제 종료가 확인된 뒤 같은 stage에 `--feedback`을 전달한다. `REVIEW_REQUIRED`는 실제 독립 reviewer 결과를 `--feedback`으로 돌려준다. 사용자 질문의 답은 실제 답만 `--answer`로 전달하며, 새 실행이 반환한 `answers_path`를 작업자에게 전달한다. 최종 E2E 실패의 구현 수정 승인과 E2E 재실행 승인은 별개다. 검증되지 않은 반환을 성공으로 바꾸거나 기존 상태를 직접 고치지 않는다.
 

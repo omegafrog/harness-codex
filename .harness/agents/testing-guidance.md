@@ -1,6 +1,6 @@
 # Testing and verification guidance
 
-This provider-neutral document stores durable project-specific testing preferences for this workspace. A managed workflow reads and updates the copy in its active worktree so the durable memory change can be reviewed and pushed with that branch. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
+This provider-neutral document stores durable project-specific testing preferences for this workspace. A managed workflow reads and updates the copy in its active worktree so the durable memory change can be reviewed and pushed with that branch. Ordinary verification commands belong in `.harness/agents/EXEC.md` and run through native project CLIs. `.harness/agents/execution.json` is reserved for explicit end-user E2E profiles.
 
 ## Active guidance
 
@@ -23,7 +23,7 @@ This provider-neutral document stores durable project-specific testing preferenc
 ### harness-black-box-calculator-workflow
 - Status: active
 - Applies to: 사용자가 요청하는 Harness workflow E2E 실행
-- Guidance: `docs/agents/EXEC.md`의 정본 시나리오를 그대로 사용한다. 테스트 저장소는 `/home/jiwoo/workspace/harness-test`다. 승인된 소스 commit/push → consumer 갱신 → 명시적으로 요청한 기존 worktree 백업/삭제 → main/clean 확인 뒤 `codex exec`로 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`를 실행한다. 실제 응답의 worktree에서 별도 `codex exec`로 `$orchestrator 계속 진행해`를 실행해 요구사항 흐름 진입부터 구현(implement) 완료까지 관찰하고 멈춘 뒤 산출물을 검증한다. 중단·실패·질문·승인 대기에 임의로 개입하거나 답변·위임·상태 수정·자동 재실행을 하지 않는다. 다른 작은 기능·fixture·eval replay·단위 테스트를 이 E2E의 대체로 보고하지 않는다.
+- Guidance: `.harness/agents/EXEC.md`의 정본 시나리오를 그대로 사용한다. 테스트 저장소는 `/home/jiwoo/workspace/harness-test`다. 승인된 소스 commit/push → consumer 갱신 → 명시적으로 요청한 기존 worktree 백업/삭제 → main/clean 확인 뒤 `codex exec`로 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`를 실행한다. 실제 응답의 worktree에서 별도 `codex exec`로 `$orchestrator 계속 진행해`를 실행해 요구사항 흐름 진입부터 구현(implement) 완료까지 관찰하고 멈춘 뒤 산출물을 검증한다. 중단·실패·질문·승인 대기에 임의로 개입하거나 답변·위임·상태 수정·자동 재실행을 하지 않는다. 다른 작은 기능·fixture·eval replay·단위 테스트를 이 E2E의 대체로 보고하지 않는다.
 - Rationale: 실제 사용자의 두 orchestrator 호출 경로를 반복 가능한 방식으로 검증한다.
 - Source: 2026-11-05 사용자의 저장소·원문 명령·실행 순서·개입 금지 직접 지시
 - Updated: 2026-11-05

@@ -6,7 +6,7 @@
 
 - `CONTEXT.md` - 프로젝트 유비쿼터스 언어
 - `CONTEXT-MAP.md` - bounded context 경계와 관계
-- `docs/architecture/domain-model.md` - 영향받는 모델의 implemented/accepted-target, 소유 코드·규칙·통신·배포 및 canonical 다이어그램 참조
+- `docs/specs/<plan-set-id>/tactical-design.md` - 변경 대상의 모델·Aggregate·규칙 책임·호출 설계와 현행 코드 근거
 - `docs/architecture/constraints.md` - 사용자가 관리하는 지속적인 설계·구현 제약
 - `docs/adr/` - 되돌리기 어려운 설계 결정
 

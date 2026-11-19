@@ -19,7 +19,7 @@
 ## 프로젝트 문서
 
 - 용어는 `CONTEXT.md`와 요구사항 용어 표에서 찾는다. 새 개념에는 [용어 생애주기](../../domain-modeling/references/language-lifecycle.md)를 적용한다.
-- `docs/architecture/domain-model.md`에 영향받는 모델 행만 반영하고 기존 프로젝트 본문을 보존한다. 코드에서 확인한 내용은 경로·행·commit과 함께 `implemented`, 나머지 설계는 `accepted-target`으로 표기한다. 모델·Root·강제 위치·통신 등은 해당 BC 설계 행의 링크로 연결한다.
+- 변경의 모델·Aggregate·규칙 강제 위치·통신은 해당 BC의 `tactical-design.md`에만 기록한다. 현행 구현을 인용할 때는 코드 경로·행·commit을 적고 승인된 설계와 구분한다. 구현 결과는 최종 통합 시 `sync-contracts`에서 현행 계약에 반영한다.
 - 지속되는 결정은 적용된 요소에서 `docs/adr/`의 구체적인 Markdown 파일이나 문서 절을 링크한다. 이미 같은 결정을 담은 ADR이 있으면 그 위치를 사용한다. 새로 기록할 때 결정, 근거(요구·답변 ID), 결과와 영향을 받는 경계를 적고 문서의 다른 결정을 보존한다. 실제로 바꾼 ADR·프로젝트 문서·클래스 다이어그램 파일은 결과의 workspace artifact에 개별 경로를 싣는다.
 - `domain_context_pack`이 있으면 먼저 후보를 확인한다. 상세는 `node .codex/scripts/harness-domain.mjs get <ID>...`로, 후보가 부족하면 `discover` 또는 `search`로 조회한다. 사용한 공통 정의 ID를 근거로 남긴다.
 

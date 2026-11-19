@@ -38,9 +38,8 @@ export async function commitStageRequest({ root, rawPath }) {
 // completes; reviewers then read them in the history like the code, and no stage or orchestrator stages them by hand.
 // Other staged files are left as they are: the commit names only the stage's own paths.
 // The requirements stages write the plan set's documents; bounded-context settles the map and glossary scope,
-// and ubiquitous-language settles the glossary. The tactical design stages also write the project's model rows
-// (docs/architecture/domain-model.md) and may add terms to the glossary. These documents belong to the project.
-const TACTICAL_PROJECT_DOCUMENTS = ['docs/architecture/domain-model.md', 'CONTEXT.md'];
+// and ubiquitous-language settles the glossary. The tactical design stages may add terms to the glossary.
+const TACTICAL_PROJECT_DOCUMENTS = ['CONTEXT.md'];
 const PROJECT_DOCUMENTS = {
   'bounded-context': ['CONTEXT-MAP.md', 'CONTEXT.md'],
   'ubiquitous-language': ['CONTEXT.md'],
@@ -53,7 +52,7 @@ const LISTED_PROJECT_DOCUMENTS = {
   ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, [...TACTICAL_PROJECT_DOCUMENTS, ...(skill === 'context-boundary' ? ['CONTEXT-MAP.md'] : [])]])),
 };
 const TACTICAL_IMPLEMENTATION_DOCUMENTS = {
-  'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, 'docs/agents/EXEC.md'],
+  'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, '.harness/agents/EXEC.md'],
   'tactical-api': (id) => [`docs/implementation/${id}/api.md`],
   'tactical-data': (id) => [`docs/implementation/${id}/data.md`],
 };
@@ -101,8 +100,7 @@ export const restartDocuments = (stageId, planSetId) => TACTICAL_DESIGN_STAGES.i
 // user instruction about the `domain-model` stage can be mistaken for. The runner renames it to `tactical-design.md` with
 // `git mv` when a tactical stage input is prepared and before the stage runs: the index records the rename, so history
 // follows the file, and the next tactical stage commit takes it together with the stage's own edits. Nothing happens
-// when the plan set has no legacy document or already has the current one; `docs/architecture/domain-model.md`, the
-// project's model index, is never touched.
+// when the plan set has no legacy document or already has the current one.
 export async function migrateLegacyTacticalDesign({ root, planSetId }) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId || '')) throw new Error('Invalid plan_set_id');
   const [current, legacy] = tacticalDesignDocuments(planSetId);

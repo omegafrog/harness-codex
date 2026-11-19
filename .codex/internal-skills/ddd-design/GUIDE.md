@@ -19,7 +19,7 @@ It does not choose packages, modules, persistence, or framework wiring; those ch
 - `CONTEXT.md`
 - related ADRs
 - event-storming output: the event flow tables and hotspot decisions in `docs/specs/<plan-set-id>/requirements.md` when present
-- Existing affected models, source references, and accepted changes from `CONTEXT-MAP.md` and `docs/architecture/domain-model.md` when present.
+- Existing affected models, source references, and accepted changes from `CONTEXT-MAP.md`, the integrated architecture contract, and linked tactical designs when present.
 
 Before proposing boundaries, read [model-continuity.md](references/model-continuity.md). It defines existing-model discovery, rule encapsulation, communication/deployment evidence, and the durable model lifecycle. Apply it to affected concepts only; an existing method or function may be the entire design delta.
 

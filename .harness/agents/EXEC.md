@@ -2,14 +2,14 @@
 
 ## 이 문서의 역할
 
-`docs/agents/EXEC.md`는 **이 저장소를 실행·검증하는 방법의 정본**이다. 서버와 인프라를 띄우고 멈추는 방법, 일반 검증 명령, 사용자 흐름 E2E의 실행 기준과 환경값을 둔다. 에이전트는 서버·인프라를 실행하거나 검증하기 전에 이 문서를 읽고 따른다.
+`.harness/agents/EXEC.md`는 **이 저장소를 실행·검증하는 방법의 정본**이다. 서버와 인프라를 띄우고 멈추는 방법, 일반 검증 명령, 사용자 흐름 E2E의 실행 기준과 환경값을 둔다. 에이전트는 서버·인프라를 실행하거나 검증하기 전에 이 문서를 읽고 따른다.
 
 | 이 문서에 두는 것 | 다른 곳에 두는 것 |
 |---|---|
 | 서버·인프라 실행·중지·정리 방법, 플랫폼별 명령과 환경변수 | 모든 에이전트가 따르는 공통 규칙: `AGENTS.md` |
 | 일반 단위·회귀 검증 명령(`npm test` 등)과 그 범위 | workflow 실행 규칙: 각 `.codex/internal-skills/*/GUIDE.md` |
-| 사용자 흐름 E2E의 실행 환경, 원문 요청, 관찰·보존 기준 | E2E에 쓰는 구체 인자·포트·readiness 값: `docs/agents/execution.json`의 profile |
-| 이 저장소가 쓰는 외부 인프라(예: 관측성 스택)의 설치·검증 근거 | 재발 방지 학습: `docs/agents/testing-guidance.md`, 구현 선호: `docs/agents/implementation-guidance.md` |
+| 사용자 흐름 E2E의 실행 환경, 원문 요청, 관찰·보존 기준 | E2E에 쓰는 구체 인자·포트·readiness 값: `.harness/agents/execution.json`의 profile |
+| 이 저장소가 쓰는 외부 인프라(예: 관측성 스택)의 설치·검증 근거 | 재발 방지 학습: `.harness/agents/testing-guidance.md`, 구현 선호: `.harness/agents/implementation-guidance.md` |
 
 변경 이력, 작업 계획, 의사결정 기록은 이 문서에 쓰지 않는다. 명령이 바뀌면 이 문서를 고치고, E2E의 인자·환경·인프라가 바뀌면 `execution.json` profile도 함께 고친다. 소비자 프로젝트에서는 `$setup`이 이 파일을 프로젝트 소유 문서로 준비하며 Harness 업데이트가 덮어쓰지 않는다.
 
@@ -30,7 +30,8 @@
 
 - Harness 동작을 수정하면 관리 자산 discovery·변환부터 신규 설치, 갱신, Doctor 진단, Git 제외까지 확인한다. 소비자 소유 지침과 설정은 설치기가 안전한 템플릿으로 다루는 경우에만 설치 대상으로 추가한다. Harness 관리 생성물은 소유권에 따라 `.git/info/exclude` 또는 `.gitignore`에서 제외하고, 설치 소비자의 동작과 `git status`를 회귀 검사한다.
 - 커밋한 Harness 변경을 소비자에 적용하기 전에 configured upstream에 push하고 해당 branch에서 커밋을 조회한다. 소비자 갱신과 Doctor 확인 뒤 source commit과 소비자 결과를 보고한다.
-- 설치·갱신 뒤 정리가 필요하면 `git status --short`의 모든 경로를 Harness 생성물과 프로젝트 소유 파일로 확인한다. 추적된 수정과 untracked 파일을 모두 백업하고, 소유권을 확인해 열거한 Harness 생성물만 제거한다. `git check-ignore -v`로 대표 생성물의 제외 규칙을 확인하고 `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/**`의 Git 가시성을 보존한다. 정리 뒤 `git status --short`와 백업을 다시 검증한다.
+- 소비자 갱신은 기존 `docs/agents/`의 표준 지침과 설정을 `.harness/agents/`로 옮긴다. 같은 파일이 새 경로에 있고 내용이 다르면 두 파일을 보존하고 Doctor에 표시한다. `.harness/agents/`는 프로젝트 소유 경로로 Git에 기록한다.
+- 설치·갱신 뒤 정리가 필요하면 `git status --short`의 모든 경로를 Harness 생성물과 프로젝트 소유 파일로 확인한다. 추적된 수정과 untracked 파일을 모두 백업하고, 소유권을 확인해 열거한 Harness 생성물만 제거한다. `git check-ignore -v`로 대표 생성물의 제외 규칙을 확인하고 `.harness/agents/EXEC.md`, `.harness/agents/execution.json`, `docs/contracts/**`의 Git 가시성을 보존한다. 정리 뒤 `git status --short`와 백업을 다시 검증한다.
 - 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`, `harness-update`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
@@ -47,7 +48,7 @@
 
 ## E2E 실패 학습 계약
 
-E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 근거와 반복 여부를 기록한다. 반복되거나 재사용할 예방 절차가 확인되면 활성 workspace의 `docs/agents/testing-guidance.md`를 갱신한다. 실행값·URL·포트·readiness profile은 `docs/agents/execution.json`, 운영자가 따라야 할 준비·진단 절차는 이 문서에 반영하고 서로 일치시킨다. 테스트 결과와 학습 상태를 분리하며 학습 pending은 테스트 통과나 workflow 완료를 막지 않는다. `e2e-learning-check` profile의 `config_inputs`에는 이 규칙, 검증 코드와 관련 테스트를 포함한다.
+E2E 실패를 확인하면 `e2e-test`의 실패 학습 절차에 따라 원인 근거와 반복 여부를 기록한다. 반복되거나 재사용할 예방 절차가 확인되면 활성 workspace의 `.harness/agents/testing-guidance.md`를 갱신한다. 실행값·URL·포트·readiness profile은 `.harness/agents/execution.json`, 운영자가 따라야 할 준비·진단 절차는 이 문서에 반영하고 서로 일치시킨다. 테스트 결과와 학습 상태를 분리하며 학습 pending은 테스트 통과나 workflow 완료를 막지 않는다. `e2e-learning-check` profile의 `config_inputs`에는 이 규칙, 검증 코드와 관련 테스트를 포함한다.
 
 ## Harness 검증 경로 실행
 
@@ -145,9 +146,9 @@ Git 프로젝트는 `<git-common-dir>/harness-workflows/sessions/<workspace-hash
 
 ## 테스트·서비스 실행 계약
 
-구현 선호사항과 테스트 실행 선호사항은 각각 활성 프로젝트 workspace의 `docs/agents/implementation-guidance.md`와 `docs/agents/testing-guidance.md`에 기록한다. 관리 worktree에서는 실행 중인 `workspace_root`의 추적 파일을 읽고 갱신한다. 이 파일은 workflow branch와 함께 review·push되므로 원본 checkout의 사본을 대신 사용하지 않는다. 구현 agent는 편집 전에 구현 지침을, 테스트·서비스 실행 runner는 실행 전에 테스트 지침을 읽는다. 구현 agent도 검증을 실행할 때 테스트 지침을 함께 읽는다. 지침이 승인된 Spec이나 실행 계약과 충돌하면 진행하지 않고 호출자에게 보고한다.
+구현 선호사항과 테스트 실행 선호사항은 각각 활성 프로젝트 workspace의 `.harness/agents/implementation-guidance.md`와 `.harness/agents/testing-guidance.md`에 기록한다. 관리 worktree에서는 실행 중인 `workspace_root`의 추적 파일을 읽고 갱신한다. 이 파일은 workflow branch와 함께 review·push되므로 원본 checkout의 사본을 대신 사용하지 않는다. 구현 agent는 편집 전에 구현 지침을, 테스트·서비스 실행 runner는 실행 전에 테스트 지침을 읽는다. 구현 agent도 검증을 실행할 때 테스트 지침을 함께 읽는다. 지침이 승인된 Spec이나 실행 계약과 충돌하면 진행하지 않고 호출자에게 보고한다.
 
-일반 단위·회귀 검증은 아래 프로젝트별 명령을 저장소 루트에서 기본 CLI로 직접 실행한다. `docs/agents/execution.json`과 `harness-exec`는 명시적 사용자 흐름 E2E에만 사용하며, 이 저장소에는 현재 그런 E2E profile이 없다. E2E profile을 추가할 때는 `purpose: "e2e"`와 실제 실행 준비/readiness 검증을 포함한다.
+일반 단위·회귀 검증은 아래 프로젝트별 명령을 저장소 루트에서 기본 CLI로 직접 실행한다. `.harness/agents/execution.json`과 `harness-exec`는 명시적 사용자 흐름 E2E에만 사용하며, 이 저장소에는 현재 그런 E2E profile이 없다. E2E profile을 추가할 때는 `purpose: "e2e"`와 실제 실행 준비/readiness 검증을 포함한다.
 
 ```sh
 node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <e2e-profile-id>
@@ -274,7 +275,7 @@ Codex 테스트 전에 `/hooks`에서 서브에이전트 식별 훅의 신뢰 �
 4. 아래 첫 `codex exec`를 테스트 저장소 workspace에서 실행한다. 프롬프트 원문은 `$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해`다. 같은 기능의 기존 worktree가 있으면 이어가기와 새 workflow 선택 질문을 기대하며 관찰자가 답을 만들지 않는다. 실제 사용자가 새 시작을 선택하면 이번 생성 명령의 execution ID와 worktree 참조를 생성 전 Git 목록·canonical `worktree.json`·요청 binding과 대조한다. 관련 후보가 없으면 새 workflow가 준비되는지 확인한다. 응답 경로가 없거나 검증이 실패하면 추정 경로를 만들어 진행하지 않는다.
 5. 반환된 worktree를 workspace로 두 번째 `codex exec`를 실행하며 프롬프트 원문은 `$orchestrator 계속 진행해`다. 요구사항 흐름의 일곱 stage(`stakeholder-analysis`부터 `bounded-context`까지)와 전술 설계 흐름의 여섯 stage(`domain-model`부터 `context-boundary`까지)를 거쳐 `tactical-to-code`의 기술·화면·API·데이터 결정과 구현으로 진행하는지 관찰한다. 구현 단계를 정상적으로 마치면 다음 제품 E2E를 시작하지 않고 멈춘 뒤 산출물을 검증한다.
 6. 실행 중단·오류·사용자 질문·승인 대기 시 테스트 관찰자가 답변이나 위임을 만들거나 상태·Spec·plan·코드·설정을 수정하거나 재실행해 넘기지 않는다. 실제 중단 원문과 시점, stage, session, 실패 증거를 보존하고 사용자에게 보고한다. 자동 승인이 없는 한 성공을 위해 gate를 우회하지 않는다. 두 명령 이외 추가 진행 요청은 사용자의 실제 답변이나 명시적 지시가 있어야 한다.
-7. 첫 실행의 workflow 생성과 응답 위치를 검증한다. 요구사항에서는 서브도메인 경계를 나누거나 유지하는 이유와 실제 승인 기록, 이벤트 다이어그램, `CONTEXT-MAP.md`·`CONTEXT.md` 갱신, 승인된 `fixed` 상태를 확인한다. 사용자가 이후 수정을 요청한 경우 영향받은 단계만 다시 열리고, 무관한 업무·식별자와 산출물이 보존되며, 새 바운디드 컨텍스트 승인 전에는 전술 설계에 들어가지 않는지 확인한다. 전술 설계에서는 `tactical-design.md`의 BC별 Entity·VO와 Aggregate 관계, 다이어그램, 모델별 업무 규칙, Application Service 메서드별 호출·트랜잭션·통합, outbound 인터페이스, 해당 결정의 별도 ADR을 확인한다. `context-boundary`의 `harness-domain-model-check.mjs` 통과와 `docs/architecture/domain-model.md`의 `accepted-target` 상태도 대조한다. 독립 `tactical-to-code`에서는 기술·화면·API·데이터 결정, port의 구체 구현체와 조립 위치, 설계 동결 gate, 구현 산출물·단위 테스트·완료 결과를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
+7. 첫 실행의 workflow 생성과 응답 위치를 검증한다. 요구사항에서는 서브도메인 경계를 나누거나 유지하는 이유와 실제 승인 기록, 이벤트 다이어그램, `CONTEXT-MAP.md`·`CONTEXT.md` 갱신, 승인된 `fixed` 상태를 확인한다. 사용자가 이후 수정을 요청한 경우 영향받은 단계만 다시 열리고, 무관한 업무·식별자와 산출물이 보존되며, 새 바운디드 컨텍스트 승인 전에는 전술 설계에 들어가지 않는지 확인한다. 전술 설계에서는 `tactical-design.md`의 BC별 Entity·VO와 Aggregate 관계, 다이어그램, 모델별 업무 규칙, Application Service 메서드별 호출·트랜잭션·통합, outbound 인터페이스, 해당 결정의 별도 ADR을 확인한다. `context-boundary`의 `harness-domain-model-check.mjs` 통과와 `tactical-design.md`의 현행 코드 근거·설계 구분을 확인한다. 독립 `tactical-to-code`에서는 기술·화면·API·데이터 결정, port의 구체 구현체와 조립 위치, 설계 동결 gate, 구현 산출물·단위 테스트·완료 결과를 직접 확인한다. 파일 존재나 agent의 성공 문구만으로 구현 완료를 판정하지 않는다. 실패 시 자동 수정하지 않고 증거와 미검증 범위를 보고한다.
 
 Codex E2E에서는 자동 압축 임계값 140,000 토큰을 비교값으로 사용한다. 아래 세 명령의 `-c model_auto_compact_token_limit=140000`과 `-c features.subagent_default_context_limits=false`는 상위 오케스트레이터와 native 하위 작업자에 같은 설정을 전달한다. 각 스레드는 자기 활성 컨텍스트로 압축 시점을 판단한다. 일반 프로젝트는 자체 Codex 설정이나 모델 기본값을 사용한다. 비교 실행마다 실제 인자를 보존하고 압축 관측·캐시 입력·비캐시 입력·출력과 단계 결과를 함께 확인한다.
 

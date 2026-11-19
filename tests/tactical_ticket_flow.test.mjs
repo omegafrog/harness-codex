@@ -327,7 +327,7 @@ test('an update from the previous release brings the ticket stages and keeps pro
     lock.files[path].upstream_sha256 = sha(content);
   }
   await writeFile(lockPath, JSON.stringify(lock));
-  const documents = { 'docs/specs/old/tactical-design.md': '# project design\n', 'docs/plans/old/plans.md': '# project plans\n', 'docs/agents/EXEC.md': 'project execution notes\n' };
+  const documents = { 'docs/specs/old/tactical-design.md': '# project design\n', 'docs/plans/old/plans.md': '# project plans\n', '.harness/agents/EXEC.md': 'project execution notes\n' };
   for (const [path, content] of Object.entries(documents)) { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), content); }
   await writeFile(join(root, 'app.txt'), 'application edit\n');
 
@@ -342,7 +342,7 @@ test('an update from the previous release brings the ticket stages and keeps pro
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m);
   for (const path of Object.keys(documents)) assert.match(status, new RegExp(`\\?\\? ${path.replaceAll('.', '\\.')}`), `${path} stays visible`);
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.agents\/|\.claude\/|\.io\//);
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.agents\/|\.claude\/|\.io\//);
   assert.match(git('check-ignore', '-v', ticketGuide, '.harness/src/workflow/plan-review.mjs'), /info\/exclude/);
   for (const [path, content] of Object.entries(documents)) assert.equal(await readFile(join(root, path), 'utf8'), content, `${path} is untouched`);
 });

@@ -89,7 +89,7 @@ test('Claude Code Edit, Write, MultiEdit and NotebookEdit follow the same rule',
     ]) assert.match(decide(root, tool, input) ?? '', /orchestrator main session does not write/, `${tool} ${JSON.stringify(input).slice(0, 60)}`);
     for (const [tool, input] of [
       ['Write', { file_path: `${root}/.io/runtime/orchestrator/plan-note.md`, content: 'x' }],
-      ['Edit', { file_path: `${root}/docs/agents/testing-guidance.md`, old_string: 'a', new_string: 'b' }],
+      ['Edit', { file_path: `${root}/.harness/agents/testing-guidance.md`, old_string: 'a', new_string: 'b' }],
       ['Write', { file_path: '/tmp/outside-note.md', content: 'x' }],
     ]) assert.equal(decide(root, tool, input), null, `${tool} ${input.file_path}`);
     // Reads and other tools are never guarded.
@@ -110,7 +110,7 @@ test('shell commands: clearly identifiable writes to protected paths are denied,
     const allowed = [
       'git status --short', 'node .codex/scripts/harness-context.mjs', 'node .codex/scripts/harness-agent-run.mjs --background true > .io/runtime/run.log 2>&1 &', 'echo hi | tee .io/runtime/x.log',
       'ls src > /dev/null', 'npm test 2>&1 | tail -20', 'echo "a > src/not-a-redirect.js"', "echo 'x > docs/contracts/product.md'", 'cat <<EOF\n> src/inside-a-heredoc.js\nEOF', 'git diff > /tmp/review.diff',
-      'sed -n "1,20p" src/App.java', 'sed "s/a/b/" src/App.java', 'cp src/App.java /tmp/App.java', 'echo x > "$OUTPUT"', 'echo x > $(mktemp)', 'cd .io && echo x > note.md', 'tee docs/agents/testing-guidance.md < /tmp/t',
+      'sed -n "1,20p" src/App.java', 'sed "s/a/b/" src/App.java', 'cp src/App.java /tmp/App.java', 'echo x > "$OUTPUT"', 'echo x > $(mktemp)', 'cd .io && echo x > note.md', 'tee .harness/agents/testing-guidance.md < /tmp/t',
       'cat docs/contracts/product.md', 'ls -la docs/contracts', 'node --test tests/*.test.mjs',
     ];
     for (const command of allowed) assert.equal(decide(root, 'Bash', { command }), null, command);

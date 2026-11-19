@@ -17,7 +17,7 @@ Use it proactively whenever affected model meaning, ownership, identity or lifec
 
 Read [language-lifecycle.md](references/language-lifecycle.md) when choosing, renaming or retiring terms. Resolve current canonical and retired/replacement records before using historical Specs or code names. Keep retired terms as scoped tombstones, not active aliases; preserve only evidenced compatibility identifiers at their boundary.
 
-Keep affected model ownership and lifecycle under [model-continuity.md](../ddd-design/references/model-continuity.md). `docs/architecture/domain-model.md` indexes implemented/accepted aggregate models, rule enforcement, communication and deployment evidence; `CONTEXT-MAP.md` links it. Reuse canonical diagrams rather than copying their content. The model index is architecture documentation, never a task/status board or a second glossary.
+Keep affected model ownership and lifecycle under [model-continuity.md](../ddd-design/references/model-continuity.md). Record each change’s design in its `tactical-design.md`. The integrated architecture contract records the current models, rule enforcement, communication and deployment evidence. Reuse canonical diagrams.
 
 When a Product Spec or Architecture Spec defines terminology, classify each term before the stage is complete:
 

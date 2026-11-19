@@ -16,12 +16,12 @@ source code를 수정하지 않는다.
 - optional Figwright handoff: file/session identity and authoritative root node id
 - exact route(s) and user flow
 - acceptance scenarios
-- `docs/agents/EXEC.md` and project execution instructions
+- `.harness/agents/EXEC.md` and project execution instructions
 
 ## Execution
 
 1. `workspace_root`와 `git rev-parse --show-toplevel` 일치를 확인한다.
-2. `docs/agents/EXEC.md`와 대상 frontend의 실행 지침을 읽는다.
+2. `.harness/agents/EXEC.md`와 대상 frontend의 실행 지침을 읽는다.
 3. 기존 project command로 필요한 app/server를 시작한다. 실행 방법을 추측해 repository 설정을 바꾸지 않는다.
 4. 실제 browser automation/screenshot capability를 사용한다. Playwright가 project 또는 environment에 준비되어 있으면 우선 사용한다.
 5. design brief의 primary user flow를 실제로 수행한다.

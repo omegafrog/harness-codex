@@ -164,7 +164,7 @@ async function setupVictoriaLogs() {
   await replaceConfig(join(directory, 'scrape.json'), JSON.stringify(scrapeConfig(config), null, 2) + '\n');
   await replaceConfig(join(directory, 'otel-javaagent.properties'), `# Harness development-only OpenTelemetry agent config; never package the agent in production.\notel.logs.exporter=otlp\notel.metrics.exporter=none\notel.traces.exporter=none\notel.exporter.otlp.protocol=http/protobuf\notel.exporter.otlp.logs.endpoint=http://127.0.0.1:${config.otel_port}/v1/logs\n`);
   for (const name of ['implementation-guidance.md', 'testing-guidance.md']) {
-    const path = join(guidanceRoot, 'docs/agents', name);
+    const path = join(guidanceRoot, '.harness/agents', name);
     await safePath(path, guidanceRoot);
     const previous = await readFile(path, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return '# Project guidance\n\n## Active guidance\n\n'; });
     let updated = previous;
@@ -188,7 +188,7 @@ async function setupVictoriaLogs() {
     mcp.mcpServers[name] ??= { command: 'node', args: [join(root, '.codex/scripts/harness-victorialogs.mjs'), command, '--root', root] };
   }
   await replaceConfig(mcpPath, JSON.stringify(mcp, null, 2) + '\n');
-  const executionPath = join(root, 'docs/agents/execution.json');
+  const executionPath = join(root, '.harness/agents/execution.json');
   await safePath(executionPath);
   if (existsSync(executionPath)) {
     const execution = JSON.parse(await readFile(executionPath, 'utf8'));
@@ -197,7 +197,7 @@ async function setupVictoriaLogs() {
     await mkdir(dirname(executionPath), { recursive: true });
     await writeFile(executionPath, '{"schema_version":1,"profiles":{}}\n', { flag: 'wx' });
   }
-  const execPath = join(root, 'docs/agents/EXEC.md');
+  const execPath = join(root, '.harness/agents/EXEC.md');
   await safePath(execPath);
   const instructions = await readFile(execPath, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return ''; });
   if (!instructions.includes('## VictoriaLogs local')) await writeFile(execPath, instructions + '\n## VictoriaLogs local\n\n설정과 MCP 연결: [로컬 VictoriaLogs](../observability/victorialogs/README.md). 필요한 경우 `node .codex/scripts/harness-victorialogs.mjs start|check|stop --root <workspace_root>`를 직접 사용한다. start는 foreground이며 저장 데이터는 보존한다. 실제 사용자 경로 E2E에만 harness-exec profile을 사용한다. Spring Boot 개발 profile 연결은 설치된 `victorialogs-local-setup` 스킬이 기존 source/config에 맞춰 완료한다.\n');

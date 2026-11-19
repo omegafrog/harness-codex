@@ -119,7 +119,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 
 #### 전술 설계 흐름
 
-`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model`은 stage 이름이며 `docs/architecture/domain-model.md`는 프로젝트 모델 색인이다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.codex/internal-skills/domain-model/references/template.md`에 있다.
+`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model` 단계는 이 문서의 모델 절을 작성한다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.codex/internal-skills/domain-model/references/template.md`에 있다.
 
 | stage | 하는 일 |
 |---|---|
@@ -130,7 +130,7 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `integration-design` | Application Service가 사용하는 상대 BC의 공개 계약, 동기 응답과 비동기 반응을 대조하고 빠진 설계를 소유 stage로 돌려보낸다 |
 | `context-boundary` | BC별 구성과 의존 경로를 확정 경계·데이터 소유권에 대조하고 최종 검증을 요청한다 |
 
-- 장기 보관할 결정은 프로젝트의 `docs/adr/`를 사용한다. 관련 모델·메서드에서 ADR의 근거로 이동할 수 있다. 클래스 다이어그램과 ADR, 프로젝트 모델 문서는 Git으로 추적한다.
+- 장기 보관할 결정은 프로젝트의 `docs/adr/`를 사용한다. 관련 모델·메서드에서 ADR의 근거로 이동할 수 있다. 전술 설계 문서와 클래스 다이어그램, ADR은 Git으로 추적한다.
 - 마지막 `context-boundary`가 `completed/OK`를 반환하면 실행기가 `harness-domain-model-check.mjs`로 설계 전체를 검사한다. 검사에 실패하면 작성한 stage를 `owner_stage`로 알려 주는 `gate_error`를 반환한다. 업무 규칙의 의미와 모델 선택 근거는 각 stage와 리뷰에서 확인한다.
 - 요구사항 변경은 가장 이른 소유 stage에서 재개한다. 기존 파일과 유효한 결정은 보존하고 영향받는 산출물을 갱신한다. 사용자가 변경된 확정 요구사항을 승인한 뒤 전술 설계를 재개한다.
 - `tactical-to-code`의 구현 설계는 포트별 인터페이스·구현체 경로, 기술과 조립 지점을 정한다. 마지막 `tactical-data`의 `harness-design-freeze-check.mjs`가 업무 연결과 인프라 구현 연결을 확인하면 `to-ticket`이 시작할 수 있다. 설계 결함은 `DESIGN_NOT_FROZEN`으로 보고한다.
@@ -391,7 +391,7 @@ npx --yes github:omegafrog/harness-codex install --provider claude-code  # .clau
 Claude Code provider 코드(adapter, orchestrator launcher·시작 hook, hook 설치기)는 소스의 `.claude/harness/`에 있고 설치 대상의 같은 경로에 설치된다. `update`는 설치된 provider를 유지하며, `update --provider <값>`을 주면 설치 구성을 바꾸고 빠진 provider의 관리 파일은 백업 후 제거한다. `$setup`은 설치된 provider만 선택지로 보여 주고, workflow binding은 setup이 정한 provider와 같아야 한다.
 
 
-**메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.codex/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `docs/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
+**메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.codex/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `.harness/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
 
 설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 한 번에 반환하는 질문 전체를 한 화면에서 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 선행 답이 바뀌어 맞지 않게 된 질문만 다시 묻는다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.harness/harness.yaml`과 컨텍스트·트래커 설정을 정한다.
 
@@ -462,7 +462,7 @@ git ls-files .agents .codex
 git rm --cached .codex/agents/<managed-profile>.toml
 ```
 
-공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. stakeholder 카드(`docs/domain/stakeholders/`)는 프로젝트 소유 문서이므로 제외되지 않고 Git에 보이며, 설치·업데이트가 만들거나 고치지 않는다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
+공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. stakeholder 카드(`docs/domain/stakeholders/`)는 프로젝트 소유 문서이므로 제외되지 않고 Git에 보이며, 설치·업데이트가 만들거나 고치지 않는다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `.harness/agents/EXEC.md`에 둔다.
 
 설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. `update`는 Harness 관리 경로를 항상 최신 릴리스와 같게 맞춘다. 로컬에서 수정한 관리 파일은 백업한 뒤 최신본으로 교체하고, upstream에서 사라진 관리 자산은 수정 여부와 관계없이 백업한 뒤 삭제하며 lock 항목과 빈 디렉터리(구 `.codex/harness-runtime` 포함)도 정리한다. `--no-backup`이면 백업하지 않는다. `install`은 `--force` 없이는 로컬 수정을 보존한다. 이전 업데이트가 남긴 빈 Harness skill 디렉터리도 함께 지우며, Harness가 모르는 이름의 skill 디렉터리는 건드리지 않는다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 

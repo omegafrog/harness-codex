@@ -235,7 +235,7 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await writeFile(join(workspace, 'app.txt'), 'application change in progress\n');
   const status = treeGit('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m);
-  assert.doesNotMatch(status, /\.io\/|\.harness\/|\.codex\/|\.claude\/|\.agents\//);
+  assert.doesNotMatch(status, /\.io\/|\.harness\/(?!agents\/)|\.codex\/|\.claude\/|\.agents\//);
   for (const path of [MODULE, relative(workspace, join(backup, 'state.json')), '.io/runtime/orchestrator/state.json']) assert.match(treeGit('check-ignore', '-v', path), /exclude/, path);
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application change in progress\n');
 });

@@ -20,7 +20,7 @@ const LOCAL_GENERATED_EXCLUDES = [
   "/.github/workflows/harness-contracts.yml",
   "/skills-lock.json",
 ];
-const PREVIOUS_BROAD_EXCLUDES = new Set([".agents/", ".codex/", ".harness/", ".harness/src/", "skills-lock.json"]);
+const PREVIOUS_BROAD_EXCLUDES = new Set([".agents/", ".codex/", ".harness/", "/.harness/", ".harness/src/", "skills-lock.json"]);
 const execFileAsync = promisify(execFile);
 
 export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {

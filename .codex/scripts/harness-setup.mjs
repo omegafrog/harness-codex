@@ -238,11 +238,15 @@ function setYamlScalar(source, path, value) {
 }
 
 async function prepareProjectFiles() {
+  const { migrateProjectAgentFiles } = await import('../../.harness/src/installer/project-agent-files.mjs');
+  const { moved, conflicts } = await migrateProjectAgentFiles(root);
+  for (const { from, to } of moved) console.log(`Moved project guidance: ${from} -> ${to}`);
+  for (const { from, to } of conflicts) console.log(`Preserved both project guidance files: ${from}, ${to}`);
   const seedFiles = [
     ['CONTEXT.md', '.codex/skills/setup/assets/CONTEXT.md'],
     ['CONTEXT-MAP.md', '.codex/skills/setup/assets/CONTEXT-MAP.md'],
-    ['docs/agents/implementation-guidance.md', '.codex/internal-skills/implementation-guidance/references/template.md'],
-    ['docs/agents/testing-guidance.md', '.codex/internal-skills/testing-guidance/references/template.md'],
+    ['.harness/agents/implementation-guidance.md', '.codex/internal-skills/implementation-guidance/references/template.md'],
+    ['.harness/agents/testing-guidance.md', '.codex/internal-skills/testing-guidance/references/template.md'],
   ];
   for (const [target, source] of seedFiles) {
     const targetPath = join(root, target);
@@ -256,8 +260,8 @@ async function prepareProjectFiles() {
     console.log(`Created ${target}`);
   }
   for (const [target, content] of Object.entries({
-    'docs/agents/EXEC.md': '',
-    'docs/agents/execution.json': '{"schema_version":1,"profiles":{}}\n',
+    '.harness/agents/EXEC.md': '',
+    '.harness/agents/execution.json': '{"schema_version":1,"profiles":{}}\n',
     'docs/contracts/product.md': '',
     'docs/contracts/architecture.md': '',
     'docs/contracts/manifest.json': '{}\n',

@@ -23,7 +23,7 @@ model_tier: low_performance
 
 ## 산출물
 
-매번 `docs/implementation/<plan-set-id>/technology.md`에 현재 stack, 검토한 실행·검증 명령, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거, 수용한 단점 및 미확정 항목을 한국어로 기록한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `docs/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
+매번 `docs/implementation/<plan-set-id>/technology.md`에 현재 stack, 검토한 실행·검증 명령, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거, 수용한 단점 및 미확정 항목을 한국어로 기록한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `.harness/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
 
 결과는 `completed/OK` 또는 `action_required/USER_DECISION_REQUIRED`다. 기술 선택 질문의 근거는 질문 결과에 적고 `answers.json`을 보존한다. 이 stage는 code, Product Spec, Architecture Spec, `docs/contracts/`를 수정하지 않는다.
 

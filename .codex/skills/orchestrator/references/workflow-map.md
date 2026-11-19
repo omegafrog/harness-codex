@@ -4,7 +4,7 @@
 
 ## 요구사항과 승인
 
-`stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context` 순서다. 독립 persona가 낸 요구 후보의 채택은 사용자에게 묻는다. 서브도메인 후보별 독립 업무(BIZ)를 기록하고 용어·이벤트·hotspot을 정리한다. 분류 단계는 경계 후보와 분류를 확인받고 유지안을 선택한 경우에도 경계 결정을 기록한다. `requirements-fix`가 업무 규칙·예외·완료 조건의 빈칸을 채운 뒤 `bounded-context`가 경계를 확정해 `requirements.md`를 `fixed`로 만든다. `ubiquitous-language`는 `CONTEXT.md`, `bounded-context`는 `CONTEXT-MAP.md`를 함께 갱신한다. 이벤트 다이어그램 렌더가 막히면 해당 stage의 차단을 기록하고 환경 복구 뒤 이어간다.
+`stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context` 순서다. 명시적 top-level feature는 이미 포함된 범위이며 행동 단위 경계만 `stakeholder-analysis`가 결정한다. 독립 persona가 낸 요구 후보의 채택은 사용자에게 묻는다. 서브도메인 후보별 독립 업무(BIZ)를 기록하고 용어·이벤트·hotspot을 정리한다. 분류 단계는 경계 후보와 분류를 확인받고 유지안을 선택한 경우에도 경계 결정을 기록한다. `requirements-fix`가 업무 규칙·예외·완료 조건의 빈칸을 채운 뒤 `bounded-context`가 경계를 확정해 `requirements.md`를 `fixed`로 만든다. `ubiquitous-language`는 `CONTEXT.md`, `bounded-context`는 `CONTEXT-MAP.md`를 함께 갱신한다. 이벤트 다이어그램 렌더가 막히면 해당 stage의 차단을 기록하고 환경 복구 뒤 이어간다.
 
 `stakeholder-analysis`가 기존 승인 업무 안의 자명한 변경으로 `판정: 생략`이면 나머지 요구사항·전술 설계 stage는 문서 없이 생략 결과를 기록한다. 이해관계자 등록 요청은 `node .codex/scripts/harness-stakeholder.mjs add`로 사용자 소유 카드를 작성하도록 안내한다. worktree에서 사용할 카드는 커밋되어 있어야 한다.
 

@@ -10,7 +10,7 @@
 
 기존 승인 계획의 경로 문자열은 과거 표시 정보로만 보존한다. 실제 소비자인 보존 workflow의 승인 snapshot을 임의로 덮어쓰지 않으며 runtime은 그 값을 읽어 실행하지 않는다. 다음 계획 재작성 때 이 구형 필드를 제거한다. 발행용 session 사본은 정적 실행기가 현행 실행 정보로 생성하며 canonical 업무 계획·리뷰 hash를 변경하지 않는다.
 
-ticket의 테스트 계약은 소유한 규칙의 비즈니스 로직 단위 테스트와 전술 설계의 컨텍스트 경계 강제 검사만 정의한다. 사용자 경로 E2E는 ticket이 아니라 사용자가 요청한 별도 `e2e-test` stage가 소유하며 `docs/agents/EXEC.md`와 `execution.json` profile을 쓴다. 실제 실행 준비와 필수 gate는 각 실행 단계에서 확인한다.
+ticket의 테스트 계약은 소유한 규칙의 비즈니스 로직 단위 테스트와 전술 설계의 컨텍스트 경계 강제 검사만 정의한다. 사용자 경로 E2E는 ticket이 아니라 사용자가 요청한 별도 `e2e-test` stage가 소유하며 `.harness/agents/EXEC.md`와 `execution.json` profile을 쓴다. 실제 실행 준비와 필수 gate는 각 실행 단계에서 확인한다.
 
 ## 계획 시
 

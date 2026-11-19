@@ -56,8 +56,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await mkdir(join(root, 'docs/specs/ticket-one'), { recursive: true });
     await writeFile(join(root, 'docs/specs/ticket-one/product-spec.md'), 'Status: approved\nProduct requirements.\n');
     await writeFile(join(root, 'docs/specs/ticket-one/architecture-spec.md'), 'Status: approved\nArchitecture.\n');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'Project-owned execution notes.\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'Project-owned execution notes.\n');
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/owned.md'), 'Project-owned contract.\n');
 
@@ -175,7 +175,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await assert.rejects(updateReviewAttempt({ root, scope: 'spec-budget-ticket-architecture', action: 'begin', inputs: await snapshotSpecReview({ root, ticketId: 'budget-ticket' }) }), /retry budget exhausted/i);
 
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.match(status, /docs\/contracts\/owned\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/workflow\/providers\/claude-code\.mjs/);
     execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });

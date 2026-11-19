@@ -10,7 +10,7 @@ const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
 const { stageExecutionPaths } = await import(new URL('session-output.mjs', installed));
-const { PRE_SPEC_STAGES } = await import(new URL('worktree-stages.mjs', installed));
+const { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES } = await import(new URL('worktree-stages.mjs', installed));
 try {
   const args = process.argv.slice(2), opts = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -98,6 +98,10 @@ try {
   // The runner, not the model, fingerprints returned artifacts; a model-typed hash can be wrong.
   for (const artifact of Array.isArray(envelope.result.artifacts) ? envelope.result.artifacts : []) {
     if (!artifact || typeof artifact.path !== 'string' || isAbsolute(artifact.path)) continue;
+    if (TACTICAL_DESIGN_STAGES.includes(input.skill) && artifact.base === 'workspace'
+      && artifact.path.replaceAll('\\', '/') === 'docs/architecture/domain-model.md') {
+      throw new Error('Record model design in the plan set’s tactical-design.md.');
+    }
     const base = artifact.base === 'workspace' ? opts.root : artifact.base === 'session' ? session : artifact.base === 'control_session' ? (input.context?.control_session_directory || session) : null;
     if (!base) continue;
     await assertWorkspaceTarget(base, artifact.path);

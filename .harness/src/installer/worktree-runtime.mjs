@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { readHarnessLock } from './lock.mjs';
+import { PROJECT_AGENT_DIRECTORY, PROJECT_AGENT_FILES } from '../workflow/project-agent-paths.mjs';
+import { migrateProjectAgentFiles } from './project-agent-files.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { protectLocalInstallArtifacts } from './local-exclude.mjs';
 import { retireProjectHooks } from './orchestrator-hook.mjs';
@@ -34,7 +36,8 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
     for (const [path, entry] of Object.entries(lock.files)) await copy(path, entry.installed_sha256);
     await copy(lockPath);
   }
-  for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'docs/agents/EXEC.md', 'docs/agents/execution.json']) {
+  await migrateProjectAgentFiles(targetRoot);
+  for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', ...PROJECT_AGENT_FILES.map((name) => `${PROJECT_AGENT_DIRECTORY}/${name}`)]) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (lock) {

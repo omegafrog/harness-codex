@@ -21,7 +21,7 @@ const profileManifest = {
   schema_version: 1,
   profiles: {
     [PROFILE]: {
-      purpose: 'e2e', command: ['node', '-e', 'process.exit(0)'], required_env: [], config_inputs: ['docs/agents/execution.json'],
+      purpose: 'e2e', command: ['node', '-e', 'process.exit(0)'], required_env: [], config_inputs: ['.harness/agents/execution.json'],
       prepare: [], verify_config: [['node', '--version']], dependencies: [], timeout_ms: null, readiness_timeout_ms: 5000, poll_interval_ms: 100,
     },
   },
@@ -53,8 +53,8 @@ async function buildConsumer() {
   git(root, 'config', 'user.name', 'Contract');
   git(root, 'config', 'user.email', 'contract@example.test');
   const baseline = {
-    'CONTEXT.md': '# Context\n', 'CONTEXT-MAP.md': '# Context map\n', 'docs/agents/EXEC.md': '',
-    'docs/agents/execution.json': `${JSON.stringify(profileManifest, null, 2)}\n`,
+    'CONTEXT.md': '# Context\n', 'CONTEXT-MAP.md': '# Context map\n', '.harness/agents/EXEC.md': '',
+    '.harness/agents/execution.json': `${JSON.stringify(profileManifest, null, 2)}\n`,
   };
   for (const [path, content] of Object.entries(baseline)) {
     await mkdir(join(root, path, '..'), { recursive: true });
@@ -63,7 +63,7 @@ async function buildConsumer() {
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   await updateProject({ sourceRoot, targetRoot: root });
-  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', '.harness/agents');
   git(root, 'commit', '-q', '-m', 'Consumer setup baseline');
   const tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: PLAN_SET });
   const ws = tree.workspace;
@@ -319,6 +319,10 @@ test('implement-wrapper final gate is derived from canonical records, never from
       assert.equal(mixed.reason, 'e2e_receipt_ran_on_uncommitted_changes');
       assert.deepEqual(mixed.details.problems[0].paths, ['src/calc.js']);
       assert.equal((await reasonAfter({ uncommitted_paths: ['docs/specs/calc/request.md'] })).status, 'pass', 'documentation edits do not invalidate the run');
+      const { config_hashes } = JSON.parse(await readFile(join(await receiptDirectory(), 'receipt.json'), 'utf8'));
+      const { ['.harness/agents/execution.json']: manifestDigest, ...otherHashes } = config_hashes;
+      const oldPathReceipt = { config_hashes: { ...otherHashes, 'docs/agents/execution.json': manifestDigest } };
+      assert.equal((await reasonAfter(oldPathReceipt)).status, 'pass', 'a receipt may still name the old path when its contents match');
 
       // Application code that differs from the tested commit makes the receipt stale (untracked, then committed).
       await writeFile(join(f.ws, 'src/later.js'), 'export const later = true;\n');
@@ -343,10 +347,10 @@ test('implement-wrapper final gate is derived from canonical records, never from
       await rm(join(f.ws, 'src/__pycache__'), { recursive: true });
 
       // The profile and the files it fingerprinted must be what the run used.
-      await editJson(join(f.ws, 'docs/agents/execution.json'), (value) => { value.profiles[PROFILE].poll_interval_ms = 200; }, async () => {
+      await editJson(join(f.ws, '.harness/agents/execution.json'), (value) => { value.profiles[PROFILE].poll_interval_ms = 200; }, async () => {
         const { tests } = (await derive()).checks;
         assert.equal(tests.reason, 'e2e_receipt_config_changed');
-        assert.deepEqual(tests.details.problems[0].files, ['docs/agents/execution.json']);
+        assert.deepEqual(tests.details.problems[0].files, ['.harness/agents/execution.json']);
       });
       // The profile comes from the e2e plan; without it the gate cannot know what to require.
       await withEdit(join(f.ws, `docs/plans/${PLAN_SET}/e2e.md`), (text) => text.replaceAll(PROFILE, 'other-profile'), async () => {

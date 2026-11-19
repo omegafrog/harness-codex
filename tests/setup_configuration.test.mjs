@@ -103,7 +103,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.equal(run('--check').status, 'setup_required');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /CONTEXT\.md/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
     execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-setup.mjs'], { cwd: root });
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
@@ -163,9 +163,9 @@ test('installed setup starts isolated sessions without preparing answer files or
     const cli = join(root, '.codex/scripts/harness-setup.mjs');
     const call = (...args) => JSON.parse(execFileSync(process.execPath, [cli, '--root', root, ...args], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     await writeFile(join(root, 'app.mjs'), 'project owned\n');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project instructions\n');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project instructions\n');
     await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
     const first = call('--start');
     assert.equal(first.status, 'needs_input');
@@ -188,10 +188,10 @@ test('installed setup starts isolated sessions without preparing answer files or
     assert.throws(() => call('--start', '--check'), /--start cannot be combined/);
     assert.equal(await exists(join(root, '.io/runtime/setup/current-setup-path.txt')), false);
     for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md']) assert.equal(await exists(join(root, path)), false);
-    assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project instructions\n');
+    assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), 'project instructions\n');
     assert.equal(await readFile(join(root, 'docs/contracts/project.md'), 'utf8'), 'project contract\n');
     const status = git('status', '--short', '--untracked-files=all');
-    for (const path of ['app.mjs', 'docs/agents/EXEC.md', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
+    for (const path of ['app.mjs', '.harness/agents/EXEC.md', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
     assert.doesNotMatch(status, /\.io\/|\.codex\/scripts\/|\.harness\/src\//);
     for (const path of ['.codex/scripts/harness-setup.mjs', '.harness/src/workflow/setup-answers.mjs', '.io/runtime/setup']) git('check-ignore', '-v', path);
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
@@ -212,7 +212,7 @@ test('setup asks only questions whose conditions are known and carries runtime c
     assert.ok(first.questions.every(({ context }) => context.includes('Codex CLI')));
     assert.equal(first.questions.some(({ prompt }) => prompt.startsWith('이 설정으로 계속할까요?')), false, 'confirmation waits until conditional questions have been resolved');
     // Nothing was written while answers were missing.
-    for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
+    for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'CONTEXT-MAP.md', '.harness/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
     assert.doesNotMatch(git('status', '--short', '--untracked-files=all'), /CONTEXT\.md|docs\//);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -244,7 +244,7 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
     assert.equal(await exists(join(root, 'CONTEXT.md')), true);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /CONTEXT\.md/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
     git('check-ignore', '-v', '.harness/harness.yaml');
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -407,7 +407,7 @@ test('installed setup collects individual reordered answers, advances on the las
         assert.deepEqual(await receive(project, [reply]), status, 'duplicate delivery is idempotent');
         if (index !== reversed.length - 1) assert.equal(command().status, 'waiting', 'partial replies cannot run discovery/application');
       }
-      for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', 'docs/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
+      for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'CONTEXT.md', '.harness/agents/EXEC.md']) assert.equal(await exists(join(root, path)), false, path);
       assert.equal(command('--status').status, 'ready');
       oldReply = replies[0];
       batch = command();
@@ -438,7 +438,7 @@ test('installed setup collects individual reordered answers, advances on the las
     for (const path of [helper, '.codex/scripts/harness-setup.mjs', '.agents/skills/setup/references/answer-delivery.md', '.io/runtime/setup']) git('check-ignore', '-v', path);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, / M app\.mjs/);
-    for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
+    for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\/|\.io\//);
     assert.equal(await readFile(join(root, 'app.mjs'), 'utf8'), 'export const owned = false;\n');
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -687,7 +687,7 @@ test('installed Claude Code consumer completes setup through --reply and passes 
     assert.deepEqual(doctor.diagnostics.filter(({ severity }) => severity === 'error'), []);
     const status = git('status', '--short', '--untracked-files=all').split('\n').filter(Boolean);
     assert.ok(status.includes('?? app.txt'), 'application files stay visible');
-    assert.ok(!status.some((line) => /\.claude\/|\.codex\/|\.agents\/|\.github\/|\.harness\//.test(line)), `every Harness-managed path, including the contract runner, stays out of git status:\n${status.join('\n')}`);
+    assert.ok(!status.some((line) => /\.claude\/|\.codex\/|\.agents\/|\.github\/|\.harness\/(?!agents\/)/.test(line)), `every Harness-managed path, including the contract runner, stays out of git status:\n${status.join('\n')}`);
     assert.match(git('check-ignore', '-v', '.harness/contracts.mjs'), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/, 'the contract runner is excluded like every other managed file');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

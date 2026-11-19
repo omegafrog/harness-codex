@@ -13,7 +13,7 @@ Step of the requirements flow after `event-storming` and before `requirements-fi
 
 - The user request (`scope` of the execution input), read verbatim.
 - `docs/specs/<plan-set-id>/requirements.md` with its SD table, `BIZ` sections, event flow tables, `## 4` cross-subdomain events and hotspot decisions, and `stakeholder-analysis.md`, resolved with `harness-spec-path.mjs`.
-- `CONTEXT-MAP.md` and `docs/architecture/domain-model.md`, read-only and only when present, for a classification an existing area already carries.
+- `CONTEXT-MAP.md` and `docs/contracts/architecture.md`, read-only and only when present, for a classification an existing area already carries.
 - The [requirements.md template](../requirements-fix/references/template.md), which owns the SD table columns, and the [event diagram reference](../event-storming/references/diagrams.md) for the diagrams a changed set needs.
 
 ## Prohibited

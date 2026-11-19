@@ -168,6 +168,6 @@ test('an installed consumer revises a pending answer through the managed files a
 
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed and generated files stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, 'Harness-managed and generated files stay out of commits');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
 });

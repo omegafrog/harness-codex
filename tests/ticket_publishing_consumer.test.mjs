@@ -59,8 +59,8 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await checkArchitectureGuidance();
   await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
   await checkPlanningGuidance();
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), '');
   // A previous managed release must update both native profiles without force.
   const lockPath = join(root, '.codex/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
@@ -76,7 +76,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await updateProject({ sourceRoot, targetRoot: root });
   await checkPlanningGuidance();
   await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
-  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), '');
+  assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), '');
   const guide = await readFile(guidePath, 'utf8');
   assert.match(guide, /필요한 비테스트 검증을 템플릿의 해당 위치에 옮겨 적는다/);
   assert.match(guide, /GitHub Issue 본문 템플릿/);
@@ -105,12 +105,12 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.throws(() => renderSplitPlanIssue({ ...plan, design: [] }), /plan.design|design must be a non-empty list/);
   const { verification, ...legacyPlan } = plan;
   assert.doesNotMatch(renderSplitPlanIssue(legacyPlan), /필요한 비테스트 검증/);
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned');
   await writeFile(join(root, 'app.js'), 'application change');
   await writeFile(join(root, 'AGENTS.md'), 'project-owned instructions');
   const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-  assert.match(status, /docs\/agents\/EXEC\.md/);
+  assert.match(status, /\.harness\/agents\/EXEC\.md/);
   assert.match(status, /CONTEXT\.md/);
   assert.match(status, /app\.js/);
   assert.match(status, /AGENTS\.md/);

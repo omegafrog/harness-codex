@@ -22,6 +22,7 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 
 - Inspecting source or test code, or inferring requirements from the current implementation.
 - Asking again about an item whose source is `요청 원문`, `CAND-xx 채택` or `answers.json`, or about a hotspot already `해결`.
+- Treating a recommendation as consent, or a rejection, challenge, question or alternative proposal as acceptance. Preserve `ACCEPTED`, `REJECTED`, `QUESTION_OR_CHALLENGE`, `ALTERNATIVE_PROPOSAL`, `question_id` and the existing `answers.json` contract.
 - 사용자가 명시했거나 합의된 완료 조건을 안전하게 충족하는 데 꼭 필요한 동작·정책·구성 요소·인프라·검증만 포함한다. 파생 항목에는 어떤 `BIZ`·`INV`·`EX`·`AC`를 충족하는 데 필요한지 적는다. 기존 보안·권한·데이터 보호·오류 처리를 지킨다. 선택적 개선은 질문이나 요구사항에 넣지 않는다.
 - 수치와 제한은 사용자 표현 그대로 적는다. 단위·인코딩·정규화·정밀도를 임의로 덧붙이지 않는다.
 - 범위·규칙은 사용자 수정 지시 또는 상위 소유 stage의 변경 근거에 따라 보완한다. 확정한 경계나 분류에 문제가 있으면 해당 소유 stage에 돌려보낸다. 이 단계는 `### 1.1`, `CONTEXT.md`, `CONTEXT-MAP.md`, `상태: fixed`와 승인 질문을 소유하지 않는다.
@@ -32,8 +33,8 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 2. A `판정: 생략` in `stakeholder-analysis.md` ends this stage at once: write nothing, put the skip and its evidence path in the result summary, and return `completed/OK`.
 3. `context.user_revision`, `context.reopen` 또는 `context.revalidation_mark`가 있으면 이전 산출물과 지금의 근거를 대조한다. 사용자 수정은 영향받는 `BIZ`의 `출처·변경 이력`에 원문을 `사용자 수정 지시`로 남긴다. 나머지 유효한 결정·ID를 보존하고 영향받는 행만 수정한다. 문서를 `draft`로 두고 컨텍스트의 업무·규칙 소유권이 바뀌는지 요약에 적는다.
 4. On resume, read the previous result, `requirements.md` and the actual answers. Continue at step 7 when answers exist.
-5. [coverage 체크리스트](references/coverage.md)의 각 행을 확인한다. 요청·채택 후보·답변·해결된 hotspot의 결정을 근거와 함께 유지한다. 새로 발견한 독립 업무나 누락된 확정 범위는 `subdomain-candidates`, 경계의 근거 또는 승인이 빠진 경우는 `subdomain-classification`을 가장 앞선 소유자로 지정해 `blocked` / `DEPENDENCY_INCOMPLETE`와 `result.dependency_gap`을 반환한다.
-6. `PARTIAL` 또는 `UNRESOLVED` 중 결과를 바꾸고 기존 근거나 합리적인 기본값으로 정할 수 없는 결정을 한 번에 묻는다. 한국어로 대안마다 달라지는 결과와 범위를 적고 권장안과 근거를 붙인다. 특정 대안에서만 필요한 질문은 제목에 조건을 밝히고 `해당 없음`을 선택지에 넣는다. 선행 답변을 받아야 선택지를 구체화할 수 있는 질문만 미룬다. 질문이 있으면 `action_required` / `USER_DECISION_REQUIRED`로 반환하고, 없으면 8단계로 간다.
+5. 질문 전에 기존 요구사항, 실제 `answers.json`, prior result/evidence, scope ACT 계약, 해결된 HS 및 권위 있는 계약을 대조한다. 같은 결정을 다시 묻지 않는다. 단, 부모 답변 뒤 특정 자식 정책이 여전히 미정이라면 그 자식 결정을 좁혀 물을 수 있다. 새 독립 업무 또는 scope 결정 누락은 앞선 owner에 `blocked` / `DEPENDENCY_INCOMPLETE`로 반환한다.
+6. 요청된 범위 안에서 업무 결과, 권한, 상태/데이터 결과, 기준이 실제로 미정이고 근거만으로 정하면 결정을 지어내게 되는 항목만 묻는다. 한국어 질문에는 관련 기능/BIZ/INV/EX/HS, 남은 결정과 질문 이유, 대안별 업무 결과 및 범위, 권장안과 근거, 직접 입력, 조건부 적용/해당 없음 선택지를 담는다. 독립 질문은 묶고 중복 질문은 합친다. 우선순위는 범위, 규칙·권리·상태, 성공/실패 결과, 검증 가능한 AC다. 답변은 기존 상태 분류와 question ID 기계약에 맞춰 처리한다. 영향받은 행만 재검증하고 유효한 결정과 ID는 유지한다.
 7. 답변마다 `ACCEPTED`(명확한 선택·동의·위임), `REJECTED`(대안 미확정 상태에서 거절), `QUESTION_OR_CHALLENGE`(질문·이의), `ALTERNATIVE_PROPOSAL`(확정 전 대안 제안)로 분류한다. 질문·이의·대안의 영향에 답한 뒤 coverage를 다시 확인하고, 필요한 결정이 남은 경우에만 묶어서 묻는다. 확정 답변은 `BIZ` 필드나 공통 섹션에 `answers.json`과 `question_id`를 출처로 적고, 위임받아 정한 내용과 기본값에는 결정 주체와 근거를 적는다.
 8. Write what remains: an `AC` for every normal scenario, `INV` and `EX`, and the common sections `6.1`–`6.4`, each item with its source. Items that only the agent proposes carry `요청 해석(에이전트 제안)` and pass the scope admission rule. Use only terms of the `## 3` table; a new confusable word gets a row there.
 9. Run the gate in the checklist's `확정 조건` except its bounded-context row, which `bounded-context` checks. When it passes, keep `상태: draft`, add the stage to each touched `출처·변경 이력`, and return `completed/OK` with `requirements.md`. When it fails, go back to step 6 for the failing rows; never hand over a document with an open row.

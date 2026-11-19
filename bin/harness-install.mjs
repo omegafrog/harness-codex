@@ -180,6 +180,8 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/workflow/startup-state.mjs",
     ".harness/src/workflow/execution-state.mjs",
     ".harness/src/workflow/stage-input.mjs",
+    ".harness/src/workflow/project-agent-paths.mjs",
+    ".harness/src/installer/project-agent-files.mjs",
     ".harness/src/workflow/stage-reopen.mjs",
     ".harness/src/workflow/spec-review.mjs",
     ".harness/src/workflow/review-attempts.mjs",
@@ -246,6 +248,7 @@ async function main() {
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
     if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
+    for (const { from, to } of syncResult.project_agent_files?.moved || []) console.log(`Moved project guidance: ${from} -> ${to}`);
     if (syncResult.skipped.length > 0) console.log(`Preserved: ${syncResult.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
     if (syncResult.retired?.length) console.log(`Retired managed assets: ${syncResult.retired.join(", ")}`);
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
@@ -268,6 +271,7 @@ async function main() {
     if (result.retired?.length) console.log(`Retired managed assets: ${result.retired.join(", ")}`);
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
+    for (const { from, to } of result.project_agent_files?.moved || []) console.log(`Moved project guidance: ${from} -> ${to}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
     await noteCodexUserHooks(projectRoot, options);
   }

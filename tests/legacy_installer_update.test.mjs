@@ -7,6 +7,43 @@ import { resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { inspectRetiredProjectHooks } from '../.harness/src/installer/orchestrator-hook.mjs';
+import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+
+test('update moves project guidance outside the managed inventory and preserves conflicting copies', async (t) => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/project-guidance-`);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  await mkdir(resolve(root, 'docs/agents'), { recursive: true });
+  await mkdir(resolve(root, '.harness/agents'), { recursive: true });
+  await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'Project runtime notes\n');
+  await writeFile(resolve(root, 'docs/agents/execution.json'), '{"profiles":{"e2e":{"config_inputs":["docs/agents/EXEC.md","application.properties"]}}}\n');
+  await writeFile(resolve(root, 'docs/agents/testing-guidance.md'), 'Original project notes\n');
+  await writeFile(resolve(root, '.harness/agents/testing-guidance.md'), 'New project notes\n');
+  await writeFile(resolve(root, 'docs/agents/custom.md'), 'Unrelated project document\n');
+  git('add', 'docs/agents');
+  git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'Legacy project guidance');
+  await writeFile(resolve(root, '.git/info/exclude'), '/.harness/\n');
+  await protectLocalInstallArtifacts(root, sourceRoot);
+  const result = await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+  assert.deepEqual(result.project_agent_files.moved.map(({ to }) => to), ['.harness/agents/EXEC.md', '.harness/agents/execution.json']);
+  assert.deepEqual(result.project_agent_files.conflicts, [{ from: 'docs/agents/testing-guidance.md', to: '.harness/agents/testing-guidance.md' }]);
+  assert.equal(await readFile(resolve(root, '.harness/agents/EXEC.md'), 'utf8'), 'Project runtime notes\n');
+  assert.deepEqual(JSON.parse(await readFile(resolve(root, '.harness/agents/execution.json'), 'utf8')).profiles.e2e.config_inputs, ['.harness/agents/EXEC.md', 'application.properties']);
+  assert.equal(await readFile(resolve(root, '.harness/agents/testing-guidance.md'), 'utf8'), 'New project notes\n');
+  assert.equal(await readFile(resolve(root, 'docs/agents/testing-guidance.md'), 'utf8'), 'Original project notes\n');
+  assert.equal(await readFile(resolve(root, 'docs/agents/custom.md'), 'utf8'), 'Unrelated project document\n');
+  await assert.rejects(readFile(resolve(root, 'docs/agents/EXEC.md')), { code: 'ENOENT' });
+  assert.equal(Object.keys(result.lock.files).some((path) => path.startsWith('.harness/agents/')), false);
+  assert.match(git('status', '--short', '--untracked-files=all'), /\?\? \.harness\/agents\/EXEC\.md/);
+  assert.throws(() => git('check-ignore', '-q', '.harness/agents/EXEC.md'), { status: 1 });
+  assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'project_guidance_legacy_path' && item.path.endsWith('testing-guidance.md')));
+  const retry = await updateProject({ sourceRoot, targetRoot: root });
+  assert.deepEqual(retry.project_agent_files, { moved: [], conflicts: result.project_agent_files.conflicts });
+});
 
 test('legacy Doctor is backed up and updated while project files remain visible', async () => {
   const sourceRoot = process.cwd();
@@ -78,7 +115,7 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.ok(JSON.parse(diagnostics).diagnostics.some((item) => item.code === 'installer_retired_file' && item.path === resolve(root, modifiedPath)));
     assert.equal(execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--help'], { encoding: 'utf8' }).includes('Usage:'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC.md/);
+    assert.match(status, /\.harness\/agents\/EXEC.md/);
     assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
     assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
     assert.match(status, /to-ticket-plan_revision\.schema\.json/);
@@ -135,8 +172,8 @@ test('installed E2E cleanup preserves session evidence and removes new external 
       assert.match(await readFile(resolve(root, path), 'utf8'), pattern);
       execFileSync('git', ['-C', root, 'check-ignore', '-q', path]);
     }
-    assert.equal(await readFile(resolve(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned');
-    assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /docs\/agents\/EXEC\.md/);
+    assert.equal(await readFile(resolve(root, '.harness/agents/EXEC.md'), 'utf8'), 'project owned');
+    assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /\.harness\/agents\/EXEC\.md/);
     const dir = resolve(root, '.io/runtime/e2e/run');
     await mkdir(dir, { recursive: true });
     const manifest = resolve(dir, 'artifacts.json');

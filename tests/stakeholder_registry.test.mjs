@@ -176,7 +176,7 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the card is project-owned and visible to Git');
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files, including the contract runner, stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files, including the contract runner, stay out of commits');
   assert.match(git('check-ignore', '-v', '.harness/contracts.mjs'), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
   assert.throws(() => git('check-ignore', '-q', 'docs/domain/stakeholders/SH-01.md'), 'cards are not ignored');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'ongoing application change\n');
@@ -227,11 +227,11 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
   await writeFile(join(primary, '.harness/harness.yaml'), SETUP);
   await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
+  git('add', 'app.txt', 'docs', '.harness/agents', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git('commit', '-qm', 'baseline');
 
   const invoke = (cwd, script, args = [], input) => {

@@ -69,4 +69,4 @@ DDD 노드 예: `rectangle "[[../architecture.md#order Order]]" as order`. owner
 
 경계를 감싸는 package는 `package "Orders" as orders [[../architecture.md#orders]] { ... }`처럼 **package URL 문법**을 사용한다. package 표시명 안의 `[[URL 이름]]`은 일반 텍스트가 될 수 있으므로 사용하지 않는다. 렌더 후 각 이름의 실제 `<a href>`를 검사하며 URL 문자열이나 bracket label의 존재만으로 클릭 성공을 판정하지 않는다.
 
-일반 검증 명령은 EXEC에 기본 CLI로 기록한다. 명시적 최종 사용자 흐름 E2E의 실행 전제가 바뀌면 `purpose: "e2e"`인 프로젝트 소유 `docs/agents/execution.json` profile과 EXEC의 인자·설정 검증·인프라 readiness를 source/CI와 대조하고 source_roots에 공유 실행 계약을 포함한다. 비밀 환경값 자체를 공개 계약에 복사하지 않는다.
+일반 검증 명령은 EXEC에 기본 CLI로 기록한다. 명시적 최종 사용자 흐름 E2E의 실행 전제가 바뀌면 `purpose: "e2e"`인 프로젝트 소유 `.harness/agents/execution.json` profile과 EXEC의 인자·설정 검증·인프라 readiness를 source/CI와 대조하고 source_roots에 공유 실행 계약을 포함한다. 비밀 환경값 자체를 공개 계약에 복사하지 않는다.

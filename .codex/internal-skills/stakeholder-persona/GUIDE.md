@@ -25,8 +25,9 @@ Read this GUIDE and nothing else. Do not read, search or run anything in the rep
 - Discuss only the request. Every substantive candidate quotes the request phrase it comes from. Something you notice that no phrase supports is an observation with `request_anchor: null`.
 - Do not assume other personas exist or what they say. Do not add features, policies or future extensions the request does not need.
 - The request's explicit scope is a given. A candidate that only repeats what the request says is not a candidate.
+- The requester's named top-level features are settled as included. Do not recommend adoption/rejection/deferral of them. A named capability may contain several independently completing actions; discuss only a plausible required slice when the request leaves that scope open. Do not turn exact-anchor presence into admission, and do not propose blanket CRUD or optional extensions as required.
 - Instead state a decision the anchored phrase needs in order to work and the request does not settle: per-actor create, read, update and delete permission, states and what deletion or ending propagates to, failure and exception outcomes, completion conditions, business rules. Phrase it as a concrete proposed rule the user can adopt or reject.
-- Only a decision the phrase cannot work without gets an anchor. An optional feature, convenience, policy or extension is an observation with `request_anchor: null`.
+- A necessary decision for a requested action may anchor to the exact request phrase. Optional ideas remain observations even when the phrase is an exact anchor; the facilitator must not classify them as unrelated solely because of that anchor.
 - Stay inside `knowledge_boundary`. For anything outside it, say it is unknown instead of guessing; a candidate whose truth depends on an unknown goes in `rationale` as "unknown".
 - Do not choose code, frameworks, storage or module structure, and do not mention them.
 - Write statements in Korean as one observable business requirement each. Use your card's vocabulary.
@@ -81,8 +82,8 @@ Only when the facilitator names `mode: events`. The facilitator gives you your c
 - Work only on the given `BIZ`. Every step needs a `basis`: a scenario line of that `BIZ` (for example `BIZ-01 정상 2`), an adopted `CAND-xx`, or an exact phrase of the request. Behavior that no basis supports, or that would add a feature, goes to `out_of_scope_observations`; never into a step.
 - A step is one actor, the command that actor gives, and the domain event that results, in business order. An event is a business fact in Korean past tense, such as `게시글이 작성됨`. Technical facts are not events: clicks, screen changes, API calls, database saves and input checks. Do not model aggregates, entities or classes.
 - `policy` says what must happen next when the event happens (`<event>이면 <next action>`), or is null. `external_system` names a system outside the business that the command or policy uses, or is null.
-- A hotspot is a decision the `BIZ` leaves open that would change an event, policy or exception outcome, such as who may do it, what it propagates to, or what happens on failure. Phrase it as one question with the reason it matters, and do not answer it. At most 3 per `BIZ`, ranked by how much the decision changes the outcome. A fact that the request, an adopted candidate or the scenarios already settle is not a hotspot.
-- At most 12 steps per `BIZ`. Stay inside your card's `knowledge_boundary` and mention no code, framework or storage.
+- A hotspot is a decision the `BIZ` leaves open that would change an event, policy or exception outcome, such as who may do it, what it propagates to, or what happens on failure. Phrase each material unresolved decision as one question with the reason it matters, and do not answer it. Rank by impact; do not cap the number when that would leave an in-scope material decision unrecorded. A fact that the request, an adopted candidate or the scenarios already settle is not a hotspot.
+- Stay inside your card's `knowledge_boundary` and mention no code, framework or storage.
 
 Your final message is exactly one JSON object, no markdown fence and no prose:
 

@@ -119,8 +119,8 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
   };
   await checkGuidance();
   const owned = {
-    'docs/agents/EXEC.md': 'project launch instructions',
-    'docs/agents/execution.json': '{"profiles":{}}',
+    '.harness/agents/EXEC.md': 'project launch instructions',
+    '.harness/agents/execution.json': '{"profiles":{}}',
     'docs/contracts/product.md': 'project contract',
     'app.js': 'project application change',
   };

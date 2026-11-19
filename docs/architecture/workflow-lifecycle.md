@@ -23,4 +23,4 @@ Spec reviewer는 기존 Product·Architecture Spec만, 계획 reviewer는 전술
 
 질문별 기존 답변과 위임을 재사용하고 독립 질문을 묶는다. 기술 선택은 필요할 때만 내부 GUIDE를 읽고 일반 출처를 인용한다. 사용자 발행 승인, 독립 리뷰, 프로세스 중복 방지와 실행 전제는 생략하지 않는다. 같은 provider/session을 재개하고 process가 살아 있으면 새 실행을 만들지 않는다. 리뷰·gate·발행 실패는 해당 정본을 보존하고 소유 단계로 돌려보낸다.
 
-Spec·계획 단계는 통합 계약을 읽기만 하며 최종 구현에서 갱신한다. 구현의 테스트·리뷰와 완료 gate는 각 소유 GUIDE와 [enforcement](enforcement.md)를 따른다. 프로젝트 runtime 설정은 [EXEC](../agents/EXEC.md)에 둔다.
+Spec·계획 단계는 통합 계약을 읽기만 하며 최종 구현에서 갱신한다. 구현의 테스트·리뷰와 완료 gate는 각 소유 GUIDE와 [enforcement](enforcement.md)를 따른다. 프로젝트 runtime 설정은 [EXEC](../../.harness/agents/EXEC.md)에 둔다.

@@ -75,13 +75,13 @@ export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.REQUIREMENTS_FIX,
   WORKTREE_STAGE.BOUNDED_CONTEXT,
 ]);
-export const REQUIREMENTS_REVISION_STAGES = Object.freeze(REQUIREMENTS_STAGES.slice(1).filter((id) => ![WORKTREE_STAGE.UBIQUITOUS_LANGUAGE, WORKTREE_STAGE.EVENT_STORMING].includes(id)));
+export const REQUIREMENTS_REVISION_STAGES = Object.freeze([WORKTREE_STAGE.STAKEHOLDER_ANALYSIS, ...REQUIREMENTS_STAGES.slice(1).filter((id) => ![WORKTREE_STAGE.UBIQUITOUS_LANGUAGE, WORKTREE_STAGE.EVENT_STORMING].includes(id))]);
 
 // The plan set document that the tactical design stages fill, one section each. It is named for the flow, not for the first
 // stage: a user instruction about the `domain-model` stage then cannot read as an instruction about a file.
 export const TACTICAL_DESIGN_DOCUMENT = 'tactical-design.md';
 // What an earlier Harness called it. A plan set that still holds it is renamed by the runner when a tactical stage input is
-// prepared (migrateLegacyTacticalDesign). `docs/architecture/domain-model.md` is the project's model index and is never renamed.
+// prepared (migrateLegacyTacticalDesign).
 export const LEGACY_TACTICAL_DESIGN_DOCUMENT = 'domain-model.md';
 // The current path of a plan set document that an earlier Harness recorded under the legacy name (an artifact of a finished
 // stage), or the path itself. Records of finished stages are never rewritten; a read of one follows the rename instead.

@@ -30,8 +30,8 @@ test('installed tracker activation links directly published Issues despite Proje
     await mkdir(join(root, '.io'), { recursive: true });
     await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'example' }));
     const plans = join(root, 'docs/plans/example'), specs = join(root, 'docs/specs/example'), drafts = join(root, '.io/runtime/to-ticket/drafts');
-    for (const path of [plans, specs, drafts, join(root, 'docs/agents')]) await mkdir(path, { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+    for (const path of [plans, specs, drafts, join(root, '.harness/agents')]) await mkdir(path, { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), '');
     for (const id of ['auth', 'posts']) await writeFile(join(plans, `${id}.md`), `# ${id}\nDo ${id}.\n`);
     await writeFile(join(plans, 'plans.md'), '# Plans\n\n| 순서 | Plan | Issue | 범위 | 의존성 | 토큰 |\n|---|---|---|---|---|---|\n| 1 | [auth](auth.md) | #35 | 로그인 | 없음 | 1 |\n| 2 | [posts](posts.md) | #38 | 글 | auth (인증 경계) | 1 |\n');
     for (const name of ['product', 'architecture']) await writeFile(join(specs, `${name}-spec.md`), `# ${name}\n`);

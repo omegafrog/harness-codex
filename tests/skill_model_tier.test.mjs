@@ -288,15 +288,15 @@ test('installed consumer: a fresh install has no bindings.json, resolves from de
     for (const provider of ['.agents', '.claude']) assert.deepEqual(parseSkillDeclaration(await readFile(join(root, provider, 'skills/eli5/SKILL.md'), 'utf8')), { model_tier: 'low_performance' });
     assert.equal((await readSkillDeclaration({ root, skill: 'orchestrator' })).main_session, true);
     assert.deepEqual((await resolveSkillBinding({ root, skill: 'context-boundary' })).model_tier, 'high_performance');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     await writeFile(join(root, 'app.js'), 'export const application = true;\n');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.severity === 'error' && /^(skill_model_tier|execution_)/.test(item.code)), []);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'installer_retired_file' || item.code === 'installer_stale_lock_entry'), false);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /app\.js/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
     git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
     git('check-ignore', '-v', '.agents/skills/eli5/SKILL.md');
@@ -321,15 +321,15 @@ test('installed consumer: an update of a consumer that still has bindings.json r
     assert.equal((await resolveSkillBinding({ root, skill: 'sync-contracts' })).model, 'codex-implementation');
     assert.deepEqual((await readSkillDeclaration({ root, skill: 'orchestrator' })).main_session, true);
 
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     await writeFile(join(root, 'app.js'), 'export const application = true;\n');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.severity === 'error' && /^(skill_model_tier|execution_)/.test(item.code)), []);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'installer_retired_file' && item.path.endsWith('bindings.json')), false);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /app\.js/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
     git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
     // A second update has nothing left to retire.

@@ -1,3 +1,4 @@
+import { LEGACY_PROJECT_AGENT_DIRECTORY, PROJECT_AGENT_DIRECTORY, PROJECT_AGENT_FILES } from '../workflow/project-agent-paths.mjs';
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { parseYaml } from "../eval/yaml.mjs";
 import { legacyAgentKeys, runtimeAgentProvider } from '../workflow/agent-config.mjs';
@@ -127,7 +128,8 @@ async function inspectExecutionAssets(root, diagnostics) {
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
     paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
-    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
+    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs',
+      '.harness/src/workflow/project-agent-paths.mjs', '.harness/src/installer/project-agent-files.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator'].map((name) => `.claude/harness/${name}.mjs`));
@@ -507,6 +509,21 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     if (ignored.status !== 0) diagnostics.push(diagnostic('runtime_not_ignored', 'error', 'Harness workflow session files are not ignored by Git', join(repositoryRoot, '.io')));
     const inputIgnored = await git(['check-ignore', '--no-index', '-q', '.io/probe/skill/execution/input.json']);
     if (inputIgnored.status !== 0) diagnostics.push(diagnostic('execution_input_not_ignored', 'error', 'Harness execution inputs are not ignored by Git', join(repositoryRoot, '.io')));
+  }
+  for (const name of PROJECT_AGENT_FILES) {
+    const oldPath = join(repositoryRoot, LEGACY_PROJECT_AGENT_DIRECTORY, name);
+    const path = `${PROJECT_AGENT_DIRECTORY}/${name}`;
+    const current = await lstat(join(repositoryRoot, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    if (await lstat(oldPath).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) {
+      diagnostics.push(diagnostic('project_guidance_legacy_path', 'warning', current
+        ? `Both paths exist. Harness reads ${path}. Compare the files before removing the old copy.`
+        : `Run harness-codex update to move this project file to ${path}.`, oldPath));
+    }
+    if (current && !current.isFile()) diagnostics.push(diagnostic('project_guidance_invalid', 'error', `Expected a regular project guidance file: ${path}`, join(repositoryRoot, path)));
+    if (current && gitRoot.status === 0 && resolve(gitRoot.stdout.trim()) === repositoryRoot
+      && (await git(['check-ignore', '--no-index', '-q', path])).status === 0) {
+      diagnostics.push(diagnostic('project_guidance_ignored', 'warning', `Project guidance should be tracked by Git: ${path}`, join(repositoryRoot, path)));
+    }
   }
   // setup does not persist agents.provider. The current CLI or provider configuration selects the diagnostics.
   const claudeProvider = await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider) === 'claude-code' || (!config.agents?.provider && Boolean(config.agents?.['claude-code']) && !config.agents?.codex), () => false);

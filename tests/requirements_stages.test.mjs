@@ -60,7 +60,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(analysis, /## 4\. 후보 요구사항/);
   assert.match(analysis, /## 5\. 충돌/);
   assert.match(analysis, /요청 범위 밖 관찰/);
-  assert.match(await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md'), /create `requirements\.md`/);
+  assert.match(await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md'), /creates `requirements\.md`/);
 
   // Each stage guide links the template, keeps its own boundary and returns through the common contract.
   for (const stage of REQUIREMENTS_STAGES.slice(1)) {
@@ -104,8 +104,8 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /pattern only when supported by evidence/);
   // The user sees which stakeholder each candidate question came from, by role and participant ID.
   const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
-  assert.match(analysisGuide, /Start each question title with the stakeholders it came from, each by the role and ID of the participant table/);
-  assert.match(analysisGuide, /`\[제안: 도메인 전문가\(LENS-DOMAIN\), 결제 담당자\(SH-01\)\]`/);
+  assert.match(analysisGuide, /Ask and resolve the scope round first[\s\S]*Do not ask policy/);
+  assert.match(analysisGuide, /participant provenance/);
   const events = await read('.codex/internal-skills/event-storming/GUIDE.md');
   assert.match(events, /`mode: events`/);
   assert.match(events, /`stakeholder_persona`/);
@@ -133,24 +133,41 @@ test('the requester is a stakeholder: requested features are settled, and a pers
   const request = '$orchestrator 계산기 웹 앱 만들어. 유저 인증과 커뮤니티 기능 있어야 해.';
   const participants = '| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청 기능 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n';
   const features = (decision = '확정', phrase = '커뮤니티 기능') => `| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 커뮤니티 | "${phrase}" | REQUESTER | ${decision} | 요청 원문 | q:4 |\n`;
+  const actions = '| ACT | 요청 기능 | 행위자 | 행동 | 결정 | 근거/answer ID |\n|---|---|---|---|---|---|\n| ACT-01 | 커뮤니티 | 회원 | 게시글을 작성한다 | 포함 | 요청 원문 |\n';
   const observation = (anchor) => `| 제안자 | 관찰 | 요청 앵커 | 근거 |\n|---|---|---|---|\n| LENS-DOMAIN | 게시물 작성자만 수정한다 | "${anchor}" | 근거 |\n`;
-  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis }).errors.map(({ code }) => code);
-  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('결제 기능')}`), [], 'an observation anchored outside the request is kept out of scope');
-  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('유저 인증과 커뮤니티 기능')}`), ['ANCHORED_CANDIDATE_EXCLUDED'], 'the E2E defect: an anchored community candidate was moved out of scope');
-  assert.deepEqual(codes(`# 분석\n\n${features()}`), ['REQUESTER_MISSING']);
-  assert.deepEqual(codes(`# 분석\n\n${participants}`), ['REQUESTED_FEATURES_MISSING']);
-  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('대기')}`), ['REQUESTED_FEATURE_ASKED'], 'a requested feature is never asked for adoption');
-  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('확정', '게시판 기능')}`), ['REQUESTED_FEATURE_NOT_QUOTED']);
-  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n| 제안자 | 관찰 | 근거 |\n|---|---|---|\n| LENS-DOMAIN | 관찰 | 근거 |\n`), ['OBSERVATION_ANCHOR_MISSING']);
+  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis, strict: true }).errors.map(({ code }) => code);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${actions}\n${observation('결제 기능')}`), [], 'optional observations stay observations');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${actions}\n${observation('유저 인증과 커뮤니티 기능')}`), ['ANCHORED_CANDIDATE_EXCLUDED'], 'an anchored candidate cannot be moved out of scope');
+  assert.deepEqual(codes(`# 분석\n\n${features()}\n${actions}`), ['REQUESTER_MISSING']);
+  assert.ok(codes(`# 분석\n\n${participants}\n${actions}`).includes('REQUESTED_FEATURES_MISSING'));
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('대기')}\n${actions}`), ['REQUESTED_FEATURE_ASKED'], 'a requested feature is never asked for adoption');
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features('확정', '게시판 기능')}\n${actions}`), ['REQUESTED_FEATURE_NOT_QUOTED']);
+  assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${actions}\n| 제안자 | 관찰 | 근거 |\n|---|---|---|\n| LENS-DOMAIN | 관찰 | 근거 |\n`), ['OBSERVATION_ANCHOR_MISSING']);
+  assert.ok(codes(`# 분석\n\n${participants}\n${features()}`).includes('REQUESTED_ACTIONS_MISSING'));
   assert.ok(checkStakeholderAnalysis({ request, analysis: '# 분석\n\n- 판정: 생략\n' }).ok, 'a skipped analysis is not checked');
 
   // The guides carry the same rules: subdomain-candidates never asks about a requested feature and rewinds instead.
   const candidates = await read('.codex/internal-skills/subdomain-candidates/GUIDE.md');
-  assert.match(candidates, /다른 활동의 규칙·예외·정책·상태 전이에 묻힌 동작도 확인한다/);
+  assert.match(candidates, /포함 행동 각각을 행위자·대상·시작 조건·독립적으로 관찰 가능한 완료 결과로 검토/);
   assert.match(candidates, /`result\.owner_stage: stakeholder-analysis`/);
   const analysisGuide = await read('.codex/internal-skills/stakeholder-analysis/GUIDE.md');
-  assert.match(analysisGuide, /This is the only reason a candidate leaves the candidate table/);
-  assert.match(analysisGuide, /`\[제안: 요청자\(REQUESTER\) · 요청 기능: <기능>\]`/);
+  assert.match(analysisGuide, /Every explicitly requested top-level feature is already included/);
+  assert.match(analysisGuide, /ACT-xx/);
+});
+
+test('named calculator, authentication and community scope cases are checked by the strict stakeholder gate', async () => {
+  const { checkStakeholderAnalysis } = await import('../.harness/src/workflow/stakeholder-analysis-gate.mjs');
+  const request = 'Build a calculator with authentication and community posting';
+  const participants = '| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 명시 기능 |\n';
+  const features = '| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 |\n|---|---|---|---|---|\n| calculator | "calculator" | REQUESTER | 확정 | 요청 원문 |\n| authentication | "authentication" | REQUESTER | 확정 | 요청 원문 |\n| community | "community posting" | REQUESTER | 확정 | 요청 원문 |\n';
+  const actions = (community = 'ACT-03 | community | member | publish a post | 명시 | 포함 | 요청 원문') => `| ACT | 요청 기능 | 행위자 | 행동 | 종류 | 결정 | 근거/answer ID |\n|---|---|---|---|---|---|---|\n| ACT-01 | calculator | user | calculate a result | 명시 | 포함 | 요청 원문 |\n| ACT-02 | authentication | user | sign in | 명시 | 포함 | 요청 원문 |\n| ${community} |`;
+  const analysis = (actionRows) => `# Stakeholder analysis\n\n${participants}\n${features}\n${actionRows}`;
+  const codes = (value) => checkStakeholderAnalysis({ request, analysis: value, strict: true, complete: true }).errors.map(({ code }) => code);
+  assert.ok(codes(analysis(actions().replace('ACT-03 | community | member | publish a post | 명시 | 포함 | 요청 원문 |', ''))).includes('REQUESTED_FEATURE_ACTION_MISSING'), 'community with no concrete action is a gap');
+  assert.ok(codes(analysis(actions('ACT-03 | community | member | publish a post | 선택 확장 관찰 | 포함 | 요청 앵커 "community posting"'))).includes('OPTIONAL_ACTION_NEEDS_USER_DECISION'), 'an optional idea cannot be included on an anchor alone');
+  assert.ok(codes(analysis(actions('ACT-03 | community | member | publish a post | 명시 | 제외 | 요청 원문'))).includes('EXPLICIT_ACTION_REVISION_EVIDENCE_MISSING'), 'excluding an explicit action needs direct user revision evidence');
+  const revised = checkStakeholderAnalysis({ request, analysis: analysis(actions('ACT-03 | community | member | publish a post | 명시 | 제외 | answers.json q:9')), strict: true, complete: true, userRevision: true });
+  assert.ok(!revised.errors.some(({ code }) => code === 'EXPLICIT_ACTION_REVISION_EVIDENCE_MISSING'), 'a runner-marked user revision with an answer receipt can change explicit scope');
 });
 
 test('a BIZ field is written once: a second field of the same name is rejected, placeholders filled in place pass', async () => {
@@ -171,6 +188,42 @@ test('a BIZ field is written once: a second field of the same name is rejected, 
   assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);
   assert.equal(complete(fixed.replace('AC-01 세션이 생성된다', 'AC-01 TODO')).ok, false);
   assert.match(await read(TEMPLATE), /같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다/);
+});
+
+test('the completion gate checks ACT/BIZ direction and rejects generic AC outcomes', async () => {
+  const { checkRequirementsDocument } = await import('../.harness/src/workflow/requirements-document-gate.mjs');
+  const doc = (reverse = '행동 ID: ACT-01 — 근거: 요청 원문', ac = 'AC-01 [SC-01, INV-01] 조건: 입력이 유효하다; 행위: 사용자가 계산한다; 관찰 결과: 계산 결과가 표시된다; 상태: 기록은 변경되지 않는다 — 출처: 요청 원문') => `# 요구사항 명세\n- 상태: draft\n\n## 2. 업무\n\n### BIZ-01 계산 (SD-01)\n- 업무 목적: 계산 결과를 제공한다 — 출처: 요청 원문\n- 업무 주체: 사용자: 계산한다 — 출처: 요청 원문\n- 정상 시나리오:\n  - SC-01 정상: 입력이 유효하다; 계산 결과가 표시된다 — 출처: 요청 원문; AC: AC-01\n  - 유효 대안: NOT_APPLICABLE — 단건 계산 결과가 하나로 정해져 대안 결과가 없다\n- 업무 규칙:\n  - INV-01 [SC-01] 유효 입력에 계산 결과를 제공한다 — 출처: 요청 원문\n- 예외 시나리오:\n  - SC-02 거절/실패: 잘못된 입력은 거절되고 기록은 바뀌지 않는다 — 출처: answers.json q:1\n  - EX-01 [SC-02] 잘못된 입력은 거절하고 계산 기록은 바뀌지 않는다 — 출처: answers.json q:1; SC-02\n- 완료 조건:\n  - ${ac}\n  - AC-02 [SC-02, EX-01] 조건: 입력이 잘못되었다; 행위: 사용자가 계산을 요청한다; 관찰 결과: 입력 거절이 안내되고 기록은 바뀌지 않는다; 상태: 기존 기록 유지 — 출처: answers.json q:1\n- ${reverse}\n\n## 6. 공통\n\n### 6.1 범위·비목표\n| ACT | 요청 기능 | 행위자 | 행동 | 결정 | 근거/answer ID | BIZ 연결 |\n|---|---|---|---|---|---|---|\n| ACT-01 | 계산기 | 사용자 | 계산 결과를 확인한다 | 포함 | 요청 원문 | BIZ-01 |\n| ACT-02 | 계산기 | 사용자 | 계산 기록을 저장한다 | 제외 — 이번 범위에 기록 보존 없음 | q:2 | 해당 없음 |\n`;
+  const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
+  assert.equal(complete(doc()).ok, true, JSON.stringify(complete(doc()).errors));
+  assert.ok(complete(doc('ACT-02', 'AC-01 오류 발생')).errors.some(({ code }) => code === 'BIZ_ACTION_REVERSE_LINK_MISSING'));
+  assert.ok(complete(doc()).errors.length === 0);
+  const generic = complete(doc('ACT-01', 'AC-01 오류 발생'));
+  assert.ok(generic.errors.some(({ code }) => code === 'AC_OUTCOME_STRUCTURE_INVALID'));
+  const e2eLeak = checkRequirementsDocument({ requirements: doc() + '\n### 6.4 E2E 시나리오\nE2E-01 (ACT-02)', stage: 'requirements-fix', complete: true, scopeActions: [{ ACT: 'ACT-01', 결정: '포함' }, { ACT: 'ACT-02', 결정: '제외' }] });
+  assert.ok(e2eLeak.errors.some(({ code }) => code === 'EXCLUDED_ACTION_E2E_LEAK'));
+  const source = [{ ACT: 'ACT-01', '요청 기능': '계산기', 행위자: '사용자', 행동: '계산 결과를 확인한다', 결정: '포함', '근거/answer ID': '요청 원문' }, { ACT: 'ACT-02', '요청 기능': '계산기', 행위자: '사용자', 행동: '계산 기록을 저장한다', 결정: '제외 — 보존 안 함', '근거/answer ID': 'q:2' }];
+  const projection = doc().replace('## 6. 공통', '## 6. 공통');
+  assert.ok(checkRequirementsDocument({ requirements: projection, stage: 'requirements-fix', complete: true, strict: true, scopeActions: source, requestedFeatures: [{ '요청 기능': '계산기' }] }).errors.some(({ code }) => code === 'ACTION_SCOPE_ROW_DRIFT'));
+  const omittedAction = checkRequirementsDocument({ requirements: projection, stage: 'requirements-fix', complete: true, strict: true, scopeActions: [...source, { ACT: 'ACT-03', '요청 기능': '계산기', 행위자: '사용자', 행동: '결과를 공유한다', 결정: '포함', '근거/answer ID': 'answers.json q:3' }], requestedFeatures: [{ '요청 기능': '계산기' }] });
+  assert.ok(omittedAction.errors.some(({ code, id }) => code === 'ACTION_SCOPE_ROW_MISSING' && id === 'ACT-03'), 'an independently included action cannot disappear from 6.1');
+  const revisedScope = [{ ...source[0], 행동: '계산 결과를 내역으로 저장한다' }, { ...source[1], 결정: '제외 — 이번 범위에 기록 보존 없음' }];
+  const revision = checkRequirementsDocument({ requirements: projection, stage: 'requirements-fix', complete: true, strict: true, scopeActions: revisedScope, requestedFeatures: [{ '요청 기능': '계산기' }] });
+  assert.ok(revision.errors.some(({ code, id }) => code === 'ACTION_SCOPE_ROW_DRIFT' && id === 'ACT-01'), 'a revision with stale BIZ/AC evidence is rejected');
+  assert.ok(!revision.errors.some(({ code, id }) => code === 'ACTION_SCOPE_ROW_DRIFT' && id === 'ACT-02'), 'unaffected ACT-02 keeps its stable decision');
+  const removedFailure = doc().replace(/  - SC-02[^\n]*\n/, '').replace(/  - EX-01[^\n]*\n/, '').replace(/  - AC-02[^\n]*\n/, '');
+  assert.ok(complete(removedFailure).errors.some(({ code }) => code === 'SCENARIO_CLASS_UNSETTLED'), 'happy-only coverage fails when the fixture already records a failure class');
+  assert.ok(complete(doc().replace(/  - AC-02[^\n]*\n/, '')).errors.some(({ code }) => code === 'COVERAGE_AC_LINK_MISSING'), 'a recorded failure needs its own AC');
+  const pendingHotspot = checkRequirementsDocument({ requirements: doc() + '\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 삭제 후 복구 가능한가 | BIZ-01 | 대기 | - | - |\n', stage: 'bounded-context', complete: true, strict: true, scopeActions: source, requestedFeatures: [{ '요청 기능': '계산기' }] });
+  assert.ok(pendingHotspot.errors.some(({ code }) => code === 'REQUIREMENTS_DECISION_OPEN'), 'bounded-context cannot fix requirements with an open hotspot');
+  const scopeChanged = checkRequirementsDocument({ requirements: doc().replace('ACT-01 | 계산기 | 사용자 | 계산 결과를 확인한다 | 포함 | 요청 원문 | BIZ-01', 'ACT-01 | 계산기 | 사용자 | 계산 결과를 확인한다 | 제외 — 새 지시 | answers.json q:9 | 해당 없음'), stage: 'requirements-fix', complete: true, strict: true, scopeActions: [{ ...source[0], 결정: '제외 — 새 지시', '근거/answer ID': 'answers.json q:9' }, source[1]], requestedFeatures: [{ '요청 기능': '계산기' }] });
+  assert.ok(scopeChanged.errors.some(({ code }) => code === 'EXCLUDED_ACTION_BIZ_REVERSE_LEAK'), 'scope revision cannot leave the old BIZ action reference behind');
+  const noContract = doc().replace(/^## 2\. 업무$/m, '').replace(/^### 6\.1 범위·비목표[\s\S]*$/m, '');
+  const missing = checkRequirementsDocument({ requirements: noContract, stage: 'requirements-fix', complete: true, strict: true, scopeActions: source, requestedFeatures: [{ '요청 기능': '계산기' }] });
+  assert.ok(missing.errors.some(({ code }) => code === 'REQUIREMENTS_BUSINESS_HEADING_MISSING'));
+  assert.ok(missing.errors.some(({ code }) => code === 'ACTION_HEADING_MISSING'));
+  assert.ok(missing.errors.some(({ code }) => code === 'ACTION_TABLE_MISSING'));
+  const missingActorBranch = doc().replace('비회원', '작성자 권한이 없는 회원');
+  assert.equal(checkRequirementsDocument({ requirements: missingActorBranch, stage: 'requirements-fix', complete: true }).ok, true, 'actor and target-state relevance is a recorded semantic review, not guessed from generic rows');
 });
 
 test('installed consumers get the requirements stages and diagram tooling, Git ignores them and keeps the plan set documents visible', async (t) => {
@@ -254,7 +307,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   assert.match(status, /\?\? docs\/domain\/stakeholders\/SH-01\.md/);
   assert.match(status, /^ M app\.txt$/m, 'application changes stay visible and untouched');
   assert.match(status, /^ M CONTEXT\.md$/m, 'the glossary is project-owned');
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//, 'Harness-managed files stay out of commits');
   for (const path of ['docs/specs/community/requirements.md', 'docs/specs/community/diagrams/events/SD-01.events.svg', 'CONTEXT.md']) assert.throws(() => git('check-ignore', '-q', path), `not ignored: ${path}`);
 
   // Doctor accepts the installation, reports a missing managed asset, and update restores it without touching project documents.
@@ -289,7 +342,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const updatedStatus = git('status', '--short', '--untracked-files=all');
   assert.match(updatedStatus, /\?\? docs\/specs\/community\/requirements\.md/);
   assert.match(updatedStatus, /^ M app\.txt$/m);
-  assert.doesNotMatch(updatedStatus, /\.codex\/|\.harness\/|\.claude\/|\.agents\/|\.io\//);
+  assert.doesNotMatch(updatedStatus, /\.codex\/|\.harness\/(?!agents\/)|\.claude\/|\.agents\/|\.io\//);
 });
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
@@ -358,7 +411,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   const questionId = waiting.finished.result.questions[0].question_id;
   const resumed = await runStage('event-storming', {
     extraArgs: ['--answer', 'no'],
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 4. 서브도메인 간 이벤트\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 해결 | 복구할 수 없다 → INV-01 | answers.json |\n', [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n\n요청 범위 밖 관찰: LENS-DOMAIN (event-storming)\n`, ...eventFiles },
+    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 4. 서브도메인 간 이벤트\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 해결 | 복구할 수 없다 → INV-01 | answers.json |\n', [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 |\n|---|---|---|---|---|\n| ${REQUEST} | "${REQUEST}" | REQUESTER | 확정 | 요청 원문 |\n\n| ACT | 요청 기능 | 행위자 | 행동 | 결정 | 근거/answer ID |\n|---|---|---|---|---|---|\n| ACT-01 | ${REQUEST} | 사용자 | 요청한 결과를 완료한다 | 포함 | 요청 원문 |\n\n요청 범위 밖 관찰: LENS-DOMAIN (event-storming)\n`, ...eventFiles },
     artifacts: [artifact(requirements, 'requirements'), artifact(analysis, 'stakeholder_analysis'), artifact(`${specDirectory}/diagrams/events`, 'event_diagrams')],
   });
   assert.deepEqual(resumed.files, [analysis, requirements, ...Object.keys(eventFiles).sort()].sort());
@@ -387,10 +440,23 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.deepEqual(classified.files, [requirements]);
 
   // 6. requirements-fix fills the open rows before the boundaries are decided; the document stays draft.
-  const filled = await runStage('requirements-fix', {
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n- INV-01 작성자가 글을 삭제한다.\n' },
-    artifacts: [artifact(requirements, 'requirements')],
-  });
+  const filling = await flow.beginStage('requirements-fix');
+  assert.equal(filling.prepared.input.context.requirements_contract_version, 1, 'fresh runner-owned contract version reaches a later state-only stage');
+  await flow.submitStage(filling, { files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n- INV-01 작성자가 글을 삭제한다.\n' }, artifacts: [artifact(requirements, 'requirements')] });
+  const missingContract = flow.finishStage(filling);
+  assert.notEqual(missingContract.status, 0, missingContract.stdout);
+  assert.match(missingContract.stderr + missingContract.stdout, /ACTION_TABLE_MISSING|ACTION_HEADING_MISSING|REQUIREMENTS_BUSINESS_HEADING_MISSING/);
+  const validRequirements = `# 요구사항 명세\n\n- 상태: draft\n\n## 1. 서브도메인 후보\n\n| SD | 이름 | 업무 범위 | 포함 업무 | 핵심 용어 후보 | 분리 이유(가설) | 분류 | 근거 | 상태 |\n|---|---|---|---|---|---|---|---|---|\n| SD-01 | 게시판 | 글 삭제 | BIZ-01 | 게시글 | 기존 영역 확장 | core | 요청 원문 | confirmed |\n\n## 2. 업무\n\n### BIZ-01 게시글 삭제 (SD-01)\n- 상태: draft\n- 업무 목적: 작성자가 게시글을 삭제한다 — 출처: 요청 원문\n- 업무 주체: 사용자: 게시글을 삭제한다 — 출처: 요청 원문\n- 행동 ID: ACT-01 — 근거: 요청 원문\n- 정상 시나리오:\n  - SC-01 정상: 작성자가 자기 게시글 삭제를 요청하면 게시글이 목록에서 사라진다 — 출처: 요청 원문\n  - 유효 대안: NOT_APPLICABLE — 이 업무에서는 삭제 결과가 하나로 정해진다\n- 업무 규칙:\n  - INV-01 [SC-01] 작성자만 자기 게시글을 삭제할 수 있다 — 출처: answers.json q:1\n- 예외 시나리오:\n  - SC-02 거절/실패: 비작성자가 삭제를 요청하면 거절되고 게시글은 유지된다 — 출처: answers.json q:2\n  - EX-01 [SC-02] 비작성자의 삭제 요청을 거절한다 — 출처: answers.json q:2\n- 완료 조건:\n  - AC-01 [SC-01, INV-01] 조건: 작성자가 자기 게시글 삭제를 요청한다; 행위: 게시글 삭제를 요청한다; 관찰 결과: 게시글이 목록에서 사라진다; 상태: 삭제됨 — 출처: 요청 원문\n  - AC-02 [SC-02, EX-01] 조건: 비작성자가 게시글 삭제를 요청한다; 행위: 삭제를 요청한다; 관찰 결과: 권한 거절이 안내되고 게시글이 유지된다; 상태: 게시글 유지 — 출처: answers.json q:2\n\n## 6. 공통\n\n### 6.1 범위·비목표\n| ACT | 요청 기능 | 행위자 | 행동 | 결정 | 근거/answer ID | BIZ 연결 |\n|---|---|---|---|---|---|---|\n| ACT-01 | ${REQUEST} | 사용자 | 요청한 결과를 완료한다 | 포함 | 요청 원문 | BIZ-01 |\n\n### 6.4 E2E 시나리오\n`;
+  await writeFile(join(workspace, requirements), validRequirements);
+  await writeFile(filling.started.output_path, JSON.stringify({ schema_version: 1, skill: 'requirements-fix', status: 'completed', code: 'OK', result: { schema_version: 1, skill: 'requirements-fix', status: 'completed', code: 'OK', summary: '완료', artifacts: [{ base: 'workspace', path: requirements, kind: 'requirements' }], questions: [], review_request: null, owner_stage: null, dependency_gap: null } }));
+  const acceptedFill = flow.finishStage(filling);
+  assert.equal(acceptedFill.status, 0, acceptedFill.stderr + acceptedFill.stdout);
+  const filled = { ...filling, finished: JSON.parse(acceptedFill.stdout), files: [requirements] };
+  // The remaining integration steps retain their legacy document fixtures; remove the fresh-contract record to model a resumed pre-version execution.
+  const compatibilityStatePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const compatibilityState = JSON.parse(await readFile(compatibilityStatePath, 'utf8'));
+  delete compatibilityState.stages['stakeholder-analysis'].requirements_contract_version;
+  await writeFile(compatibilityStatePath, JSON.stringify(compatibilityState));
   assert.deepEqual(filled.files, [requirements]);
   const directory = dirname(filled.started.output_path);
   const raw = JSON.parse(await readFile(filled.started.output_path, 'utf8'));
@@ -519,12 +585,12 @@ test('the requirements stages run in order as workflow stages and the tactical d
     files: { [tacticalDesign]: '# 전술 설계\n\n## 1. Domain Model\n\nBIZ-01 / INV-01 게시글 삭제\n' },
     artifacts: [artifact(tacticalDesign, 'tactical_design')],
   });
-  const applicationFile = 'docs/agents/EXEC.md';
+  const applicationFile = '.harness/agents/EXEC.md';
   await writeFile(join(workspace, applicationFile), '# 프로젝트 실행 설정\n');
   const headBeforeRevision = treeGit('rev-parse', 'HEAD');
   const designBeforeRevision = await readFile(join(workspace, tacticalDesign), 'utf8');
   const gitBeforeRevision = treeGit('status', '--short', '--untracked-files=all');
-  assert.match(gitBeforeRevision, / M docs\/agents\/EXEC\.md/);
+  assert.match(gitBeforeRevision, / M \.harness\/agents\/EXEC\.md/);
   const revise = '작성자와 운영자가 각자 권한에 따라 지울 수 있게 고쳐 줘';
   const rerun = await flow.beginStage('requirements-fix', { extraArgs: ['--user-revision', 'true', '--feedback', revise] });
   assert.equal(treeGit('rev-parse', 'HEAD'), headBeforeRevision);

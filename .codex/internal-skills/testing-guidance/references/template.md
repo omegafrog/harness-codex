@@ -1,6 +1,6 @@
 # Testing and verification guidance
 
-This provider-neutral document stores durable project-specific testing preferences. Ordinary verification commands belong in `docs/agents/EXEC.md` and run through native project CLIs. `docs/agents/execution.json` is reserved for explicit end-user E2E profiles.
+This provider-neutral document stores durable project-specific testing preferences. Ordinary verification commands belong in `.harness/agents/EXEC.md` and run through native project CLIs. `.harness/agents/execution.json` is reserved for explicit end-user E2E profiles.
 
 ## Active guidance
 

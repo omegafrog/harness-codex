@@ -13,19 +13,19 @@ test('plan review inputs are the tactical design documents, never a Spec and nev
   try {
     execFileSync('git', ['init', '-q', root]);
     const plans = join(root, 'docs/plans/set'), specs = join(root, 'docs/specs/set'), decisions = join(root, 'docs/implementation/set');
-    for (const directory of [plans, specs, decisions, join(root, 'docs/agents')]) await mkdir(directory, { recursive: true });
+    for (const directory of [plans, specs, decisions, join(root, '.harness/agents')]) await mkdir(directory, { recursive: true });
     await writeFile(join(specs, 'requirements.md'), '# requirements\n');
     await writeFile(join(specs, 'tactical-design.md'), '# tactical design\n');
     for (const name of ['technology', 'ui-handoff', 'api', 'data']) await writeFile(join(decisions, `${name}.md`), `# ${name}\n`);
     await writeFile(join(root, 'CONTEXT.md'), '# Context\n');
-    await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), '');
     await writeFile(join(plans, 'first.md'), '---\nstatus: planned\n---\n# first\n');
-    await writeFile(join(plans, 'plans.md'), '# Plans\n\n| [first](first.md) | Architecture Spec 12.7 환경, 실행 안내는 `docs/agents/EXEC.md` | 없음 |\n');
+    await writeFile(join(plans, 'plans.md'), '# Plans\n\n| [first](first.md) | Architecture Spec 12.7 환경, 실행 안내는 `.harness/agents/EXEC.md` | 없음 |\n');
     const snapshot = await snapshotPlanSet({ root, planSetId: 'set' });
     assert.deepEqual(snapshot.spec_paths, [], 'no Spec exists and none is required');
     assert.deepEqual(snapshot.design_paths, ['docs/specs/set/requirements.md', 'docs/specs/set/tactical-design.md', 'CONTEXT.md', ...['technology', 'ui-handoff', 'api', 'data'].map((name) => `docs/implementation/set/${name}.md`)]);
     assert.deepEqual(Object.keys(snapshot.inputs).sort(), [...snapshot.design_paths, 'docs/plans/set/first.md', 'docs/plans/set/plans.md'].sort());
-    assert.ok(!Object.keys(snapshot.inputs).includes('docs/agents/EXEC.md'));
+    assert.ok(!Object.keys(snapshot.inputs).includes('.harness/agents/EXEC.md'));
 
     // A decision document is part of the review basis, so a change to it affects every ticket.
     await writeFile(join(decisions, 'data.md'), '# data changed\n');

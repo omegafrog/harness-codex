@@ -84,7 +84,7 @@ When only one suite exists, use it unless the user explicitly requests otherwise
 
 ## Execute
 
-Before running a suite, read the active workspace's `<workspace_root>/docs/agents/testing-guidance.md`. In a managed worktree, use that worktree copy so project-specific test memory stays with the evaluated branch.
+Before running a suite, read the active workspace's `<workspace_root>/.harness/agents/testing-guidance.md`. In a managed worktree, use that worktree copy so project-specific test memory stays with the evaluated branch.
 
 Use the mode-specific command above. Do not copy Harness eval implementation into a consumer repository just to run evaluation.
 
