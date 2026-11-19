@@ -21,6 +21,8 @@ model_tier: implementation
 
 ## Rules
 
+코드 변경 전 [Ponytail 구현 원칙](../implement/references/ponytail.md)을 읽는다.
+
 1. `workspace_root`를 모든 명령의 cwd로 사용하고 repository root 일치를 확인한다.
 2. design brief를 임의로 다시 설계하지 않는다. 방향 변경이 필요하면 blocker로 돌려보낸다.
 3. 기존 token, primitive, shared component, layout pattern을 먼저 찾고 재사용한다.

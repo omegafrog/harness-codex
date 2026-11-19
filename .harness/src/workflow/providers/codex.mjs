@@ -108,9 +108,12 @@ export function codexHookTrustHash(eventName, handler) {
 // `$CODEX_HOME/config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<handler>"]` with a trusted hash.
 export async function inspectCodexHookTrust(env = process.env) {
   const home = codexHome(env), hooksPath = join(home, 'hooks.json');
+  const configPath = join(home, 'config.toml');
   const text = await readFile(hooksPath, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   const hooks = text ? JSON.parse(text).hooks || {} : {};
-  const config = await readFile(join(home, 'config.toml'), 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const config = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
+  const ponytailTable = config.split(/^[ \t]*\[/m).find((section) => /^plugins\."ponytail@ponytail"\]/.test(section));
+  const ponytail_config_path = /^[ \t]*enabled[ \t]*=[ \t]*true\b/m.test(ponytailTable || '') ? configPath : null;
   const trusted = new Map();
   let current = null;
   for (const line of config.split('\n')) {
@@ -136,7 +139,7 @@ export async function inspectCodexHookTrust(env = process.env) {
   };
   const retired_startup = RETIRED_EVENTS.some((event) => Array.isArray(hooks[event]) && hooks[event].some(retiredGroup));
   const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS);
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath };
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath, ponytail_config_path };
 }
 
 

@@ -81,6 +81,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   if (!await marker('.harness/schemas') && !await marker('.codex/internal-skills/skill-execution')) return;
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
+    '.codex/internal-skills/implement/references/ponytail.md',
     '.codex/internal-skills/workflow-compose/GUIDE.md',
     '.codex/internal-skills/e2e-test/GUIDE.md',
     '.codex/internal-skills/e2e-test/references/verification-policy.md',
@@ -524,6 +525,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
+      if (trust.ponytail_config_path) diagnostics.push(diagnostic('codex_ponytail_plugin_enabled', 'warning', 'The Codex Ponytail plugin can inject global instructions. Set [plugins."ponytail@ponytail"] enabled = false in this user config to use the Harness implementation-only guidance.', trust.ponytail_config_path));
       if (trust.retired_startup) diagnostics.push(diagnostic('retired_codex_user_orchestrator_hook', 'warning', 'The retired Harness startup hook remains in Codex user hooks; run setup with the codex provider after updating any other Harness checkouts that still use it', trust.hooks_path));
       if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked Harness agents are refused before they start', null));
       if (trust.write_guard !== 'trusted') diagnostics.push(diagnostic('codex_write_guard_hook_untrusted', 'warning', trust.write_guard === 'missing' ? 'Harness write-guard hook is missing from the Codex user hooks; run setup with the codex provider so the orchestrator main session cannot edit product code, tests or contracts' : 'Harness write-guard hook is not trusted; run /hooks in Codex and trust "Guarding Harness orchestrator writes" (PreToolUse) so the orchestrator main session cannot edit product code, tests or contracts', null));

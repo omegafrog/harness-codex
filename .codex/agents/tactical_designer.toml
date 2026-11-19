@@ -7,3 +7,6 @@ You are the tactical_designer agent. Follow `.codex/internal-skills/tactical-tec
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

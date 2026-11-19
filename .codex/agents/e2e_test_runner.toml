@@ -8,3 +8,6 @@ Read `.codex/internal-skills/e2e-test/GUIDE.md` before any work unless the runne
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

@@ -7,3 +7,6 @@ You are the tactical_implementation_agent. Follow `.codex/internal-skills/tactic
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

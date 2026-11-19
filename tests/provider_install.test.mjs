@@ -123,22 +123,22 @@ test('the install CLI accepts --provider and rejects unknown values', () => {
   assert.match(help.stdout, /--provider <codex\|claude-code\|all>/);
 });
 
-test('install and update never install Wake and Doctor checks only the configured Codex provider', async (t) => {
+test('install and update preserve user plugins and Doctor reports the legacy Ponytail setting for Codex', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'harness-wake-install-'));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const root = join(base, 'project'), bin = join(base, 'bin'), log = join(base, 'calls'), state = join(base, 'state');
-  await mkdir(root); await mkdir(bin);
+  const root = join(base, 'project'), bin = join(base, 'bin'), log = join(base, 'calls'), codexHome = join(base, 'codex-home');
+  await mkdir(root); await mkdir(bin); await mkdir(codexHome);
   execFileSync('git', ['init', '-q', root]);
   await writeFile(join(root, 'user-file.txt'), 'preserve');
-  const server = join(bin, 'wake.cjs');
-  await writeFile(server, `require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.id===1)console.log(JSON.stringify({id:1,result:{}}));if(m.id===2)console.log(JSON.stringify({id:2,result:{tools:[{name:'queue_thread'}]}}));});`);
-  await writeFile(join(bin, 'systemctl'), '#!/bin/sh\nexit 1\n');
-  await chmod(join(bin, 'systemctl'), 0o755);
+  await writeFile(log, '');
+  const userConfig = join(codexHome, 'config.toml');
+  const legacyConfig = '[plugins."ponytail@ponytail"]\nenabled = true\n';
+  await writeFile(userConfig, legacyConfig);
   const codex = join(bin, 'codex');
-  await writeFile(codex, `#!/usr/bin/env node\nconst fs=require('node:fs'); const a=process.argv.slice(2); fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n'); if(a.join(' ')==='plugin list --json') console.log(JSON.stringify({installed:[{pluginId:'ponytail@ponytail',enabled:true}]})); else if(a.join(' ')==='plugin marketplace list --json') console.log(JSON.stringify({marketplaces:[{name:'ponytail',marketplaceSource:{source:'https://github.com/DietrichGebert/ponytail.git'}}]})); else if(a.join(' ')==='mcp get codex-wake --json') console.log(JSON.stringify({enabled:!process.env.WAKE_TEST_DISABLED,transport:{type:'stdio',command:process.execPath,args:[${JSON.stringify(server)}],cwd:process.cwd()}}));\n`);
+  await writeFile(codex, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\nprocess.exitCode = 1;\n`);
   await chmod(codex, 0o755);
   const cli = join(sourceRoot, 'bin/harness-install.mjs');
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: codexHome };
   for (const command of ['install', 'update']) {
     if (command === 'update') {
       const oldDoctor = join(root, '.harness/src/doctor/doctor.mjs');
@@ -146,6 +146,7 @@ test('install and update never install Wake and Doctor checks only the configure
     }
     const result = spawnSync(process.execPath, [cli, command, '--project', root, '--provider', 'codex'], { encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Updated .codex\/harness-lock\.json|Harness update complete/);
   }
   for (const path of ['.harness/src/doctor/doctor.mjs', '.agents/skills/setup/references/initial-setup.md', '.agents/skills/orchestrator/SKILL.md']) {
     assert.doesNotMatch(await readFile(join(root, path), 'utf8'), /harness-stage-listen|codex_wake_unavailable/);
@@ -157,29 +158,31 @@ test('install and update never install Wake and Doctor checks only the configure
   assert.match(maintenance, /Do not report unrequested actions that were not performed, including contract synchronization or sealing/);
   const installedReport = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8', env });
   assert.ok(JSON.parse(installedReport.stdout).diagnostics.every(({ code, message }) => !/wake/i.test(code) && !/harness-stage-listen/i.test(message)));
-  const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(calls.some((args) => args.some((arg) => /codex-wake/.test(arg))), false);
   assert.equal(await readFile(join(root, 'user-file.txt'), 'utf8'), 'preserve');
   const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
   assert.match(status, /user-file\.txt/);
   assert.doesNotMatch(status, /stage-result-events/);
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
-  const doctor = (doctorEnv) => {
-    const result = spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', env: doctorEnv });
+  const doctor = (doctorEnv = env) => {
+    const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', env: doctorEnv });
     return JSON.parse(result.stdout).diagnostics;
   };
-  assert.equal(doctor(env).some((item) => item.code === 'codex_wake_unavailable'), false);
-  assert.equal(doctor({ ...env, WAKE_TEST_DISABLED: '1' }).some((item) => item.code === 'codex_wake_unavailable'), false);
+  const ponytailWarning = ({ code, path }) => code === 'codex_ponytail_plugin_enabled' && path === userConfig;
+  assert.ok(doctor().some(ponytailWarning));
+  assert.equal(await readFile(userConfig, 'utf8'), legacyConfig);
+  await writeFile(userConfig, legacyConfig.replace('true', 'false'));
+  assert.equal(doctor().some(ponytailWarning), false);
+  await writeFile(userConfig, legacyConfig);
   for (const command of ['install', 'update']) {
     const result = spawnSync(process.execPath, [cli, command, '--project', root, '--provider', 'claude-code'], { encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr);
   }
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: claude-code\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
-  assert.equal(doctor({ ...env, HARNESS_PROVIDER_ID: 'claude-code', WAKE_TEST_DISABLED: '1' }).some((item) => item.code === 'codex_wake_unavailable'), false);
-  assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).filter((args) => args[0] === 'mcp' && args[1] === 'get').length, 0);
-  assert.equal((await readFile(log, 'utf8')).split('\n').filter(Boolean).map(JSON.parse).some((args) => args[0] === 'plugin' && args.some((arg) => /codex-wake/.test(arg))), false);
+  assert.equal(doctor({ ...env, HARNESS_PROVIDER_ID: 'claude-code' }).some(ponytailWarning), false);
+  assert.equal(await readFile(log, 'utf8'), '', 'install, update, and Doctor need no Codex plugin or MCP commands');
+  assert.equal(await readFile(userConfig, 'utf8'), legacyConfig);
   execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/src/workflow/stage-checkpoint.mjs']);
   assert.equal(await readFile(join(root, 'user-file.txt'), 'utf8'), 'preserve');
 });

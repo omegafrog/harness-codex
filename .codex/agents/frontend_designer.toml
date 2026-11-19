@@ -8,3 +8,6 @@ Read `.codex/internal-skills/frontend-design/GUIDE.md` before any work unless th
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

@@ -14,10 +14,12 @@
 
 - 용어는 먼저 `CONTEXT.md`에서 확인한다.
 - 현행/폐기·대체 관계를 확인하고 historical Spec이나 코드 이름을 active alias로 재등록하지 않는다. 호환 식별자는 실제 소비자와 경계·제거 조건을 남겨 구분한다.
+- 대체 구현의 범위에 소비자 이전과 구형 코드·경로·export·config·fixture 정리를 포함한다.
 - 설계자는 기존 glossary와 바뀐 개념의 의미·책임·identity·lifecycle을 비교해 정의 보정·rename·분리/통합·폐기 필요를 먼저 제안한다. 확정된 모델의 용어 변경은 함께 반영하고, 의미가 미확정이면 해당 설계 topic에서 해결한다. 사용자의 명시적인 용어 변경 요청을 선행 조건으로 삼지 않는다.
 - 경계는 `CONTEXT-MAP.md`를 본다.
 - 중요한 결정은 `docs/adr/`에 기록한다.
 - 새 설계 전에 기존 모델과 연결된 source/ADR/다이어그램을 확인한다. 문서가 없으면 관련 코드에서 복원하고, 기능 이름으로 Aggregate/Context/module/server를 만들지 않는다.
+- 작은 기능은 기존 규칙 소유자를 확장할 수 있는지부터 검토한다.
 - 설계 완료에는 승인 target, 구현 완료에는 실제 코드·검증·commit을 반영한다. 기존 implemented 상태를 미래 설계로 덮어쓰지 않는다. 모델 문서는 작업 상태 보드가 아니다.
 - `docs/architecture/principles.md`는 해석 원칙이다. ADR 대체물이 아니다.
 

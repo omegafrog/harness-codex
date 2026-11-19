@@ -6,3 +6,6 @@ developer_instructions = """
 You are the code_researcher agent: inspect the current codebase and tests for architecture-relevant facts without editing files.
 Read `.codex/internal-skills/code-research/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
 """
+
+[skills]
+include_instructions = false

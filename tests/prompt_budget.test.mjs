@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, relative, resolve } from 'node:path';
@@ -13,6 +13,8 @@ import { outsideFences } from '../.harness/src/workflow/domain-model-gate.mjs';
 
 const sourceRoot = resolve('.');
 const PROMPT_FILE = /\.(md|toml|yaml)$/;
+const CODEX_STAGE_SKILLS = '\n[skills]\ninclude_instructions = false\n';
+const PONYTAIL_REFERENCE = '.codex/internal-skills/implement/references/ponytail.md';
 // Files that setup or the project creates after installation.
 const GENERATED = new Set(['.harness/harness.yaml', '.codex/repository-conventions.md']);
 const BANNED = [
@@ -66,11 +68,13 @@ test('installed skill guides and agent profiles reference files that exist', asy
     const files = await promptFiles(root, ['.codex/agents', '.codex/internal-skills', '.agents/skills', '.claude/skills', '.claude/agents']);
     assert.ok(files.length > 50);
     const broken = [];
+    const ponytailReaders = [];
     for (const path of files) {
       const text = await readFile(join(root, path), 'utf8');
       const prose = path.endsWith('.md') ? outsideFences(text).join('\n') : text;
       for (const [, link] of prose.matchAll(/\]\(([^)\s#]+)(?:#[^)]*)?\)/g)) {
         if (/^(https?|mailto):/.test(link) || link.includes('<')) continue;
+        if (normalize(join(dirname(path), link)) === PONYTAIL_REFERENCE) ponytailReaders.push(path);
         if (!existsSync(normalize(join(root, dirname(path), link)))) broken.push(`${path} -> ${link}`);
       }
       for (const [, target] of text.matchAll(/`(\.(?:codex|agents|claude)\/[^`\s*<>]+\.(?:md|json|mjs|toml|yaml))`/g)) {
@@ -78,6 +82,7 @@ test('installed skill guides and agent profiles reference files that exist', asy
       }
     }
     assert.deepEqual(broken, [], `broken references in ${relative(sourceRoot, root)}`);
+    assert.deepEqual(ponytailReaders.sort(), ['frontend-implement', 'implement', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -92,6 +97,7 @@ test('agent profiles only name their role and point at the GUIDE that owns the r
   const dir = '.codex/agents';
   for (const file of (await readdir(join(sourceRoot, dir))).filter((name) => name.endsWith('.toml'))) {
     const text = await readFile(join(sourceRoot, dir, file), 'utf8');
+    assert.ok(text.endsWith(CODEX_STAGE_SKILLS), `${file}: omit the inherited Codex skill catalog`);
     // The installer replaces the marker line with the shared stage contract; it is not a rule this profile owns.
     const instructions = (/developer_instructions = """\n([\s\S]*?)\n"""/.exec(text)?.[1] || '').replace(`\n\n${STAGE_CONTRACT_MARKER}`, '');
     const guides = [...instructions.matchAll(/`(\.codex\/internal-skills\/[^`]+\/GUIDE\.md)`/g)].map(([, path]) => path);
@@ -114,14 +120,57 @@ test('every stage agent profile carries the shared stage contract marker, and an
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    for (const file of await readdir(join(sourceRoot, '.codex/agents'))) {
+      if (!file.endsWith('.toml')) continue;
+      const path = `.codex/agents/${file}`;
+      assert.ok((await readFile(join(root, path), 'utf8')).endsWith(CODEX_STAGE_SKILLS), path);
+    }
     for (const path of ['.codex/agents/workflow_stage.toml', '.claude/agents/workflow_stage.md', '.codex/agents/spec_reviewer.toml']) {
       const text = await readFile(join(root, path), 'utf8');
       assert.ok(text.includes(STAGE_CONTRACT), `${path} carries the contract`);
       assert.ok(!text.includes(STAGE_CONTRACT_MARKER), `${path} has no marker left`);
       execFileSync('git', ['check-ignore', '-q', path], { cwd: root });
     }
+    assert.doesNotMatch(await readFile(join(root, '.claude/agents/workflow_stage.md'), 'utf8'), /include_instructions/);
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }), '');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('consumer update omits the Codex skill catalog and preserves project-owned files', async (t) => {
+  await mkdir('.io', { recursive: true });
+  const fixture = await mkdtemp(resolve('.io/stage-skills-'));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const root = join(fixture, 'consumer');
+  const legacy = join(fixture, 'legacy');
+  const profile = '.codex/agents/workflow_stage.toml';
+  const current = await readFile(join(sourceRoot, profile), 'utf8');
+  await mkdir(join(legacy, dirname(profile)), { recursive: true });
+  await writeFile(join(legacy, profile), current.replace(CODEX_STAGE_SKILLS, ''));
+  execFileSync('git', ['init', '-q', root]);
+  await protectLocalInstallArtifacts(root, legacy);
+  await updateProject({ sourceRoot: legacy, targetRoot: root, initialize: true, provider: 'codex' });
+  assert.doesNotMatch(await readFile(join(root, profile), 'utf8'), /include_instructions/);
+
+  const files = {
+    '.codex/config.toml': '[skills]\ninclude_instructions = true\n',
+    '.codex/agents/project_agent.toml': 'name = "project_agent"\n',
+    'AGENTS.md': '# Consumer project guidance\n',
+    'app.js': 'export const app = true;\n',
+  };
+  for (const [path, contents] of Object.entries(files)) await writeFile(join(root, path), contents);
+  const profileUpdate = ({ code, path }) => code === 'installer_upstream_updated' && path === join(root, profile);
+  assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(profileUpdate));
+  const updated = execFileSync(process.execPath, [join(sourceRoot, 'bin/harness-install.mjs'), 'update', '--project', root, '--provider', 'codex'], { encoding: 'utf8' });
+  assert.match(updated, /^Updated: .*\.codex\/agents\/workflow_stage\.toml/m);
+  assert.ok((await readFile(join(root, profile), 'utf8')).endsWith(CODEX_STAGE_SKILLS));
+  assert.equal(await readFile(join(root, PONYTAIL_REFERENCE), 'utf8'), await readFile(join(sourceRoot, PONYTAIL_REFERENCE), 'utf8'));
+  assert.ok(!(await runDoctor({ root, sourceRoot })).diagnostics.some(profileUpdate));
+  for (const [path, contents] of Object.entries(files)) assert.equal(await readFile(join(root, path), 'utf8'), contents);
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  for (const path of [profile, PONYTAIL_REFERENCE]) assert.match(git('check-ignore', '-v', path), /\.git\/info\/exclude:/);
+  assert.deepEqual(git('status', '--short', '-uall').trimEnd().split('\n'), Object.keys(files).sort().map((path) => `?? ${path}`));
+  await rm(join(root, PONYTAIL_REFERENCE));
+  assert.ok((await runDoctor({ root })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === join(root, PONYTAIL_REFERENCE)));
 });
 
 test('the orchestrator dispatches stages to native subagents and returns format errors', async () => {

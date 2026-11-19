@@ -28,10 +28,14 @@
 
 ## Harness 원본 저장소의 설치 동작
 
+- Harness 동작을 수정하면 관리 자산 discovery·변환부터 신규 설치, 갱신, Doctor 진단, Git 제외까지 확인한다. 소비자 소유 지침과 설정은 설치기가 안전한 템플릿으로 다루는 경우에만 설치 대상으로 추가한다. Harness 관리 생성물은 소유권에 따라 `.git/info/exclude` 또는 `.gitignore`에서 제외하고, 설치 소비자의 동작과 `git status`를 회귀 검사한다.
+- 커밋한 Harness 변경을 소비자에 적용하기 전에 configured upstream에 push하고 해당 branch에서 커밋을 조회한다. 소비자 갱신과 Doctor 확인 뒤 source commit과 소비자 결과를 보고한다.
+- 설치·갱신 뒤 정리가 필요하면 `git status --short`의 모든 경로를 Harness 생성물과 프로젝트 소유 파일로 확인한다. 추적된 수정과 untracked 파일을 모두 백업하고, 소유권을 확인해 열거한 Harness 생성물만 제거한다. `git check-ignore -v`로 대표 생성물의 제외 규칙을 확인하고 `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/**`의 Git 가시성을 보존한다. 정리 뒤 `git status --short`와 백업을 다시 검증한다.
 - 공개 Harness 진입점은 `orchestrator`, `eli5`, `setup`, `harness-update`만 `.codex/skills/*/SKILL.md`에 둔다. 내부 절차와 지원 파일은 `.codex/internal-skills/*/GUIDE.md`에 두고 consumer에도 같은 경로로 설치한다. Native public copies는 `.agents/skills/`와 `.claude/skills/`에 생성한다. Loader와 agent runner는 internal GUIDE를 직접 읽는다. 관리 lock으로 확인한 과거 공개 Harness copies는 설치·갱신 시 session backup 후 제거하고, 사용자 소유 비관리 파일은 보존한다.
 - 구현 worktree 지침은 `session-worktree/references/sequential.md`와 `parallel.md`로 분리한다. wrapper는 의존성·공유 자원 판단 후 선택한 파일 하나만 읽고 `workspace_mode`·절대 `workspace_reference`를 하위 단계에 전달한다. CLI 입출력 표는 `session-worktree/references/worktree-cli.md`에 둔다. 이 내부 skill과 reference는 기존 내부 스킬 관리 자산으로 설치·업데이트·Doctor·Git 제외 검사를 받는다.
 - 계획의 실행 위치(`workspace_root`, `workspace_branch`)는 정적 실행기가 worktree.json과 Git에서 확정하며 agent가 per-plan/index에 기록하지 않는다. `internal-skills-check`는 설치·갱신된 consumer의 지침 배포, Issue renderer의 실행 위치 보존, Doctor inventory와 애플리케이션 변경의 Git 노출을 확인한다.
 - 내부 스킬 설치·갱신·비노출·호출 링크 회귀 검사는 `node --test tests/workflow_completion_retention.test.mjs`로 실행한다. 서버·외부 인프라는 필요하지 않다.
+- Codex 작업자 스킬 목록 설정의 신규 설치·갱신, Doctor 갱신 진단 및 Git 가시성은 `node --import ./tests/support/isolated-codex-home.mjs --test tests/prompt_budget.test.mjs`로 확인한다. 서버·외부 모델은 필요하지 않다.
 
 - 이전 배포본과 정확히 일치하는 폐기 Harness 자산은 update가 백업 후 제거한다. 미확인·수정 파일은 보존하고 Git에서 프로젝트 소유 파일의 가시성을 확인한다.
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
@@ -73,7 +77,8 @@ worktree cwd enforcement 회귀는 `node --import ./tests/support/isolated-codex
 - implement-wrapper 최종 완료 gate가 정본 기록(리뷰 evidence·E2E receipt·tracker·제거 목록·checkpoint)에서 도출되는지는 `node --import ./tests/support/isolated-codex-home.mjs --test tests/implement_wrapper_completion.test.mjs`로 검사한다. 임시 consumer에 설치하고 계획 리뷰·plan별 코드 리뷰·`harness-exec.mjs` receipt·계약 seal을 실제 코드로 만든 뒤 상태 파일 없이 통과, 기록별 누락 차단, 직접 쓴 `passed: true` 무시, 설치·갱신·Doctor·Git 가시성을 확인한다. 서버·인프라를 띄우지 않는다.
 - implement-wrapper의 순차 실행·통합 리뷰·최종 E2E 승인/실패 중단 지침 배포 검사는 `node --test tests/implement_wrapper_consumer.test.mjs`로 실행한다. 임시 consumer의 신규 설치·구버전 관리 자산 갱신·native 링크·Doctor 누락 진단·프로젝트 파일 Git 가시성을 확인한다. 서버·인프라나 실제 E2E를 실행하지 않는다.
 - Harness eval 계약의 집중 검사는 `npm test`로 실행한다. 외부 서비스나 모델 인증은 필요하지 않다.
-- 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 설치기는 Ponytail plugin 준비를 위해 Codex/network를 사용할 수 있으므로 실제 실행 권한과 의존성을 먼저 확인한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
+- 외부 consumer 설치/갱신 검증은 소유한 임시 디렉터리에서 Git 저장소를 만들고, 원본 저장소를 cwd로 `node bin/harness-install.mjs install --project <절대 consumer 경로>`, `node bin/harness-install.mjs update --project <동일 경로>`를 실행한다. 사용자 저장소에 `--force`를 적용해 검증하지 않는다.
+- Ponytail 구현 원칙은 `implement`, `tactical-code`, `frontend-implement`의 GUIDE에서 코드 변경 전에 읽는다. 예전 설치에서 Codex 사용자 설정의 `[plugins."ponytail@ponytail"]`이 켜져 있으면 `enabled = false`로 변경하고 새 세션에 적용한다. 설치·갱신은 사용자 설정을 보존한다. 소비자 회귀는 `env -u CODEX_HOME node --import ./tests/support/isolated-codex-home.mjs --test tests/prompt_budget.test.mjs tests/provider_install.test.mjs`로 확인한다.
 - 진단: 원본 루트를 cwd로 `node bin/harness-doctor.mjs --project <consumer 경로> --json`. `passed`, diagnostics와 exit code를 함께 확인한다.
 - workspace 검사: 검사할 저장소를 cwd로 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <절대 worktree 경로> --json`. 관리형 workflow는 등록된 linked worktree를 사용한다.
 - suite 검증: 원본 루트를 cwd로 `node bin/harness-eval.mjs run --suite <설정된 suite ID>`. `.harness/harness.yaml`, suite manifests, 인증 및 recording profile을 확인하고 `evaluate-harness`를 따른다. 모델 실행 비용이 발생할 수 있으며 일반 suite를 blind 비교라고 부르지 않는다.
@@ -247,6 +252,8 @@ workflow-compose는 Git 공통 디렉터리의 `.git/harness-reservations/`에 l
 Codex 테스트 전에 `/hooks`에서 서브에이전트 식별 훅의 신뢰 상태를 확인한다. 현재 대화 ID와 워크트리는 `harness-context.mjs --entry`에서 대조하며, 관찰 로그의 `thread.started` 값을 임의로 주입하지 않는다. 명시적으로 검토한 자동화에서 신뢰 설정을 사용할 수 없다면 상위 `codex exec`에만 `--dangerously-bypass-hook-trust`를 추가할 수 있다. 이 옵션은 활성 훅 전체의 신뢰 확인을 우회한다.
 
 ## Harness workflow E2E 정본 시나리오
+
+정본 소비자 저장소는 `/home/jiwoo/workspace/harness-test`다. 다른 세션에서도 이 저장소를 사용하고, 경로가 없으면 `git@github.com:omegafrog/harness-test.git`의 checkout을 찾거나 다시 clone한다.
 
 2026-11-05 사용자 지시: Harness를 테스트하라고 요청받으면 아래 black-box E2E를 기본 실행한다. 단위 테스트·설치 fixture·eval replay로 대체하지 않는다. 테스트 대상·원문 프롬프트·시작/종료 단계를 임의로 줄이거나 다른 작은 기능으로 바꾸지 않는다.
 

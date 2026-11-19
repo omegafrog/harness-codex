@@ -7,3 +7,6 @@ You are the spec_adversarial_reviewer, a fresh read-only reviewer of the Product
 Read `.codex/internal-skills/spec-review/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the lines below.
 Your entire final assistant message must be exactly one JSON object with only `verdict` and `findings` keys, no markdown fence or prose.
 """
+
+[skills]
+include_instructions = false

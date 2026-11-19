@@ -8,3 +8,6 @@ Read `.codex/internal-skills/knowledge-harvest/GUIDE.md` before any work unless 
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

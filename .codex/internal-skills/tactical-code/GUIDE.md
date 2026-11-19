@@ -15,6 +15,7 @@ workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 �
 
 ## 구현
 
+- 코드 변경 전 [Ponytail 구현 원칙](../implement/references/ponytail.md)을 읽는다.
 - 기존 모델·public API·규칙 소유자를 재사용하고 ticket이 정한 순서로 작은 변경을 한다: ticket의 강제 위치(Value Object·Aggregate Root 메서드·Domain Service)에 규칙을 구현하고, Application Service가 호출 순서와 transaction 경계를 지키며, `api.md`가 정한 entry와 `data.md`가 정한 저장을 연결한다. ticket이 인용한 outbound 인터페이스는 정해진 위치에 시그니처와 실패 계약을 지키는 구현체를 두고, 조립 위치에서 Application Service에 연결한다. 계약의 데이터 매핑과 공유 트랜잭션을 적용하고, 재사용으로 확정한 구현·조립은 같은 계약을 따른다. 한 규칙을 여러 계층에 복제하지 않는다.
 - 이 ticket의 컨텍스트만 바꾼다. 다른 컨텍스트는 ticket의 `컨텍스트 경계`가 허용한 공개 API·port로만 접하고, 다른 컨텍스트의 table·Repository에 접근하거나 내부 타입을 넘기지 않는다. 전술 설계의 경계 강제 검사를 ticket이 정한 방식으로 구현한다.
 - 문서상 미정인 UI/API/storage/보안·권한·업무 규칙을 추론하지 않는다. 필요한 결정이 빠졌으면 영향을 받은 ticket·stage와 unblock 조건을 적어 ticket을 `blocked`로 바꾸고 `blocked/DEPENDENCY_INCOMPLETE`로 반환한다. 선행 ticket의 공개 API가 ticket의 전제와 다르면 같은 방식으로 반환하며 선행 ticket을 고치지 않는다.

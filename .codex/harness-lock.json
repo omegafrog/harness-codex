@@ -877,6 +877,12 @@
       "source_path": ".codex/internal-skills/implement/GUIDE.md",
       "source_transform": "project-local-paths-v1"
     },
+    ".codex/internal-skills/implement/references/ponytail.md": {
+      "installed_sha256": "6cfa600a4dd7d9cfc48e78c0176a7535affe8e07755165a6efeda4e2027b4756",
+      "upstream_sha256": "6cfa600a4dd7d9cfc48e78c0176a7535affe8e07755165a6efeda4e2027b4756",
+      "source_path": ".codex/internal-skills/implement/references/ponytail.md",
+      "source_transform": "project-local-paths-v1"
+    },
     ".codex/internal-skills/implementation-guidance/GUIDE.md": {
       "installed_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",
       "upstream_sha256": "d0224c2ca2def8ac9fc9644ac76daef9994bc0092752d1d767bc18e704750cd3",

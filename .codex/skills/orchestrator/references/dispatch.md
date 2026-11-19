@@ -10,6 +10,8 @@ stage가 정해졌으면 파일 조회를 시작하기 전에 `launch`부터 실
 
 새 `execution_id`마다 반환된 `agent_profile`의 새 native 작업자를 시작한다. Codex는 `spawn_agent`에 `fork_turns: "none"`을 주고, 이름을 지정할 수 있으면 실행마다 다른 이름을 쓴다. Claude Code는 명시적 `subagent_type`으로 fresh `Agent`를 시작하며 필요하면 백그라운드로 실행한다. 이미 bind된 작업자에게 다음 실행을 맡길 수 없다. 작업자 ID 반환과 메시지 전달, 지정 profile의 sandbox·권한, `binding`의 모델과 effort를 현재 CLI에서 적용할 수 있을 때 시작한다. 보조 조사도 지명된 profile에 질문과 필요한 파일 범위만 맡긴다. 부모 이력이나 산출물 본문을 붙여 넣지 않는다. 작업자는 실제 ID를 받으면 반환된 `guide`·`input_path`·`schema_path`와 제공된 경우 `answers_path`·`feedback_path`를 읽는다. `workspace_root`, `execution_id`, bind한 실제 `agent_id`와 bind의 `receive_command`를 함께 건넨다. 별도의 공통 지침은 설치된 profile에서 읽는다.
 
+Codex의 Harness 작업자 프로필은 `skills.include_instructions = false`로 자동 스킬 목록을 생략한다. 작업자는 배정된 GUIDE와 현재 단계에서 필요한 참조를 경로로 연다. 사용자가 배정된 작업에 외부 스킬을 명시했다면 해당 스킬 파일의 경로도 전달한다.
+
 현재 전술 설계 양식은 작업자가 `completed/OK`를 제출할 때 소유 부분을 검증한다. `domain-model`은 모델 필드·메서드·업무 연결, `aggregate-design`은 Aggregate 구조·담당 규칙·클래스 다이어그램, `domain-service`는 남은 규칙 책임, `application-service`는 업무 커버리지·호출·트랜잭션·포트를 본다. `context-boundary`에서는 문서 전체를 다시 확인한다. 이전 번호식 문서는 기존 마지막 gate를 사용한다. `gate_error`는 결과나 commit을 남기지 않으며, 오류를 같은 작업자에게 돌려준다. 자기 산출물의 오류는 그 자리에서 고치고 다시 제출한다. 앞 stage의 오류는 `owner_stage`와 `dependency_gap`을 갖춘 `blocked/DEPENDENCY_INCOMPLETE`로 제출해 실제 소유자에게 보낸다.
 
 ## 작업자 대기와 실행 복구

@@ -20,3 +20,6 @@ Hot-path contract:
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

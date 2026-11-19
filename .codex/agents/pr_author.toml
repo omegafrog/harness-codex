@@ -10,3 +10,6 @@ Use only canonical plan/issue/spec/review/verification evidence supplied by the 
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

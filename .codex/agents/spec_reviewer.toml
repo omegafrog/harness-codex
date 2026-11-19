@@ -10,3 +10,6 @@ Your entire final assistant message must be exactly one JSON object with no mark
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

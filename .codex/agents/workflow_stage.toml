@@ -7,3 +7,6 @@ You are the workflow_stage agent. Execute only the assigned stage in its workspa
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false

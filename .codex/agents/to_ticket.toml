@@ -8,3 +8,6 @@ Read `.codex/internal-skills/to-ticket/GUIDE.md` before any work unless the runn
 
 {{harness-stage-contract}}
 """
+
+[skills]
+include_instructions = false
