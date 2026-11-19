@@ -667,7 +667,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
   if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
-  if (stageId === 'to-ticket') {
+  if (stageId === 'to-ticket' && plan_set_id) {
+    const { planDesignPaths } = await import('./plan-review.mjs');
+    for (const path of await planDesignPaths({ root, planSetId: plan_set_id })) {
+      if (!input_refs.some((reference) => reference.base === 'workspace' && reference.path === path)) input_refs.push({ base: 'workspace', path });
+    }
     const ui = state.stages?.['tactical-ui'];
     if (ui?.status === 'completed' && ui.code === 'OK' && ui.result_ref) {
       const result = await readSkillSessionJson({ root, session_directory: taskSession, path: ui.result_ref });

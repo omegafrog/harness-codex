@@ -5,17 +5,17 @@
 ## 입력과 분석
 
 1. `context.worktree_ref`가 가리키는 정본 `worktree.json`에서 `workspace`, `session_directory`, `branch`, `head`, `return_root`, `plan_set_id`를 읽는다. `plan_set_id`가 없으면 중단한다. Tracker ticket ID와 같을 필요는 없다. `workspace`를 작업 위치로 사용한다. 진입 시 `node .codex/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --defer-tracker-sync --json`을 실행해 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다.
-2. 아래 문서를 읽는다. 이 문서들이 분할의 유일한 근거이며 다른 설계 문서를 만들거나 찾지 않는다.
+2. `input_refs`가 준 경로를 직접 연다. 정본 위치는 아래 표의 `<plan-set-id>`에 `context.plan_set_id`를 대입하면 된다. 경로를 확인하기 위해 와일드카드, `rg --files`, 디렉터리 목록을 사용하지 않는다. 다른 계획 세트의 문서를 근거로 사용하지 않는다.
 
    | 문서 | 쓰임 |
    |---|---|
    | `docs/specs/<plan-set-id>/requirements.md` | BIZ·INV·EX·AC. 규칙의 정본이며 ticket은 규칙을 더하거나 조이지 않는다 |
-   | `docs/specs/<plan-set-id>/tactical-design.md` | 컨텍스트별 모델·Aggregate·업무 규칙·Application Service 메서드·인터페이스, 메서드별 통합, 컨텍스트 경계와 결정 이력 |
+   | `docs/specs/<plan-set-id>/tactical-design.md` | 범위 내 BIZ가 참조하는 컨텍스트, Aggregate·규칙 강제 위치, Application Service 메서드·트랜잭션, outbound 인터페이스·통합·경계 결정을 확인한다 |
    | `CONTEXT.md`, `CONTEXT-MAP.md` | 용어, 컨텍스트와 관계 방향 |
    | `docs/implementation/<plan-set-id>/technology.md`, `api.md`, `data.md` | 기술·API·데이터 및 인터페이스 바인딩. ticket이 의존하는 결정이다 |
-   | `tactical-ui` 결과의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design |
+   | `input_refs`의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design이다. 참조가 없으면 brief를 찾지 않는다 |
 
-   기존 번호별 형식의 전술 설계와 구현 결정은 작성 당시의 절·표를 근거로 사용한다. 현행 `docs/contracts/`와 연결 다이어그램, 요청 원문도 읽는다. `stakeholder-analysis`가 `판정: 생략`이라 `requirements.md`와 `tactical-design.md`가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 문서의 빈칸이나 모순 때문에 분할을 정할 수 없으면 설계 stage로 되돌아가지 않고 `blocked/INPUT_MISSING`과 `DESIGN_NOT_FROZEN:`으로 시작하는 summary(문서·항목·요구 ID)를 반환한다. `to-ticket`은 확정된 설계만 ticket으로 나누며 `owner_stage`·`dependency_gap`은 `null`이다.
+   `requirements.md`에서 범위 내 BIZ와 각 INV·EX·AC를 먼저 식별하고, 전술 설계는 그 BIZ와 연결된 절·표만 읽는다. 경계·의존 순서에 근거가 필요하면 해당 호출이나 참조의 반대편 절과 링크를 따라간다. 기존 번호별 형식도 해당 절·표를 사용한다. 요청 원문은 입력의 `scope`에서 확인하고, 프로젝트 계약이나 다이어그램은 적용할 판단의 정확한 참조가 있을 때 연다. `stakeholder-analysis`가 `판정: 생략`이라 두 문서가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 필수 입력이 없거나 문서의 빈칸·모순 때문에 분할을 정할 수 없으면 `blocked/INPUT_MISSING`과 `DESIGN_NOT_FROZEN:`으로 시작하는 summary(정본 경로·항목·요구 ID)를 반환한다. `owner_stage`·`dependency_gap`은 `null`이다.
 3. 활성 workspace의 `<workspace_root>/.codex/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 ticket 예상 토큰과 산정 근거를 기록하고, 각 ticket이 한도 안에 들도록 나눈다.
 
 ## 분할 기준

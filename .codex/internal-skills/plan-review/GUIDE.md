@@ -7,13 +7,13 @@ model_tier: high_performance
 
 ## 기준
 
-최초 독립 리뷰는 review snapshot이 지정한 설계 문서, 계획 index와 모든 canonical ticket을 직접 읽고 대조한다. 설계 문서는 admission의 `files`에 있는 것이 전부다: `docs/specs/<plan-set-id>/requirements.md`, `tactical-design.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/implementation/<plan-set-id>/`의 `technology.md`·`api.md`·`data.md`와 해당되는 frontend design artifact다. 과거 `ui-handoff.md`가 있으면 기존 리뷰 근거로 보존한다. 재리뷰는 아래 변경 범위 규칙을 따른다. 요구사항의 BIZ·INV·EX·AC, 전술 설계의 모델·Aggregate·Application Service·통합·컨텍스트 경계, 각 ticket의 `max_plan_tokens`, ticket 간 의존·인계, 업무 규칙 단위 테스트와 경계 강제 검사를 검토한다.
+최초 독립 리뷰는 admission의 `files`가 준 정확한 경로로 계획 index와 모든 canonical ticket을 열고, 요구사항의 BIZ·INV·EX·AC 전체와 양방향으로 대조한다. 전술 설계에서는 각 BIZ와 ticket이 의존하는 모델·Aggregate·Application Service·통합·컨텍스트 경계의 절·표만 읽는다. 기술·API·데이터 결정도 같은 방식으로 연결된 근거를 확인한다. frontend design과 과거 `ui-handoff.md`는 admission에 포함된 경우에 읽는다. 문서 경로를 재검색하지 않는다. 각 ticket의 `max_plan_tokens`, ticket 간 의존·인계, 업무 규칙 단위 테스트와 경계 강제 검사도 검토한다.
 
 양방향으로 대조한다. 요구사항의 모든 BIZ·INV·EX·AC가 정확히 한 ticket에 소유되고 검증 테스트를 갖는지, 반대로 ticket의 모든 규칙·제한·동작·테스트 기대값이 `requirements.md`나 전술 설계에 근거가 있는지 확인한다. 사용자 승인 기록이 있어도 근거 없는 규칙을 더하거나 규칙을 더 엄격하게 만든 ticket은 major로 지적한다. 그 변경은 `SPEC_REVISION_REQUIRED`로 요구사항에 먼저 반영한다.
 
 파생 작업은 없을 때 실패하는 INV/EX/AC, BIZ 또는 컨텍스트 경계 규칙을 설명해야 한다. 넓은 의도나 관행·편의·미래 확장만으로 정당화한 작업·의존성·검증은 제외하도록 지적한다. 리뷰어의 누락 지적도 같은 근거와 실패 조건이 필요하며, 선택적 개선을 필수 작업이나 사용자 질문으로 만들지 않는다.
 
-자동 검사는 전체 입력 snapshot과 이전 hash·지적을 보존한다. 최초 리뷰는 전체를 읽고, 재리뷰는 admission의 `inputs`와 `previous_inputs`를 비교해 변경된 파일 전체, `previous_findings`와 직접 영향을 받는 설계·ticket 관계를 새 reviewer가 확인한다. 이전에 통과한 무관한 항목은 유지한다. 이전 기준이 없거나 모호하거나 동일하면 전체 snapshot과 이전 지적을 독립적으로 검토한다. 리뷰 지침이나 환경 문제로 리뷰가 성립하지 않았으면 계획을 임의로 바꾸지 않고 현재 snapshot을 새 reviewer가 다시 검토한다. 기존 리뷰 이력과 실제 지적, 재시도 한도는 유지한다. 변경 영향 판단은 reviewer가 수행하며 전체 snapshot gate는 계속 현재성을 확인한다.
+자동 검사는 전체 파일을 해시해 입력 snapshot의 현재성을 확인하고 이전 hash·지적을 보존한다. 재리뷰는 admission의 `inputs`와 `previous_inputs`를 비교해 변경된 파일 전체, `previous_findings`와 직접 영향을 받는 설계·ticket 관계를 새 reviewer가 확인한다. 이전에 통과한 무관한 항목은 유지한다. 이전 기준이 없거나 모호하거나 동일하면 최초 리뷰의 범위와 이전 지적을 독립적으로 검토한다. 리뷰 지침이나 환경 문제로 리뷰가 성립하지 않았으면 계획을 임의로 바꾸지 않고 현재 snapshot을 새 reviewer가 다시 검토한다. 기존 리뷰 이력과 실제 지적, 재시도 한도는 유지한다. 변경 영향 판단은 reviewer가 수행한다.
 
 ## 실행 모델과 반환
 

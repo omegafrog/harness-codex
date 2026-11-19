@@ -166,7 +166,8 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     await mkdir(join(tree.session_directory, 'runtime/executions/failed-to-ticket'), { recursive: true });
     const failedRestart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.notEqual(failedRestart.input.execution_id, restart.input.execution_id);
-    assert.deepEqual(failedRestart.input.input_refs, []);
+    assert.deepEqual(failedRestart.input.input_refs, restart.input.input_refs, 'a restart uses the same fixed design inputs');
+    assert.ok(failedRestart.input.input_refs.every(({ base }) => base === 'workspace'), 'a restart excludes earlier attempt artifacts');
     assert.equal(await readFile(join(tree.workspace, 'docs/specs/calculator/tactical-design.md'), 'utf8'), specBeforeRestart.toString());
     assert.equal((await readdir(join(tree.session_directory, 'runtime/restarts'))).length, 2);
   } finally {
