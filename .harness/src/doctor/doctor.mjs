@@ -12,7 +12,7 @@ import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
 import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/skill-execution.mjs";
-import { inspectOrchestratorHook } from '../installer/orchestrator-hook.mjs';
+import { inspectRetiredProjectHooks } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
 import { parseSkillDeclaration } from "../workflow/skill-declaration.mjs";
@@ -117,7 +117,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     '.codex/schemas/decision/architecture-decision.schema.yaml',
     '.codex/scripts/harness-publication.mjs',
     ...['input', 'return', 'question', 'workflow-compose-result', 'workflow-compose-input', 'flows/common', 'flows/plan-review', 'flows/spec-review'].map((name) => `.harness/schemas/${name}.schema.json`),
-    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'orchestrator-hook', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.codex/scripts/harness-${name}.mjs`),
   ];
   // The orchestrator owns the stage coordination references; each installed provider copy carries them.
   for (const skills of ['.agents/skills', '.claude/skills']) {
@@ -129,7 +129,7 @@ async function inspectExecutionAssets(root, diagnostics) {
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
-    paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator', 'scripts/harness-claude-orchestrator-hook'].map((name) => `.claude/harness/${name}.mjs`));
+    paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
       if (profile.isFile() && profile.name.endsWith('.toml')) paths.push(`.claude/agents/${profile.name.replace(/\.toml$/, '.md')}`);
     }
@@ -507,19 +507,14 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     const inputIgnored = await git(['check-ignore', '--no-index', '-q', '.io/probe/skill/execution/input.json']);
     if (inputIgnored.status !== 0) diagnostics.push(diagnostic('execution_input_not_ignored', 'error', 'Harness execution inputs are not ignored by Git', join(repositoryRoot, '.io')));
   }
-  const hookScript = join(repositoryRoot, '.codex/scripts/harness-orchestrator-hook.mjs');
-  // The Codex project hook only matters when Codex is the active provider; Claude Code registers its own hook in .claude/settings.local.json.
-  // setup does not persist agents.provider (the running CLI decides), so a Claude-only installation is recognised by its own hook file.
+  // setup does not persist agents.provider. The current CLI or provider configuration selects the diagnostics.
   const claudeProvider = await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider) === 'claude-code' || (!config.agents?.provider && Boolean(config.agents?.['claude-code']) && !config.agents?.codex), () => false);
-  if (await lstat(hookScript).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
-    try {
-      const hook = await inspectOrchestratorHook(repositoryRoot);
-      if (hook.retired_hooks) diagnostics.push(diagnostic('retired_beads_hook', 'warning', 'Retired Beads hooks remain; update Harness to back up and remove them', hook.path));
-      const userHook = !claudeProvider && !hook.valid && await (await import('../workflow/providers/codex.mjs')).codexUserOrchestratorHookInstalled().catch(() => false);
-      if (!claudeProvider && !hook.valid && !userHook) diagnostics.push(diagnostic('orchestrator_hook_missing', 'error', hook.reason, hook.path));
-    } catch (error) {
-      if (!claudeProvider) diagnostics.push(diagnostic('orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid orchestrator hook'), join(repositoryRoot, '.codex/hooks.json')));
-    }
+  try {
+    const hook = await inspectRetiredProjectHooks(repositoryRoot);
+    if (hook.beads) diagnostics.push(diagnostic('retired_beads_hook', 'warning', 'Retired Beads hooks remain; update Harness to back up and remove them', hook.path));
+    if (hook.startup) diagnostics.push(diagnostic('retired_orchestrator_hook', 'warning', 'Retired Harness startup hooks remain; update Harness to back up and remove them', hook.path));
+  } catch (error) {
+    if (!claudeProvider) diagnostics.push(diagnostic('codex_project_hooks_invalid', 'error', safeMessage(error, 'Invalid Codex project hooks'), join(repositoryRoot, '.codex/hooks.json')));
   }
   // Model settings live under agents.<provider>; older flat keys must be moved by update or setup.
   const agentConfig = await readFile(join(repositoryRoot, '.harness/harness.yaml'), 'utf8').then((text) => parseYaml(text), () => null);
@@ -529,7 +524,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     try {
       const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
-      if (trust.orchestrator_hook !== 'trusted') diagnostics.push(diagnostic('codex_orchestrator_hook_untrusted', 'warning', trust.orchestrator_hook === 'missing' ? 'Harness orchestrator user hook is missing from the Codex user hooks; run setup with the codex provider so new worktrees need no hook review' : 'Harness orchestrator user hook is not trusted; run /hooks in Codex and trust "Running Harness orchestrator hook" once for all worktrees', null));
+      if (trust.retired_startup) diagnostics.push(diagnostic('retired_codex_user_orchestrator_hook', 'warning', 'The retired Harness startup hook remains in Codex user hooks; run setup with the codex provider after updating any other Harness checkouts that still use it', trust.hooks_path));
       if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked Harness agents are refused before they start', null));
       if (trust.write_guard !== 'trusted') diagnostics.push(diagnostic('codex_write_guard_hook_untrusted', 'warning', trust.write_guard === 'missing' ? 'Harness write-guard hook is missing from the Codex user hooks; run setup with the codex provider so the orchestrator main session cannot edit product code, tests or contracts' : 'Harness write-guard hook is not trusted; run /hooks in Codex and trust "Guarding Harness orchestrator writes" (PreToolUse) so the orchestrator main session cannot edit product code, tests or contracts', null));
       if (!trust.trusted) diagnostics.push(diagnostic('codex_subagent_hook_untrusted', 'warning', trust.missing.length ? 'Harness subagent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness subagent hook is not trusted; run /hooks in Codex and trust "Recording Harness subagent". Codex stages will not start until then.', trust.hooks_path, { missing: trust.missing, untrusted: trust.untrusted }));
@@ -542,6 +537,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       const { inspectClaudeOrchestratorHook } = await import('../../../.claude/harness/installer/claude-orchestrator-hook.mjs').catch((error) => { throw error.code === 'ERR_MODULE_NOT_FOUND' ? new Error('agents.provider is claude-code but the Claude provider is not installed; install with --provider claude-code or all') : error; });
       const hook = await inspectClaudeOrchestratorHook(repositoryRoot);
       if (!hook.valid) diagnostics.push(diagnostic('claude_orchestrator_hook_missing', 'error', hook.reason, hook.path));
+      if (hook.retired_startup) diagnostics.push(diagnostic('retired_orchestrator_hook', 'warning', 'Retired Harness startup hooks remain; update Harness to back up and remove them', hook.path));
     } catch (error) {
       diagnostics.push(diagnostic('claude_orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid Claude Code orchestrator hook'), join(repositoryRoot, '.claude/settings.local.json')));
     }

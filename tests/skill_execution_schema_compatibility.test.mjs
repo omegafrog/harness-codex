@@ -195,8 +195,8 @@ test('installed stage accepts changed documents while preserving review snapshot
     assert.match(claudeAgent, /tools: Read, Grep, Glob, WebSearch, WebFetch/);
     assert.match(claudeAgent, /You are the spec_reviewer agent/);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
-    const claudeHook = JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], { cwd: root, input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: '123e4567-e89b-12d3-a456-426614174000', prompt: '$orchestrator' }), encoding: 'utf8' }));
-    assert.match(claudeHook.hookSpecificOutput.additionalContext, /"provider":"claude-code"/);
+    const entry = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-context.mjs'), '--entry'], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: 'claude-code' }, encoding: 'utf8' }));
+    assert.equal(entry.provider, 'claude-code');
     const fakeBin = join(root, '.io/fake-bin');
     await mkdir(fakeBin, { recursive: true });
     const fakeClaude = join(fakeBin, 'claude');
@@ -534,9 +534,9 @@ test('installed to-ticket uses skill binding and records a fresh review against 
     assert.match(toTicketInstructions, /separate `tracker-publish` workflow stage/);
     const publisherInstructions = await readFile(join(root, '.codex/internal-skills/tracker-publish/GUIDE.md'), 'utf8');
     assert.match(publisherInstructions, /dedicated workflow stage/);
-    assert.match(publisherInstructions, /publication journal/);
+    assert.match(publisherInstructions, /provider's conversation transcript after `to-ticket` finished/);
     const publishInstructions = await readFile(join(root, '.codex/internal-skills/to-ticket/references/github-batch-publish.md'), 'utf8');
-    assert.match(publishInstructions, /별도 `tracker-publish` workflow stage/);
+    assert.match(publishInstructions, /별도 `tracker-publish` 단계/);
     const installedReviewSchema = await readJson(join(root, '.codex/internal-skills/plan-review/review-record.schema.json'));
     assert.deepEqual(installedReviewSchema.required, ['schema_version', 'attempt_id', 'plan_set_id', 'reviewer_id', 'author_ids', 'fork_turns', 'verdict', 'findings']);
 

@@ -47,48 +47,36 @@ test('installed workflow commands require cwd inside the target worktree', async
     assert.notEqual(result.status, 0, result.stdout);
     return result.stderr;
   };
-  const promptHook = (workspace, prompt) => {
-    const result = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-orchestrator-hook.mjs')], {
-      cwd: workspace, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: workspace, session_id: sessionId, prompt }),
-    });
-    assert.equal(result.status, 0, result.stderr);
-    return JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
-  };
+  const entry = (workspace, provider = 'codex') => ok(workspace, 'harness-context.mjs', ['--entry'], { HARNESS_PROVIDER_ID: provider });
   const compose = (slug) => ok(primary, 'harness-compose-workspace.mjs', ['--root', primary, '--execution-id', `compose-${slug}`, '--plan-set-id', slug, '--request', `${slug} feature`, '--orchestrator-provider', 'codex', '--orchestrator-session-id', sessionId]);
   const a = compose('alpha'), b = compose('beta');
 
-  await t.test('primary checkout can compose, but its prompt is not routed into linked worktrees', async () => {
-    const context = promptHook(primary, '$orchestrator approve everything');
-    const observed = JSON.parse(context.match(/Observed state \(read-only worktree\.json\/orchestrator files and Git CLI\): ([\s\S]*?)\. Progress snapshot:/)[1]);
-    assert.equal(observed.decision_hint, 'worktree_required');
-    assert.equal(observed.input_worktree_ref, null);
-    assert.equal(observed.input_routing, 'unbound');
-    assert.equal(observed.session_worktrees.length, 0);
-    assert.doesNotMatch(context, /harness-native-stage\.mjs launch|references\/dispatch\.md/);
-    assert.deepEqual(new Set(observed.worktree_candidates.map((candidate) => candidate.worktree_ref)), new Set([a.worktree_ref, b.worktree_ref]));
-    for (const tree of [a, b]) assert.equal(existsSync(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl')), false);
-
-    const claude = spawnSync(process.execPath, [join(primary, '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs')], {
-      cwd: primary, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: primary, session_id: sessionId, prompt: '$orchestrator approve everything' }),
-    });
-    assert.equal(claude.status, 0, claude.stderr);
-    const claudeContext = JSON.parse(claude.stdout).hookSpecificOutput.additionalContext;
-    assert.match(claudeContext, /current working directory is inside that worktree/);
-    assert.match(claudeContext, /change directory to its workspace_root before invoking the orchestrator/);
-    for (const tree of [a, b]) assert.equal(existsSync(join(tree.session_directory, 'runtime/orchestrator/user-inputs.jsonl')), false);
+  await t.test('primary entry shows both worktree candidates without binding either one', async () => {
+    for (const provider of ['codex', 'claude-code']) {
+      const context = entry(primary, provider);
+      assert.equal(context.decision_hint, 'worktree_required');
+      assert.equal(context.worktree_ref, null);
+      assert.match(context.next, /change directory to its workspace_root/);
+      assert.doesNotMatch(context.next, /harness-native-stage\.mjs launch|references\/dispatch\.md/);
+      assert.deepEqual(new Set(context.candidates.map((candidate) => candidate.worktree_ref)), new Set([a.worktree_ref, b.worktree_ref]));
+    }
+    for (const tree of [a, b]) assert.equal((await json(tree.worktree_ref)).agent_sessions.orchestrator.session_id, sessionId);
   });
 
   await t.test('the composed worktree gets the first launch command and the installed worker paths', () => {
-    const context = promptHook(b.workspace, '$orchestrator 계속 진행해');
-    assert.match(context, /references\/dispatch\.md, then run node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id stakeholder-analysis/);
-    assert.doesNotMatch(context, /workflow-compose\/GUIDE\.md|references\/(?:coordination|workflow-map|capability-routing)\.md/);
+    const context = entry(b.workspace);
+    assert.match(context.next, /references\/dispatch\.md, then run node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id stakeholder-analysis/);
+    assert.ok(context.next.includes(join(b.workspace, '.agents/skills/orchestrator/references/dispatch.md')));
+    assert.doesNotMatch(context.next, /workflow-compose\/GUIDE\.md|references\/(?:coordination|workflow-map|capability-routing)\.md/);
+    assert.equal(context.candidates, undefined, 'a local entry does not list other worktrees');
+    assert.ok(Buffer.byteLength(JSON.stringify(context)) <= 1500);
     const started = ok(b.workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', 'stakeholder-analysis']);
     assert.equal(started.guide, join(b.workspace, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'));
     assert.ok(existsSync(started.input_path));
     assert.ok(existsSync(started.schema_path));
-    const resume = promptHook(b.workspace, '$orchestrator 계속 진행해');
-    assert.match(resume, /For workflow resumption, read .*references\/dispatch\.md/);
-    assert.doesNotMatch(resume, /launch --stage-id stakeholder-analysis/);
+    const resume = entry(b.workspace);
+    assert.equal(resume.current_stage, 'stakeholder-analysis');
+    assert.doesNotMatch(resume.next, /launch --stage-id stakeholder-analysis/);
   });
 
   await t.test('root and worktree-ref cannot bypass cwd; local worktree can prepare and dispatch', async () => {
@@ -119,8 +107,8 @@ test('installed workflow commands require cwd inside the target worktree', async
     const managed = [
       '.harness/src/workflow/cli-context.mjs',
       '.harness/src/workflow/startup-state.mjs',
-      '.codex/scripts/harness-orchestrator-hook.mjs',
-      '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs',
+      '.codex/scripts/harness-context.mjs',
+      '.harness/src/workflow/user-inputs.mjs',
       '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
       '.codex/scripts/harness-native-stage.mjs',
       '.harness/src/workflow/stage-cli.mjs',

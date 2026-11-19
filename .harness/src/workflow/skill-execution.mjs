@@ -285,9 +285,9 @@ export async function validateSkillInput({ root, input }) {
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
     requireValue(request.target_commit === head && Array.isArray(request.scenarios) && request.scenarios.length > 0 && request.scenarios.every((item) => typeof item === 'string' && item.trim()) && profile?.purpose === 'e2e' && Number.isInteger(request.timeout_ms) && request.timeout_ms > 0 && profile.timeout_ms === request.timeout_ms, 'E2E request does not match the current commit or profile');
-    const inputs = (await readFile(join(session, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    const { userSaidAfter } = await import('./user-inputs.mjs');
     const orchestratorId = input.context.orchestrator_session_id || input.context.codex_session_id;
-    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId), 'E2E request approval was not recorded');
+    requireValue(typeof request.approval_answer === 'string' && request.approval_answer.trim() && orchestratorId && await userSaidAfter({ root, text: request.approval_answer, sessionId: orchestratorId, provider: input.context.orchestrator_provider || 'codex', allowHistoricalOwner: true }), 'E2E request approval was not recorded');
   }
 }
 

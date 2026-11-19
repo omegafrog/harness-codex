@@ -314,8 +314,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (tacticalImplementationViolation) throw new Error(tacticalImplementationViolation);
   if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
   if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
-  // The orchestrator's own words cannot prove that the user approved: the user's reply to the reviewed plan set must be in
-  // the log of the user's actual inputs, written after to-ticket finished. A bare flag publishes nothing.
+  // The provider transcript must contain the user's reply after the reviewed plan set finished.
   if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z' }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
@@ -559,7 +558,6 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (review.review_input?.implementation_commit_sha !== head || (receipt.head && receipt.head !== head)) throw new Error('E2E failure target commit is stale');
       const plan = await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`), 'utf8');
       if (!plan.includes(`\`${receipt.profile_id}\``)) throw new Error('E2E failure profile does not match the plan');
-      const inputs = (await readFile(join(taskSession, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
       const orchestratorId = orchestratorSession?.session_id || codexSessionId;
       if (testDefectFailure) {
         if (!/^runtime\/e2e\/[A-Za-z0-9._-]+\/failure\.json$/.test(testDefectFailure)) throw new Error('Invalid test defect evidence reference');
@@ -567,7 +565,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         const copy = await readSkillSessionJson({ root, session_directory: taskSession, path: testDefectFailure.replace(/failure\.json$/, 'receipt.json') });
         if (receipt.status !== 'failed' || receipt.phase !== 'command' || failure.status !== 'failed' || failure.profile_id !== receipt.profile_id || failure.target_commit !== head || !Array.isArray(failure.failures) || !failure.failures.length || !isDeepStrictEqual(copy, receipt)) throw new Error('Test defect evidence does not match the failed E2E run');
       }
-      if (!orchestratorId || !inputs.some((item) => item.text === approvalAnswer && item.session_id === orchestratorId && (testDefectFailure ? Date.parse(item.at) <= Date.parse(receipt.started_at) : Date.parse(item.at) > Date.parse(receipt.finished_at)))) throw new Error('E2E repair approval was not recorded for this failure');
+      if (!orchestratorId || !await userSaidAfter({ root, text: approvalAnswer, sessionId: orchestratorId, provider, ...(testDefectFailure ? { until: receipt.started_at } : { since: new Date(Date.parse(receipt.finished_at) + 1).toISOString() }) })) throw new Error('E2E repair approval was not recorded for this failure');
       for (const [path, hash] of Object.entries(receipt.config_hashes || {})) {
         await assertWorkspaceTarget(root, path);
         if (createHash('sha256').update(await readFile(join(root, path))).digest('hex') !== hash) throw new Error(`E2E failure receipt is stale: ${path}`);
@@ -653,9 +651,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
     if (profile?.purpose !== 'e2e' || profile.timeout_ms !== request.timeout_ms) throw new Error('E2E request does not match the execution profile');
-    const inputs = (await readFile(join(taskSession, 'runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
     const orchestratorId = orchestratorSession?.session_id || codexSessionId;
-    if (!orchestratorId || !inputs.some((item) => item.text === request.approval_answer && item.session_id === orchestratorId)) throw new Error('E2E request approval was not recorded');
+    if (!orchestratorId || !await userSaidAfter({ root, text: request.approval_answer, sessionId: orchestratorId, provider })) throw new Error('E2E request approval was not recorded');
     input_refs.push({ base: 'session', path: e2eRequest, kind: 'approved_e2e_request', sha256: createHash('sha256').update(await readFile(join(taskSession, e2eRequest))).digest('hex') });
   }
   let plan_review_admission;

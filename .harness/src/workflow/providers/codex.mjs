@@ -1,6 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 
 export const id = 'codex';
 
@@ -44,39 +44,41 @@ export function codexWriteGuardHook() {
     timeout: 10,
   };
 }
-// Codex trusts a hook by its hooks.json path and command, so a project hook written into each new worktree needed a
-// new review every time. This user-level hook is trusted once and runs the orchestrator hook of whatever Harness
-// workspace the session is in; it steps aside where the project's own hooks.json already has it.
 const ORCHESTRATOR_STATUS = 'Running Harness orchestrator hook';
-export const ORCHESTRATOR_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
-export function codexOrchestratorHook() {
-  return {
-    type: 'command',
-    command: `sh -c 'r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; f="$r/.codex/scripts/harness-orchestrator-hook.mjs"; [ -f "$f" ] || exit 0; grep -qs harness-orchestrator-hook.mjs "$r/.codex/hooks.json" && exit 0; exec node "$f"'`,
-    statusMessage: ORCHESTRATOR_STATUS,
-    timeout: 10,
-  };
-}
-const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, { event: 'PreToolUse', status: WRITE_GUARD_STATUS, handler: codexWriteGuardHook }, ...ORCHESTRATOR_EVENTS.map((event) => ({ event, status: ORCHESTRATOR_STATUS, handler: codexOrchestratorHook }))];
+const RETIRED_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
+const retiredStartup = (item) => item?.type === 'command' && item.statusMessage === ORCHESTRATOR_STATUS
+  && item.command === `sh -c 'r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; f="$r/.codex/scripts/harness-orchestrator-hook.mjs"; [ -f "$f" ] || exit 0; grep -qs harness-orchestrator-hook.mjs "$r/.codex/hooks.json" && exit 0; exec node "$f"'`;
+const retiredGroup = (group) => Array.isArray(group?.hooks) && group.hooks.some(retiredStartup);
+const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, { event: 'PreToolUse', status: WRITE_GUARD_STATUS, handler: codexWriteGuardHook }];
 
-// Whether the user-level orchestrator hook is installed; worktrees then need no project hook of their own.
-export async function codexUserOrchestratorHookInstalled(env = process.env) {
-  const text = await readFile(join(codexHome(env), 'hooks.json'), 'utf8').catch(() => null);
-  if (!text) return false;
-  try {
-    const hooks = JSON.parse(text).hooks || {};
-    return ORCHESTRATOR_EVENTS.every((event) => (hooks[event] || []).some((group) => (group.hooks || []).some((handler) => handler?.statusMessage === ORCHESTRATOR_STATUS && handler.command === codexOrchestratorHook().command)));
-  } catch { return false; }
-}
-
-export async function syncCodexSubagentHook(env = process.env) {
-  const path = join(codexHome(env), 'hooks.json');
+export async function syncCodexSubagentHook(env = process.env, { retireStartupOnly = false } = {}) {
+  const configuredPath = join(codexHome(env), 'hooks.json');
+  // Account managers can share hooks.json by symlink. Write its target so all accounts keep the same file.
+  const path = await realpath(configuredPath).catch(async (error) => {
+    if (error.code !== 'ENOENT') throw error;
+    const existing = await lstat(configuredPath).catch((failure) => failure.code === 'ENOENT' ? null : Promise.reject(failure));
+    if (existing) throw error;
+    return configuredPath;
+  });
   const text = await readFile(path, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   const config = text === null ? { hooks: {} } : JSON.parse(text);
   if (!config || typeof config !== 'object' || Array.isArray(config) || (config.hooks !== undefined && (typeof config.hooks !== 'object' || Array.isArray(config.hooks)))) throw new Error(`Invalid Codex hooks configuration: ${path}`);
   config.hooks ||= {};
   let changed = false;
-  for (const { event, status, handler } of OWNED_HOOKS) {
+  for (const event of RETIRED_EVENTS) {
+    const groups = config.hooks[event];
+    if (!Array.isArray(groups) || !groups.some(retiredGroup)) continue;
+    const kept = groups.map((group) => {
+      if (!retiredGroup(group)) return group;
+      const hooks = group.hooks.filter((handler) => !retiredStartup(handler));
+      return { ...group, hooks };
+    });
+    // Keep group slots for other hooks: Codex stores their trust by event, group index and handler index.
+    if (kept.every((group) => Array.isArray(group?.hooks) && !group.hooks.length)) delete config.hooks[event];
+    else config.hooks[event] = kept;
+    changed = true;
+  }
+  if (!retireStartupOnly) for (const { event, status, handler } of OWNED_HOOKS) {
     const want = handler();
     const groups = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
     const owned = groups.flatMap((group) => group.hooks || []).filter((item) => item?.statusMessage === status);
@@ -128,14 +130,13 @@ export async function inspectCodexHookTrust(env = process.env) {
   const freshGroups = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
   const freshSlots = freshGroups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:pre_tool_use:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === FRESH_AGENT_STATUS);
   const freshAgentCheck = !freshSlots.length ? 'missing' : freshSlots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash('pre_tool_use', handler)) ? 'trusted' : 'untrusted';
-  const slotState = (event, status, handler) => {
+  const slotState = (event, status) => {
     const slots = (Array.isArray(hooks[event]) ? hooks[event] : []).flatMap((group, groupIndex) => (group.hooks || []).map((item, handlerIndex) => ({ item, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ item }) => item?.statusMessage === status);
     return !slots.length ? 'missing' : slots.some(({ key, item }) => trusted.get(key) === codexHookTrustHash(snake(event), item)) ? 'trusted' : 'untrusted';
   };
-  const orchestratorStates = ORCHESTRATOR_EVENTS.map((event) => slotState(event, ORCHESTRATOR_STATUS, codexOrchestratorHook));
-  const orchestratorHook = orchestratorStates.every((state) => state === 'trusted') ? 'trusted' : orchestratorStates.includes('missing') ? 'missing' : 'untrusted';
-  const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS, codexWriteGuardHook);
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, orchestrator_hook: orchestratorHook, hooks_path: hooksPath };
+  const retired_startup = RETIRED_EVENTS.some((event) => Array.isArray(hooks[event]) && hooks[event].some(retiredGroup));
+  const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS);
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath };
 }
 
 

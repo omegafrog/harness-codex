@@ -12,8 +12,8 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
-const CODEX = ['.agents/skills/orchestrator/SKILL.md', '.codex/hooks.json', '.harness/src/workflow/providers/codex.mjs'];
+const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
+const CODEX = ['.agents/skills/orchestrator/SKILL.md', '.harness/src/workflow/providers/codex.mjs'];
 const SHARED = ['.codex/internal-skills/implement/GUIDE.md', '.codex/scripts/harness-native-stage.mjs', '.codex/agents/implementation_agent.toml', '.codex/agents/pr_author.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs'];
 
 async function install(provider) {
@@ -29,7 +29,7 @@ test('install --provider codex carries no Claude Code files and the Claude provi
   const { root } = await install('codex');
   try {
     assert.deepEqual(present(root, CLAUDE), []);
-    assert.deepEqual(present(root, [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]), [...CODEX.filter((path) => path !== '.codex/hooks.json'), ...SHARED]);
+    assert.deepEqual(present(root, [...CODEX, ...SHARED]), [...CODEX, ...SHARED]);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: gpt-6.1-sol\n    low_performance_reasoning_effort: medium\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
     assert.match(await readFile(join(root, '.codex/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
@@ -72,9 +72,9 @@ test('install --provider claude-code carries no Codex skill root and registers t
     assert.deepEqual(present(root, ['.agents/skills/orchestrator/SKILL.md', '.harness/src/workflow/providers/codex.mjs'].slice(0, 1)), []);
     assert.deepEqual(present(root, SHARED), SHARED);
     const settings = JSON.parse(await readFile(join(root, '.claude/settings.local.json'), 'utf8'));
-    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop', 'SubagentStart', 'SubagentStop']) assert.equal(settings.hooks[event].length, 1, event);
+    for (const event of ['SubagentStart', 'SubagentStop']) assert.equal(settings.hooks[event].length, 1, event);
     assert.match(settings.hooks.SubagentStart[0].hooks[0].command, /harness-agent-event\.mjs/);
-    assert.match(settings.hooks.UserPromptSubmit[0].hooks[0].command, /\.claude\/harness\/scripts\/harness-claude-orchestrator-hook\.mjs/);
+    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop']) assert.equal(settings.hooks[event], undefined);
     const admission = settings.hooks.PreToolUse.find((entry) => entry.matcher === 'Agent').hooks[0].command;
     const agent = (tool_input) => spawnSync('sh', ['-c', admission], {
       cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: 'utf8',
@@ -104,9 +104,8 @@ test('the default install carries both providers and an explicit provider on upd
   const { root } = await install(null);
   try {
     assert.deepEqual(present(root, CLAUDE), CLAUDE);
-    const { codexUserOrchestratorHookInstalled } = await import('../.harness/src/workflow/providers/codex.mjs');
-    const expectedCodex = await codexUserOrchestratorHookInstalled() ? CODEX.filter((path) => path !== '.codex/hooks.json') : CODEX;
-    assert.deepEqual(present(root, expectedCodex), expectedCodex);
+    assert.deepEqual(present(root, CODEX), CODEX);
+    assert.equal(existsSync(join(root, '.codex/hooks.json')), false);
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.code === 'installer_stale_lock_entry' || item.code === 'execution_asset_missing' || item.code.startsWith('plan_pr_template_')), [], 'Doctor recognizes the PR author profile and managed plan template');
     const result = await updateProject({ sourceRoot, targetRoot: root, provider: 'codex' });

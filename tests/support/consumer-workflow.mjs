@@ -3,11 +3,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateProject } from '../../.harness/src/installer/update.mjs';
+import { codexUserPrompt } from './codex-user-prompt.mjs';
 import { protectLocalInstallArtifacts } from '../../.harness/src/installer/local-exclude.mjs';
 
 export const sourceRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -74,8 +75,7 @@ export async function consumerWorkflow(t, request) {
   // The user's approval of the fixed requirements, logged as their own input after bounded-context finished.
   const REQUIREMENTS_APPROVAL = '확정된 요구사항을 승인합니다';
   async function approveRequirements(text = REQUIREMENTS_APPROVAL) {
-    await mkdir(join(workspace, '.io/runtime/orchestrator'), { recursive: true });
-    await appendFile(join(workspace, '.io/runtime/orchestrator/user-inputs.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), session_id: 'user', source: 'prompt', text })}\n`);
+    await codexUserPrompt(workspace, text);
     return ['--requirements-approved', 'true', '--approval-answer', text];
   }
 

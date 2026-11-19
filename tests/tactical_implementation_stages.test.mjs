@@ -13,6 +13,7 @@ import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from '../.harness/src/installer/legacy-assets.mjs';
 import { loadNamedWorkflow } from '../.harness/src/workflow/loader.mjs';
 import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, tacticalImplementationOrderViolation, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
+import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
 
 test('tactical implementation is ordered after completed tactical design and remains outside pre-spec restarts', async () => {
@@ -316,20 +317,19 @@ test('an installed consumer can defer interrupted UI and prepare API with no fro
   await writeFile(statePath, JSON.stringify(state));
   await flow.runStage('tactical-technology', { files: { [`docs/implementation/${flow.planSetId}/technology.md`]: 'Node\n' } });
   await flow.runStage('tactical-ui', { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '화면 설계 필요', expectCommit: false });
-  const log = join(statePath, '..', 'user-inputs.jsonl');
   const direction = '게시글 입력과 등록 흐름 승인';
   const deferral = 'ui는 넘어가 지금';
-  const item = (text) => JSON.stringify({ at: new Date().toISOString(), text }) + '\n';
-  await writeFile(log, item(direction));
+  const transcript = await codexUserPrompt(flow.workspace, direction);
+  const directionOnly = await readFile(transcript, 'utf8');
   const brief = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', 'frontend-design-brief', '--approval-answer', direction]);
   flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', '--execution-id', brief.execution_id, '--agent-id', 'designer']);
   const args = ['--verbose', '--stage-id', 'tactical-ui', '--feedback', deferral];
-  await writeFile(log, item(direction) + item(deferral));
+  await codexUserPrompt(flow.workspace, deferral);
   assert.throws(() => flow.invoke(flow.workspace, 'harness-prepare-input.mjs', args), /frontend-design-brief is running/);
   flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['fail', '--execution-id', brief.execution_id, '--reason', 'Confirmed provider failure']);
-  await writeFile(log, item(direction));
+  await writeFile(transcript, directionOnly);
   assert.throws(() => flow.invoke(flow.workspace, 'harness-prepare-input.mjs', args), /frontend-design-brief is failed/);
-  await writeFile(log, item(direction) + item(deferral));
+  await codexUserPrompt(flow.workspace, deferral);
   await flow.runStage('tactical-ui', { extraArgs: ['--feedback', deferral], summary: '이번 실행에서 UI 보류', expectCommit: false });
   const api = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-api']);
   assert.equal(api.input.context.stage_id, 'tactical-api');
@@ -352,7 +352,7 @@ test('installed frontend design is dispatched independently and its brief enters
   const briefArgs = ['--verbose', '--stage-id', 'frontend-design-brief'];
   const direction = '게시글 작성 화면의 입력·오류·등록 흐름 승인';
   assert.throws(() => flow.invoke(flow.workspace, 'harness-prepare-input.mjs', [...briefArgs, '--approval-answer', direction]), /Frontend direction answer was not recorded/);
-  await writeFile(join(statePath, '..', 'user-inputs.jsonl'), JSON.stringify({ at: new Date().toISOString(), text: direction }) + '\n');
+  await codexUserPrompt(flow.workspace, direction);
   const prepared = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', [...briefArgs, '--approval-answer', direction]);
   assert.equal(prepared.input.skill, 'frontend-design');
   assert.equal(prepared.input.context.agent_profile, 'frontend_designer');

@@ -38,6 +38,8 @@ export const RETIRED_SKILL_NAMES = new Set(['beads', 'spec-me', 'architecture-sp
 
 // Identified from released source snapshots; unknown or modified content is never adopted.
 export const LEGACY_ASSETS = [
+  { release: '43e7fa09', path: '.codex/scripts/harness-orchestrator-hook.mjs', sha256: '07fc9ee4e7264573931c75214a877c7dce91c134afefca0b49e64c0e160bfe6e', action: 'retire' },
+  { release: '43e7fa09', path: '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs', sha256: '4fba9d37b11b028ff48396bfa7b2075138f2ce8a1aac46f12069d8dd77063f3c', action: 'retire' },
   { release: '3d8e3e60', path: '.codex/scripts/harness-spec-writer.mjs', sha256: '800ea15bfbef0c69adc4effbf2298e5d3a448c3a80eb9ca19441075e672fb58d', action: 'retire' },
   { release: '3d8e3e60', path: '.harness/src/workflow/spec-writer.mjs', sha256: '145b0dcf3a9e33f90ac7a807539c5704f14f4f9a6b2aa38e5c19f8a5f8b470e6', action: 'retire' },
   { release: '3d8e3e60', path: '.harness/src/workflow/spec-writer-loop.mjs', sha256: '630fccd40d5ffe9a42fb8fc7a23986cae49866d868e24ac600a44d5442151a73', action: 'retire' },

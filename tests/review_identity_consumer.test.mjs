@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
@@ -172,10 +173,9 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
     const { recordPendingQuestions } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
     const { findingFingerprint } = await import(`file://${join(root, '.harness/src/wrapper/repair.mjs')}`);
-    const userSays = (prompt) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-orchestrator-hook.mjs')], { cwd: root, encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: root, session_id: 'c5c669a2-2967-4831-98db-63a24954e857', prompt }) });
 
     // An earlier round's user answer exists, but nothing was asked in this round yet.
-    userSays('$orchestrator Spec에 추가');
+    await codexUserPrompt(root, 'Spec에 추가');
     assert.match(run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가').stderr, /not a question the latest repair asked/);
 
     // repair asks about F-1; the user has not answered since, so the earlier answer cannot be reused.
@@ -188,12 +188,11 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
 
     // The user answers after the question: the decision is recorded with the finding's fingerprint.
     await new Promise((done) => setTimeout(done, 1100));
-    userSays('$orchestrator Spec에 추가'); // the placeholder worktree.json fails later hook steps; the input is recorded first
+    await codexUserPrompt(root, 'Spec에 추가');
     const ok = run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가');
     assert.equal(ok.status, 0, ok.stderr);
     const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), 'utf8'));
     assert.deepEqual(evidence.scope_decisions, [{ finding_id: 'F-1', choice: 'adopt', question_id: question.question_id, answers_ref: 'runtime/reviews/implementation-A-answers.json', fingerprints: [findingFingerprint(today)] }]);
-    assert.equal((await readFile(join(root, '.io/runtime/orchestrator/user-inputs.jsonl'), 'utf8')).trim().split('\n').length, 2);
   } finally {
     await rm(parent, { recursive: true, force: true });
   }

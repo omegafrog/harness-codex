@@ -304,6 +304,7 @@ async function noteCodexUserHooks(projectRoot, options) {
     if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
     const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
     const trust = await inspectCodexHookTrust();
+    if (trust.retired_startup) console.log("A retired Harness orchestrator hook remains in the Codex user hooks. Run $setup with the Codex provider after updating any other Harness checkout that still uses this hook.");
     if (trust.write_guard !== "trusted") console.log(`Codex user hook "Guarding Harness orchestrator writes" is ${trust.write_guard}: run $setup (codex provider) to register it, then trust it in /hooks, so the orchestrator main session cannot edit product code, tests or contracts.`);
   } catch { /* the notice is advisory; Doctor reports the same state */ }
 }

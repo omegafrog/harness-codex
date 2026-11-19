@@ -6,16 +6,16 @@ main_session: true
 
 # orchestrator
 
-현재 사용자 요청이 `$orchestrator` 또는 `/orchestrator`로 시작할 때만 메인 세션에서 workflow를 조율한다. 같은 대화에서 답변·발행 승인·재개를 전달할 때도 호출어를 붙이며, 실행기에는 호출어 뒤의 사용자 원문을 넘긴다. 사용자가 일시정지·중단을 요청했으면 재개하지 않는다.
+사용자가 Codex의 `$orchestrator` 또는 Claude Code의 `/orchestrator`로 호출하면 메인 세션에서 workflow를 조율한다. 자유 텍스트 답변·발행 승인·재개에도 같은 호출어를 붙인다. 실행기에는 호출어 뒤의 사용자 원문을 넘긴다. 사용자가 일시정지·중단을 요청했으면 재개하지 않는다.
 
 ## 현재 요청에 맞는 경로
 
-시작 훅과 실행기의 현재 `next`가 요청과 맞으면 그 명령을 우선한다. 아래 링크는 그 상황의 절차가 필요할 때만 연다. 다음 단계나 이전 단계의 문서를 미리 읽지 않는다. 같은 세션을 재개하면 새 답과 최신 결과부터 확인하고, 압축으로 필요한 규칙이 사라졌으면 현재 절차만 다시 읽는다.
+신규 요청이나 재개 시 현재 디렉터리에서 `node .codex/scripts/harness-context.mjs --entry`를 실행한다. Harness 유지보수와 아래의 독립 기능 요청은 해당 경로로 바로 진행한다. 실행기가 반환한 `next`가 현재 요청과 맞으면 우선한다. 구성 또는 재개에 필요한 세션이 `session_verified: false`이면 현재 대화를 확인할 수 없다고 알리고 멈춘다. 아래 링크는 해당 절차가 필요할 때만 연다. 같은 실행에서 새 답이나 결과를 받으면 기존 실행의 반환으로 이어간다.
 
 | 상황 | 필요한 절차 |
 |---|---|
 | Harness 설치·업데이트·진단 | 현재 checkout의 [Harness Maintenance](../../../.codex/internal-skills/harness-maintenance/GUIDE.md). workflow를 만들지 않는다. |
-| setup이 필요한 저장소 | 시작 훅이 안내한 `setup` |
+| setup이 필요한 저장소 | 진입 명령이 안내한 `setup` |
 | 새 workflow 시작 | [workflow-compose](../../../.codex/internal-skills/workflow-compose/GUIDE.md) |
 | 다음 요구사항·전술 설계·구현 단계를 정할 정보가 부족함 | [workflow 지도](references/workflow-map.md)의 해당 절 |
 | 실행 배정·결과 확인·중단된 실행 복구 | [실행과 결과](references/dispatch.md)의 해당 절 |
@@ -28,7 +28,7 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 ## 실행과 확인
 
 1. 단계가 정해졌으면 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 새 `execution_id`마다 반환된 profile과 binding으로 fresh native 서브에이전트를 시작한다. `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로를 전달하고 `next.bind`를 실행한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 결과 요약과 참조로 조율한다. 사용자 승인에 필요한 산출물은 해당 승인 절차에서 확인한다.
-2. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. 정상 결과의 `next`를 따르고, `format_error`나 `gate_error`는 같은 작업자에게 돌려준다. `owner_stage`가 앞 단계면 [상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)를 따른다. 상태가 불명확한 실행을 중복으로 시작하지 않는다. 재개에 필요한 다음 동작이 훅에서 확인되지 않을 때만 `harness-context.mjs`를 한 번 실행한다.
+2. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. 정상 결과의 `next`를 따르고, `format_error`나 `gate_error`는 같은 작업자에게 돌려준다. `owner_stage`가 앞 단계면 [상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)를 따른다. 상태가 불명확한 실행을 중복으로 시작하지 않는다. 진입 결과에 재개 근거가 더 필요한 경우 `harness-context.mjs`를 한 번 실행한다.
 3. 오류가 반환한 `why`·`next`·`user_decision`을 사용한다. Harness 소스나 state 파일을 읽지 않고 제공된 실행기 명령으로 확인한다. 다른 worktree의 결과와 이미 처리한 실행을 건너뛴다. 제품 코드·테스트·Spec·계획·통합 계약의 편집과 Git 작업은 소유 stage와 실행기에 맡긴다.
 
 ## 사용자 결정과 완료

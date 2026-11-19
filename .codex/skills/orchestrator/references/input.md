@@ -1,6 +1,6 @@
 # 실행 입력 준비
 
-compose 명령에는 실제 `--orchestrator-provider <provider>`와 `--orchestrator-session-id <session-id>`를 함께 전달한다. 생성 성공 후 절대 workspace 경로를 사용자에게 알리고 primary checkout에서 멈춘다. 사용자가 해당 worktree로 이동해 orchestrator를 다시 호출하면 stage를 진행한다. 입력 준비와 상태 조회는 현재 worktree에서 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>`와 `node .codex/scripts/harness-context.mjs`로 실행한다. primary checkout에서 `--root`나 `--worktree-ref`로 다른 workflow를 고르지 않는다.
+compose 명령에는 `harness-context.mjs --entry`가 확인한 `--orchestrator-provider <provider>`와 `--orchestrator-session-id <session-id>`를 함께 전달한다. 생성 성공 후 절대 workspace 경로를 사용자에게 알리고 primary checkout에서 멈춘다. 사용자가 해당 worktree로 이동해 orchestrator를 다시 호출하면 stage를 진행한다. 입력 준비와 상태 조회는 현재 worktree에서 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>`와 `node .codex/scripts/harness-context.mjs`로 실행한다. primary checkout에서 `--root`나 `--worktree-ref`로 다른 workflow를 고르지 않는다.
 
 1. target worktree로 이동한 뒤 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <선택한 stage ID>`로 입력 파일을 준비하고 실행을 예약한다. 입력만 준비하려면 같은 옵션으로 `node .codex/scripts/harness-prepare-input.mjs`를 실행한다. 출력은 `execution_id`·`stage_id`·`next`만 담으며 저장된 입력 전체는 `--verbose`로만 출력한다.
    보통 `--stage-id`에는 선택한 skill 이름을 그대로 사용한다. 단, manifest가 `pr_author`로 선언한 `plan-pr`와 `integration-pr`는 stage ID를 전달한다. 준비기는 이 두 ID를 등록된 `gh-open-pr` skill로 해석하고 `context.stage_id`는 유지한다. Spec 내부 phase ID(예: `product`, `architecture`)는 독립 실행 stage가 아니므로 전달하지 않는다. stage 재개에 필요한 session ID는 실행 기록에서 읽는다.
