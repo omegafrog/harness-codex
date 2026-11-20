@@ -10,8 +10,8 @@
 
 ## 관리 규칙
 
-- GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. split plan은 검증 완료 시 `Done`이지만, child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
-- GitHub mode에서 split plan 완료 상태는 `.harness/harness.yaml`의 `tracker.github.status_field`에 해당하는 Project field를 `gh project item-edit`로 `Done`으로 갱신한 뒤 검증한다. 기본 Project `Status` field 갱신은 유효한 상태 전이가 아니다. child Issue 상태는 `OPEN`이어야 한다.
+- 모든 mode의 정본 상태는 로컬 plan Issue `docs/plans/<plan-set>/<plan-id>.md`의 `status` frontmatter (`planned`, `in-progress`, `blocked`, `completed`)다. GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)와 GitHub Issue는 보조 mirror다. split plan은 검증 완료 시 로컬에서 `completed`로 바꾸고 GitHub child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
+- GitHub mode에서는 로컬 plan 상태를 먼저 기록하고 configured Project field와 기본 `Status`를 best-effort mirror로 동기화한다. mirror 갱신·검증 실패는 로컬 상태를 되돌리거나 완료를 차단하지 않는다. child Issue는 PR merge 전까지 `OPEN`이어야 한다.
 - local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
 - 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 
@@ -22,7 +22,7 @@
 ## Assignee 규칙
 
 - GitHub mode의 assignee 설정은 `.harness/harness.yaml`의 `tracker.github.assignees`를 사용한다.
-- `tactical-to-code`의 `to-ticket → tracker-publish` 흐름은 사용자의 직접 발행 승인(`--approval-answer`)을 받은 뒤에만 Project draft를 만들고 Issue로 전환한다. ticket 한 개를 구현하는 `tactical-code`는 시작 때 `in-progress`로, 테스트가 통과한 뒤 `completed`로 바꾸며 local-markdown mode에서는 ticket 파일의 `status` 변경을 그 ticket의 commit에 포함한다. `to-ticket → tracker-publish` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다. 키 이름 `spec_me`는 이미 소비자의 `.harness/harness.yaml`에 저장된 설정이라 workflow 폐기 뒤에도 바꾸지 않는다. 소비자 설정을 옮기는 migration이 생길 때 함께 바꾼다.
+- `tactical-to-code`의 `to-ticket → tracker-publish` 흐름은 사용자의 직접 발행 승인(`--approval-answer`)을 받은 뒤에만 Project draft를 만들고 Issue로 전환한다. ticket 한 개를 구현하는 `tactical-code`는 시작 때 로컬 plan Issue를 `in-progress`로, 검증 완료 뒤 `completed`로 바꾸며 이 frontmatter 변경을 해당 ticket commit에 포함한다. GitHub mode도 동일하게 로컬 상태를 정본으로 쓰고 외부 상태는 best-effort로 동기화한다. `to-ticket → tracker-publish` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다. 키 이름 `spec_me`는 이미 소비자의 `.harness/harness.yaml`에 저장된 설정이라 workflow 폐기 뒤에도 바꾸지 않는다. 소비자 설정을 옮기는 migration이 생길 때 함께 바꾼다.
 - Codex가 테스트·개발 중 추가로 만든 Issue는 `codex` 값(`@copilot`)을 assignee로 지정한다.
 - 기존 Issue의 assignee는 별도 요청 없이는 변경하지 않는다.
 

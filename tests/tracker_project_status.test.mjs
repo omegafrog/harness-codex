@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { sessionOutputPath } from '../.harness/src/workflow/session-output.mjs';
 
 test('installed tracker marks execution in progress but leaves Done until PR merge', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tracker-project-status-'));
@@ -40,6 +41,11 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     await mkdir(join(root, '.io/runtime'), { recursive: true });
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'tracker:\n  mode: github\n  github:\n    repository: owner/repo\n    project_owner: owner\n    project_number: 1\n    status_field: Workflow Status\n');
+    await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+    await writeFile(join(root, 'docs/plans/set/P1.md'), '---\nstatus: planned\n---\n# P1\n');
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ plan_set_id: 'set' }));
+    const receipt = sessionOutputPath(root, 'runtime/to-ticket/set-issues.json');
+    await writeFile(receipt, JSON.stringify({ repository: 'owner/repo', tickets: [{ plan_id: 'P1', ticket_ref: 'owner/repo#1' }] }));
     await writeFile(join(root, 'consumer-change.txt'), 'preserve');
     const lifecycleUrl = pathToFileURL(join(root, '.harness/src/tracker/lifecycle.mjs')).href;
     const { inspectTrackerSync, readTrackerStatus, syncTrackerStatus } = await import(lifecycleUrl);
@@ -57,13 +63,16 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     assert.equal(calls.filter((call) => call === 'project view').length, 1);
     assert.equal(calls.filter((call) => call === 'project field-list').length, 1);
     values.set('workflow', 'Blocked');
-    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).canonical_status, 'blocked');
+    const driftedMirror = await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run });
+    assert.equal(driftedMirror.canonical_status, 'completed');
+    assert.match(driftedMirror.warnings[0], /local status remains completed/);
     assert.equal(calls.filter((call) => call === 'project field-list').length, 1);
     fields[0].id = 'workflow-recreated';
     values.set(fields[0].id, 'Planned');
-    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).status, 'fail');
-    assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).canonical_status, 'planned');
-    assert.equal(calls.filter((call) => call === 'project field-list').length, 2);
+    const unavailableMirror = await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run });
+    assert.equal(unavailableMirror.status, 'pass');
+    assert.equal(unavailableMirror.canonical_status, 'completed');
+    assert.equal(calls.filter((call) => call === 'project field-list').length, 1);
 
     const gitStatus = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
     assert.match(gitStatus, /consumer-change\.txt/);

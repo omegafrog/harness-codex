@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspectTrackerSync, listPlanTickets, readPlanSetTicketStatuses } from '../.harness/src/tracker/lifecycle.mjs';
+import { sessionOutputPath } from '../.harness/src/workflow/session-output.mjs';
 
 const repository = 'omegafrog/harness-test';
 const refs = [`${repository}#1`, `${repository}#2`];
@@ -13,8 +14,13 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'tracker-mirror-'));
   execFileSync('git', ['init', '-q', root]);
   await mkdir(join(root, '.codex'), { recursive: true });
+  await mkdir(join(root, '.io'), { recursive: true });
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), `tracker:\n  mode: github\n  github:\n    repository: ${repository}\n    project_owner: omegafrog\n    project_number: 1\n    status_field: Workflow Status\n`);
+  await mkdir(join(root, 'docs/plans/set'), { recursive: true });
+  for (const id of ['calculator', 'e2e', 'unmapped']) await writeFile(join(root, `docs/plans/set/${id}.md`), `---\nstatus: planned\n---\n# ${id}\n`);
+  await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ plan_set_id: 'set' }));
+  await writeFile(sessionOutputPath(root, 'runtime/to-ticket/set-issues.json'), JSON.stringify({ repository, tickets: [{ plan_id: 'calculator', ticket_ref: refs[0] }, { plan_id: 'e2e', ticket_ref: refs[1] }] }));
   const calls = [];
   const run = async (command, args) => {
     if (command === 'gh' && args[0] === 'project' && args[1] === 'view') return JSON.stringify({ id: 'project-id' });
@@ -47,6 +53,7 @@ test('GitHub tracker checks explicit references without an external mirror', asy
     const result = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
     assert.equal(result.status, 'pass', JSON.stringify(result));
     assert.deepEqual(result.tickets.map((ticket) => ticket.ref), refs);
+    assert.equal(result.mirror_status, 'available');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -60,9 +67,22 @@ test('tickets are checked against the plan a stage implements', async () => {
     assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'set', run }), [
       { plan_id: 'calculator', ticket_ref: refs[0] }, { plan_id: 'e2e', ticket_ref: refs[1] },
     ]);
-    assert.deepEqual(await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run }), [
-      { plan_id: 'calculator', ticket_ref: refs[0], status: 'planned' }, { plan_id: 'e2e', ticket_ref: refs[1], status: 'planned' }, { plan_id: 'unmapped', ticket_ref: null, status: 'planned' },
+    assert.deepEqual((await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator', 'e2e', 'unmapped'], run })).map(({ plan_id, status }) => ({ plan_id, status })), [
+      { plan_id: 'calculator', status: 'planned' }, { plan_id: 'e2e', status: 'planned' }, { plan_id: 'unmapped', status: 'planned' },
     ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('local plan status remains authoritative when GitHub status lookup is unavailable', async () => {
+  const { root, run } = await fixture();
+  try {
+    const local = await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: 'set', plan_ids: ['calculator'], run: async () => { throw new Error('rate limit'); } });
+    assert.equal(local[0].status, 'planned');
+    const checked = await inspectTrackerSync({ workspace_root: root, expected_plan_id: 'set:calculator', ticket_refs: [refs[0]], run: async () => { throw new Error('rate limit'); } });
+    assert.equal(checked.status, 'pass', JSON.stringify(checked));
+    assert.equal(checked.local_status, 'planned');
+    assert.equal(checked.mirror_status, 'unavailable');
+    assert.match(checked.warnings[0], /rate limit/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

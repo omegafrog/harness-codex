@@ -16,15 +16,23 @@ const TERMINAL_STATUSES = new Set(["completed"]);
 const TRACKER_MODES = new Set(["github", "local-markdown"]);
 
 function expectedDoneStatus(trackerMode) {
-  return trackerMode === "local-markdown" ? "completed" : "Done";
+  return "completed";
 }
 
-function trackerIsReconciled(snapshot, trackerMode) {
+function localTrackerStatus(snapshot, planId = null) {
+  if (snapshot?.local_status) return canonicalStatus(snapshot.local_status);
+  const tickets = Array.isArray(snapshot?.tickets) ? snapshot.tickets : [];
+  const ticket = planId ? tickets.find((item) => item.plan_id === planId) : tickets.length === 1 ? tickets[0] : null;
+  return canonicalStatus(ticket?.status) || null;
+}
+
+function trackerIsReconciled(snapshot, trackerMode, planId = null) {
   if (!snapshot) return false;
-  if (trackerMode === "local-markdown") return snapshot.status === "completed";
-  const expected = expectedDoneStatus(trackerMode);
-  return snapshot.status === expected
-    && snapshot.project_status === expected;
+  const status = localTrackerStatus(snapshot, planId) || canonicalStatus(snapshot.status);
+  if (status === "completed") return true;
+  // Compatibility for callers holding a pre-local-first snapshot.
+  if (!snapshot.local_status && trackerMode === "github") return canonicalStatus(snapshot.status) === "completed";
+  return false;
 }
 
 function canonicalStatus(status) {
@@ -163,13 +171,13 @@ export function reconcileCompletion({
   if (!plan?.id) throw new TypeError("plan.id is required");
   if (!TRACKER_MODES.has(trackerMode)) throw new TypeError(`Unsupported tracker mode: ${trackerMode}`);
   const completion = evaluateCompletion({ completionKind, implementation, reviews, tests, requiredOutcomes, requiredOutcomeEvidence, evidence, blocker, retirement, contractDocs, trackerSync, planReview, pr });
-  if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode)) {
+  if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode, plan.id)) {
     completion.can_complete = false;
     completion.state = "in-progress";
     completion.unresolved.push("tracker:not-reconciled");
   }
-  const currentStatus = trackerSnapshot?.status || null;
-  const requestedStatus = completion.can_complete ? expectedDoneStatus(trackerMode) : completion.state === "blocked" ? (trackerMode === "local-markdown" ? "blocked" : "Blocked") : (trackerMode === "local-markdown" ? "in-progress" : "In Progress");
+  const currentStatus = localTrackerStatus(trackerSnapshot, plan.id) || canonicalStatus(trackerSnapshot?.status) || null;
+  const requestedStatus = completion.can_complete ? expectedDoneStatus(trackerMode) : completion.state === "blocked" ? "blocked" : "in-progress";
   return {
     plan_id: plan.id,
     state: completion.state,
@@ -181,7 +189,7 @@ export function reconcileCompletion({
       current_status: currentStatus,
       requested_status: requestedStatus,
       mutated: false,
-      reason: "wrapper computes reconciliation; selected tracker remains the source of truth",
+      reason: "local ticket state is canonical; configured tracker status is a best-effort mirror",
     },
     dependents: recalculateDependents(dependents, { completedPlanIds: completion.can_complete ? [plan.id] : [] }),
   };

@@ -35,7 +35,7 @@ local-markdown mode는 위 canonical 상태를 ticket 파일에 그대로 기록
 - blocker 없음
 - GitHub mode에서는 대응 child Issue가 parent Issue에 연결됨
 
-GitHub mode에서 실행 가능 plan은 Project `Planned` 상태를 유지하며, `implement`가 선택해 `In Progress`로 전환한다.
+GitHub mode에서도 실행 가능 여부와 lifecycle 상태는 로컬 plan Issue frontmatter를 기준으로 계산한다. `implement`가 선택한 plan은 로컬에서 `in-progress`로 전환한 뒤 Project 상태를 best-effort mirror로 맞춘다.
 
 ## 상태 전이
 

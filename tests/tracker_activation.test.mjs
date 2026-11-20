@@ -32,7 +32,7 @@ test('installed tracker activation links directly published Issues despite Proje
     const plans = join(root, 'docs/plans/example'), specs = join(root, 'docs/specs/example'), drafts = join(root, '.io/runtime/to-ticket/drafts');
     for (const path of [plans, specs, drafts, join(root, '.harness/agents')]) await mkdir(path, { recursive: true });
     await writeFile(join(root, '.harness/agents/EXEC.md'), '');
-    for (const id of ['auth', 'posts']) await writeFile(join(plans, `${id}.md`), `# ${id}\nDo ${id}.\n`);
+    for (const id of ['auth', 'posts']) await writeFile(join(plans, `${id}.md`), `---\nstatus: planned\n---\n# ${id}\nDo ${id}.\n`);
     await writeFile(join(plans, 'plans.md'), '# Plans\n\n| 순서 | Plan | Issue | 범위 | 의존성 | 토큰 |\n|---|---|---|---|---|---|\n| 1 | [auth](auth.md) | #35 | 로그인 | 없음 | 1 |\n| 2 | [posts](posts.md) | #38 | 글 | auth (인증 경계) | 1 |\n');
     for (const name of ['product', 'architecture']) await writeFile(join(specs, `${name}-spec.md`), `# ${name}\n`);
     for (const name of ['parent', 'auth', 'posts']) await writeFile(join(drafts, `${name}.md`), `${name}\n`);
@@ -86,8 +86,10 @@ test('installed tracker activation links directly published Issues despite Proje
     const { syncTrackerStatus } = await import(runtime('tracker/lifecycle.mjs'));
     const warning = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#101', status: 'in-progress', run: async () => { throw new Error('rate limit'); } });
     assert.equal(warning.status, 'pass');
+    assert.equal(warning.canonical_status, 'in-progress');
     assert.equal(warning.tracker_updated, false);
     assert.match(warning.warnings[0], /rate limit/);
+    assert.match(await readFile(join(plans, 'auth.md'), 'utf8'), /^---\nstatus: in-progress\n---/);
     items[1].body = items[1].body.replace(/<!-- harness-plan [^\n]* -->/, '').trimEnd();
     assert.deepEqual(await listPlanTickets({ workspace_root: root, plan_set_id: 'example', run }), [
       { plan_id: 'auth', ticket_ref: 'owner/repo#101' }, { plan_id: 'posts', ticket_ref: 'owner/repo#102' },

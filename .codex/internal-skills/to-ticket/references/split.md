@@ -106,4 +106,4 @@ GitHub mode의 Issue 초안과 structured-source는 [GitHub 템플릿](github-is
 
 Canonical ticket과 index, 준비된 초안을 포함하는 `plan_set_draft` artifact를 반환한다. Artifact는 `{kind: "plan_set_draft", base: "workspace", path: "docs/plans/<plan-set-id>/plans.md"}` 형태다. Canonical ticket 작성 뒤 같은 `to-ticket` execution이 독립 fresh reviewer를 호출하고 plan-review gate를 통과한다. configured tracker 티켓 발행은 후속 `tracker-publish` workflow stage에서 수행한다.
 
-`tracker.mode`가 `local-markdown`이면 각 ticket 파일(`docs/plans/<plan-set-id>/<plan-id>.md`)이 곧 tracker ticket이므로 위 모양대로 파일 맨 앞에 YAML frontmatter `---\nstatus: planned\n---`를 둔다. 이 frontmatter가 없으면 local tracker가 ticket을 읽지 못해 `tracker-publish`와 구현 단계가 시작되지 않는다. 리뷰 snapshot은 frontmatter의 `status`를 제외하므로 이 값은 리뷰 결과에 영향을 주지 않는다.
+모든 tracker mode에서 각 로컬 plan Issue 파일(`docs/plans/<plan-set-id>/<plan-id>.md`)이 lifecycle 상태의 정본이다. 따라서 각 ticket 파일 맨 앞에 YAML frontmatter `---\nstatus: planned\n---`를 둔다. GitHub mode에서는 Issue/Project 상태가 이 로컬 상태의 보조 mirror다. 리뷰 snapshot은 frontmatter의 `status`를 제외하므로 lifecycle 전이는 리뷰 결과에 영향을 주지 않는다.

@@ -8,7 +8,7 @@ plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에�
 
 입력의 `context.plan_id`로 배정된 승인 plan 하나만 구현한다. 리뷰 지적을 고치는 수정 재개에서는 plan 문서를 바꾸지 않고, 고친 내용을 `harness-tracker.mjs comment`로 Issue에만 기록한다. 다른 plan을 스스로 고르지 않는다. 배정된 plan이 이미 `Done`이어도 먼저 `harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`로 현재 리뷰를 확인한다. 리뷰가 필요하면 기존 fixed point와 현재 commit을 보존해 `REVIEW_REQUIRED`를 반환하고, 검토가 유효할 때만 변경 없이 `completed/OK`로 반환한다. 단 실행 입력에 `feedback.json`이 있으면 이 종료 규칙을 적용하지 않는다. plan이 `Done`이거나 HEAD가 이미 리뷰된 commit이어도 피드백이 요구한 수정을 한다(orchestrator가 티켓을 다시 열고 시작한다). 피드백이 있는데 파일을 하나도 바꾸지 않은 채 `completed/OK`로 끝내지 않는다. 피드백대로 고칠 수 없으면 그 이유와 필요한 입력을 `blocked/INPUT_MISSING`으로 반환한다. 구현 절차는 [implement GUIDE](../../../.codex/internal-skills/implement/GUIDE.md)를 따른다.
 
-전체 plan set의 순차 배정·통합 리뷰·최종 E2E는 기존 [구현 workflow 조율](../../../.codex/skills/orchestrator/references/implementation.md)이 소유한다. 이 wrapper를 새 executor로 대체하지 않는다. 한 번에 split plan 하나를 구현하며, 그 plan의 단위 테스트·독립 리뷰·canonical tracker 완료 확인 뒤 다음 plan으로 진행한다. 모든 구현 후 전체 Spec과 누적 diff의 통합 리뷰를 수행하고, 에이전트가 작성한 최종 E2E 시나리오에 대한 실제 사용자 승인을 받은 뒤 runner를 호출한다. E2E 실패는 자동 수정·재실행하지 않고 사용자에게 확인한다.
+전체 plan set의 순차 배정·통합 리뷰·최종 E2E는 기존 [구현 workflow 조율](../../../.codex/skills/orchestrator/references/implementation.md)이 소유한다. 이 wrapper를 새 executor로 대체하지 않는다. 한 번에 split plan 하나를 구현하며, 그 plan의 단위 테스트·독립 리뷰·로컬 canonical ticket 완료 확인 뒤 다음 plan으로 진행한다. GitHub Issue와 Project 상태는 best-effort mirror이므로 API 조회·수정 실패가 로컬 완료 판정을 막지 않는다. 모든 구현 후 전체 Spec과 누적 diff의 통합 리뷰를 수행하고, 에이전트가 작성한 최종 E2E 시나리오에 대한 실제 사용자 승인을 받은 뒤 runner를 호출한다. E2E 실패는 자동 수정·재실행하지 않고 사용자에게 확인한다.
 
 ## 실행 계약
 
@@ -34,7 +34,7 @@ plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에�
 
 ## 반환
 
-구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조와 `unplanned_additions` 배열을 남긴다. orchestrator가 독립 구현 리뷰와 `repair`를 실행한다. `repair`가 통과했다는 feedback으로 재개되면 이 stage가 plan을 완료한다: 완료 gate를 확인하고 tracker의 그 plan을 `Done`(local-markdown은 `completed`)으로 바꾼 뒤 다음 ready plan을 고른다. Done 전이를 orchestrator에 미루지 않는다. plan을 고른 뒤 바꿀 코드가 없으면 먼저 `node .codex/scripts/harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`를 실행한다. `status: reviewed`이면 HEAD가 같은 계획 snapshot으로 이미 리뷰를 통과한 commit이므로 `REVIEW_REQUIRED`를 반환하지 않고 같은 방식으로 완료한다.
+구현과 단위 테스트를 마치면 `action_required/REVIEW_REQUIRED`로 반환하고 fixed point·commit·검증 근거의 파일 참조와 `unplanned_additions` 배열을 남긴다. orchestrator가 독립 구현 리뷰와 `repair`를 실행한다. `repair`가 통과했다는 feedback으로 재개되면 이 stage가 plan을 완료한다: 완료 gate를 확인하고 로컬 plan Issue를 `completed`로 바꾼 뒤 GitHub mode에서는 Project 상태를 best-effort mirror로 맞추고 다음 ready plan을 고른다. 로컬 완료 전이를 orchestrator에 미루지 않는다. plan을 고른 뒤 바꿀 코드가 없으면 먼저 `node .codex/scripts/harness-code-review.mjs reviewed --root <workspace_root> --plan <plan-id>`를 실행한다. `status: reviewed`이면 HEAD가 같은 계획 snapshot으로 이미 리뷰를 통과한 commit이므로 `REVIEW_REQUIRED`를 반환하지 않고 같은 방식으로 완료한다.
 
 구현 stage는 승인된 Spec과 plan을 구현할 뿐 사용자에게 질문하지 않는다(`USER_DECISION_REQUIRED`와 questions를 반환하지 않는다). Spec이 정하지 않은 결정이 필요하면 `SPEC_REVISION_REQUIRED`, plan 재분할·수정은 `PLAN_REVISION_REQUIRED`로 반환한다. 환경·권한·의존성 부족과 실행 오류는 공통 계약의 blocked/failed 코드로 반환한다. 선택한 scope만으로 작업이 완료되는 호출은 `completed/OK`를 사용할 수 있으며 전체 workflow 완료를 뜻하지 않는다.
 

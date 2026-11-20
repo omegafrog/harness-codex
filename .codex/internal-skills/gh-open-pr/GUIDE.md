@@ -18,7 +18,7 @@ or the implementation workflow has completed its verification gates.
 - For a plan PR, confirm every split plan has been created, linked to the parent Issue and has the configured `Planned` status.
 - For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
 - The workflow creates exactly one PR per plan set. Both plan PR and implementation PR cover the parent Issue and every child Issue; never create one PR per split plan or a child-scoped implementation PR.
-- Before creating or updating the implementation PR, confirm every split plan in the plan set has completed its verification gates and has terminal tracker status (`Done` in GitHub mode; `completed` in local-markdown mode). Do not create or update an implementation PR after an individual split plan finishes.
+- Before creating or updating the implementation PR, confirm every split plan in the plan set has completed its verification gates and has local canonical status `completed`. GitHub Issue/Project status is a best-effort mirror and does not determine readiness. Do not create or update an implementation PR after an individual split plan finishes.
 - When implementation follows an existing plan PR on the same head branch, update that draft with `gh pr edit`; do not open a second PR for the implementation.
 - Before creating the draft plan PR, confirm its body includes the exact Product Spec and Architecture Spec paths plus every available non-empty ticket-scoped SVG diagram link. Record `해당 없음 — <reason>` for absent diagrams.
 - For every implementation PR, resolve the intended Issue number(s) from the selected plan before composing the body. A bare `#123` mention, title reference, or Project item does not establish a linked Issue.
@@ -189,7 +189,7 @@ Do not run `gh pr merge`, `gh pr close`, or an equivalent API operation.
 
 ## Post-Merge Reconciliation
 
-After the user merges the plan-set integration PR, verify intended parent/child Issue closure only. Split-plan child Issues may already have configured Project `Workflow Status` `Done` before this merge; do not roll them back or wait for merge to mark them `Done`. If Project automation did not close the intended Issues, report the reconciliation blocker; do not copy status to local Markdown.
+After the user merges the plan-set integration PR, verify intended parent/child Issue closure only. Local plan Issue status is canonical; GitHub `Workflow Status` is a best-effort mirror. Child GitHub Issues may remain open until this merge. A mirror failure does not change the local plan completion result.
 
 ## Notes
 

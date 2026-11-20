@@ -119,7 +119,7 @@ node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket o
 node .codex/scripts/harness-tracker.mjs sync --root /absolute/project --ticket owner/repo#123 --status completed
 ```
 
-GitHub mode는 configured Project/Workflow Status의 네 option을 확인하고 exact Issue project item만 변경한다. 기본 Status도 실행 상태에 맞추며 Issue closure는 변경하지 않는다. local-markdown mode는 configured directory 안의 ticket YAML frontmatter 상태를 바꾸고 본문을 보존한다. 참조 누락·중복·권한/API 실패는 오류다.
+모든 mode에서 lifecycle 상태 정본은 로컬 plan Issue의 YAML frontmatter다. GitHub mode는 로컬 상태를 먼저 바꾸고 configured Project/Workflow Status 및 기본 Status를 best-effort mirror로 동기화하며 Issue closure는 변경하지 않는다. local-markdown mode는 configured directory 안의 ticket YAML frontmatter 상태를 바꾸고 본문을 보존한다. 로컬 ticket·참조 불일치는 오류이며 GitHub 조회·수정 실패는 경고로 남긴다.
 
 GitHub 발행은 승인된 본문으로 저장소 Issue를 직접 만든다. 활성화 시 plan 연결은 세션의 `runtime/to-ticket/<plan-set-id>-issues.json`에 저장한다. Project 등록·조회 실패는 경고다.
 

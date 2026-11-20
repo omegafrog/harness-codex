@@ -584,7 +584,7 @@ export async function executeImplementPlan({
     orchestration_state: actual.orchestration_state || "running",
     last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
     blocker: completion.can_complete ? null : existingBlocker || { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
-    next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : reviewRepair?.next_action || "resolve completion gate findings",
+    next_action: completion.can_complete ? "record the local ticket as completed and best-effort mirror the status to the configured tracker" : reviewRepair?.next_action || "resolve completion gate findings",
     lifecycle_evidence: {
       fixed_point: fixedPoint,
       contract_docs: contractDocs,

@@ -235,8 +235,6 @@ async function deriveRequiredOutcome({ root, planSetId, plans, tests, run }) {
   let tickets;
   try { tickets = await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: plans.map((plan) => plan.id), run }); }
   catch (error) { return blocked('required_outcome_tracker_unresolved', { error: error.message }); }
-  const unmapped = tickets.filter((ticket) => !ticket.ticket_ref);
-  if (unmapped.length) return blocked('required_outcome_plan_ticket_missing', { plans: unmapped.map((ticket) => ticket.plan_id) });
   const incomplete = tickets.filter((ticket) => ticket.status !== 'completed');
   if (incomplete.length) return blocked('required_outcome_plan_incomplete', { incomplete });
   if (tests.verdict.status !== 'pass') return blocked('required_outcome_e2e_not_passed', { tests_reason: tests.verdict.reason });

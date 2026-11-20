@@ -11,7 +11,7 @@ model_tier: implementation
 
 먼저 ticket 파일 `docs/plans/<plan-set-id>/<plan_id>.md`(`input_refs`의 kind `ticket`)를 끝까지 읽는다. ticket이 구현할 규칙(INV/EX/AC)과 강제 위치, 검증 테스트, 접하는 컨텍스트와 경계 규칙, 의존한 결정, 선행 ticket, 완료 기준을 정한다. 그다음 ticket이 인용한 근거만 읽는다: `docs/specs/<plan-set-id>/tactical-design.md`에서 ticket이 가리킨 모델·Aggregate·Application Service 메서드·인터페이스·메서드별 통합·경계 행, `docs/implementation/<plan-set-id>/`의 인용된 `technology.md`·`api.md`·`data.md`, UI design artifact, `CONTEXT.md`의 용어. 설계 전체나 다른 ticket 문서를 한꺼번에 읽지 않는다. 선행 ticket이 만든 코드는 저장소의 현재 코드로 읽는다.
 
-workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 사용자의 기존 변경을 보존한다. `harness-workspace-preflight.mjs --for-implementation`을 통과하지 않으면 수정하지 않는다. 편집 전에 ticket을 `in-progress`로 바꾼다: `node .codex/scripts/harness-tracker.mjs sync --root <workspace_root> --ticket <ref> --status in-progress`. `<ref>`는 local-markdown이면 ticket 경로, GitHub mode이면 `harness-context.mjs`의 `plan_tickets`에 있는 이 ticket의 값이다.
+workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 사용자의 기존 변경을 보존한다. `harness-workspace-preflight.mjs --for-implementation`을 통과하지 않으면 수정하지 않는다. 편집 전에 로컬 canonical ticket 상태를 `in-progress`로 바꾼다: `node .codex/scripts/harness-tracker.mjs sync --root <workspace_root> --ticket <ref> --status in-progress`. GitHub mode의 `<ref>`는 `harness-context.mjs`의 `plan_tickets`에서 가져오고, local-markdown mode에서는 ticket 경로를 사용한다. 모든 tracker mode에서 정본은 `docs/plans/<plan-set>/<plan-id>.md`의 `status` frontmatter다. GitHub Issue/Project는 best-effort mirror이므로 API 실패나 불일치가 로컬 상태 판정을 바꾸지 않는다.
 
 ## 구현
 
@@ -24,6 +24,6 @@ workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 �
 
 ## 종료
 
-테스트와 `필요한 비테스트 검증`이 통과한 뒤에만 ticket을 `completed`로 바꾼다(`harness-tracker.mjs sync ... --status completed`). local-markdown mode는 이 명령이 ticket 파일의 `status`를 바꾸므로 그 파일을 commit 경로에 포함한다. GitHub mode는 외부 상태만 바뀐다.
+테스트와 `필요한 비테스트 검증`이 통과한 뒤에만 로컬 ticket을 `completed`로 바꾼다(`harness-tracker.mjs sync ... --status completed`). 모든 tracker mode에서 local tracker 상태가 정본이다. GitHub mode의 Issue와 Project 상태는 보조 mirror이며 API 제한·미설정·불일치가 있어도 로컬 완료 판정을 차단하지 않는다. local-markdown mode는 기존처럼 ticket 파일의 `status`도 갱신하므로 그 파일을 commit 경로에 포함한다.
 
 코드·테스트 변경을 정확한 `commit_request: {message, paths}`로 반환한다. message는 `tactical-code: <plan-set-id>/<plan-id>`로 시작하고 한 ticket의 변경만 담는다. `git add`와 `git commit`은 하지 않는다. `git status --short`, 실행한 명령과 결과, 생략한 검증을 보고한다. 성공은 `action_required/REVIEW_REQUIRED`가 아니라 `completed/OK`이며 ticket의 완료 기준과 모든 테스트가 통과한 경우만이다. 남은 질문·외부 환경·결정 blocker는 성공으로 표시하지 않는다.

@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { sessionDirectory, sessionOutputPath } from '../workflow/session-output.mjs';
+import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
 
 const exec = promisify(execFile);
@@ -35,6 +35,70 @@ async function localTicket(root, config, ref) {
   const status = parseYaml(frontmatter[1]).status;
   if (!Object.hasOwn(TRACKER_STATES, status)) throw new Error(`Unsupported local status: ${status}`);
   return { path, content, frontmatter: frontmatter[0], status };
+}
+async function writeLocalPlanStatus(root, planSetId, planId, status) {
+  const local = await localTicket(root, {}, `docs/plans/${planSetId}/${planId}.md`);
+  if (local.status === status) return false;
+  const updated = local.frontmatter.replace(/^status:[ \t]*[^\r\n]+/m, `status: ${status}`);
+  if (await readFile(local.path, 'utf8') !== local.content) throw new Error('Local ticket changed concurrently; retry from the latest state');
+  const temp = `${local.path}.${randomUUID()}.tmp`;
+  try { await writeFile(temp, local.content.replace(local.frontmatter, updated), { flag: 'wx', mode: (await lstat(local.path)).mode }); await rename(temp, local.path); }
+  finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+  return true;
+}
+async function localIssueLinks(root, planSetId, repository = null) {
+  const path = sessionOutputPath(root, `runtime/to-ticket/${planSetId}-issues.json`, { create: false });
+  try {
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    if (!Array.isArray(saved.tickets) || (repository && saved.repository !== repository)) throw new Error('Invalid Issue links');
+    for (const ticket of saved.tickets) if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticket.plan_id || '') || typeof ticket.ticket_ref !== 'string') throw new Error('Invalid Issue links');
+    return new Map(saved.tickets.map((ticket) => [ticket.plan_id, ticket.ticket_ref]));
+  } catch (error) { if (error.code === 'ENOENT') return new Map(); throw error; }
+}
+async function localPlanIds(root, planSetId) {
+  const directory = resolve(root, 'docs/plans', planSetId);
+  try { return (await readdir(directory)).filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)).sort(); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+}
+async function localPlanStatus(root, planSetId, planId) {
+  const path = `docs/plans/${planSetId}/${planId}.md`;
+  return (await localTicket(root, {}, path)).status;
+}
+async function localTicketIdentity(root, ref, expectedPlanId = null) {
+  let planSetId = null, planId = null;
+  if (expectedPlanId) {
+    const separator = expectedPlanId.lastIndexOf(':');
+    if (separator <= 0) throw new Error('Invalid expected plan identity');
+    planSetId = expectedPlanId.slice(0, separator); planId = expectedPlanId.slice(separator + 1);
+  } else {
+    const local = /^docs\/plans\/([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)\.md$/.exec(ref);
+    if (local) [, planSetId, planId] = local;
+    else {
+      try { planSetId = JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (planSetId) planId = [...await localIssueLinks(root, planSetId)].find(([, ticketRef]) => ticketRef === ref)?.[0] || null;
+      if (!planId) {
+        const directory = sessionOutputPath(root, 'runtime/to-ticket', { create: false });
+        try {
+          for (const name of await readdir(directory)) {
+            if (!/^[A-Za-z0-9][A-Za-z0-9._-]*-issues\.json$/.test(name)) continue;
+            const candidateSet = name.slice(0, -'-issues.json'.length);
+            const links = await localIssueLinks(root, candidateSet);
+            const candidatePlan = [...links].find(([, ticketRef]) => ticketRef === ref)?.[0];
+            if (candidatePlan) { planSetId = candidateSet; planId = candidatePlan; break; }
+          }
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+    }
+  }
+  if (!planSetId || !planId || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planSetId) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new Error(`No local plan ticket is linked to ${ref}`);
+  if (ref.startsWith('docs/plans/')) {
+    const expectedRef = `docs/plans/${planSetId}/${planId}.md`;
+    if (ref !== expectedRef) throw new Error('Local ticket does not match expected plan identity');
+  } else {
+    const linked = (await localIssueLinks(root, planSetId)).get(planId);
+    if (linked && linked !== ref) throw new Error('Issue reference does not match the local plan link');
+  }
+  return { plan_set_id: planSetId, plan_id: planId, local_ref: `docs/plans/${planSetId}/${planId}.md` };
 }
 const PROJECT_METADATA_TTL_MS = 60 * 60 * 1000;
 const nonemptyId = (value) => typeof value === 'string' && value.length > 0;
@@ -138,9 +202,17 @@ async function readTracker(root, config, ref, run, context = {}) {
 }
 export async function readTrackerStatus({ workspace_root: root, ticket_ref: ref, run = defaultRun } = {}) {
   try {
-    const tracker = await readTracker(root, await projectConfig(root), ref, run, {});
-    return { status: 'pass', reason: 'tracker_status_read', ticket_ref: ref, canonical_status: tracker.status, project_status: tracker.default_status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id };
-  } catch (error) { return { status: 'fail', reason: 'tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
+    const config = await projectConfig(root);
+    const identity = await localTicketIdentity(root, ref);
+    const canonicalStatus = await localPlanStatus(root, identity.plan_set_id, identity.plan_id);
+    if (config?.mode !== 'github') return { status: 'pass', reason: 'local_tracker_status_read', ticket_ref: ref, canonical_status: canonicalStatus, local_status: canonicalStatus };
+    try {
+      const tracker = await readTracker(root, config, ref, run, {});
+      return { status: 'pass', reason: 'local_tracker_status_read', ticket_ref: ref, canonical_status: canonicalStatus, local_status: canonicalStatus, mirror_status: tracker.status, project_status: tracker.default_status, issue_state: tracker.issue_state, project_id: tracker.project?.id, field_id: tracker.field?.id, item_id: tracker.item?.id, ...(tracker.status !== canonicalStatus ? { warnings: [`GitHub mirror is ${tracker.status}; local status remains ${canonicalStatus}`] } : {}) };
+    } catch (error) {
+      return { status: 'pass', reason: 'local_tracker_status_read', ticket_ref: ref, canonical_status: canonicalStatus, local_status: canonicalStatus, mirror_status: null, warnings: [`GitHub mirror unavailable: ${error.message}`] };
+    }
+  } catch (error) { return { status: 'fail', reason: 'local_tracker_status_unresolved', ticket_ref: ref, violations: [error.message] }; }
 }
 export async function listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run = defaultRun } = {}) {
   if (!planSetId) return [];
@@ -189,27 +261,19 @@ export async function listPlanTickets({ workspace_root: root, plan_set_id: planS
   return [...tickets.values()].sort((a, b) => a.plan_id.localeCompare(b.plan_id));
 }
 
-// Local tickets use frontmatter. GitHub tickets use verified implementation commits for readiness.
+// Local plan Issues are canonical in every tracker mode. GitHub Issue references are an optional mirror mapping.
 export async function readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run = defaultRun } = {}) {
   if (!planSetId || !Array.isArray(planIds)) throw new Error('A plan set ID and its plan IDs are required');
   const config = await projectConfig(root);
-  if (config?.mode === 'local-markdown') {
-    const tickets = [];
-    for (const planId of planIds) {
-      const ref = `docs/plans/${planSetId}/${planId}.md`;
-      tickets.push({ plan_id: planId, ticket_ref: ref, status: (await localTicket(root, config, ref)).status });
-    }
-    return tickets;
+  if (!['github', 'local-markdown'].includes(config?.mode)) throw new Error('Exactly one configured tracker mode is required');
+  const links = config.mode === 'github' ? await localIssueLinks(root, planSetId) : new Map();
+  const tickets = [];
+  for (const planId of planIds) {
+    const ref = config.mode === 'local-markdown' ? `docs/plans/${planSetId}/${planId}.md` : links.get(planId) ?? null;
+    const status = await localPlanStatus(root, planSetId, planId);
+    tickets.push({ plan_id: planId, ticket_ref: ref, status });
   }
-  if (config?.mode !== 'github') throw new Error('Exactly one configured tracker mode is required');
-  const mapped = new Map((await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run })).map((ticket) => [ticket.plan_id, ticket]));
-  const { implementedTickets } = await import('../workflow/tactical-tickets.mjs');
-  const completed = await implementedTickets({ root, session: sessionDirectory(root), planSetId });
-  return planIds.map((planId) => ({
-    plan_id: planId,
-    ticket_ref: mapped.get(planId)?.ticket_ref ?? null,
-    status: completed.has(planId) ? 'completed' : 'planned',
-  }));
+  return tickets;
 }
 
 // Which plans must be finished before this plan, read from the plan's own "의존성" section (backticked plan IDs of the
@@ -234,32 +298,57 @@ export async function planDependencies({ workspace_root: root, plan_set_id: plan
 export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, run = defaultRun } = {}) {
   try {
     const config = await projectConfig(root);
-    let refs = ticket_refs;
-    if (refs === null) {
-      let planSetId;
-      try { planSetId = JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (!planSetId && expected_plan_id) planSetId = expected_plan_id.slice(0, expected_plan_id.lastIndexOf(':'));
-      const tickets = planSetId ? await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run }) : [];
-      refs = tickets.filter((ticket) => !expected_plan_id || `${planSetId}:${ticket.plan_id}` === expected_plan_id).map((ticket) => ticket.ticket_ref);
-    }
-    if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(refs).size !== refs.length) throw new Error('ticket_refs must contain unique exact references');
-    if (expected_plan_id && refs.length) {
+    if (ticket_refs !== null && (!Array.isArray(ticket_refs) || ticket_refs.some((ref) => typeof ref !== 'string' || !ref.trim()) || new Set(ticket_refs).size !== ticket_refs.length)) throw new Error('ticket_refs must contain unique exact references');
+    let planSetId = null, planIds = [];
+    if (expected_plan_id) {
       const separator = expected_plan_id.lastIndexOf(':');
-      const tickets = await listPlanTickets({ workspace_root: root, plan_set_id: expected_plan_id.slice(0, separator), run });
-      if (refs.some((ref) => !tickets.some((ticket) => ticket.plan_id === expected_plan_id.slice(separator + 1) && ticket.ticket_ref === ref))) throw new Error('Ticket does not belong to the expected plan');
+      if (separator <= 0) throw new Error('Invalid expected plan identity');
+      planSetId = expected_plan_id.slice(0, separator);
+      planIds = [expected_plan_id.slice(separator + 1)];
+    } else {
+      try { planSetId = JSON.parse(await readFile(resolve(root, '.io/worktree.json'), 'utf8')).plan_set_id; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (planSetId) planIds = await localPlanIds(root, planSetId);
     }
-    const context = {};
-    let statuses = null;
+    const warnings = [];
+    let links = planSetId ? await localIssueLinks(root, planSetId) : new Map();
+    if (config.mode === 'github' && planSetId && (!links.size || planIds.length === 0)) {
+      try {
+        const remoteLinks = await listPlanTickets({ workspace_root: root, plan_set_id: planSetId, run });
+        links = new Map([...links, ...remoteLinks.map(({ plan_id, ticket_ref }) => [plan_id, ticket_ref])]);
+        if (!planIds.length) planIds = remoteLinks.map(({ plan_id }) => plan_id);
+      } catch (error) { warnings.push(`GitHub ticket mapping unavailable: ${error.message}`); }
+    }
+    if (ticket_refs !== null) {
+      if (expected_plan_id) {
+        const expectedPlanId = planIds[0];
+        const knownRef = links.get(expectedPlanId);
+        if (config.mode === 'github' && !knownRef) return { status: 'fail', reason: 'tracker_reference_unresolved', violations: ['The local plan Issue has no verified GitHub mirror link'], tickets: [] };
+        if (knownRef && ticket_refs.some((ref) => ref !== knownRef)) return { status: 'fail', reason: 'tracker_reference_mismatch', violations: ['Ticket does not belong to the expected plan'], tickets: [] };
+        if (!knownRef && config.mode === 'local-markdown' && ticket_refs.some((ref) => ref !== `docs/plans/${planSetId}/${expectedPlanId}.md`)) return { status: 'fail', reason: 'tracker_reference_mismatch', violations: ['Ticket does not belong to the expected plan'], tickets: [] };
+      } else if (planSetId) {
+        const mappedIds = [...links].filter(([, ref]) => ticket_refs.includes(ref)).map(([id]) => id);
+        if (mappedIds.length) planIds = mappedIds;
+      }
+    }
+    const localTickets = planSetId && planIds.length ? await readPlanSetTicketStatuses({ workspace_root: root, plan_set_id: planSetId, plan_ids: planIds, run }) : [];
+    const refs = ticket_refs ?? localTickets.map((ticket) => ticket.ticket_ref).filter(Boolean);
+    let mirrorStatuses = null;
     if (config.mode === 'github' && refs.length) {
       for (const ref of refs) githubReference(config, ref);
-      try { statuses = await githubTickets(root, config, refs, run, context); }
-      catch (error) { return { status: 'pass', reason: 'project_status_unavailable', warnings: [error.message], violations: [], tickets: [] }; }
+      try { mirrorStatuses = await githubTickets(root, config, refs, run, {}); }
+      catch (error) { warnings.push(`GitHub status mirror unavailable: ${error.message}`); }
     }
-    const tickets = [];
-    for (const ref of refs) tickets.push({ ref, status: (statuses ? statuses.get(ref) : await readTracker(root, config, ref, run, context)).status });
-    return { status: 'pass', reason: refs.length ? 'tracker_tickets_current' : 'no_managed_tracker_tickets', violations: [], tickets };
+    const tickets = localTickets.map((ticket) => {
+      const mirrorStatus = ticket.ticket_ref && mirrorStatuses ? mirrorStatuses.get(ticket.ticket_ref)?.status ?? null : null;
+      if (ticket.ticket_ref && mirrorStatuses && mirrorStatus !== ticket.status) warnings.push(mirrorStatus
+        ? `GitHub mirror for ${ticket.plan_id} is ${mirrorStatus}; local status remains ${ticket.status}`
+        : `GitHub mirror for ${ticket.plan_id} could not be read; local status remains ${ticket.status}`);
+      return { ref: ticket.ticket_ref, plan_id: ticket.plan_id, status: ticket.status, ...(ticket.ticket_ref && mirrorStatuses ? { mirror_status: mirrorStatus } : {}) };
+    });
+    const localStatus = localTickets.length === 1 ? localTickets[0].status : expected_plan_id ? localTickets.find((ticket) => ticket.plan_id === planIds[0])?.status ?? null : null;
+    return { status: 'pass', reason: 'local_tracker_current', local_status: localStatus, local_statuses: true, mirror_status: mirrorStatuses ? 'available' : config.mode === 'github' && refs.length ? 'unavailable' : 'not_configured', warnings, violations: [], tickets };
   } catch (error) {
-    return { status: 'fail', reason: 'tracker_status_unresolved', violations: [error.message] };
+    return { status: 'fail', reason: 'local_tracker_status_unresolved', violations: [error.message] };
   }
 }
 
@@ -288,58 +377,59 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   if (status !== null && !Object.hasOwn(TRACKER_STATES, status)) throw new Error('Use planned, in-progress, blocked, or completed');
   if (phase !== null || classification !== null) throw new Error('Tracker phase and classification were retired with Beads; no metadata was changed');
   const config = await projectConfig(root);
+  const identity = await localTicketIdentity(root, ref, expected_plan_id);
   if (expected_plan_id) {
     const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: [ref], expected_plan_id, run });
     if (check.status !== 'pass') throw new Error(check.violations.join('; '));
   }
-  const context = {};
-  if (config.mode === 'github') githubReference(config, ref);
+  const currentStatus = await localPlanStatus(root, identity.plan_set_id, identity.plan_id);
+  const desired = status || currentStatus;
+  if (!Object.hasOwn(TRACKER_STATES, desired)) throw new Error(`Unsupported local status: ${desired}`);
+  const local_updated = await writeLocalPlanStatus(root, identity.plan_set_id, identity.plan_id, desired);
+
+  if (config.mode !== 'github') return { status: 'pass', reason: 'local_status_recorded', ticket_ref: ref, plan_id: identity.plan_id, canonical_status: desired, local_updated, tracker_updated: false };
   let tracker_updated = false;
+  const warnings = [];
+  const context = {};
   let tracker;
-  try { tracker = await readTracker(root, config, ref, run, context); }
-  catch (error) {
-    if (config.mode !== 'github') throw error;
-    return { status: 'pass', reason: 'project_status_unavailable', ticket_ref: ref, warnings: [error.message], tracker_updated };
+  try {
+    githubReference(config, ref);
+    tracker = await readTracker(root, config, ref, run, context);
+  } catch (error) {
+    warnings.push(`GitHub status mirror unavailable: ${error.message}`);
+    return { status: 'pass', reason: 'local_status_recorded', ticket_ref: ref, plan_id: identity.plan_id, canonical_status: desired, local_updated, mirror_status: 'unavailable', tracker_updated, warnings };
   }
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
   try {
-    const desired = status || tracker.status;
-    await writer.append('tracker_sync_started', { ticket_ref: ref, desired, previous: tracker.status, phase, classification }, { critical: true });
-    if (config.mode === 'github') {
-      if (tracker.status !== desired) {
-        const option = single(tracker.field.options.filter((o) => o.name === TRACKER_STATES[desired][0]), 'Workflow Status option');
-        await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.field.id, '--single-select-option-id', option.id], root);
-        tracker_updated = true;
-      }
-      if (tracker.statusField) {
-        const optionName = githubBoardStatus[desired];
-        if (optionName && tracker.default_status !== optionName) {
-          const option = single(tracker.statusField.options.filter((o) => o.name === optionName), 'Project Status option');
-          await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.statusField.id, '--single-select-option-id', option.id], root);
-          tracker_updated = true;
-        }
-      }
-    } else if (tracker.status !== desired) {
-      const updated = tracker.frontmatter.replace(/^status:[ \t]*[^\r\n]+/m, `status: ${desired}`);
-      if (await readFile(tracker.path, 'utf8') !== tracker.content) throw new Error('Local ticket changed concurrently; retry from the latest state');
-      const temp = `${tracker.path}.${randomUUID()}.tmp`;
-      try {
-        await writeFile(temp, tracker.content.replace(tracker.frontmatter, updated), { flag: 'wx', mode: (await lstat(tracker.path)).mode });
-        await rename(temp, tracker.path);
-      } finally { await unlink(temp).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    await writer.append('tracker_sync_started', { ticket_ref: ref, desired, local_status: desired, mirror_previous: tracker.status, phase, classification }, { critical: true });
+    if (tracker.status !== desired) {
+      const option = single(tracker.field.options.filter((o) => o.name === TRACKER_STATES[desired][0]), 'Workflow Status option');
+      await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.field.id, '--single-select-option-id', option.id], root);
       tracker_updated = true;
     }
-    tracker = await readTracker(root, config, ref, run, context);
-    if (tracker.status !== desired) throw new Error('Canonical tracker write did not verify');
-    if (tracker.statusField && githubBoardStatus[desired] && tracker.default_status !== githubBoardStatus[desired]) throw new Error('GitHub Project Status write did not verify');
-    const result = { status: 'pass', reason: 'tracker_synced', ticket_ref: ref, canonical_status: desired, tracker_updated, evidence_path: evidence };
+    if (tracker.statusField) {
+      const optionName = githubBoardStatus[desired];
+      if (optionName && tracker.default_status !== optionName) {
+        const option = single(tracker.statusField.options.filter((o) => o.name === optionName), 'Project Status option');
+        await run('gh', ['project', 'item-edit', '--id', tracker.item.id, '--project-id', tracker.project.id, '--field-id', tracker.statusField.id, '--single-select-option-id', option.id], root);
+        tracker_updated = true;
+      }
+    }
+    try {
+      const verified = await readTracker(root, config, ref, run, context);
+      if (verified.status !== desired || (verified.statusField && githubBoardStatus[desired] && verified.default_status !== githubBoardStatus[desired])) throw new Error('GitHub mirror write did not verify');
+      tracker = verified;
+    } catch (error) { warnings.push(`GitHub status mirror verification unavailable: ${error.message}`); }
+    const result = { status: 'pass', reason: 'local_status_recorded', ticket_ref: ref, plan_id: identity.plan_id, canonical_status: desired, local_updated, mirror_status: tracker.status, tracker_updated, warnings, evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
     return result;
   } catch (error) {
-    if (config.mode === 'github') await forgetProjectMetadata(context);
-    const result = { status: 'fail', reason: 'tracker_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Read the latest tracker status before retrying', evidence_path: evidence };
+    await forgetProjectMetadata(context);
+    const warning = `GitHub status mirror update failed: ${error.message}`;
+    warnings.push(warning);
+    const result = { status: 'pass', reason: 'local_status_recorded', ticket_ref: ref, plan_id: identity.plan_id, canonical_status: desired, local_updated, mirror_status: 'unavailable', tracker_updated, warnings, evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
-    return config.mode === 'github' ? { ...result, status: 'pass', reason: 'project_sync_unavailable', warnings: result.violations, violations: [] } : result;
+    return result;
   } finally { await writer.close(); }
 }
