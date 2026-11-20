@@ -40,9 +40,9 @@ async function consumer() {
   const json = (run) => ({ status: run.status, stderr: run.stderr, json: run.stdout ? JSON.parse(run.stdout) : null });
   const c = {
     root, git, write, env,
-    cli: (...args) => json(spawnSync(process.execPath, [join(root, '.codex/scripts/harness-contract-review.mjs'), ...args, '--root', root, '--plan-set', PLAN_SET], { cwd: root, encoding: 'utf8', env })),
-    seal: (summary = 'a contract change') => { const run = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-contracts.mjs'), 'seal', '--root', root, '--summary', summary], { cwd: root, encoding: 'utf8' }); assert.equal(run.status, 0, run.stdout + run.stderr); },
-    hook: (event) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env, encoding: 'utf8', input: JSON.stringify({ session_id: 'sync-contracts-thread', agent_type: 'contract_reviewer', ...event }) }),
+    cli: (...args) => json(spawnSync(process.execPath, [join(root, '.harness/scripts/harness-contract-review.mjs'), ...args, '--root', root, '--plan-set', PLAN_SET], { cwd: root, encoding: 'utf8', env })),
+    seal: (summary = 'a contract change') => { const run = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-contracts.mjs'), 'seal', '--root', root, '--summary', summary], { cwd: root, encoding: 'utf8' }); assert.equal(run.status, 0, run.stdout + run.stderr); },
+    hook: (event) => spawnSync(process.execPath, [join(root, '.harness/scripts/harness-agent-event.mjs')], { cwd: root, env, encoding: 'utf8', input: JSON.stringify({ session_id: 'sync-contracts-thread', agent_type: 'contract_reviewer', ...event }) }),
     revision: async () => JSON.parse(await readFile(join(root, 'docs/contracts/manifest.json'), 'utf8')).revision,
     history: async () => JSON.parse(await readFile(join(root, `.io/runtime/reviews/${SCOPE}.json`), 'utf8')),
     // begin -> a native reviewer the hook binds -> record, the way the stage does it.
@@ -175,7 +175,7 @@ test('different findings are repaired for five rounds, then the sixth review is 
 test('Claude Code admits only the active contract attempt, claims it before dispatch and the hook then records the same review', async () => {
   const c = await consumer();
   try {
-    const admission = (input) => JSON.parse(execFileSync(process.execPath, [join(c.root, '.codex/scripts/harness-agent-admission.mjs')], { cwd: c.root, env: c.env, input: JSON.stringify(input), encoding: 'utf8' }));
+    const admission = (input) => JSON.parse(execFileSync(process.execPath, [join(c.root, '.harness/scripts/harness-agent-admission.mjs')], { cwd: c.root, env: c.env, input: JSON.stringify(input), encoding: 'utf8' }));
     const dispatch = { hook_event_name: 'PreToolUse', session_id: 'claude-session', tool_name: 'Agent', tool_use_id: 'dispatch-1', tool_input: { subagent_type: 'contract_reviewer', prompt: 'Review the contract.' } };
     assert.equal(admission(dispatch).hookSpecificOutput.permissionDecision, 'deny', 'no active attempt');
     const begin = c.cli('begin');
@@ -197,7 +197,7 @@ test('Claude Code admits only the active contract attempt, claims it before disp
 test('installed consumer: the reviewer profile, GUIDE, CLI and hook handling ship, resolve the skill binding and stay out of commits', async () => {
   const c = await consumer();
   try {
-    for (const path of ['.codex/agents/contract_reviewer.toml', '.claude/agents/contract_reviewer.md', '.codex/internal-skills/contract-review/GUIDE.md', '.codex/scripts/harness-contract-review.mjs', '.harness/src/workflow/contract-review.mjs']) {
+    for (const path of ['.codex/agents/contract_reviewer.toml', '.claude/agents/contract_reviewer.md', '.harness/skills/quality/contract-review/GUIDE.md', '.harness/scripts/harness-contract-review.mjs', '.harness/src/workflow/contract-review.mjs']) {
       assert.ok((await readdir(join(c.root, path, '..'))).includes(path.split('/').at(-1)), path);
       assert.match(c.git('check-ignore', '-v', path), /\.git\/info\/exclude/, `${path} is Harness-owned and ignored`);
     }
@@ -205,7 +205,7 @@ test('installed consumer: the reviewer profile, GUIDE, CLI and hook handling shi
     assert.match(profile, /permissionMode: plan/);
     assert.match(profile, /contract-review\/GUIDE\.md/);
     await writeFile(join(c.root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: codex-high\n    high_performance_reasoning_effort: high\n    implementation_model: codex-implementation\n    implementation_reasoning_effort: medium\n    execution_model: codex-execution\n    execution_reasoning_effort: low\n    low_performance_model: codex-light\n    low_performance_reasoning_effort: minimal\n');
-    const binding = JSON.parse(execFileSync(process.execPath, [join(c.root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', c.root, '--skill', 'contract-review'], { cwd: c.root, encoding: 'utf8' }));
+    const binding = JSON.parse(execFileSync(process.execPath, [join(c.root, '.harness/scripts/harness-skill-execution.mjs'), 'binding', '--root', c.root, '--skill', 'contract-review'], { cwd: c.root, encoding: 'utf8' }));
     assert.deepEqual([binding.model_tier, binding.model, binding.reasoning_effort], ['high_performance', 'codex-high', 'high']);
     // Harness-generated files stay out of git status; the application-owned files stay visible.
     await mkdir(join(c.root, 'src'), { recursive: true });
@@ -216,7 +216,7 @@ test('installed consumer: the reviewer profile, GUIDE, CLI and hook handling shi
     // The installed Doctor knows the new assets.
     const doctor = await runDoctor({ root: c.root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.code === 'execution_asset_missing' && /contract-review/.test(item.message)), []);
-    await rm(join(c.root, '.codex/scripts/harness-contract-review.mjs'));
+    await rm(join(c.root, '.harness/scripts/harness-contract-review.mjs'));
     const missing = await runDoctor({ root: c.root, sourceRoot });
     assert.ok(missing.diagnostics.some((item) => item.code === 'execution_asset_missing' && /harness-contract-review\.mjs/.test(item.message)));
   } finally { await rm(c.root, { recursive: true, force: true }); }

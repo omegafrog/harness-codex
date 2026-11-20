@@ -1,3 +1,4 @@
+import { internalSkillAssetPath } from '../.harness/src/workflow/skill-declaration.mjs';
 import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,7 +56,7 @@ test('tactical implementation is ordered after completed tactical design and rem
   for (const item of [workflow, planning]) assert.ok(!Object.values(item.hooks).flat().includes('spec_reviews'), `${item.id} needs no Spec review`);
   assert.ok(workflow.hooks.before_complete.includes('plan_review') && workflow.hooks.before_complete.includes('required_outcome'));
   assert.equal(workflow.stages.some(({ skill }) => skill === 'frontend-design'), false, 'frontend design stays its own workflow');
-  const guide = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/workflow-map.md'), 'utf8');
+  const guide = await readFile(join(sourceRoot, '.agents/skills/orchestrator/references/workflow-map.md'), 'utf8');
   assert.match(guide, /별도 `tactical-to-code` workflow/);
   assert.match(guide, /`frontend-design-brief` stage/);
 });
@@ -71,16 +72,16 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   await writeFile(join(root, 'app.txt'), 'application edit\n');
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  assert.equal(await readFile(join(root, '.codex/workflows/spec-me.yaml'), 'utf8').catch(() => null), null, 'fresh install has no spec-me workflow');
+  assert.equal(await readFile(join(root, '.harness/workflows/spec-me.yaml'), 'utf8').catch(() => null), null, 'fresh install has no spec-me workflow');
   await writeFile(join(root, '.harness/harness.yaml'), SETUP);
 
   const assets = [
-    '.codex/workflows/tactical-to-code.yaml',
-    '.codex/workflows/frontend-design.yaml',
-    ...['frontend-design', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.harness/workflows/tactical-to-code.yaml',
+    '.harness/workflows/frontend-design.yaml',
+    ...['frontend-design', 'frontend-implement', 'frontend-visual-review'].map((name) => internalSkillAssetPath(name)),
     ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
-    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    '.codex/internal-skills/to-ticket/references/split.md',
+    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => internalSkillAssetPath(name)),
+    '.harness/skills/planning/to-ticket/references/split.md',
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
     '.codex/agents/to_ticket.toml',
@@ -91,9 +92,9 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
     '.harness/src/workflow/tactical-tickets.mjs',
     '.harness/src/workflow/plan-review.mjs',
     '.harness/src/tracker/publication.mjs',
-    '.codex/scripts/harness-native-stage.mjs',
-    '.codex/scripts/harness-result.mjs',
-    '.codex/scripts/harness-context.mjs',
+    '.harness/scripts/harness-native-stage.mjs',
+    '.harness/scripts/harness-result.mjs',
+    '.harness/scripts/harness-context.mjs',
   ];
   const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
   for (const path of assets) {
@@ -102,7 +103,7 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code, severity }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid'].includes(code)), []);
-  const frontendGuide = join(root, '.codex/internal-skills/frontend-design/GUIDE.md');
+  const frontendGuide = join(root, '.harness/skills/delivery/frontend-design/GUIDE.md');
   const savedGuide = await readFile(frontendGuide);
   await rm(frontendGuide);
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith('frontend-design/GUIDE.md')));
@@ -155,9 +156,9 @@ test('update removes every retired spec-me asset from an installed consumer and 
   assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'beads', 'spec-me']);
   for (const path of RETIRED_ASSET_PATHS) assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
   for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.codex/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
-  const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`);
+  const kept = ['requirements-fix', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => internalSkillAssetPath(name));
   for (const path of kept) assert.ok((await readFile(join(root, path), 'utf8')).length > 0, `${path} stays installed`);
-  assert.equal((await readFile(join(root, '.codex/internal-skills/requirements-fix/GUIDE.md'), 'utf8')).includes('spec-me/GUIDE.md'), false, 'a live stage guide links no retired guide');
+  assert.equal((await readFile(join(root, '.harness/skills/requirements/requirements-fix/GUIDE.md'), 'utf8')).includes('spec-me/GUIDE.md'), false, 'a live stage guide links no retired guide');
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), false);
 
   // An earlier release installed these as managed, locked files; one copy was edited by the user, one never was in the lock.
@@ -228,7 +229,7 @@ test('installed prepare command enforces the tactical implementation order', asy
   for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
   state.current_stage = 'workflow-compose';
   await writeFile(statePath, JSON.stringify(state, null, 2) + '\n');
-  const prepare = (stage) => execFileSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', stage], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const prepare = (stage) => execFileSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', stage], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
   assert.throws(() => prepare('tactical-code'), (error) => /tactical-code cannot start before tactical-technology/.test(error.stderr));
   assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-code'], undefined, 'out-of-order preparation records no stage result');
@@ -238,7 +239,7 @@ test('installed prepare command enforces the tactical implementation order', asy
   staleState.stages['context-boundary'].status = 'blocked';
   staleState.stages['context-boundary'].code = 'DEPENDENCY_INCOMPLETE';
   await writeFile(statePath, JSON.stringify(staleState, null, 2) + '\n');
-  assert.throws(() => execFileSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-native-stage.mjs'), 'start', '--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', first.input.execution_id], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), (error) => /tactical-technology requires completed\/OK tactical design stage context-boundary/.test(error.stderr));
+  assert.throws(() => execFileSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), 'start', '--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', first.input.execution_id], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), (error) => /tactical-technology requires completed\/OK tactical design stage context-boundary/.test(error.stderr));
   assert.notEqual(JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-technology']?.status, 'running', 'start rechecks tactical design and claims nothing after an upstream revision');
 });
 
@@ -301,7 +302,7 @@ test('installed decisions are committed alone and the ticket stages wait for the
 
   // The decisions alone do not start code: the ticket split and the user-approved publication come first. The ticket-by-ticket
   // run of tactical-code (profile, binding, one commit per ticket) is covered by tactical_ticket_flow.test.mjs.
-  const prepare = (...args) => spawnSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: flow.workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: flow.workspace, encoding: 'utf8' });
   assert.match(prepare('--stage-id', 'tactical-code', '--plan', 'any-ticket').stderr, /tactical-code cannot start before to-ticket/);
   assert.match(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', '발행하세요').stderr, /tracker-publish cannot start before to-ticket/);
   const finalState = JSON.parse(await readFile(statePath, 'utf8'));
@@ -375,7 +376,10 @@ test('installed frontend design is dispatched independently and its brief enters
   await mkdir(plans, { recursive: true });
   await writeFile(join(plans, 'plans.md'), '# 계획\n');
   await writeFile(join(plans, 'ui.md'), '---\nstatus: planned\nfrontend: true\n---\n# 화면\n');
-  const { snapshotPlanSet } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/plan-review.mjs')).href);
+  await mkdir(join(flow.workspace, 'docs/specs', flow.planSetId), { recursive: true });
+  await writeFile(join(flow.workspace, flow.specPath('requirements.md')), '# 게시글 작성 요구사항\n');
+  await writeFile(join(flow.workspace, flow.specPath('tactical-design.md')), '# 게시글 작성 설계\n');
+  const { planReviewSnapshotHash, snapshotPlanSet } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/plan-review.mjs')).href);
   const snapshot = await snapshotPlanSet({ root: flow.workspace, planSetId: flow.planSetId });
   assert.ok(snapshot.design_paths.includes(`.io/${brief.path}`));
   assert.equal(snapshot.inputs[`.io/${brief.path}`], brief.sha256);
@@ -402,8 +406,13 @@ test('installed frontend design is dispatched independently and its brief enters
   await writeExecutionInput(flow.workspace, { execution_id: 'ui-review', skill: 'frontend-visual-review', context: { plan_id: 'ui', transition: { result_ref: 'implementation' } } }, flow.planSetId);
   ticketState.stages['frontend-visual-review'].execution_id = 'ui-review';
   await check('tactical-code');
+  const { updateReviewAttempt } = await import(pathToFileURL(join(flow.workspace, '.harness/src/workflow/review-attempts.mjs')).href);
+  const reviewBasis = { root: flow.workspace, scope: `plan-${flow.planSetId}`, inputs: snapshot.inputs };
+  const admission = await updateReviewAttempt({ ...reviewBasis, action: 'begin' });
+  await updateReviewAttempt({ ...reviewBasis, action: 'record', attemptId: admission.attempt_id, review: { reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', findings: [] } });
   const dispatchState = JSON.parse(await readFile(statePath, 'utf8'));
   for (const stage of ['tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish']) dispatchState.stages[stage] = { status: 'completed', code: 'OK' };
+  for (const stage of ['to-ticket', 'tracker-publish']) dispatchState.stages[stage].review_snapshot_sha256 = planReviewSnapshotHash(snapshot.inputs);
   await writeFile(statePath, JSON.stringify(dispatchState));
   const dispatch = async (stage, skill, profile) => {
     const prepared = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, '--plan', 'ui']);

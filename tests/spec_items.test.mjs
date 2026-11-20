@@ -75,7 +75,7 @@ test('harness-code-review spec-items lists the Architecture Spec items of the wo
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
-  const script = fileURLToPath(new URL('../.codex/scripts/harness-code-review.mjs', import.meta.url));
+  const script = fileURLToPath(new URL('../.harness/scripts/harness-code-review.mjs', import.meta.url));
   const directory = await mkdtemp(join(tmpdir(), 'spec-items-'));
   const primary = join(directory, 'primary'), root = join(directory, 'workspace');
   try {
@@ -113,24 +113,14 @@ test('a missing artifact that the stage does not declare as an output is dropped
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-// A failing E2E whose evidence shows only a test-code defect is fixed and rerun without a user decision round.
-test('the orchestrator and the E2E guide point at the test-defect fast path', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-  const path = '.codex/internal-skills/e2e-test/references/test-defect-fast-path.md';
-  const fast = await read(path);
-  assert.match(fast, /단언을 약하게 만들지 않는다/);
-  assert.match(fast, /3회 미만/);
-  assert.match(await read('.codex/internal-skills/e2e-test/GUIDE.md'), /references\/test-defect-fast-path\.md/);
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /test-defect-fast-path\.md/);
-});
-
 // Ending the orchestrator's turn aborts the sub-agents it started, so the E2E runner reported nothing.
 test('the orchestrator waits for native stage agents including E2E', async () => {
   const { readFile } = await import('node:fs/promises');
   const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /실제 에이전트 결과를 기다리고/);
+  assert.match(await read('.agents/skills/orchestrator/references/implementation.md'), /--stage-id e2e-test --e2e-request/);
+  assert.match(await read('.agents/skills/orchestrator/SKILL.md'), /실제 에이전트 결과를 기다리고/);
+  assert.match(await read('.harness/skills/quality/e2e-test/GUIDE.md'), /자동 수정하거나 자동 재실행하지 않고/);
+  assert.doesNotMatch(await read('.harness/skills/quality/e2e-test/GUIDE.md'), /test-defect-fast-path/);
 });
 
 // The stage reads prerequisite completion from Harness, so it cannot take its own ticket for a prerequisite.
@@ -161,31 +151,14 @@ test('plan dependencies come from the plan text and canonical tracker status', a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('the test-defect fast path keeps the orchestrator from editing files itself', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const text = await readFile(new URL('../.codex/internal-skills/e2e-test/references/test-defect-fast-path.md', import.meta.url), 'utf8');
-  assert.match(text, /orchestrator는 테스트 파일이든 제품 파일이든 직접 수정하지 않는다/);
-});
-
-// A repair request must not be answered with "already implemented, no changes".
-test('the implementation stage does not skip a fix requested through feedback because the plan is already done', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const text = await readFile(new URL('../.codex/internal-skills/implement-wrapper/GUIDE.md', import.meta.url), 'utf8');
-  assert.match(text, /`feedback\.json`이 있으면 이 종료 규칙을 적용하지 않는다/);
-  assert.match(text, /파일을 하나도 바꾸지 않은 채 `completed\/OK`로 끝내지 않는다/);
-});
-
 // The final review used to demand a sealed contract that only a later step produces, so it failed in every round.
-test('an unsealed contract is deferred in the final review and the orchestrator seals it before the completion gate', async () => {
+test('an unsealed contract is deferred in the final review and contract edits belong to the sync stage', async () => {
   const { readFile } = await import('node:fs/promises');
   const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-  assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /`contracts_invalid`이고 `docs\/contracts\/manifest\.json`이 비어 있는 상태는 코드·Spec 결함이 아니다/);
-  const implementation = await read('.codex/skills/orchestrator/references/implementation.md');
-  assert.match(implementation, /최종 E2E 통과 → `sync-contracts` stage → 완료 gate다/);
-  assert.match(implementation, /orchestrator는 `docs\/contracts\/`를 직접 작성·수정·seal하지 않는다/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /계약 동기화[^\n]*references\/implementation\.md/);
-  assert.match(await read('.codex/internal-skills/sync-contracts/GUIDE.md'), /## Stage로 실행/);
-  assert.match(await read('.harness/src/workflow/stage-input.mjs'), /stageId === 'sync-contracts' && \(state\.stages\?\.\['implement-wrapper'\]/);
+  assert.match(await read('.harness/skills/quality/code-review/GUIDE.md'), /`contracts_invalid`이고 `docs\/contracts\/manifest\.json`이 비어 있는 상태는 코드·Spec 결함이 아니다/);
+  assert.match(await read('.agents/skills/orchestrator/SKILL.md'), /통합 계약의 편집과 Git 작업은 소유 stage와 실행기에 맡긴다/);
+  assert.match(await read('.harness/skills/delivery/sync-contracts/GUIDE.md'), /## Stage로 실행/);
+  assert.match(await read('.harness/src/workflow/completion.mjs'), /deriveTacticalOutcome/);
 });
 
 // The seal loop came from a check that stopped at the first broken field and never said how to fix a diagram entry.

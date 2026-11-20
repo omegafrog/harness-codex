@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { discoverManagedAssetPaths } from "./update.mjs";
+import { LEGACY_ASSETS } from "./legacy-assets.mjs";
 
 const LOCAL_GENERATED_EXCLUDES = [
   "/.harness-workflows/",
@@ -32,6 +33,17 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const harnessSourcePath = await realpath(sourceRoot);
   const sourceCheckout = await isHarnessSourceCheckout(harnessSourcePath, targetPath);
   const managedPaths = await discoverManagedAssetPaths(sourceRoot);
+  const previousScriptExcludes = new Set([
+    ...managedPaths.filter((path) => path.startsWith(".harness/scripts/")).map((path) => `/${path.replace(".harness/scripts/", ".codex/scripts/")}`),
+    ...LEGACY_ASSETS.filter((asset) => asset.path.startsWith(".codex/scripts/") && asset.action === "retire").map((asset) => `/${asset.path}`),
+    "/.codex/scripts/harness-workflow-session.mjs",
+    "/.codex/scripts/plans-index-gate.mjs",
+  ]);
+  const previousToolExcludes = new Set([
+    ...managedPaths.filter((path) => path.startsWith(".harness/tools/")).map((path) => `/${path.replace(".harness/tools/", ".codex/tools/")}`),
+    "/.codex/tools/plantuml-bootstrap.mjs",
+    "/.codex/tools/plantuml-render.mjs",
+  ]);
   const sourceOwnedPaths = new Set([...managedPaths.map((path) => `/${path}`), "/.harness/harness.yaml", "/.codex/context-budget.json", "/.codex/harness-lock.json", "/.codex/hooks.json", "/.claude/settings.local.json"]);
   const exclusions = [
     ...LOCAL_GENERATED_EXCLUDES.filter((entry) => !sourceCheckout || !sourceOwnedPaths.has(entry)),
@@ -42,7 +54,7 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   catch { return; }
   const excludePath = resolve(projectRoot, (result.stdout || "").trim());
   const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
-  const normalizedExisting = existing.split(/\r?\n/).filter((entry) => !PREVIOUS_BROAD_EXCLUDES.has(entry)).join("\n");
+  const normalizedExisting = existing.split(/\r?\n/).filter((entry) => !PREVIOUS_BROAD_EXCLUDES.has(entry) && !previousScriptExcludes.has(entry) && !previousToolExcludes.has(entry)).join("\n");
   const additions = exclusions.filter((entry) => !normalizedExisting.split(/\r?\n/).includes(entry));
   if (additions.length === 0 && normalizedExisting === existing) return;
   const prefix = normalizedExisting.length > 0 && !normalizedExisting.endsWith("\n") ? "\n" : "";

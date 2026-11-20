@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { updateProject } from "../.harness/src/installer/update.mjs";
 import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-exclude.mjs";
 import { evaluateWorkflowStage } from "../.harness/src/workflow/stage-gates.mjs";
@@ -117,10 +117,13 @@ test("installed review gate rejects missing and stale reviews and accepts the cu
     await writeClaim({ root, claim: { schema_version: 1, id: 'docs-backup', source_id: 'example-docs', statement: 'Backups are provided', locator: { section: 'Backup', excerpt: 'backups' }, retrieved_at: '2026-11-05T00:00:00Z', context: 'operations', qualifiers: [] } });
     await mkdir(join(root, '.io/runtime/executions/ask'), { recursive: true });
     await writeFile(join(root, '.io/runtime/executions/ask/decision-answers.json'), JSON.stringify([{ question_id: 'ask:1', answer: '관리형' }]));
-    const decisionCli = join(root, '.codex/scripts/harness-decision-gate.mjs');
-    assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'approve', '--ticket', 'example', '--decision', 'db', '--answers', 'runtime/executions/ask/decision-answers.json', '--question', 'ask:1'], { cwd: root, encoding: 'utf8' })).status, 'accepted');
-    assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'decision_evidence_complete', '--ticket', 'example'], { cwd: root, encoding: 'utf8' })).status, 'pass');
-    assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'decision_review_complete', '--ticket', 'example'], { cwd: root, encoding: 'utf8' })).status, 'pass');
+    const { approveArchitectureDecision: approveInstalledDecision } = await import(pathToFileURL(join(root, '.harness/src/decision/artifacts.mjs')));
+    const { evaluateDecisionEvidenceComplete, evaluateDecisionReviewComplete } = await import(pathToFileURL(join(root, '.harness/src/workflow/stage-gates.mjs')));
+    const decisionScope = { root, ticketId: 'example' };
+    const approved = await approveInstalledDecision({ ...decisionScope, decisionId: 'db', answersPath: 'runtime/executions/ask/decision-answers.json', questionId: 'ask:1' });
+    assert.equal(approved.value.status, 'accepted');
+    assert.equal((await evaluateDecisionEvidenceComplete(decisionScope)).status, 'pass');
+    assert.equal((await evaluateDecisionReviewComplete(decisionScope)).status, 'pass');
     await writeFile(join(dir, "architecture-spec.md"), "# Changed\n");
     await assert.rejects(requireCurrentSpecReview({ root, ticketId: "example" }), /inputs changed/);
     const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
@@ -146,13 +149,14 @@ for (const condition of ["product_diagram_required", "architecture_diagram_requi
   });
 }
 
-test("installed decision gate CLI validates applicable Product and Architecture diagrams", async () => {
+test("installed diagram gates validate applicable Product and Architecture diagrams", async () => {
   const root = await mkdtemp(join(tmpdir(), "installed-diagram-gate-"));
   try {
     execFileSync("git", ["init", "-q", root]);
     const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    for (const axis of ["product", "architecture"]) {
+    const { evaluateProductDiagramCompletion, evaluateArchitectureDiagramCompletion } = await import(pathToFileURL(join(root, ".harness/src/workflow/stage-gates.mjs")));
+    for (const [axis, evaluate] of [["product", evaluateProductDiagramCompletion], ["architecture", evaluateArchitectureDiagramCompletion]]) {
       const specName = axis === "product" ? "product-spec.md" : "architecture-spec.md";
       const directory = join(root, "docs/specs/example/diagrams", axis);
       await mkdir(directory, { recursive: true });
@@ -160,10 +164,9 @@ test("installed decision gate CLI validates applicable Product and Architecture 
       await writeFile(join(root, "docs/specs/example", specName), `![Diagram](diagrams/${axis}/sample.svg)\n`);
       await writeFile(join(directory, "sample.puml"), "@startuml\n@enduml\n");
       await writeFile(join(directory, "sample.svg"), "<svg></svg>\n");
-      const gate = axis === "product" ? "product_diagram_completion" : "architecture_diagram_completion";
-      const result = JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-decision-gate.mjs"), gate, "--ticket", "example"], { cwd: root, encoding: "utf8" }));
+      const result = await evaluate({ root, ticketId: "example" });
       assert.equal(result.status, "pass");
-      assert.equal(result.rule_id, gate);
+      assert.equal(result.rule_id, `${axis}_diagram_completion`);
     }
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -176,29 +179,19 @@ test("installed diagram gates block missing and inconsistent artifacts", async (
     execFileSync("git", ["init", "-q", root]);
     const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const gateCli = join(root, ".codex/scripts/harness-decision-gate.mjs");
+    const { evaluateProductDiagramCompletion } = await import(pathToFileURL(join(root, ".harness/src/workflow/stage-gates.mjs")));
     const specRoot = join(root, "docs/specs/example");
     const directory = join(specRoot, "diagrams/product");
     await mkdir(directory, { recursive: true });
     await writeFile(join(specRoot, "product-spec.md"), "No diagram link.\n");
 
-    const runGate = () => {
-      try {
-        execFileSync(process.execPath, [gateCli, "product_diagram_completion", "--ticket", "example"], { cwd: root, encoding: "utf8" });
-        assert.fail("expected installed gate to block");
-      } catch (error) {
-        assert.equal(error.status, 2);
-        return JSON.parse(error.stdout);
-      }
-    };
-
-    const missing = runGate();
+    const missing = await evaluateProductDiagramCompletion({ root, ticketId: "example" });
     assert.equal(missing.status, "blocked");
     assert.ok(missing.violations.some(({ code }) => code === "missing_diagram_source"));
 
     await writeFile(join(directory, "sample.puml"), "@startuml\n@enduml\n");
     await writeFile(join(directory, "sample.svg"), "<svg></svg>\n");
-    const inconsistent = runGate();
+    const inconsistent = await evaluateProductDiagramCompletion({ root, ticketId: "example" });
     assert.equal(inconsistent.status, "blocked");
     assert.ok(inconsistent.violations.some(({ code }) => code === "missing_diagram_link"));
   } finally {
@@ -229,7 +222,7 @@ test("installed Architecture review gate blocks Specs still marked as draft or p
     } }));
     const check = () => {
       try {
-        execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" });
+        execFileSync(process.execPath, [join(root, ".harness/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" });
         return null;
       } catch (error) {
         assert.equal(error.status, 1);
@@ -251,15 +244,15 @@ test("installed Architecture review gate blocks Specs still marked as draft or p
     const saved = JSON.parse(await readFile(reviewPath, "utf8"));
     delete saved.architecture.inputs;
     await writeFile(reviewPath, JSON.stringify(saved));
-    assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
+    assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".harness/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
     saved.architecture.findings = [{ severity: "minor", description: "fabricated finding", evidence: "not recorded" }];
     await writeFile(reviewPath, JSON.stringify(saved));
     assert.match(check().reason, /authoritative passing result/);
 
     const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
     assert.match(status, /docs\/specs\/example\/product-spec\.md/);
-    assert.doesNotMatch(status, /\.codex\/scripts\/harness-spec-review\.mjs|\.harness\/src/);
-    assert.match(execFileSync("git", ["check-ignore", "-v", ".codex/scripts/harness-spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.codex/);
+    assert.doesNotMatch(status, /\.harness\/scripts\/harness-spec-review\.mjs|\.harness\/src/);
+    assert.match(execFileSync("git", ["check-ignore", "-v", ".harness/scripts/harness-spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.harness/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

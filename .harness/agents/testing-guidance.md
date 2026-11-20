@@ -15,7 +15,7 @@ This provider-neutral document stores durable project-specific testing preferenc
 ### planning-guidance-is-optional
 - Status: active
 - Applies to: to-ticket의 계획 작성 진입
-- Guidance: 내부 진입점은 `.codex/internal-skills/to-ticket/GUIDE.md`다. 폐기된 공개 `skills/to-ticket/SKILL.md`를 필수로 요구하지 않는다. AGENTS.md·EXEC.md는 있을 때 적용하는 프로젝트 지침이며 누락·빈 내용만으로 계획 작성을 차단하거나 setup·임시 문서 작성을 요구하지 않는다. 승인 Spec/리뷰·정본 workspace·계획 gate는 유지하고 실제 서버/E2E 실행 준비는 해당 실행 단계에서 검증한다.
+- Guidance: 내부 진입점은 `.harness/skills/planning/to-ticket/GUIDE.md`다. 폐기된 공개 `skills/to-ticket/SKILL.md`를 필수로 요구하지 않는다. AGENTS.md·EXEC.md는 있을 때 적용하는 프로젝트 지침이며 누락·빈 내용만으로 계획 작성을 차단하거나 setup·임시 문서 작성을 요구하지 않는다. 승인 Spec/리뷰·정본 workspace·계획 gate는 유지하고 실제 서버/E2E 실행 준비는 해당 실행 단계에서 검증한다.
 - Rationale: 실행 준비 문서 확인을 계획의 선행조건으로 확대 해석한 실제 E2E 중단을 방지한다.
 - Source: 2026-11-05 사용자의 to-ticket 차단 조건 수정 요청, 실행 to-ticket-696b62b9-d1d6-402b-b802-29ec2bb3c155
 - Updated: 2026-11-05
@@ -30,16 +30,16 @@ This provider-neutral document stores durable project-specific testing preferenc
 
 ### final-e2e-explicit-approval
 - Status: active
-- Applies to: implement-wrapper의 최종 E2E
-- Guidance: 기존 implement-wrapper로 tracker의 split plan을 하나씩 구현·검증·리뷰한다. 전체 구현 후 Spec 기반 통합 코드 리뷰를 통과해야 최종 E2E를 준비한다. 에이전트가 시나리오·기대 결과·실제 실행 조건을 작성하고 사용자에게 최종 실행 승인을 받은 뒤 실행한다. 실패·timeout·환경 차단·cleanup 실패 시 증거와 소유 자원 정리만 수행하고 사용자 확인 전 코드·테스트·실행 설정 수정이나 재실행을 하지 않는다. 과거 계획 승인은 이 확인을 대신하지 않으며 사용자가 재실행을 지시하면 횟수로 제한하지 않는다.
+- Applies to: 사용자가 별도로 요청한 tactical-to-code 완료 후 E2E
+- Guidance: 시나리오·기대 결과·실행 조건과 대상 commit을 제시하고 명시적인 사용자 실행 승인을 받은 뒤 실행한다. 실패·timeout·환경 차단·cleanup 실패 시 증거와 소유 자원 정리만 수행하고 사용자 확인 전 코드·테스트·실행 설정 수정이나 재실행을 하지 않는다. 과거 계획 승인은 이 확인을 대신하지 않으며 사용자가 재실행을 지시하면 횟수로 제한하지 않는다.
 - Rationale: 통합 검증의 범위와 실패 후 조치를 사용자가 결정한다.
-- Source: 2026-11-05 사용자 요청 및 기존 implement-wrapper 재사용 지시
-- Updated: 2026-11-05
+- Source: 2026-11-05 사용자 E2E 승인 및 실패 처리 지시
+- Updated: 2026-11-20
 
 ### planning-and-implementation-unit-tests-only
 - Status: superseded
 - Applies to: 계획·구현 단계의 테스트 계획·작성·갱신
-- Guidance: 계획과 구현은 비즈니스 로직 단위 테스트만 추가·수정한다. 테스트는 해당 모듈이 소유한 UC/BR/AC의 조건·행위·기대 업무 결과만 검증한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. 통합·계약·E2E 테스트와 프레임워크 배선·직렬화·mock 호출·단순 위임 테스트를 만들지 않는다. 기존 필수 검증 명령·완료 gate는 테스트 작성 범위와 분리해 실행할 수 있다. 상세 기준은 `.codex/internal-skills/testing-guidance/GUIDE.md`를 따른다.
+- Guidance: 계획과 구현은 비즈니스 로직 단위 테스트만 추가·수정한다. 테스트는 해당 모듈이 소유한 UC/BR/AC의 조건·행위·기대 업무 결과만 검증한다. 비즈니스 로직 변경이 없으면 테스트를 추가하지 않는다. 통합·계약·E2E 테스트와 프레임워크 배선·직렬화·mock 호출·단순 위임 테스트를 만들지 않는다. 기존 필수 검증 명령·완료 gate는 테스트 작성 범위와 분리해 실행할 수 있다. 상세 기준은 `.harness/skills/operations/testing-guidance/GUIDE.md`를 따른다.
 - Rationale: 테스트를 업무 규칙의 실행 가능한 명세로 한정하고 비즈니스 로직에 대한 오판을 줄인다.
 - Source: 2026-10-26 사용자 요청 — “단위 테스트만 만들도록 해 플랜 및 구현에서. 그리고 단위 테스트는 비즈니스 로직만 테스트해. 비즈니스 로직이 제대로 동작하는지에 대해서만 해”
 - Updated: 2026-10-26

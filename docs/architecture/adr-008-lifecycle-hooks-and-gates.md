@@ -24,7 +24,7 @@ hooks:
 ```
 
 기본 구현 lifecycle은 위 검사를 사용한다. `spec-me` 같은 명세 workflow는
-`.codex/workflows/<workflow>.yaml`에서 해당 hook에 빈 목록을 명시하고, Product/
+`.harness/workflows/<workflow>.yaml`에서 해당 hook에 빈 목록을 명시하고, Product/
 Architecture coverage·ambiguity·diagram gate를 stage gate로 선언할 수 있다.
 빈 hook은 암묵적 기본 검사를 복원하지 않으며, 실행 시 `no_checks_configured`로
 명시적인 pass를 반환한다. workflow-specific gate의 의미와 순서는 canonical

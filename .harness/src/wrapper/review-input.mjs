@@ -43,8 +43,11 @@ export function reviewInputFromParts({ root, fixed, implementation, between, dif
     diff_range: { from: fixed, to: implementation },
     diff,
     unplanned_additions: unplannedAdditions,
-    product_spec_path: details.product_spec_path,
-    architecture_spec_path: details.architecture_spec_path,
+    requirements_path: details.requirements_path || details.product_spec_path,
+    tactical_design_path: details.tactical_design_path || details.architecture_spec_path,
+    design_paths: details.design_paths || [],
+    product_spec_path: details.requirements_path || details.product_spec_path,
+    architecture_spec_path: details.tactical_design_path || details.architecture_spec_path,
     completion_kind: 'plan_implemented',
     plan_set_id: planSetId,
     planning_snapshot_sha256: details.review_snapshot_sha256,
@@ -94,7 +97,7 @@ export function assembleReviews({ reviewInput, standards, spec, specItems = [] }
     let parsed;
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { throw new Error(`${role} reviewer answer is not JSON`); }
     if (!parsed || !REVIEW_STATES.has(parsed.state) || !Array.isArray(parsed.report?.findings)) throw new Error(`${role} reviewer answer must be {"state":"passed"|"failed","report":{"findings":[...]}}`);
-    // The Spec reviewer must answer every contract item of the Architecture Spec, not only report the first mismatch.
+    // The Spec reviewer must answer every extracted tactical-design item, not only report the first mismatch.
     if (role === 'spec') assertSpecCoverage(specItems, parsed.report);
     return { role, context_id: contextId, independent: true, fresh_context: true, implementation_commit_sha: reviewInput.implementation_commit_sha, review_input: reviewInput, state: parsed.state, report: parsed.report, raw_result: typeof raw === 'string' ? raw : JSON.stringify(raw) };
   };

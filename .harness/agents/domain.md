@@ -53,16 +53,16 @@ Actor와 Subdomain의 ID는 각각 `actor.<slug>`, `subdomain.<slug>`이고,
 Context 소유 ID는 `<context>.<kind>.<slug>`다.
 `implemented`에는 구현 근거 참조를, `retired`에는 폐기 근거 및 해당되는 대체 ID를 기록한다.
 
-현재 저장소에서 `node .codex/scripts/harness-domain.mjs validate`로 파일 구조,
+현재 저장소에서 `node .harness/scripts/harness-domain.mjs validate`로 파일 구조,
 Context 소유권과 정의 사이의 참조를 검사한다. `source_refs`와 `implementation_refs`는
 이 단계에서 목록 형식만 검사하며, 근거의 실제 충족 여부는 이후 동기화·구현 검증이 판단한다.
 
 ### 검색과 인덱스
 
-- `node .codex/scripts/harness-domain.mjs discover '주문 취소'`는 관련 후보, Context, Subdomain과 연결 항목을 반환한다.
-- `node .codex/scripts/harness-domain.mjs search '취소' --context order --kind rule`로 범위를 제한한다. 기본은 현행 정의 5건이며 `--status retired` 또는 `--status all`로 과거 정의도 조회할 수 있다.
-- `node .codex/scripts/harness-domain.mjs get order.rule.cancel-eligibility`는 원문을 반환하며 ID를 여러 개 넘길 수 있다.
-- `node .codex/scripts/harness-domain.mjs index`로 탐색용 Markdown을 갱신하고 `index --check`로 정합성을 확인한다. 생성된 INDEX.md는 Git으로 관리한다.
+- `node .harness/scripts/harness-domain.mjs discover '주문 취소'`는 관련 후보, Context, Subdomain과 연결 항목을 반환한다.
+- `node .harness/scripts/harness-domain.mjs search '취소' --context order --kind rule`로 범위를 제한한다. 기본은 현행 정의 5건이며 `--status retired` 또는 `--status all`로 과거 정의도 조회할 수 있다.
+- `node .harness/scripts/harness-domain.mjs get order.rule.cancel-eligibility`는 원문을 반환하며 ID를 여러 개 넘길 수 있다.
+- `node .harness/scripts/harness-domain.mjs index`로 탐색용 Markdown을 갱신하고 `index --check`로 정합성을 확인한다. 생성된 INDEX.md는 Git으로 관리한다.
 
 검색 인덱스와 Stage별 Context Pack은 Worktree의 `.io/runtime/domain/`에 둔다.
 실행 입력의 `domain_context_pack`은 후보와 버전을 제공한다. 요청·답변·피드백이나 정본 내용이 바뀌면
@@ -70,7 +70,7 @@ Context 소유권과 정의 사이의 참조를 검사한다. `source_refs`와 `
 
 ### 확정 변경과 마이그레이션
 
-`node .codex/scripts/harness-domain.mjs bootstrap`은 이전에 확정된 요구사항에서 공통화 후보와 출처를 찾는다. 원본을 수정하지 않는다. 업무적 의미와 구현 근거는 검토자가 확인한다.
+`node .harness/scripts/harness-domain.mjs bootstrap`은 이전에 확정된 요구사항에서 공통화 후보와 출처를 찾는다. 원본을 수정하지 않는다. 업무적 의미와 구현 근거는 검토자가 확인한다.
 
 `sync plan <plan-set-id> <proposal-path>`는 변경 예정 경로, 기존 값과 정본 버전을 반환한다. 제안 JSON에는 `schema_version: 1`, 로컬 ID를 공통 ID로 연결하는 전체 `links`, `changes` 배열을 적는다. 변경에는 `operation`, `id`, `reason`, `document: {metadata, body}`를 적는다. 기존 정의를 재사용할 때는 `reuse`와 ID만 적을 수 있다. 새 정의는 `accepted-target`으로 시작한다. 소유권 이전은 `relocate`로 이전 ID를 폐기하고 다른 Context에 대체 ID를 생성한다.
 
@@ -82,7 +82,7 @@ Context 소유권과 정의 사이의 참조를 검사한다. `source_refs`와 `
 
 독립 검토자는 적용 조건, 업무 결과, 소비 Policy 및 기존 참조에 미치는 영향을 확인한다. 로컬 검토 기록은 `--review <path>`로 넘기고 `{base,head,verdict:"pass",evidence}`에 정확한 커밋과 근거를 적는다. GitHub CI는 파일 대신 PR의 해당 head에 대한 저장소 구성원의 승인을 사용한다. Merge Queue에서는 PR 승인을 required check로 먼저 적용하고 Queue의 임시 병합 결과를 구조 검증한다. 대상과 head가 바뀌면 다시 검토한다.
 
-소비자는 자신의 CI 설정에서 검토한 Harness 리비전을 별도 경로에 준비하고, 소비자 저장소를 현재 디렉터리로 둔 채 그 리비전의 `.codex/scripts/harness-domain.mjs`를 실행한다. Git에 포함되지 않는 로컬 Harness 설치본은 CI 입력으로 사용하지 않는다. 실제 병합 차단은 소비자의 branch protection 또는 ruleset에서 `domain-merge`를 필수화해야 동작한다.
+소비자는 자신의 CI 설정에서 검토한 Harness 리비전을 별도 경로에 준비하고, 소비자 저장소를 현재 디렉터리로 둔 채 그 리비전의 `.harness/scripts/harness-domain.mjs`를 실행한다. Git에 포함되지 않는 로컬 Harness 설치본은 CI 입력으로 사용하지 않는다. 실제 병합 차단은 소비자의 branch protection 또는 ruleset에서 `domain-merge`를 필수화해야 동작한다.
 
 ### 검색 평가
 

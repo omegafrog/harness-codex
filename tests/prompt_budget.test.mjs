@@ -1,3 +1,4 @@
+import { internalSkillAssetPath } from '../.harness/src/workflow/skill-declaration.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -14,9 +15,9 @@ import { outsideFences } from '../.harness/src/workflow/domain-model-gate.mjs';
 const sourceRoot = resolve('.');
 const PROMPT_FILE = /\.(md|toml|yaml)$/;
 const CODEX_STAGE_SKILLS = '\n[skills]\ninclude_instructions = false\n';
-const PONYTAIL_REFERENCE = '.codex/internal-skills/implement/references/ponytail.md';
+const PONYTAIL_REFERENCE = '.harness/skills/delivery/tactical-code/references/ponytail.md';
 // Files that setup or the project creates after installation.
-const GENERATED = new Set(['.harness/harness.yaml', '.codex/repository-conventions.md']);
+const GENERATED = new Set(['.harness/harness.yaml', '.codex/repository-conventions.md', '.codex/context-budget.json']);
 const BANNED = [
   [/기본 `model_tier`는/, 'a skill declares its model tier in its own document and the runner resolves it'],
   [/내부 절차를 호출할 때 공개 스킬 검색 대신/, 'the stage agent profiles state the internal GUIDE rule once'],
@@ -46,7 +47,7 @@ function sentences(text) {
 test('skill guides and agent profiles do not reintroduce copied boilerplate', async () => {
   const files = [
     'AGENTS.md',
-    ...(await promptFiles(sourceRoot, ['.codex/agents', '.codex/skills', '.codex/internal-skills', '.codex/workflows'])),
+    ...(await promptFiles(sourceRoot, ['.codex/agents', '.agents/skills', '.harness/skills', '.harness/workflows'])),
   ];
   const owners = new Map();
   for (const path of files) {
@@ -65,7 +66,7 @@ test('installed skill guides and agent profiles reference files that exist', asy
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const files = await promptFiles(root, ['.codex/agents', '.codex/internal-skills', '.agents/skills', '.claude/skills', '.claude/agents']);
+    const files = await promptFiles(root, ['.codex/agents', '.harness/skills', '.agents/skills', '.claude/skills', '.claude/agents']);
     assert.ok(files.length > 50);
     const broken = [];
     const ponytailReaders = [];
@@ -77,12 +78,12 @@ test('installed skill guides and agent profiles reference files that exist', asy
         if (normalize(join(dirname(path), link)) === PONYTAIL_REFERENCE) ponytailReaders.push(path);
         if (!existsSync(normalize(join(root, dirname(path), link)))) broken.push(`${path} -> ${link}`);
       }
-      for (const [, target] of text.matchAll(/`(\.(?:codex|agents|claude)\/[^`\s*<>]+\.(?:md|json|mjs|toml|yaml))`/g)) {
+      for (const [, target] of text.matchAll(/`(\.(?:codex|agents|claude|harness\/skills)\/[^`\s*<>]+\.(?:md|json|mjs|toml|yaml))`/g)) {
         if (!GENERATED.has(target) && !existsSync(join(root, target))) broken.push(`${path} => ${target}`);
       }
     }
     assert.deepEqual(broken, [], `broken references in ${relative(sourceRoot, root)}`);
-    assert.deepEqual(ponytailReaders.sort(), ['frontend-implement', 'implement', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`));
+    assert.deepEqual(ponytailReaders.sort(), ['frontend-implement', 'tactical-code'].map((name) => internalSkillAssetPath(name)));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -100,7 +101,7 @@ test('agent profiles only name their role and point at the GUIDE that owns the r
     assert.ok(text.endsWith(CODEX_STAGE_SKILLS), `${file}: omit the inherited Codex skill catalog`);
     // The installer replaces the marker line with the shared stage contract; it is not a rule this profile owns.
     const instructions = (/developer_instructions = """\n([\s\S]*?)\n"""/.exec(text)?.[1] || '').replace(`\n\n${STAGE_CONTRACT_MARKER}`, '');
-    const guides = [...instructions.matchAll(/`(\.codex\/internal-skills\/[^`]+\/GUIDE\.md)`/g)].map(([, path]) => path);
+    const guides = [...instructions.matchAll(/`(\.harness\/skills\/[^`]+\/GUIDE\.md)`/g)].map(([, path]) => path);
     assert.ok(guides.length > 0 || PROFILES_WITHOUT_OWNING_GUIDE.has(file.replace(/\.toml$/, '')), `${file} must point at its owning GUIDE`);
     for (const path of guides) assert.ok(existsSync(join(sourceRoot, path)), `${file}: ${path} is missing`);
     const limit = PROFILES_WITHOUT_OWNING_GUIDE.has(file.replace(/\.toml$/, '')) ? 2000 : 1000;
@@ -110,8 +111,8 @@ test('agent profiles only name their role and point at the GUIDE that owns the r
 
 test('every stage agent profile carries the shared stage contract marker, and an install writes the contract in its place', async () => {
   const roles = new Set(['workflow_stage', 'execution_runner', 'e2e_test_runner']);
-  for (const file of await readdir(join(sourceRoot, '.codex/workflows'))) {
-    for (const [, role] of (await readFile(join(sourceRoot, '.codex/workflows', file), 'utf8')).matchAll(/role:\s*\[?\s*([a-z_]+)/g)) roles.add(role);
+  for (const file of await readdir(join(sourceRoot, '.harness/workflows'))) {
+    for (const [, role] of (await readFile(join(sourceRoot, '.harness/workflows', file), 'utf8')).matchAll(/role:\s*\[?\s*([a-z_]+)/g)) roles.add(role);
   }
   for (const role of roles) assert.match(await readFile(join(sourceRoot, '.codex/agents', `${role}.toml`), 'utf8'), new RegExp(STAGE_CONTRACT_MARKER.replace(/[{}]/g, '\\$&')), `${role} carries the marker`);
   await mkdir('.io', { recursive: true });
@@ -160,7 +161,7 @@ test('consumer update omits the Codex skill catalog and preserves project-owned 
   for (const [path, contents] of Object.entries(files)) await writeFile(join(root, path), contents);
   const profileUpdate = ({ code, path }) => code === 'installer_upstream_updated' && path === join(root, profile);
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(profileUpdate));
-  const updated = execFileSync(process.execPath, [join(sourceRoot, 'bin/harness-install.mjs'), 'update', '--project', root, '--provider', 'codex'], { encoding: 'utf8' });
+  const updated = execFileSync(process.execPath, [join(sourceRoot, '.harness/cli/harness-install.mjs'), 'update', '--project', root, '--provider', 'codex'], { encoding: 'utf8' });
   assert.match(updated, /^Updated: .*\.codex\/agents\/workflow_stage\.toml/m);
   assert.ok((await readFile(join(root, profile), 'utf8')).endsWith(CODEX_STAGE_SKILLS));
   assert.equal(await readFile(join(root, PONYTAIL_REFERENCE), 'utf8'), await readFile(join(sourceRoot, PONYTAIL_REFERENCE), 'utf8'));
@@ -174,7 +175,7 @@ test('consumer update omits the Codex skill catalog and preserves project-owned 
 });
 
 test('the orchestrator dispatches stages to native subagents and returns format errors', async () => {
-  const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
+  const skill = await readFile(join(sourceRoot, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
   assert.ok(Buffer.byteLength(skill) <= 6 * 1024, 'the explicitly invoked entry point fits the prompt budget');
   assert.match(skill, /fresh native 서브에이전트를 시작한다/);
   assert.match(skill, /`format_error`나 `gate_error`는 같은 작업자에게 돌려준다/);
@@ -184,7 +185,7 @@ test('the orchestrator dispatches stages to native subagents and returns format 
 });
 
 test('the code-review caller procedure assembles review evidence with the CLI instead of by hand', async () => {
-  const repair = await readFile(join(sourceRoot, '.codex/internal-skills/code-review/references/repair.md'), 'utf8');
+  const repair = await readFile(join(sourceRoot, '.harness/skills/quality/code-review/references/repair.md'), 'utf8');
   assert.match(repair, /harness-code-review\.mjs assemble --root <workspace_root> --plan <plan-id> --fixed-point/);
   assert.match(repair, /reviewer ID는 넘기지 않는다/);
   assert.match(repair, /reviewer 판정을 구현 stage에 직접 넘기거나 repair를 건너뛰지 않는다/);
@@ -206,7 +207,7 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     assert.match(dispatch, /타임아웃이나 빈 알림이면 다시 기다린다\./);
     assert.match(dispatch, /`inspect`에도 확인 근거가 없을 때만 `collaboration\.list_agents` 한 번/);
     assert.match(dispatch, /새 `execution_id`마다 반환된 `agent_profile`의 새 native 작업자/);
-    const stakeholder = await readFile(join(root, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'), 'utf8');
+    const stakeholder = await readFile(join(root, '.harness/skills/requirements/stakeholder-analysis/GUIDE.md'), 'utf8');
     assert.match(stakeholder, /Use those exact paths to check, read or write either file/);
     for (const skill of ['.agents/skills/orchestrator/SKILL.md', '.claude/skills/orchestrator/SKILL.md']) {
       const text = await readFile(join(root, skill), 'utf8');
@@ -222,7 +223,7 @@ test('installed orchestrator guidance keeps stage guides, schemas and products o
     assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === requiredReference));
     execFileSync('git', ['check-ignore', '-q', '.agents/skills/orchestrator/references/dispatch.md'], { cwd: root });
     assert.equal(execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).length, 0);
-    assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
+    execFileSync('git', ['check-ignore', '-q', '.harness/scripts/harness-contracts.mjs'], { cwd: root });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -234,8 +235,8 @@ test('installed guidance has the caller pass spec-items to the shell-less Claude
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     assert.doesNotMatch(await readFile(join(root, '.claude/agents/spec_reviewer.md'), 'utf8'), /tools:[^\n]*Bash/);
-    assert.match(await readFile(join(root, '.codex/internal-skills/code-review/GUIDE.md'), 'utf8'), /셸이 없어 `spec-items`를 실행할 수 없다/);
-    assert.match(await readFile(join(root, '.claude/skills/orchestrator/references/implementation.md'), 'utf8'), /spec-items --plan <plan-id>`를 직접 실행해 그 출력/);
-    execFileSync('git', ['check-ignore', '-q', '.codex/internal-skills/code-review/GUIDE.md'], { cwd: root });
+    assert.match(await readFile(join(root, '.harness/skills/quality/code-review/GUIDE.md'), 'utf8'), /셸이 없어 `spec-items`를 실행할 수 없다/);
+    assert.match(await readFile(join(root, '.harness/skills/quality/code-review/references/repair.md'), 'utf8'), /spec-items --plan <plan-id>`를 직접 실행해 그 출력/);
+    execFileSync('git', ['check-ignore', '-q', '.harness/skills/quality/code-review/GUIDE.md'], { cwd: root });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

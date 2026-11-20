@@ -41,7 +41,7 @@ export async function prepareBasisRecheck({ root, planId, reviewInput, finding }
     if (hash(normalized) !== file.sha256) throw new Error(`Historical snapshot content failed hash validation: ${file.path}`);
     reviewFiles[file.path] = { sha256: file.sha256, content: file.content };
   }
-  const oldSpecs = [reviewInput.product_spec_path, reviewInput.architecture_spec_path];
+  const oldSpecs = [reviewInput.requirements_path || reviewInput.product_spec_path, reviewInput.tactical_design_path || reviewInput.architecture_spec_path];
   const oldPlan = reviewInput.canonical_plan?.reference;
   if (oldSpecs.some((path) => !reviewFiles[path]) || !oldPlan || !reviewFiles[oldPlan]) throw new Error('Historical Spec or canonical plan content is missing; do not invent a snapshot');
   if ([...oldSpecs, oldPlan].some((path) => admission.inputs[path] !== reviewFiles[path].sha256)
@@ -49,7 +49,7 @@ export async function prepareBasisRecheck({ root, planId, reviewInput, finding }
 
   const current = await snapshotPlanSet({ root, planSetId });
   const currentFiles = {};
-  for (const path of [...current.spec_paths, ...current.plans.map((item) => item.path)]) {
+  for (const path of [...current.design_paths, ...current.spec_paths, ...current.plans.map((item) => item.path)]) {
     const content = await readFile(`${root}/${path}`, 'utf8');
     const item = current.plans.find((plan) => plan.path === path);
     const normalized = item ? normalizeReviewContent(path, Buffer.from(content)) : Buffer.from(content);
@@ -95,7 +95,7 @@ export async function recordBasisRecheck({ root, planId, artifactRef, result }) 
   const hasCurrentImplementationEvidence = (result) => result.evidence.some((item) => item.snapshot === 'current' && item.path.startsWith('implementation.'));
   if (result.classification === 'supported_finding' && (!hasSourceEvidence(result) || !hasCurrentImplementationEvidence(result))) throw new Error('Supporting an implementation finding requires current implementation and Spec/plan evidence');
   if (result.classification === 'plan_gap' && !result.evidence.some((item) => item.snapshot === 'current' && item.path === `docs/plans/${artifact.review_time.plan_set_id}/${result.affected_plan_id}.md`)) throw new Error('A plan-gap route must cite the affected current canonical plan');
-  if (result.classification === 'spec_decision' && !result.evidence.some((item) => artifact.review_time.spec_paths.includes(item.path))) throw new Error('A Spec decision route must cite a reviewed Product or Architecture Spec');
+  if (result.classification === 'spec_decision' && !result.evidence.some((item) => artifact.review_time.spec_paths.includes(item.path))) throw new Error('A Spec decision route must cite a reviewed requirements or tactical-design document');
   if (result.classification === 'unsupported_finding' && (!result.evidence.some((item) => item.snapshot === 'review_time') || !result.evidence.some((item) => item.snapshot === 'current'))) throw new Error('Dismissing a finding requires evidence from both review-time and current snapshots');
   const current = await snapshotPlanSet({ root, planSetId: artifact.review_time.plan_set_id });
   const currentHead = (await gitRun(root, ['rev-parse', 'HEAD'])).stdout.trim();

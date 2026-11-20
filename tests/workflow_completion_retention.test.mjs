@@ -56,8 +56,9 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     const { recordExecutionState } = await import(new URL(`file://${join(tree.workspace, '.harness/src/workflow/execution-state.mjs')}`));
     const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
     for (const skill of ['workflow-compose', 'requirements-fix', 'to-ticket', 'tracker-publish']) {
-      const input = { skill, execution_id: skill, session_directory: tree.session_directory, context: { worktree_ref: join(tree.session_directory, 'worktree.json') } };
+      const input = { skill, execution_id: skill, session_directory: tree.session_directory, context: { worktree_ref: join(tree.session_directory, 'worktree.json'), plan_set_id: 'calculator' } };
       const binding = { model: 'example', reasoning_effort: 'low' };
+      if (skill === 'tracker-publish') input.context.publication_review_snapshot_sha256 = JSON.parse(await readFile(statePath, 'utf8')).stages['to-ticket'].review_snapshot_sha256;
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
       if (skill === 'to-ticket') {
         await recordExecutionState({ root: tree.workspace, input, binding, status: 'action_required', code: 'REVIEW_REQUIRED' });
@@ -83,7 +84,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     await writeFile(join(tree.session_directory, 'runtime/executions/tactical-ui/result.json'), JSON.stringify({ artifacts: [], summary: 'UI 없음' }));
     await writeFile(statePath, JSON.stringify(settledState, null, 2));
 
-    const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();
+    const completionPath = execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-session-output.mjs'), '--root', tree.workspace, '--path', 'runtime/to-ticket/completion-state.json'], { cwd: tree.workspace, encoding: 'utf8' }).trim();
     await writeFile(completionPath, JSON.stringify({
       workspace_root: tree.workspace,
       ticket_id: 'calculator',
@@ -91,7 +92,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       plan_review: { plan_set_id: 'calculator', phase: 'planning' },
       tracker_sync: { ticket_refs: [ticket] },
     }));
-    const args = [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];
+    const args = [join(tree.workspace, '.harness/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'to-ticket', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/to-ticket/completion-state.json'];
     const intermediate = JSON.parse(execFileSync(process.execPath, args, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(intermediate.state, 'completed');
     assert.equal(intermediate.final_workflow, false);
@@ -134,11 +135,11 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     restartState.stages['to-ticket'].result_ref = 'runtime/executions/to-ticket/result.json';
     restartState.stages['workflow-compose'].result_ref = 'runtime/executions/workflow-compose/result.json';
     await writeFile(statePath, JSON.stringify(restartState, null, 2));
-    await writeExecutionInput(tree.workspace, { schema_version: 1, skill: 'workflow-compose', execution_id: 'workflow-compose', scope: 'test', input_refs: [], context: { worktree_ref: join(tree.session_directory, 'worktree.json') } }, 'calculator');
+    await writeExecutionInput(tree.workspace, { schema_version: 1, skill: 'workflow-compose', execution_id: 'workflow-compose', scope: 'test', input_refs: [], context: { worktree_ref: join(tree.session_directory, 'worktree.json'), plan_set_id: 'calculator' } }, 'calculator');
     await mkdir(join(tree.session_directory, 'runtime/executions/workflow-compose'), { recursive: true });
     await writeFile(join(tree.session_directory, 'runtime/executions/workflow-compose/result.json'), JSON.stringify({ worktree_ref: join(tree.session_directory, 'worktree.json') }));
     await mkdir(join(tree.session_directory, 'runtime/executions/to-ticket'), { recursive: true });
-    const restart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const restart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(restart.input.skill, 'to-ticket');
     assert.equal(restart.input.context.transition, undefined);
     assert.equal(restart.input.context.resume_session_id, undefined);
@@ -153,7 +154,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     assert.match(restartedStatus, /application-owned\.txt/);
     assert.doesNotMatch(restartedStatus, /\.io\/restarts/);
     assert.match(execFileSync('git', ['check-ignore', '-v', `runtime/restarts/${archives[0]}/plans/plans.md`], { cwd: tree.session_directory, encoding: 'utf8' }), /\.io/);
-    const recovered = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const recovered = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(recovered.input.execution_id, restart.input.execution_id);
 
     await mkdir(join(tree.workspace, 'docs/plans/calculator'), { recursive: true });
@@ -164,7 +165,7 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
     restartState.stages['to-ticket'] = { ...restartState.stages['to-ticket'], status: 'failed', execution_id: 'failed-to-ticket', code: 'EXECUTION_ERROR', result_ref: undefined, native_managed: true, native_finished: true };
     await writeFile(statePath, JSON.stringify(restartState, null, 2));
     await mkdir(join(tree.session_directory, 'runtime/executions/failed-to-ticket'), { recursive: true });
-    const failedRestart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const failedRestart = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--restart', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.notEqual(failedRestart.input.execution_id, restart.input.execution_id);
     assert.deepEqual(failedRestart.input.input_refs, restart.input.input_refs, 'a restart uses the same fixed design inputs');
     assert.ok(failedRestart.input.input_refs.every(({ base }) => base === 'workspace'), 'a restart excludes earlier attempt artifacts');

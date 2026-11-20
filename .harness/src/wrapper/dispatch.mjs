@@ -232,8 +232,8 @@ export async function dispatchImplementPlan({
       planSetId,
       planId: plan.id,
       planPath: planReviewGate.details.plan_reference,
-      productSpecPath: planReviewGate.details.product_spec_path,
-      architectureSpecPath: planReviewGate.details.architecture_spec_path,
+      productSpecPath: planReviewGate.details.requirements_path || planReviewGate.details.product_spec_path,
+      architectureSpecPath: planReviewGate.details.tactical_design_path || planReviewGate.details.architecture_spec_path,
       planReviewRefs: { ...planReviewGate.details, repository_root: workspaceRoot },
       dependencyFacts,
       resourceFacts,
@@ -310,10 +310,10 @@ export async function runIndependentReviewers({
   const resolvedPlanSetId = planSetId || plan.plan_set_id;
   if (!Array.isArray(commitList) || commitList.length === 0 || !commitList.includes(reviewFixedPoint) || !commitList.includes(implementation.commit_sha)) throw new TypeError("commitList must include fixedPoint and implementation.commit_sha");
   if (typeof diff !== "string" || !diff.trim()) throw new TypeError("diff must be a non-empty string");
-  const expectedProductSpecPath = `docs/specs/${resolvedPlanSetId}/product-spec.md`;
-  const expectedArchitectureSpecPath = `docs/specs/${resolvedPlanSetId}/architecture-spec.md`;
-  const approvedProductPath = planReviewRefs?.product_spec_path || expectedProductSpecPath;
-  const approvedArchitecturePath = planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const expectedProductSpecPath = `docs/specs/${resolvedPlanSetId}/requirements.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${resolvedPlanSetId}/tactical-design.md`;
+  const approvedProductPath = planReviewRefs?.requirements_path || planReviewRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = planReviewRefs?.tactical_design_path || planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
   const safeProjectPath = (path) => typeof path === "string" && path.length > 0 && !path.startsWith("/") && !path.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
   if (!safeProjectPath(approvedProductPath) || !safeProjectPath(approvedArchitecturePath)) throw new TypeError("Spec paths must be safe workspace-relative paths");
   if (planReviewRefs?.repository_root && resolvePath(repository) !== resolvePath(planReviewRefs.repository_root)) throw new TypeError("Reviewer repository must be the workspace whose plan review inputs were checked");
@@ -330,6 +330,9 @@ export async function runIndependentReviewers({
     unplanned_additions: implementation.unplanned_additions,
     product_spec_path: productSpecPath || approvedProductPath,
     architecture_spec_path: architectureSpecPath || approvedArchitecturePath,
+    requirements_path: productSpecPath || approvedProductPath,
+    tactical_design_path: architectureSpecPath || approvedArchitecturePath,
+    design_paths: planReviewRefs?.design_paths || [productSpecPath || approvedProductPath, architectureSpecPath || approvedArchitecturePath],
     completion_kind: 'plan_implemented',
     ...(planReviewRefs ? { plan_set_id: resolvedPlanSetId, planning_snapshot_sha256: planReviewRefs.review_snapshot_sha256 } : {}),
     ...(planReviewRefs?.canonical_plan ? { canonical_plan: planReviewRefs.canonical_plan } : {}),
@@ -476,8 +479,8 @@ export async function executeImplementPlan({
       fixedPoint,
       planSetId: dispatchOptions.planSetId,
       repository: dispatched.workspace_root,
-      productSpecPath: dispatched.plan_review.product_spec_path,
-      architectureSpecPath: dispatched.plan_review.architecture_spec_path,
+      productSpecPath: dispatched.plan_review.requirements_path || dispatched.plan_review.product_spec_path,
+      architectureSpecPath: dispatched.plan_review.tactical_design_path || dispatched.plan_review.architecture_spec_path,
       planReviewRefs: dispatched.plan_review,
       trackerPort: dispatchOptions.trackerPort,
       commitList: reviewCommitList,

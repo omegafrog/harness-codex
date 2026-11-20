@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectCodexHookTrust, syncCodexSubagentHook, codexSubagentHook } from '../.harness/src/workflow/providers/codex.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
@@ -55,7 +55,7 @@ test('installed consumers retire the old startup scripts and registrations while
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   const codexSettings = join(root, '.codex/hooks.json');
   const claudeSettings = join(root, '.claude/settings.local.json');
-  const runtime = '.codex/scripts/harness-context.mjs';
+  const runtime = '.harness/scripts/harness-context.mjs';
   const retired = ['.codex/scripts/harness-orchestrator-hook.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs'];
   assert.equal(existsSync(codexSettings), false);
   for (const path of retired) assert.equal(existsSync(join(root, path)), false);
@@ -66,6 +66,7 @@ test('installed consumers retire the old startup scripts and registrations while
   const hash = createHash('sha256').update(script).digest('hex');
   const lockPath = join(root, '.codex/harness-lock.json'), lock = await json(lockPath);
   for (const path of retired) {
+    await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), script);
     lock.files[path] = { source_path: path, installed_sha256: hash, upstream_sha256: hash };
   }

@@ -18,14 +18,14 @@ const GUARD_SCRIPT = 'harness-write-guard.mjs';
 const ADMISSION_SCRIPT = 'harness-agent-admission.mjs';
 export const WRITE_GUARD_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash';
 const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && [SUBAGENT_SCRIPT, GUARD_SCRIPT, ADMISSION_SCRIPT].some((script) => hook.command.includes(script));
-const admissionHook = () => ({ type: 'command', command: `HARNESS_NATIVE_ADMISSION=1 node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${ADMISSION_SCRIPT}"`, timeout: 10 });
+const admissionHook = () => ({ type: 'command', command: `HARNESS_NATIVE_ADMISSION=1 node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${ADMISSION_SCRIPT}"`, timeout: 10 });
 
 export function claudeSubagentHook() {
-  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${SUBAGENT_SCRIPT}"`, timeout: 10 };
+  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${SUBAGENT_SCRIPT}"`, timeout: 10 };
 }
 
 export function claudeWriteGuardHook() {
-  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.codex/scripts/${GUARD_SCRIPT}"`, timeout: 10 };
+  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${GUARD_SCRIPT}"`, timeout: 10 };
 }
 
 const expectedHook = (event) => SUBAGENT_EVENTS.includes(event) ? claudeSubagentHook() : claudeWriteGuardHook();

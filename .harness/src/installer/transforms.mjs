@@ -5,7 +5,8 @@ export function transformSourceContent(content, transform) {
   const text = ['project-local-paths-v1', 'claude-agent-v1'].includes(transform) ? injectStageContract(content.toString('utf8')) : content.toString('utf8');
   if (transform === 'project-local-paths-v1') return text.replaceAll('.codex/skills/', '.agents/skills/');
   if (transform === 'claude-skills-v1') {
-    return text.replaceAll('.codex/skills/', '.claude/skills/')
+    return text.replaceAll('.agents/skills/', '.claude/skills/')
+      .replaceAll('.codex/skills/', '.claude/skills/')
       .replace(/^(---\r?\nname: orchestrator\r?\n)/, '$1disable-model-invocation: true\n');
   }
   if (transform === 'claude-agent-v1') {
@@ -29,4 +30,15 @@ ${prompt.replaceAll('.codex/skills/', '.claude/skills/')}
 `;
   }
   return content;
+}
+
+export async function renderSourceContent(content, transform, readSource) {
+  if (transform !== 'standalone-contracts-v1') return transformSourceContent(content, transform);
+  const formatPath = '.harness/skills/delivery/sync-contracts/references/format.md';
+  const format = await readSource(formatPath);
+  if (!format) throw new Error(`Missing contract component format: ${formatPath}`);
+  const marker = 'null /* HARNESS_CONTRACT_COMPONENT_FORMAT */';
+  const text = content.toString('utf8');
+  if (!text.includes(marker)) throw new Error('Missing standalone contract component format marker');
+  return text.replace(marker, () => JSON.stringify(format.toString('utf8')));
 }

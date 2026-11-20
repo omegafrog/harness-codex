@@ -221,7 +221,7 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
 
 // The execution of the stage that is running or waiting for the main session's review dispatch. Commands such as
 // `harness-plan-review.mjs begin` run in the main session, which has no stage agent identity of its own.
-export async function currentStageExecutionId(root) {
+export async function currentStageExecutionId(root, { awaitingReviewFrom = null } = {}) {
   if (!root) return null;
   try {
     const workspace = await realpath(root);
@@ -233,6 +233,7 @@ export async function currentStageExecutionId(root) {
     catch (error) { if (error.code !== 'ENOENT') throw error; state = JSON.parse(await readFile(join(session, 'runtime/orchestrator/state.json'), 'utf8')); }
     const current = state.stages?.[state.current_stage];
     if (!current || !['running', 'waiting'].includes(current.status) || !current.execution_id) return null;
+    if (awaitingReviewFrom && (state.current_stage !== awaitingReviewFrom || current.status !== 'waiting' || current.code !== 'REVIEW_REQUIRED')) return null;
     const input = await readExecutionInput({ root: workspace, execution_id: current.execution_id });
     await validateSkillInput({ root: workspace, input });
     if (input.session_directory !== session || input.context?.worktree_ref !== join(session, 'worktree.json')) return null;

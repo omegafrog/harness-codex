@@ -1,4 +1,4 @@
-import { PUBLIC_SKILLS } from './public-skills.mjs';
+import { PUBLIC_SKILLS, PUBLIC_SKILL_SOURCES } from './public-skills.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
@@ -8,7 +8,8 @@ import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 import { retireProjectHooks } from './orchestrator-hook.mjs';
 import { migrateAgentsText } from '../workflow/agent-config.mjs';
-import { transformSourceContent } from './transforms.mjs';
+import { currentInternalSkillAssetPath, INTERNAL_SKILL_ROOT, LEGACY_INTERNAL_SKILL_ROOT, listInternalSkillGuides } from '../workflow/skill-declaration.mjs';
+import { renderSourceContent } from './transforms.mjs';
 import { migrateProjectAgentFiles } from './project-agent-files.mjs';
 import { LEGACY_ASSETS, RETIRED_ASSET_PATHS, RETIRED_SKILL_NAMES } from './legacy-assets.mjs';
 
@@ -94,64 +95,46 @@ async function findDanglingSymlink(root, path) {
 
 async function discoverSourceDescriptors(sourceRoot) {
   const descriptors = [];
-  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/internal-skills", () => true)) {
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, INTERNAL_SKILL_ROOT, () => true)) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath, sourcePath.endsWith(".md") ? SOURCE_TRANSFORM : null));
   }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath, SOURCE_TRANSFORM));
     descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^\.codex\/agents\//, '.claude/agents/').replace(/\.toml$/, '.md'), 'claude-agent-v1'));
   }
-  for (const directory of [".codex/workflows", ".codex/schemas"]) {
-    for (const sourcePath of await listDirectoryFiles(sourceRoot, directory, (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
-  }
-  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs") && entry.name !== "harness-orchestrator-hook.mjs")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   // The runner reads the stage input and return schemas from here; stage agents receive a composed schema per execution.
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".schema.json"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".harness/src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath));
-    if (sourcePath === ".harness/src/contracts/contracts.mjs") descriptors.push(sourceDescriptor(sourcePath, ".harness/contracts.mjs"));
-  }
-  for (const sourcePath of await listDirectoryFiles(sourceRoot, "bin", (entry) => entry.isFile() && /^plantuml-(bootstrap|render)\.mjs$/.test(entry.name))) {
-    descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^bin\//, ".codex/tools/")));
+    if (sourcePath === ".harness/src/contracts/contracts.mjs") descriptors.push(sourceDescriptor(sourcePath, ".harness/contracts.mjs", "standalone-contracts-v1"));
   }
   // Everything specific to the Claude Code provider lives under .claude/harness and installs to the same path.
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".claude/harness", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
-  descriptors.push(sourceDescriptor('bin/harness-doctor.mjs', '.codex/scripts/harness-doctor.mjs'));
+  descriptors.push(sourceDescriptor('.harness/cli/harness-doctor.mjs', '.harness/scripts/harness-doctor.mjs'));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/workflows", (entry) => entry.isFile() && entry.name === "harness-contracts.yml")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github", (entry) => entry.isFile() && entry.name === "pull_request_template.md")) {
     if (sourcePath === ".github/pull_request_template.md") descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/PULL_REQUEST_TEMPLATE", (entry) => entry.isFile() && entry.name.endsWith(".md"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
-  const skillsRoot = resolve(sourceRoot, ".codex/skills");
-  let skills;
-  try {
-    const rootPath = await realpath(sourceRoot);
-    const canonicalSkillsRoot = await realpath(skillsRoot);
-    if (!isWithin(rootPath, canonicalSkillsRoot)) throw new InstallerUpdateError("Harness source skills escape repository root", { path: canonicalSkillsRoot });
-    const information = await lstat(skillsRoot);
-    if (information.isSymbolicLink() || !information.isDirectory()) throw new InstallerUpdateError("Harness source skills root must be a real directory", { path: skillsRoot });
-    skills = await readdir(skillsRoot, { withFileTypes: true });
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      const dangling = await findDanglingSymlink(sourceRoot, skillsRoot);
-      if (dangling) throw new InstallerUpdateError("Harness source skills contain a dangling symlink", { path: dangling });
-      skills = [];
-    }
-    else if (error instanceof InstallerUpdateError) throw error;
-    else throw new InstallerUpdateError("Unable to inspect harness source skills", { cause: error });
-  }
-  for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && PUBLIC_SKILLS.includes(entry.name)).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
-    const sourcePath = `.codex/skills/${skill.name}/SKILL.md`;
+  for (const skill of [...PUBLIC_SKILLS].sort()) {
+    const sourceDirectory = PUBLIC_SKILL_SOURCES[skill];
+    const sourcePath = `${sourceDirectory}/SKILL.md`;
     try {
       const information = await lstat(resolve(sourceRoot, sourcePath));
       if (information.isFile() || information.isSymbolicLink()) {
-        for (const path of await listDirectoryFiles(sourceRoot, `.codex/skills/${skill.name}`, () => true)) {
-          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".agents/skills/"), path.endsWith(".md") ? SOURCE_TRANSFORM : null));
-          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".claude/skills/"), path.endsWith(".md") ? 'claude-skills-v1' : null));
+        for (const path of await listDirectoryFiles(sourceRoot, sourceDirectory, () => true)) {
+          const relativePath = path.slice(sourceDirectory.length + 1);
+          const transform = null;
+          const claudeTransform = path.endsWith('.md') ? 'claude-skills-v1' : null;
+          descriptors.push(sourceDescriptor(path, `.agents/skills/${skill}/${relativePath}`, transform));
+          descriptors.push(sourceDescriptor(path, `.claude/skills/${skill}/${relativePath}`, claudeTransform));
         }
       }
     } catch (error) {
-      if (error.code !== "ENOENT") throw new InstallerUpdateError(`Unable to inspect source skill: ${skill.name}`, { cause: error });
+      if (error.code !== "ENOENT") throw new InstallerUpdateError(`Unable to inspect source skill: ${skill}`, { cause: error });
     }
   }
   return descriptors.sort((left, right) => left.target_path < right.target_path ? -1 : left.target_path > right.target_path ? 1 : 0);
@@ -175,7 +158,8 @@ async function readSource(root, descriptor) {
   const information = await stat(actualPath);
   if (!information.isFile()) throw new InstallerUpdateError(`Harness source is not a regular file: ${descriptor.source_path}`, { path: actualPath });
   const content = await readFile(actualPath);
-  return descriptor.source_transform ? Buffer.from(transformSourceContent(content, descriptor.source_transform)) : content;
+  if (!descriptor.source_transform) return content;
+  return Buffer.from(await renderSourceContent(content, descriptor.source_transform, (path) => readSource(root, sourceDescriptor(path, path))));
 }
 
 async function containedPath(root, relativePath) {
@@ -304,11 +288,32 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const lock = existingLock || { schema_version: 1, files: {} };
   const activeProvider = provider || installedProviders(lock);
   const descriptors = (await discoverSourceDescriptors(sourceRoot)).filter((descriptor) => activeProvider === "all" || [null, activeProvider].includes(targetProvider(descriptor.target_path)));
-  const internalSkillNames = new Set((await readdir(resolve(sourceRoot, '.codex/internal-skills'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error)))
-    .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  const internalSkillNames = new Set((await listInternalSkillGuides(sourceRoot)).map(({ skill }) => skill));
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
+  // A partial install cannot move the GUIDEs together with the runner and caller paths that refer to them.
+  if (scope !== 'all' && Object.keys(lock.files).some((path) => {
+    const currentPath = currentInternalSkillAssetPath(path);
+    return currentPath !== path && byTarget.has(currentPath) && !lock.files[currentPath];
+  })) {
+    throw new InstallerUpdateError('Moving internal skills to .harness/skills requires a full install or update for this project');
+  }
+  if (scope !== 'all' && Object.keys(lock.files).some((path) => {
+    if (!path.startsWith('.codex/scripts/')) return false;
+    const currentPath = path.replace('.codex/scripts/', '.harness/scripts/');
+    return byTarget.has(currentPath) && !lock.files[currentPath];
+  })) {
+    throw new InstallerUpdateError('Moving scripts to .harness/scripts requires a full install or update for this project');
+  }
+  if (scope !== 'all' && Object.keys(lock.files).some((path) => {
+    if (!path.startsWith('.codex/tools/')) return false;
+    const currentPath = path.replace('.codex/tools/', '.harness/tools/');
+    return byTarget.has(currentPath) && !lock.files[currentPath];
+  })) {
+    throw new InstallerUpdateError('Moving tools to .harness/tools requires a full install or update for this project');
+  }
   const entries = await classifyLockEntries({ root: targetRoot, lock, sourceRoot });
-  const isSkill = (path) => path.startsWith(".agents/skills/") || path.startsWith(".claude/skills/") || path.startsWith(".codex/internal-skills/");
+  const isInternalSkill = (path) => path.startsWith(`${INTERNAL_SKILL_ROOT}/`);
+  const isSkill = (path) => isInternalSkill(path) || path.startsWith(".agents/skills/") || path.startsWith(".claude/skills/");
   const selected = (path) => scope === "all" || (scope === "agents" ? path.startsWith(".codex/agents/") : isSkill(path));
   const actions = [];
   const skipped = [];
@@ -376,6 +381,9 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     if (!source) continue;
     const sourceHash = hashContent(source);
     const knownLegacy = target && LEGACY_ASSETS.some((item) => item.action === 'replace' && item.path === descriptor.target_path && item.sha256 === hashContent(target.content));
+    if (target && isInternalSkill(descriptor.target_path) && hashContent(target.content) !== sourceHash) {
+      throw new InstallerUpdateError(`Unregistered file conflicts with a Harness skill asset: ${descriptor.target_path}`, { path: descriptor.target_path });
+    }
     if (target && hashContent(target.content) !== sourceHash && !force && !isSkill(descriptor.target_path) && !knownLegacy) {
       skipped.push({ path: descriptor.target_path, status: "unlocked" });
       continue;
@@ -469,12 +477,16 @@ async function pruneEmptySkillDirectories(root, harnessSkillNames) {
   const legacyRuntime = resolve(root, '.codex/harness-runtime');
   const legacyInformation = await lstat(legacyRuntime).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   if (legacyInformation?.isDirectory() && !legacyInformation.isSymbolicLink()) removed.push(...await removeEmptyTree(root, legacyRuntime));
-  for (const skillsRoot of ['.codex/internal-skills', '.agents/skills', '.claude/skills']) {
+  for (const skillsRoot of [LEGACY_INTERNAL_SKILL_ROOT, '.agents/skills', '.claude/skills']) {
     const boundary = resolve(root, skillsRoot);
     const information = await lstat(boundary).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
     if (!information || information.isSymbolicLink() || !information.isDirectory()) continue;
+    if (skillsRoot === LEGACY_INTERNAL_SKILL_ROOT) {
+      removed.push(...await removeEmptyTree(root, boundary));
+      continue;
+    }
     for (const entry of await readdir(boundary, { withFileTypes: true })) {
-      if (!entry.isDirectory() || (skillsRoot !== '.codex/internal-skills' && !harnessSkillNames.has(entry.name))) continue;
+      if (!entry.isDirectory() || !harnessSkillNames.has(entry.name)) continue;
       removed.push(...await removeEmptyTree(root, resolve(boundary, entry.name)));
     }
   }

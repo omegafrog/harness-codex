@@ -48,6 +48,7 @@ function validateHistory(history, limit = 3) {
   requireValue(repairs.every((item) => item && Number.isSafeInteger(item.round) && item.round >= 1 && typeof item.inputs?.fixed_point === 'string' && item.inputs.fixed_point && typeof item.inputs?.implementation_commit_sha === 'string' && item.inputs.implementation_commit_sha && Array.isArray(item.findings)), 'Invalid repair reservation');
   requireValue(history.attempts.every((item) => item && ['active', 'pass', 'revise', 'stale', 'aborted'].includes(item.status) && Number.isSafeInteger(item.round) && item.round >= 1 && item.round <= limit && (!item.review || Array.isArray(item.review.findings))), 'Invalid recorded review');
   requireValue(history.attempts.every((item) => !item.admission_ref && !item.admission_execution_id || /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(item.admission_execution_id || '') && item.admission_ref === `runtime/executions/${item.admission_execution_id}/plan-review-admission-${item.id}.json`), 'Invalid plan review admission reference');
+  requireValue(history.attempts.every((item) => item.admission_sha256 === undefined || (item.admission_ref && /^[a-f0-9]{64}$/.test(item.admission_sha256))), 'Invalid plan review admission hash');
   requireValue(history.attempts.every((item) => !item.native_review || typeof item.native_review.reviewer_id === 'string' && item.native_review.reviewer_id && typeof item.native_review.dispatch_token === 'string' && item.native_review.dispatch_token && typeof item.native_review.parent_session_id === 'string' && item.native_review.parent_session_id && typeof item.native_review.execution_id === 'string' && item.native_review.execution_id && (!item.native_review.agent_id || typeof item.native_review.agent_id === 'string' && typeof item.native_review.stopped === 'boolean' && (!item.native_review.stopped || typeof item.native_review.result === 'string' && item.native_review.result.trim() && ['pass', 'revise', 'reject', 'blocked'].includes(item.native_review.review?.verdict) && Array.isArray(item.native_review.review.findings)))), 'Invalid native review claim');
   return history;
 }
@@ -64,7 +65,7 @@ async function readHistory(path, limit = 3) {
 
 // Serialize admission and result writes; the persisted active attempt owns the review slot.
 // 수리 한도가 끝날 때마다 plan을 고쳐 새로 여는 순환을 사용자 결정 없이 계속하지 않는다.
-export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, requireNative = false }) {
+export async function updateReviewAttempt({ root, scope, action, inputs, attemptId, review, reason, resolution, findings = [], reviewerId, nativeAgentId, nativeResult, nativeReview, parentSessionId, executionId, admissionRef, admissionSha256, requireNative = false }) {
   const path = historyPath(root, scope);
   const lock = await open(`${path}.lock`, 'wx').catch((error) => {
     if (error.code === 'EEXIST') throw new Error('Review history is being updated; retry after the current command finishes');
@@ -109,21 +110,25 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
         last.status = !same(last.inputs, inputs) ? 'stale' : native.review.verdict === 'pass' && (native.review.findings || []).every((item) => item.severity === 'minor') ? 'pass' : 'revise';
         last.settled_after_interruption = true;
       }
-      requireValue(last?.status !== 'active', `A review is already active (attempt ${last?.id}, execution ${last?.native_review?.execution_id || last?.admission_execution_id || 'unknown'}); record its result or abort it before dispatch`);
-      requireValue(!last || last.status === 'aborted' || (scope.startsWith('plan-') && last.status === 'revise') || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
-      if (scope.startsWith('contracts-')) {
-        const repeated = repeatedContractFindings(history);
-        requireValue(!repeated.length, `The same contract review finding came back after a fix (${repeated.map((finding) => finding.description).join('; ').slice(0, 300)}); ask the user how to handle it and record the answer with resolve before another review`);
+      if (scope.startsWith('plan-') && last?.status === 'pass' && last.settled_after_interruption && same(last.inputs, inputs)) {
+        result = { status: 'pass', reason: 'recovered_pass', attempt_id: last.id, round: last.round, inputs: last.inputs, findings: last.review.findings };
+      } else {
+        requireValue(last?.status !== 'active', `A review is already active (attempt ${last?.id}, execution ${last?.native_review?.execution_id || last?.admission_execution_id || 'unknown'}); record its result or abort it before dispatch`);
+        requireValue(!last || last.status === 'aborted' || (scope.startsWith('plan-') && last.status === 'revise') || !same(last.inputs, inputs), 'Review inputs are unchanged; reuse the current result or resolve the findings before dispatch');
+        if (scope.startsWith('contracts-')) {
+          const repeated = repeatedContractFindings(history);
+          requireValue(!repeated.length, `The same contract review finding came back after a fix (${repeated.map((finding) => finding.description).join('; ').slice(0, 300)}); ask the user how to handle it and record the answer with resolve before another review`);
+        }
+        const trailingPreparationAborts = trailingPreparationAbortCount(history);
+        if (scope.startsWith('spec-')) requireValue(trailingPreparationAborts < MAX_PREPARATION_ABORTS, 'Spec review preparation retry limit exhausted; record preparation recovery before retrying');
+        const substantive = lastSubstantiveAttempt(history);
+        const round = !substantive || substantive.status === 'pass' || resolutionApplied(history, substantive) ? 1 : substantive.round + 1;
+        requireValue(round <= limit, limit === 3 ? 'Review retry budget exhausted (initial review plus two retries); present unresolved findings for a scope or decision resolution' : `Review retry budget exhausted (${limit} rounds); present unresolved findings for a scope or decision resolution`);
+        const attempt = { id: randomUUID(), round, status: 'active', inputs };
+        history.attempts.push(attempt);
+        const previousReview = lastRecordedReview(history);
+        result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_inputs: previousReview?.inputs || null, previous_findings: previousReview?.review.findings || [] };
       }
-      const trailingPreparationAborts = trailingPreparationAbortCount(history);
-      if (scope.startsWith('spec-')) requireValue(trailingPreparationAborts < MAX_PREPARATION_ABORTS, 'Spec review preparation retry limit exhausted; record preparation recovery before retrying');
-      const substantive = lastSubstantiveAttempt(history);
-      const round = !substantive || substantive.status === 'pass' || resolutionApplied(history, substantive) ? 1 : substantive.round + 1;
-      requireValue(round <= limit, limit === 3 ? 'Review retry budget exhausted (initial review plus two retries); present unresolved findings for a scope or decision resolution' : `Review retry budget exhausted (${limit} rounds); present unresolved findings for a scope or decision resolution`);
-      const attempt = { id: randomUUID(), round, status: 'active', inputs };
-      history.attempts.push(attempt);
-      const previousReview = lastRecordedReview(history);
-      result = { status: 'pass', attempt_id: attempt.id, round, inputs, previous_inputs: previousReview?.inputs || null, previous_findings: previousReview?.review.findings || [] };
     } else if (action === 'claim') {
       requireValue(last?.status === 'active' && last.id === attemptId, `No active review matches this attempt ID (requested ${attemptId || 'missing'}, active ${last?.status === 'active' ? last.id : 'none'})`);
       requireValue(!last.native_review, 'A native reviewer is already claimed for this attempt');
@@ -134,6 +139,10 @@ export async function updateReviewAttempt({ root, scope, action, inputs, attempt
       requireValue(last?.status === 'active' && last.id === attemptId && !last.admission_ref && typeof executionId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId) && admissionRef === `runtime/executions/${executionId}/plan-review-admission-${attemptId}.json`, 'Plan review admission reference does not match its active attempt');
       last.admission_ref = admissionRef;
       last.admission_execution_id = executionId;
+      if (admissionSha256 !== undefined) {
+        requireValue(/^[a-f0-9]{64}$/.test(admissionSha256), 'Invalid plan review admission hash');
+        last.admission_sha256 = admissionSha256;
+      }
       result = { status: 'pass', attempt_id: last.id, admission_ref: admissionRef };
     } else if (action === 'bind-native') {
       requireValue(last?.status === 'active' && last.id === attemptId, 'No active review matches this attempt ID');
@@ -228,7 +237,17 @@ export async function inspectActiveReviewAttempt({ root, scope }) {
   const history = await readHistory(historyPath(root, scope, { create: false }), roundLimit(scope));
   const last = history.attempts.at(-1);
   requireValue(last?.status === 'active', 'No active review attempt');
-  return { attempt_id: last.id, inputs: last.inputs, native_review: last.native_review || null, admission_ref: last.admission_ref || null, admission_execution_id: last.admission_execution_id || null };
+  return { attempt_id: last.id, inputs: last.inputs, native_review: last.native_review || null, admission_ref: last.admission_ref || null, admission_execution_id: last.admission_execution_id || null, admission_sha256: last.admission_sha256 || null };
+}
+
+export async function recordedPlanReviewForExecution({ root, planSetId, executionId }) {
+  const scope = `plan-${planSetId}`;
+  const history = await readHistory(historyPath(root, scope, { create: false }), roundLimit(scope));
+  const last = history.attempts.at(-1);
+  requireValue(last && ['pass', 'revise', 'stale'].includes(last.status) && last.admission_execution_id === executionId
+    && last.native_review?.execution_id === executionId && last.native_review.stopped && last.review,
+  'Plan review handoff requires a recorded independent result for the waiting to-ticket execution');
+  return { attempt_id: last.id, status: last.status, findings: last.review.findings || [] };
 }
 
 export async function assertNoUnrecordedNativeReview({ root, scope }) {

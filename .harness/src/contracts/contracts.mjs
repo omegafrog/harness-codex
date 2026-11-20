@@ -7,21 +7,12 @@ import { promisify } from "node:util";
 
 const DIRECTORY = "docs/contracts";
 const MANIFEST = `${DIRECTORY}/manifest.json`;
+const COMPONENT_FORMAT = ".harness/skills/delivery/sync-contracts/references/format.md";
+const embeddedComponentFormat = null /* HARNESS_CONTRACT_COMPONENT_FORMAT */;
+const readComponentFormat = () => embeddedComponentFormat ?? readFile(new URL(`../../../${COMPONENT_FORMAT}`, import.meta.url), "utf8");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || "") && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const text = (value) => typeof value === "string" && value.trim().length > 0;
-const kinds = {
-  "external-system": ["설명", "인터페이스", "외부 명세"],
-  "bounded-context": ["설명", "커뮤니케이션", "내부 구성요소", "배포"],
-  aggregate: ["설명", "기능", "구성요소", "불변식"],
-  "aggregate-root": ["설명", "속성", "메서드"],
-  entity: ["설명", "속성", "메서드"],
-  "value-object": ["설명", "속성", "불변식"],
-  "domain-service": ["설명", "속성", "메서드", "비즈니스 규칙"],
-  "domain-method": ["설명", "비즈니스 규칙"],
-  "composition-service": ["설명", "필요 엔티티", "동작", "메서드"],
-  "composition-method": ["설명", "필요 엔티티", "동작"],
-};
 
 async function safePath(root, path) {
   if (!text(path) || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new Error(`Invalid relative path: ${path}`);
@@ -47,6 +38,33 @@ async function previous(root, baseRef) {
 }
 function sections(markdown) {
   return new Map([...markdown.matchAll(/<a id="([a-z][a-z0-9-]*)"><\/a>\s*\n## ([^\n]+)\n([\s\S]*?)(?=<a id="|$)/g)].map((m) => [m[1], { name: m[2].trim(), body: m[3] }]));
+}
+function componentFields(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const header = lines.findIndex((line) => /^\|\s*종류\s*\|\s*필수 문서 필드\s*\|\s*$/.test(line));
+  if (header < 0 || !/^\|\s*:?-+:?\s*\|\s*:?-+:?\s*\|\s*$/.test(lines[header + 1] || "")) {
+    throw new Error(`Missing component field table in ${COMPONENT_FORMAT}`);
+  }
+  const common = [];
+  const byKind = new Map();
+  for (let index = header + 2; index < lines.length && lines[index].startsWith("|"); index += 1) {
+    const columns = lines[index].slice(1, -1).split("|").map((cell) => cell.trim());
+    if (columns.length !== 2) throw new Error(`Invalid component field table row in ${COMPONENT_FORMAT}: ${lines[index]}`);
+    const names = [...columns[0].matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+    // Field labels are the code-formatted terms before each explanation colon. Ignore examples in the prose.
+    const fields = columns[1].split(";").flatMap((clause) => {
+      const label = clause.split(":", 1)[0];
+      return [...label.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+    });
+    if (!names.length || fields.length === 0 || (names.includes("공통") && names.length !== 1)) throw new Error(`Invalid component field table row in ${COMPONENT_FORMAT}: ${lines[index]}`);
+    if (names[0] === "공통") common.push(...fields);
+    else for (const kind of names) {
+      if (byKind.has(kind)) throw new Error(`Duplicate component kind in ${COMPONENT_FORMAT}: ${kind}`);
+      byKind.set(kind, fields);
+    }
+  }
+  if (!common.length || !byKind.size) throw new Error(`Incomplete component field table in ${COMPONENT_FORMAT}`);
+  return { common: [...new Set(common)], byKind };
 }
 function model(manifest) {
   const { revision, updated_at, change_summary, no_contract_change, hashes, ...content } = manifest;
@@ -94,6 +112,7 @@ async function viewer(root, manifest) {
 async function validate(root, manifest) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
+  const { common: commonComponentFields, byKind: componentKinds } = componentFields(await readComponentFormat());
   require(manifest.schema_version === 1, "Unsupported schema_version");
   require(Number.isInteger(manifest.revision) && manifest.revision > 0, "revision must be a positive integer");
   require(validDate(manifest.updated_at), "updated_at must be YYYY-MM-DD");
@@ -128,8 +147,9 @@ async function validate(root, manifest) {
     require(manifest.diagrams.some((d) => d.kind === "state" && d.feature === feature.id && (d.source || text(d.reason))), `Missing state or reason: ${feature.id} — add {"kind":"state","feature":"${feature.id}","source":"docs/contracts/diagrams/${feature.id}.state.puml"} (with its SVG) or, when the feature has no lifecycle states, {"kind":"state","feature":"${feature.id}","reason":"<why there are no states>"} to manifest.diagrams`);
   }
   for (const component of manifest.components) {
-    const body = checkSection(component, architecture, kinds[component.kind] || []);
-    require(Object.hasOwn(kinds, component.kind), `Unknown component kind: ${component.id}`);
+    const requiredFields = componentKinds.get(component.kind);
+    const body = checkSection(component, architecture, [...commonComponentFields, ...(requiredFields || [])]);
+    require(requiredFields !== undefined, `Unknown component kind: ${component.id}`);
     if (!["external-system", "bounded-context"].includes(component.kind)) require(manifest.components.some((c) => c.id === component.owner), `Missing owner: ${component.id}`);
     let ancestor = component, seen = new Set([component.id]);
     while (ancestor.owner) {

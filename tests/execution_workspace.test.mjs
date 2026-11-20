@@ -60,12 +60,11 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   await writeFile(ref, JSON.stringify({ ...record, common: join(directory, 'missing-common') }));
   await assert.rejects(snapshotPlanSet({ root, planSetId: 'example' }), { code: 'ENOENT' });
   await writeFile(ref, JSON.stringify(record));
+  // GitHub Issue drafts and their rendered bodies are part of the reviewed snapshot.
+  await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const snapshot = await snapshotPlanSet({ root, planSetId: 'example' });
   const admission = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs: snapshot.inputs });
   await updateReviewAttempt({ root, scope: 'plan-example', action: 'record', attemptId: admission.attempt_id, inputs: snapshot.inputs, review: { reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', findings: [] } });
-  // Publication drafts exist only for the GitHub tracker, so the mode is configured before they are prepared.
-  await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
-  await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
   const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
   for (const item of prepared) {
     const body = await readFile(join(root, '.io', item.body_path), 'utf8');
@@ -76,6 +75,11 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   }
   assert.equal(await readFile(join(plans, 'slice.md'), 'utf8'), legacy);
   assert.deepEqual((await snapshotPlanSet({ root, planSetId: 'example' })).inputs, snapshot.inputs);
+  const draftPath = join(drafts, 'slice.md');
+  const approvedDraft = await readFile(draftPath, 'utf8');
+  await writeFile(draftPath, `${approvedDraft}Unreviewed change.\n`);
+  await assert.rejects(preparePublicationDrafts({ root, planSetId: 'example' }), /Plan review is stale/);
+  await writeFile(draftPath, approvedDraft);
   assert.throws(() => buildImplementPrompt({ repository: root, workspaceRoot: primary, planSetId: 'example', planId: 'slice', planReviewRefs: { execution_workspace: expected } }), /conflicts with runner/);
 
   const issues = [];

@@ -1,4 +1,4 @@
-// Stage ids that a worktree record or an execution state may name. `spec-me`, `architecture-spec` and `architecture-review`
+// Stage ids that a worktree record or an execution state may name. `spec-me`, `architecture-spec`, `architecture-review`, `codebase-design`, `ddd-design` and `domain-modeling`
 // are retired: no workflow runs them and their guides are removed. Their ids stay valid only so that the record of a
 // worktree created by an older Harness still parses; nothing can start them (`spec-me` is refused by name, the others have no
 // skill document any more).
@@ -7,11 +7,10 @@ export const WORKTREE_STAGE = Object.freeze({
   APPLICATION_SERVICE: 'application-service',
   ARCHITECTURE_REVIEW: 'architecture-review',
   ARCHITECTURE_SPEC: 'architecture-spec',
-  ATTENTION_SPAN: 'attention-span',
+  CODEBASE_DESIGN: 'codebase-design',
   BOUNDED_CONTEXT: 'bounded-context',
   CODE_RESEARCH: 'code-research',
   CODE_REVIEW: 'code-review',
-  CODEBASE_DESIGN: 'codebase-design',
   CONTEXT_BOUNDARY: 'context-boundary',
   CORRECT: 'correct',
   DDD_DESIGN: 'ddd-design',
@@ -173,5 +172,5 @@ export function preSpecOrderViolation(stages, stageId) {
     return `${stageId} cannot start before ${required}: ${required} is ${stages[required]?.stale ? 'stale' : stages?.[required]?.status || 'not started'}${stages[required]?.stale ? `, because ${owner} was reopened for ${blocked}` : ''}. Re-run the stale stages in order (${(order || []).join(' → ')}); ${required} is next.`;
   }
   const status = stages?.[required]?.status;
-  return `${stageId} cannot start before ${required}: the flow runs ${PRE_SPEC_STAGES.join(' → ')} in order, and ${required} is ${status ? `${status}${stages[required].code ? `/${stages[required].code}` : ''}, not completed/OK` : 'not started'}. Complete ${required} next.${recorded ? ` ${stageId} is already recorded as ${recorded.status} without a result, so it was started out of order. After its native run has ended and its Codex session is closed, discard it with: node .codex/scripts/harness-prepare-input.mjs --stage-id ${stageId} --discard-out-of-order true` : ''}`;
+  return `${stageId} cannot start before ${required}: the flow runs ${PRE_SPEC_STAGES.join(' → ')} in order, and ${required} is ${status ? `${status}${stages[required].code ? `/${stages[required].code}` : ''}, not completed/OK` : 'not started'}. Complete ${required} next.${recorded ? ` ${stageId} is already recorded as ${recorded.status} without a result, so it was started out of order. After its native run has ended and its Codex session is closed, discard it with: node .harness/scripts/harness-prepare-input.mjs --stage-id ${stageId} --discard-out-of-order true` : ''}`;
 }

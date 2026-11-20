@@ -207,5 +207,5 @@ export async function designNotFrozen({ root, planSetId }) {
   if (!planSetId) return null;
   const verdict = await checkWorkspaceDesignFreeze({ root, planSetId });
   if (verdict.ok) return null;
-  return `DESIGN_NOT_FROZEN: to-ticket splits a frozen design and does not start while the design-freeze gate fails (${verdict.errors.map((error) => `${error.code}${error.id ? ` ${error.id}` : ''} [${error.owner_stage}]`).join(', ')}). Re-run tactical-data so the gate passes (node .codex/scripts/harness-design-freeze-check.mjs --workspace-root <root> shows the errors); a design change is made by the stage that owns it, never by to-ticket`;
+  return `DESIGN_NOT_FROZEN: to-ticket splits a frozen design and does not start while the design-freeze gate fails (${verdict.errors.map((error) => `${error.code}${error.id ? ` ${error.id}` : ''} [${error.owner_stage}]`).join(', ')}). Re-run tactical-data so the gate passes (node .harness/scripts/harness-design-freeze-check.mjs --workspace-root <root> shows the errors); a design change is made by the stage that owns it, never by to-ticket`;
 }

@@ -27,7 +27,7 @@ test('installed harness-progress summarizes a session and shows the running stag
       },
     };
     await writeFile(join(session, 'runtime/orchestrator/state.json'), JSON.stringify(state));
-    const script = join(root, '.codex/scripts/harness-progress.mjs');
+    const script = join(root, '.harness/scripts/harness-progress.mjs');
     const output = execFileSync(process.execPath, [script, '--session', session], { cwd: root, encoding: 'utf8' });
     assert.match(output, /기록된 단계 1\/3 완료/);
     assert.match(output, /✓ requirements-fix\s+완료 00:02:00 · 2회차/);
@@ -52,13 +52,13 @@ test('installed harness-progress summarizes a session and shows the running stag
     assert.match(running, /하위 agent: standards_reviewer/);
     assert.match(running, /└ ▸ npm test -- "auth"\s+\(\d+초 전\)/);
     // The orchestrator between stages is shown with its own latest step and reviewers.
-    await writeFile(join(rolloutDir, 'rollout-x-orch-1.jsonl'), JSON.stringify({ type: 'response_item', timestamp: new Date().toISOString(), payload: { type: 'custom_tool_call', input: 'await tools.exec_command({cmd:"node .codex/scripts/harness-code-review.mjs repair"})' } }));
+    await writeFile(join(rolloutDir, 'rollout-x-orch-1.jsonl'), JSON.stringify({ type: 'response_item', timestamp: new Date().toISOString(), payload: { type: 'custom_tool_call', input: 'await tools.exec_command({cmd:"node .harness/scripts/harness-code-review.mjs repair"})' } }));
     await writeFile(join(session, 'runtime/orchestrator/state.json'), JSON.stringify({ ...live, orchestrator_session_id: 'orch-1' }));
     await writeFile(join(session, 'runtime/orchestrator/subagents.jsonl'), `${JSON.stringify({ event: 'SubagentStart', agent_id: 'r1', agent_type: 'spec_reviewer' })}\n`);
     const orchestrating = execFileSync(process.execPath, [script, '--session', session], { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: home } });
-    assert.match(orchestrating, /▶ orchestrator\s+진행 중\n\s+└ 하위 agent: spec_reviewer\n\s+└ ▸ node \.codex\/scripts\/harness-code-review\.mjs repair/);
+    assert.match(orchestrating, /▶ orchestrator\s+진행 중\n\s+└ 하위 agent: spec_reviewer\n\s+└ ▸ node \.harness\/scripts\/harness-code-review\.mjs repair/);
     // Same session found without --session from the project directory.
     assert.match(execFileSync(process.execPath, [script], { cwd: root, encoding: 'utf8' }), /requirements-fix/);
-    assert.equal(execFileSync('git', ['-C', root, 'check-ignore', '-q', '.codex/scripts/harness-progress.mjs'], { stdio: 'pipe' }).length, 0);
+    assert.equal(execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/scripts/harness-progress.mjs'], { stdio: 'pipe' }).length, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

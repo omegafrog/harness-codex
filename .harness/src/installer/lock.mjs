@@ -3,10 +3,10 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
-import { transformSourceContent as transformSource } from './transforms.mjs';
+import { renderSourceContent } from './transforms.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
-const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1"]);
+const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1", "standalone-contracts-v1"]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
@@ -121,11 +121,7 @@ export async function hashFile(path) {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function transformSourceContent(content, transform) {
-  return transformSource(content, transform);
-}
-
-async function transformedHash(root, relativePath, transform) {
+async function readTransformedSource(root, relativePath) {
   const path = resolve(root, relativePath);
   if (!isWithin(root, path)) throw new HarnessLockError(`Harness source path escapes repository root: ${relativePath}`, { path });
   try {
@@ -134,12 +130,19 @@ async function transformedHash(root, relativePath, transform) {
     if (!isWithin(rootPath, actualPath)) throw new HarnessLockError(`Harness source path resolves outside repository root: ${relativePath}`, { path: actualPath });
     const information = await stat(actualPath);
     if (!information.isFile()) throw new HarnessLockError(`Harness source path is not a regular file: ${relativePath}`, { path: actualPath });
-    return createHash("sha256").update(transformSourceContent(await readFile(actualPath), transform)).digest("hex");
+    return await readFile(actualPath);
   } catch (error) {
     if (error.code === "ENOENT") return null;
     if (error instanceof HarnessLockError) throw error;
     throw new HarnessLockError(`Unable to hash harness source file: ${relativePath}`, { path, cause: error });
   }
+}
+
+async function transformedHash(root, relativePath, transform) {
+  const source = await readTransformedSource(root, relativePath);
+  if (source === null) return null;
+  const rendered = await renderSourceContent(source, transform, (path) => readTransformedSource(root, path));
+  return createHash("sha256").update(rendered).digest("hex");
 }
 
 async function currentHash(root, relativePath) {
@@ -173,15 +176,14 @@ export async function discoverHarnessOwnedFiles(root) {
     throw new HarnessLockError("Unable to resolve repository root", { root, cause: error });
   });
   const patterns = [
-    [".codex/internal-skills", () => true],
+    [".harness/skills", () => true],
     [".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml")],
     [".claude/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")],
     [".claude/skills", () => true],
     [".claude/harness", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
-    [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
-    [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
-    [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
-    [".codex/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".harness/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
+    [".harness/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".harness/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".harness/src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".schema.json")],
   ];

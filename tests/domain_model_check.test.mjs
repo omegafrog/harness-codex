@@ -5,13 +5,13 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkTacticalDesign, parseRequirements, parseTables } from '../.codex/scripts/harness-domain-model-check.mjs';
+import { checkTacticalDesign, parseRequirements, parseTables } from '../.harness/scripts/harness-domain-model-check.mjs';
 import { TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { FINAL_TACTICAL_STAGE, TacticalGateError, assertTacticalDesignGate, checkWorkspaceTacticalDesign, evaluateTacticalDesignGate, gateFailureInstruction, stakeholderAnalysisSkipped } from '../.harness/src/workflow/domain-model-gate.mjs';
 import { READ_ONLY_DOCUMENT, READ_ONLY_REQUIREMENTS, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument as loadTemplate, upTo } from './support/domain-model-fixture.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const SCRIPT = join(sourceRoot, '.codex/scripts/harness-domain-model-check.mjs');
+const SCRIPT = join(sourceRoot, '.harness/scripts/harness-domain-model-check.mjs');
 const [DOMAIN_MODEL, AGGREGATE_DESIGN, DOMAIN_SERVICE, APPLICATION_SERVICE, INTEGRATION_DESIGN, CONTEXT_BOUNDARY] = TACTICAL_DESIGN_STAGES;
 
 const templateDocument = () => loadTemplate(sourceRoot);

@@ -9,16 +9,16 @@ import { JsonlEventWriter } from '../.harness/src/eval/journal.mjs';
 import { resolveAgentSandbox } from '../.harness/src/workflow/skill-execution.mjs';
 import { assertPrStageReadiness } from '../.harness/src/workflow/stage-input.mjs';
 
-test('PR authoring is restricted to the two declared dedicated stages', async () => {
+test('PR authoring is restricted to the declared planning PR stage', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
   await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'gh-open-pr' } }), /available only at its gated/);
   assert.deepEqual(
     await resolveAgentSandbox({ root, input: { skill: 'gh-open-pr' }, workflow: 'to-ticket', stage: 'plan-pr' }),
     { profile: 'pr_author', sandbox: 'workspace-write' },
   );
-  assert.deepEqual(
-    await resolveAgentSandbox({ root, input: { skill: 'gh-open-pr' }, workflow: 'implement-wrapper', stage: 'integration-pr' }),
-    { profile: 'pr_author', sandbox: 'workspace-write' },
+  await assert.rejects(
+    resolveAgentSandbox({ root, input: { skill: 'gh-open-pr' }, workflow: 'implement-wrapper', stage: 'integration-pr' }),
+    /Workflow file not found/,
   );
 });
 

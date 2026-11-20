@@ -13,7 +13,7 @@ Plan Set의 Issue, split plan의 child Issue, implementation PR은 같은 계획
 
 GitHub Plan Set Issue form의 `structured-source`가 유일한 canonical 입력이다. YAML/JSON source는 `validatePlanSetSource`로 parse·validate한 뒤 `renderPlanSetIssue`에 전달한다. 실제 mutation 경계는 `preparePlanSetIssue`와 `trackerCreatePlanSetIssue`이며, 이 경계를 통과한 canonical title/body만 external tracker port에 전달한다. form의 나머지 입력은 사람이 확인하는 preview이며 별도 source로 사용하지 않는다.
 
-Plan Set과 split plan은 각각 `.codex/schemas/tracker/plan-set.schema.yaml`, `.codex/schemas/tracker/split-plan.schema.yaml`의 versioned contract를 따른다. 구현 PR은 `.codex/schemas/tracker/implementation-pr.schema.yaml`을 따르며, `implemented_plans`가 모든 `child_issues`를 정확히 한 번씩 커버해야 한다.
+Plan Set, split plan, 구현 PR의 입력은 [트래커 검증기](../../.harness/src/tracker/contracts.mjs)의 `validatePlanSet`, `validateSplitPlan`, `validateImplementationPr`가 검증한다. 구현 PR의 `implemented_plans`는 모든 `child_issues`를 정확히 한 번씩 커버해야 한다.
 
 ### Implementation PR sections
 
@@ -43,4 +43,4 @@ Closing keyword는 implementation PR에서만 renderer가 생성한다. parent I
 - 사람이 작성하는 GitHub authoring surface와 renderer output의 구조가 고정된다.
 - 자유 형식 preview가 canonical tracker source를 덮어쓰지 않는다.
 - plan coverage 또는 closing reference 누락을 mutation 전에 발견할 수 있다.
-- 새로운 tracker 문서 종류를 추가하면 해당 schema, renderer, form/template, doctor contract를 함께 확장해야 한다.
+- 새로운 tracker 문서 종류를 추가하면 해당 검증기, renderer, form/template, doctor contract를 함께 확장해야 한다.

@@ -1,3 +1,4 @@
+import { internalSkillAssetPath } from '../.harness/src/workflow/skill-declaration.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
@@ -11,42 +12,6 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { transformSourceContent } from '../.harness/src/installer/transforms.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-
-test('intent questions resolve material scope choices instead of collecting a motive per rule', async () => {
-  const guide = await read('.codex/internal-skills/product-spec/GUIDE.md');
-  assert.match(guide, /first propose each feature's `목적` and `충분한 수준`/);
-  assert.match(guide, /observable user flows and completion conditions linked to UC\/AC IDs/);
-  assert.match(guide, /a missing reason alone does not require a question/);
-  assert.match(guide, /never as the user's answer or approval/);
-  assert.match(guide, /When asking, show the concrete result and implementation scope of each option/);
-  assert.doesNotMatch(guide, /needs the user's reason before it becomes a requirement/);
-  const topics = await read('.codex/internal-skills/product-spec/references/topics.md');
-  assert.match(topics, /Restating the feature .* is not an intent/);
-  assert.match(topics, /reference the existing feature intent and completion conditions/);
-  assert.doesNotMatch(topics, /When the request does not state the reason, ask/);
-  assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /에이전트 제안과 근거/);
-});
-
-test('every stage requires necessary work to meet completion conditions without adding optional questions', async () => {
-  const product = await read('.codex/internal-skills/product-spec/GUIDE.md');
-  assert.match(product, /explicitly required or indispensable/);
-  assert.match(product, /Agent-proposed intents and completion conditions cannot authorize new product scope/);
-  assert.match(product, /explain which condition would fail without it/);
-  assert.match(product, /Preserve baseline security, authorization, data protection and ordinary error handling/);
-  assert.match(product, /Omit optional improvements without turning them into interview questions/);
-  assert.match(product, /Login alone does not require OAuth, email recovery infrastructure or a custom session-timeout policy/);
-  for (const skill of ['implement', 'code-review']) {
-    assert.match(await read(`.codex/internal-skills/${skill}/GUIDE.md`), /\(\.\.\/product-spec\/GUIDE\.md\)/, skill);
-  }
-  // The ticket stages no longer depend on a Spec: the same necessity rule rests on the requirements and the tactical design.
-  for (const skill of ['to-ticket', 'plan-review']) {
-    const guide = await read(`.codex/internal-skills/${skill}/GUIDE.md`);
-    assert.doesNotMatch(guide, /product-spec\/GUIDE\.md|12\.7|13절/, skill);
-    assert.doesNotMatch(guide.replace(/이전 릴리스의 Product·Architecture Spec[^\n]*\n/, '\n'), /Architecture Spec|Product Spec/, skill);
-    assert.match(guide, /INV\/EX\/AC/, skill);
-  }
-  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /누락 지적에도 같은 필요성 기준/);
-});
 
 test('fresh and updated consumers receive scope guidance and the gate while project changes stay visible', async () => {
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -71,17 +36,15 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     await writeFile(resolve(root, path), content);
   }
   const managedPaths = [
-    ...['product-spec', 'to-ticket', 'plan-review', 'implement', 'code-review']
-      .map((skill) => `.codex/internal-skills/${skill}/GUIDE.md`),
-    '.codex/internal-skills/product-spec/references/topics.md',
-    '.codex/internal-skills/product-spec/references/template.md',
-    '.codex/internal-skills/spec-review/references/review-criteria.md',
+    ...['requirements-fix', 'to-ticket', 'plan-review', 'tactical-code', 'code-review']
+      .map((skill) => internalSkillAssetPath(skill)),
+    '.harness/skills/quality/spec-review/references/review-criteria.md',
     '.harness/src/workflow/spec-review.mjs',
     '.harness/src/workflow/plan-review.mjs',
     '.harness/src/workflow/skill-execution.mjs',
     '.harness/src/workflow/stage-checkpoint.mjs',
-    '.codex/scripts/harness-spec-review.mjs',
-    '.codex/scripts/harness-native-stage.mjs',
+    '.harness/scripts/harness-spec-review.mjs',
+    '.harness/scripts/harness-native-stage.mjs',
     ...['.agents', '.claude'].flatMap((provider) => ['SKILL.md', 'references/coordination.md', 'references/dispatch.md', 'references/input.md', 'references/workflow-map.md']
       .map((path) => `${provider}/skills/orchestrator/${path}`)),
   ];
@@ -107,25 +70,29 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     await mkdir(specDirectory, { recursive: true });
     await writeFile(resolve(specDirectory, 'architecture-spec.md'), '# Architecture\n');
     await writeFile(resolve(specDirectory, 'product-spec.md'), inline.replace('출처:', '근거:'));
-    const rejected = spawnSync(process.execPath, [resolve(root, '.codex/scripts/harness-spec-review.mjs'), 'begin', '--root', root, '--ticket', 'efficiency', '--axis', 'architecture'], { encoding: 'utf8' });
+    const rejected = spawnSync(process.execPath, [resolve(root, '.harness/scripts/harness-spec-review.mjs'), 'begin', '--root', root, '--ticket', 'efficiency', '--axis', 'architecture'], { encoding: 'utf8' });
     assert.equal(rejected.status, 1);
     assert.match(rejected.stderr, /Product Spec intent is incomplete/, 'invalid input must fail before admitting a reviewer');
     await writeFile(resolve(specDirectory, 'product-spec.md'), inline);
     const { assertSpecReadyForReview } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/spec-review.mjs'))}?ready-${phase}`);
     await assertSpecReadyForReview({ root, ticketId: 'efficiency' });
-    const { assertPlanIssueDrafts } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/plan-review.mjs'))}?${phase}`);
+    const { inspectPlanSet } = await import(`${pathToFileURL(resolve(root, '.harness/src/workflow/plan-review.mjs'))}?${phase}`);
     const configPath = resolve(root, '.harness/harness.yaml');
     const originalConfig = await readFile(configPath, 'utf8').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     await writeFile(configPath, 'tracker:\n  mode: github\n');
-    const planInput = { root, plans: [{ id: 'calc' }] };
-    await assert.rejects(assertPlanIssueDrafts(planInput), /parent.md.*calc.md/);
+    const planDirectory = resolve(root, 'docs/plans/efficiency');
+    await mkdir(planDirectory, { recursive: true });
+    await writeFile(resolve(planDirectory, 'plans.md'), '# Efficiency\n');
+    await writeFile(resolve(planDirectory, 'calc.md'), '---\nstatus: planned\n---\n# Calculate\n');
+    const planInput = { root, planSetId: 'efficiency', phase: 'planning' };
+    assert.match((await inspectPlanSet(planInput)).reason, /missing or empty: .*parent\.md.*calc\.md/);
     const drafts = resolve(root, '.io/runtime/to-ticket/drafts');
     await mkdir(drafts, { recursive: true });
     await writeFile(resolve(drafts, 'parent.md'), 'Parent issue\n');
     await writeFile(resolve(drafts, 'calc.md'), ' \n');
-    await assert.rejects(assertPlanIssueDrafts(planInput), /calc.md/);
+    assert.match((await inspectPlanSet(planInput)).reason, /missing or empty: \.io\/runtime\/to-ticket\/drafts\/calc\.md$/);
     await writeFile(resolve(drafts, 'calc.md'), 'Calculation issue\n');
-    await assertPlanIssueDrafts(planInput);
+    assert.match((await inspectPlanSet(planInput)).reason, /requires the canonical execution workspace/);
     await writeFile(resolve(drafts, 'parent.md'), '');
     await writeFile(resolve(drafts, 'calc.md'), '');
     if (originalConfig === null) await unlink(configPath);
@@ -160,34 +127,30 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
 });
 
 test('the Spec review looks for excess as well as gaps', async () => {
-  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /과한 설계: .*근거하지 않은 결정·규칙·구성요소/);
-  assert.match(await read('.codex/internal-skills/spec-review/GUIDE.md'), /충분한 수준을 넘는 과한 설계를 확인한다/);
+  assert.match(await read('.harness/skills/quality/spec-review/references/review-criteria.md'), /과한 설계: .*근거하지 않은 결정·규칙·구성요소/);
+  assert.match(await read('.harness/skills/quality/spec-review/GUIDE.md'), /충분한 수준을 넘는 과한 설계를 확인한다/);
 });
 
 test('implementation review findings are limited to Spec, repository standards and unbacked additions, with DDD standards as a basis', async () => {
-  const guide = await read('.codex/internal-skills/code-review/GUIDE.md');
+  const guide = await read('.harness/skills/quality/code-review/GUIDE.md');
   assert.match(guide, /지적은 세 가지뿐이다/);
   assert.match(guide, /그 밖의 구조 제안이나 더 나은 설계 의견은 지적하지 않는다/);
-  assert.match(guide, /`intent_ref`는 Product Spec의 INT·BR ID나 BASELINE ID만 쓴다/);
-  assert.match(await read('.harness/src/wrapper/repair.mjs'), /"\.codex\/internal-skills\/ddd-design\/",/);
+  assert.match(guide, /`intent_ref`는 현재 요구사항의 `BIZ`·`INV`·`EX`·`AC`·`HS` 또는 전술 설계의 `AS`·`CON` ID를 쓴다/);
+  assert.match(await read('.harness/src/wrapper/repair.mjs'), /"\.harness\/skills\/requirements\/bounded-context\/",/);
 });
 
 test('the final E2E conditions are prepared once after all plans, derived by the agent, not asked during a plan', async () => {
-  assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /plan 구현 중에는 최종 E2E의 실행 조건이나 환경을 사용자에게 묻거나 정하지 않는다/);
-  assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /plan 구현 단계에서는 최종 E2E 조건을 사용자에게 묻지 않는다/);
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /시나리오는 Spec에서 확정됐으므로 다시 작성하거나 실행 조건을 묻지 않는다/);
+  assert.match(await read('.harness/skills/delivery/tactical-code/GUIDE.md'), /필요한 결정이 빠졌으면/);
 });
 
-test('the final E2E is specified in the Product Spec template and run once after approval; tickets never carry an E2E', async () => {
-  assert.match(await read('.codex/internal-skills/product-spec/references/template.md'), /13\. \*\*End-user Scenarios\*\*/);
-  assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /13\. \*\*End-user Scenarios\*\*/);
-  assert.match(await read('.codex/internal-skills/spec-review/references/review-criteria.md'), /시나리오를 위해 추가된 요구에 사용자 답변 출처가 있는지/);
-  assert.match(await read('.codex/internal-skills/product-spec/references/topics.md'), /do not add the requirement yourself: ask the user/);
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /E2E ticket은 만들지 않는다/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /ticket에 E2E를 배정하지 않는다/);
-  const orchestration = await read('.codex/skills/orchestrator/references/implementation.md');
-  assert.match(orchestration, /마지막 `e2e` plan을 다른 plan과 같은 방식/);
-  assert.match(orchestration, /사용자에게 실행 승인만 묻는다/);
+test('the final E2E is specified in requirements and run once after approval; tickets never carry an E2E', async () => {
+  assert.match(await read('.harness/skills/requirements/requirements-fix/references/template.md'), /### 6\.4 E2E 시나리오/);
+  assert.match(await read('.harness/skills/quality/spec-review/references/review-criteria.md'), /시나리오를 위해 추가된 요구에 사용자 답변 출처가 있는지/);
+  assert.match(await read('.harness/skills/planning/to-ticket/references/split.md'), /E2E ticket은 만들지 않는다/);
+  assert.match(await read('.harness/skills/planning/plan-review/GUIDE.md'), /ticket에 E2E를 배정하지 않는다/);
+  const orchestration = await read('.agents/skills/orchestrator/references/implementation.md');
+  assert.match(orchestration, /한 실행은 ticket 하나만 구현한다/);
+  assert.match(orchestration, /명시적으로 요청된 경우/);
   assert.doesNotMatch(orchestration, /에이전트가 승인 Product\/Architecture Specs와 parent test contract를 읽고/);
 });
 
@@ -200,7 +163,7 @@ test('implementation never asks the user: the output schema and the result valid
   const dir = await mkdtemp(join(tmpdir(), 'impl-schema-'));
   try {
     const path = join(dir, 'schema.json');
-    await writeOutputSchema({ root, input: { execution_id: 'implement-wrapper-1', skill: 'implement-wrapper' }, prefix: '', path });
+    await writeOutputSchema({ root, input: { execution_id: 'tactical-code-1', skill: 'tactical-code' }, prefix: '', path });
     const schema = JSON.parse(await readFile(path, 'utf8'));
     assert.ok(!schema.properties.code.enum.includes('USER_DECISION_REQUIRED'));
     assert.ok(!schema.properties.result.properties.code.enum.includes('USER_DECISION_REQUIRED'));
@@ -210,21 +173,16 @@ test('implementation never asks the user: the output schema and the result valid
     assert.ok(JSON.parse(await readFile(other, 'utf8')).properties.code.enum.includes('USER_DECISION_REQUIRED'), 'requirements-fix still asks');
   } finally { await rm(dir, { recursive: true, force: true }); }
   assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /Implementation does not ask the user/);
-  assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
+  assert.match(await read('.harness/skills/delivery/tactical-code/GUIDE.md'), /사용자에게 직접 질문하거나 추정해 확정하지 않는다/);
 });
 
 test('infrastructure checks belong to a separately requested E2E, not to each ticket', async () => {
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /그 ticket의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
-  assert.match(await read('.codex/internal-skills/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /ticket에서 빼고 사용자가 요청하는 별도 E2E로 넘기라고 지적한다/);
+  assert.match(await read('.harness/skills/planning/to-ticket/references/split.md'), /그 ticket의 작업 환경에서 바로 실행할 수 있는 것만 적는다/);
+  assert.match(await read('.harness/skills/quality/code-review/GUIDE.md'), /report `verification_gap` only for a check the plan's own environment can run/);
+  assert.match(await read('.harness/skills/planning/plan-review/GUIDE.md'), /ticket에서 빼고 사용자가 요청하는 별도 E2E로 넘기라고 지적한다/);
 });
 
 test('the implementer builds to the same layer criteria the reviewer judges with', async () => {
-  const implement = await read('.codex/internal-skills/implement/GUIDE.md');
-  assert.match(implement, /코드를 쓰기 전에 반드시: \[model continuity contract\]/);
-  assert.match(implement, /리뷰어도 같은 기준으로 판정한다/);
-  assert.match(implement, /plan 내용은 Issue 본문이 아니라 plan-review `check`가 돌려준 canonical plan 파일에서 읽는다/);
-  assert.match(await read('.codex/internal-skills/to-ticket/references/split.md'), /domain → application → `api\.md`가 정한 entry → `data\.md`가 정한 저장까지 수직으로 구현하며/);
-  assert.match(await read('.codex/internal-skills/plan-review/GUIDE.md'), /domain → application → API → 저장까지 수직이어야 한다/);
-  assert.match(await read('.codex/skills/orchestrator/references/implementation.md'), /리뷰어가 인용한 근거\(`basis`의 source·path·quote\)를 그대로 넣어/);
+  const implementation = await read('.harness/skills/delivery/tactical-code/GUIDE.md');
+  assert.match(implementation, /Ponytail 구현 원칙/);
 });

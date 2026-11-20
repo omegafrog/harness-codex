@@ -7,6 +7,7 @@ import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { isHarnessSourceCheckout } from "../installer/source-checkout.mjs";
 import { AGENT_TIERS } from "./agent-config.mjs";
+import { internalSkillGuidePaths } from "./skill-declaration.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PACKAGE_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -29,7 +30,7 @@ export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
   "learning_mode",
 ]);
 
-export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
+export const DEFAULT_WORKFLOW_DIR = ".harness/workflows";
 export const DEFAULT_AGENT_DIR = ".codex/agents";
 export const DEFAULT_SKILL_DIR = ".agents/skills";
 export const LEGACY_SKILL_DIR = ".codex/skills";
@@ -220,11 +221,13 @@ async function resolveReferences(workflow, { root, agentDir, skillDir, legacySki
     roles[role] = path;
   }
   for (const skill of workflow.skills) {
-    const internalPath = await resolveRegularFile(root, join(".codex/internal-skills", skill, "GUIDE.md"), `Internal skill ${skill}`);
-    if (internalPath) {
-      skills[skill] = internalPath;
-      continue;
+    for (const candidate of internalSkillGuidePaths(skill)) {
+      const path = await resolveRegularFile(root, candidate, `Internal skill ${skill}`);
+      if (!path) continue;
+      skills[skill] = path;
+      break;
     }
+    if (Object.hasOwn(skills, skill)) continue;
     const canonicalPath = await resolveRegularFile(root, join(directories[0], skill, "SKILL.md"), `Skill ${skill}`);
     if (canonicalPath) {
       skills[skill] = canonicalPath;

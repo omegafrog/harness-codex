@@ -20,7 +20,7 @@ const MODULE = '.harness/src/workflow/stage-takeover.mjs';
 const question = { question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null };
 const SKIPPED = (analysis) => ({ files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
 
-// A printed `node .codex/scripts/<script> ...` command, run the way the orchestrator runs it.
+// A printed `node .harness/scripts/<script> ...` command, run the way the orchestrator runs it.
 const printed = (workspace, command, sessionId) => {
   const parts = command.split(' ');
   assert.equal(parts[0], 'node', command);
@@ -39,7 +39,7 @@ async function interruptedWorkflow(t, { stage = STAGE, before = null, bind = tru
   const old = (await readState()).orchestrator_session_id;
   const fresh = randomUUID();
   const workspaceReal = await realpath(workspace);
-  const run = (script, args, sessionId = fresh) => spawnSync(process.execPath, [join(workspace, '.codex/scripts', script), ...args], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: sessionId } });
+  const run = (script, args, sessionId = fresh) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', script), ...args], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: sessionId } });
   const ok = (result) => { assert.equal(result.status, 0, result.stderr || result.stdout); return JSON.parse(result.stdout); };
   const refusal = (result, code = 'TAKEOVER_REFUSED') => {
     assert.notEqual(result.status, 0, 'the command refuses');
@@ -106,7 +106,7 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   const { workspace, treeGit, session, readState, old, fresh, run, ok, refusal, launched, entry, answers, writeParent, writeAgent, hold, untouched, thread, parentFile, agentFile } = f;
   const takeover = ['launch', '--stage-id', STAGE, '--take-over', 'true'];
   const head = treeGit('rev-parse', 'HEAD').trim();
-  const command = `node .codex/scripts/${NATIVE} launch --stage-id ${STAGE} --take-over true`;
+  const command = `node .harness/scripts/${NATIVE} launch --stage-id ${STAGE} --take-over true`;
 
   // The new conversation is told the exact command wherever it looks first: the context, inspect, and the refused launch.
   const context = ok(run('harness-context.mjs', []));
@@ -146,9 +146,9 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await releaseAgent();
   const own0 = refusal(run(NATIVE, takeover, old));
   assert.match(own0.why, /started stakeholder-analysis itself/, 'the conversation that started it waits instead');
-  assert.deepEqual(own0.next, ['node .codex/scripts/harness-context.mjs']);
+  assert.deepEqual(own0.next, ['node .harness/scripts/harness-context.mjs']);
   await untouched(entry);
-  const unset = spawnSync(process.execPath, [join(workspace, '.codex/scripts', NATIVE), ...takeover], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' } });
+  const unset = spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), ...takeover], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' } });
   assert.match(refusal(unset).why, /CODEX_THREAD_ID/);
   assert.match(refusal(run(NATIVE, [...takeover, '--answer', 'no'])).error, /must be requested alone/);
   assert.match(refusal(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'yes'])).error, /must be requested alone/);
@@ -165,7 +165,7 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   await writeFile(launched.output_path, '{}');
   const finished = refusal(run(NATIVE, takeover));
   assert.match(finished.why, /already completed and wrote its output/);
-  assert.equal(finished.next[0], `node .codex/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
+  assert.equal(finished.next[0], `node .harness/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
   assert.equal(ok(run(NATIVE, inspectId)).next, `Its agent completed and wrote its output; record it: ${finished.next[0]}`);
   await untouched(entry);
   await rm(launched.output_path);
@@ -260,7 +260,7 @@ test('installed consumer: the two steps and a repeated command are safe, and a s
   assert.equal(first.already_taken_over, undefined);
   assert.equal(first.previous_session_id, old);
   assert.match(first.verified, /never bound an agent/);
-  assert.equal(first.next, `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: node .codex/scripts/${NATIVE} launch --stage-id ${STAGE} --feedback '${TAKEOVER_FEEDBACK}'`);
+  assert.equal(first.next, `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: node .harness/scripts/${NATIVE} launch --stage-id ${STAGE} --feedback '${TAKEOVER_FEEDBACK}'`);
   const failed = (await readState()).stages[STAGE];
   assert.equal(failed.status, 'failed');
   assert.equal(failed.native_finished, true);
@@ -300,7 +300,7 @@ test('a takeover is offered only for a native stage that another Codex conversat
   const explain = (message, context = {}) => explainError(new Error(message), { root: join(sourceRoot, 'no-such-workspace'), stageId: STAGE, executionId: 'x-1', ...context });
   for (const message of [
     'Takeover refused: the project worktree has uncommitted changes that the interrupted stage may have left ( M app.txt)',
-    'Takeover refused: its native agent already completed and wrote its output; record it with node .codex/scripts/harness-native-stage.mjs finish --execution-id x-1',
+    'Takeover refused: its native agent already completed and wrote its output; record it with node .harness/scripts/harness-native-stage.mjs finish --execution-id x-1',
     'Takeover refused: this conversation started stakeholder-analysis itself, so its agent is waited for here, not taken over',
     'Takeover refused: stakeholder-analysis must be the current native stage and be running without a result (it is completed)',
     'Takeover refused: this command needs the id of the current Codex conversation (CODEX_THREAD_ID), which is not set',
@@ -339,12 +339,12 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
   assert.equal(git('status', '--short', '--untracked-files=all').trim(), '');
 
   const read = (path) => readFile(join(sourceRoot, path), 'utf8');
-  const skill = await read('.codex/skills/orchestrator/SKILL.md');
+  const skill = await read('.agents/skills/orchestrator/SKILL.md');
   assert.match(skill, /실행 배정·결과 확인·중단된 실행 복구.*references\/dispatch\.md/);
-  const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
+  const dispatch = await read('.agents/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /launch --stage-id <stage> --take-over true/);
   assert.match(dispatch, /다른 Codex 대화[^\n]*그 대화로 돌아가지 않고 아래 인계를 쓴다/);
-  assert.match(await read('.codex/skills/orchestrator/references/input.md'), /--take-over-interrupted true/);
+  assert.match(await read('.agents/skills/orchestrator/references/input.md'), /--take-over-interrupted true/);
   assert.match(await read('docs/architecture/enforcement.md'), /stage-takeover\.mjs[\s\S]*takeOverInterruptedStage/);
 });
 
@@ -365,7 +365,7 @@ test('installed consumer: the last tactical design stage is taken over, and spec
   assert.equal((await readState()).current_stage, STAGE_LAST);
 
   // The new conversation runs the command it was handed, verbatim.
-  const handed = /(node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id context-boundary --take-over true)/.exec(ok(run('harness-context.mjs', [])).next)?.[1];
+  const handed = /(node \.harness\/scripts\/harness-native-stage\.mjs launch --stage-id context-boundary --take-over true)/.exec(ok(run('harness-context.mjs', [])).next)?.[1];
   assert.ok(handed, 'the context hands over the command');
   const taken = JSON.parse((() => { const result = printed(workspace, handed, fresh); assert.equal(result.status, 0, result.stderr); return result.stdout; })());
   assert.equal(taken.status, 'launched');

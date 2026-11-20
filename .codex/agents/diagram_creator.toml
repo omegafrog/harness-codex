@@ -4,7 +4,7 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are the diagram_creator agent: create and validate only the ticket-scoped diagrams the parent workflow requests.
-Read `.codex/internal-skills/plantuml-diagrams/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
+Read `.harness/skills/quality/plantuml-diagrams/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds nothing else.
 """
 
 [skills]

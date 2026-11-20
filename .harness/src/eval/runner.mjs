@@ -151,7 +151,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_INTEGRATION_RESOURCE: caseSpec.integration_resource ? JSON.stringify(caseSpec.integration_resource) : "",
-    HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs"), "--root", resolve(root)]),
+    HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, ".harness/cli/harness-external-port.mjs"), "--root", resolve(root)]),
     HARNESS_EVAL_MODEL: caseSpec.environment?.codex?.model || config.eval.codex?.model || "",
     HARNESS_EVAL_MODEL_CONFIG: modelConfig === undefined || modelConfig === null
       ? ""
@@ -224,7 +224,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
       runtimePath: join(caseDir, "recording.jsonl"),
       integration: caseSpec.integration,
       integrationResource: caseSpec.integration_resource,
-      subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs"), "--root", resolve(root)],
+      subprocessCommand: [process.execPath, resolve(root, ".harness/cli/harness-external-port.mjs"), "--root", resolve(root)],
       subprocessCwd: workspaceHandle.workspace,
       subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root, caseDir, attempt),
     });

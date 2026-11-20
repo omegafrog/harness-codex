@@ -36,11 +36,10 @@ test('installed tracker activation links directly published Issues despite Proje
     await writeFile(join(plans, 'plans.md'), '# Plans\n\n| 순서 | Plan | Issue | 범위 | 의존성 | 토큰 |\n|---|---|---|---|---|---|\n| 1 | [auth](auth.md) | #35 | 로그인 | 없음 | 1 |\n| 2 | [posts](posts.md) | #38 | 글 | auth (인증 경계) | 1 |\n');
     for (const name of ['product', 'architecture']) await writeFile(join(specs, `${name}-spec.md`), `# ${name}\n`);
     for (const name of ['parent', 'auth', 'posts']) await writeFile(join(drafts, `${name}.md`), `${name}\n`);
+    await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
     const snapshot = await snapshotPlanSet({ root, planSetId: 'example' });
     const admission = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs: snapshot.inputs });
     await updateReviewAttempt({ root, scope: 'plan-example', action: 'record', attemptId: admission.attempt_id, inputs: snapshot.inputs, review: { reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', findings: [] } });
-    await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
-    await writeFile(join(root, '.harness/harness.yaml'), JSON.stringify({ tracker: { mode: 'github', github: { repository: 'owner/repo', project_owner: 'owner', project_number: 8, status_field: 'Workflow Status' } } }));
     const prepared = await preparePublicationDrafts({ root, planSetId: 'example' });
 
     const items = [];

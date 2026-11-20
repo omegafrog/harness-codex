@@ -29,10 +29,10 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await mkdir(join(root, '.io/runtime/setup/4a11857b-60f0-4b0c-a3e6-3fea42eb45d2'), { recursive: true });
     const answers = join(root, '.io/runtime/setup/4a11857b-60f0-4b0c-a3e6-3fea42eb45d2/answers.json');
     await writeFile(answers, JSON.stringify({ configuration_hash: 'obsolete', answers: {} }));
-    const setup = join(root, '.codex/scripts/harness-setup.mjs');
+    const setup = join(root, '.harness/scripts/harness-setup.mjs');
     const run = (...args) => JSON.parse(execFileSync(process.execPath, [setup, '--root', root, ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.deepEqual(run('--check'), { status: 'configured', violations: [] });
-    const observed = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-context.mjs'), '--entry'], { cwd: root, encoding: 'utf8' }));
+    const observed = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-context.mjs'), '--entry'], { cwd: root, encoding: 'utf8' }));
     assert.equal(observed.decision_hint, 'compose_candidate');
     assert.throws(() => run('--answers', join(root, '.io/runtime/setup/answers.json')), /unique setup session/);
     const first = run('--answers', answers);
@@ -105,7 +105,7 @@ test('installed setup reuses current configuration and ignores old answer hashes
     assert.match(status, /CONTEXT\.md/);
     assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.harness\/src\//);
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-setup.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.harness/scripts/harness-setup.mjs'], { cwd: root });
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -135,7 +135,7 @@ async function freshProject({ linked = false, provider = 'codex' } = {}) {
   await mkdir(directory, { recursive: true });
   const answers = join(directory, 'answers.json');
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-  const command = (...args) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, ...args], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: provider, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  const command = (...args) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, ...args], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: provider, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   const run = async (map) => {
     await writeFile(answers, JSON.stringify({ answers: map }));
     return command();
@@ -160,7 +160,7 @@ test('installed setup starts isolated sessions without preparing answer files or
   const project = await freshProject();
   const { root, sourceRoot, bin, git } = project;
   try {
-    const cli = join(root, '.codex/scripts/harness-setup.mjs');
+    const cli = join(root, '.harness/scripts/harness-setup.mjs');
     const call = (...args) => JSON.parse(execFileSync(process.execPath, [cli, '--root', root, ...args], { cwd: root, env: { ...process.env, CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     await writeFile(join(root, 'app.mjs'), 'project owned\n');
     await mkdir(join(root, '.harness/agents'), { recursive: true });
@@ -192,8 +192,8 @@ test('installed setup starts isolated sessions without preparing answer files or
     assert.equal(await readFile(join(root, 'docs/contracts/project.md'), 'utf8'), 'project contract\n');
     const status = git('status', '--short', '--untracked-files=all');
     for (const path of ['app.mjs', '.harness/agents/EXEC.md', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
-    assert.doesNotMatch(status, /\.io\/|\.codex\/scripts\/|\.harness\/src\//);
-    for (const path of ['.codex/scripts/harness-setup.mjs', '.harness/src/workflow/setup-answers.mjs', '.io/runtime/setup']) git('check-ignore', '-v', path);
+    assert.doesNotMatch(status, /\.io\/|\.harness\/scripts\/|\.harness\/src\//);
+    for (const path of ['.harness/scripts/harness-setup.mjs', '.harness/src/workflow/setup-answers.mjs', '.io/runtime/setup']) git('check-ignore', '-v', path);
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -300,7 +300,7 @@ test('setup uses the current CLI and preserves the other provider model settings
     assert.doesNotMatch(claude, /provider: "claude-code"/);
     const runCodex = async (map) => {
       await writeFile(answers, JSON.stringify({ answers: map }));
-      return JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+      return JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-setup.mjs'), '--root', root, '--answers', answers], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     };
     batch = await runCodex({});
     values = { [batch.pending.id]: 'reuse' };
@@ -435,7 +435,7 @@ test('installed setup collects individual reordered answers, advances on the las
     assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'execution_asset_missing'), false);
     assert.match(await readFile(join(root, '.agents/skills/setup/references/native-choices.md'), 'utf8'), /--receive|--bind-ui|--cancel/);
     assert.equal(command('--status').status, 'configured');
-    for (const path of [helper, '.codex/scripts/harness-setup.mjs', '.agents/skills/setup/references/answer-delivery.md', '.io/runtime/setup']) git('check-ignore', '-v', path);
+    for (const path of [helper, '.harness/scripts/harness-setup.mjs', '.agents/skills/setup/references/answer-delivery.md', '.io/runtime/setup']) git('check-ignore', '-v', path);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, / M app\.mjs/);
     for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'docs/contracts/project.md']) assert.ok(status.includes(path), path);
@@ -620,7 +620,7 @@ test('setup finds its conversation and accepts a direct answer to one displayed 
     const sessions = join(home, 'sessions', '2026', '11', '13');
     await mkdir(sessions, { recursive: true });
     await writeFile(join(sessions, 'rollout-2026-11-13T00-00-00-setup-test-session.jsonl'), await readFile(transcript));
-    const call = () => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, '--receive-rollout'], { cwd: root, env: { ...process.env, CODEX_HOME: home, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const call = () => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-setup.mjs'), '--root', root, '--answers', answers, '--receive-rollout'], { cwd: root, env: { ...process.env, CODEX_HOME: home, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: 'setup-test-session', PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     const rollout = join(sessions, 'rollout-2026-11-13T00-00-00-setup-test-session.jsonl');
     const message = (text) => '\n' + JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
     await appendFile(rollout, message('설명해 주세요'));
@@ -646,11 +646,11 @@ test('installed Claude Code consumer completes setup through --reply and passes 
     execFileSync('git', ['init', '-q', '-b', 'main', root]);
     execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'initial'], { cwd: root });
     await writeFile(join(root, 'app.txt'), 'application file');
-    const install = spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-install.mjs'), 'install', '--project', root, '--provider', 'claude-code'], { encoding: 'utf8' });
+    const install = spawnSync(process.execPath, [join(sourceRoot, '.harness/cli/harness-install.mjs'), 'install', '--project', root, '--provider', 'claude-code'], { encoding: 'utf8' });
     assert.equal(install.status, 0, install.stdout + install.stderr);
     const env = { ...process.env, HARNESS_PROVIDER_ID: 'claude-code' };
     delete env.CODEX_THREAD_ID;
-    const cli = join(root, '.codex/scripts/harness-setup.mjs');
+    const cli = join(root, '.harness/scripts/harness-setup.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, '--root', root, ...args], { cwd: root, env, encoding: 'utf8' });
     const last = (result) => JSON.parse(result.stdout.trim().split('\n').at(-1));
     const started = last(run('--start'));
@@ -681,7 +681,11 @@ test('installed Claude Code consumer completes setup through --reply and passes 
     assert.equal(config.agents['claude-code'].implementation_reasoning_effort, 'low');
     assert.equal(config.tracker.mode, 'local-markdown');
     assert.equal(await exists(join(root, '.codex/harness.yaml')), false);
-    assert.equal(await exists(join(root, 'CONTEXT.md')), true, 'setup templates come from the Claude skill directory');
+    for (const name of ['CONTEXT.md', 'CONTEXT-MAP.md']) {
+      assert.equal(await exists(join(root, '.agents/skills/setup/assets', name)), false);
+      assert.equal(await readFile(join(root, name), 'utf8'), await readFile(join(root, '.claude/skills/setup/assets', name), 'utf8'));
+      git('check-ignore', '-q', `.claude/skills/setup/assets/${name}`);
+    }
     git('check-ignore', '-q', '.harness/harness.yaml');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter(({ severity }) => severity === 'error'), []);

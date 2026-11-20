@@ -36,7 +36,7 @@ test('installed workflow commands require cwd inside the target worktree', async
   git(primary, 'add', 'app.txt', 'docs', '.harness/agents', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git(primary, 'commit', '-qm', 'baseline');
 
-  const invoke = (cwd, script, args = [], env = {}) => spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  const invoke = (cwd, script, args = [], env = {}) => spawnSync(process.execPath, [join(cwd, '.harness/scripts', script), ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
   const ok = (cwd, script, args = [], env = {}) => {
     const result = invoke(cwd, script, args, env);
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -65,13 +65,13 @@ test('installed workflow commands require cwd inside the target worktree', async
 
   await t.test('the composed worktree gets the first launch command and the installed worker paths', () => {
     const context = entry(b.workspace);
-    assert.match(context.next, /references\/dispatch\.md, then run node \.codex\/scripts\/harness-native-stage\.mjs launch --stage-id stakeholder-analysis/);
+    assert.match(context.next, /references\/dispatch\.md, then run node \.harness\/scripts\/harness-native-stage\.mjs launch --stage-id stakeholder-analysis/);
     assert.ok(context.next.includes(join(b.workspace, '.agents/skills/orchestrator/references/dispatch.md')));
     assert.doesNotMatch(context.next, /workflow-compose\/GUIDE\.md|references\/(?:coordination|workflow-map|capability-routing)\.md/);
     assert.equal(context.candidates, undefined, 'a local entry does not list other worktrees');
     assert.ok(Buffer.byteLength(JSON.stringify(context)) <= 1500);
     const started = ok(b.workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', 'stakeholder-analysis']);
-    assert.equal(started.guide, join(b.workspace, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'));
+    assert.equal(started.guide, join(b.workspace, '.harness/skills/requirements/stakeholder-analysis/GUIDE.md'));
     assert.ok(existsSync(started.input_path));
     assert.ok(existsSync(started.schema_path));
     const resume = entry(b.workspace);
@@ -107,10 +107,10 @@ test('installed workflow commands require cwd inside the target worktree', async
     const managed = [
       '.harness/src/workflow/cli-context.mjs',
       '.harness/src/workflow/startup-state.mjs',
-      '.codex/scripts/harness-context.mjs',
+      '.harness/scripts/harness-context.mjs',
       '.harness/src/workflow/user-inputs.mjs',
-      '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
-      '.codex/scripts/harness-native-stage.mjs',
+      '.harness/skills/requirements/stakeholder-analysis/GUIDE.md',
+      '.harness/scripts/harness-native-stage.mjs',
       '.harness/src/workflow/stage-cli.mjs',
     ];
     const lockPath = join(primary, '.codex/harness-lock.json'), lock = await json(lockPath);
@@ -136,7 +136,7 @@ test('installed workflow commands require cwd inside the target worktree', async
     const status = git(primary, 'status', '--short', '--untracked-files=all');
     assert.match(status, /app\.txt/); assert.match(status, /\.harness\/agents\/EXEC\.md/); assert.match(status, /docs\/contracts\/project-notes\.md/);
     assert.doesNotMatch(status, /\.io\/|\.codex\/|\.harness\/src\//);
-    for (const path of [...managed, ...profiles, '.agents/skills/orchestrator/references/dispatch.md', '.codex/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
+    for (const path of [...managed, ...profiles, '.agents/skills/orchestrator/references/dispatch.md', '.harness/scripts/harness-context.mjs', '.io/runtime/orchestrator/progress.json']) git(primary, 'check-ignore', '-v', path);
     const installed = await import(`${pathToFileURL(installedPath).href}?consumer=${randomUUID()}`);
     assert.equal(typeof installed.resolveCommandContext, 'function');
   });

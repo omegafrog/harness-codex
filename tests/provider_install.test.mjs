@@ -12,9 +12,9 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
+const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md'];
 const CODEX = ['.agents/skills/orchestrator/SKILL.md', '.harness/src/workflow/providers/codex.mjs'];
-const SHARED = ['.codex/internal-skills/implement/GUIDE.md', '.codex/scripts/harness-native-stage.mjs', '.codex/agents/implementation_agent.toml', '.codex/agents/pr_author.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs'];
+const SHARED = ['.harness/skills/delivery/tactical-code/GUIDE.md', '.harness/scripts/harness-native-stage.mjs', '.codex/agents/tactical_implementation_agent.toml', '.codex/agents/pr_author.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs'];
 
 async function install(provider) {
   const root = await mkdtemp(join(tmpdir(), `harness-provider-${provider || 'default'}-`));
@@ -32,8 +32,7 @@ test('install --provider codex carries no Claude Code files and the Claude provi
     assert.deepEqual(present(root, [...CODEX, ...SHARED]), [...CODEX, ...SHARED]);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: gpt-6.1-sol\n    low_performance_reasoning_effort: medium\n    high_performance_model: gpt-6.1-sol\n    high_performance_reasoning_effort: high\n');
-    assert.match(await readFile(join(root, '.codex/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
-    assert.match(await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8'), /id: integration-pr[\s\S]*skill: gh-open-pr/);
+    assert.match(await readFile(join(root, '.harness/workflows/to-ticket.yaml'), 'utf8'), /id: plan-pr[\s\S]*skill: gh-open-pr/);
     const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
     assert.equal(Object.keys(lock.files).some((path) => path.startsWith('.claude/')), false);
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
@@ -41,7 +40,7 @@ test('install --provider codex carries no Claude Code files and the Claude provi
     assert.equal((await loadProvider('codex')).id, 'codex');
     const { resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
     const { resolveStageSkill } = await import(`file://${join(root, '.harness/src/workflow/stage-input.mjs')}`);
-    for (const [stageId, workflow] of [['plan-pr', 'to-ticket'], ['integration-pr', 'implement-wrapper']]) {
+    for (const [stageId, workflow] of [['plan-pr', 'to-ticket']]) {
       assert.equal((await resolveStageSkill({ root, stageId })).skill, 'gh-open-pr');
       const input = { skill: 'gh-open-pr', context: { stage_id: stageId } };
       const binding = await resolveWorkflowStage({ root, input });
@@ -50,11 +49,6 @@ test('install --provider codex carries no Claude Code files and the Claude provi
       assert.equal((await resolveSkillBinding({ root, skill: input.skill, ...binding })).model_tier, 'low_performance');
     }
     assert.equal((await resolveStageSkill({ root, stageId: 'tracker-publish' })).skill, 'tracker-publish');
-    const duplicateManifest = join(root, '.codex/workflows/implement-wrapper-copy.yaml');
-    const originalManifest = await readFile(join(root, '.codex/workflows/implement-wrapper.yaml'), 'utf8');
-    await writeFile(duplicateManifest, originalManifest.replace('id: implement-wrapper\n', 'id: implement-wrapper-copy\n'));
-    await assert.rejects(resolveStageSkill({ root, stageId: 'integration-pr' }), /Workflow stage is ambiguous: integration-pr/);
-    await rm(duplicateManifest);
     assert.deepEqual(await resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } }, workflow: 'to-ticket', stage: 'plan-pr' }), { profile: 'pr_author', sandbox: 'workspace-write' });
     await assert.rejects(resolveAgentSandbox({ root, input: { skill: 'gh-open-pr', context: { agent_profile: 'pr_author' } } }), /only at its gated/);
     // A plain update keeps what is installed instead of adding the other provider.
@@ -88,7 +82,7 @@ test('install --provider claude-code carries no Codex skill root and registers t
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     assert.equal((await loadProvider('claude-code')).id, 'claude-code');
     await writeFile(join(root, 'app.txt'), 'application change\n');
-    await rm(join(root, '.codex/scripts/harness-agent-admission.mjs'));
+    await rm(join(root, '.harness/scripts/harness-agent-admission.mjs'));
     assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('harness-agent-admission.mjs')));
     await updateProject({ sourceRoot, targetRoot: root });
     assert.deepEqual(present(root, ['.agents/skills/orchestrator/SKILL.md']), []);
@@ -115,7 +109,7 @@ test('the default install carries both providers and an explicit provider on upd
 });
 
 test('the install CLI accepts --provider and rejects unknown values', () => {
-  const cli = join(sourceRoot, 'bin/harness-install.mjs');
+  const cli = join(sourceRoot, '.harness/cli/harness-install.mjs');
   const bad = spawnSync(process.execPath, [cli, 'install', '--provider', 'gemini', '--project', tmpdir()], { encoding: 'utf8' });
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /--provider must be codex, claude-code or all/);
@@ -137,7 +131,7 @@ test('install and update preserve user plugins and Doctor reports the legacy Pon
   const codex = join(bin, 'codex');
   await writeFile(codex, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\nprocess.exitCode = 1;\n`);
   await chmod(codex, 0o755);
-  const cli = join(sourceRoot, 'bin/harness-install.mjs');
+  const cli = join(sourceRoot, '.harness/cli/harness-install.mjs');
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: codexHome };
   for (const command of ['install', 'update']) {
     if (command === 'update') {
@@ -152,11 +146,11 @@ test('install and update preserve user plugins and Doctor reports the legacy Pon
     assert.doesNotMatch(await readFile(join(root, path), 'utf8'), /harness-stage-listen|codex_wake_unavailable/);
   }
   await assert.rejects(readFile(join(root, '.codex/scripts/harness-stage-listen.mjs')), { code: 'ENOENT' });
-  const maintenance = await readFile(join(root, '.codex/internal-skills/harness-maintenance/GUIDE.md'), 'utf8');
+  const maintenance = await readFile(join(root, '.harness/skills/operations/harness-maintenance/GUIDE.md'), 'utf8');
   assert.match(maintenance, /harness-doctor\.mjs --project <repository-root> --json/);
   assert.match(maintenance, /only the diagnostics returned by that invocation/);
   assert.match(maintenance, /Do not report unrequested actions that were not performed, including contract synchronization or sealing/);
-  const installedReport = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8', env });
+  const installedReport = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8', env });
   assert.ok(JSON.parse(installedReport.stdout).diagnostics.every(({ code, message }) => !/wake/i.test(code) && !/harness-stage-listen/i.test(message)));
   assert.equal(await readFile(join(root, 'user-file.txt'), 'utf8'), 'preserve');
   const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
@@ -165,7 +159,7 @@ test('install and update preserve user plugins and Doctor reports the legacy Pon
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
   const doctor = (doctorEnv = env) => {
-    const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', env: doctorEnv });
+    const result = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', env: doctorEnv });
     return JSON.parse(result.stdout).diagnostics;
   };
   const ponytailWarning = ({ code, path }) => code === 'codex_ponytail_plugin_enabled' && path === userConfig;
@@ -191,14 +185,14 @@ test('Doctor preserves tracked project files and no longer checks Wake', async (
   const root = await mkdtemp(join(tmpdir(), 'harness-no-wake-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q', root]);
-  await mkdir(join(root, '.codex/scripts'), { recursive: true });
-  const monitor = '.codex/scripts/codex-monitor.mjs';
+  await mkdir(join(root, '.harness/scripts'), { recursive: true });
+  const monitor = '.harness/scripts/codex-monitor.mjs';
   await writeFile(join(root, monitor), 'project owned');
   execFileSync('git', ['-C', root, 'add', monitor]);
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   await writeFile(join(root, monitor), 'project edit');
-  const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
   assert.equal(JSON.parse(result.stdout).diagnostics.some(({ code }) => code === 'codex_wake_unavailable'), false);
   assert.equal(await readFile(join(root, monitor), 'utf8'), 'project edit');
   assert.match(execFileSync('git', ['-C', root, 'status', '--short'], { encoding: 'utf8' }), /codex-monitor/);
@@ -217,12 +211,12 @@ test('installed consumer exposes the harness-update skill to Codex and Claude Co
     const skill = await readFile(join(root, directory, 'harness-update/SKILL.md'), 'utf8');
     assert.match(skill, /^---\nname: harness-update\n/);
     assert.match(skill, /harness-maintenance\/GUIDE\.md/);
-    assert.ok(await readFile(join(root, '.codex/internal-skills/harness-maintenance/GUIDE.md'), 'utf8'), 'the linked procedure exists');
+    assert.ok(await readFile(join(root, '.harness/skills/operations/harness-maintenance/GUIDE.md'), 'utf8'), 'the linked procedure exists');
     execFileSync('git', ['check-ignore', '-q', `${directory}/harness-update/SKILL.md`], { cwd: root });
   }
   assert.match(await readFile(join(root, '.agents/skills/harness-update/agents/openai.yaml'), 'utf8'), /display_name: "Harness Update"/);
   // Doctor reports setup as still missing here; only the skill-exposure and skill-declaration checks matter.
-  const doctor = JSON.parse(spawnSync(process.execPath, [join(sourceRoot, 'bin/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' }).stdout);
+  const doctor = JSON.parse(spawnSync(process.execPath, [join(sourceRoot, '.harness/cli/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' }).stdout);
   assert.equal(doctor.diagnostics.some(({ code }) => /skill_exposed|skill_declaration/.test(code)), false);
   const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
   assert.doesNotMatch(status, /harness-update|\.agents\/|\.claude\//);

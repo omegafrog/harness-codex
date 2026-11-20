@@ -10,8 +10,8 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const guide = '.codex/internal-skills/e2e-telemetry/GUIDE.md';
-const script = '.codex/internal-skills/e2e-telemetry/scripts/report.mjs';
+const guide = '.harness/skills/quality/e2e-telemetry/GUIDE.md';
+const script = '.harness/skills/quality/e2e-telemetry/scripts/report.mjs';
 const main = '11111111-1111-4111-8111-111111111111';
 const child = '22222222-2222-4222-8222-222222222222';
 const missing = '33333333-3333-4333-8333-333333333333';
@@ -121,7 +121,7 @@ test('installed E2E telemetry switches off cleanly and counts observed roots and
   for (const path of [script, guide]) assert.ok(diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith(path)));
   await updateProject({ sourceRoot, targetRoot: root });
   assert.equal(run('1', 'updated', ['--thread', main]).status, 'complete');
-  assert.match(await readFile(join(root, '.codex/internal-skills/e2e-test/GUIDE.md'), 'utf8'), /HARNESS_E2E_TELEMETRY=1/);
+  assert.match(await readFile(join(root, '.harness/skills/quality/e2e-test/GUIDE.md'), 'utf8'), /HARNESS_E2E_TELEMETRY=1/);
   for (const path of [guide, script, '.io/runtime/e2e/updated/telemetry.json', '.io/runtime/e2e/updated/telemetry.md']) git('check-ignore', '-v', path);
   assert.equal(git('status', '--short', '--untracked-files=all').trim(), '?? app.txt');
   assert.equal(await readFile(join(root, 'app.txt'), 'utf8'), 'project change\n');

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -26,7 +26,7 @@ test('installed plan review records reviewer identity only from the subagent hoo
     await writeFile(join(root, 'docs/specs/sample/product-spec.md'), '# Product\n');
     await writeFile(join(root, 'docs/specs/sample/architecture-spec.md'), '# Architecture\n');
     const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_SKILL_EXECUTION_ID: 'to-ticket-exec-1', HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: 'sample', HARNESS_REVIEW_EXECUTION_ID: 'to-ticket-exec-1' };
-    const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
+    const cli = join(root, '.harness/scripts/harness-plan-review.mjs');
     const run = (args) => spawnSync(process.execPath, [cli, ...args, '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8', env });
     const begin = JSON.parse(run(['begin']).stdout);
 
@@ -37,7 +37,7 @@ test('installed plan review records reviewer identity only from the subagent hoo
     assert.match(selfDeclared.stderr, /must not supply reviewer_id, author_ids, fork_turns, verdict, findings; they are recorded from the native reviewer hook/);
     assert.notEqual(run(['record', '--attempt', begin.attempt_id]).status, 0, 'no hook-bound reviewer yet');
 
-    const hook = (event) => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], { cwd: root, env, input: JSON.stringify({ session_id: 'to-ticket-thread', agent_type: 'plan_reviewer', ...event }) });
+    const hook = (event) => execFileSync(process.execPath, [join(root, '.harness/scripts/harness-agent-event.mjs')], { cwd: root, env, input: JSON.stringify({ session_id: 'to-ticket-thread', agent_type: 'plan_reviewer', ...event }) });
     // A forked reviewer (inherits the author's conversation) is logged but never bound.
     const forkedTranscript = join(root, '.io/forked-rollout.jsonl');
     await writeFile(forkedTranscript, `${JSON.stringify({ type: 'session_meta', payload: { id: 'forked-reviewer', forked_from_id: 'to-ticket-thread' } })}\n`);
@@ -115,7 +115,7 @@ test('orchestrator-session code reviewers are recorded by the hook and assemble 
     const session = join(root, '.io');
     await mkdir(session, { recursive: true });
     await writeFile(join(session, 'worktree.json'), JSON.stringify({ state: 'active', session_directory: session }));
-    const hookScript = join(root, '.codex/scripts/harness-agent-event.mjs');
+    const hookScript = join(root, '.harness/scripts/harness-agent-event.mjs');
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('HARNESS_')));
     const hook = (event) => execFileSync(process.execPath, [hookScript], { cwd: root, env, input: JSON.stringify({ cwd: root, session_id: 'orchestrator-thread', ...event }) });
     const answer = JSON.stringify({ state: 'passed', report: { findings: [] } });
@@ -167,9 +167,10 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
-    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/decision', state: 'active', plan_set_id: 'sample', agent_sessions: { orchestrator: { provider: 'codex', session_id: 'c5c669a2-2967-4831-98db-63a24954e857', execution_id: 'compose-1' } } }));
+    const sessionId = randomUUID();
+    await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, worktree_id: sessionId, workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/decision', state: 'active', plan_set_id: 'sample', agent_sessions: { orchestrator: { provider: 'codex', session_id: sessionId, execution_id: 'compose-1' } } }));
     await writeFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), JSON.stringify({ review_input: {}, reviews: [] }));
-    const cli = join(root, '.codex/scripts/harness-code-review.mjs');
+    const cli = join(root, '.harness/scripts/harness-code-review.mjs');
     const run = (...args) => spawnSync(process.execPath, [cli, 'record-decision', '--root', root, '--plan', 'A', ...args], { cwd: root, encoding: 'utf8' });
     const { recordPendingQuestions } = await import(`file://${join(root, '.harness/src/wrapper/review-input.mjs')}`);
     const { findingFingerprint } = await import(`file://${join(root, '.harness/src/wrapper/repair.mjs')}`);
@@ -180,15 +181,14 @@ test('orchestrator-relayed scope decisions answer only a question the latest rep
 
     // repair asks about F-1; the user has not answered since, so the earlier answer cannot be reused.
     const today = { reviewer_role: 'standards', kind: 'test_defect', summary: 'integration tests mixed into unit tests', evidence: 'identity/tests/test_identity.py:40' };
-    const [question] = await recordPendingQuestions({ root, planId: 'A', questions: [{ finding_id: 'F-1', finding_ids: ['F-1'], fingerprints: [findingFingerprint(today)], question: { title: 't' } }], now: new Date(Date.now() + 1000) });
+    const [question] = await recordPendingQuestions({ root, planId: 'A', questions: [{ finding_id: 'F-1', finding_ids: ['F-1'], fingerprints: [findingFingerprint(today)], question: { title: 't' } }], now: new Date() });
     assert.match(question.question_id, /^scope-A:F-1@[0-9a-f]{12}$/);
     assert.match(run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가').stderr, /No user message after the question/);
     const wrong = run('--finding', 'F-1', '--choice', 'adopt', '--answer', '지적 기각');
     assert.match(wrong.stderr, /must contain the chosen option label/);
 
     // The user answers after the question: the decision is recorded with the finding's fingerprint.
-    await new Promise((done) => setTimeout(done, 1100));
-    await codexUserPrompt(root, 'Spec에 추가');
+    await codexUserPrompt(root, 'Spec에 추가', { at: new Date(Date.now() + 1).toISOString() });
     const ok = run('--finding', 'F-1', '--choice', 'adopt', '--answer', 'Spec에 추가');
     assert.equal(ok.status, 0, ok.stderr);
     const evidence = JSON.parse(await readFile(join(root, '.io/runtime/reviews/implementation-A-evidence.json'), 'utf8'));
@@ -259,7 +259,7 @@ test('reviewed reports when HEAD still needs a review, and the CLI accepts --fla
     await mkdir(join(root, '.io/runtime/reviews'), { recursive: true });
     await writeFile(join(root, '.io/runtime/reviews/implementation-P-evidence.json'), JSON.stringify({ review_input: {}, reviews: [], passed: { implementation_commit_sha: 'b'.repeat(40) } }));
     assert.equal((await reviewedCommit({ root, planId: 'P' })).reason, 'commit_changed');
-    const cli = fileURLToPath(new URL('../.codex/scripts/harness-code-review.mjs', import.meta.url));
+    const cli = fileURLToPath(new URL('../.harness/scripts/harness-code-review.mjs', import.meta.url));
     const run = spawnSync(process.execPath, [cli, 'record-decision', `--root=${root}`, '--plan=P', '--finding=F', '--choice=reject', '--answer=지적 기각'], { encoding: 'utf8' });
     assert.match(run.stderr, /not a question the latest repair asked/, 'inline values are parsed');
     assert.match(spawnSync(process.execPath, [cli, 'repair', '--bogus', 'x'], { encoding: 'utf8' }).stderr, /Invalid code-review argument --bogus/);

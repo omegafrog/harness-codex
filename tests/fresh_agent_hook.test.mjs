@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { freshAgentDecision } from '../.codex/scripts/harness-fresh-agent.mjs';
+import { freshAgentDecision } from '../.harness/scripts/harness-fresh-agent.mjs';
 import { codexFreshAgentHook } from '../.harness/src/workflow/providers/codex.mjs';
 
 const spawn = (input) => ({ hook_event_name: 'PreToolUse', tool_name: 'collaborationspawn_agent', tool_input: input });

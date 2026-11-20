@@ -6,7 +6,7 @@ import { lstat, readFile, realpath, readdir } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path';
 import { parseYaml } from '../eval/yaml.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
-import { loadNamedWorkflow } from './loader.mjs';
+import { DEFAULT_WORKFLOW_DIR, loadNamedWorkflow } from './loader.mjs';
 import { sessionDirectory, stageExecutionPaths } from './session-output.mjs';
 import { findExecutionInput } from './execution-input.mjs';
 import { assertSingleProvider, configuredProvider, parseWorkflowBinding } from './providers/index.mjs';
@@ -157,7 +157,7 @@ export async function resolveWorkflowStage({ root, input, workflow = null, stage
     return { workflow, stage };
   }
   if (!input.context?.stage_id) return { workflow: null, stage: null };
-  const files = (await readdir(join(root, '.codex/workflows'), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const files = (await readdir(join(root, DEFAULT_WORKFLOW_DIR), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   const matches = [];
   for (const file of files) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
@@ -257,7 +257,9 @@ export async function validateSkillInput({ root, input }) {
   if (input.skill === 'tracker-publish') requireValue(input.context?.publication_approved === true, 'User publication approval is required');
   if (input.skill === 'tracker-publish' && input.context?.worktree_ref) {
     const { preparePublicationDrafts } = await import('../tracker/publication.mjs');
-    const expected = await preparePublicationDrafts({ root, planSetId: input.context.plan_set_id });
+    const expectedSnapshotSha256 = input.context.publication_review_snapshot_sha256;
+    requireValue(expectedSnapshotSha256, 'Publication approval requires a reviewed snapshot');
+    const expected = await preparePublicationDrafts({ root, planSetId: input.context.plan_set_id, expectedSnapshotSha256 });
     const supplied = input.context.publication_drafts;
     requireValue(Array.isArray(supplied) && supplied.length === expected.length && expected.every((item) => supplied.some((candidate) => candidate.plan_id === item.plan_id && candidate.body_path === item.body_path && candidate.body_sha256 === item.body_sha256)), 'Publication body references must match static runner output');
   }
@@ -317,9 +319,6 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   const expected = stageExecutionPaths(root, input.execution_id, { create: false }).refs.result;
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
   const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
-  // A stage may hand the independent review to its caller, which dispatches the reviewer for the waiting stage.
-  const callerDispatchesReviewer = true;
-  requireValue(callerDispatchesReviewer || !(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');
   const resultSchema = await json(join(root, SCHEMAS, flowSchema));
   const schemaResult = structuredClone(result);
   if (schemaResult.review_request) {
@@ -328,6 +327,15 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     if (Object.hasOwn(request, 'agent_profile')) { request.role = request.agent_profile; delete request.agent_profile; }
   }
   validate(schemaResult, resultSchema);
+  if (input.skill === 'to-ticket' && (envelope.code === 'REVIEW_REQUIRED' || schemaResult.review_request)) {
+    requireValue(envelope.status === 'action_required' && envelope.code === 'REVIEW_REQUIRED'
+      && schemaResult.review_request?.skill === 'plan-review' && schemaResult.review_request.role === 'plan_reviewer'
+      && !result.questions?.length && !result.artifacts.some((item) => item.kind === 'user_question'),
+    'to-ticket REVIEW_REQUIRED must request plan-review with plan_reviewer and no user questions');
+    const { snapshotPlanSet } = await import('./plan-review.mjs');
+    const snapshot = await snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
+    requireValue(!snapshot.missing_issue_drafts.length, 'to-ticket REVIEW_REQUIRED needs all GitHub Issue drafts before review');
+  }
   for (const key of ['execution_id', 'skill', 'status', 'code']) requireValue(result[key] === envelope[key], `Result ${key} mismatch`);
   for (const reference of result.artifacts) await readReference(root, reference, session, controlSession, true);
   if (input.skill === 'e2e-test' && envelope.status === 'completed') {
@@ -389,14 +397,6 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       // A completed plan being reopened (user revision, or a Spec change that requires a plan revision) is replaced by the
       // new run, whose own completion needs a fresh review; the stale review of the old plan must not block the reopening.
       requireValue(reopening || review.status === 'pass', `to-ticket requires a current passing independent plan review: ${review.reason}`);
-      // GitHub publication later reads these drafts; a plan set without them can never be published.
-      const tracker = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch(() => '')).tracker;
-      // A completed result being reopened for a user revision is re-validated only to be replaced; it may predate this check.
-      if (tracker?.mode === 'github' && !reopening) {
-        const { snapshotPlanSet, assertPlanIssueDrafts } = await import('./plan-review.mjs');
-        const snapshot = await snapshotPlanSet({ root, planSetId: input.context?.plan_set_id });
-        await assertPlanIssueDrafts({ root, plans: snapshot.plans, session });
-      }
     }
     for (const output of input.context?.outputs ?? []) {
       requireValue(result.artifacts.filter((artifact) => artifact.kind === output.id).length === 1, `Completed stage must return one artifact with kind=${output.id}`);
@@ -422,7 +422,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       if (question.decision_kind === 'technology') await assertTechnologyQuestionEvidence(root, question);
     }
   }
-  if (['implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return SPEC_REVISION_REQUIRED for a decision the approved Spec does not settle');
+  if (['tactical-code', 'implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return DEPENDENCY_INCOMPLETE to the owning requirements, tactical design, or ticket stage for an unsettled decision');
   if (envelope.code === 'USER_DECISION_REQUIRED' || questions.length) {
     requireValue(questions.length <= 1 && (questions.length === 0 || questions[0].base === 'session'), 'Question requires at most one session user_question artifact');
     requireValue(resultQuestions, 'User decision requires questions');

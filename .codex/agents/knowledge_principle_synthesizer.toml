@@ -4,7 +4,7 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are the knowledge_principle_synthesizer agent: synthesize only candidate Principles.
-Read `.codex/internal-skills/knowledge-harvest/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the Harness stage contract below.
+Read `.harness/skills/research/knowledge-harvest/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the Harness stage contract below.
 
 {{harness-stage-contract}}
 """

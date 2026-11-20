@@ -1,11 +1,11 @@
-// The Architecture Spec items a Spec reviewer must account for one by one. Reviews used to report whatever the reviewer
-// noticed first, so a plan was fixed and re-reviewed once per mismatch (routes, package boundaries, schema, ...). The
-// contract-defining sections of the Spec are listed here and a Spec review is accepted only when it answers every item.
+// Legacy Architecture Spec items are retained for reviewing old plan sets. Current tactical design items are extracted
+// from the BC-oriented template below. A Spec review is accepted only when it answers every extracted item.
 export const SPEC_CONTRACT_SECTIONS = ['6.5', '6.7', '6.9', '6.11', '6.13', '9.1', '9.2', '12.7'];
 const VERDICTS = new Set(['match', 'mismatch', 'not_applicable']);
 
 // Table data rows and top-level list items under the contract sections, numbered per section.
 export function extractSpecContractItems(markdown) {
+  if (/<!--\s*tactical-design:\s*context-components-v1\s*-->/.test(markdown)) return extractTacticalDesignItems(markdown);
   const items = [];
   let active = null, level = 0, count = 0, tableRow = 0;
   const lines = markdown.split('\n');
@@ -36,6 +36,25 @@ export function extractSpecContractItems(markdown) {
         items.push({ id: `S${active}-${count}`, section: active, line: index + 1, text: line.trim().replace(/\s+/g, ' ').slice(0, 220) });
       }
     }
+  }
+  return items;
+}
+
+// Current plan sets use requirements.md plus a BC-oriented tactical-design.md, not numbered Architecture Spec sections.
+// Give every substantive line in a bounded-context section a stable-in-document checklist ID so the Spec reviewer checks
+// the actual settled design rows and prose. Legacy numbered Specs continue through the extractor above.
+export function extractTacticalDesignItems(markdown) {
+  const items = [];
+  let inContext = false;
+  for (const [index, raw] of markdown.split('\n').entries()) {
+    const line = raw.trim();
+    if (/^#{1,2}\s+BC\s+\S/.test(line) || /^##\s+[1-7]\.\s+/.test(line)) inContext = true;
+    else if (/^#{1,2}\s+/.test(line) && !/^#{3,}\s+/.test(line)) inContext = false;
+    if (!inContext || !line || line.startsWith('<!--') || /^#{1,6}\s/.test(line) || /^```/.test(line)) continue;
+    if (/^\|[\s:|\-]+\|?$/.test(line)) continue;
+    if (/^\|/.test(line) && /^\|?\s*:?-{2,}/.test(line.replace(/^\|\s*/, ''))) continue;
+    if (/^\|/.test(line) && /^\s*\|[\s:|\-]+\|?\s*$/.test(markdown.split('\n')[index + 1] || '')) continue;
+    items.push({ id: `TD-${String(items.length + 1).padStart(4, '0')}`, section: 'tactical-design', line: index + 1, text: line.replace(/\s+/g, ' ').slice(0, 220) });
   }
   return items;
 }

@@ -14,7 +14,7 @@ import { configuredProvider } from './providers/index.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
-import { loadNamedWorkflow } from './loader.mjs';
+import { DEFAULT_WORKFLOW_DIR, loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
 import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
 import { markRequirementsRevision, resolveReopen, staleFeedback } from './stage-reopen.mjs';
@@ -79,7 +79,7 @@ export async function assertPrStageReadiness({ root, state, stageId }) {
 
 export async function resolveStageSkill({ root, stageId }) {
   if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
-  const workflows = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
+  const workflows = await readdir(join(root, DEFAULT_WORKFLOW_DIR), { withFileTypes: true });
   const matches = [];
   for (const file of workflows) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
@@ -300,7 +300,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // feedback. The state claim marks downstream results stale in the same transaction that starts the owner.
   let reopenPlan = null;
   if (reopenFor !== null) {
-    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .codex/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
+    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .harness/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
     reopenPlan = await resolveReopen({ root, session, state, ownerStage: stageId, blockedExecutionId: reopenFor });
     feedback = reopenPlan.feedback;
   }
@@ -409,6 +409,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let taskSession = session;
   let executionWorkspace;
   let publicationDrafts;
+  let publicationSnapshotSha256;
+  let planReviewFeedback;
   let plan_set_id;
   const requirementsApproval = requirementsApproved ? { execution_id: state.stages?.['bounded-context']?.execution_id, answer: approvalAnswer } : null;
   if (worktree_ref) {
@@ -591,6 +593,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const previousReturn = await readSkillSessionJson({ root, session_directory: taskSession, path: `${prefix}/return.json` });
       await validateSkillReturn({ root, input: previousInput, envelope: previousReturn, reopening: Boolean(userRevisionWaiting || (crossStageRevision && previous.status === 'completed' && previous.code === 'OK')) });
       if (previousReturn.result_ref !== previous.result_ref || previousReturn.code !== previous.code || ((reviewWaiting || revisionWaiting) && previousReturn.status !== 'action_required')) throw new Error('Feedback target does not match stage state');
+      if (reviewWaiting && stageId === 'to-ticket') {
+        const { recordedPlanReviewForExecution } = await import('./review-attempts.mjs');
+        planReviewFeedback = await recordedPlanReviewForExecution({ root, planSetId: plan_set_id, executionId: previous.execution_id });
+      }
     }
     if (interrupted) {
       interruptedAnswers = join(taskSession, prefix, 'answers.json');
@@ -664,7 +670,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const execution_id = `${stage.id}-${randomUUID()}`;
   if (review_admission || plan_review_admission) input_refs.push({ base: 'control_session', path: reviewAdmissionRef });
-  if (stage.skill === 'tracker-publish') publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id });
+  if (stage.skill === 'tracker-publish') {
+    publicationSnapshotSha256 = state.stages['to-ticket'].review_snapshot_sha256;
+    const expectedDraftsSha256 = state.stages['to-ticket'].publication_drafts_sha256;
+    if (!publicationSnapshotSha256 || !expectedDraftsSha256) throw new Error('Publication approval requires the plan review snapshot and final bodies recorded when to-ticket finished');
+    publicationDrafts = await preparePublicationDrafts({ root, planSetId: plan_set_id, expectedSnapshotSha256: publicationSnapshotSha256, expectedDraftsSha256 });
+  }
   if (stageId === 'to-ticket' && plan_set_id) {
     const { planDesignPaths } = await import('./plan-review.mjs');
     for (const path of await planDesignPaths({ root, planSetId: plan_set_id })) {
@@ -682,6 +693,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     await readFile(join(root, 'docs/plans', plan_set_id, `${planId}.md`)).catch(() => { throw new Error(`Plan ${planId} is not part of plan set ${plan_set_id}`); });
     // tactical-code builds one published ticket per execution, after the tickets it depends on, and reads that ticket's file.
     if (['tactical-code', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) {
+      const { assertDispatchPlanReview } = await import('./plan-review.mjs');
+      await assertDispatchPlanReview({ root, planSetId: plan_set_id, planId, expectedSnapshotSha256: state.stages?.['tracker-publish']?.review_snapshot_sha256 });
       await assertTicketStartable({ root, planSetId: plan_set_id, planId, resume: feedback !== null || answer !== null });
       input_refs.push({ base: 'workspace', path: `docs/plans/${plan_set_id}/${planId}.md`, kind: 'ticket' });
       await assertFrontendTicketOrder({ root, session: taskSession, state, stageId, planSetId: plan_set_id, planId });
@@ -711,6 +724,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (domainPack) input_refs.push(domainPack);
   const requirementsContractVersion = stageId === WORKTREE_STAGE.STAKEHOLDER_ANALYSIS ? 1 : state.stages?.[WORKTREE_STAGE.STAKEHOLDER_ANALYSIS]?.requirements_contract_version;
   const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(requirementsContractVersion === 1 ? { requirements_contract_version: 1 } : {}), ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  if (publicationSnapshotSha256) input.context.publication_review_snapshot_sha256 = publicationSnapshotSha256;
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
@@ -732,7 +746,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   await mkdir(paths.directory, { recursive: true });
   if (Array.isArray(answer)) await writeFile(paths.files.answers, JSON.stringify(answer, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   if (interruptedAnswers) await copyFile(interruptedAnswers, paths.files.answers).catch((error) => { if (error.code !== 'ENOENT') throw error; });
-  if (feedback !== null) await writeFile(paths.files.feedback, JSON.stringify({ feedback }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  if (feedback !== null) await writeFile(paths.files.feedback, JSON.stringify({ feedback, ...(planReviewFeedback ? { plan_review: planReviewFeedback } : {}) }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const storedInput = storedStageInput(input);
   return { input: storedInput, path, session_directory: taskSession, execution_directory: paths.directory, ...(answer !== null ? { answer } : {}) };
 }

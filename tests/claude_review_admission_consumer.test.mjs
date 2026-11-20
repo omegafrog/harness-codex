@@ -11,13 +11,13 @@ import { snapshotSpecReview } from '../.harness/src/workflow/spec-review.mjs';
 import { snapshotPlanSet, updatePlanReview } from '../.harness/src/workflow/plan-review.mjs';
 import { updateReviewAttempt, inspectReviewHistory, assertNoUnrecordedNativeReview } from '../.harness/src/workflow/review-attempts.mjs';
 
-const callAdmission = (root, ticketId, input) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-admission.mjs')], {
+const callAdmission = (root, ticketId, input) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-agent-admission.mjs')], {
   cwd: root,
   env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_CONTROL_SESSION_DIR: join(root, '.io'), HARNESS_SKILL_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: ticketId, HARNESS_WORKSPACE_ROOT: root },
   input: JSON.stringify(input), encoding: 'utf8',
 }));
 const callEvent = (root, event) => {
-  const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], {
+  const result = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-agent-event.mjs')], {
     cwd: root,
     env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_SKILL_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: 'ticket-one' },
     input: JSON.stringify(event), encoding: 'utf8',
@@ -37,12 +37,12 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     for (const path of ['.codex/agents/plan_reviewer.toml', '.claude/agents/plan_reviewer.md']) {
       const instructions = await readFile(join(root, path), 'utf8');
       // The profile only points at the GUIDE, which owns the admission and re-review rules.
-      assert.match(instructions, /\.codex\/internal-skills\/plan-review\/GUIDE\.md/);
+      assert.match(instructions, /\.harness\/skills\/planning\/plan-review\/GUIDE\.md/);
       assert.match(instructions, /"verdict":"pass"\|"revise"/);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
-    const planReviewGuide = await readFile(join(root, '.codex/internal-skills/plan-review/GUIDE.md'), 'utf8');
-    assert.match(planReviewGuide, /JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나/);
+    const planReviewGuide = await readFile(join(root, '.harness/skills/planning/plan-review/GUIDE.md'), 'utf8');
+    assert.match(planReviewGuide, /JSON에 없는 `workspace_root`나 `session_directory`를 요구하거나/);
     assert.match(planReviewGuide, /변경된 파일 전체/);
     assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 최초 리뷰의 범위/);
     assert.match(planReviewGuide, /의존하는 모델·Aggregate·Application Service·통합·컨텍스트 경계의 절·표만 읽는다/);
@@ -121,8 +121,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.equal(planAttempt.reviewer_input_ref, `runtime/executions/review-stage/plan-review-admission-${planAttempt.attempt_id}.json`);
     const reviewerSnapshot = JSON.parse(await readFile(join(root, '.io', planAttempt.reviewer_input_ref), 'utf8'));
     assert.equal(reviewerSnapshot.attempt_id, planAttempt.attempt_id);
-    for (const key of ['execution_id', 'attempt_id', 'plan_set_id', 'inputs', 'files', 'previous_inputs', 'previous_findings']) assert.ok(Object.hasOwn(reviewerSnapshot, key), key);
-    for (const key of ['workspace_root', 'session_directory', 'review_delta']) assert.ok(!Object.hasOwn(reviewerSnapshot, key), key);
+    for (const key of ['execution_id', 'attempt_id', 'plan_set_id', 'inputs', 'files', 'previous_inputs', 'previous_findings', 'review_delta']) assert.ok(Object.hasOwn(reviewerSnapshot, key), key);
+    for (const key of ['workspace_root', 'session_directory']) assert.ok(!Object.hasOwn(reviewerSnapshot, key), key);
     assert.ok(reviewerSnapshot.files.some((file) => file.path === 'docs/plans/ticket-one/slice.md' && file.content.includes('# Slice')));
     const planInput = { ...input, tool_use_id: 'dispatch-plan', tool_input: { ...input.tool_input, subagent_type: 'plan_reviewer', prompt: 'Review the plans.' } };
     const admissionPath = join(root, '.io', planAttempt.reviewer_input_ref);
@@ -144,7 +144,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     const planReview = { schema_version: 1, attempt_id: planAttempt.attempt_id, plan_set_id: 'ticket-one' };
     process.env.HARNESS_SKILL_EXECUTION_ID = 'resumed-author';
     await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
-    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission contents/);
+    await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission changed after the runner bound it/);
     await writeFile(admissionPath, admissionContents);
     await updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview });
     await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' }), /unchanged/i);
@@ -153,7 +153,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     }
     assert.equal(planHistory.recorded_state, 'active');
     await assertNoUnrecordedNativeReview({ root, scope: planScope });
-    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'design_paths', 'spec_paths', 'plans', 'inputs', 'execution_workspace']);
+    assert.deepEqual(Object.keys(await snapshotPlanSet({ root, planSetId: 'ticket-one' })), ['plan_set_id', 'base', 'design_paths', 'spec_paths', 'plans', 'inputs', 'publication_bodies', 'missing_issue_drafts', 'execution_workspace']);
 
     await mkdir(join(root, 'docs/specs/budget-ticket'), { recursive: true });
     const budgetSpec = join(root, 'docs/specs/budget-ticket/architecture-spec.md');
@@ -179,7 +179,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.match(status, /docs\/contracts\/owned\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/workflow\/providers\/claude-code\.mjs/);
     execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-admission.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.harness/scripts/harness-agent-admission.mjs'], { cwd: root });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

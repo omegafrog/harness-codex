@@ -37,7 +37,7 @@ test('installed repository round trips definitions, validates references and pre
   run('git', ['init', '-q']);
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  const cli = () => JSON.parse(run(process.execPath, ['.codex/scripts/harness-domain.mjs', 'validate']));
+  const cli = () => JSON.parse(run(process.execPath, ['.harness/scripts/harness-domain.mjs', 'validate']));
   assert.deepEqual(cli(), { valid: true, definitions: 0, contexts: 0 });
   await writeFile(join(root, 'CONTEXT-MAP.md'), contextMap);
   const path = await writeDomainDocument(root, { metadata, body });
@@ -45,8 +45,8 @@ test('installed repository round trips definitions, validates references and pre
   const before = gitStatus();
   assert.ok(before.includes(path));
   assert.ok(before.includes('CONTEXT-MAP.md'));
-  run('git', ['check-ignore', '-v', '.codex/scripts/harness-domain.mjs', '.harness/src/domain/repository.mjs']);
-  const managedCli = '.codex/scripts/harness-domain.mjs';
+  run('git', ['check-ignore', '-v', '.harness/scripts/harness-domain.mjs', '.harness/src/domain/repository.mjs']);
+  const managedCli = '.harness/scripts/harness-domain.mjs';
   await rm(join(root, managedCli));
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === join(root, managedCli)));
   await updateProject({ sourceRoot, targetRoot: root });
@@ -54,7 +54,7 @@ test('installed repository round trips definitions, validates references and pre
   assert.equal(gitStatus(), before);
   assert.equal(await readFile(join(root, 'CONTEXT-MAP.md'), 'utf8'), contextMap);
   assert.equal((await readDomainRepository(root))[0].body, body);
-  const domain = (...args) => JSON.parse(run(process.execPath, ['.codex/scripts/harness-domain.mjs', ...args]));
+  const domain = (...args) => JSON.parse(run(process.execPath, ['.harness/scripts/harness-domain.mjs', ...args]));
   const exact = domain('search', '취소 조건').candidates[0];
   assert.equal(exact.id, metadata.id);
   assert.ok(exact.evidence.includes('name_or_alias'));

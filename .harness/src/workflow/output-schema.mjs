@@ -5,7 +5,7 @@ import { loadProvider } from './providers/index.mjs';
 import { listDeclaredSkills } from './skill-declaration.mjs';
 
 // 구현 stage만 Spec 밖 동작을 구조화해 신고한다. 과거 결과 호환을 위해 저장 스키마에서는 선택으로 둔다.
-const IMPLEMENTATION_FLOWS = new Set(['implement', 'implement-wrapper']);
+const IMPLEMENTATION_FLOWS = new Set(['tactical-code', 'implement', 'implement-wrapper']);
 const COMMIT_REQUEST_FLOWS = new Set([...IMPLEMENTATION_FLOWS, 'tactical-code']);
 
 export async function writeOutputSchema({ root, input, prefix, path, provider = 'codex' }) {

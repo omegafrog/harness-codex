@@ -32,7 +32,7 @@ tracker:
     directory: docs/plans
 `;
 
-const cli = (root, args, cwd = root) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-stakeholder.mjs'), ...args], { cwd, encoding: 'utf8' });
+const cli = (root, args, cwd = root) => spawnSync(process.execPath, [join(root, '.harness/scripts/harness-stakeholder.mjs'), ...args], { cwd, encoding: 'utf8' });
 const ok = (result) => { assert.equal(result.status, 0, result.stderr || result.stdout); return result; };
 const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
@@ -58,7 +58,7 @@ test('the card CLI adds, edits, lists, validates and removes project-owned cards
   const root = await mkdtemp(join(tmpdir(), 'stakeholder-cli-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q', root]);
-  const tool = join(sourceRoot, '.codex/scripts/harness-stakeholder.mjs');
+  const tool = join(sourceRoot, '.harness/scripts/harness-stakeholder.mjs');
   const run = (...args) => spawnSync(process.execPath, [tool, ...args, '--root', root], { encoding: 'utf8' });
 
   const added = ok(run('add', '--role', '모더레이터', '--goal', '악성 글을 빨리 지운다', '--goal', '신고를 놓치지 않는다', '--pain-point', '신고가 흩어져 있다', '--authority', '글 삭제 권한', '--knowledge-boundary', '결제 흐름'));
@@ -138,13 +138,13 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   await writeFile(join(root, '.harness/harness.yaml'), SETUP);
 
   const managed = [
-    '.codex/scripts/harness-stakeholder.mjs',
+    '.harness/scripts/harness-stakeholder.mjs',
     '.harness/src/stakeholders/cards.mjs',
-    '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
-    '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
-    '.codex/internal-skills/stakeholder-analysis/references/lenses/domain.md',
-    '.codex/internal-skills/stakeholder-analysis/references/lenses/security.md',
-    '.codex/internal-skills/stakeholder-persona/GUIDE.md',
+    '.harness/skills/requirements/stakeholder-analysis/GUIDE.md',
+    '.harness/skills/requirements/stakeholder-analysis/references/output-template.md',
+    '.harness/skills/requirements/stakeholder-analysis/references/lenses/domain.md',
+    '.harness/skills/requirements/stakeholder-analysis/references/lenses/security.md',
+    '.harness/skills/requirements/stakeholder-persona/GUIDE.md',
     '.codex/agents/stakeholder_persona.toml',
     '.claude/agents/stakeholder_persona.md',
   ];
@@ -154,18 +154,18 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
     assert.ok(lock.files[path], `lock inventory: ${path}`);
     assert.match(git('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   }
-  assert.equal(await readFile(join(root, '.codex/scripts/harness-stakeholder.mjs'), 'utf8'), await readFile(join(sourceRoot, '.codex/scripts/harness-stakeholder.mjs'), 'utf8'));
+  assert.equal(await readFile(join(root, '.harness/scripts/harness-stakeholder.mjs'), 'utf8'), await readFile(join(sourceRoot, '.harness/scripts/harness-stakeholder.mjs'), 'utf8'));
   const profile = await readFile(join(root, '.claude/agents/stakeholder_persona.md'), 'utf8');
   assert.match(profile, /^name: stakeholder_persona$/m);
   assert.match(profile, /^permissionMode: plan$/m);
   assert.match(profile, /^tools: Read, Grep, Glob, WebSearch, WebFetch$/m);
   assert.match(profile, /stakeholder-persona\/GUIDE\.md/);
   assert.match(await readFile(join(root, '.codex/agents/stakeholder_persona.toml'), 'utf8'), /^sandbox_mode = "read-only"$/m);
-  const { FRESH_AGENT_TYPES } = await import(pathToFileURL(join(root, '.codex/scripts/harness-fresh-agent.mjs')));
+  const { FRESH_AGENT_TYPES } = await import(pathToFileURL(join(root, '.harness/scripts/harness-fresh-agent.mjs')));
   assert.ok(FRESH_AGENT_TYPES.includes('stakeholder_persona'));
 
   // The installed tools resolve their tiers from the installed GUIDEs.
-  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
+  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
   assert.deepEqual(binding('stakeholder-persona'), { skill: 'stakeholder-persona', provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });
   assert.equal(binding('stakeholder-analysis').model_tier, 'implementation');
 
@@ -198,16 +198,16 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   ok(cli(root, ['remove', 'SH-02']));
 
   // A missing managed tool is an execution-asset error, and update restores it without touching the project's cards.
-  const tool = join(root, '.codex/scripts/harness-stakeholder.mjs');
-  const lens = join(root, '.codex/internal-skills/stakeholder-analysis/references/lenses/security.md');
+  const tool = join(root, '.harness/scripts/harness-stakeholder.mjs');
+  const lens = join(root, '.harness/skills/requirements/stakeholder-analysis/references/lenses/security.md');
   const cardText = await readFile(join(root, 'docs/domain/stakeholders/SH-01.md'), 'utf8');
   await unlink(tool);
   await writeFile(lens, 'locally edited lens\n');
   doctor = await runDoctor({ root, sourceRoot });
   assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === tool));
   await updateProject({ sourceRoot, targetRoot: root });
-  assert.equal(await readFile(tool, 'utf8'), await readFile(join(sourceRoot, '.codex/scripts/harness-stakeholder.mjs'), 'utf8'));
-  assert.equal(await readFile(lens, 'utf8'), await readFile(join(sourceRoot, '.codex/internal-skills/stakeholder-analysis/references/lenses/security.md'), 'utf8'));
+  assert.equal(await readFile(tool, 'utf8'), await readFile(join(sourceRoot, '.harness/scripts/harness-stakeholder.mjs'), 'utf8'));
+  assert.equal(await readFile(lens, 'utf8'), await readFile(join(sourceRoot, '.harness/skills/requirements/stakeholder-analysis/references/lenses/security.md'), 'utf8'));
   assert.equal(await readFile(join(root, 'docs/domain/stakeholders/SH-01.md'), 'utf8'), cardText);
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
@@ -235,7 +235,7 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   git('commit', '-qm', 'baseline');
 
   const invoke = (cwd, script, args = [], input) => {
-    const result = spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', input });
+    const result = spawnSync(process.execPath, [join(cwd, '.harness/scripts', script), ...args], { cwd, encoding: 'utf8', input });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
   };
@@ -256,14 +256,14 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   assert.equal(started.agent_profile, 'workflow_stage');
   assert.equal(started.binding.model_tier, 'implementation');
   assert.equal(started.binding.model, 'codex-implementation');
-  assert.equal(started.guide, join(workspace, '.codex/internal-skills/stakeholder-analysis/GUIDE.md'));
+  assert.equal(started.guide, join(workspace, '.harness/skills/requirements/stakeholder-analysis/GUIDE.md'));
   const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
   assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
   invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', 'facilitator-1']);
 
   // The stage writes its document at the plan set path and completes; the runner commits that document only.
   const planSetId = tree.plan_set_id;
-  const artifactPath = execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, 'stakeholder-analysis.md'], { cwd: workspace, encoding: 'utf8' }).trim();
+  const artifactPath = execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-spec-path.mjs'), workspace, 'stakeholder-analysis.md'], { cwd: workspace, encoding: 'utf8' }).trim();
   assert.equal(artifactPath, `docs/specs/${planSetId}/stakeholder-analysis.md`);
   await mkdir(join(workspace, 'docs/specs', planSetId), { recursive: true });
   await mkdir(join(workspace, 'docs/domain/stakeholders'), { recursive: true });
@@ -279,7 +279,7 @@ test('stakeholder-analysis runs as a workflow stage that the next flow stage acc
   assert.match(treeGit('status', '--short', '--untracked-files=all'), /\?\? docs\/domain\/stakeholders\/SH-01\.md/, 'the runner leaves the project-owned card alone');
 
   // The next flow stage follows the completed stage and receives the document as an input reference; the retired spec-me is refused outright.
-  const premature = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
+  const premature = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'spec-me'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me has been removed/);
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-candidates']);

@@ -85,7 +85,7 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
 
 async function installHarnessRuntime({ root, workspace }) {
   const rootPath = await realpath(root);
-  const installer = resolve(root, "bin/harness-install.mjs");
+  const installer = resolve(root, ".harness/cli/harness-install.mjs");
   let installerPath;
   try {
     installerPath = await realpath(installer);

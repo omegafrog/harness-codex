@@ -11,11 +11,12 @@ const codexHome = (env) => resolve(env.CODEX_HOME || join(env.HOME || '', '.code
 
 // One user-level hook serves every project and worktree: it runs the active workspace's
 // harness-agent-event.mjs only inside a Harness stage and does nothing elsewhere.
+// A user-level registration also serves older checkouts that still install under .codex/scripts.
 export function codexSubagentHook() {
   return {
     type: 'command',
     // Inside a stage HARNESS_WORKSPACE_ROOT names the workspace; in the main orchestrator session the cwd is the worktree.
-    command: `sh -c 'f="\${HARNESS_WORKSPACE_ROOT:-.}/.codex/scripts/harness-agent-event.mjs"; [ -f "$f" ] && exec node "$f"; exit 0'`,
+    command: `sh -c 'r="\${HARNESS_WORKSPACE_ROOT:-.}"; d="$r/.harness/scripts"; [ -d "$d" ] || d="$r/.codex/scripts"; f="$d/harness-agent-event.mjs"; [ -f "$f" ] && exec node "$f"; exit 0'`,
     statusMessage: SUBAGENT_STATUS,
     timeout: 10,
   };
@@ -27,7 +28,7 @@ const FRESH_AGENT_STATUS = 'Checking Harness fresh agent';
 export function codexFreshAgentHook() {
   return {
     type: 'command',
-    command: `sh -c 'f="\${HARNESS_WORKSPACE_ROOT:-.}/.codex/scripts/harness-fresh-agent.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *spawn_agent*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
+    command: `sh -c 'r="\${HARNESS_WORKSPACE_ROOT:-.}"; d="$r/.harness/scripts"; [ -d "$d" ] || d="$r/.codex/scripts"; f="$d/harness-fresh-agent.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *spawn_agent*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
     statusMessage: FRESH_AGENT_STATUS,
     timeout: 10,
   };
@@ -39,7 +40,7 @@ const WRITE_GUARD_STATUS = 'Guarding Harness orchestrator writes';
 export function codexWriteGuardHook() {
   return {
     type: 'command',
-    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && exit 0; r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; f="$r/.codex/scripts/harness-write-guard.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *apply_patch*|*Bash*|*exec_command*|*shell_command*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
+    command: `sh -c '[ -n "$HARNESS_SKILL_EXECUTION_ID" ] && exit 0; r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; d="$r/.harness/scripts"; [ -d "$d" ] || d="$r/.codex/scripts"; f="$d/harness-write-guard.mjs"; [ -f "$f" ] || exit 0; i=$(cat); case "$i" in *apply_patch*|*Bash*|*exec_command*|*shell_command*) printf "%s" "$i" | exec node "$f";; esac; exit 0'`,
     statusMessage: WRITE_GUARD_STATUS,
     timeout: 10,
   };
@@ -123,22 +124,20 @@ export async function inspectCodexHookTrust(env = process.env) {
     const hash = /^\s*trusted_hash\s*=\s*"sha256:([0-9a-f]{64})"/.exec(line)?.[1];
     if (current && hash) trusted.set(current, hash);
   }
-  const missing = [], untrusted = [];
-  for (const event of SUBAGENT_EVENTS) {
-    const groups = Array.isArray(hooks[event]) ? hooks[event] : [];
-    const slots = groups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === SUBAGENT_STATUS);
-    if (!slots.length) missing.push(event);
-    else if (!slots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash(snake(event), handler))) untrusted.push(event);
-  }
-  const freshGroups = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-  const freshSlots = freshGroups.flatMap((group, groupIndex) => (group.hooks || []).map((handler, handlerIndex) => ({ handler, key: `${hooksPath}:pre_tool_use:${groupIndex}:${handlerIndex}` }))).filter(({ handler }) => handler?.statusMessage === FRESH_AGENT_STATUS);
-  const freshAgentCheck = !freshSlots.length ? 'missing' : freshSlots.some(({ key, handler }) => trusted.get(key) === codexHookTrustHash('pre_tool_use', handler)) ? 'trusted' : 'untrusted';
-  const slotState = (event, status) => {
-    const slots = (Array.isArray(hooks[event]) ? hooks[event] : []).flatMap((group, groupIndex) => (group.hooks || []).map((item, handlerIndex) => ({ item, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` }))).filter(({ item }) => item?.statusMessage === status);
+  const slotState = (event, expected) => {
+    const slots = (Array.isArray(hooks[event]) ? hooks[event] : []).flatMap((group, groupIndex) => (group.hooks || []).map((item, handlerIndex) => ({ item, key: `${hooksPath}:${snake(event)}:${groupIndex}:${handlerIndex}` })))
+      .filter(({ item }) => item?.statusMessage === expected.statusMessage && item.command === expected.command);
     return !slots.length ? 'missing' : slots.some(({ key, item }) => trusted.get(key) === codexHookTrustHash(snake(event), item)) ? 'trusted' : 'untrusted';
   };
+  const missing = [], untrusted = [];
+  for (const event of SUBAGENT_EVENTS) {
+    const state = slotState(event, codexSubagentHook());
+    if (state === 'missing') missing.push(event);
+    else if (state === 'untrusted') untrusted.push(event);
+  }
+  const freshAgentCheck = slotState('PreToolUse', codexFreshAgentHook());
   const retired_startup = RETIRED_EVENTS.some((event) => Array.isArray(hooks[event]) && hooks[event].some(retiredGroup));
-  const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS);
+  const writeGuard = slotState('PreToolUse', codexWriteGuardHook());
   return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath, ponytail_config_path };
 }
 

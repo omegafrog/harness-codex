@@ -12,8 +12,6 @@
 - 전술 설계 흐름 — 확정된 요구사항 뒤 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary`가 하나의 `tactical-design.md`를 단계별로 채우고 소유 부분을 완료 전에 검사하며, 마지막 stage에서 문서 전체를 검사
 - 구현 흐름 — 완료된 tactical design 뒤 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → (사용자 발행 승인) `tracker-publish` → `tactical-code` 순서로 결정·ticket 분할·발행·ticket별 구현과 테스트; 실제 UI는 별도 `frontend-design` workflow가 소유
 - `to-ticket` — 완료된 tactical design과 구현 결정을 바운디드 컨텍스트·업무별 vertical ticket(의존 순서, 소유 규칙과 검증 테스트, 컨텍스트 경계 포함)으로 분할하고 독립 리뷰
-- `implement-wrapper` — Spec 기반 legacy 계획에서 orchestrator가 선택한 승인 Plan 하나를 구현하고 단위 테스트·실행 근거를 반환
-- `implement` + `code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
 - `frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
 - `evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
@@ -95,11 +93,11 @@ docs/specs/<plan-set-id>/requirements.md           채택·확정한 항목의 �
 이해관계자의 역할·목표·불편·제약·권한·용어·모르는 것은 사용자가 프로젝트 소유 카드 `docs/domain/stakeholders/SH-xx.md`로 직접 등록한다. 카드는 Git에 노출되는 프로젝트 문서이며 Harness가 대신 만들지 않는다.
 
 ```bash
-node .codex/scripts/harness-stakeholder.mjs add          # 터미널에서는 대화형, 아니면 --role --goal 같은 플래그
-node .codex/scripts/harness-stakeholder.mjs edit SH-01
-node .codex/scripts/harness-stakeholder.mjs list [--json]
-node .codex/scripts/harness-stakeholder.mjs validate
-node .codex/scripts/harness-stakeholder.mjs remove SH-01
+node .harness/scripts/harness-stakeholder.mjs add          # 터미널에서는 대화형, 아니면 --role --goal 같은 플래그
+node .harness/scripts/harness-stakeholder.mjs edit SH-01
+node .harness/scripts/harness-stakeholder.mjs list [--json]
+node .harness/scripts/harness-stakeholder.mjs validate
+node .harness/scripts/harness-stakeholder.mjs remove SH-01
 ```
 
 `role`과 목표 하나 이상만 필수이고 나머지는 `UNKNOWN`으로 둘 수 있다. 규제기관이나 외부 시스템처럼 사람이 아닌 제약 출처는 `--kind constraint-source`로 등록한다(persona로 실행하지 않고 제약만 전달). workflow worktree는 커밋된 파일만 보므로 workflow를 시작하기 전에 카드를 커밋한다. 형식 오류는 `harness-codex-doctor`가 `stakeholder_card_invalid`로 경고한다.
@@ -113,13 +111,13 @@ node .codex/scripts/harness-stakeholder.mjs remove SH-01
 | `event-storming` | 도메인 전문가 persona를 다시 실행해 업무별 행위자·명령·도메인 이벤트(과거형 업무 사실)·정책·외부 시스템·hotspot을 낸다. 요청 밖 기능은 범위 밖 관찰로 접는다 | hotspot을 한 묶음으로 | `diagrams/events/`의 SD별·서브도메인 간 PlantUML(`.puml`)과 렌더(`.svg`) |
 | `subdomain-classification` | 업무와 이벤트를 근거로 유지·분리 대안을 비교하고 core·supporting·generic 분류를 정한다 | 경계 선택과 분류는 각각 확인 | |
 | `requirements-fix` | 남은 빈칸을 한 번의 인터뷰로 채우고 coverage gate(컨텍스트 소속 제외)를 통과시킨다. 경계를 정하기 전에 요구사항을 완성하려고 `bounded-context` 앞에서 실행하며, 문서는 `draft`로 둔다 | 빈칸만 한 묶음 | |
-| `bounded-context` | 완성된 요구사항으로 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 `ddd-design` 경계 규칙으로 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적고, coverage gate 전체를 통과하면 `상태: fixed`로 확정하며 공통 정의를 동기화한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
+| `bounded-context` | 완성된 요구사항으로 기존 컨텍스트에 먼저 넣고, 합친 안과 나눈 안을 동일한 경계 기준으로 합친 안과 나눈 안을 비교해 바운디드 컨텍스트를 정한다. 관계마다 통신 계약과 판단 소유자를 적고, coverage gate 전체를 통과하면 `상태: fixed`로 확정하며 공통 정의를 동기화한다. 승인 질문은 없고, 확정 뒤 변경은 사용자의 수정 지시로만 한다 | 결과가 갈리는 경계만 한 묶음 | `CONTEXT-MAP.md`(accepted-target) |
 
 `stakeholder-analysis`가 생략을 판정하면 뒤 stage와 전술 설계 stage는 문서를 쓰지 않고 생략을 기록한 채 지나간다. 확정된 `requirements.md`와 바운디드 컨텍스트는 이후 전술 설계 및 구현의 입력이다. 이벤트 다이어그램 렌더에는 Java와 Graphviz가 필요하고 렌더 실패는 stage 완료를 막는다.
 
 #### 전술 설계 흐름
 
-`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model` 단계는 이 문서의 모델 절을 작성한다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.codex/internal-skills/domain-model/references/template.md`에 있다.
+`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model` 단계는 이 문서의 모델 절을 작성한다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.harness/skills/design/domain-model/domain-model/references/template.md`에 있다.
 
 | stage | 하는 일 |
 |---|---|
@@ -158,55 +156,26 @@ Parent Issue
 └─ Child Plan C
 ```
 
-### 5. `implement-wrapper`
 
-orchestrator가 Plan의 dependency와 shared resource로 실행 순서를 정하고, 각 worker는 선택된 Plan 하나를 구현한다.
-
-```text
-독립 Plan      → 병렬 실행 가능
-resource 충돌 → 순차 실행
-dependency     → 선행 Plan 완료까지 대기
-```
-
-Plan마다 새로운 `implementation_agent`를 사용한다. setup에서 확인한 `.codex/context-budget.json`의 수치로 to-ticket은 계획을 분할하고 orchestrator는 실행 중 인계 여부를 판단한다.
-
-### 6. `implement`
-
-한 번에 정확히 하나의 승인된 Plan만 실행한다.
-
-```text
-Failing Test
-    ↓
-Minimum Implementation
-    ↓
-Tests / Typecheck
-    ↓
-Commit
-    ↓
-Independent Review
-```
-
-실제 server/E2E 실행이 필요하면 `execution_runner`가 별도로 실행과 log 수집을 담당한다.
-
-### 7. `code-review`
+### 4. `code-review`
 
 같은 diff를 두 개의 독립 reviewer가 검증한다.
 
 ```text
 Implementation Diff
-      ├─ standards_reviewer → Product Spec + repository rules
-      └─ spec_reviewer      → Architecture Spec
+      ├─ standards_reviewer → requirements.md + repository rules
+      └─ spec_reviewer      → tactical-design.md + cited implementation decisions
 ```
 
 둘 중 하나라도 unresolved이면 Plan을 완료 처리하지 않는다.
 
-### 8. `gh-open-pr`
+### 5. `gh-open-pr`
 
 Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하나**를 사용한다.
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
-### 9. `frontend-design`
+### 6. `frontend-design`
 
 기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다.
 
@@ -226,9 +195,9 @@ BLOCKER/MAJOR가 있으면 correction
 Visual acceptance
 ```
 
-기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
+기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `tactical-code`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
 
-### 10. `evaluate-harness`
+### 7. `evaluate-harness`
 
 Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
 
@@ -244,33 +213,33 @@ correctness / quality / tokens / latency / inconclusive 판정
 
 Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으로 선택하고, 매핑이 불명확하면 `p0`를 smoke/regression suite로 사용한다. Baseline은 실패를 없애기 위해 자동 갱신하지 않는다.
 
-`meta-harness-pilot`은 Codex 구독으로 Harness 동작을 점검하는 14-case suite다. 자체 4개 파일 중심 사례와 공개 skill-routing 8개 사례에 기존 `p0` 기준선의 `implement-wrapper-dependency`, `code-review-isolation`을 재사용해 범위를 넓혔다. 초기 `baseline: null` 상태에서는 품질·정책 verdict와 절대 비용만 보고하며 회귀율은 계산하지 않는다. subagent 축은 격리된 reviewer spawn이 불가능할 때 올바르게 차단하는 `code-review-isolation` 동작만 측정한다.
+`meta-harness-pilot`은 Codex 구독으로 Harness 동작을 점검하는 14-case suite다. 자체 4개 파일 중심 사례와 공개 skill-routing 8개 사례에 기존 `p0` 기준선의 `legacy-implementation-dependency`, `code-review-isolation`을 재사용해 범위를 넓혔다. 초기 `baseline: null` 상태에서는 품질·정책 verdict와 절대 비용만 보고하며 회귀율은 계산하지 않는다. subagent 축은 격리된 reviewer spawn이 불가능할 때 올바르게 차단하는 `code-review-isolation` 동작만 측정한다.
 
 ```sh
-node bin/harness-eval.mjs run --suite meta-harness-pilot
+node .harness/cli/harness-eval.mjs run --suite meta-harness-pilot
 ```
 
 ---
 
 ## Skill Catalog
 
-사용자가 직접 시작하는 스킬은 `.codex/skills/`에 두며, 내부 절차는 `.codex/internal-skills/`에 둔다.
+사용자가 직접 시작하는 공개 skill은 provider-neutral한 `.agents/skills/`에 둔다. provider별 native 설치 경로에는 해당 사본을 생성하고, 내부 절차는 [.harness/skills/의 단계별 폴더](.harness/skills/README.md)에 둔다.
 
 ### Workflow / entrypoint
 
 | Skill | 역할 |
 | --- | --- |
-| [`setup`](.codex/skills/setup/SKILL.md) | repository 초기 설정 |
-| [`orchestrator`](.codex/skills/orchestrator/SKILL.md) | subagent skill 실행과 파일 기반 결과·상태 전이 조율 |
+| [`setup`](.agents/skills/setup/SKILL.md) | repository 초기 설정 |
+| [`orchestrator`](.agents/skills/orchestrator/SKILL.md) | 공통 workflow 조율과 파일 기반 결과·상태 전이 |
 
-내부 작성·모델링·리뷰·구현 절차는 `.codex/internal-skills/*/GUIDE.md`에 있으며 상위 workflow/agent가 읽는다. 사용자 공개 스킬 목록에는 등록하지 않는다.
+내부 작성·모델링·리뷰·구현 절차는 `.harness/skills/**/GUIDE.md`에 있으며 상위 workflow/agent가 읽는다. 사용자 공개 스킬 목록에는 등록하지 않는다.
 
 ### Interview / validation / utility
 
 | Skill | 역할 |
 | --- | --- |
-| [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
-| [`harness-update`](.codex/skills/harness-update/SKILL.md) | 설치된 Harness 런타임 업데이트 진입점 |
+| [`eli5`](.agents/skills/eli5/SKILL.md) | visual-first 간단 설명 |
+| [`harness-update`](.agents/skills/harness-update/SKILL.md) | 설치된 Harness 런타임 업데이트 진입점 |
 
 ---
 
@@ -289,10 +258,9 @@ node bin/harness-eval.mjs run --suite meta-harness-pilot
 | `frontend_designer` | reference-grounded visual direction과 frontend brief 작성 |
 | `frontend_implementation_agent` | frontend brief 구현·correction |
 | `frontend_visual_reviewer` | 실제 browser render 기반 visual/UX review |
-| `implementation_agent` | Plan 하나 구현 |
 | `execution_runner` | server/E2E 실행·polling·log 수집 |
-| `standards_reviewer` | Product Spec + repository rules 리뷰 |
-| `spec_reviewer` | Architecture Spec 리뷰 |
+| `standards_reviewer` | `requirements.md` + repository rules 리뷰 |
+| `spec_reviewer` | `tactical-design.md` + 구현 결정 리뷰 |
 
 결정, 문서화, 구현, 실행 검증, 리뷰를 같은 agent에게 몰아주지 않는 것이 기본 원칙이다.
 
@@ -391,11 +359,11 @@ npx --yes github:omegafrog/harness-codex install --provider claude-code  # .clau
 Claude Code provider 코드(adapter, orchestrator launcher·시작 hook, hook 설치기)는 소스의 `.claude/harness/`에 있고 설치 대상의 같은 경로에 설치된다. `update`는 설치된 provider를 유지하며, `update --provider <값>`을 주면 설치 구성을 바꾸고 빠진 provider의 관리 파일은 백업 후 제거한다. `$setup`은 설치된 provider만 선택지로 보여 주고, workflow binding은 setup이 정한 provider와 같아야 한다.
 
 
-**메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.codex/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `.harness/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
+**메인 세션 쓰기 가드.** workflow worktree의 메인 orchestrator 세션은 제품 코드·테스트·Spec·계획·`docs/contracts/`를 직접 쓰지 않고 소유 stage에 맡긴다. PreToolUse hook(`.harness/scripts/harness-write-guard.mjs`)이 이를 집행한다. Codex는 `$setup`이 `~/.codex/hooks.json`에 "Guarding Harness orchestrator writes"를 등록하며 `/hooks`에서 신뢰해야 동작하고, Claude Code는 설치기가 `.claude/settings.local.json`의 `PreToolUse`(`Edit|Write|MultiEdit|NotebookEdit|Bash`)에 등록한다. `update`는 Claude 등록을 복구하고 Codex 사용자 hook이 없거나 신뢰되지 않았으면 안내하며 Doctor가 같은 상태를 보고한다. `.io/`와 `.harness/agents/`의 지침·실행 문서만 쓸 수 있고, stage 실행기와 하위 agent의 쓰기는 막지 않는다. `apply_patch`·Edit·Write와 리다이렉션·`tee`·`sed -i` 등 대상이 글자로 보이는 셸 쓰기만 판별하며, 스크립트·인터프리터·포매터가 내부에서 쓰는 파일과 MCP 파일 도구는 볼 수 없다.
 
 설치가 끝나면 Codex CLI에서 `$setup`을 실행한다. 모델·effort·tracker·관측성 선택은 Codex 내부의 네이티브 선택 UI에서 제출하며 별도 터미널이나 설치기 메뉴를 열지 않는다. 스킬은 `harness-setup.mjs --answers`가 한 번에 반환하는 질문 전체를 한 화면에서 전달하고, 제출한 답만 session JSON에 보존해 적용한다. 선행 답이 바뀌어 맞지 않게 된 질문만 다시 묻는다. 입력 대기 중인 숨은 PTY를 만들지 않는다. 이 단계에서 프로젝트별 `.harness/harness.yaml`과 컨텍스트·트래커 설정을 정한다.
 
-로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .codex/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.codex/internal-skills/victorialogs-local-setup/assets/README.md)를 따른다.
+로컬 관측성은 **OpenTelemetry Collector → VictoriaLogs**, **Actuator → VictoriaMetrics**, **공식 MCP 두 개 → 에이전트**로 구성한다. 프로젝트의 `node .harness/scripts/harness-setup.mjs --root <절대 경로>` CLI가 사용 여부·로그/메트릭 포트·보존 기간·OTLP HTTP 포트·여러 프로젝트/서비스의 앱·컨테이너 기준 Actuator URL을 수집하고 compose·Collector·scrape·provider-neutral MCP 설정·실행 profile을 준비한다. 기본 포트는 Logs 9428, Metrics 8428, OTLP 4318이며 모두 loopback으로 제한한다. Docker bridge를 사용하며 host 공개 포트만 loopback에 제한한다. WSL 앱→Collector는 공개 localhost, Metrics→WSL 앱은 컨테이너의 host.docker.internal 주소를 사용하고 내부 수집·MCP는 service DNS로 연결한다. `victorialogs-local-setup` 스킬이 기존 Spring 개발 profile에 OTel SDK/appender 또는 외부 Java agent와 개발용 Actuator/Prometheus registry를 연결한다. production artifact에는 개발 의존성을 넣지 않는다. 진단 v1 schema·오프라인 검사와 workspace별 구현/테스트 메모리 지침도 배포한다. 데이터와 queue는 원본 프로젝트 session 내부에 보존하며 setup 자체는 서버를 시작하지 않는다. [배포 안내](.harness/skills/operations/victorialogs-local-setup/assets/README.md)를 따른다.
 
 
 설치되는 핵심 런타임은 다음과 같다.
@@ -403,13 +371,15 @@ Claude Code provider 코드(adapter, orchestrator launcher·시작 hook, hook �
 ```text
 .agents/skills/*                 Codex skill 사본
 .codex/agents/*                  Harness agent profile
-.codex/workflows/*               workflow 정의
-.codex/schemas/*                 workflow schema
-.codex/scripts/*                 workspace 및 lifecycle script
+.harness/workflows/*               workflow 정의
+.harness/schemas/*               단계 실행 입력·출력 스키마
+.harness/scripts/*                 workspace 및 lifecycle script
 .codex/harness-lock.json         설치 기준선과 파일 hash
 ```
 
 필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.harness/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
+
+`.codex/scripts/`에 설치된 Harness를 갱신하면 공용 스크립트와 호출 경로가 `.harness/scripts/`로 옮겨진다. `update`는 lock에 등록된 이전 스크립트와 로컬 수정을 기본적으로 백업한 뒤 이전 파일을 제거하며, Claude Code의 프로젝트 훅도 갱신한다. Codex에서는 `$setup`으로 사용자 훅을 갱신하고 `/hooks`에서 다시 신뢰한다.
 
 ### 업데이트
 
@@ -473,8 +443,8 @@ git rm --cached .codex/agents/<managed-profile>.toml
 agent 없이 실행 기록만 읽는 읽기 전용 명령이다. 작업 worktree(또는 프로젝트) 디렉터리에서 실행한다.
 
 ```bash
-node .codex/scripts/harness-progress.mjs            # 한 번 출력
-node .codex/scripts/harness-progress.mjs --watch    # 3초마다 갱신 (--watch 5 처럼 초 지정)
+node .harness/scripts/harness-progress.mjs            # 한 번 출력
+node .harness/scripts/harness-progress.mjs --watch    # 3초마다 갱신 (--watch 5 처럼 초 지정)
 ```
 
 단계별 상태·경과 시간·회차·대기 사유를 보여 주고, 실행 중인 stage 아래에 하위 agent(reviewer)와 그 stage agent의 마지막 명령·메시지를 한 줄로 보여 주며(Codex 대화 기록을 읽음), `running`인데 실행기 프로세스가 없으면 "정지됨"으로 표시한다. 기록된 단계만 집계하므로 전체 진행률(%)은 계산하지 않는다.

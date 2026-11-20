@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+import { inspectWorkspace } from "../src/eval/workspace-preflight.mjs";
+
+
+async function runWorkspacePreflightCli(argv = process.argv.slice(2), cwd = process.cwd()) {
+  const options = { workspaceRoot: null, json: false, forImplementation: false, deferTrackerSync: false, forE2e: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--workspace-root" && argv[index + 1]) options.workspaceRoot = argv[++index];
+    else if (token === "--json") options.json = true;
+    else if (token === "--for-implementation") options.forImplementation = true;
+    else if (token === "--defer-tracker-sync") options.deferTrackerSync = true;
+    else if (token === "--for-e2e") options.forE2e = true;
+    else throw new Error(`Unknown or incomplete argument: ${token}`);
+  }
+  if (!options.workspaceRoot || (options.deferTrackerSync && options.forImplementation) || (options.forE2e && (options.deferTrackerSync || options.forImplementation))) throw new Error("Usage: harness-workspace-preflight.mjs --workspace-root <absolute-workspace-root> [--for-implementation | --defer-tracker-sync | --for-e2e] [--json]");
+  const result = await inspectWorkspace({ workspaceRoot: options.workspaceRoot, cwd });
+  if (result.valid) result.tracker_sync = options.deferTrackerSync
+    ? { status: "deferred", reason: "to_ticket_batch_publish" }
+    : { status: "not_required", reason: options.forE2e ? "e2e_workspace_integrity_only" : "workspace_integrity_only" };
+  if (result.valid && options.forImplementation) {
+    const installed = new URL('../src/workflow/project-readiness.mjs', import.meta.url);
+    const { inspectProjectReadiness } = await import(installed.href);
+    result.project_readiness = await inspectProjectReadiness({ workspace_root: result.workspace_root, deferContractSync: true });
+    if (result.project_readiness.contract_sync?.status === "deferred") result.contract_sync = result.project_readiness.contract_sync;
+    if (result.project_readiness.status !== 'pass') { result.valid = false; result.reason = result.project_readiness.reason; }
+  }
+  if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+  else process.stdout.write(`workspace ${result.valid ? "ready" : "blocked"}: ${JSON.stringify(result)}\n`);
+  if (!result.valid) process.exitCode = 1;
+  return result;
+}
+
+
+try {
+  await runWorkspacePreflightCli();
+} catch (error) {
+  process.stderr.write(`${error.message}\n`);
+  process.exitCode = 1;
+}

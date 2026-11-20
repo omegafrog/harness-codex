@@ -89,7 +89,7 @@ test('installed consumer uses local tracker and retires managed Beads assets wit
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /app\.txt/);
     assert.match(status, /docs\/plans\/set\/P1\.md/);
-    assert.doesNotMatch(status, /\.codex\/internal-skills/);
+    assert.doesNotMatch(status, /\.harness\/skills/);
     await assert.rejects(readFile(join(root, '.codex/internal-skills/beads/GUIDE.md')), { code: 'ENOENT' });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

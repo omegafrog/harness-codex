@@ -12,8 +12,8 @@ P0 Behavioral Eval에는 실제 Codex와 실제 harness를 실행하고, case별
 현재 Node package 안에 얇은 `harness-eval` CLI와 내부 eval modules를 둔다.
 
 ```text
-bin/harness-eval.mjs
-src/eval/
+.harness/cli/harness-eval.mjs
+.harness/src/eval/
   runner.mjs
   case-loader.mjs
   case-workspace.mjs
@@ -62,7 +62,7 @@ environment:
 
 ## Consequences
 
-- `node bin/harness-eval.mjs run --suite p0`로 고정된 실행 경계를 제공한다.
+- `node .harness/cli/harness-eval.mjs run --suite p0`로 고정된 실행 경계를 제공한다.
 - case lifecycle, safety boundary, recording, timeout 분류, 결과 집계를 한 곳에서 검증할 수 있다.
 - 별도 orchestration service나 Python runtime 재구축은 하지 않는다.
 - 기존 Node package 구조와 새 `src/eval/` 경계 사이의 module contract를 명확히 해야 한다.

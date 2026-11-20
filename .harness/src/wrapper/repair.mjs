@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { inspectPlanSet } from '../workflow/plan-review.mjs';
 import { sessionOutputPath } from '../workflow/session-output.mjs';
 import { currentProjectAgentPath } from '../workflow/project-agent-paths.mjs';
+import { currentInternalSkillAssetPath } from '../workflow/skill-declaration.mjs';
 
 const REPAIRABLE_KINDS = new Set([
   "implementation_defect",
@@ -30,16 +31,16 @@ const SCOPE_DECISION_KINDS = new Set([
 
 const REMOVE_DIRECTIVE = "remove_unrequested_behavior";
 const MIN_BASIS_QUOTE_LENGTH = 6;
-const BASIS_SOURCES = new Set(["product_spec", "architecture_spec", "canonical_plan", "repository_standard"]);
+const BASIS_SOURCES = new Set(["requirements", "tactical_design", "product_spec", "architecture_spec", "canonical_plan", "repository_standard"]);
 const FAST_ANSWER_SECONDS = 10;
-const INTENT_REF = /^(?:INT-[A-Z0-9-]+|BR-\d+|BASELINE-\d+)$/;
-const BASELINE_PATH = ".codex/internal-skills/code-review/references/baseline.md";
+const INTENT_REF = /^(?:INT-[A-Z0-9-]+|BR-\d+|ACT-\d+|SD-\d+|BIZ-\d+|SC-\d+|INV-\d+|EX-\d+|AC-\d+|HS-\d+|AS-\d+|CON-\d+|BASELINE-\d+)$/;
+const BASELINE_PATH = ".harness/skills/quality/code-review/references/baseline.md";
 const REPOSITORY_STANDARD_PATHS = [
   BASELINE_PATH,
   ".codex/repository-conventions.md",
-  ".codex/internal-skills/code-review/references/default-rules.md",
-  ".codex/internal-skills/testing-guidance/GUIDE.md",
-  ".codex/internal-skills/ddd-design/",
+  ".harness/skills/quality/code-review/references/default-rules.md",
+  ".harness/skills/operations/testing-guidance/GUIDE.md",
+  ".harness/skills/requirements/bounded-context/",
   ".harness/agents/",
   "docs/architecture/",
   "docs/contracts/",
@@ -202,20 +203,28 @@ export function buildScopeDecisionQuestions(findings = []) {
 }
 
 function validReviewInput(input, implementationCommitSha, expected = null) {
+  const requirementsPath = input?.requirements_path || input?.product_spec_path;
+  const tacticalDesignPath = input?.tactical_design_path || input?.architecture_spec_path;
+  const expectedRequirementsPath = expected?.requirements_path || expected?.product_spec_path;
+  const expectedTacticalDesignPath = expected?.tactical_design_path || expected?.architecture_spec_path;
+  const designPaths = input?.design_paths || [requirementsPath, tacticalDesignPath];
+  const expectedDesignPaths = expected?.design_paths || [expectedRequirementsPath, expectedTacticalDesignPath];
   if (!input || typeof input !== "object" || typeof input.repository !== "string" || !input.repository
     || typeof input.fixed_point !== "string" || !input.fixed_point
     || input.implementation_commit_sha !== implementationCommitSha
     || typeof input.diff !== "string" || !input.diff.trim()
     || !Array.isArray(input.commit_list) || !input.commit_list.includes(input.fixed_point) || !input.commit_list.includes(implementationCommitSha)
     || !input.diff_range || input.diff_range.from !== input.fixed_point || input.diff_range.to !== implementationCommitSha
-    || typeof input.product_spec_path !== "string" || !input.product_spec_path
-    || typeof input.architecture_spec_path !== "string" || !input.architecture_spec_path) return false;
+    || typeof requirementsPath !== "string" || !requirementsPath
+    || typeof tacticalDesignPath !== "string" || !tacticalDesignPath
+    || !Array.isArray(designPaths) || designPaths.some((path) => typeof path !== 'string' || !path || path.startsWith('/') || path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'))) return false;
   if ((input.plan_set_id || input.canonical_plan) && (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input.plan_set_id || '') || !/^[a-f0-9]{64}$/.test(input.planning_snapshot_sha256 || ''))) return false;
   if (expected && (input.repository !== expected.repository
     || input.fixed_point !== expected.fixed_point
     || input.implementation_commit_sha !== expected.implementation_commit_sha
-    || input.product_spec_path !== expected.product_spec_path
-    || input.architecture_spec_path !== expected.architecture_spec_path
+    || requirementsPath !== expectedRequirementsPath
+    || tacticalDesignPath !== expectedTacticalDesignPath
+    || JSON.stringify(designPaths) !== JSON.stringify(expectedDesignPaths)
     || input.diff !== expected.diff
     || JSON.stringify(input.commit_list) !== JSON.stringify(expected.commit_list)
     || input.plan_set_id !== expected.plan_set_id || input.planning_snapshot_sha256 !== expected.planning_snapshot_sha256
@@ -353,10 +362,10 @@ async function answeredImmediately(root, decision) {
 }
 
 function basisPath(reviewInput, basis) {
-  if (basis.source === "product_spec") return reviewInput.product_spec_path;
-  if (basis.source === "architecture_spec") return reviewInput.architecture_spec_path;
+  if (basis.source === "requirements" || basis.source === "product_spec") return reviewInput.requirements_path || reviewInput.product_spec_path;
+  if (basis.source === "tactical_design" || basis.source === "architecture_spec") return reviewInput.tactical_design_path || reviewInput.architecture_spec_path;
   if (basis.source === "canonical_plan") return reviewInput.canonical_plan?.reference || null;
-  const path = typeof basis.path === "string" ? currentProjectAgentPath(basis.path) : "";
+  const path = typeof basis.path === "string" ? currentInternalSkillAssetPath(currentProjectAgentPath(basis.path)) : "";
   const safe = path && !path.startsWith("/") && !path.split(/[\\/]/).includes("..");
   return safe && REPOSITORY_STANDARD_PATHS.some((allowed) => allowed.endsWith("/") ? path.startsWith(allowed) : path === allowed) ? path : null;
 }
@@ -373,7 +382,11 @@ async function unverifiedFindingBasis(root, reviewInput, reviews) {
       if (!REPAIRABLE_KINDS.has(finding.kind) || !hasSpecBasis(finding)) continue;
       const path = basisPath(reviewInput, finding.basis);
       const text = path ? await readFile(resolve(root, path), "utf8").catch(() => "") : "";
-      const intentPath = finding.intent_ref.startsWith("BASELINE-") ? BASELINE_PATH : reviewInput.product_spec_path;
+      const intentPath = finding.intent_ref.startsWith("BASELINE-")
+        ? BASELINE_PATH
+        : /^(?:AS|CON)-/.test(finding.intent_ref)
+          ? (reviewInput.tactical_design_path || reviewInput.architecture_spec_path)
+          : (reviewInput.requirements_path || reviewInput.product_spec_path);
       const intentText = await readFile(resolve(root, intentPath), "utf8").catch(() => "");
       if (!compact(text).includes(compact(finding.basis.quote)) || !new RegExp(`\\b${finding.intent_ref}\\b`).test(intentText)) unverified.add(`${review.role}:${index}`);
     }

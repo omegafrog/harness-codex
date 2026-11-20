@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { readClaim, readSource } from '../knowledge/registry.mjs';
 import { readContextDesign, sections } from './domain-model-gate.mjs';
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, PRE_SPEC_STAGES, TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
@@ -56,6 +57,47 @@ const TACTICAL_IMPLEMENTATION_DOCUMENTS = {
   'tactical-api': (id) => [`docs/implementation/${id}/api.md`],
   'tactical-data': (id) => [`docs/implementation/${id}/data.md`],
 };
+const DECISION_EVIDENCE_STAGES = new Set([...PRE_SPEC_STAGES, ...Object.keys(TACTICAL_IMPLEMENTATION_DOCUMENTS)]);
+const KNOWLEDGE_ARTIFACT_PATHS = new Map([
+  ['knowledge_source', /^knowledge\/sources\/([A-Za-z0-9][A-Za-z0-9._-]*)\.yaml$/],
+  ['knowledge_claim', /^knowledge\/claims\/([A-Za-z0-9][A-Za-z0-9._-]*)\.yaml$/],
+]);
+
+async function decisionEvidencePaths(root, artifacts) {
+  const sources = new Set();
+  const claims = new Set();
+  for (const { base, kind, path } of artifacts) {
+    const pattern = KNOWLEDGE_ARTIFACT_PATHS.get(kind);
+    if (base !== 'workspace' || !pattern) continue;
+    const match = typeof path === 'string' && pattern.exec(path);
+    if (!match || match[0] !== path) throw new Error(`Invalid ${kind} artifact path: ${path}`);
+    (kind === 'knowledge_source' ? sources : claims).add(match[1]);
+  }
+  const paths = [
+    ...[...sources].map((id) => `knowledge/sources/${id}.yaml`),
+    ...[...claims].map((id) => `knowledge/claims/${id}.yaml`),
+  ];
+  if (!paths.length) return paths;
+  if (await git(root, 'diff', '--cached', '--no-renames', '--name-only', '--', ...paths)) {
+    throw new Error('Decision evidence paths already have staged changes');
+  }
+  const ignored = (await git(root, 'status', '--porcelain', '-z', '--ignored', '--untracked-files=all', '--', ...paths))
+    .split('\0').find((entry) => entry.startsWith('!! '));
+  if (ignored) throw new Error(`Decision evidence path is ignored by Git: ${ignored.slice(3)}`);
+
+  for (const sourceId of sources) await readSource({ root, sourceId });
+  for (const claimId of claims) {
+    const claim = await readClaim({ root, claimId });
+    if (sources.has(claim.source_id)) continue;
+    const sourcePath = `knowledge/sources/${claim.source_id}.yaml`;
+    const committed = /^(?:100644|100755) blob ([a-f0-9]+)\t/.exec(await git(root, 'ls-tree', 'HEAD', '--', sourcePath));
+    if (!committed || committed[1] !== await git(root, 'hash-object', '--', sourcePath)) {
+      throw new Error(`Claim ${claimId} requires ${sourcePath} in HEAD or as a knowledge_source artifact in the same commit`);
+    }
+  }
+  return paths;
+}
+
 const stageDocuments = (skill, id) => TACTICAL_IMPLEMENTATION_DOCUMENTS[skill]?.(id) || [`docs/specs/${id}`, ...(PROJECT_DOCUMENTS[skill] || [])];
 const WORKFLOW_DOCUMENTS = {
   ...Object.fromEntries(PRE_SPEC_STAGES.map((skill) => [skill, (id) => stageDocuments(skill, id)])),
@@ -137,15 +179,22 @@ export async function commitWorkflowDocuments({ root, input, rawPath, domainPath
   // committed, so the tree is clean for the restart that reopens the earlier stage and the rule survives it.
   const tactical = TACTICAL_DESIGN_STAGES.includes(input.skill);
   const deepening = tactical && envelope.status === 'blocked' && envelope.code === 'DEPENDENCY_INCOMPLETE';
-  if (envelope.status !== 'completed' && !deepening) return null;
+  const decisionStage = DECISION_EVIDENCE_STAGES.has(input.skill);
+  const decisionQuestion = decisionStage && envelope.status === 'action_required' && envelope.code === 'USER_DECISION_REQUIRED';
+  if (envelope.status !== 'completed' && !deepening && !decisionQuestion) return null;
   // The rename the runner made before this stage ran is part of the same clean-tree guarantee: the restart needs it committed.
   const renamed = deepening && await legacyRenamePending(root, planSetId) ? tacticalDesignDocuments(planSetId) : [];
   const requirements = `docs/specs/${planSetId}/requirements.md`;
-  const artifacts = new Set((envelope.result?.artifacts || []).filter((item) => item.base === 'workspace' && typeof item.path === 'string').map((item) => item.path));
-  const paths = (deepening ? [requirements, ...renamed]
+  const reportedArtifacts = envelope.result?.artifacts || [];
+  const artifacts = new Set(reportedArtifacts.filter((item) => item.base === 'workspace' && typeof item.path === 'string').map((item) => item.path));
+  const evidencePaths = !deepening && decisionStage ? await decisionEvidencePaths(root, reportedArtifacts) : [];
+  // A question may cite registry entries before the user settles the decision. Only the registry entries are ready to commit.
+  if (decisionQuestion && !evidencePaths.length) return null;
+  const syncPaths = decisionQuestion ? [] : domainPaths;
+  const paths = (decisionQuestion ? [] : deepening ? [requirements, ...renamed]
     : tactical ? [requirements, ...tacticalDesignDocuments(planSetId), ...PROJECT_DOCUMENTS[input.skill]]
       : owned(planSetId)).filter((path) => !LISTED_PROJECT_DOCUMENTS[input.skill]?.includes(path) || artifacts.has(path));
-  if (tactical && !deepening) {
+  if (tactical && envelope.status === 'completed') {
     for (const path of artifacts) {
       if (!decisionDocument.test(path) && !(input.skill === 'aggregate-design' && isTacticalClassDiagram(path, planSetId))) continue;
       await assertWorkspaceTarget(root, path);
@@ -153,10 +202,10 @@ export async function commitWorkflowDocuments({ root, input, rawPath, domainPath
       paths.push(path);
     }
   }
-  if (domainPaths.length && await git(root, 'diff', '--cached', '--name-only', '--', ...domainPaths)) {
+  if (syncPaths.length && await git(root, 'diff', '--cached', '--name-only', '--', ...syncPaths)) {
     throw new Error('Domain sync paths already have staged changes');
   }
-  paths.push(...domainPaths);
+  paths.push(...syncPaths, ...evidencePaths);
   const changed = (await git(root, 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths)).split('\0').filter(Boolean);
   if (!changed.length) return null;
   // `present` is staged as the working tree has it. A document that already left both the working tree and the index (the
@@ -172,7 +221,7 @@ export async function commitWorkflowDocuments({ root, input, rawPath, domainPath
     // A pathspec commit takes only these documents; anything else in the index stays staged for its owner.
     await git(root, 'commit', '-m', `${input.skill}: ${planSetId}`, '--', ...present, ...departed);
   } catch (error) {
-    if (domainPaths.length) await git(root, 'reset', '-q', 'HEAD', '--', ...domainPaths);
+    if (syncPaths.length || evidencePaths.length) await git(root, 'reset', '-q', 'HEAD', '--', ...syncPaths, ...evidencePaths);
     throw error;
   }
   return git(root, 'rev-parse', 'HEAD');

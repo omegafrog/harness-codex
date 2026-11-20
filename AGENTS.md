@@ -9,9 +9,9 @@ Node.js 기반 Codex Harness의 ChangeSet/use-case workflow 소스 저장소다.
 
 ## 작업별 진입점
 
-- Workflow 조율은 [coordination](.codex/skills/orchestrator/references/coordination.md), 각 단계 실행은 배정된 GUIDE를 따른다.
-- 새 page/view/app shell과 대규모 UI/UX 변경은 독립 [frontend-design workflow](.codex/workflows/frontend-design.yaml)와 [GUIDE](.codex/internal-skills/frontend-design/GUIDE.md)를 사용한다. `implement`·`implement-wrapper`·`code-review`·`e2e-test`의 하위 단계로 실행하지 않는다.
-- 실제 서버·인프라를 띄우는 사용자 흐름 E2E는 [e2e-test GUIDE](.codex/internal-skills/e2e-test/GUIDE.md)와 `e2e_test_runner`를 사용한다. 소비자 계산기 시나리오, 일반 검증 CLI와 서버 설정은 [EXEC](.harness/agents/EXEC.md)를 따른다.
+- Workflow 조율은 [coordination](.agents/skills/orchestrator/references/coordination.md), 각 단계 실행은 배정된 GUIDE를 따른다.
+- 새 page/view/app shell과 대규모 UI/UX 변경은 독립 [frontend-design workflow](.harness/workflows/frontend-design.yaml)와 [GUIDE](.harness/skills/delivery/frontend-design/GUIDE.md)를 사용한다. `implement`·`implement-wrapper`·`code-review`·`e2e-test`의 하위 단계로 실행하지 않는다.
+- 실제 서버·인프라를 띄우는 사용자 흐름 E2E는 [e2e-test GUIDE](.harness/skills/quality/e2e-test/GUIDE.md)와 `e2e_test_runner`를 사용한다. 소비자 계산기 시나리오, 일반 검증 CLI와 서버 설정은 [EXEC](.harness/agents/EXEC.md)를 따른다.
 - GitHub Issues 사용법은 [issue-tracker](.harness/agents/issue-tracker.md), 상태 전이는 [plan-status](.harness/agents/plan-status.md)를 따른다.
 
 ## 프로젝트 기준

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { AGENT_TIERS, tierSettingKeys } from '../.harness/src/workflow/agent-config.mjs';
 import { resolveSkillBinding } from '../.harness/src/workflow/skill-execution.mjs';
-import { listDeclaredSkills, parseSkillDeclaration, readSkillDeclaration, stripSkillDeclaration } from '../.harness/src/workflow/skill-declaration.mjs';
+import { internalSkillAssetPath, listDeclaredSkills, parseSkillDeclaration, readSkillDeclaration, stripSkillDeclaration } from '../.harness/src/workflow/skill-declaration.mjs';
 import { loadNamedWorkflow, loadWorkflowText } from '../.harness/src/workflow/loader.mjs';
 import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
@@ -43,12 +43,12 @@ tracker:
     directory: docs/plans
 `;
 // Every skill the retired skill-execution/bindings.json registered and that still exists; each now declares its tier in its own
-// document. spec-me, architecture-spec and architecture-review were registered too and have since been removed.
+// document. spec-me, architecture-spec, architecture-review, codebase-design, ddd-design and domain-modeling were registered too and have since been removed/merged.
 const FORMER_REGISTRY = [
-  'attention-span', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
-  'diagnosing-bugs', 'domain-modeling', 'e2e-test', 'eli5', 'evaluate-harness', 'event-storming', 'frontend-design', 'frontend-figma', 'frontend-implement',
-  'frontend-visual-review', 'gh-open-pr', 'grill-with-docs', 'grilling', 'harness-maintenance', 'harness-recover', 'implement', 'implement-wrapper',
-  'knowledge-harvest', 'maintain-verification', 'plan-review', 'plantuml-diagrams', 'product-spec', 'session-worktree', 'setup', 'spec-review',
+  'code-research', 'code-review', 'correct',
+  'diagnosing-bugs', 'e2e-test', 'eli5', 'evaluate-harness', 'event-storming', 'frontend-design', 'frontend-figma', 'frontend-implement',
+  'frontend-visual-review', 'gh-open-pr', 'grill-with-docs', 'grilling', 'harness-maintenance', 'harness-recover',
+  'knowledge-harvest', 'maintain-verification', 'plan-review', 'plantuml-diagrams', 'session-worktree', 'setup', 'spec-review',
   'sync-contracts', 'to-ticket', 'tracker-publish', 'victorialogs-local-setup', 'workflow-compose', 'worktree-create',
 ];
 
@@ -86,7 +86,7 @@ async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skill
   const lockPath = join(root, '.codex/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   for (const path of Object.keys(lock.files)) {
-    if (!/(^\.codex\/internal-skills\/[^/]+\/GUIDE\.md|^\.(agents|claude)\/skills\/[^/]+\/SKILL\.md)$/.test(path)) continue;
+    if (!/(^\.harness\/skills\/(?:[^/]+\/)+GUIDE\.md|^\.(agents|claude)\/skills\/[^/]+\/SKILL\.md)$/.test(path)) continue;
     const stripped = stripSkillDeclaration(await readFile(join(root, path), 'utf8'));
     await writeFile(join(root, path), stripped);
     lock.files[path].installed_sha256 = lock.files[path].upstream_sha256 = sha256(stripped);
@@ -106,7 +106,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   }
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'orchestrator' })).main_session, true);
   // The tiers carried over from the registry, with its `low` renamed to the setup tier `low_performance`.
-  const expected = { 'plantuml-diagrams': 'low_performance', 'product-spec': 'low_performance', 'context-boundary': 'high_performance', implement: 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
+  const expected = { 'plantuml-diagrams': 'low_performance', 'context-boundary': 'high_performance', 'tactical-code': 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
   for (const [skill, tier] of Object.entries(expected)) assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   const declared = (await listDeclaredSkills(sourceRoot)).filter((item) => !item.main_session).map((item) => item.skill);
   assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'a skill document declares a tier that neither the retired registry nor the later additions list, or the reverse');
@@ -200,17 +200,17 @@ test('a workflow stage may override the tier only with one of setup\'s four name
   const root = await fixture({ light: guide('low_performance') });
   try {
     await mkdir(join(root, '.codex/agents'), { recursive: true });
-    await mkdir(join(root, '.codex/workflows'), { recursive: true });
+    await mkdir(join(root, '.harness/workflows'), { recursive: true });
     await writeFile(join(root, '.codex/agents/r.toml'), 'name = "r"\n');
-    await writeFile(join(root, '.codex/workflows/tiers.yaml'), stage('execution'));
+    await writeFile(join(root, '.harness/workflows/tiers.yaml'), stage('execution'));
     assert.equal((await loadNamedWorkflow('tiers', { root })).stages[0].model_tier, 'execution');
     const binding = await resolveSkillBinding({ root, skill: 'light', workflow: 'tiers', stage: 'only' });
     assert.deepEqual([binding.model_tier, binding.model, binding.reasoning_effort], ['execution', 'codex-execution', 'low']);
-    await writeFile(join(root, '.codex/workflows/tiers.yaml'), stage(null));
+    await writeFile(join(root, '.harness/workflows/tiers.yaml'), stage(null));
     assert.equal((await resolveSkillBinding({ root, skill: 'light', workflow: 'tiers', stage: 'only' })).model_tier, 'low_performance');
   } finally { await rm(root, { recursive: true, force: true }); }
-  for (const name of await readdir(join(sourceRoot, '.codex/workflows'))) {
-    assert.doesNotMatch(await readFile(join(sourceRoot, '.codex/workflows', name), 'utf8'), /model_tier: low$/m, `${name} still uses the retired tier name`);
+  for (const name of await readdir(join(sourceRoot, '.harness/workflows'))) {
+    assert.doesNotMatch(await readFile(join(sourceRoot, '.harness/workflows', name), 'utf8'), /model_tier: low$/m, `${name} still uses the retired tier name`);
   }
 });
 
@@ -242,14 +242,14 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
       else if (/\.(mjs|md|toml|json|yaml)$/.test(entry.name) && (await readFile(join(sourceRoot, path), 'utf8')).includes('subagent_binding')) offenders.push(path);
     }
   };
-  for (const directory of ['.harness', '.codex', '.claude', 'bin']) await walk(directory);
+  for (const directory of ['.harness', '.codex', '.claude', '.agents']) await walk(directory);
   assert.deepEqual(offenders.filter((path) => path !== '.codex/harness-lock.json'), ['.harness/schemas/input.schema.json']);
   const schema = JSON.parse(await readFile(join(sourceRoot, '.harness/schemas/input.schema.json'), 'utf8'));
   const retired = schema.properties.context.properties.subagent_binding;
   assert.match(retired.description, /Retired: no runner writes this any more/);
   assert.ok(!(schema.properties.context.required || []).includes('subagent_binding'), 'old inputs that carry it stay valid, new ones need not');
   // The diagram launch rule asks the binding command instead.
-  for (const path of ['.codex/internal-skills/plantuml-diagrams/GUIDE.md']) {
+  for (const path of ['.harness/skills/quality/plantuml-diagrams/GUIDE.md']) {
     const text = await readFile(join(sourceRoot, path), 'utf8');
     assert.match(text, /harness-skill-execution\.mjs binding --root <workspace_root> --skill /, path);
     assert.match(text, /(실패하면 멈추고 부모 모델을 상속하지 않는다|never inherit the parent model)/, path);
@@ -259,18 +259,18 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
 test('installed consumer: the binding command returns setup\'s values for a sub-agent skill and refuses the main-session skill', async () => {
   const { root } = await install();
   try {
-    const binding = (skill) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
-    for (const skill of ['plantuml-diagrams', 'product-spec']) {
+    const binding = (skill) => spawnSync(process.execPath, [join(root, '.harness/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
+    for (const skill of ['plantuml-diagrams']) {
       const result = binding(skill);
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(result.stdout), { skill, provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });
     }
-    assert.equal(JSON.parse(binding('implement').stdout).model, 'codex-implementation');
+    assert.equal(JSON.parse(binding('tactical-code').stdout).model, 'codex-implementation');
     const main = binding('orchestrator');
     assert.notEqual(main.status, 0);
     assert.match(main.stderr, /orchestrator runs in the main session and cannot be bound as a subagent/);
     // A skill whose declaration is gone stops the caller instead of falling back to a default model.
-    await writeFile(join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md'), '# no declaration\n');
+    await writeFile(join(root, '.harness/skills/quality/plantuml-diagrams/GUIDE.md'), '# no declaration\n');
     const missing = binding('plantuml-diagrams');
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /Skill plantuml-diagrams declares no model_tier/);
@@ -298,7 +298,7 @@ test('installed consumer: a fresh install has no bindings.json, resolves from de
     assert.match(status, /app\.js/);
     assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
-    git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
+    git('check-ignore', '-v', '.harness/skills/quality/plantuml-diagrams/GUIDE.md');
     git('check-ignore', '-v', '.agents/skills/eli5/SKILL.md');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -331,7 +331,7 @@ test('installed consumer: an update of a consumer that still has bindings.json r
     assert.match(status, /app\.js/);
     assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
-    git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
+    git('check-ignore', '-v', '.harness/skills/quality/plantuml-diagrams/GUIDE.md');
     // A second update has nothing left to retire.
     assert.equal((await updateProject({ sourceRoot, targetRoot: root })).retired.includes(BINDINGS), false);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -360,12 +360,12 @@ test('installed consumer: an update removes bindings.json even when it was edite
 test('Doctor reports a malformed declaration and a workflow stage skill that declares nothing', async () => {
   const { root } = await install();
   try {
-    const ownDoc = (skill) => join(root, '.codex/internal-skills', skill, 'GUIDE.md');
-    await writeFile(ownDoc('implement'), (await readFile(ownDoc('implement'), 'utf8')).replace('model_tier: implementation', 'model_tier: low'));
+    const ownDoc = (skill) => join(root, internalSkillAssetPath(skill));
+    await writeFile(ownDoc('tactical-code'), (await readFile(ownDoc('tactical-code'), 'utf8')).replace('model_tier: implementation', 'model_tier: low'));
     await writeFile(ownDoc('tactical-technology'), stripSkillDeclaration(await readFile(ownDoc('tactical-technology'), 'utf8')));
     const doctor = await runDoctor({ root, sourceRoot });
     const found = (code) => doctor.diagnostics.filter((item) => item.code === code).map((item) => item.path);
-    assert.deepEqual(found('skill_model_tier_invalid'), [ownDoc('implement')]);
+    assert.deepEqual(found('skill_model_tier_invalid'), [ownDoc('tactical-code')]);
     assert.deepEqual(found('skill_model_tier_missing'), [ownDoc('tactical-technology')]);
     assert.equal(doctor.passed, false);
   } finally { await rm(root, { recursive: true, force: true }); }

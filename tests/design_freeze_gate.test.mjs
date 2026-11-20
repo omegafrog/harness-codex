@@ -1,3 +1,4 @@
+import { internalSkillAssetPath } from '../.harness/src/workflow/skill-declaration.mjs';
 import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +17,7 @@ import { DesignFreezeError, assertDesignFreezeGate, checkDesignFreeze, checkWork
 import { dependencyOwnerErrors, OWNER_REQUIRED_STAGES } from '../.harness/src/workflow/stage-reopen.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const SCRIPT = join(sourceRoot, '.codex/scripts/harness-design-freeze-check.mjs');
+const SCRIPT = join(sourceRoot, '.harness/scripts/harness-design-freeze-check.mjs');
 
 const REQUIREMENTS = `# 요구사항 명세
 
@@ -230,12 +231,12 @@ test('to-ticket never rewinds: it is not an owner-naming stage and a DEPENDENCY_
 
 test('the guidance forbids new scope in every tactical and implementation-design stage', async () => {
   const read = (path) => readFile(join(sourceRoot, path), 'utf8');
-  const shared = await read('.codex/internal-skills/domain-model/references/deepening.md');
+  const shared = await read('.harness/skills/design/domain-model/domain-model/references/deepening.md');
   assert.match(shared, /요구의 범위를 추가하지 않는다\.[\s\S]*범위 추가는 사용자가 요구사항 단계에서 결정한다/);
-  for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.match(await read(`.codex/internal-skills/${stage}/GUIDE.md`), /deepening\.md/, stage);
-  for (const stage of ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) assert.match(await read(`.codex/internal-skills/${stage}/GUIDE.md`), /## 범위 추가 금지[\s\S]*범위 질문/, stage);
-  assert.match(await read('.codex/internal-skills/tactical-api/GUIDE.md'), /`근거` 열[\s\S]*UNTRACED_ITEM/);
-  const toTicket = await read('.codex/internal-skills/to-ticket/GUIDE.md');
+  for (const stage of ['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']) assert.match(await read(internalSkillAssetPath(stage)), /deepening\.md/, stage);
+  for (const stage of ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) assert.match(await read(internalSkillAssetPath(stage)), /## 범위 추가 금지[\s\S]*범위 질문/, stage);
+  assert.match(await read('.harness/skills/design/technical-decisions/tactical-api/GUIDE.md'), /`근거` 열[\s\S]*UNTRACED_ITEM/);
+  const toTicket = await read('.harness/skills/planning/to-ticket/GUIDE.md');
   assert.match(toTicket, /DESIGN_NOT_FROZEN/);
   assert.doesNotMatch(toTicket, /orchestrator then reopens that stage/);
 });
@@ -245,9 +246,9 @@ test('update restores the design-freeze gate of an installed consumer, Doctor re
   const git = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
   const assets = [
     '.harness/src/workflow/design-freeze-gate.mjs',
-    '.codex/scripts/harness-design-freeze-check.mjs',
-    '.codex/internal-skills/tactical-data/GUIDE.md',
-    '.codex/internal-skills/to-ticket/references/split.md',
+    '.harness/scripts/harness-design-freeze-check.mjs',
+    '.harness/skills/design/technical-decisions/tactical-data/GUIDE.md',
+    '.harness/skills/planning/to-ticket/references/split.md',
   ];
   const projectFile = 'docs/contracts/README.md';
   await mkdir(join(primary, 'docs/contracts'), { recursive: true });
@@ -268,11 +269,11 @@ test('update restores the design-freeze gate of an installed consumer, Doctor re
   assert.equal((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(git('status', '--short', '--untracked-files=all').trim(), `?? ${projectFile}`, 'only the project-owned file appears in Git status');
   assert.equal(await readFile(join(primary, projectFile), 'utf8'), '소비 프로젝트 계약\n');
-  for (const stage of ['tactical-api', 'tactical-data']) assert.match(await readFile(join(primary, `.codex/internal-skills/${stage}/GUIDE.md`), 'utf8'), /## 범위 추가 금지/, `the installed ${stage} guide forbids new scope`);
-  assert.match(await readFile(join(primary, '.codex/internal-skills/domain-model/references/deepening.md'), 'utf8'), /요구의 범위를 추가하지 않는다/);
+  for (const stage of ['tactical-api', 'tactical-data']) assert.match(await readFile(join(primary, internalSkillAssetPath(stage)), 'utf8'), /## 범위 추가 금지/, `the installed ${stage} guide forbids new scope`);
+  assert.match(await readFile(join(primary, '.harness/skills/design/domain-model/domain-model/references/deepening.md'), 'utf8'), /요구의 범위를 추가하지 않는다/);
   const cli = (requirements, tacticalDesign, api, data) => {
     const args = ['--requirements', requirements, '--tactical-design', tacticalDesign, '--api', api, '--data', data].map((arg) => arg.startsWith('--') ? arg : join(primary, arg));
-    return spawnSync(process.execPath, [join(primary, '.codex/scripts/harness-design-freeze-check.mjs'), ...args], { cwd: primary, encoding: 'utf8' });
+    return spawnSync(process.execPath, [join(primary, '.harness/scripts/harness-design-freeze-check.mjs'), ...args], { cwd: primary, encoding: 'utf8' });
   };
   const fixture = ['requirements.md', 'tactical-design.md', 'api.md', 'data.md'];
   for (const [index, content] of [REQUIREMENTS, CONTEXT_DESIGN, API(GOOD_ROWS), DATA_WITH_BINDING.replace('src/server.ts의 wireAuth', '-')].entries()) {
@@ -293,7 +294,7 @@ test('installed consumer: tactical-data must complete a binding, and to-ticket o
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const seeded = await state();
   for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
   await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');

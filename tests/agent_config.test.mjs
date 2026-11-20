@@ -63,12 +63,12 @@ test('update migrates flat model keys in an installed project and keeps harness.
     assert.equal(spawnSync('git', ['-C', root, 'check-ignore', '-q', '.harness/harness.yaml']).status, 0, 'harness.yaml stays out of commits');
     await writeFile(resolve(root, 'app.txt'), 'application file');
     assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /app\.txt/);
-    const doctor = spawnSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+    const doctor = spawnSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
     assert.ok(!JSON.parse(doctor.stdout).diagnostics.some((item) => item.code === 'agents_config_flat'));
     // A flat file written after the update is reported.
     await (await import('node:fs/promises')).mkdir(resolve(root, '.harness'), { recursive: true });
     await writeFile(resolve(root, '.harness/harness.yaml'), FLAT);
-    const flat = spawnSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+    const flat = spawnSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
     assert.ok(JSON.parse(flat.stdout).diagnostics.some((item) => item.code === 'agents_config_flat'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -97,7 +97,7 @@ test('install moves a legacy .codex/harness.yaml to the shared location and keep
     await mkdir(resolve(root, '.codex'), { recursive: true });
     await writeFile(resolve(root, '.codex/harness.yaml'), 'tracker:\n  mode: github\nagents:\n  provider: claude-code\n');
     await writeFile(resolve(root, 'app.txt'), 'application file');
-    const run = spawnSync('node', [resolve(sourceRoot, 'bin/harness-install.mjs'), 'install', '--project', root, '--provider', 'claude-code'], { encoding: 'utf8' });
+    const run = spawnSync('node', [resolve(sourceRoot, '.harness/cli/harness-install.mjs'), 'install', '--project', root, '--provider', 'claude-code'], { encoding: 'utf8' });
     assert.match(run.stdout, /Moved \.codex\/harness\.yaml to \.harness\/harness\.yaml/, run.stdout + run.stderr);
     await assert.rejects(access(resolve(root, '.codex/harness.yaml')));
     assert.equal(parseYaml(await readFile(resolve(root, '.harness/harness.yaml'), 'utf8')).agents.provider, 'claude-code');

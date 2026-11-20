@@ -191,10 +191,10 @@ export function buildImplementPrompt({
   }
   const planSetPath = `docs/plans/${planSetId}/plans.md`;
   const ticketId = planReviewRefs?.ticket_id || planSetId;
-  const expectedProductSpecPath = `docs/specs/${ticketId}/product-spec.md`;
-  const expectedArchitectureSpecPath = `docs/specs/${ticketId}/architecture-spec.md`;
-  const approvedProductPath = planReviewRefs?.product_spec_path || expectedProductSpecPath;
-  const approvedArchitecturePath = planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const expectedProductSpecPath = `docs/specs/${ticketId}/requirements.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${ticketId}/tactical-design.md`;
+  const approvedProductPath = planReviewRefs?.requirements_path || planReviewRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = planReviewRefs?.tactical_design_path || planReviewRefs?.architecture_spec_path || expectedArchitectureSpecPath;
   const approvedPlanPath = planReviewRefs?.plan_reference || planSetPath;
   const safePath = (value) => typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
   if (!safePath(approvedProductPath) || !safePath(approvedArchitecturePath) || !safePath(approvedPlanPath)) throw new TypeError("Plan review references must be safe workspace-relative paths");
@@ -205,7 +205,7 @@ export function buildImplementPrompt({
     `Repository: ${repository}`,
     `Active workspace root: ${workspaceRoot || repository}`,
     `workspace_mode: ${workspaceMode}`,
-    `workspace_reference: ${resolve(workspaceRoot || repository, `.codex/internal-skills/session-worktree/references/${workspaceMode}.md`)}`,
+    `workspace_reference: ${resolve(workspaceRoot || repository, `.harness/skills/workflow/session-worktree/references/${workspaceMode}.md`)}`,
     "Read only the selected workspace_reference for workspace preparation, resumption, integration, and cleanup. Pass the same workspace_mode and workspace_reference to reviews and verification; do not load the other mode or the worktree-creation procedure.",
     `Session directory: ${sessionDirectory(workspaceRoot || repository)}`,
     ...(workspaceMode === "parallel" ? [`Parallel worker context: Read ${sessionDirectory(workspaceRoot || repository)}/worktree.json for this worktree's branch and ID.`] : []),
@@ -214,10 +214,9 @@ export function buildImplementPrompt({
     `Execute exactly one plan: ${planId}`,
     `Plan: ${planPath || approvedPlanPath} (split plan: ${planId})`,
     `Plan set: ${planSetPath}`,
-    `Product Spec: ${productSpecPath || approvedProductPath}`,
-    `Architecture Spec: ${architectureSpecPath || approvedArchitecturePath}`,
-    ...(planReviewRefs ? ["Compare the selected plan directly with the Product and Architecture Specs. Write or update only the business-logic unit tests required by the plan's test contract, and run its declared verification command/profile.", "The current complete plan set and its Specs passed an independent plan review; reread the canonical files before editing."] : []),
-    "Implementation contract: .codex/internal-skills/implement/GUIDE.md",
+    `Requirements: ${productSpecPath || approvedProductPath}`,
+    `Tactical design: ${architectureSpecPath || approvedArchitecturePath}`,
+    ...(planReviewRefs ? ["Compare the selected plan directly with requirements.md and tactical-design.md, plus the cited implementation decisions. Write or update only the business-logic unit tests required by the plan's test contract, and run its declared verification command/profile.", "The current complete plan set and its design documents passed an independent plan review; reread the canonical files before editing."] : []),
     `Checkpoint: ${checkpointPath || planRuntimePaths({ root: workspaceRoot || repository, planId }).checkpoint_path}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,
     `Resource facts: ${JSON.stringify(resourceFacts)}`,

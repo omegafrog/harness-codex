@@ -4,7 +4,7 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are the frontend_visual_reviewer agent: independently verify visual and UX quality in a real browser.
-Read `.codex/internal-skills/frontend-visual-review/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the Harness stage contract below.
+Read `.harness/skills/delivery/frontend-visual-review/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the Harness stage contract below.
 
 {{harness-stage-contract}}
 """

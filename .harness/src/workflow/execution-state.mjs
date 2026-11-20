@@ -128,11 +128,32 @@ export async function recordExecutionState({ root, input, binding, status, code 
       if (status === 'running' || typeof beforeTransition !== 'function') throw new Error('Invalid terminal transition preparation');
       await beforeTransition();
     }
+    let planReviewSnapshotSha256;
+    let publicationDraftsSha256;
+    if (status === 'completed' && code === 'OK' && ['to-ticket', 'tracker-publish'].includes(stage)) {
+      const { inspectPlanSet } = await import('./plan-review.mjs');
+      const expectedSnapshotSha256 = stage === 'tracker-publish' ? input.context?.publication_review_snapshot_sha256 : undefined;
+      const review = await inspectPlanSet({ root, planSetId: input.context?.plan_set_id, phase: 'planning', expectedSnapshotSha256 });
+      if (review.status !== 'pass' || (stage === 'tracker-publish' && (!expectedSnapshotSha256 || expectedSnapshotSha256 !== state.stages?.['to-ticket']?.review_snapshot_sha256))) throw new Error(`Stage completion requires the current reviewed plan snapshot: ${review.reason}`);
+      planReviewSnapshotSha256 = review.details.review_snapshot_sha256;
+      const { preparePublicationDrafts, publicationDraftFingerprint } = await import('../tracker/publication.mjs');
+      publicationDraftsSha256 = publicationDraftFingerprint(await preparePublicationDrafts({
+        root,
+        planSetId: input.context.plan_set_id,
+        expectedSnapshotSha256: planReviewSnapshotSha256,
+        expectedDraftsSha256: stage === 'tracker-publish' ? state.stages['to-ticket'].publication_drafts_sha256 : undefined,
+      }));
+    }
     const now = new Date().toISOString();
     let rewindTree;
     if (nativeClaim) {
       const orderViolation = preSpecOrderViolation(state.stages, stage) || tacticalImplementationOrderViolation(state.stages, stage);
       if (orderViolation) throw new Error(orderViolation);
+      if (input.context?.plan_id && ['tactical-code', 'frontend-implementation', 'frontend-visual-review'].includes(stage)) {
+        const { assertDispatchPlanReview } = await import('./plan-review.mjs');
+        await assertDispatchPlanReview({ root, planSetId: input.context.plan_set_id, planId: input.context.plan_id, expectedSnapshotSha256: state.stages?.['tracker-publish']?.review_snapshot_sha256 });
+      }
+      if (stage === 'tracker-publish' && input.context?.publication_review_snapshot_sha256 !== state.stages?.['to-ticket']?.review_snapshot_sha256) throw new Error('Publication approval is stale; prepare the stage again from the completed plan review');
       await assertRequirementsApproval({ root, state, stage, planSetId: input.context?.plan_set_id, approval: input.context?.requirements_approval });
       const revision = input.context?.user_revision && REQUIREMENTS_REVISION_STAGES.includes(stage);
       if (revision) markRequirementsRevision(state, stage, input.context.requirements_revision_from, input.execution_id, now);
@@ -146,6 +167,10 @@ export async function recordExecutionState({ root, input, binding, status, code 
     }
     const priorWorkflowStatus = previous?.prior_workflow_status ?? (input.skill === 'workflow-compose' && state.status !== 'running' ? state.status : null);
     const entry = { ...previous, status, execution_id: input.execution_id, model: binding.model, reasoning_effort: binding.reasoning_effort, code, result_ref, result_session_directory: input.session_directory, reason, updated_at: now };
+    if (planReviewSnapshotSha256) entry.review_snapshot_sha256 = planReviewSnapshotSha256;
+    else if (status === 'running' && previous?.execution_id !== input.execution_id) delete entry.review_snapshot_sha256;
+    if (publicationDraftsSha256) entry.publication_drafts_sha256 = publicationDraftsSha256;
+    else if (status === 'running' && previous?.execution_id !== input.execution_id) delete entry.publication_drafts_sha256;
     if (input.context?.requirements_contract_version === 1) entry.requirements_contract_version = 1;
     if (instruction_delivery) { entry.instruction_delivery = instruction_delivery; if (instruction_delivery.phase) entry.phase = instruction_delivery.phase; }
     if (status === 'running') {

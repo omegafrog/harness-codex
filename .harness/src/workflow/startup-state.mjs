@@ -197,7 +197,7 @@ export function orchestratorInputTarget(observed) {
 export function startupProcedure({ observed, progress, orchestrator, composer }) {
   switch (observed.decision_hint) {
     case 'maintenance_candidate':
-      return 'Follow .codex/internal-skills/harness-maintenance/GUIDE.md in the current checkout.';
+      return 'Follow .harness/skills/operations/harness-maintenance/GUIDE.md in the current checkout.';
     case 'setup_candidate':
       return 'Follow the setup procedure for the current checkout.';
     case 'worktree_required':
@@ -213,7 +213,7 @@ export function startupProcedure({ observed, progress, orchestrator, composer })
         && progress.stages.length === 1 && progress.stages[0].id === WORKTREE_STAGE.WORKFLOW_COMPOSE
         && progress.stages[0].status === 'completed';
       if (firstStage) {
-        return `For a plain continuation of the composed workflow, read ${dispatch}, then run node .codex/scripts/harness-native-stage.mjs launch --stage-id ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS} in the current worktree. Use the returned guide, input and schema paths only to brief the stage worker. A different user request follows the relevant route in the orchestrator skill.`;
+        return `For a plain continuation of the composed workflow, read ${dispatch}, then run node .harness/scripts/harness-native-stage.mjs launch --stage-id ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS} in the current worktree. Use the returned guide, input and schema paths only to brief the stage worker. A different user request follows the relevant route in the orchestrator skill.`;
       }
       return `For workflow resumption, read ${dispatch} and use the current worktree's harness-context.mjs when the next action needs confirmation.`;
     }
