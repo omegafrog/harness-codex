@@ -20,6 +20,39 @@ import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, for
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
 
 const lastJson = (text) => { try { return JSON.parse(String(text || '').trim().split('\n').filter(Boolean).pop()); } catch { return null; } };
+
+async function persistGateRejection({ session, paths, gate, stage, executionId, errors, instruction }) {
+  await assertWorkspaceTarget(session, paths.refs.feedback);
+  let previous = {};
+  try {
+    const file = await open(paths.files.feedback, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || info.nlink !== 1) throw new Error('Stage feedback must be a regular unshared file');
+      previous = JSON.parse(await file.readFile('utf8'));
+    } finally { await file.close(); }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new Error('Stage feedback must contain a JSON object');
+  const rejection = { gate, stage, execution_id: executionId, errors, instruction, rejected_at: new Date().toISOString() };
+  const feedback = { ...previous, gate_rejections: [...(Array.isArray(previous.gate_rejections) ? previous.gate_rejections : []), rejection] };
+  const file = await open(paths.files.feedback, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink !== 1) throw new Error('Stage feedback must be a regular unshared file');
+    await file.truncate(0);
+    await file.writeFile(JSON.stringify(feedback, null, 2) + '\n');
+  } finally { await file.close(); }
+  return feedback;
+}
+
+async function printGateError({ session, paths, gate, stage, executionId, errors, instruction }) {
+  const feedback = await persistGateRejection({ session, paths, gate, stage, executionId, errors, instruction });
+  const retryInput = { feedback_path: paths.files.feedback, feedback, gate_rejection: feedback.gate_rejections.at(-1) };
+  process.stdout.write(`${JSON.stringify(gateErrorResult({ gate, executionId, stage, errors, instruction, outputPath: paths.files.raw, feedbackPath: paths.files.feedback, retryInput }))}\n`);
+}
+
 // A failed child command already printed its explanation as one JSON object: pass it on instead of wrapping it.
 const childFailure = (child, context = {}) => {
   const printed = lastJson(child.stderr);
@@ -293,21 +326,21 @@ try {
     const { evaluateStakeholderAnalysisGate, stakeholderAnalysisFailureInstruction } = await import('../../.harness/src/workflow/stakeholder-analysis-gate.mjs');
     const analysisGate = await evaluateStakeholderAnalysisGate({ root, input, envelope: raw });
     if (analysisGate && !analysisGate.ok) {
-      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate), outputPath: paths.files.raw }))}\n`);
+      await printGateError({ session, paths, gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate) });
       process.exit(1);
     }
     // Check BIZ field shape and, at requirements completion, the rule, exception and acceptance entries.
     const { evaluateRequirementsDocumentGate, requirementsDocumentFailureInstruction } = await import('../../.harness/src/workflow/requirements-document-gate.mjs');
     const documentGate = await evaluateRequirementsDocumentGate({ root, input, envelope: raw });
     if (documentGate && !documentGate.ok) {
-      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'requirements_document_check', executionId: id, stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate), outputPath: paths.files.raw }))}\n`);
+      await printGateError({ session, paths, gate: 'requirements_document_check', executionId: id, stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate) });
       process.exit(1);
     }
     // Check component ownership at each stage and the whole design at context-boundary before committing anything.
     const { evaluateTacticalDesignGate, gateFailureInstruction } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
     const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
     if (gate && !gate.ok) {
-      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate), outputPath: paths.files.raw }))}\n`);
+      await printGateError({ session, paths, gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate) });
       process.exit(1);
     }
     // The last implementation-design stage (tactical-data) is accepted as completed only when the design freezes: nothing in api.md,
@@ -316,7 +349,7 @@ try {
     const { evaluateDesignFreezeGate, freezeFailureInstruction } = await import('../../.harness/src/workflow/design-freeze-gate.mjs');
     const freeze = await evaluateDesignFreezeGate({ root, input, envelope: raw });
     if (freeze && !freeze.ok) {
-      process.stdout.write(`${JSON.stringify(gateErrorResult({ gate: 'design_freeze_check', executionId: id, stage: freeze.stage, errors: freeze.errors, instruction: freezeFailureInstruction(freeze), outputPath: paths.files.raw }))}\n`);
+      await printGateError({ session, paths, gate: 'design_freeze_check', executionId: id, stage: freeze.stage, errors: freeze.errors, instruction: freezeFailureInstruction(freeze) });
       process.exit(1);
     }
     if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['to-ticket', 'sync-contracts'].includes(input.skill)) {

@@ -28,7 +28,7 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 ## 실행과 확인
 
 1. 단계가 정해졌으면 `node .codex/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 사용자가 모델·reasoning effort를 지정하면 [실행 배정](references/dispatch.md#실행-배정)의 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 반환된 profile과 binding으로 fresh native 서브에이전트를 시작한다. `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로를 전달하고 `next.bind`를 실행한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 결과 요약과 참조로 조율한다. 사용자 승인에 필요한 산출물은 해당 승인 절차에서 확인한다.
-2. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. 정상 결과의 `next`를 따르고, `format_error`나 `gate_error`는 같은 작업자에게 돌려준다. `owner_stage`가 앞 단계면 [상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)를 따른다. 상태가 불명확한 실행을 중복으로 시작하지 않는다. 진입 결과에 재개 근거가 더 필요한 경우 `harness-context.mjs`를 한 번 실행한다.
+2. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. 정상 결과의 `next`를 따르고, `format_error`나 `gate_error`는 같은 작업자에게 돌려준다. `gate_error`이면 결과의 `retry_input` 전체와 `feedback_path`를 수정 요청의 다음 입력에 포함하고, 작업자가 피드백 파일을 읽도록 한다. `owner_stage`가 앞 단계면 [상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)를 따른다. 상태가 불명확한 실행을 중복으로 시작하지 않는다. 진입 결과에 재개 근거가 더 필요한 경우 `harness-context.mjs`를 한 번 실행한다.
 3. 오류가 반환한 `why`·`next`·`user_decision`을 사용한다. Harness 소스나 state 파일을 읽지 않고 제공된 실행기 명령으로 확인한다. 다른 worktree의 결과와 이미 처리한 실행을 건너뛴다. 제품 코드·테스트·Spec·계획·통합 계약의 편집과 Git 작업은 소유 stage와 실행기에 맡긴다.
 
 ## 사용자 결정과 완료

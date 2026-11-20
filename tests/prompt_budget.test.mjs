@@ -8,7 +8,7 @@ import { dirname, join, normalize, relative, resolve } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
-import { STAGE_CONTRACT, STAGE_CONTRACT_MARKER } from '../.harness/src/installer/stage-contract.mjs';
+import { STAGE_CONTRACT, STAGE_CONTRACT_MARKER, STAGE_GATE_RETRY_CONTRACT } from '../.harness/src/installer/stage-contract.mjs';
 import { outsideFences } from '../.harness/src/workflow/domain-model-gate.mjs';
 
 const sourceRoot = resolve('.');
@@ -128,6 +128,7 @@ test('every stage agent profile carries the shared stage contract marker, and an
     for (const path of ['.codex/agents/workflow_stage.toml', '.claude/agents/workflow_stage.md', '.codex/agents/spec_reviewer.toml']) {
       const text = await readFile(join(root, path), 'utf8');
       assert.ok(text.includes(STAGE_CONTRACT), `${path} carries the contract`);
+      assert.ok(text.includes(STAGE_GATE_RETRY_CONTRACT), `${path} tells stage agents to read gate rejection feedback`);
       assert.ok(!text.includes(STAGE_CONTRACT_MARKER), `${path} has no marker left`);
       execFileSync('git', ['check-ignore', '-q', path], { cwd: root });
     }

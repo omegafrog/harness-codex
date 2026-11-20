@@ -412,7 +412,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   const rejected = finishStage(boundary);
   assert.equal(rejected.status, 1, rejected.stdout);
   const rejection = JSON.parse(rejected.stdout);
-  assert.deepEqual(Object.keys(rejection), ['status', 'gate', 'execution_id', 'stage', 'errors', 'instruction', 'output_path', 'code', 'why', 'next']);
+  assert.deepEqual(Object.keys(rejection), ['status', 'gate', 'execution_id', 'stage', 'errors', 'instruction', 'output_path', 'feedback_path', 'retry_input', 'code', 'why', 'next']);
   assert.equal(rejection.code, 'GATE_ERROR');
   assert.ok(rejection.next.some((step) => /finish --execution-id /.test(step)), 'the rejection names the finish command to run again');
   assert.equal(rejection.status, 'gate_error');
@@ -420,6 +420,12 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   assert.equal(rejection.stage, 'context-boundary');
   assert.equal(rejection.execution_id, boundary.prepared.input.execution_id);
   assert.equal(rejection.output_path, boundary.started.output_path);
+  assert.equal(rejection.feedback_path, join(dirname(boundary.started.output_path), 'feedback.json'));
+  assert.equal(rejection.retry_input.feedback_path, rejection.feedback_path);
+  assert.deepEqual(rejection.retry_input.gate_rejection.errors, rejection.errors, 'the next-input payload carries the exact rejection');
+  const gateFeedback = JSON.parse(await readFile(rejection.feedback_path, 'utf8'));
+  assert.deepEqual(gateFeedback.gate_rejections, [rejection.retry_input.gate_rejection], 'the exact rejection is persisted for the same stage worker');
+  assert.ok(rejection.next.some((step) => /retry_input as the next input/.test(step)));
   assert.deepEqual(rejection.errors.map((error) => [error.owner_stage, error.code, error.id]), [
     ['aggregate-design', 'DECISION_NO_SOURCE', 'CON-01'],
     ['application-service', 'MULTI_AGGREGATE_TRANSACTION', 'AS-04'],
@@ -440,7 +446,9 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   assertVisibility([' M app.txt', ` M ${tacticalDesign}`], 'after the rejection the document is visible and nothing else changed');
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'ongoing application change\n', 'application changes stay untouched');
   assert.equal(await readFile(join(workspace, tacticalDesign), 'utf8'), everyone, 'the gate does not edit the stage documents');
-  assert.equal(finishStage(boundary).status, 1, 'the same finish rejects again until the output changes');
+  const repeated = finishStage(boundary);
+  assert.equal(repeated.status, 1, 'the same finish rejects again until the output changes');
+  assert.equal(JSON.parse(await readFile(rejection.feedback_path, 'utf8')).gate_rejections.length, 2, 'repeated rejection details accumulate instead of replacing the first correction input');
 
   // The state command cannot record the stage as completed around the gate either.
   const recorded = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', boundary.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });

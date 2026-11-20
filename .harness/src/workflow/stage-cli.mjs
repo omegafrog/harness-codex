@@ -208,7 +208,7 @@ export function formatErrorResult({ executionId, agentId, errors, schemaPath, ou
   };
 }
 
-export function gateErrorResult({ gate, executionId, stage, errors, instruction, outputPath }) {
+export function gateErrorResult({ gate, executionId, stage, errors, instruction, outputPath, feedbackPath, retryInput }) {
   return {
     status: 'gate_error',
     gate,
@@ -217,10 +217,12 @@ export function gateErrorResult({ gate, executionId, stage, errors, instruction,
     errors,
     instruction,
     output_path: outputPath,
+    feedback_path: feedbackPath,
+    retry_input: retryInput,
     code: 'GATE_ERROR',
     why: 'The finished stage was rejected by its gate; nothing was committed or recorded and the stage is still running.',
     next: [
-      'Send errors to the same subagent unchanged. If an error names an earlier owner_stage, the subagent must return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage and result.dependency_gap pointing at that stage instead of editing its section. The orchestrator then reopens that stage itself (finish prints the command); it does not ask the user.',
+      'Use retry_input as the next input to the same subagent. It carries the persisted feedback_path and the exact gate rejection, including errors and instruction. Ask the subagent to read the feedback file and correct only the owned findings. If an error names an earlier owner_stage, the subagent must return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage and result.dependency_gap pointing at that stage instead of editing its section. The orchestrator then reopens that stage itself (finish prints the command); it does not ask the user.',
       `Then run again: ${nativeCommand('finish', executionId)}`,
       'If the subagent cannot fix it after a repeat, report the errors to the user and stop; do not edit documents or record completion yourself.',
     ],
