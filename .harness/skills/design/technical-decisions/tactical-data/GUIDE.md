@@ -42,6 +42,8 @@ model_tier: low_performance
 
 앞선 전술 설계 stage의 산출물이 부족해 진행할 수 없으면 `blocked/DEPENDENCY_INCOMPLETE`로 반환하고 `result.owner_stage`(빈틈을 소유한 가장 앞 stage)와 `result.dependency_gap`(그 stage가 추가하거나 고쳐야 할 내용과 근거)을 반드시 적는다. 실행기는 둘이 없으면 반려하며, orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 이 stage까지 순서대로 다시 진행한다. 업무 결정이 필요하면 이 코드가 아니라 `USER_DECISION_REQUIRED` 질문을 쓴다.
 
+요구사항의 업무 입력값, 유효성·중복 규칙, 보존·삭제 결과가 빠져 저장 모델이나 일관성 선택을 확정할 수 없으면 설계에서 추정하지 않는다. `requirements-fix`를 owner stage로 지정하고 빠진 결정과 영향받는 BIZ/INV/EX/AC 및 근거를 `dependency_gap`에 기록한다. 요구사항을 재확정하고 사용자 승인을 받은 뒤 이 stage까지 다시 검증한다.
+
 ## 공통 도메인 조회
 
 입력의 `domain_context_pack`이 있으면 필요한 후보부터 확인한다. 상세는 `node .harness/scripts/harness-domain.mjs get <ID>...`로 일괄 조회하고 후보가 부족하면 `discover` 또는 `search`로 범위를 넓힌다. 설계에 사용한 공통 정의의 ID를 근거로 남기고 범위는 확정 요구사항을 따른다.

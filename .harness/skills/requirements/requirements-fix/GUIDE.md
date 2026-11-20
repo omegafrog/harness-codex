@@ -16,6 +16,7 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 - The user request (`scope` of the execution input), read verbatim.
 - `docs/specs/<plan-set-id>/requirements.md` and `stakeholder-analysis.md`, resolved with `harness-spec-path.mjs`, and `CONTEXT.md` for the settled terms.
 - The [requirements.md template](references/template.md), which owns the final shape, and the [coverage checklist](references/coverage.md).
+- For included registration/login/authentication actions, apply the checklist's account-decision rows even when the original request only names "registration" or "login"; do not infer form fields or identifier/password rules from conventional defaults.
 - 현행 동작이나 기존 결정과의 충돌을 확인해야 할 때 관련 `docs/contracts/` 계약과 연결 다이어그램을 읽는다.
 
 ## Prohibited

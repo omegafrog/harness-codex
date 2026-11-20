@@ -121,8 +121,14 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(context, /`result\.owner_stage: requirements-fix`/);
   const coverage = await read('.harness/skills/requirements/requirements-fix/references/coverage.md');
   assert.match(coverage, /확정 조건/);
+  assert.match(coverage, /등록 입력값/);
+  assert.match(coverage, /로그인 식별자/);
   assert.doesNotMatch(`${fix}\n${coverage}`, /product-spec\/GUIDE\.md/);
   assert.match(fix, /grill-with-docs\/GUIDE\.md#stage-hosted-invocation/);
+  const grill = await read('.harness/skills/requirements/grill-with-docs/GUIDE.md');
+  assert.match(grill, /decision dimensions needed by the requested behavior/);
+  assert.match(grill, /reopened stage adds that exact gap as a required topic/);
+  assert.match(grill, /Preserve the accepted parts of partial answers/);
 
   // The requirements and bounded-context guides treat requirements.md as the fixed input.
   assert.match(fix, /later tactical design stages read the `fixed` `requirements\.md` as settled user decisions/);
@@ -225,6 +231,17 @@ test('the completion gate checks ACT/BIZ direction and rejects generic AC outcom
   assert.ok(missing.errors.some(({ code }) => code === 'ACTION_TABLE_MISSING'));
   const missingActorBranch = doc().replace('비회원', '작성자 권한이 없는 회원');
   assert.equal(checkRequirementsDocument({ requirements: missingActorBranch, stage: 'requirements-fix', complete: true }).ok, true, 'actor and target-state relevance is a recorded semantic review, not guessed from generic rows');
+  const accountDoc = doc().replace('ACT-01 | 계산기 | 사용자 | 계산 결과를 확인한다', 'ACT-01 | 계정 | 사용자 | 회원가입을 한다');
+  const unrelatedRegistration = doc().replace('ACT-01 | 계산기 | 사용자 | 계산 결과를 확인한다', 'ACT-01 | 커뮤니티 | 사용자 | 게시글을 등록한다');
+  assert.ok(!complete(unrelatedRegistration).errors.some(({ code }) => code === 'AUTH_DECISION_INCOMPLETE'), 'generic content registration does not activate account policy coverage');
+  const missingAccountDecisions = complete(accountDoc);
+  assert.equal(missingAccountDecisions.errors.filter(({ code }) => code === 'AUTH_DECISION_INCOMPLETE').length, 5, 'included registration behavior requires each authentication decision');
+  const accountDecisions = `- 인증 방식: 자체 계정과 비밀번호 — 출처: answers.json q:3\n- 등록 입력값: 이메일과 비밀번호를 입력하며 모두 필수 — 출처: answers.json q:3\n- 로그인 식별자: 이메일 — 출처: answers.json q:3\n- 식별자 규칙: 이메일 형식을 받아들이고 중복은 거절 — 출처: answers.json q:3\n- 비밀번호 규칙: 비밀번호 사용 — 출처: answers.json q:3\n`;
+  const withAccountDecisions = accountDoc.replace('- 행동 ID: ACT-01 — 근거: 요청 원문', `- 행동 ID: ACT-01 — 근거: 요청 원문\n${accountDecisions}`);
+  assert.equal(complete(withAccountDecisions).ok, true, 'sourced authentication decisions satisfy the gate');
+  const noLocalPassword = accountDecisions.replace('자체 계정과 비밀번호', '외부 인증').replace('이메일과 비밀번호를 입력하며 모두 필수', '외부 인증 제공자가 입력을 처리함').replace('비밀번호 사용', '해당 없음 — 외부 인증을 사용해 자체 비밀번호를 받지 않음');
+  assert.equal(complete(accountDoc.replace('- 행동 ID: ACT-01 — 근거: 요청 원문', `- 행동 ID: ACT-01 — 근거: 요청 원문\n${noLocalPassword}`)).ok, true, 'conditional N/A is accepted with a concrete reason');
+  assert.ok(complete(accountDoc.replace('- 행동 ID: ACT-01 — 근거: 요청 원문', `- 행동 ID: ACT-01 — 근거: 요청 원문\n${accountDecisions.replace('비밀번호 사용', '해당 없음')}`)).errors.some(({ code }) => code === 'AUTH_DECISION_INCOMPLETE'), 'blank N/A does not satisfy a decision');
 });
 
 test('installed consumers get the requirements stages and diagram tooling, Git ignores them and keeps the plan set documents visible', async (t) => {

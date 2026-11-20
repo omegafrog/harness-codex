@@ -103,6 +103,9 @@ export function checkRequirementsDocument({ requirements, stage, complete = fals
       const actionIds = new Set();
       const bizSections = extractBizSections(lines);
       const bizIds = new Set(bizSections.keys());
+      const authenticationActions = new Set(rows
+        .filter((row) => clean(row['결정']).startsWith('포함') && /회원\s*가입|계정\s*등록|회원\s*등록|로그인|인증/.test(`${clean(row['행동'])} ${clean(row['요청 기능'])}`))
+        .flatMap((row) => [...clean(row['BIZ 연결']).matchAll(/BIZ-\d+/g)].map((match) => match[0])));
       for (const [id, section] of bizSections) if (section === null) errors.push({ code: 'BIZ_ID_DUPLICATE', id, message: id + ' appears in more than one BIZ heading.', owner_stage: WORKTREE_STAGE.SUBDOMAIN_CANDIDATES });
       for (const row of rows) {
         const id = clean(row.ACT), decision = clean(row['결정']), link = clean(row['BIZ 연결']);
@@ -117,6 +120,25 @@ export function checkRequirementsDocument({ requirements, stage, complete = fals
             if (!references.includes(id)) errors.push({ code: 'BIZ_ACTION_REVERSE_LINK_MISSING', id: bizId, message: bizId + ' must refer back to ' + id + ' in its action reference field.', owner_stage: WORKTREE_STAGE.SUBDOMAIN_CANDIDATES });
           }
         } else if ((decision.startsWith('제외') || decision.startsWith('후속')) && /BIZ-\d+/.test(link)) errors.push({ code: 'EXCLUDED_ACTION_BIZ_LEAK', id, message: id + ' is excluded or deferred but leaks into BIZ link ' + link, owner_stage: WORKTREE_STAGE.STAKEHOLDER_ANALYSIS });
+      }
+      for (const bizId of authenticationActions) {
+        const section = bizSections.get(bizId) || [];
+        const checks = [
+          '인증 방식',
+          '등록 입력값',
+          '로그인 식별자',
+          '식별자 규칙',
+          '비밀번호 규칙',
+        ];
+        for (const label of checks) {
+          const content = fieldContent(section, label);
+          const reasonedNA = /(?:해당 없음|NOT_APPLICABLE)\s*[—–-]\s*(?!출처\s*[:：])\S/.test(content);
+          const settled = content && !/(?:^|\s)(?:TODO|TBD|미정|PARTIAL|UNRESOLVED)(?:\s|$)/i.test(content)
+            && (/출처\s*[:：]/.test(content) || /(?:요청 원문|answers\.json|CAND-\d+ 채택)/.test(content));
+          if (!settled || (/(?:해당 없음|NOT_APPLICABLE)/.test(content) && !reasonedNA)) {
+            errors.push({ code: 'AUTH_DECISION_INCOMPLETE', id: bizId, message: `${bizId} includes registration/login behavior and needs a sourced, settled "${label}" decision or a reasoned NOT_APPLICABLE.`, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX });
+          }
+        }
       }
       if (Array.isArray(scopeActions)) {
         const documentActions = new Map(rows.map((row) => [clean(row.ACT), row]));
