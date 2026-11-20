@@ -80,6 +80,7 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.harness/src/workflow/plan-review.mjs',
     '.harness/src/workflow/skill-execution.mjs',
     '.harness/src/workflow/stage-checkpoint.mjs',
+    '.harness/contracts.mjs',
     '.codex/scripts/harness-spec-review.mjs',
     '.codex/scripts/harness-native-stage.mjs',
     ...['.agents', '.claude'].flatMap((provider) => ['SKILL.md', 'references/coordination.md', 'references/dispatch.md', 'references/input.md', 'references/workflow-map.md']

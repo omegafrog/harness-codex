@@ -28,5 +28,7 @@ permissionMode: ${permissionMode}${readOnlyTools}
 ${prompt.replaceAll('.codex/skills/', '.claude/skills/')}
 `;
   }
+  // The source contract module uses only Node built-ins and is already self-contained at its installed path.
+  if (transform === 'standalone-contracts-v1') return text;
   return content;
 }

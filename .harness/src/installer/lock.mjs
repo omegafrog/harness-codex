@@ -6,7 +6,7 @@ import { isWithin } from "../eval/util.mjs";
 import { transformSourceContent as transformSource } from './transforms.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
-const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1"]);
+const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1", "standalone-contracts-v1"]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
