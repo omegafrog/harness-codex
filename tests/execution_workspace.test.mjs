@@ -27,7 +27,7 @@ test('installed runner owns execution paths despite legacy plans and forged inpu
   const { updateReviewAttempt } = await import(runtime('workflow/review-attempts.mjs'));
   const { preparePublicationDrafts, publicationTitle, updatePublication, inspectPublication } = await import(runtime('tracker/publication.mjs'));
   const { writeExecutionInput } = await import(runtime('workflow/execution-input.mjs'));
-  const { readExecutionInput } = await import(runtime('workflow/skill-execution.mjs'));
+  const { readExecutionInput } = await import(runtime('workflow/stage-runtime.mjs'));
   const { buildImplementPrompt } = await import(runtime('wrapper/scheduler.mjs'));
   const record = { schema_version: 1, worktree_id: 'c5c669a2-2967-4831-98db-63a24954e857', workspace: root, common: join(primary, '.git'), return_root: primary, session_directory: join(root, '.io'), branch: 'feature/test', state: 'active', plan_set_id: 'example' };
   const ref = join(root, '.io/worktree.json');

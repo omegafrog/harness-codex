@@ -152,7 +152,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
     await mkdir(join(workspace, plans), { recursive: true });
     await writeFile(join(workspace, plans, name), content);
   }
-  const env = { HARNESS_WORKSPACE_ROOT: workspace, HARNESS_SKILL_EXECUTION_ID: ticketId };
+  const env = { HARNESS_WORKSPACE_ROOT: workspace, HARNESS_STAGE_EXECUTION_ID: ticketId };
   const planReview = await import(pathToFileURL(join(workspace, '.harness/src/workflow/plan-review.mjs')).href);
   const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
   Object.assign(process.env, env);
@@ -184,7 +184,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   await codexUserPrompt(workspace, APPROVAL);
   const publish = await beginStage('tracker-publish', { extraArgs: ['--publication-approved', 'true', '--approval-answer', APPROVAL] });
   assert.equal(publish.started.agent_profile, 'tracker_publisher');
-  const { resolveAgentSandbox } = await import(pathToFileURL(join(workspace, '.harness/src/workflow/skill-execution.mjs')).href);
+  const { resolveAgentSandbox } = await import(pathToFileURL(join(workspace, '.harness/src/workflow/stage-runtime.mjs')).href);
   assert.deepEqual(await resolveAgentSandbox({ root: workspace, input: { skill: 'tracker-publish' }, workflow: 'tactical-to-code', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' }, 'the publisher is the one stage with network and tracker access');
   await submitStage(publish, { summary: '계획을 발행했다' });
   assert.equal(JSON.parse(finishStage(publish).stdout).status, 'completed');
@@ -198,7 +198,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
 
   // The stage marks the ticket completed with the installed tracker command, which rewrites the local ticket's status.
   const implementTicket = async (begun, ticket, files, summary) => {
-    const sync = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-tracker.mjs'), 'sync', '--root', workspace, '--ticket', `${plans}/${ticket}.md`, '--status', 'completed'], { cwd: workspace, encoding: 'utf8', env: { ...process.env, HARNESS_SKILL_EXECUTION_ID: begun.prepared.input.execution_id } });
+    const sync = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-tracker.mjs'), 'sync', '--root', workspace, '--ticket', `${plans}/${ticket}.md`, '--status', 'completed'], { cwd: workspace, encoding: 'utf8', env: { ...process.env, HARNESS_STAGE_EXECUTION_ID: begun.prepared.input.execution_id } });
     assert.equal(sync.status, 0, sync.stderr || sync.stdout);
     const paths = [...Object.keys(files), `${plans}/${ticket}.md`];
     await submitStage(begun, { files, summary, commit_request: { message: `tactical-code: ${planSetId}/${ticket}`, paths } });

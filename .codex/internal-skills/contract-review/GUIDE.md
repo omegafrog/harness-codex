@@ -22,7 +22,7 @@ reviewer는 `begin`이 알려 준 sealed revision의 `docs/contracts/product.md`
 
 ## 실행 모델과 반환
 
-`contract-review`는 workflow 실행기가 dispatch하는 stage가 아니다. `sync-contracts` execution이 계약을 seal한 뒤 `contract_reviewer` 프로필의 새 read-only native subagent를 직접 호출한다. 매 회차 새 agent context를 만들고 작성자 대화나 이전 reviewer 대화를 상속하지 않는다(`fork_turns: none`). 호출 전 `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill contract-review`로 설정된 model과 reasoning effort를 resolve해 전달한다. Reviewer는 파일을 편집하거나 추가 agent를 만들지 않는다.
+`contract-review`는 workflow 실행기가 dispatch하는 stage가 아니다. `sync-contracts` execution이 계약을 seal한 뒤 `contract_reviewer` 프로필의 새 read-only native subagent를 직접 호출한다. 매 회차 새 agent context를 만들고 작성자 대화나 이전 reviewer 대화를 상속하지 않는다(`fork_turns: none`). 호출 전 `node .codex/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill contract-review`로 설정된 model과 reasoning effort를 resolve해 전달한다. Reviewer는 파일을 편집하거나 추가 agent를 만들지 않는다.
 
 Reviewer는 `verdict`(`pass` 또는 `revise`)와 `findings`(각각 `severity`, `description`, `evidence`)만 반환한다. `severity`는 `blocker`·`major`·`minor`이며 `blocker`·`major`가 하나라도 있으면 `revise`다. `evidence`에는 계약 위치와 source·테스트·receipt의 경로와 줄을 함께 적는다. verdict·findings와 reviewer ID·작성자·fresh 여부는 Codex와 Claude Code 공통 subagent hook(`harness-agent-event.mjs`)이 `begin` 뒤 띄운 native reviewer에서 기록하며 stage가 쓰거나 고치지 않는다. 회차 밖에서 띄웠거나 작성자 대화를 fork한 reviewer는 기록되지 않고, 그런 reviewer가 마지막 정식 리뷰 뒤에 있으면 stage 완료가 거부된다.
 

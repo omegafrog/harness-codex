@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { isAbsolute } from 'node:path';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', installed));
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput } = await import(new URL('stage-runtime.mjs', installed));
 const { createComposerWorkspace, prepareComposerWorkspace } = await import(new URL('composer-workspace.mjs', installed));
 const { parseWorkflowBinding } = await import(new URL('providers/index.mjs', installed));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', installed));

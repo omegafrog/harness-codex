@@ -6,7 +6,7 @@ import { assertWorkspaceTarget } from '../../../.harness/src/eval/case-workspace
 // The subagent hooks record the reviewers the main orchestrator spawns. The stage runner can also pass
 // them through --settings, and the recorder de-duplicates.
 // The PreToolUse hook denies the orchestrator main session's own writes to product code, tests and contracts; it steps
-// aside inside stage runners (HARNESS_SKILL_EXECUTION_ID) and sub-agents (agent_id), which share this settings file.
+// aside inside stage runners (HARNESS_STAGE_EXECUTION_ID) and sub-agents (agent_id), which share this settings file.
 const RETIRED_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
 const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
 const GUARD_EVENTS = ['PreToolUse'];

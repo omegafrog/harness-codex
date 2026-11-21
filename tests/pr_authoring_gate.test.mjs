@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JsonlEventWriter } from '../.harness/src/eval/journal.mjs';
-import { resolveAgentSandbox } from '../.harness/src/workflow/skill-execution.mjs';
+import { resolveAgentSandbox } from '../.harness/src/workflow/stage-runtime.mjs';
 import { assertPrStageReadiness } from '../.harness/src/workflow/stage-input.mjs';
 
 test('PR authoring is restricted to the two declared dedicated stages', async () => {

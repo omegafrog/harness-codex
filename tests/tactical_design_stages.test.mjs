@@ -117,7 +117,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   }
 
   // The tiers resolve from the installed guides, and the installed gate and flow lists are the source ones.
-  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
+  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
   for (const [stage, tier] of Object.entries(TACTICAL_TIERS)) assert.deepEqual(binding(stage), { skill: stage, provider: 'codex', model_tier: tier, model: MODELS[tier], reasoning_effort: tier === 'high_performance' ? 'high' : 'medium' }, stage);
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.PRE_SPEC_STAGES], PRE_SPEC_STAGES);

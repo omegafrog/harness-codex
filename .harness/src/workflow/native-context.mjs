@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
 import { parseWorktreeRecord } from './worktrees.mjs';
-import { readExecutionInput, validateSkillInput } from './skill-execution.mjs';
+import { readExecutionInput, validateSkillInput } from './stage-runtime.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 
 export async function readRolloutMetadata(path) {

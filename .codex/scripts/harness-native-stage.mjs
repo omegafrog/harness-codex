@@ -9,7 +9,7 @@ import { cliSession } from '../../.harness/src/workflow/cli-session.mjs';
 import { resolveCommandContext } from '../../.harness/src/workflow/cli-context.mjs';
 import { executionInputAbsolutePath } from '../../.harness/src/workflow/execution-input.mjs';
 import { recordExecutionState } from '../../.harness/src/workflow/execution-state.mjs';
-import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/skill-execution.mjs';
+import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
 import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';

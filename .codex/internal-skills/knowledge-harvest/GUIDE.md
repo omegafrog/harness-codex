@@ -4,7 +4,7 @@ model_tier: low_performance
 
 # Knowledge Harvest
 
-필요한 조사·추출·검토는 fresh 서브에이전트에 위임한다. 각 서브에이전트의 model·effort는 `node .codex/scripts/harness-skill-execution.mjs binding --root <workspace_root> --skill <skill>`이 반환한 값만 쓴다.
+필요한 조사·추출·검토는 fresh 서브에이전트에 위임한다. 각 서브에이전트의 model·effort는 `node .codex/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill <skill>`이 반환한 값만 쓴다.
 
 ## 목적
 

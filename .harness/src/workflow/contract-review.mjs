@@ -68,7 +68,7 @@ export async function updateContractReview({ root, planSetId, action, attemptId,
   }
   if (action === 'record') {
     // Inside a stage the reviewer must have been bound to this attempt by the subagent hook, in this execution.
-    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
     if (executionId) {
       requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && EXECUTION_ID.test(executionId), 'Contract review requires its runtime workspace and execution identity');
       const active = await inspectActiveReviewAttempt({ root, scope });

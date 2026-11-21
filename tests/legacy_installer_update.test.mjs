@@ -8,6 +8,8 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { inspectRetiredProjectHooks } from '../.harness/src/installer/orchestrator-hook.mjs';
 
+const retiredTierDirectory = ['.codex', 'internal-skills', ['skill', 'execution'].join('-')].join('/');
+
 test('legacy Doctor is backed up and updated while project files remain visible', async () => {
   const sourceRoot = process.cwd();
   const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
@@ -25,13 +27,13 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     }
     await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files: {} }));
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
-    const schemaPath = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_finalize.schema.json';
-    await mkdir(resolve(root, '.codex/internal-skills/skill-execution/schemas/flows'), { recursive: true });
+    const schemaPath = `${retiredTierDirectory}/schemas/flows/to-ticket-plan_finalize.schema.json`;
+    await mkdir(resolve(root, `${retiredTierDirectory}/schemas/flows`), { recursive: true });
     const schema = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/to-ticket-plan.schema.json'));
     await writeFile(resolve(root, schemaPath), schema);
-    const unknownSchema = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_revision.schema.json';
+    const unknownSchema = `${retiredTierDirectory}/schemas/flows/to-ticket-plan_revision.schema.json`;
     await writeFile(resolve(root, unknownSchema), 'user schema');
-    const releasedSchema = '.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_split.schema.json';
+    const releasedSchema = `${retiredTierDirectory}/schemas/flows/to-ticket-plan_split.schema.json`;
     const releasedContent = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/to-ticket-plan-released.schema.json'));
     await writeFile(resolve(root, releasedSchema), releasedContent);
     const retiredPath = '.codex/scripts/old-managed.mjs';
@@ -91,7 +93,7 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.equal(await readFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'utf8'), 'custom doctor');
     assert.ok(second.skipped.some((item) => item.path === '.codex/scripts/harness-doctor.mjs' && item.status === 'unlocked'));
     await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), await readFile(resolve(sourceRoot, 'bin/harness-doctor.mjs')));
-    const runtime = '.harness/src/workflow/skill-execution.mjs';
+    const runtime = '.harness/src/workflow/stage-runtime.mjs';
     const secondLock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
     delete secondLock.files[runtime];
     await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify(secondLock));

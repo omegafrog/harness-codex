@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeClaim, writeSource } from '../.harness/src/knowledge/registry.mjs';
-import { assertTechnologyQuestionEvidence } from '../.harness/src/workflow/skill-execution.mjs';
+import { assertTechnologyQuestionEvidence } from '../.harness/src/workflow/stage-runtime.mjs';
 import { validateArchitectureDecision } from '../.harness/src/decision/validation.mjs';
 
 const source = (id, tier) => ({ schema_version: 1, id, title: id, uri: `https://example.test/${id}`, publisher: 'Example', tier, authority: 'Example', independent_authority_id: id, recency: 'high', relevance: 'high', commercial_bias: 'low', primary_source: tier !== 'community', preference: 'preferred', domain_metadata: {}, discovered_at: '2026-11-10T00:00:00Z', collection_status: 'not_collected' });

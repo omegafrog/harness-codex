@@ -36,7 +36,7 @@ async function consumer() {
   await write('docs/contracts/manifest.json', JSON.stringify(manifest));
   git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
   git('commit', '-q', '-m', 'Baseline');
-  const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_SKILL_EXECUTION_ID: STAGE, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: STAGE };
+  const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_STAGE_EXECUTION_ID: STAGE, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: STAGE };
   const json = (run) => ({ status: run.status, stderr: run.stderr, json: run.stdout ? JSON.parse(run.stdout) : null });
   const c = {
     root, git, write, env,
@@ -205,7 +205,7 @@ test('installed consumer: the reviewer profile, GUIDE, CLI and hook handling shi
     assert.match(profile, /permissionMode: plan/);
     assert.match(profile, /contract-review\/GUIDE\.md/);
     await writeFile(join(c.root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: codex-high\n    high_performance_reasoning_effort: high\n    implementation_model: codex-implementation\n    implementation_reasoning_effort: medium\n    execution_model: codex-execution\n    execution_reasoning_effort: low\n    low_performance_model: codex-light\n    low_performance_reasoning_effort: minimal\n');
-    const binding = JSON.parse(execFileSync(process.execPath, [join(c.root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', c.root, '--skill', 'contract-review'], { cwd: c.root, encoding: 'utf8' }));
+    const binding = JSON.parse(execFileSync(process.execPath, [join(c.root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', c.root, '--skill', 'contract-review'], { cwd: c.root, encoding: 'utf8' }));
     assert.deepEqual([binding.model_tier, binding.model, binding.reasoning_effort], ['high_performance', 'codex-high', 'high']);
     // Harness-generated files stay out of git status; the application-owned files stay visible.
     await mkdir(join(c.root, 'src'), { recursive: true });

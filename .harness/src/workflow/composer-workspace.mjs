@@ -1,7 +1,7 @@
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkflowWorktree, adoptWorkflowWorktree, isLinkedWorktree, recordWorktreeOutcome, parseWorktreeRecord, recordWorkflowSession } from './worktrees.mjs';
-import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
+import { readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { writeExecutionInput } from './execution-input.mjs';
 import { recordExecutionState } from './execution-state.mjs';
 import { assertSingleProvider, parseWorkflowBinding } from './providers/index.mjs';

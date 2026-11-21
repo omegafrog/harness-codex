@@ -15,7 +15,7 @@ try {
   const entryMode = process.argv.includes('--entry');
   const { args, verbose } = extractVerbose(process.argv.slice(2).filter((arg) => arg !== '--entry'));
   if (args.length && (entryMode || !['--root', '--worktree-ref'].includes(args[0]) || !args[1] || args.length > 2)) throw new Error('Usage: harness-context.mjs [--entry | --root DIR | --worktree-ref FILE] [--verbose]');
-  if (entryMode && process.env.HARNESS_SKILL_EXECUTION_ID) throw new Error('Workflow entry requires the main orchestrator session');
+  if (entryMode && process.env.HARNESS_STAGE_EXECUTION_ID) throw new Error('Workflow entry requires the main orchestrator session');
   const output = (value) => process.stdout.write(`${JSON.stringify(value, null, verbose ? 2 : undefined)}\n`);
   const ctx = resolveCommandContext(args[0] === '--worktree-ref' ? { worktreeRef: args[1] } : { root: args[1] });
   let routing = null;

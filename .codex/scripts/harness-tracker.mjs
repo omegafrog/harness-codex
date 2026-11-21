@@ -17,17 +17,17 @@ try {
   const context = resolveCommandContext({ root: options.workspace_root });
   options.workspace_root = context.root;
   // Inside an implementation stage the tickets must belong to the plan the stage implements.
-  if (process.env.HARNESS_SKILL_EXECUTION_ID && context.plan_set_id) {
-    const { readExecutionInput } = await import(new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url).href);
-    const planId = (await readExecutionInput({ root: context.root, execution_id: process.env.HARNESS_SKILL_EXECUTION_ID }).catch(() => null))?.context?.plan_id;
+  if (process.env.HARNESS_STAGE_EXECUTION_ID && context.plan_set_id) {
+    const { readExecutionInput } = await import(new URL('../../.harness/src/workflow/stage-runtime.mjs', import.meta.url).href);
+    const planId = (await readExecutionInput({ root: context.root, execution_id: process.env.HARNESS_STAGE_EXECUTION_ID }).catch(() => null))?.context?.plan_id;
     if (planId && ['check', 'sync'].includes(command)) options.expected_plan_id = `${context.plan_set_id}:${planId}`;
   }
   if (command === 'dependencies') {
     // The plan comes from the stage's own input, never from a typed ID.
     let planId = options.plan;
-    if (!planId && process.env.HARNESS_SKILL_EXECUTION_ID) {
-      const { readExecutionInput } = await import(new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url).href);
-      planId = (await readExecutionInput({ root: context.root, execution_id: process.env.HARNESS_SKILL_EXECUTION_ID }).catch(() => null))?.context?.plan_id;
+    if (!planId && process.env.HARNESS_STAGE_EXECUTION_ID) {
+      const { readExecutionInput } = await import(new URL('../../.harness/src/workflow/stage-runtime.mjs', import.meta.url).href);
+      planId = (await readExecutionInput({ root: context.root, execution_id: process.env.HARNESS_STAGE_EXECUTION_ID }).catch(() => null))?.context?.plan_id;
     }
     const answer = await planDependencies({ workspace_root: context.root, plan_set_id: context.plan_set_id, plan_id: planId });
     process.stdout.write(`${JSON.stringify(answer, null, 2)}\n`);

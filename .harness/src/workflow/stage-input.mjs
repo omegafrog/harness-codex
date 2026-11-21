@@ -3,7 +3,7 @@ import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeF
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync } from 'node:child_process';
-import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './skill-execution.mjs';
+import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
 import { mergeAnswers } from './questions.mjs';

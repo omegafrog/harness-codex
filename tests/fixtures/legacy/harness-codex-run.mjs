@@ -8,7 +8,7 @@ try { sourceCheckout = JSON.parse(await readFile(new URL('../../package.json', i
 const installed = new URL('../harness-runtime/src/workflow/', import.meta.url);
 const base = existsSync(new URL('codex-process.mjs', installed)) && !sourceCheckout ? installed : new URL('../../src/workflow/', import.meta.url);
 const { runCodexProcess } = await import(new URL('codex-process.mjs', base));
-const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await import(new URL('skill-execution.mjs', base));
+const { resolveSkillBinding, readExecutionInput, validateSkillInput } = await import(new URL('stage-runtime.mjs', base));
 const { cliSession } = await import(new URL('cli-session.mjs', base));
 const { findExecutionInput } = await import(new URL('execution-input.mjs', base));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', base));
@@ -60,7 +60,7 @@ try {
   if (!owner?.start || !owner.boot) throw new Error('Runner process identity unavailable');
   await recordExecutionState({ root, input, binding, status: 'running', owner, runnerClaim: true });
   const record = parseWorktreeRecord(await readFile(opts['worktree-ref'], 'utf8'));
-  const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_SKILL_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => {
+  const result = await runCodexProcess({ root, args: command, prompt, env: { ...process.env, HARNESS_SESSION_DIR: session, HARNESS_CONTROL_SESSION_DIR: input.context?.control_session_directory || session, HARNESS_STAGE_EXECUTION_ID: opts['execution-id'] }, onStart: async (pid) => {
     const child = await processIdentity(pid);
     if (!child?.start || !child.boot) throw new Error('Child process identity unavailable');
     await recordExecutionState({ root, input, binding, status: 'running', owner, child });

@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('skill-execution.mjs', installed));
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('stage-runtime.mjs', installed));
 const { identifyQuestions } = await import(new URL('questions.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));

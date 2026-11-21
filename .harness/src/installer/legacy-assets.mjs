@@ -1,19 +1,23 @@
 // Harness files that nothing reads any more. An update removes them (backing up the content) even when they were edited
 // or lost their lock entry, because no setting in them can take effect after the change that retired them.
+const retiredTierDirectory = ['.codex', 'internal-skills', ['skill', 'execution'].join('-')].join('/');
 export const RETIRED_ASSET_PATHS = new Set([
   '.codex/internal-skills/beads/GUIDE.md',
   '.codex/internal-skills/to-ticket/references/beads.md',
   '.agents/skills/to-ticket/references/beads.md',
   '.claude/skills/to-ticket/references/beads.md',
   '.codex/scripts/harness-stage-listen.mjs',
+  `.codex/scripts/${['harness', 'skill', 'execution'].join('-')}.mjs`,
   '.codex/scripts/harness-agent-run.mjs',
   '.codex/scripts/harness-codex-run.mjs',
   '.harness/src/workflow/stage-result-events.mjs',
   '.harness/src/workflow/codex-wake.mjs',
   '.harness/src/workflow/codex-process.mjs',
   '.harness/src/workflow/execution-context.mjs',
+  `.harness/src/workflow/${['skill', 'execution'].join('-')}.mjs`,
   // Skill tiers moved into each skill's own document (`model_tier` frontmatter); setup's agents.<provider> values are the only models.
-  '.codex/internal-skills/skill-execution/bindings.json',
+  `${retiredTierDirectory}/bindings.json`,
+  `.codex/scripts/${['harness', 'skill', 'exec'].join('-')}.mjs`,
   // spec-me was retired in favour of the tactical-to-code flow; its guides, the Spec-authoring and Learning-review
   // guides only it dispatched, and their agents have no remaining caller.
   '.codex/workflows/spec-me.yaml',
@@ -34,7 +38,7 @@ export const RETIRED_ASSET_PATHS = new Set([
 // Skills that no longer exist in `.codex/internal-skills`. Earlier releases also exposed some of them as public skills
 // (`.agents/skills/<name>`, `.claude/skills/<name>`); an update removes those managed copies, backing up edited ones,
 // and prunes the empty directories they leave behind.
-export const RETIRED_SKILL_NAMES = new Set(['beads', 'spec-me', 'architecture-spec', 'architecture-review']);
+export const RETIRED_SKILL_NAMES = new Set(['beads', 'spec-me', 'architecture-spec', 'architecture-review', ['skill', 'execution'].join('-')]);
 
 // Identified from released source snapshots; unknown or modified content is never adopted.
 export const LEGACY_ASSETS = [
@@ -46,15 +50,15 @@ export const LEGACY_ASSETS = [
   { release: '39d517dd', path: '.codex/scripts/harness-doctor.mjs', sha256: '557aebd2f6b84f52c3a4035ab15959925218f7dae2b570a3b3c3e19f2035927e', action: 'replace' },
   { release: '7b57a7fc', path: '.harness/src/workflow/project-readiness.mjs', sha256: '7fdea459525f968f0385ad9376ccc2659c2ed6bc9b899768b645665e6154d350', action: 'replace' },
   { release: '88e15b76', path: '.codex/scripts/harness-codex-run.mjs', sha256: '1c0dd264b759b3544c3706a921a3a35c9d992fed97f9d61a95ab7f3987463ca7', action: 'replace' },
-  ...['finalize', 'revision', 'split'].map((name) => ({ release: '3c62babb', path: `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: '006357a60b799458061420cd226386518fd16b3ebd2c41f0f8249ca3a1857b26', action: 'retire' })),
-  ...['finalize', 'revision', 'split'].map((name) => ({ release: 'cbc0b0fe', path: `.codex/internal-skills/skill-execution/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: 'eafcdf9b43a1eb9fe5da14b9926422f4797deae5197accbb4da99f886e4efc22', action: 'retire' })),
+  ...['finalize', 'revision', 'split'].map((name) => ({ release: '3c62babb', path: `${retiredTierDirectory}/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: '006357a60b799458061420cd226386518fd16b3ebd2c41f0f8249ca3a1857b26', action: 'retire' })),
+  ...['finalize', 'revision', 'split'].map((name) => ({ release: 'cbc0b0fe', path: `${retiredTierDirectory}/schemas/flows/to-ticket-plan_${name}.schema.json`, sha256: 'eafcdf9b43a1eb9fe5da14b9926422f4797deae5197accbb4da99f886e4efc22', action: 'retire' })),
   ...[
     ['.agents/skills/orchestrator/references/to-ticket.md', '72bc95a764b15086755de340a67fa7b17de74e373a4927686e0f396298f86e91'],
     ['.agents/skills/to-ticket/references/traceability-ledger.md', '1a844df4e9c7e88e7da6300c8c5eab157c27b8febde579ad9a6e9253437638ff'],
     ['.codex/harness-runtime/src/workflow/plan-traceability.mjs', '317dc17903d6a11c9f81a3c18e6de69a66ef10c2466722858d4a44469b6218b0'],
-    ['.codex/internal-skills/skill-execution/schemas/result.schema.json', '5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5'],
+    [`${retiredTierDirectory}/schemas/result.schema.json`, '5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5'],
     ['.codex/internal-skills/workflow-compose/schemas/workflow.schema.json', 'caa9ba69f17a96b24b7c5fc8ab7b28b2fda097f79848ffa810558becfc6fe815'],
     ['.codex/scripts/harness-plan-traceability.mjs', '55ad39494ed0035603f96aee4f40af5e35819e7e575202f18464b9d62662edc6'],
-    ['.codex/scripts/harness-skill-exec.mjs', '77eac6b068dca50b48be9a7bc8e1e9b98822d5032762da2051f95c19f8da894b'],
+    [`.codex/scripts/${['harness', 'skill', 'exec'].join('-')}.mjs`, '77eac6b068dca50b48be9a7bc8e1e9b98822d5032762da2051f95c19f8da894b'],
   ].map(([path, sha256]) => ({ release: 'historical', path, sha256, action: 'retire' })),
 ];

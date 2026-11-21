@@ -111,7 +111,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
     assert.match(await read('.codex/internal-skills/implement/GUIDE.md'), /commit_request/);
     assert.deepEqual(specReview.decisionsWithoutDelegation('| PD-1 | x | 사용자가 위임 |'), ['PD-1']);
     assert.match(await read('.codex/scripts/harness-prepare-input.mjs'), /user-revision/);
-    assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /reopening/);
+    assert.match(await read('.harness/src/workflow/stage-runtime.mjs'), /reopening/);
     assert.match(await read('.harness/src/workflow/stage-input.mjs'), /reopening: Boolean\(userRevisionWaiting \|\| \(crossStageRevision/);
     assert.match(await read('.agents/skills/orchestrator/references/dispatch.md'), /--user-revision true/);
     const doctor = await runDoctor({ root, sourceRoot });

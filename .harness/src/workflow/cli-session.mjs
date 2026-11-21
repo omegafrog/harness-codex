@@ -1,7 +1,7 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { parseWorktreeRecord } from './worktrees.mjs';
-import { resolveSkillSession } from './skill-execution.mjs';
+import { resolveSkillSession } from './stage-runtime.mjs';
 
 export async function cliSession(root, worktreeRef) {
   if (!worktreeRef) return resolveSkillSession(root);

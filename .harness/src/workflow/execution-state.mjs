@@ -1,7 +1,7 @@
 import { mkdir, rename, rm, writeFile, unlink, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { resolveSkillSession, readSkillSessionJson } from './skill-execution.mjs';
+import { resolveSkillSession, readSkillSessionJson } from './stage-runtime.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
@@ -189,6 +189,6 @@ export async function recordExecutionState({ root, input, binding, status, code 
       await recordWorktreeStage({ workspace_root: record.workspace, repository_root: record.return_root, current_stage: stageSkill });
     }
     if (migrated && !stateOnly) await unlink(join(session, directory, 'state.json'));
-    await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [], codex_session_id: codexSessionId }, 'SkillExecution');
+    await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [], codex_session_id: codexSessionId }, 'StageRuntime');
   } finally { await rm(lock, { recursive: true }); }
 }

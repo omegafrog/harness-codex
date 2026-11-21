@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { readPlanSetTicketStatuses } from '../tracker/lifecycle.mjs';
 import { planDependencies as indexDependencies } from '../tracker/publication.mjs';
-import { readExecutionInput, readSkillSessionJson } from './skill-execution.mjs';
+import { readExecutionInput, readSkillSessionJson } from './stage-runtime.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 

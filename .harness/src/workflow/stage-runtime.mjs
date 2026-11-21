@@ -115,7 +115,7 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
     }
   }
   const supplied = workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
-  const provider = executionProvider || supplied?.provider || (process.env.HARNESS_SKILL_EXECUTION_ID ? process.env.HARNESS_PROVIDER_ID : null) || orchestratorProvider || recordedBinding?.provider || configuredProvider(config);
+  const provider = executionProvider || supplied?.provider || (process.env.HARNESS_STAGE_EXECUTION_ID ? process.env.HARNESS_PROVIDER_ID : null) || orchestratorProvider || recordedBinding?.provider || configuredProvider(config);
   requireValue(['codex', 'claude-code'].includes(provider), 'Invalid execution provider');
   const settings = providerAgents(config, provider);
   const model = settings[keys.model], effort = settings[keys.reasoning_effort];

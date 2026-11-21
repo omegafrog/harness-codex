@@ -5,7 +5,7 @@ import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
 import { normalizeReviewContent } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
-import { readSkillSessionJson } from './skill-execution.mjs';
+import { readSkillSessionJson } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_DOCUMENT } from './worktree-stages.mjs';
@@ -200,9 +200,9 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
   if (action === 'begin') {
     // When the stage cannot start the reviewer, its caller (the main session) opens the admission for the current stage
     // execution: the stage returned REVIEW_REQUIRED and is waiting for this review.
-    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID || await mainSessionExecutionId(root);
-    requireValue((process.env.HARNESS_SKILL_EXECUTION_ID ? process.env.HARNESS_WORKSPACE_ROOT === root : Boolean(executionId)) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
-    process.env.HARNESS_SKILL_EXECUTION_ID = executionId;
+    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID || await mainSessionExecutionId(root);
+    requireValue((process.env.HARNESS_STAGE_EXECUTION_ID ? process.env.HARNESS_WORKSPACE_ROOT === root : Boolean(executionId)) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
+    process.env.HARNESS_STAGE_EXECUTION_ID = executionId;
     reviewerFiles = [];
     for (const path of Object.keys(snapshot.inputs)) {
       const file = await safeFile(root, path);
@@ -213,8 +213,8 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
     }
   }
   // Inside a stage, both providers bind the reviewer through the subagent hook before a record is accepted.
-  if (action === 'record' && process.env.HARNESS_SKILL_EXECUTION_ID) {
-    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+  if (action === 'record' && process.env.HARNESS_STAGE_EXECUTION_ID) {
+    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
     requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review requires its runtime workspace and execution identity');
     const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
     const native = active.native_review;
@@ -233,7 +233,7 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
   }
   const result = await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason, requireNative });
   if (action === 'begin') {
-    const executionId = process.env.HARNESS_SKILL_EXECUTION_ID;
+    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
     if (executionId) {
       const ref = `runtime/executions/${executionId}/plan-review-admission-${result.attempt_id}.json`;
       try {

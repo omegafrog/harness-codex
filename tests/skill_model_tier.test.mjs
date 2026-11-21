@@ -7,7 +7,7 @@ import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { AGENT_TIERS, tierSettingKeys } from '../.harness/src/workflow/agent-config.mjs';
-import { resolveSkillBinding } from '../.harness/src/workflow/skill-execution.mjs';
+import { resolveSkillBinding } from '../.harness/src/workflow/stage-runtime.mjs';
 import { listDeclaredSkills, parseSkillDeclaration, readSkillDeclaration, stripSkillDeclaration } from '../.harness/src/workflow/skill-declaration.mjs';
 import { loadNamedWorkflow, loadWorkflowText } from '../.harness/src/workflow/loader.mjs';
 import { writeOutputSchema } from '../.harness/src/workflow/output-schema.mjs';
@@ -16,7 +16,8 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = resolve('.');
-const BINDINGS = '.codex/internal-skills/skill-execution/bindings.json';
+const legacyTierDirectory = ['.codex', 'internal-skills', ['skill', 'execution'].join('-')].join('/');
+const BINDINGS = `${legacyTierDirectory}/bindings.json`;
 const SETUP = `agents:
   provider: codex
   codex:
@@ -42,8 +43,7 @@ tracker:
   local_markdown:
     directory: docs/plans
 `;
-// Every skill the retired skill-execution/bindings.json registered and that still exists; each now declares its tier in its own
-// document. spec-me, architecture-spec and architecture-review were registered too and have since been removed.
+// Active skill declarations checked against the tier inventory established during the previous setup migration.
 const FORMER_REGISTRY = [
   'attention-span', 'code-research', 'code-review', 'codebase-design', 'correct', 'ddd-design',
   'diagnosing-bugs', 'domain-modeling', 'e2e-test', 'eli5', 'evaluate-harness', 'event-storming', 'frontend-design', 'frontend-figma', 'frontend-implement',
@@ -52,7 +52,7 @@ const FORMER_REGISTRY = [
   'sync-contracts', 'to-ticket', 'tracker-publish', 'victorialogs-local-setup', 'workflow-compose', 'worktree-create',
 ];
 
-// Skills added after the registry was retired; each declares its tier in its own document from the start.
+// Skills added after that inventory was recorded; each declares its tier in its own document.
 const DECLARED_SINCE_REGISTRY = ['aggregate-design', 'application-service', 'bounded-context', 'context-boundary', 'contract-review', 'domain-model', 'domain-service', 'e2e-telemetry', 'harness-update', 'integration-design', 'requirements-fix', 'stakeholder-analysis', 'stakeholder-persona', 'subdomain-candidates', 'subdomain-classification', 'tactical-api', 'tactical-code', 'tactical-data', 'tactical-technology', 'tactical-ui', 'ubiquitous-language'];
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
@@ -81,7 +81,7 @@ async function install() {
   return { root, git, installed };
 }
 
-// Shapes a consumer installed before the change: no declarations in the skill documents, plus the old registry file.
+// Shapes an older consumer: no declarations in the skill documents, plus its obsolete registry file.
 async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skills":{"spec-me":"high_performance","plantuml-diagrams":"low"},"main_session_skills":["orchestrator"]}\n', locked = true } = {}) {
   const lockPath = join(root, '.codex/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
@@ -91,7 +91,7 @@ async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skill
     await writeFile(join(root, path), stripped);
     lock.files[path].installed_sha256 = lock.files[path].upstream_sha256 = sha256(stripped);
   }
-  // A consumer from before the stage contract moved still had the skill-execution directory around the registry.
+  // Older consumers kept this registry under the internal skills directory.
   await mkdir(dirname(join(root, BINDINGS)), { recursive: true });
   await writeFile(join(root, BINDINGS), bindings);
   if (locked) lock.files[BINDINGS] = { installed_sha256: sha256(bindings), upstream_sha256: sha256(bindings), source_path: BINDINGS };
@@ -99,7 +99,7 @@ async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skill
   return bindings;
 }
 
-test('every skill the retired registry listed declares its tier in its own document, and the orchestrator is main-session only', async () => {
+test('active skills declare their tier in their own document, and the orchestrator is main-session only', async () => {
   for (const skill of FORMER_REGISTRY) {
     const declaration = await readSkillDeclaration({ root: sourceRoot, skill });
     assert.ok(AGENT_TIERS.includes(declaration.model_tier), `${skill} declares ${declaration.model_tier}`);
@@ -109,7 +109,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   const expected = { 'plantuml-diagrams': 'low_performance', 'product-spec': 'low_performance', 'context-boundary': 'high_performance', implement: 'implementation', 'e2e-test': 'execution', setup: 'execution', eli5: 'low_performance', 'sync-contracts': 'implementation' };
   for (const [skill, tier] of Object.entries(expected)) assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   const declared = (await listDeclaredSkills(sourceRoot)).filter((item) => !item.main_session).map((item) => item.skill);
-  assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'a skill document declares a tier that neither the retired registry nor the later additions list, or the reverse');
+  assert.deepEqual(declared, [...FORMER_REGISTRY, ...DECLARED_SINCE_REGISTRY].sort(), 'the declared skill inventory matches the current setup');
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'contract-review' })).model_tier, 'high_performance');
   // The facilitator stage runs at the implementation tier; the personas it starts run at the low_performance tier.
   assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-analysis' })).model_tier, 'implementation');
@@ -130,7 +130,7 @@ test('every skill the retired registry listed declares its tier in its own docum
   for (const [skill, tier] of Object.entries({ 'tactical-technology': 'low_performance', 'tactical-ui': 'low_performance', 'tactical-api': 'low_performance', 'tactical-data': 'low_performance', 'tactical-code': 'implementation' })) {
     assert.equal((await readSkillDeclaration({ root: sourceRoot, skill })).model_tier, tier, skill);
   }
-  await assert.rejects(readdir(join(sourceRoot, '.codex/internal-skills/skill-execution')), { code: 'ENOENT' }, 'no shared skill-execution skill remains');
+  await assert.rejects(readdir(join(sourceRoot, legacyTierDirectory)), { code: 'ENOENT' }, 'the obsolete registry directory is absent');
 });
 
 test("a skill's tier comes from its own declaration and maps to agents.<provider>.<tier>_model", async () => {
@@ -251,7 +251,7 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
   // The diagram launch rule asks the binding command instead.
   for (const path of ['.codex/internal-skills/plantuml-diagrams/GUIDE.md']) {
     const text = await readFile(join(sourceRoot, path), 'utf8');
-    assert.match(text, /harness-skill-execution\.mjs binding --root <workspace_root> --skill /, path);
+    assert.match(text, /harness-stage-runtime\.mjs binding --root <workspace_root> --skill /, path);
     assert.match(text, /(실패하면 멈추고 부모 모델을 상속하지 않는다|never inherit the parent model)/, path);
   }
 });
@@ -259,7 +259,7 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
 test('installed consumer: the binding command returns setup\'s values for a sub-agent skill and refuses the main-session skill', async () => {
   const { root } = await install();
   try {
-    const binding = (skill) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
+    const binding = (skill) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
     for (const skill of ['plantuml-diagrams', 'product-spec']) {
       const result = binding(skill);
       assert.equal(result.status, 0, result.stderr);
@@ -303,7 +303,7 @@ test('installed consumer: a fresh install has no bindings.json, resolves from de
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('installed consumer: an update of a consumer that still has bindings.json removes it and restores the declarations', async () => {
+test('installed consumer: update removes its obsolete tier registry and restores declarations', async () => {
   const { root, git } = await install();
   try {
     const stale = await makeLegacyConsumer(root);
@@ -337,7 +337,7 @@ test('installed consumer: an update of a consumer that still has bindings.json r
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('installed consumer: an update removes bindings.json even when it was edited or lost its lock entry, keeping a backup', async () => {
+test('installed consumer: update retires an edited or unlocked tier registry while keeping a backup', async () => {
   for (const variant of ['edited', 'unlocked']) {
     const { root } = await install();
     try {

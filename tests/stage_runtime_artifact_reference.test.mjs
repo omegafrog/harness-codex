@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 
-test('installed skill execution accepts a changed input with its original snapshot hash', async () => {
+test('installed stage runtime accepts a changed input with its original snapshot hash', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-mutable-input-'));
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
   try {
@@ -18,7 +18,7 @@ test('installed skill execution accepts a changed input with its original snapsh
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
     const runtime = `file://${join(root, '.harness/src/workflow')}`;
-    const { validateSkillInput } = await import(`${runtime}/skill-execution.mjs`);
+    const { validateSkillInput } = await import(`${runtime}/stage-runtime.mjs`);
     const { sessionDirectory } = await import(`${runtime}/session-output.mjs`);
     const inputPath = 'docs/specs/calculator/product-spec.md';
     await mkdir(join(root, inputPath, '..'), { recursive: true });

@@ -4,7 +4,7 @@
 // an orchestrator edit bypasses that stage's review and completion gates.
 //
 // The rule applies only to the main session of an active workflow worktree (`.io/worktree.json` with state "active"):
-//   - stage runners set HARNESS_SKILL_EXECUTION_ID in the environment their hooks inherit, so a stage and the sub-agents it
+//   - stage runners set HARNESS_STAGE_EXECUTION_ID in the environment their hooks inherit, so a stage and the sub-agents it
 //     starts are never guarded;
 //   - a payload that carries `agent_id` came from a sub-agent. Claude Code documents the field for PreToolUse. Codex does not
 //     document it there, but codex-cli 0.167.1 sends `agent_id` and `agent_type` with a sub-agent's PreToolUse (observed), so a
@@ -247,7 +247,7 @@ function message(path, root, how) {
 
 // Returns the deny reason, or null when the call is allowed.
 export function writeGuardDecision(event, env = process.env) {
-  if (event?.hook_event_name !== 'PreToolUse' || env.HARNESS_SKILL_EXECUTION_ID || event.agent_id) return null;
+  if (event?.hook_event_name !== 'PreToolUse' || env.HARNESS_STAGE_EXECUTION_ID || event.agent_id) return null;
   const tool = event.tool_name, input = event.tool_input && typeof event.tool_input === 'object' ? event.tool_input : {};
   const isFileTool = FILE_TOOLS.includes(tool);
   if (!isFileTool && !['Bash', 'exec_command', 'shell_command'].includes(tool)) return null;

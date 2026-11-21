@@ -36,7 +36,7 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
   if (!hasTrackerConfiguration(config.tracker)) violations.push('Missing or invalid tracker configuration');
   if (typeof config.observability?.victorialogs?.local?.enabled !== 'boolean') violations.push('Missing observability.victorialogs.local.enabled');
   try {
-    const { validateContextBudget } = await import('./skill-execution.mjs');
+    const { validateContextBudget } = await import('./stage-runtime.mjs');
     validateContextBudget(JSON.parse(await readFile(join(root, '.codex/context-budget.json'), 'utf8')));
   } catch (error) { if (error.code && error.code !== 'ENOENT') throw error; violations.push(`Invalid context budget: ${error.message}`); }
   for (const path of ['CONTEXT.md', 'CONTEXT-MAP.md']) {

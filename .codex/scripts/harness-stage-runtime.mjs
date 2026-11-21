@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { isAbsolute } from 'node:path';
-const installed = new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url);
+const installed = new URL('../../.harness/src/workflow/stage-runtime.mjs', import.meta.url);
 const { resolveSkillBinding, resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillReturn, assessContextBudget } = await import(installed.href);
 try {
   const [action, ...args] = process.argv.slice(2);

@@ -78,7 +78,7 @@ test('fresh and updated consumers receive scope guidance and the gate while proj
     '.codex/internal-skills/spec-review/references/review-criteria.md',
     '.harness/src/workflow/spec-review.mjs',
     '.harness/src/workflow/plan-review.mjs',
-    '.harness/src/workflow/skill-execution.mjs',
+    '.harness/src/workflow/stage-runtime.mjs',
     '.harness/src/workflow/stage-checkpoint.mjs',
     '.harness/contracts.mjs',
     '.codex/scripts/harness-spec-review.mjs',
@@ -210,7 +210,7 @@ test('implementation never asks the user: the output schema and the result valid
     await writeOutputSchema({ root, input: { execution_id: 'requirements-fix-1', skill: 'requirements-fix' }, prefix: '', path: other });
     assert.ok(JSON.parse(await readFile(other, 'utf8')).properties.code.enum.includes('USER_DECISION_REQUIRED'), 'requirements-fix still asks');
   } finally { await rm(dir, { recursive: true, force: true }); }
-  assert.match(await read('.harness/src/workflow/skill-execution.mjs'), /Implementation does not ask the user/);
+  assert.match(await read('.harness/src/workflow/stage-runtime.mjs'), /Implementation does not ask the user/);
   assert.match(await read('.codex/internal-skills/implement-wrapper/GUIDE.md'), /사용자에게 질문하지 않는다/);
 });
 

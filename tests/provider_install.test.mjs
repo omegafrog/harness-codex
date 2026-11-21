@@ -39,7 +39,7 @@ test('install --provider codex carries no Claude Code files and the Claude provi
     const { loadProvider } = await import(`file://${join(root, '.harness/src/workflow/providers/index.mjs')}`);
     await assert.rejects(loadProvider('claude-code'), /claude-code provider is not installed/);
     assert.equal((await loadProvider('codex')).id, 'codex');
-    const { resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage } = await import(`file://${join(root, '.harness/src/workflow/stage-runtime.mjs')}`);
     const { resolveStageSkill } = await import(`file://${join(root, '.harness/src/workflow/stage-input.mjs')}`);
     for (const [stageId, workflow] of [['plan-pr', 'to-ticket'], ['integration-pr', 'implement-wrapper']]) {
       assert.equal((await resolveStageSkill({ root, stageId })).skill, 'gh-open-pr');

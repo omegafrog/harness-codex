@@ -11,7 +11,7 @@ import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFi
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
-import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/skill-execution.mjs";
+import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/stage-runtime.mjs";
 import { inspectRetiredProjectHooks } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
@@ -76,9 +76,9 @@ async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
 
 async function inspectExecutionAssets(root, diagnostics) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
-  // The runner schema directory (or, before it moved, the skill-execution contract directory) marks a project that installed the stage runtime.
+  // The runner schema directory (or, before it moved, the stage-runtime contract directory) marks a project that installed the stage runtime.
   const marker = async (path) => lstat(join(root, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
-  if (!await marker('.harness/schemas') && !await marker('.codex/internal-skills/skill-execution')) return;
+  if (!await marker('.harness/schemas')) return;
   const paths = [
     '.codex/internal-skills/implement-wrapper/GUIDE.md',
     '.codex/internal-skills/implement/references/ponytail.md',
@@ -126,7 +126,7 @@ async function inspectExecutionAssets(root, diagnostics) {
   }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'skill-execution', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (config.agents?.provider === 'claude-code') {
@@ -404,7 +404,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".harness/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/skill-execution.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.codex/scripts/harness-context.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/stage-runtime.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.codex/scripts/harness-context.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {

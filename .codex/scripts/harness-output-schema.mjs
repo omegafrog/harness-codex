@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 const runtime = new URL('../../.harness/src/workflow/', import.meta.url);
-const { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput } = await import(new URL('skill-execution.mjs', runtime));
+const { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput } = await import(new URL('stage-runtime.mjs', runtime));
 const { writeOutputSchema } = await import(new URL('output-schema.mjs', runtime));
 const { parseYaml } = await import(new URL('../eval/yaml.mjs', runtime));
 const { configuredProvider } = await import(new URL('providers/index.mjs', runtime));

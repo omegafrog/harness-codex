@@ -41,7 +41,7 @@ flowchart TD
 | 확인한 구조 | 근거 | 과도하거나 충돌하는 부분 | 계획에 반영할 변경 |
 |---|---|---|---|
 | writer receipt는 이미 제거됨 | `spec-me/SKILL.md`, `tests/worktree_record_contract.test.mjs` | writer receipt 삭제만 반복해서 제안하면 남아 있는 문제를 해결하지 못함 | 남은 리뷰·승인·발행·실행 기록을 각각 정리 |
-| reviewer가 입력 파일별 해시를 반환함 | `plan-review/GUIDE.md`, `spec-review/GUIDE.md`, `skill-execution.mjs` | 실행기가 발급한 값을 모델이 복사하고 다시 대조함 | reviewer는 판정·지적을 반환하고 실행기가 admission과 실제 agent metadata를 연결 |
+| reviewer가 입력 파일별 해시를 반환함 | `plan-review/GUIDE.md`, `spec-review/GUIDE.md`, `stage-runtime.mjs` | 실행기가 발급한 값을 모델이 복사하고 다시 대조함 | reviewer는 판정·지적을 반환하고 실행기가 admission과 실제 agent metadata를 연결 |
 | 계획 snapshot이 로컬 링크를 재귀 탐색함 | `workflow/plan-review.mjs:97` | 링크된 Markdown이 추가 링크를 끌어들여 검토·무효화 범위가 확장됨 | 두 Spec·계획 index·전체 split plan으로 검토 범위를 명시 |
 | 계획 snapshot이 부가 파일도 고정 포함함 | `workflow/plan-review.mjs:112` | glossary·통합 계약·실행 설정 변경만으로 계획 리뷰가 stale이 될 수 있음 | 부가 자료는 작성자가 필요한 내용을 Spec·계획에 반영하며 자동 snapshot 확장을 제거 |
 | 계획 상태 제외가 일관되지 않음 | `workflow/plan-review.mjs:13,120,171` | canonical plan 설명용 해시는 `status`를 제외하지만 review snapshot은 파일 전체를 해시함 | 기존 `status` 제외 처리를 계획 snapshot에도 일관되게 적용; 본문 변경은 계속 감지 |
@@ -52,7 +52,7 @@ flowchart TD
 | publisher가 별도 완료 파일을 작성함 | `tracker-publish/SKILL.md` | 발행 journal·완료 파일·stage result에 mapping과 상태를 중복 작성함 | journal에 성공한 mutation을 기록하고 실행기가 stage 결과를 생성 |
 | 완료 hook의 일부 항목은 입력 boolean만 검사함 | `gates/lifecycle.mjs`의 `required_outcome`, `evidence`, `evidence_flush` | 모델이 적은 `true`를 위한 별도 완료 자료가 생기며 실제 동작 검증과 중복됨 | 실제 산출물·리뷰·journal·종료 결과에서 유도; 독립 근거가 없는 중복 선언 제거 |
 | coverage gate 이름 일부는 manifest에만 선언됨 | `workflow/loader.mjs`, `workflow/stage-gates.mjs` | `product_coverage` 등은 등록된 stage evaluator와 같지 않아 자동 검사로 오인 가능 | 자동 검사와 작성·리뷰 판단을 가이드에 구분; 기존 검사에 연결되지 않는 선언 정리 |
-| 동일 snapshot을 여러 경계에서 검사함 | `plan-review/GUIDE.md`, `stage-input.mjs`, `skill-execution.mjs`, `completion.mjs` | pass 후 작성자 재개·작성 완료·발행 전·최종 완료에서 중복 조율이 발생 | 변경 가능한 경계와 외부 mutation 직전 검사는 유지하고 같은 동작 안의 중복 호출 제거 |
+| 동일 snapshot을 여러 경계에서 검사함 | `plan-review/GUIDE.md`, `stage-input.mjs`, `stage-runtime.mjs`, `completion.mjs` | pass 후 작성자 재개·작성 완료·발행 전·최종 완료에서 중복 조율이 발생 | 변경 가능한 경계와 외부 mutation 직전 검사는 유지하고 같은 동작 안의 중복 호출 제거 |
 
 해시 계산의 CPU 비용이 긴 실행의 주원인이라고 단정하지 않는다. 코드상 확인된 부담은 모델의 해시 복사, 별도 파일 작성, 넓은 무효화 범위, 자료 승인 대기, 같은 입력의 재검토·재개다. 구현 후 기존 process log의 시각으로 각 항목의 시간을 비교한다.
 
@@ -166,7 +166,7 @@ Product·Architecture template도 현재 요구의 중복 기입 여부를 확�
 
 현재 전체 흐름 문서는 `docs/architecture/workflow-lifecycle.md`에 존재한다. 그러나 2026-10-23 기준이며 별도 Product 리뷰·옛 `.git` session 경로·worktree 소유 receipt·예전 발행 단계가 섞여 있다. 현재 orchestrator SKILL에는 이 문서로 가는 링크가 없다. `docs/architecture/enforcement.md`와 `docs/agents/EXEC.md`에도 과거 절차와 충돌하는 설명이 남아 있다.
 
-설치 소비자도 읽을 수 있는 공통 가이드를 `.codex/internal-skills/skill-execution/references/workflow-map.md`에 둔다. orchestrator SKILL과 실행 조율 GUIDE가 진입 시 이 짧은 지도를 읽도록 연결한다. 상세 규칙을 지도에 복제하지 않고 각 담당 GUIDE로 연결한다. 기존 workflow-lifecycle 문서는 같은 흐름을 설명하는 유지보수용 안내와 코드 링크로 정비한다.
+설치 소비자도 읽을 수 있는 공통 가이드를 `.codex/skills/orchestrator/references/workflow-map.md`에 둔다. orchestrator SKILL과 실행 조율 GUIDE가 진입 시 이 짧은 지도를 읽도록 연결한다. 상세 규칙을 지도에 복제하지 않고 각 담당 GUIDE로 연결한다. 기존 workflow-lifecycle 문서는 같은 흐름을 설명하는 유지보수용 안내와 코드 링크로 정비한다.
 
 공통 가이드에는 다음을 포함한다.
 
@@ -203,7 +203,7 @@ Codex·Claude가 같은 내용을 설치받게 한다. provider별 문서에는 
 | 순서 | 변경 범위 | 완료 결과 |
 |---|---|---|
 | 1 | orchestrator SKILL, 실행 조율 GUIDE·references, workflow-lifecycle·enforcement·EXEC | 현재/목표 흐름, 기록 소유자, 리뷰·정지 범위, 단계 선택 입력과 자율성 경계가 한 경로로 확인 가능 |
-| 2 | review CLI·`spec-review.mjs`·`plan-review.mjs`·관련 schema·`skill-execution.mjs` | 모델의 해시/식별자 복사 제거, 계획 snapshot 범위 축소와 status 처리 일치, 현재성·독립성 유지 |
+| 2 | review CLI·`spec-review.mjs`·`plan-review.mjs`·관련 schema·`stage-runtime.mjs` | 모델의 해시/식별자 복사 제거, 계획 snapshot 범위 축소와 status 처리 일치, 현재성·독립성 유지 |
 | 3 | `harness-result.mjs`·runner·`stage-input.mjs`·`execution-state.mjs`·completion·publisher | 결과 정본과 파생 출력 일치, 별도 완료 파일/boolean 문서 제거, 불필요한 pass 재개 제거 |
 | 4 | `.codex/internal-skills/technology-selection/GUIDE.md`, spec-me 호출 지침·decision-knowledge·Product/Architecture topics/template·Decision schema/validation/artifacts/gates·Learning 검토 | 공개 description 없는 내부 호출, 기준 → 후보 → 근거 → 비교 → 선택 → Spec 흐름과 간소화한 출처 처리 연결 |
 | 5 | manifest·bindings·agent 안내·wrapper 소비자·설치/update/transforms/Doctor/local-exclude·관련 회귀 | 모든 호출부와 설치 소비자가 같은 절차 사용; 내부 GUIDE 배포, 공개 복제본 부재, 폐기된 요구·schema·export·fixture 잔재 정리 |
@@ -242,8 +242,8 @@ Codex·Claude가 같은 내용을 설치받게 한다. provider별 문서에는 
 
 ## 11. 조사 근거
 
-- [오케스트레이터 선택·전환](../../.codex/skills/orchestrator/SKILL.md), [실행 조율](../../.codex/internal-skills/skill-execution/GUIDE.md), [입력/재개](../../.harness/src/workflow/stage-input.mjs), [실행 상태](../../.harness/src/workflow/execution-state.mjs).
+- [오케스트레이터 선택·전환](../../.codex/skills/orchestrator/SKILL.md), [실행 조율](../../.harness/src/installer/stage-contract.mjs), [입력/재개](../../.harness/src/workflow/stage-input.mjs), [실행 상태](../../.harness/src/workflow/execution-state.mjs).
 - [Spec 절차](../../.codex/skills/spec-me/SKILL.md), [결정 근거](../../.codex/skills/spec-me/references/decision-knowledge.md), [Architecture 결정](../../.codex/skills/spec-me/references/architecture-decision.md), [Decision schema](../../.codex/schemas/decision/architecture-decision.schema.yaml), [stage gates](../../.harness/src/workflow/stage-gates.mjs).
-- [Spec 리뷰](../../.harness/src/workflow/spec-review.mjs), [계획 리뷰 snapshot](../../.harness/src/workflow/plan-review.mjs), [review 시도 관리](../../.harness/src/workflow/review-attempts.mjs), [검토 결과 전달](../../.harness/src/workflow/skill-execution.mjs), [결과 정규화](../../.codex/scripts/harness-result.mjs).
+- [Spec 리뷰](../../.harness/src/workflow/spec-review.mjs), [계획 리뷰 snapshot](../../.harness/src/workflow/plan-review.mjs), [review 시도 관리](../../.harness/src/workflow/review-attempts.mjs), [검토 결과 전달](../../.harness/src/workflow/stage-runtime.mjs), [결과 정규화](../../.codex/scripts/harness-result.mjs).
 - [발행 절차](../../.codex/skills/tracker-publish/SKILL.md), [구현 wrapper](../../.codex/skills/implement-wrapper/SKILL.md), [구현 dispatch](../../.harness/src/wrapper/dispatch.mjs), [공통 완료](../../.harness/src/workflow/completion.mjs), [lifecycle gates](../../.harness/src/gates/lifecycle.mjs), [E2E 실행 기록](../../.harness/src/workflow/execution.mjs).
 - [기존 전체 흐름 문서](../architecture/workflow-lifecycle.md), [enforcement 설명](../architecture/enforcement.md), [실행 안내](../agents/EXEC.md), [설치 discovery/update](../../.harness/src/installer/update.mjs), [provider 문서 변환](../../.harness/src/installer/transforms.mjs), [Doctor](../../.harness/src/doctor/doctor.mjs), [Git 제외](../../.harness/src/installer/local-exclude.mjs).

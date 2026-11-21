@@ -138,7 +138,7 @@ export async function approveArchitectureDecision({ root = process.cwd(), ticket
   const decision = await readArchitectureDecisionForHash({ root, ticketId, decisionId });
   if (delegated) {
     const state = JSON.parse(await readFile(sessionOutputPath(root, 'runtime/orchestrator/state.json', { create: false }), 'utf8'));
-    const { readExecutionInput } = await import('../workflow/skill-execution.mjs');
+    const { readExecutionInput } = await import('../workflow/stage-runtime.mjs');
     const input = await readExecutionInput({ root, execution_id: state.stages?.['workflow-compose']?.execution_id });
     if (typeof input.scope !== 'string' || typeof decision.selection?.user_choice !== 'string' || !decision.selection.user_choice.trim() || !input.scope.includes(decision.selection.user_choice)) throw new TypeError('Delegation must be quoted from the recorded original request.');
   } else {

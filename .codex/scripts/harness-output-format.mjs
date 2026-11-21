@@ -2,7 +2,7 @@
 import { isAbsolute } from 'node:path';
 import { validateOutputFormat } from '../../.harness/src/workflow/output-schema.mjs';
 import { cliSession } from '../../.harness/src/workflow/cli-session.mjs';
-import { readExecutionInput, readSkillSessionJson, validateSkillInput } from '../../.harness/src/workflow/skill-execution.mjs';
+import { readExecutionInput, readSkillSessionJson, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
 
 try {
   const args = process.argv.slice(2), opts = {};

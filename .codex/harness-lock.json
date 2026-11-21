@@ -699,11 +699,6 @@
       "upstream_sha256": "5e5e80bb78c6611b764d2e1cd1cf02fcfffcbf65f91ad0f2a5f3df8b13ca36a3",
       "source_path": "src/workflow/session-output.mjs"
     },
-    ".codex/harness-runtime/src/workflow/skill-execution.mjs": {
-      "installed_sha256": "a483a6efee7e78b5c84255af255ecf8838838b8601210bddadf431e927b987e1",
-      "upstream_sha256": "a483a6efee7e78b5c84255af255ecf8838838b8601210bddadf431e927b987e1",
-      "source_path": "src/workflow/skill-execution.mjs"
-    },
     ".codex/harness-runtime/src/workflow/spec-review.mjs": {
       "installed_sha256": "dff386f94f82ae68ce8af956c85e391dd4bafc53a4278c9006623084ad7bd3f8",
       "upstream_sha256": "dff386f94f82ae68ce8af956c85e391dd4bafc53a4278c9006623084ad7bd3f8",
@@ -955,32 +950,6 @@
       "source_path": ".codex/internal-skills/session-worktree/references/worktree-cli.md",
       "source_transform": "project-local-paths-v1"
     },
-    ".codex/internal-skills/skill-execution/GUIDE.md": {
-      "installed_sha256": "d916b63fa9b56d5d50b83f1a24c703989f5090020a46f4d5caf01a3b4ff6b400",
-      "upstream_sha256": "d916b63fa9b56d5d50b83f1a24c703989f5090020a46f4d5caf01a3b4ff6b400",
-      "source_path": ".codex/internal-skills/skill-execution/GUIDE.md",
-      "source_transform": "project-local-paths-v1"
-    },
-    ".codex/internal-skills/skill-execution/schemas/input.schema.json": {
-      "installed_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",
-      "upstream_sha256": "ef1de9848bcdc52098fc65f28963af33b00ce55e687a7e34b143e90903c56abc",
-      "source_path": ".codex/internal-skills/skill-execution/schemas/input.schema.json"
-    },
-    ".codex/internal-skills/skill-execution/schemas/question.schema.json": {
-      "installed_sha256": "b4e2e4b353f18a52e66fe1c49b4df616a03e804941d3e8c5d10988062e99fe74",
-      "upstream_sha256": "b4e2e4b353f18a52e66fe1c49b4df616a03e804941d3e8c5d10988062e99fe74",
-      "source_path": ".codex/internal-skills/skill-execution/schemas/question.schema.json"
-    },
-    ".codex/internal-skills/skill-execution/schemas/result.schema.json": {
-      "installed_sha256": "5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5",
-      "upstream_sha256": "5709b168e46c62e5e872d4771fb1c285d92e814302d065269e41bbb93c0e6ef5",
-      "source_path": ".codex/internal-skills/skill-execution/schemas/result.schema.json"
-    },
-    ".codex/internal-skills/skill-execution/schemas/return.schema.json": {
-      "installed_sha256": "46ce5b5b87b9e550ad02c30150b31ec3d0b96b4ccb794d54f3d180d1451fdb1b",
-      "upstream_sha256": "46ce5b5b87b9e550ad02c30150b31ec3d0b96b4ccb794d54f3d180d1451fdb1b",
-      "source_path": ".codex/internal-skills/skill-execution/schemas/return.schema.json"
-    },
     ".codex/internal-skills/spec-review/GUIDE.md": {
       "installed_sha256": "736ac989fa249ade9100046111e695a725b4ec1f42c9f7b133a1e94c16eee6de",
       "upstream_sha256": "736ac989fa249ade9100046111e695a725b4ec1f42c9f7b133a1e94c16eee6de",
@@ -1139,15 +1108,10 @@
       "upstream_sha256": "3f113c4020031bf7a96b095a6d70e0b52ecacb56321a4027e9fbfefa8dcc0eaa",
       "source_path": ".codex/scripts/harness-setup.mjs"
     },
-    ".codex/scripts/harness-skill-exec.mjs": {
-      "installed_sha256": "a583306cd41b72ea07bfc210b07adb583b2d47906e8bcc4d3c8907b7fac36a87",
-      "upstream_sha256": "a583306cd41b72ea07bfc210b07adb583b2d47906e8bcc4d3c8907b7fac36a87",
-      "source_path": ".codex/scripts/harness-skill-exec.mjs"
-    },
-    ".codex/scripts/harness-skill-execution.mjs": {
+    ".codex/scripts/harness-stage-runtime.mjs": {
       "installed_sha256": "92b4d48deeb8f72b472c7d61b65f6bba2f7bd1af58916eaf4f35bce60dd1f7e7",
       "upstream_sha256": "92b4d48deeb8f72b472c7d61b65f6bba2f7bd1af58916eaf4f35bce60dd1f7e7",
-      "source_path": ".codex/scripts/harness-skill-execution.mjs"
+      "source_path": ".codex/scripts/harness-stage-runtime.mjs"
     },
     ".codex/scripts/harness-spec-review.mjs": {
       "installed_sha256": "c0354d021bc4c5e8138fd08a398b866f5f690def6effd6c74ff16f0b99049135",

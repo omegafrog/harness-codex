@@ -40,8 +40,8 @@
 
 ## 3. 정본 배치 원칙
 
-1. **런타임이 결정하는 값은 지침에 다시 쓰지 않는다.** model tier·model·effort는 각 skill 문서 frontmatter의 `model_tier`와 `harness-skill-execution.mjs binding`이 정한다. workspace 검사는 workflow `before_dispatch` gate가 수행한다. plan hash 정규화는 `harness-plan-review.mjs check`가 판정한다.
-2. **공통 규칙은 설치되는 관리 자산 한 곳에 둔다.** consumer의 `docs/agents/EXEC.md`는 프로젝트 소유이며 설치되지 않는다. 실제 테스트 consumer(`harness-test`)의 EXEC.md에는 "세션 파일 출력 경계" 섹션이 없다. 따라서 실행 산출물 경로 규칙(로그·임시 파일·스크린샷 등을 어디에 쓰는가)의 정본은 `EXEC.md`가 아니라 `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md`(신규)에 둔다.
+1. **런타임이 결정하는 값은 지침에 다시 쓰지 않는다.** model tier·model·effort는 각 skill 문서 frontmatter의 `model_tier`와 `harness-stage-runtime.mjs binding`이 정한다. workspace 검사는 workflow `before_dispatch` gate가 수행한다. plan hash 정규화는 `harness-plan-review.mjs check`가 판정한다.
+2. **공통 규칙은 설치되는 관리 자산 한 곳에 둔다.** consumer의 `docs/agents/EXEC.md`는 프로젝트 소유이며 설치되지 않는다. 실제 테스트 consumer(`harness-test`)의 EXEC.md에는 "세션 파일 출력 경계" 섹션이 없다. 따라서 실행 산출물 경로 규칙(로그·임시 파일·스크린샷 등을 어디에 쓰는가)의 정본은 `EXEC.md`가 아니라 `.harness/src/installer/stage-contract.mjs`에 둔다.
 3. **링크는 그 실행이 실제로 따라야 할 문서만 건다.** 참고용 링크도 모델이 읽는 계기가 된다.
 4. **agent toml에는 역할별 차이만 둔다.** 공통 절차는 역할이 읽는 GUIDE가 소유한다.
 5. 한 파일 안에서는 같은 규칙을 한 번만 쓴다.
@@ -55,8 +55,8 @@
 | # | 대상 | 변경 |
 |---|---|---|
 | 1-1 | `grill-with-docs`, `domain-modeling`, `implement`, `gh-open-pr`, `maintain-verification`, `evaluate-harness`, `frontend-design` GUIDE의 `## 통합 계약 연속성` | "sync-contracts에 따라 갱신" 문장이 AGENTS.md와 `code-review/GUIDE.md:120`(중간 plan은 deferred, 최종 통합에서만 sync)과 충돌한다. 설계 단계(`grill-with-docs`, `domain-modeling`)와 plan 단위 `implement`에서는 "현행 계약을 읽고 변경안은 ticket Spec에 기록" 한 줄로 바꾼다. 최종 통합을 수행하는 스킬(`implement-wrapper` 최종 단계, `sync-contracts`)에만 갱신 지시를 남긴다. `gh-open-pr`·`maintain-verification`·`evaluate-harness`·`frontend-design`은 각 흐름이 실제로 최종 통합 경로인지 확인한 뒤 같은 기준으로 정리한다. |
-| 1-2 | `frontend-design/GUIDE.md` `## Workspace contract` 3-4단계 | `frontend-design.yaml`의 `before_dispatch: workspace` gate와 중복된다. `implement/GUIDE.md:11`처럼 "gate가 수행하며 별도 실행하지 않는다"로 바꾼다. standalone 실행에도 gate가 적용되는지 `harness-skill-execution`/dispatch 경로에서 확인하고, 적용되지 않으면 standalone 조건으로만 남긴다. |
-| 1-3 | `implement/GUIDE.md:14` | runner가 주입하는 `skill-execution/worker-base.md`를 다시 가리키는 문장이다. worker-base는 모든 stage에 이미 주입되므로 문장을 삭제한다. (계획 작성 시 "근거 코드 없음"으로 잘못 적었고 구현 중 정정했다.) |
+| 1-2 | `frontend-design/GUIDE.md` `## Workspace contract` 3-4단계 | `frontend-design.yaml`의 `before_dispatch: workspace` gate와 중복된다. `implement/GUIDE.md:11`처럼 "gate가 수행하며 별도 실행하지 않는다"로 바꾼다. standalone 실행에도 gate가 적용되는지 `harness-stage-runtime`/dispatch 경로에서 확인하고, 적용되지 않으면 standalone 조건으로만 남긴다. |
+| 1-3 | `implement/GUIDE.md:14` | runner가 주입하는 the injected stage contract를 다시 가리키는 문장이다. worker-base는 모든 stage에 이미 주입되므로 문장을 삭제한다. (계획 작성 시 "근거 코드 없음"으로 잘못 적었고 구현 중 정정했다.) |
 | 1-4 | `e2e-test/GUIDE.md:26` | "원본 checkout / 설치 consumer" 분기의 두 경로가 같다. 경로 하나로 합친다. |
 | 1-5 | `to-ticket/references/github-batch-publish.md:21,27` | 동일 문장 중복을 하나로 합친다. |
 
@@ -64,7 +64,7 @@
 
 - 33개 GUIDE/SKILL의 `## 실행 모델과 반환`에서 model_tier·model key·binding 해석 문장을 삭제한다.
 - 남길 내용은 스킬별 고유 정보뿐이다. 예: "구현은 이 실행이 수행하고 필수 독립 리뷰는 서브에이전트에 위임한다", "사용자 결정과 단계 전환은 caller에 반환한다". 고유 정보가 없으면 섹션 전체를 삭제한다.
-- 공통 문장 "사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다"는 `skill-execution/GUIDE.md`에 한 번만 둔다.
+- 공통 문장 "사용자 결정과 workflow 단계 전환은 상위 caller에 반환한다"는 the injected stage contract에 한 번만 둔다.
 - `spec-me/GUIDE.md:14`의 standalone 모델 설명과 `frontend-design/GUIDE.md`의 `## Model routing`도 같은 이유로 삭제한다. stage별 tier는 `frontend-design.yaml`이 이미 정한다.
 - 확인: 각 skill 문서 frontmatter의 `model_tier`와 workflow yaml의 stage `model_tier`가 삭제된 설명과 일치하는지 대조한다(설명 삭제 전 값 손실 여부 점검).
 
@@ -72,14 +72,14 @@
 
 | 항목 | 정본 | 각 사용처 처리 |
 |---|---|---|
-| 실행 산출물 경로 (GUIDE `## 세션 출력` 9곳 + agent toml 17곳) | 신규 `skill-execution/references/runtime-artifact-paths.md`. 현재 `docs/agents/EXEC.md` §"세션 파일 출력 경계"의 Harness 공통 부분을 옮긴다. | GUIDE는 섹션 삭제 후 필요 스킬만 링크 한 줄. agent toml은 "Follow `.codex/internal-skills/skill-execution/references/runtime-artifact-paths.md`." 한 문장으로 교체. |
+| 실행 산출물 경로 (GUIDE `## 세션 출력` 9곳 + agent toml 17곳) | 신규 `.harness/src/installer/stage-contract.mjs`. 현재 `docs/agents/EXEC.md` §"세션 파일 출력 경계"의 Harness 공통 부분을 옮긴다. | GUIDE는 섹션 삭제 후 필요 스킬만 링크 한 줄. agent toml은 공통 stage contract를 따르도록 교체. |
 | 테스트·서비스 실행 전제 (7곳) | `e2e-test/references/verification-policy.md` | "일반 검증은 EXEC.md의 native CLI, `harness-exec`는 명시적 E2E 전용"을 정본에 두고 사용처는 링크 한 줄. `e2e-test` 자신의 실행 절차는 유지한다. |
 | 소유 worktree 종료 (6곳) | `session-worktree/GUIDE.md` | 하위 단계(`code-review`, `e2e-test`, `implement`, `sync-contracts`)는 "상위 workflow의 worktree를 그대로 사용한다" 한 줄. 독립 workflow인 `frontend-design`, `gh-open-pr`만 링크를 남긴다. |
-| "내부 절차를 호출할 때 공개 스킬 검색 대신 …" (16곳) | `skill-execution/GUIDE.md`의 한 문장 | 각 파일 첫 줄 삭제. 본문에서 실제로 쓰는 GUIDE만 해당 위치에 링크한다. |
+| "내부 절차를 호출할 때 공개 스킬 검색 대신 …" (16곳) | the injected stage contract의 한 문장 | 각 파일 첫 줄 삭제. 본문에서 실제로 쓰는 GUIDE만 해당 위치에 링크한다. |
 | E2E 실패 시 자동 수정·재실행 금지, 최종 E2E 승인 요건 | `e2e-test/references/verification-policy.md` | `failure-learning.md`의 동일 문장을 링크로 대체. |
 | VictoriaLogs 진단 로그 문단 4종 | `victorialogs-local-setup/GUIDE.md` | `implementation-guidance`·`testing-guidance`에는 적용 조건과 링크만 남긴다. |
 
-설치·배포 영향: 신규 `runtime-artifact-paths.md`는 `skill-execution/references` 아래에 두어 기존 관리 자산 discovery에 포함되게 한다. 설치 consumer에서 경로가 생성되는지 단계 6에서 확인한다.
+설치·배포 영향: 신규 `runtime-artifact-paths.md`는 `.harness/src/installer` 아래에 두어 기존 관리 자산 discovery에 포함되게 한다. 설치 consumer에서 경로가 생성되는지 단계 6에서 확인한다.
 
 ### 단계 4 — 대형 GUIDE 본문 정리
 
@@ -129,7 +129,7 @@ AGENTS.md는 설치되지 않는 소스 저장소 전용 파일이지만 이 저
 
 단계마다:
 1. `npm test` 전체 통과.
-2. 변경 파일을 단언하는 테스트 확인: `spec-me`, `workflow-compose`, `to-ticket`, `tracker-publish`, `technology-selection`, `implementation-guidance`, `skill-execution/references/{input,workflow-map}.md`, `code-review/references/baseline.md`, `orchestrator/SKILL.md`, `tracker_publisher.toml`.
+2. 변경 파일을 단언하는 테스트 확인: `spec-me`, `workflow-compose`, `to-ticket`, `tracker-publish`, `technology-selection`, `implementation-guidance`, `.codex/skills/orchestrator/references/{input,workflow-map}.md`, `code-review/references/baseline.md`, `orchestrator/SKILL.md`, `tracker_publisher.toml`.
 3. 삭제한 규칙마다 정본 위치에 같은 의미가 남아 있는지 diff로 대조한다(의미 손실 점검표를 commit 설명에 기록).
 
 전체 완료 시:

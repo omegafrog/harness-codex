@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 const base = new URL('../../.harness/src/workflow/', import.meta.url);
 const { prepareStageInput, resolveStageSkill } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
-const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('skill-execution.mjs', base));
+const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('stage-runtime.mjs', base));
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
 // What the error output needs to know about this call.

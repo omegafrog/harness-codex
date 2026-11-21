@@ -659,7 +659,7 @@ OpenAPI snapshot·Orval/Redocly 설정·의존성 lockfile·필요한 generated 
 
 | 범위 | 주요 파일/owner | 변경 |
 |---|---|---|
-| 진입·규칙 | `AGENTS.md`, `.codex/skills/orchestrator/SKILL.md`, `references/capability-routing.md`, `references/implementation.md`, skill-execution workflow 지도 | 독립 frontend 경로를 공통 단계로 라우팅하고 상충 지침 제거 |
+| 진입·규칙 | `AGENTS.md`, `.codex/skills/orchestrator/SKILL.md`, `references/capability-routing.md`, `references/implementation.md`, orchestrator workflow 지도 | 독립 frontend 경로를 공통 단계로 라우팅하고 상충 지침 제거 |
 | worktree별 독립 실행 | workflow-compose·startup-state/hook·CLI context·사용자 입력·write guard·stage dispatch/result·installer/Doctor | primary checkout에서 compose한 뒤 target 경로로 이동하고 orchestrator를 다시 호출. worktree/execution별 상태·입력·결과 분리. 전역 선택 포인터를 추가하지 않음 |
 | 스펙 | `spec-me`, `product-spec`, `architecture-spec`, `spec-review` GUIDE·template·workflow, frontend designer profile | UI 계약과 참고/asset grounding, 승인·리뷰·재개 인계 |
 | 중간 산출물 | Product/Architecture template, stage declared outputs·artifacts, `spec-review.mjs`·`plan-review.mjs`의 snapshot, frontend review result schema | UI 절 anchor·시각 설계 경로·state mapping·증거 목록을 선언하고 참조한 설계 변경의 stale review 검출 |

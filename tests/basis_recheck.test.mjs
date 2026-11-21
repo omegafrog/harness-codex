@@ -119,14 +119,14 @@ async function cliWorkspace() {
   })) await put(path, content);
   git('add', '.'); git('commit', '-qm', 'planning snapshot');
   const fixed = git('rev-parse', 'HEAD').trim();
-  const oldExecution = process.env.HARNESS_SKILL_EXECUTION_ID, oldRoot = process.env.HARNESS_WORKSPACE_ROOT;
+  const oldExecution = process.env.HARNESS_STAGE_EXECUTION_ID, oldRoot = process.env.HARNESS_WORKSPACE_ROOT;
   try {
-    process.env.HARNESS_SKILL_EXECUTION_ID = 'basis-review'; process.env.HARNESS_WORKSPACE_ROOT = root;
+    process.env.HARNESS_STAGE_EXECUTION_ID = 'basis-review'; process.env.HARNESS_WORKSPACE_ROOT = root;
     const began = await updatePlanReview({ root, planSetId: 'demo', action: 'begin' });
-    delete process.env.HARNESS_SKILL_EXECUTION_ID; delete process.env.HARNESS_WORKSPACE_ROOT;
+    delete process.env.HARNESS_STAGE_EXECUTION_ID; delete process.env.HARNESS_WORKSPACE_ROOT;
     await updatePlanReview({ root, planSetId: 'demo', action: 'record', attemptId: began.attempt_id, review: { verdict: 'pass', findings: [], reviewer_id: 'plan-reviewer', author_ids: ['orchestrator'], fork_turns: 'none' } });
   } finally {
-    if (oldExecution === undefined) delete process.env.HARNESS_SKILL_EXECUTION_ID; else process.env.HARNESS_SKILL_EXECUTION_ID = oldExecution;
+    if (oldExecution === undefined) delete process.env.HARNESS_STAGE_EXECUTION_ID; else process.env.HARNESS_STAGE_EXECUTION_ID = oldExecution;
     if (oldRoot === undefined) delete process.env.HARNESS_WORKSPACE_ROOT; else process.env.HARNESS_WORKSPACE_ROOT = oldRoot;
   }
   await put('src/post.js', 'const value = "new";\n'); git('add', 'src/post.js'); git('commit', '-qm', 'implementation');

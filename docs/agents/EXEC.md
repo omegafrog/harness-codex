@@ -190,9 +190,9 @@ reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> -
 
 `node .codex/scripts/harness-context.mjs --entry`는 현재 디렉터리의 Git 등록과 정본 `worktree.json`을 확인해 workflow 진입·재개를 안내한다. 승인 지점에서는 현재 대화의 provider 기록으로 사용자 응답을 확인한다. 프로젝트 갱신은 이전 시작 훅을 백업한 뒤 등록을 제거한다. Codex 사용자 전역 등록은 다른 checkout도 이용하므로 해당 checkout을 갱신한 뒤 Codex의 `$setup`에서 정리한다. Claude Code의 Agent admission과 서브에이전트 lifecycle, Codex의 subagent identity와 쓰기 보호는 별도 훅으로 유지한다.
 
-setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-skill-execution.mjs budget --root <workspace_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
+setup은 사용자에게 확인한 context window·plan 최대 예상 토큰·인계 예비 토큰을 프로젝트 소유 `.codex/context-budget.json`에 저장한다. `harness-stage-runtime.mjs budget --root <workspace_root> --estimate <tokens> [--used <observed-tokens>]`은 이 파일의 기준과 hash를 반환한다. 예상치와 관측 사용량을 구분하며 사용량이 없으면 runtime 판정을 반환하지 않는다. Doctor는 존재하는 budget 파일의 정합성을 검사하고 installer는 해당 설정 파일을 덮어쓰지 않는다.
 
-`model-binding-check`는 공개 skill의 binding 등록과 설정·workflow tier inventory를 검사한다. `internal-skills-check`는 skill 설치·업데이트·Doctor·Git 가시성, model/effort binding, 작은 반환 envelope와 파일 기반 결과 검증을 포함한다. `harness-skill-execution.mjs binding`은 실제 설정을 해석하고 `validate-return`은 session의 입력·반환·상세 결과·산출물을 대조한다. 이 명령들은 agent를 생성하거나 외부 tracker를 변경하지 않는다. orchestrator skill이 실제 spawn 도구와 기존 workflow lifecycle을 사용한다.
+`model-binding-check`는 공개 skill의 binding 등록과 설정·workflow tier inventory를 검사한다. `internal-skills-check`는 skill 설치·업데이트·Doctor·Git 가시성, model/effort binding, 작은 반환 envelope와 파일 기반 결과 검증을 포함한다. `harness-stage-runtime.mjs binding`은 실제 설정을 해석하고 `validate-return`은 session의 입력·반환·상세 결과·산출물을 대조한다. 이 명령들은 agent를 생성하거나 외부 tracker를 변경하지 않는다. orchestrator skill이 실제 spawn 도구와 기존 workflow lifecycle을 사용한다.
 
 Installer/Doctor/exclude Node 회귀 검사는 `node --test`로, Python CLI 검사는 `python3 -m unittest`로 직접 실행한다. 로컬 Git/file fixture와 외부 명령 stub만 사용하며 임시 consumer·backup·로그는 세션 안에 둔다.
 

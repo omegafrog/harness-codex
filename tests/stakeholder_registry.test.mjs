@@ -165,7 +165,7 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   assert.ok(FRESH_AGENT_TYPES.includes('stakeholder_persona'));
 
   // The installed tools resolve their tiers from the installed GUIDEs.
-  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
+  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
   assert.deepEqual(binding('stakeholder-persona'), { skill: 'stakeholder-persona', provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });
   assert.equal(binding('stakeholder-analysis').model_tier, 'implementation');
 

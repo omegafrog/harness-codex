@@ -31,7 +31,7 @@ try {
     deny('This Harness assignment requires a new Agent with an explicit profile and only the assigned input references. Continue a bound execution by messaging its existing agent.');
     process.exit(0);
   }
-  if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_SKILL_EXECUTION_ID || !native)) process.exit(0);
+  if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_STAGE_EXECUTION_ID || !native)) process.exit(0);
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;
   const ticketId = process.env.HARNESS_REVIEW_TICKET_ID || native?.planSetId;

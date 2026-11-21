@@ -32,7 +32,7 @@ const passingAnswer = JSON.stringify({ state: 'passed', report: { findings: [] }
 // The sync-contracts stage's semantic review of the sealed contract: `begin`, a native reviewer bound by the real subagent
 // hook (Codex and Claude Code share it), then `record`. Nothing here writes reviewer identity or the verdict by hand.
 async function reviewSealedContract({ ws, session, executionId = 'sync-contracts', reviewerId = 'contract-reviewer-1', verdict = 'pass', findings = [], forked = false }) {
-  const env = { ...process.env, HARNESS_WORKSPACE_ROOT: ws, HARNESS_SKILL_EXECUTION_ID: executionId, HARNESS_SESSION_DIR: session, HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: executionId };
+  const env = { ...process.env, HARNESS_WORKSPACE_ROOT: ws, HARNESS_STAGE_EXECUTION_ID: executionId, HARNESS_SESSION_DIR: session, HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: executionId };
   const run = (script, args) => execFileSync(process.execPath, [join(ws, '.codex/scripts', script), ...args], { cwd: ws, env, encoding: 'utf8' });
   const begin = JSON.parse(run('harness-contract-review.mjs', ['begin', '--root', ws, '--plan-set', PLAN_SET]));
   const transcript = join(session, `${reviewerId}-rollout.jsonl`);
@@ -87,10 +87,10 @@ async function buildConsumer() {
   const binding = { model: 'example', reasoning_effort: 'low' };
   await recordExecutionState({ root: ws, input, binding, status: 'running' });
   await recordExecutionState({ root: ws, input, binding, status: 'action_required', code: 'REVIEW_REQUIRED' });
-  const saved = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_SKILL_EXECUTION_ID'].map((key) => [key, process.env[key]]));
+  const saved = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_STAGE_EXECUTION_ID'].map((key) => [key, process.env[key]]));
   try {
     process.env.HARNESS_WORKSPACE_ROOT = ws;
-    process.env.HARNESS_SKILL_EXECUTION_ID = input.execution_id;
+    process.env.HARNESS_STAGE_EXECUTION_ID = input.execution_id;
     const admission = await updatePlanReview({ root: ws, planSetId: PLAN_SET, action: 'begin' });
     await bindNativeReviewer({ root: ws, scope: `plan-${PLAN_SET}`, attemptId: admission.attempt_id, executionId: input.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
     await updatePlanReview({ root: ws, planSetId: PLAN_SET, action: 'record', attemptId: admission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: admission.inputs, findings: [] } });
@@ -424,7 +424,7 @@ test('the completion gate and the sync-contracts stage need a passing independen
   const history = sessionFile(f, `runtime/reviews/contracts-${PLAN_SET}.json`);
   const log = sessionFile(f, 'runtime/executions/sync-contracts/subagents.jsonl');
   const { inspectContractReview } = await f.here('.harness/src/workflow/contract-review.mjs');
-  const { validateSkillReturn } = await f.here('.harness/src/workflow/skill-execution.mjs');
+  const { validateSkillReturn } = await f.here('.harness/src/workflow/stage-runtime.mjs');
   const contractCheck = async () => (await f.derive()).checks.contract_review;
   const input = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', workspace_root: f.ws, session_directory: f.session, scope: PLAN_SET, input_refs: [], context: { worktree_ref: join(f.session, 'worktree.json'), plan_set_id: PLAN_SET } };
   const result = { schema_version: 1, execution_id: 'sync-contracts', skill: 'sync-contracts', status: 'completed', code: 'OK', summary: 'Contract sealed and reviewed', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };

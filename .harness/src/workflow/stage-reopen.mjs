@@ -1,4 +1,4 @@
-import { readSkillSessionJson, resolveSkillSession } from './skill-execution.mjs';
+import { readSkillSessionJson, resolveSkillSession } from './stage-runtime.mjs';
 import { REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, WORKTREE_STAGE, isCurrentStage } from './worktree-stages.mjs';
 import { launchCommand } from './stage-cli.mjs';
 import { execFile } from 'node:child_process';

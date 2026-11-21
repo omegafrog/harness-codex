@@ -11,7 +11,7 @@ import { parseWorktreeRecord, specArtifactPath } from '../.harness/src/workflow/
 import { recordExecutionState } from '../.harness/src/workflow/execution-state.mjs';
 import { WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
 import { findExecutionInput, writeExecutionInput } from '../.harness/src/workflow/execution-input.mjs';
-import { readExecutionInput } from '../.harness/src/workflow/skill-execution.mjs';
+import { readExecutionInput } from '../.harness/src/workflow/stage-runtime.mjs';
 import { finishWorkflowWorktree } from '../.harness/src/workflow/worktrees.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -702,7 +702,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(switched.input.context.resume_session_id, undefined, 'a Codex conversation is never resumed in Claude');
     assert.equal(switched.input.context.previous_result_ref, `runtime/executions/${next.input.execution_id}/result.json`);
     assert.deepEqual(switched.answer, continued.answer);
-    const { resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`);
     assert.equal((await resolveSkillBinding({ root: tree.workspace, skill: 'requirements-fix', executionProvider: 'claude-code' })).model, 'opus');
     const sessions = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).agent_sessions;
     assert.equal(sessions['orchestrator.claude-code'].session_id, claudeSession);
@@ -762,7 +762,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const admitted = await updateReviewAttempt({ root: tree.workspace, scope, action: 'begin', inputs });
     const architectureReview = { axis: 'architecture', ticket_id: ticketId, reviewer_id: 'reviewer', author_ids: ['writer'], fork_turns: 'none', verdict: 'pass', inputs, findings: [] };
     await updateReviewAttempt({ root: tree.workspace, scope, action: 'record', attemptId: admitted.attempt_id, inputs, review: architectureReview });
-    const { validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { validateSkillReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`);
     const specEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', result_ref: specRef, result: specResult };
     await validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: specEnvelope });
     assert.throws(() => execFileSync(process.execPath, [...planCommand, '--feedback', '허용되지 않는 전환 피드백'], { cwd: tree.workspace, stdio: 'pipe' }), /Feedback requires/);
@@ -809,18 +809,18 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(planDir, 'plans.md'), '# Plans\n');
     await writeFile(join(planDir, 'slice.md'), '---\nstatus: planned\n---\n# Slice\n`calculator-community-e2e`\n');
     const { updatePlanReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/plan-review.mjs')}`);
-    const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_SKILL_EXECUTION_ID'].map((key) => [key, process.env[key]]));
+    const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_STAGE_EXECUTION_ID'].map((key) => [key, process.env[key]]));
     let reviewedResult, reviewedEnvelope, reviewRef, validateReviewedPlanReturn;
     try {
       process.env.HARNESS_WORKSPACE_ROOT = tree.workspace;
-      process.env.HARNESS_SKILL_EXECUTION_ID = authorInput.execution_id;
+      process.env.HARNESS_STAGE_EXECUTION_ID = authorInput.execution_id;
       const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: ticketId, action: 'begin' });
       await readFile(join(tree.session_directory, 'runtime/reviews', `plan-${ticketId}.json`));
       await assert.rejects(readFile(join(root, '.io/runtime/reviews', `plan-${ticketId}.json`)), { code: 'ENOENT' });
       reviewRef = `runtime/executions/${authorInput.execution_id}/result.json`;
       reviewedResult = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', summary: '계획 작성 및 독립 리뷰 완료', artifacts: [{ base: 'workspace', path: `docs/plans/${ticketId}/slice.md`, kind: 'split-plan', sha256: createHash('sha256').update(await readFile(join(planDir, 'slice.md'))).digest('hex') }], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
       reviewedEnvelope = { schema_version: 1, execution_id: authorInput.execution_id, skill: 'to-ticket', status: 'completed', code: 'OK', result_ref: reviewRef, result: reviewedResult };
-      ({ validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`));
+      ({ validateSkillReturn: validateReviewedPlanReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`));
       await assert.rejects(validateReviewedPlanReturn({ root: tree.workspace, input: authorInput, envelope: reviewedEnvelope }), /current passing independent plan review/i);
       const reviewHandoff = { ...reviewedResult, status: 'action_required', code: 'REVIEW_REQUIRED' };
       const handoffEnvelope = { ...reviewedEnvelope, status: 'action_required', code: 'REVIEW_REQUIRED', result: reviewHandoff };
@@ -862,7 +862,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, `runtime/executions/${implementation.input.execution_id}/return.json`), JSON.stringify(blockedEnvelope));
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: blockedRef });
-    const { validateSkillReturn: validateImplementationReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { validateSkillReturn: validateImplementationReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`);
     await validateImplementationReturn({ root: tree.workspace, input: implementation.input, envelope: blockedEnvelope });
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish'], { cwd: tree.workspace, encoding: 'utf8' }), /user publication approval are required/);
     const blockedStatePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
@@ -1081,7 +1081,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(found.input.scope, '작은 계산기 웹 앱');
     assert.equal(found.input.context.control_session_directory, undefined);
     assert.deepEqual(found.input.input_refs, []);
-    const { resolveSkillSession, validateSkillInput, validateSkillReturn, resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { resolveSkillSession, validateSkillInput, validateSkillReturn, resolveSkillBinding } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`);
     await validateSkillInput({ root: tree.workspace, input: found.input });
     await assert.rejects(validateSkillInput({ root: tree.workspace, input: { ...found.input, context: { worktree_ref: found.input.context.worktree_ref } } }), /required/);
     const foreign = join(parent, 'foreign');
@@ -1100,7 +1100,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(Object.hasOwn(next.input.context, 'subagent_binding'), false);
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'grilling', workflowBinding: next.input.context.workflow_binding }), { skill: 'grilling', provider: 'codex', model_tier: 'high_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'plantuml-diagrams' }), { skill: 'plantuml-diagrams', provider: 'codex', model_tier: 'low_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
-    const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-skill-execution.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(roleBinding.provider, 'codex');
     assert.equal(roleBinding.model, 'gpt-6-luna');
     assert.equal(roleBinding.reasoning_effort, 'medium');
@@ -1275,7 +1275,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.notEqual(wrongParent.status, 0);
     assert.match(wrongParent.stderr, /original Codex parent session/);
     const commandRunner = join(workspace, '.codex/scripts/harness-native-command.mjs');
-    const environment = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', next.input.execution_id, '--agent-id', 'agent-1', '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify({ id: process.env.HARNESS_SKILL_EXECUTION_ID, root: process.env.HARNESS_WORKSPACE_ROOT, session: process.env.HARNESS_SESSION_DIR }))'], { cwd: workspace, encoding: 'utf8' }));
+    const environment = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', next.input.execution_id, '--agent-id', 'agent-1', '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify({ id: process.env.HARNESS_STAGE_EXECUTION_ID, root: process.env.HARNESS_WORKSPACE_ROOT, session: process.env.HARNESS_SESSION_DIR }))'], { cwd: workspace, encoding: 'utf8' }));
     assert.deepEqual(environment, { id: next.input.execution_id, root: workspace, session: result.session_directory });
     assert.throws(() => execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', next.input.execution_id, '--agent-id', 'wrong', '--', process.execPath, '-e', ''], { cwd: workspace, stdio: 'pipe' }), /bound running subagent/);
     assert.throws(() => execFileSync(process.execPath, [...native, 'bind', ...nativeArgs, '--agent-id', 'another-agent'], { cwd: workspace, stdio: 'pipe' }), /binding mismatch/);

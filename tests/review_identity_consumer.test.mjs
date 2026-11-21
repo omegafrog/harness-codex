@@ -25,7 +25,7 @@ test('installed plan review records reviewer identity only from the subagent hoo
     await writeFile(join(root, 'docs/plans/sample/slice.md'), '---\nstatus: planned\n---\n# Slice\n');
     await writeFile(join(root, 'docs/specs/sample/product-spec.md'), '# Product\n');
     await writeFile(join(root, 'docs/specs/sample/architecture-spec.md'), '# Architecture\n');
-    const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_SKILL_EXECUTION_ID: 'to-ticket-exec-1', HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: 'sample', HARNESS_REVIEW_EXECUTION_ID: 'to-ticket-exec-1' };
+    const env = { ...process.env, HARNESS_WORKSPACE_ROOT: root, HARNESS_STAGE_EXECUTION_ID: 'to-ticket-exec-1', HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_REVIEW_TICKET_ID: 'sample', HARNESS_REVIEW_EXECUTION_ID: 'to-ticket-exec-1' };
     const cli = join(root, '.codex/scripts/harness-plan-review.mjs');
     const run = (args) => spawnSync(process.execPath, [cli, ...args, '--root', root, '--plan-set', 'sample'], { cwd: root, encoding: 'utf8', env });
     const begin = JSON.parse(run(['begin']).stdout);
@@ -70,7 +70,7 @@ test('a stage completes only when an admitted fresh reviewer finished after any 
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const { assertNoRogueReviewer } = await import(`file://${join(root, '.harness/src/workflow/skill-execution.mjs')}`);
+    const { assertNoRogueReviewer } = await import(`file://${join(root, '.harness/src/workflow/stage-runtime.mjs')}`);
     const session = join(root, '.io'), input = { execution_id: 'to-ticket-1' };
     const write = async (events) => { await mkdir(join(session, 'runtime/executions/to-ticket-1'), { recursive: true }); await writeFile(join(session, 'runtime/executions/to-ticket-1/subagents.jsonl'), events.map((item) => JSON.stringify({ review_scope: 'spec-x-architecture', ...item })).join('\n') + '\n'); };
     await assertNoRogueReviewer({ root, session, input }); // no reviewers at all

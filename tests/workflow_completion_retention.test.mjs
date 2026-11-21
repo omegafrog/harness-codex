@@ -61,10 +61,10 @@ test('installed to-ticket completion preserves its owned worktree and visible ar
       await recordExecutionState({ root: tree.workspace, input, binding, status: 'running' });
       if (skill === 'to-ticket') {
         await recordExecutionState({ root: tree.workspace, input, binding, status: 'action_required', code: 'REVIEW_REQUIRED' });
-        const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_SKILL_EXECUTION_ID'].map((key) => [key, process.env[key]]));
+        const savedEnvironment = Object.fromEntries(['HARNESS_WORKSPACE_ROOT', 'HARNESS_STAGE_EXECUTION_ID'].map((key) => [key, process.env[key]]));
         try {
           process.env.HARNESS_WORKSPACE_ROOT = tree.workspace;
-          process.env.HARNESS_SKILL_EXECUTION_ID = input.execution_id;
+          process.env.HARNESS_STAGE_EXECUTION_ID = input.execution_id;
           const planAdmission = await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'begin' });
           await bindNativeReviewer({ root: tree.workspace, scope: 'plan-calculator', attemptId: planAdmission.attempt_id, executionId: input.execution_id, reviewerId: 'plan-reviewer', parentSessionId: 'plan-author' });
           await updatePlanReview({ root: tree.workspace, planSetId: 'calculator', action: 'record', attemptId: planAdmission.attempt_id, review: { reviewer_id: 'plan-reviewer', author_ids: ['plan-author'], fork_turns: 'none', verdict: 'pass', inputs: planAdmission.inputs, findings: [] } });

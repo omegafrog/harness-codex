@@ -17,7 +17,7 @@ const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const guardScript = join(sourceRoot, '.codex/scripts/harness-write-guard.mjs');
 const patch = (...lines) => `*** Begin Patch\n${lines.join('\n')}\n*** End Patch`;
 const noStage = { ...process.env };
-delete noStage.HARNESS_SKILL_EXECUTION_ID;
+delete noStage.HARNESS_STAGE_EXECUTION_ID;
 
 // A workspace the way the compose step leaves it: a git worktree with an active canonical record.
 async function workflowWorkspace({ state = 'active', record = true } = {}) {
@@ -127,10 +127,10 @@ test('the guard does not interfere inside stage runners, sub-agents, other works
   const write = { command: patch('*** Update File: src/App.java', '@@', '-a', '+b') };
   try {
     assert.match(decide(root, 'apply_patch', write) ?? '', /does not write src\/App\.java/, 'the baseline is denied');
-    // A stage runner (and the sub-agents it starts) inherits HARNESS_SKILL_EXECUTION_ID from the runner.
-    assert.equal(decide(root, 'apply_patch', write, { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'implement-wrapper-1', HARNESS_WORKSPACE_ROOT: root }), null);
-    assert.equal(decide(root, 'Write', { file_path: `${root}/src/App.java`, content: 'x' }, { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'implement-wrapper-1' }), null);
-    assert.equal(decide(root, 'Bash', { command: 'echo x > src/App.java' }, { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'implement-wrapper-1' }), null);
+    // A stage runner (and the sub-agents it starts) inherits HARNESS_STAGE_EXECUTION_ID from the runner.
+    assert.equal(decide(root, 'apply_patch', write, { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'implement-wrapper-1', HARNESS_WORKSPACE_ROOT: root }), null);
+    assert.equal(decide(root, 'Write', { file_path: `${root}/src/App.java`, content: 'x' }, { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'implement-wrapper-1' }), null);
+    assert.equal(decide(root, 'Bash', { command: 'echo x > src/App.java' }, { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'implement-wrapper-1' }), null);
     // A payload from a sub-agent carries agent_id (documented for Claude Code PreToolUse).
     assert.equal(decide(root, 'Write', { file_path: `${root}/src/App.java`, content: 'x' }, noStage, { agent_id: 'agent-7', agent_type: 'general-purpose' }), null);
     // No active workflow in the workspace: ordinary use of Codex or Claude Code is untouched.
@@ -159,7 +159,7 @@ test('the script prints the PreToolUse deny decision and stays silent for allowe
     assert.equal(output.hookSpecificOutput.permissionDecision, 'deny');
     assert.match(output.hookSpecificOutput.permissionDecisionReason, /sync-contracts/);
     assert.equal(run(pre(root, 'apply_patch', { command: patch('*** Add File: .io/note.md', '+x') })).stdout, '');
-    assert.equal(run(pre(root, 'apply_patch', { command: patch('*** Add File: src/a.js', '+x') }), { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'stage-1' }).stdout, '');
+    assert.equal(run(pre(root, 'apply_patch', { command: patch('*** Add File: src/a.js', '+x') }), { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'stage-1' }).stdout, '');
     const garbage = spawnSync(process.execPath, [guardScript], { input: 'not json', encoding: 'utf8', env: noStage });
     assert.equal(garbage.stdout, '');
     assert.equal(garbage.status, 0, 'a hook that cannot read its input must not break the session');
@@ -182,7 +182,7 @@ test('the Codex user hook runs the script only for the main session of an active
     assert.equal(JSON.parse(run(root, pre(root, 'Bash', { command: 'echo x > src/App.java' })).stdout).hookSpecificOutput.permissionDecision, 'deny');
     assert.equal(run(root, pre(root, 'apply_patch', { command: patch('*** Add File: .io/x.md', '+x') })).stdout, '');
     assert.equal(run(root, pre(root, 'update_plan', { plan: [] })).stdout, '', 'tools that cannot write files never reach node');
-    assert.equal(run(root, pre(root, 'apply_patch', write), { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'stage-1' }).stdout, '', 'a stage runner is never guarded');
+    assert.equal(run(root, pre(root, 'apply_patch', write), { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'stage-1' }).stdout, '', 'a stage runner is never guarded');
     assert.equal(run(plain, pre(plain, 'apply_patch', write)).stdout, '', 'a workspace without an active workflow');
     assert.equal(run(tmpdir(), pre(tmpdir(), 'apply_patch', write)).stdout, '', 'outside a repository');
     assert.equal(run(tmpdir(), pre(tmpdir(), 'apply_patch', write)).status, 0);
@@ -236,7 +236,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
     const run = (event, env = noStage) => spawnSync(process.execPath, [installed], { cwd: root, input: JSON.stringify(event), encoding: 'utf8', env });
     assert.equal(JSON.parse(run(pre(root, 'Write', { file_path: `${root}/src/app.js`, content: 'x' })).stdout).hookSpecificOutput.permissionDecision, 'deny');
     assert.equal(run(pre(root, 'Write', { file_path: `${root}/.io/note.md`, content: 'x' })).stdout, '');
-    assert.equal(run(pre(root, 'Write', { file_path: `${root}/src/app.js`, content: 'x' }), { ...noStage, HARNESS_SKILL_EXECUTION_ID: 'stage-1' }).stdout, '');
+    assert.equal(run(pre(root, 'Write', { file_path: `${root}/src/app.js`, content: 'x' }), { ...noStage, HARNESS_STAGE_EXECUTION_ID: 'stage-1' }).stdout, '');
     await mkdir(join(root, 'src'), { recursive: true });
     await writeFile(join(root, 'src/app.js'), 'export const app = true;\n');
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });

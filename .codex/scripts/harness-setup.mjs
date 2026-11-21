@@ -380,7 +380,7 @@ async function main() {
 
   let previousBudget = {};
   try { if (oldBudget) previousBudget = JSON.parse(oldBudget); } catch {}
-  const { validateContextBudget } = await import(new URL('../../.harness/src/workflow/skill-execution.mjs', import.meta.url));
+  const { validateContextBudget } = await import(new URL('../../.harness/src/workflow/stage-runtime.mjs', import.meta.url));
   let validBudget = false;
   try { validateContextBudget(previousBudget); validBudget = true; } catch {}
   const positive = (value) => Number.isSafeInteger(value) && value > 0;

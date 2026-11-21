@@ -13,13 +13,13 @@ import { updateReviewAttempt, inspectReviewHistory, assertNoUnrecordedNativeRevi
 
 const callAdmission = (root, ticketId, input) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-admission.mjs')], {
   cwd: root,
-  env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_CONTROL_SESSION_DIR: join(root, '.io'), HARNESS_SKILL_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: ticketId, HARNESS_WORKSPACE_ROOT: root },
+  env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_CONTROL_SESSION_DIR: join(root, '.io'), HARNESS_STAGE_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: ticketId, HARNESS_WORKSPACE_ROOT: root },
   input: JSON.stringify(input), encoding: 'utf8',
 }));
 const callEvent = (root, event) => {
   const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], {
     cwd: root,
-    env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_SKILL_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: 'ticket-one' },
+    env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_STAGE_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: 'ticket-one' },
     input: JSON.stringify(event), encoding: 'utf8',
   });
   if (result.status !== 0) throw new Error(result.stderr);
@@ -103,12 +103,12 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await writeFile(join(root, 'docs/plans/ticket-one/plans.md'), '# Plans\nProduct Spec: `docs/specs/ticket-one/product-spec.md`\nArchitecture Spec: `docs/specs/ticket-one/architecture-spec.md`\n');
     await writeFile(join(root, 'docs/plans/ticket-one/slice.md'), '---\nstatus: planned\n---\n# Slice\n');
     const planScope = 'plan-ticket-one';
-    const runtimeEnv = { HARNESS_PROVIDER_ID: process.env.HARNESS_PROVIDER_ID, HARNESS_WORKSPACE_ROOT: process.env.HARNESS_WORKSPACE_ROOT, HARNESS_SKILL_EXECUTION_ID: process.env.HARNESS_SKILL_EXECUTION_ID };
+    const runtimeEnv = { HARNESS_PROVIDER_ID: process.env.HARNESS_PROVIDER_ID, HARNESS_WORKSPACE_ROOT: process.env.HARNESS_WORKSPACE_ROOT, HARNESS_STAGE_EXECUTION_ID: process.env.HARNESS_STAGE_EXECUTION_ID };
     let planHistory;
     try {
     process.env.HARNESS_PROVIDER_ID = 'claude-code';
     process.env.HARNESS_WORKSPACE_ROOT = root;
-    process.env.HARNESS_SKILL_EXECUTION_ID = 'review-stage';
+    process.env.HARNESS_STAGE_EXECUTION_ID = 'review-stage';
     const unclaimedAttempt = await updatePlanReview({ root, planSetId: 'ticket-one', action: 'begin' });
     await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: unclaimedAttempt.attempt_id, review: { reviewer_id: 'invented-reviewer', author_ids: ['to-ticket-author'], fork_turns: 'none', verdict: 'pass', findings: [] } }), /stopped native reviewer bound to this admission/);
     await updatePlanReview({ root, planSetId: 'ticket-one', action: 'abort', attemptId: unclaimedAttempt.attempt_id, reason: 'pre-dispatch preparation: no native reviewer was dispatched' });
@@ -142,7 +142,7 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     planHistory = await inspectReviewHistory({ root, scope: planScope });
     // The stage names only the attempt; the hook-bound reviewer supplies identity and verdict.
     const planReview = { schema_version: 1, attempt_id: planAttempt.attempt_id, plan_set_id: 'ticket-one' };
-    process.env.HARNESS_SKILL_EXECUTION_ID = 'resumed-author';
+    process.env.HARNESS_STAGE_EXECUTION_ID = 'resumed-author';
     await writeFile(admissionPath, JSON.stringify(reviewerSnapshot));
     await assert.rejects(updatePlanReview({ root, planSetId: 'ticket-one', action: 'record', attemptId: planAttempt.attempt_id, review: planReview }), /admission contents/);
     await writeFile(admissionPath, admissionContents);

@@ -19,7 +19,7 @@ export function cliContext(cwd = process.cwd()) {
       isLinkedWorktree = worktrees.includes(root) && !isPrimaryWorktree;
     } catch { /* command validation below reports the missing repository context */ }
   }
-  return { root, worktree_ref: record ? worktreeRef : null, plan_set_id: record?.plan_set_id || null, execution_id: process.env.HARNESS_SKILL_EXECUTION_ID || null, record, is_primary_worktree: isPrimaryWorktree, is_linked_worktree: isLinkedWorktree };
+  return { root, worktree_ref: record ? worktreeRef : null, plan_set_id: record?.plan_set_id || null, execution_id: process.env.HARNESS_STAGE_EXECUTION_ID || null, record, is_primary_worktree: isPrimaryWorktree, is_linked_worktree: isLinkedWorktree };
 }
 
 export function pick(name, explicit, inferred, same = (a, b) => a === b) {
