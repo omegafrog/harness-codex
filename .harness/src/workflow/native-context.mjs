@@ -1,8 +1,6 @@
 import { constants } from 'node:fs';
-import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, realpath } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { createInterface } from 'node:readline';
+import { basename, join, resolve, sep } from 'node:path';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { readExecutionInput, validateSkillInput } from './skill-execution.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -32,38 +30,73 @@ export async function readRolloutMetadata(path) {
   } finally { await handle.close(); }
 }
 
+async function readTranscriptEntries(path, { maxBytes = 32 * 1024 * 1024, tolerateMalformedRows = true } = {}) {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) throw new Error('Unsafe or oversized Codex transcript');
+    const text = await handle.readFile('utf8');
+    const entries = [];
+    let malformedRows = 0;
+    for (const [index, line] of text.split('\n').entries()) {
+      if (!line.trim()) continue;
+      try { entries.push(JSON.parse(line)); }
+      catch (error) {
+        malformedRows += 1;
+        if (!tolerateMalformedRows || index === 0) throw new Error(`Malformed Codex transcript row ${index + 1}`, { cause: error });
+      }
+    }
+    return { entries, malformedRows };
+  } finally { await handle.close(); }
+}
+
+function extractCompletedCodexTurns(entries) {
+  const turns = new Map();
+  const ensure = (id) => {
+    if (!turns.has(id)) turns.set(id, { turn_id: id, status: 'running' });
+    return turns.get(id);
+  };
+  for (const entry of entries) {
+    if (entry.type === 'turn_context' && typeof entry.payload?.turn_id === 'string') {
+      const turn = ensure(entry.payload.turn_id);
+      const { model, effort } = entry.payload;
+      if (typeof model === 'string' && typeof effort === 'string') {
+        turn.model = model;
+        turn.reasoning_effort = effort;
+      }
+      continue;
+    }
+    if (entry.type !== 'event_msg') continue;
+    const event = entry.payload || {};
+    if (typeof event.turn_id !== 'string') continue;
+    if (event.type === 'task_started') ensure(event.turn_id);
+    else if (event.type === 'task_complete') ensure(event.turn_id).status = event.error ? 'failed' : 'completed';
+    else if (event.type === 'turn_aborted') ensure(event.turn_id).status = 'interrupted';
+  }
+  return [...turns.values()].filter((turn) => turn.status === 'completed');
+}
+
 export async function resolveNativeCodexThread({ root, parentSessionId, stage }) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentSessionId || '') || !stage?.native_agent_id) return null;
   const { findRollout } = await import('./providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), parentSessionId);
   if (!path) return null;
   const workspace = await realpath(root);
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe Codex parent transcript');
-    const lines = createInterface({ input: createReadStream(path, { fd: handle.fd, autoClose: false }), crlfDelay: Infinity });
-    const previousEnd = [...(stage.attempts || [])].reverse().find((item) => item.finished_at)?.finished_at;
-    const cutoff = Date.parse(previousEnd || stage.started_at || '');
-    if (!Number.isFinite(cutoff)) return null;
-    const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
-    const candidates = new Set();
-    let first = true;
-    for await (const line of lines) {
-      let entry;
-      try { entry = JSON.parse(line); } catch { return null; }
-      if (first) {
-        first = false;
-        if (entry.type !== 'session_meta' || entry.payload?.id !== parentSessionId || entry.payload?.cwd !== workspace) return null;
-        continue;
-      }
-      const item = entry.payload?.item;
-      const timestamp = Date.parse(entry.timestamp);
-      if (entry.type !== 'event_msg' || entry.payload?.type !== 'item_completed' || item?.type !== 'SubAgentActivity' || item.kind !== 'started' || item.agent_path !== expectedPath || !Number.isFinite(timestamp) || timestamp < cutoff || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.agent_thread_id || '')) continue;
-      candidates.add(item.agent_thread_id);
-    }
-    return candidates.size === 1 ? [...candidates][0] : null;
-  } finally { await handle.close(); }
+  const { entries } = await readTranscriptEntries(path);
+  const metadata = entries[0]?.payload;
+  if (entries[0]?.type !== 'session_meta' || metadata?.id !== parentSessionId || metadata?.cwd !== workspace) return null;
+  const previousEnd = [...(stage.attempts || [])].reverse().find((item) => item.finished_at)?.finished_at;
+  const cutoff = Date.parse(previousEnd || stage.started_at || '');
+  if (!Number.isFinite(cutoff)) return null;
+  const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
+  const candidates = new Set();
+  for (const entry of entries.slice(1)) {
+    const item = entry.payload?.item;
+    const timestamp = Date.parse(entry.timestamp);
+    if (entry.type !== 'event_msg' || entry.payload?.type !== 'item_completed' || item?.type !== 'SubAgentActivity' || item.kind !== 'started' || item.agent_path !== expectedPath || !Number.isFinite(timestamp) || timestamp < cutoff || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.agent_thread_id || '')) continue;
+    candidates.add(item.agent_thread_id);
+  }
+  return candidates.size === 1 ? [...candidates][0] : null;
 }
 
 export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
@@ -73,38 +106,94 @@ export async function readNativeCodexOutcome({ root, parentSessionId, stage }, r
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
   if (!path) return null;
   const workspace = await realpath(root);
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const { entries } = await readTranscriptEntries(path);
+  const metadata = entries[0]?.payload;
+  const spawn = metadata?.source?.subagent?.thread_spawn;
+  const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
+  if (entries[0]?.type !== 'session_meta' || metadata?.id !== threadId || metadata.cwd !== workspace || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) return null;
+  let turn = null, outcome = null;
+  for (const entry of entries.slice(1)) {
+    if (entry.type !== 'event_msg') continue;
+    const event = entry.payload || {};
+    if (event.type === 'task_started' && typeof event.turn_id === 'string') { turn = event.turn_id; outcome = { status: 'running', thread_id: threadId }; }
+    else if (turn && event.turn_id === turn && event.type === 'task_complete') {
+      outcome = event.error
+        ? typeof event.error.message === 'string' && event.error.message.trim() ? { status: 'failed', thread_id: threadId, error: event.error.message } : null
+        : typeof event.last_agent_message === 'string' ? { status: 'completed', thread_id: threadId, output: event.last_agent_message } : null;
+    } else if (turn && event.turn_id === turn && event.type === 'turn_aborted') outcome = { status: 'interrupted', thread_id: threadId };
+  }
+  return outcome;
+}
+
+async function captureNativeCodexAttestation({ root, session, executionId, stageId, stage, parentSessionId, event }) {
+  const attestation = {
+    schema_version: 1,
+    source: 'codex-subagent-stop-hook',
+    execution_id: executionId,
+    stage_id: stageId,
+    parent_session_id: parentSessionId,
+    native_agent_id: stage.native_agent_id,
+    thread_id: event.agent_id,
+    captured_at: new Date().toISOString(),
+    status: 'unavailable',
+    turns: [],
+  };
   try {
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink !== 1) throw new Error('Unsafe Codex agent transcript');
-    const lines = createInterface({ input: createReadStream(path, { fd: handle.fd, autoClose: false }), crlfDelay: Infinity });
-    let first = true, turn = null, outcome = null, turnBinding = null;
+    if (event.hook_event_name !== 'SubagentStop' || typeof event.agent_transcript_path !== 'string') throw new Error('transcript_unavailable');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(event.agent_id || '')) throw new Error('thread_id_unavailable');
+    const sessionsRoot = await realpath(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'));
+    const transcriptPath = await realpath(event.agent_transcript_path);
+    if (!transcriptPath.startsWith(`${sessionsRoot}${sep}`) || !basename(transcriptPath).endsWith(`-${event.agent_id}.jsonl`)) throw new Error('transcript_path_mismatch');
+    const { entries, malformedRows } = await readTranscriptEntries(transcriptPath, { maxBytes: 32 * 1024 * 1024 });
+    const metadata = entries[0]?.payload;
+    const spawn = metadata?.source?.subagent?.thread_spawn;
     const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
-    for await (const line of lines) {
+    if (entries[0]?.type !== 'session_meta' || metadata.id !== event.agent_id || metadata.cwd !== root || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) throw new Error('transcript_identity_mismatch');
+    attestation.turns = extractCompletedCodexTurns(entries);
+    if (!attestation.turns.length) throw new Error('completed_turn_metadata_missing');
+    attestation.status = 'captured';
+    attestation.malformed_rows_skipped = malformedRows;
+  } catch (error) {
+    attestation.reason = error.message === 'Unsafe or oversized Codex transcript' ? 'transcript_unreadable' : error.message;
+  }
+  const relative = `runtime/executions/${executionId}/native-attestation.jsonl`;
+  await assertWorkspaceTarget(session, relative);
+  const directory = join(session, 'runtime/executions', executionId);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const file = await open(join(session, relative), constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.size > 8 * 1024 * 1024) throw new Error('Unsafe native attestation log');
+    await file.writeFile(`${JSON.stringify(attestation)}\n`);
+  } finally { await file.close(); }
+}
+
+export async function readNativeCodexAttestation({ root, parentSessionId, stage }) {
+  const executionId = stage?.execution_id;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) return { status: 'unavailable', reason: 'execution_id_invalid' };
+  const stageId = stage.stage_id || stage.skill;
+  const session = join(await realpath(root), '.io');
+  const relative = `runtime/executions/${executionId}/native-attestation.jsonl`;
+  await assertWorkspaceTarget(session, relative);
+  let file;
+  try {
+    file = await open(join(session, relative), constants.O_RDONLY | constants.O_NOFOLLOW);
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.size > 8 * 1024 * 1024) return { status: 'invalid', reason: 'attestation_file_invalid' };
+    const rows = (await file.readFile('utf8')).split('\n').filter(Boolean);
+    let latest = null;
+    for (const row of rows) {
       let entry;
-      try { entry = JSON.parse(line); } catch { return null; }
-      if (first) {
-        first = false;
-        const metadata = entry.payload;
-        const spawn = metadata?.source?.subagent?.thread_spawn;
-        if (entry.type !== 'session_meta' || metadata?.id !== threadId || metadata.cwd !== workspace || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) return null;
-        continue;
-      }
-      if (turn && entry.type === 'turn_context' && entry.payload?.turn_id === turn) {
-        const { model, effort } = entry.payload;
-        if (model && effort) turnBinding = { model, reasoning_effort: effort };
-      }
-      if (entry.type !== 'event_msg') continue;
-      const event = entry.payload || {};
-      if (event.type === 'task_started' && typeof event.turn_id === 'string') { turn = event.turn_id; turnBinding = null; outcome = { status: 'running', thread_id: threadId }; }
-      else if (turn && event.turn_id === turn && event.type === 'task_complete') {
-        outcome = event.error
-          ? typeof event.error.message === 'string' && event.error.message.trim() ? { status: 'failed', thread_id: threadId, error: event.error.message } : null
-          : typeof event.last_agent_message === 'string' ? { status: 'completed', thread_id: threadId, output: event.last_agent_message } : null;
-      } else if (turn && event.turn_id === turn && event.type === 'turn_aborted') outcome = { status: 'interrupted', thread_id: threadId };
+      try { entry = JSON.parse(row); } catch { return { status: 'invalid', reason: 'attestation_record_malformed' }; }
+      if (entry.schema_version !== 1 || entry.execution_id !== executionId || entry.stage_id !== stageId || entry.parent_session_id !== parentSessionId || entry.native_agent_id !== stage.native_agent_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.thread_id || '')) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
+      latest = entry;
     }
-    return outcome && turnBinding ? { ...outcome, ...turnBinding } : outcome;
-  } finally { await handle.close(); }
+    if (!latest) return { status: 'unavailable', reason: 'attestation_not_recorded' };
+    return latest;
+  } catch (error) {
+    if (error.code === 'ENOENT') return { status: 'unavailable', reason: 'attestation_not_recorded' };
+    throw error;
+  } finally { if (file) await file.close(); }
 }
 
 export async function recordNativeStageObservation(root, event) {
@@ -144,6 +233,10 @@ export async function recordNativeStageObservation(root, event) {
     if (!info.isFile() || info.nlink !== 1) throw new Error('Native observations must be a regular unshared file');
     await file.writeFile(`${JSON.stringify({ event: event.hook_event_name, session_id: event.session_id, agent_id: event.agent_id, agent_type: event.agent_type, observed_at: new Date().toISOString() })}\n`);
   } finally { await file.close(); }
+  if (state.orchestrator_provider === 'codex' && event.hook_event_name === 'SubagentStop') {
+    const stageId = Object.entries(state.stages || {}).find(([, stage]) => stage === matches[0])?.[0] || matches[0].skill || 'unknown';
+    await captureNativeCodexAttestation({ root: workspace, session, executionId: matches[0].execution_id, stageId, stage: matches[0], parentSessionId: state.orchestrator_session_id, event });
+  }
   return true;
 }
 

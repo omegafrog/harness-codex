@@ -171,12 +171,14 @@ try {
     if (action === 'inspect') {
       let observation = null;
       let codexOutcome = null;
+      let modelAttestation = null;
       const workflowState = state.state || state;
       if (binding.provider === 'codex' && current.native_agent_id) {
-        const { resolveNativeCodexThread, readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+        const { resolveNativeCodexThread, readNativeCodexOutcome, readNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
         const target = { root, parentSessionId: workflowState.orchestrator_session_id, stage: current };
         const threadId = await resolveNativeCodexThread(target);
         if (threadId) codexOutcome = { thread_id: threadId, outcome: await readNativeCodexOutcome(target, threadId).catch(() => null) };
+        if (input.context?.requested_stage_binding) modelAttestation = await readNativeCodexAttestation(target);
       }
       const threadId = codexOutcome?.thread_id || null;
       const relative = `runtime/executions/${id}/native-observations.jsonl`;
@@ -202,8 +204,7 @@ try {
       const foreign = foreignRunningStage(workflowState, here);
       const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
       const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
-      const observed = codexOutcome?.outcome;
-      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(input.context?.requested_stage_binding ? { requested_binding: input.context.requested_stage_binding, ...(observed?.model ? { observed_binding: { model: observed.model, reasoning_effort: observed.reasoning_effort } } : {}) } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
+      process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(input.context?.requested_stage_binding ? { requested_binding: input.context.requested_stage_binding, model_attestation: modelAttestation, ...(modelAttestation?.status === 'captured' ? { observed_bindings: modelAttestation.turns.map(({ model, reasoning_effort, turn_id }) => ({ model, reasoning_effort, turn_id })) } : {}) } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
       process.exit(0);
     }
     if (action === 'bind') {
@@ -300,9 +301,14 @@ try {
       process.exit(0);
     }
     if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
-      const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
-      const observed = await readNativeCodexOutcome({ root, parentSessionId: input.context?.orchestrator_session_id, stage: current });
-      if (observed?.model !== binding.model || observed?.reasoning_effort !== binding.reasoning_effort) throw new Error(`Requested stage binding mismatch: expected ${binding.model}/${binding.reasoning_effort}, observed ${observed?.model || 'unknown'}/${observed?.reasoning_effort || 'unknown'}`);
+      const { readNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
+      const observed = await readNativeCodexAttestation({ root, parentSessionId: input.context.orchestrator_session_id, stage: current });
+      if (observed.status !== 'captured') throw new Error(`Requested stage binding cannot be verified: native attestation ${observed.reason || observed.status}`);
+      const mismatches = observed.turns.filter((turn) => turn.status !== 'completed' || turn.model !== binding.model || turn.reasoning_effort !== binding.reasoning_effort);
+      if (!observed.turns.length || mismatches.length) {
+        const actual = observed.turns.map((turn) => `${turn.model || 'unknown'}/${turn.reasoning_effort || 'unknown'} (${turn.status})`).join(', ') || 'no completed turn metadata';
+        throw new Error(`Requested stage binding mismatch: expected ${binding.model}/${binding.reasoning_effort}, observed ${actual}`);
+      }
     }
     const schema = await readSkillSessionJson({ root, session_directory: session, path: paths.refs.schema });
     let format, raw;
