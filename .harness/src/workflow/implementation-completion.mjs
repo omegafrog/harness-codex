@@ -20,10 +20,10 @@ export const DERIVED_STATE_KEYS = Object.freeze(['required_outcome', 'tests', 'r
 
 // Changes after a passing E2E receipt that cannot change what the E2E exercised. Everything else (application source,
 // tests, build files, migrations) invalidates the receipt. Files the receipt itself fingerprints (config_hashes) are
-// compared by content whatever their path, so docs/agents/execution.json stays covered even though it lives in docs/.
+// compared by content whatever their path, so .harness/agents/execution.json stays covered even though it lives in docs/.
 const DOCUMENTATION_FILES = new Set(['CONTEXT.md', 'CONTEXT-MAP.md', '.harness/contracts.mjs']);
 const isRepositoryIgnorePath = (path) => path === '.gitignore' || path.endsWith('/.gitignore');
-export const isDocumentationPath = (path) => path.startsWith('docs/') || DOCUMENTATION_FILES.has(path);
+export const isDocumentationPath = (path) => path.startsWith('docs/') || path.startsWith('.harness/agents/') || DOCUMENTATION_FILES.has(path);
 const isGeneratedPythonCache = (path) => path.split('/').includes('__pycache__') || /\.(?:pyc|pyo)$/i.test(path);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -163,7 +163,7 @@ async function deriveTests({ root, plans, head }) {
   let profiles;
   try { profiles = await e2eProfileIds(root, plans); }
   catch (error) { return { verdict: blocked('test_evidence_missing', { why: `execution contract unreadable: ${error.message}` }), selected: [] }; }
-  if (!profiles.length) return { verdict: blocked('e2e_profile_unresolved', { why: 'no purpose:e2e profile of docs/agents/execution.json is named by the e2e plan' }), selected: [] };
+  if (!profiles.length) return { verdict: blocked('e2e_profile_unresolved', { why: 'no purpose:e2e profile of .harness/agents/execution.json is named by the e2e plan' }), selected: [] };
   const problems = [];
   const selected = [];
   const failures = [];

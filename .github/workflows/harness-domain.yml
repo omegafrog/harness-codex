@@ -47,4 +47,4 @@ jobs:
           else
             args+=(--structural-only)
           fi
-          node .codex/scripts/harness-domain.mjs merge-check "${args[@]}"
+          node .harness/scripts/harness-domain.mjs merge-check "${args[@]}"

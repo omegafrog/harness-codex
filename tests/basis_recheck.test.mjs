@@ -147,7 +147,7 @@ async function cliWorkspace() {
 }
 
 function reviewCli(root, ...args) {
-  const result = spawnSync(process.execPath, [resolve('.codex/scripts/harness-code-review.mjs'), ...args, '--root', root, '--plan', 'create', '--reviews', 'runtime/reviews/implementation-create-evidence.json'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [resolve('.harness/scripts/harness-code-review.mjs'), ...args, '--root', root, '--plan', 'create', '--reviews', 'runtime/reviews/implementation-create-evidence.json'], { encoding: 'utf8' });
   return { ...result, json: result.stdout ? JSON.parse(result.stdout) : null };
 }
 

@@ -7,7 +7,7 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inspectCodexHookTrust, syncCodexSubagentHook, codexSubagentHook } from '../.harness/src/workflow/providers/codex.mjs';
+import { inspectCodexHookTrust, syncCodexSubagentHook, codexSubagentHook } from '../.codex/harness/providers/codex.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
@@ -55,7 +55,7 @@ test('installed consumers retire the old startup scripts and registrations while
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   const codexSettings = join(root, '.codex/hooks.json');
   const claudeSettings = join(root, '.claude/settings.local.json');
-  const runtime = '.codex/scripts/harness-context.mjs';
+  const runtime = '.harness/scripts/harness-context.mjs';
   const retired = ['.codex/scripts/harness-orchestrator-hook.mjs', '.claude/harness/scripts/harness-claude-orchestrator-hook.mjs'];
   assert.equal(existsSync(codexSettings), false);
   for (const path of retired) assert.equal(existsSync(join(root, path)), false);
@@ -64,7 +64,7 @@ test('installed consumers retire the old startup scripts and registrations while
 
   const script = '// Previous managed script\n';
   const hash = createHash('sha256').update(script).digest('hex');
-  const lockPath = join(root, '.codex/harness-lock.json'), lock = await json(lockPath);
+  const lockPath = join(root, '.harness/harness-lock.json'), lock = await json(lockPath);
   for (const path of retired) {
     await writeFile(join(root, path), script);
     lock.files[path] = { source_path: path, installed_sha256: hash, upstream_sha256: hash };
@@ -74,8 +74,8 @@ test('installed consumers retire the old startup scripts and registrations while
   const claudeOld = { type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-claude-orchestrator-hook.mjs"', timeout: 10 };
   await writeFile(codexSettings, JSON.stringify({ hooks: Object.fromEntries(startupEvents.map((event) => [event, groups(codexOld, unrelated)])) }));
   await writeFile(claudeSettings, JSON.stringify({ ...originalClaude, hooks: { ...originalClaude.hooks, ...Object.fromEntries(startupEvents.map((event) => [event, groups(claudeOld, unrelated)])) } }));
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), 'project owned\n');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), 'project owned\n');
   await writeFile(join(root, 'app.txt'), 'application owned\n');
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'retired_orchestrator_hook'));
 
@@ -94,7 +94,7 @@ test('installed consumers retire the old startup scripts and registrations while
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code }) => ['execution_asset_missing', 'retired_orchestrator_hook', 'orchestrator_hook_missing', 'claude_orchestrator_hook_missing'].includes(code)), []);
-  assert.equal(git('status', '--short', '--untracked-files=all'), '?? app.txt\n?? docs/agents/EXEC.md\n');
-  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned\n');
+  assert.equal(git('status', '--short', '--untracked-files=all'), '?? .harness/agents/EXEC.md\n?? app.txt\n');
+  assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), 'project owned\n');
   for (const path of [runtime, '.codex/hooks.json', '.claude/settings.local.json', '.io/runtime/orchestrator/state.json']) git('check-ignore', '-v', path);
 });

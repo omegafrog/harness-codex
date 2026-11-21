@@ -65,7 +65,7 @@ test('installed consumer: a blocked design decision stage reopens its owner forw
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const refused = (result, pattern) => { assert.notEqual(result.status, 0, result.stdout); assert.match(result.stderr, pattern, result.stderr); return JSON.parse(result.stderr.trim().split('\n').pop()); };
   // The tactical design flow is already done (the fixture stands in for its six stages); the decisions run for real.
   const seeded = await state();
@@ -162,7 +162,7 @@ test('update restores the rewind module of an installed consumer, Doctor require
   const git = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
   assert.equal(await readFile(join(primary, module), 'utf8'), await readFile(join(sourceRoot, module), 'utf8'), 'a fresh install has the module');
   await unlink(join(primary, module));
-  const lockPath = join(primary, '.codex/harness-lock.json');
+  const lockPath = join(primary, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   delete lock.files[module];
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
@@ -174,7 +174,7 @@ test('update restores the rewind module of an installed consumer, Doctor require
   assert.equal((await runDoctor({ root: primary, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.match(git('check-ignore', '-v', module), /info\/exclude/);
   assert.equal(git('status', '--short', '--untracked-files=all').trim(), '', 'Harness-owned files stay out of Git status');
-  const installed = await readFile(join(primary, '.agents/skills/orchestrator/references/dispatch.md'), 'utf8');
+  const installed = await readFile(join(primary, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(installed, /--reopen-for/, 'the installed orchestrator guidance carries the rewind rule');
 });
 
@@ -184,7 +184,7 @@ test('installed consumer: every refusal after a blocked DEPENDENCY_INCOMPLETE po
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const refused = (result) => { assert.notEqual(result.status, 0, result.stdout); return JSON.parse(result.stderr.trim().split('\n').pop()); };
   const seeded = await state();
   for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
@@ -249,7 +249,7 @@ test('installed consumer: a stage blocked by ENVIRONMENT_UNAVAILABLE is retried 
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const refused = (result) => { assert.notEqual(result.status, 0, result.stdout); return JSON.parse(result.stderr.trim().split('\n').pop()); };
   const seeded = await state();
   for (const stage of [...PRE_SPEC_STAGES.slice(0, PRE_SPEC_STAGES.indexOf('application-service'))]) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
@@ -295,7 +295,7 @@ test('installed consumer: a second rewind accepts stale downstream results and r
   await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const seeded = await state();
   for (const stage of TACTICAL_DESIGN_STAGES) seeded.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
   await writeFile(statePath, JSON.stringify(seeded, null, 2) + '\n');

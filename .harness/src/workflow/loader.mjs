@@ -29,10 +29,10 @@ export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
   "learning_mode",
 ]);
 
-export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
+export const DEFAULT_WORKFLOW_DIR = ".harness/workflows";
 export const DEFAULT_AGENT_DIR = ".codex/agents";
-export const DEFAULT_SKILL_DIR = ".agents/skills";
-export const LEGACY_SKILL_DIR = ".codex/skills";
+export const DEFAULT_SKILL_DIR = ".codex/skills";
+export const LEGACY_SKILL_DIR = ".agents/skills";
 
 export class WorkflowManifestError extends Error {
   constructor(message, details = {}) {
@@ -213,14 +213,14 @@ async function resolveReferences(workflow, { root, agentDir, skillDir, legacySki
   const roles = {};
   const skills = {};
   const sourceCheckout = await isHarnessSourceCheckout(PACKAGE_ROOT, root);
-  const directories = sourceCheckout ? [legacySkillDir, skillDir] : [skillDir, legacySkillDir];
+  const directories = sourceCheckout ? [DEFAULT_SKILL_DIR, skillDir] : [skillDir, legacySkillDir];
   for (const role of workflow.roles) {
     const path = await resolveRegularFile(root, join(agentDir, `${role}.toml`), `Role profile ${role}`);
     if (!path) throw new WorkflowManifestError(`Missing role profile: ${role}`, { path: resolve(root, join(agentDir, `${role}.toml`)) });
     roles[role] = path;
   }
   for (const skill of workflow.skills) {
-    const internalPath = await resolveRegularFile(root, join(".codex/internal-skills", skill, "GUIDE.md"), `Internal skill ${skill}`);
+    const internalPath = await resolveRegularFile(root, join(".harness/internal-skills", skill, "GUIDE.md"), `Internal skill ${skill}`);
     if (internalPath) {
       skills[skill] = internalPath;
       continue;
@@ -230,7 +230,7 @@ async function resolveReferences(workflow, { root, agentDir, skillDir, legacySki
       skills[skill] = canonicalPath;
       continue;
     }
-    // A Claude Code installation carries its public skills under .claude/skills instead of .agents/skills.
+    // A Claude Code installation carries its public skills under .claude/skills.
     const legacyPath = await resolveRegularFile(root, join(directories[1], skill, "SKILL.md"), `Skill ${skill}`)
       ?? await resolveRegularFile(root, join(".claude/skills", skill, "SKILL.md"), `Skill ${skill}`);
     if (!legacyPath) throw new WorkflowManifestError(`Missing skill: ${skill}`, { path: resolve(root, join(skillDir, skill, "SKILL.md")) });

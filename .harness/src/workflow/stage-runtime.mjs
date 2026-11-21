@@ -41,7 +41,7 @@ export function validateContextBudget(policy) {
 }
 
 export async function assessContextBudget({ root, estimatedTokens, usedTokens = null }) {
-  const content = await readFile(join(root, '.codex/context-budget.json'), 'utf8');
+  const content = await readFile(join(root, '.harness/context-budget.json'), 'utf8');
   const policy = validateContextBudget(JSON.parse(content));
   requireValue(Number.isSafeInteger(estimatedTokens) && estimatedTokens >= 0, 'Estimated tokens must be a nonnegative integer');
   requireValue(usedTokens === null || (Number.isSafeInteger(usedTokens) && usedTokens >= 0), 'Used tokens must be measured as a nonnegative integer');
@@ -156,7 +156,7 @@ export async function resolveWorkflowStage({ root, input, workflow = null, stage
     return { workflow, stage };
   }
   if (!input.context?.stage_id) return { workflow: null, stage: null };
-  const files = (await readdir(join(root, '.codex/workflows'), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const files = (await readdir(join(root, '.harness/workflows'), { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   const matches = [];
   for (const file of files) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
@@ -280,7 +280,7 @@ export async function validateSkillInput({ root, input }) {
     requireValue(input.context?.agent_profile === 'e2e_test_runner' && requests.length === 1, 'E2E requires one approved request and a dedicated runner');
     const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
     const head = (await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' })).stdout.trim();
-    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    const manifestText = await readFile(join(root, '.harness/agents/execution.json'));
     requireValue(request.manifest_sha256 === createHash('sha256').update(manifestText).digest('hex'), 'E2E request execution profile has changed');
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];
@@ -338,7 +338,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     const request = JSON.parse(await readReference(root, requests[0], session, controlSession));
     const receipt = JSON.parse(await readReference(root, receipts[0], session, controlSession));
     const cleanup = JSON.parse(await readReference(root, cleanups[0], session, controlSession));
-    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && receipt.config_hashes?.['docs/agents/execution.json'] === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
+    requireValue(receipt.status === 'passed' && receipt.exit_code === 0 && receipt.profile_id === request.profile_id && receipt.head === request.target_commit && receipt.config_hashes?.['.harness/agents/execution.json'] === request.manifest_sha256, 'E2E receipt does not prove the approved run passed');
     requireValue(cleanup.status === 'passed', 'E2E cleanup is not verified');
   }
   if (result.review_request && Object.hasOwn(result.review_request, 'agent_profile')) {
@@ -441,7 +441,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     const readiness = await inspectProjectReadiness({ workspace_root: root });
     requireValue(readiness.status === 'pass', `Project preparation incomplete: ${readiness.violations.join(', ')}`);
     await resolveSkillBinding({ root, skill: 'workflow-compose' });
-    validateContextBudget(await json(join(root, '.codex/context-budget.json')));
+    validateContextBudget(await json(join(root, '.harness/context-budget.json')));
   }
   return { valid: true, usable_result: true, ...envelope };
 }

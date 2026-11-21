@@ -90,9 +90,9 @@ Product Spec에는 요구사항·품질 목표·비용/운영/데이터 제약·
 
 ## 4.1. 기술 선택 절차를 내부 skill로 분리
 
-기술 선택 절차를 `.codex/internal-skills/technology-selection/GUIDE.md`로 분리한다. 공개 스킬 카탈로그나 `.agents/skills`/`.claude/skills`에 등록하지 않고, `SKILL.md`와 공개용 description도 만들지 않는다. 따라서 시작 시 스킬 이름·description을 모델에 노출하지 않는다. 호출자가 필요한 시점에 해당 GUIDE 경로를 읽으라고 지시하고, 실행기는 같은 provider의 기존 하위 agent dispatch를 사용한다. 별도 CLI 실행기나 중첩 오케스트레이터를 만들지 않는다.
+기술 선택 절차를 `.harness/internal-skills/technology-selection/GUIDE.md`로 분리한다. 공개 스킬 카탈로그나 `.agents/skills`/`.claude/skills`에 등록하지 않고, `SKILL.md`와 공개용 description도 만들지 않는다. 따라서 시작 시 스킬 이름·description을 모델에 노출하지 않는다. 호출자가 필요한 시점에 해당 GUIDE 경로를 읽으라고 지시하고, 실행기는 같은 provider의 기존 하위 agent dispatch를 사용한다. 별도 CLI 실행기나 중첩 오케스트레이터를 만들지 않는다.
 
-`spec-me`는 기술 선택이 아직 끝나지 않았거나 기존 결정이 요구·제약을 더는 충족하지 못할 때만 이 GUIDE를 읽고 수행한다. 기존 결정이 충분하면 재사용하고 새 비교를 생략한다. caller에는 짧은 조건부 지시만 둔다. 예: “중요한 기술 선택이 남아 있으면 `.codex/internal-skills/technology-selection/GUIDE.md`를 읽고 그 절차를 수행한다.”
+`spec-me`는 기술 선택이 아직 끝나지 않았거나 기존 결정이 요구·제약을 더는 충족하지 못할 때만 이 GUIDE를 읽고 수행한다. 기존 결정이 충분하면 재사용하고 새 비교를 생략한다. caller에는 짧은 조건부 지시만 둔다. 예: “중요한 기술 선택이 남아 있으면 `.harness/internal-skills/technology-selection/GUIDE.md`를 읽고 그 절차를 수행한다.”
 
 이 구조는 카탈로그 description을 상시 context에 넣지 않지만, 실제 호출에서는 GUIDE 본문과 필요한 입력이 context를 사용한다. 파일을 공개 등록하지 않고 내부 prompt로 읽히는 방식이므로 Codex/Claude의 native `Skill` tool 호출이라고 표현하지 않는다. provider마다 호출 수단이 달라도 기술 선택의 업무 절차와 결과 형식은 공유한다.
 
@@ -164,7 +164,7 @@ Product·Architecture template도 현재 요구의 중복 기입 여부를 확�
 
 ## 8. 오케스트레이터용 전체 흐름 가이드
 
-현재 전체 흐름 문서는 `docs/architecture/workflow-lifecycle.md`에 존재한다. 그러나 2026-10-23 기준이며 별도 Product 리뷰·옛 `.git` session 경로·worktree 소유 receipt·예전 발행 단계가 섞여 있다. 현재 orchestrator SKILL에는 이 문서로 가는 링크가 없다. `docs/architecture/enforcement.md`와 `docs/agents/EXEC.md`에도 과거 절차와 충돌하는 설명이 남아 있다.
+현재 전체 흐름 문서는 `docs/architecture/workflow-lifecycle.md`에 존재한다. 그러나 2026-10-23 기준이며 별도 Product 리뷰·옛 `.git` session 경로·worktree 소유 receipt·예전 발행 단계가 섞여 있다. 현재 orchestrator SKILL에는 이 문서로 가는 링크가 없다. `docs/architecture/enforcement.md`와 `.harness/agents/EXEC.md`에도 과거 절차와 충돌하는 설명이 남아 있다.
 
 설치 소비자도 읽을 수 있는 공통 가이드를 `.codex/skills/orchestrator/references/workflow-map.md`에 둔다. orchestrator SKILL과 실행 조율 GUIDE가 진입 시 이 짧은 지도를 읽도록 연결한다. 상세 규칙을 지도에 복제하지 않고 각 담당 GUIDE로 연결한다. 기존 workflow-lifecycle 문서는 같은 흐름을 설명하는 유지보수용 안내와 코드 링크로 정비한다.
 
@@ -205,12 +205,12 @@ Codex·Claude가 같은 내용을 설치받게 한다. provider별 문서에는 
 | 1 | orchestrator SKILL, 실행 조율 GUIDE·references, workflow-lifecycle·enforcement·EXEC | 현재/목표 흐름, 기록 소유자, 리뷰·정지 범위, 단계 선택 입력과 자율성 경계가 한 경로로 확인 가능 |
 | 2 | review CLI·`spec-review.mjs`·`plan-review.mjs`·관련 schema·`stage-runtime.mjs` | 모델의 해시/식별자 복사 제거, 계획 snapshot 범위 축소와 status 처리 일치, 현재성·독립성 유지 |
 | 3 | `harness-result.mjs`·runner·`stage-input.mjs`·`execution-state.mjs`·completion·publisher | 결과 정본과 파생 출력 일치, 별도 완료 파일/boolean 문서 제거, 불필요한 pass 재개 제거 |
-| 4 | `.codex/internal-skills/technology-selection/GUIDE.md`, spec-me 호출 지침·decision-knowledge·Product/Architecture topics/template·Decision schema/validation/artifacts/gates·Learning 검토 | 공개 description 없는 내부 호출, 기준 → 후보 → 근거 → 비교 → 선택 → Spec 흐름과 간소화한 출처 처리 연결 |
+| 4 | `.harness/internal-skills/technology-selection/GUIDE.md`, spec-me 호출 지침·decision-knowledge·Product/Architecture topics/template·Decision schema/validation/artifacts/gates·Learning 검토 | 공개 description 없는 내부 호출, 기준 → 후보 → 근거 → 비교 → 선택 → Spec 흐름과 간소화한 출처 처리 연결 |
 | 5 | manifest·bindings·agent 안내·wrapper 소비자·설치/update/transforms/Doctor/local-exclude·관련 회귀 | 모든 호출부와 설치 소비자가 같은 절차 사용; 내부 GUIDE 배포, 공개 복제본 부재, 폐기된 요구·schema·export·fixture 잔재 정리 |
 
 위 변경은 새로운 receipt·traceability ledger·승인 보고서·generic policy engine을 만들지 않고 기존 실행 경로와 Decision/Spec 구조를 고친다. 필요한 비교 데이터만 기존 Decision schema에 추가한다. 과거 형식 판독과 새 형식 기록의 경계를 명시하며 영구적인 이중 기록은 유지하지 않는다.
 
-설치 자산 discovery는 내부 GUIDE/reference를 이미 수집하므로 공통 workflow map은 이 경로를 사용한다. Codex/Claude 변환 후 링크, fresh install/update inventory, Doctor의 필수 자산 목록, `.io` 및 관리 자산의 Git 제외 규칙을 함께 확인한다. `docs/agents/EXEC.md`, `execution.json`, `docs/contracts/**`, 프로젝트 Spec·계획은 계속 프로젝트 소유로 Git에 보여야 한다.
+설치 자산 discovery는 내부 GUIDE/reference를 이미 수집하므로 공통 workflow map은 이 경로를 사용한다. Codex/Claude 변환 후 링크, fresh install/update inventory, Doctor의 필수 자산 목록, `.io` 및 관리 자산의 Git 제외 규칙을 함께 확인한다. `.harness/agents/EXEC.md`, `execution.json`, `docs/contracts/**`, 프로젝트 Spec·계획은 계속 프로젝트 소유로 Git에 보여야 한다.
 
 실제 구현을 커밋한 뒤에는 Harness 원본을 먼저 push하고 upstream 포함을 확인한 다음 소비자를 update한다. 이번 계획 작성에서 commit·push·소비자 update·진행 중 workflow 재실행은 수행하지 않는다.
 
@@ -243,7 +243,7 @@ Codex·Claude가 같은 내용을 설치받게 한다. provider별 문서에는 
 ## 11. 조사 근거
 
 - [오케스트레이터 선택·전환](../../.codex/skills/orchestrator/SKILL.md), [실행 조율](../../.harness/src/installer/stage-contract.mjs), [입력/재개](../../.harness/src/workflow/stage-input.mjs), [실행 상태](../../.harness/src/workflow/execution-state.mjs).
-- [Spec 절차](../../.codex/skills/spec-me/SKILL.md), [결정 근거](../../.codex/skills/spec-me/references/decision-knowledge.md), [Architecture 결정](../../.codex/skills/spec-me/references/architecture-decision.md), [Decision schema](../../.codex/schemas/decision/architecture-decision.schema.yaml), [stage gates](../../.harness/src/workflow/stage-gates.mjs).
-- [Spec 리뷰](../../.harness/src/workflow/spec-review.mjs), [계획 리뷰 snapshot](../../.harness/src/workflow/plan-review.mjs), [review 시도 관리](../../.harness/src/workflow/review-attempts.mjs), [검토 결과 전달](../../.harness/src/workflow/stage-runtime.mjs), [결과 정규화](../../.codex/scripts/harness-result.mjs).
+- [Spec 절차](../../.codex/skills/spec-me/SKILL.md), [결정 근거](../../.codex/skills/spec-me/references/decision-knowledge.md), [Architecture 결정](../../.codex/skills/spec-me/references/architecture-decision.md), [Decision schema](../../.harness/schemas/decision/architecture-decision.schema.yaml), [stage gates](../../.harness/src/workflow/stage-gates.mjs).
+- [Spec 리뷰](../../.harness/src/workflow/spec-review.mjs), [계획 리뷰 snapshot](../../.harness/src/workflow/plan-review.mjs), [review 시도 관리](../../.harness/src/workflow/review-attempts.mjs), [검토 결과 전달](../../.harness/src/workflow/stage-runtime.mjs), [결과 정규화](../../.harness/scripts/harness-result.mjs).
 - [발행 절차](../../.codex/skills/tracker-publish/SKILL.md), [구현 wrapper](../../.codex/skills/implement-wrapper/SKILL.md), [구현 dispatch](../../.harness/src/wrapper/dispatch.mjs), [공통 완료](../../.harness/src/workflow/completion.mjs), [lifecycle gates](../../.harness/src/gates/lifecycle.mjs), [E2E 실행 기록](../../.harness/src/workflow/execution.mjs).
-- [기존 전체 흐름 문서](../architecture/workflow-lifecycle.md), [enforcement 설명](../architecture/enforcement.md), [실행 안내](../agents/EXEC.md), [설치 discovery/update](../../.harness/src/installer/update.mjs), [provider 문서 변환](../../.harness/src/installer/transforms.mjs), [Doctor](../../.harness/src/doctor/doctor.mjs), [Git 제외](../../.harness/src/installer/local-exclude.mjs).
+- [기존 전체 흐름 문서](../architecture/workflow-lifecycle.md), [enforcement 설명](../architecture/enforcement.md), [실행 안내](../../.harness/agents/EXEC.md), [설치 discovery/update](../../.harness/src/installer/update.mjs), [provider 문서 변환](../../.harness/src/installer/transforms.mjs), [Doctor](../../.harness/src/doctor/doctor.mjs), [Git 제외](../../.harness/src/installer/local-exclude.mjs).

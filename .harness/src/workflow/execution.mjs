@@ -35,7 +35,7 @@ function validate(profile) {
 
 export async function readExecutionManifest(root) {
   // 프로젝트가 선언한 실행 profile 전체를 읽고, 실행 전에 계약 오류를 걸러낸다.
-  const path = 'docs/agents/execution.json';
+  const path = '.harness/agents/execution.json';
   await assertWorkspaceTarget(root, path);
   const text = await readFile(join(root, path), 'utf8');
   const manifest = JSON.parse(text);
@@ -122,7 +122,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
   try {
     // Preserve the target even when preparation or configuration verification fails.
     Object.assign(receipt, await codeUnderTest(root));
-    const manifestPath = 'docs/agents/execution.json';
+    const manifestPath = '.harness/agents/execution.json';
     const { manifest, text: manifestText } = await readExecutionManifest(root);
     const profile = manifest.profiles?.[profile_id];
     validate(profile);

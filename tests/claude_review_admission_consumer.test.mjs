@@ -11,13 +11,13 @@ import { snapshotSpecReview } from '../.harness/src/workflow/spec-review.mjs';
 import { snapshotPlanSet, updatePlanReview } from '../.harness/src/workflow/plan-review.mjs';
 import { updateReviewAttempt, inspectReviewHistory, assertNoUnrecordedNativeReview } from '../.harness/src/workflow/review-attempts.mjs';
 
-const callAdmission = (root, ticketId, input) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-agent-admission.mjs')], {
+const callAdmission = (root, ticketId, input) => JSON.parse(execFileSync(process.execPath, [join(root, '.claude/harness/scripts/harness-agent-admission.mjs')], {
   cwd: root,
   env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_CONTROL_SESSION_DIR: join(root, '.io'), HARNESS_STAGE_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: ticketId, HARNESS_WORKSPACE_ROOT: root },
   input: JSON.stringify(input), encoding: 'utf8',
 }));
 const callEvent = (root, event) => {
-  const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-agent-event.mjs')], {
+  const result = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-agent-event.mjs')], {
     cwd: root,
     env: { ...process.env, HARNESS_SESSION_DIR: join(root, '.io'), HARNESS_STAGE_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_EXECUTION_ID: 'review-stage', HARNESS_REVIEW_TICKET_ID: 'ticket-one' },
     input: JSON.stringify(event), encoding: 'utf8',
@@ -37,11 +37,11 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     for (const path of ['.codex/agents/plan_reviewer.toml', '.claude/agents/plan_reviewer.md']) {
       const instructions = await readFile(join(root, path), 'utf8');
       // The profile only points at the GUIDE, which owns the admission and re-review rules.
-      assert.match(instructions, /\.codex\/internal-skills\/plan-review\/GUIDE\.md/);
+      assert.match(instructions, /\.harness\/internal-skills\/plan-review\/GUIDE\.md/);
       assert.match(instructions, /"verdict":"pass"\|"revise"/);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
-    const planReviewGuide = await readFile(join(root, '.codex/internal-skills/plan-review/GUIDE.md'), 'utf8');
+    const planReviewGuide = await readFile(join(root, '.harness/internal-skills/plan-review/GUIDE.md'), 'utf8');
     assert.match(planReviewGuide, /JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나/);
     assert.match(planReviewGuide, /변경된 파일 전체/);
     assert.match(planReviewGuide, /이전 기준이 없거나 모호하거나 동일하면 최초 리뷰의 범위/);
@@ -56,8 +56,8 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await mkdir(join(root, 'docs/specs/ticket-one'), { recursive: true });
     await writeFile(join(root, 'docs/specs/ticket-one/product-spec.md'), 'Status: approved\nProduct requirements.\n');
     await writeFile(join(root, 'docs/specs/ticket-one/architecture-spec.md'), 'Status: approved\nArchitecture.\n');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'Project-owned execution notes.\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'Project-owned execution notes.\n');
     await mkdir(join(root, 'docs/contracts'), { recursive: true });
     await writeFile(join(root, 'docs/contracts/owned.md'), 'Project-owned contract.\n');
 
@@ -175,11 +175,11 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     await assert.rejects(updateReviewAttempt({ root, scope: 'spec-budget-ticket-architecture', action: 'begin', inputs: await snapshotSpecReview({ root, ticketId: 'budget-ticket' }) }), /retry budget exhausted/i);
 
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.match(status, /docs\/contracts\/owned\.md/);
     assert.doesNotMatch(status, /\.harness\/src\/workflow\/providers\/claude-code\.mjs/);
     execFileSync('git', ['check-ignore', '-v', '.claude/harness/providers/claude-code.mjs'], { cwd: root });
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-agent-admission.mjs'], { cwd: root });
+    execFileSync('git', ['check-ignore', '-v', '.claude/harness/scripts/harness-agent-admission.mjs'], { cwd: root });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -42,7 +42,7 @@ export async function lastOrchestratorTurn(root) {
   let delivered = null;
   try { const path = join(dir, 'last-turn.txt'); delivered = { at: statSync(path).mtime.toISOString(), message: readFileSync(path, 'utf8') }; } catch { /* No delivered turn. */ }
   if (owner?.provider === 'codex' && owner.session_id) {
-    const { findRollout } = await import('./providers/codex.mjs');
+    const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
     const { readFile } = await import('node:fs/promises');
     const path = await findRollout(join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'sessions'), owner.session_id);
     if (path) {

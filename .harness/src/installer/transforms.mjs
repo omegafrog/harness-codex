@@ -2,7 +2,8 @@ import { injectStageContract } from './stage-contract.mjs';
 
 export function transformSourceContent(content, transform) {
   // Agent profiles carry the stage contract marker; both provider copies receive the contract text in its place.
-  const text = ['project-local-paths-v1', 'claude-agent-v1'].includes(transform) ? injectStageContract(content.toString('utf8')) : content.toString('utf8');
+  const text = ['project-local-paths-v1', 'codex-assets-v2', 'claude-agent-v1'].includes(transform) ? injectStageContract(content.toString('utf8')) : content.toString('utf8');
+  if (transform === 'codex-assets-v2') return text;
   if (transform === 'project-local-paths-v1') return text.replaceAll('.codex/skills/', '.agents/skills/');
   if (transform === 'claude-skills-v1') {
     return text.replaceAll('.codex/skills/', '.claude/skills/')

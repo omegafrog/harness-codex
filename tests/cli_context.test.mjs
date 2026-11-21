@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { codexTranscript } from './support/codex-user-prompt.mjs';
 
-const scripts = fileURLToPath(new URL('../.codex/scripts/', import.meta.url));
+const scripts = fileURLToPath(new URL('../.harness/scripts/', import.meta.url));
 const run = (cwd, script, ...args) => spawnSync(process.execPath, [join(scripts, script), ...args], { cwd, encoding: 'utf8' });
 
 // Commands run inside a worktree read the root and plan set themselves, so an agent does not copy IDs from files.
@@ -18,9 +18,9 @@ test('Harness commands infer the workspace and plan set from the worktree they r
     execFileSync('git', ['init', '-q', '-b', 'main', primary]);
     execFileSync('git', ['-C', primary, '-c', 'user.name=T', '-c', 'user.email=t@example.test', 'commit', '--allow-empty', '-qm', 'base']);
     execFileSync('git', ['-C', primary, 'worktree', 'add', '-qb', 'feature/test', root]);
-    for (const dir of ['docs/plans/set', 'docs/specs/set', 'docs/agents', '.io/runtime/orchestrator', 'src']) await mkdir(join(root, dir), { recursive: true });
+    for (const dir of ['docs/plans/set', 'docs/specs/set', '.harness/agents', '.io/runtime/orchestrator', 'src']) await mkdir(join(root, dir), { recursive: true });
     for (const name of ['product', 'architecture']) await writeFile(join(root, `docs/specs/set/${name}-spec.md`), `# ${name}\n`);
-    await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), '');
     await writeFile(join(root, 'docs/plans/set/plans.md'), '# Plans\n');
     await writeFile(join(root, 'docs/plans/set/auth.md'), '# auth\n');
     const sessionId = 'c5c669a2-2967-4831-98db-63a24954e857';

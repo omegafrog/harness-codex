@@ -21,7 +21,7 @@ const profileManifest = {
   schema_version: 1,
   profiles: {
     [PROFILE]: {
-      purpose: 'e2e', command: ['node', '-e', 'process.exit(0)'], required_env: [], config_inputs: ['docs/agents/execution.json'],
+      purpose: 'e2e', command: ['node', '-e', 'process.exit(0)'], required_env: [], config_inputs: ['.harness/agents/execution.json'],
       prepare: [], verify_config: [['node', '--version']], dependencies: [], timeout_ms: null, readiness_timeout_ms: 5000, poll_interval_ms: 100,
     },
   },
@@ -33,14 +33,14 @@ const passingAnswer = JSON.stringify({ state: 'passed', report: { findings: [] }
 // hook (Codex and Claude Code share it), then `record`. Nothing here writes reviewer identity or the verdict by hand.
 async function reviewSealedContract({ ws, session, executionId = 'sync-contracts', reviewerId = 'contract-reviewer-1', verdict = 'pass', findings = [], forked = false }) {
   const env = { ...process.env, HARNESS_WORKSPACE_ROOT: ws, HARNESS_STAGE_EXECUTION_ID: executionId, HARNESS_SESSION_DIR: session, HARNESS_REVIEW_TICKET_ID: PLAN_SET, HARNESS_REVIEW_EXECUTION_ID: executionId };
-  const run = (script, args) => execFileSync(process.execPath, [join(ws, '.codex/scripts', script), ...args], { cwd: ws, env, encoding: 'utf8' });
+  const run = (script, args) => execFileSync(process.execPath, [join(ws, '.harness/scripts', script), ...args], { cwd: ws, env, encoding: 'utf8' });
   const begin = JSON.parse(run('harness-contract-review.mjs', ['begin', '--root', ws, '--plan-set', PLAN_SET]));
   const transcript = join(session, `${reviewerId}-rollout.jsonl`);
   if (forked) await writeFile(transcript, `${JSON.stringify({ type: 'session_meta', payload: { id: reviewerId, forked_from_id: 'sync-contracts-thread' } })}\n`);
-  const hook = (event) => execFileSync(process.execPath, [join(ws, '.codex/scripts/harness-agent-event.mjs')], { cwd: ws, env, input: JSON.stringify({ session_id: 'sync-contracts-thread', agent_type: 'contract_reviewer', agent_id: reviewerId, ...(forked ? { agent_transcript_path: transcript } : {}), ...event }) });
+  const hook = (event) => execFileSync(process.execPath, [join(ws, '.harness/scripts/harness-agent-event.mjs')], { cwd: ws, env, input: JSON.stringify({ session_id: 'sync-contracts-thread', agent_type: 'contract_reviewer', agent_id: reviewerId, ...(forked ? { agent_transcript_path: transcript } : {}), ...event }) });
   hook({ hook_event_name: 'SubagentStart' });
   hook({ hook_event_name: 'SubagentStop', last_assistant_message: JSON.stringify({ verdict, findings }) });
-  return { begin, record: spawnSync(process.execPath, [join(ws, '.codex/scripts/harness-contract-review.mjs'), 'record', '--root', ws, '--plan-set', PLAN_SET, '--attempt', begin.attempt_id], { cwd: ws, env, encoding: 'utf8' }) };
+  return { begin, record: spawnSync(process.execPath, [join(ws, '.harness/scripts/harness-contract-review.mjs'), 'record', '--root', ws, '--plan-set', PLAN_SET, '--attempt', begin.attempt_id], { cwd: ws, env, encoding: 'utf8' }) };
 }
 
 // A consumer with Harness installed through the real installer, a plan set whose plan review passed, two implemented
@@ -53,8 +53,8 @@ async function buildConsumer() {
   git(root, 'config', 'user.name', 'Contract');
   git(root, 'config', 'user.email', 'contract@example.test');
   const baseline = {
-    'CONTEXT.md': '# Context\n', 'CONTEXT-MAP.md': '# Context map\n', 'docs/agents/EXEC.md': '',
-    'docs/agents/execution.json': `${JSON.stringify(profileManifest, null, 2)}\n`,
+    'CONTEXT.md': '# Context\n', 'CONTEXT-MAP.md': '# Context map\n', '.harness/agents/EXEC.md': '',
+    '.harness/agents/execution.json': `${JSON.stringify(profileManifest, null, 2)}\n`,
   };
   for (const [path, content] of Object.entries(baseline)) {
     await mkdir(join(root, path, '..'), { recursive: true });
@@ -63,7 +63,7 @@ async function buildConsumer() {
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
   await updateProject({ sourceRoot, targetRoot: root });
-  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+  git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', '.harness/agents');
   git(root, 'commit', '-q', '-m', 'Consumer setup baseline');
   const tree = await createWorkflowWorktree({ workspace_root: root, plan_set_id: PLAN_SET });
   const ws = tree.workspace;
@@ -124,7 +124,7 @@ async function buildConsumer() {
   await writeFile(join(session, 'runtime/orchestrator/subagents.jsonl'), `${subagents.map((item) => JSON.stringify(item)).join('\n')}\n`);
 
   // The final E2E, run through the real runner against the committed code.
-  const exec = spawnSync(process.execPath, [join(ws, '.codex/scripts/harness-exec.mjs'), '--root', ws, '--profile', PROFILE], { cwd: ws, encoding: 'utf8' });
+  const exec = spawnSync(process.execPath, [join(ws, '.harness/scripts/harness-exec.mjs'), '--root', ws, '--profile', PROFILE], { cwd: ws, encoding: 'utf8' });
   assert.equal(exec.status, 0, exec.stdout + exec.stderr);
 
   // Tickets complete, documentation commit after the E2E, contract bundle sealed against the final plan documents.
@@ -141,7 +141,7 @@ async function buildConsumer() {
   wgit('add', 'docs');
   wgit('commit', '-q', '-m', 'Complete tickets and seal contracts');
 
-  const cli = (extra = [], { workflow = 'implement-wrapper' } = {}) => spawnSync(process.execPath, [join(ws, '.codex/scripts/harness-workflow-complete.mjs'), '--root', ws, '--workflow', workflow, '--worktree-id', tree.worktree_id, '--base-ref', tree.head, ...extra], { cwd: ws, encoding: 'utf8' });
+  const cli = (extra = [], { workflow = 'implement-wrapper' } = {}) => spawnSync(process.execPath, [join(ws, '.harness/scripts/harness-workflow-complete.mjs'), '--root', ws, '--workflow', workflow, '--worktree-id', tree.worktree_id, '--base-ref', tree.head, ...extra], { cwd: ws, encoding: 'utf8' });
   const gate = (extra, options) => { const run = cli(extra, options); return { status: run.status, result: run.stdout ? JSON.parse(run.stdout) : null, stderr: run.stderr }; };
   return {
     root, tree, ws, session, git, wgit, write, here, commits, documented, gate, reviewSealedContract: (options) => reviewSealedContract({ ws, session, ...options }),
@@ -343,10 +343,10 @@ test('implement-wrapper final gate is derived from canonical records, never from
       await rm(join(f.ws, 'src/__pycache__'), { recursive: true });
 
       // The profile and the files it fingerprinted must be what the run used.
-      await editJson(join(f.ws, 'docs/agents/execution.json'), (value) => { value.profiles[PROFILE].poll_interval_ms = 200; }, async () => {
+      await editJson(join(f.ws, '.harness/agents/execution.json'), (value) => { value.profiles[PROFILE].poll_interval_ms = 200; }, async () => {
         const { tests } = (await derive()).checks;
         assert.equal(tests.reason, 'e2e_receipt_config_changed');
-        assert.deepEqual(tests.details.problems[0].files, ['docs/agents/execution.json']);
+        assert.deepEqual(tests.details.problems[0].files, ['.harness/agents/execution.json']);
       });
       // The profile comes from the e2e plan; without it the gate cannot know what to require.
       await withEdit(join(f.ws, `docs/plans/${PLAN_SET}/e2e.md`), (text) => text.replaceAll(PROFILE, 'other-profile'), async () => {
@@ -491,7 +491,7 @@ test('the completion gate and the sync-contracts stage need a passing independen
       await f.write('docs/contracts/product.md', '# Product\n\nA rule the reviewed revision did not have.\n');
       // Edited but not sealed: the contract check itself fails first.
       assert.equal((await contractCheck()).reason, 'contract_review_contracts_not_sealed');
-      const sealed = spawnSync(process.execPath, [join(f.ws, '.codex/scripts/harness-contracts.mjs'), 'seal', '--root', f.ws, '--summary', 'a later contract change'], { cwd: f.ws, encoding: 'utf8' });
+      const sealed = spawnSync(process.execPath, [join(f.ws, '.harness/scripts/harness-contracts.mjs'), 'seal', '--root', f.ws, '--summary', 'a later contract change'], { cwd: f.ws, encoding: 'utf8' });
       assert.equal(sealed.status, 0, sealed.stdout + sealed.stderr);
       const verdict = await contractCheck();
       assert.equal(verdict.status, 'blocked');
@@ -528,7 +528,7 @@ test('installed consumer: the derived gate ships through install and update, sta
     assert.doesNotMatch(status, /\.io\/|\.harness\/src|\.codex\//);
     assert.equal(status.includes('implementation-completion'), false);
     // The orchestrator guidance no longer hands the gate a state file for implementation completion.
-    for (const path of ['.agents/skills/orchestrator/references/dispatch.md', '.claude/skills/orchestrator/references/dispatch.md']) {
+    for (const path of ['.codex/skills/orchestrator/references/dispatch.md', '.claude/skills/orchestrator/references/dispatch.md']) {
       const guide = await readFile(join(f.root, path), 'utf8');
       assert.match(guide, /--base-ref <시작 commit SHA> --final-workflow`/);
       assert.doesNotMatch(guide, /--final-workflow \[--state/);
@@ -541,7 +541,7 @@ test('installed consumer: the derived gate ships through install and update, sta
     const missing = await runDoctor({ root: f.root, sourceRoot });
     assert.ok(missing.diagnostics.some((item) => item.code === 'installer_missing_file' && item.severity === 'error' && item.path.endsWith('implementation-completion.mjs')));
     // Update restores it for a consumer that has the previous release (no module, no lock entry yet).
-    const lockPath = join(f.root, '.codex/harness-lock.json');
+    const lockPath = join(f.root, '.harness/harness-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
     delete lock.files[NEW_FILE];
     await writeFile(lockPath, JSON.stringify(lock));

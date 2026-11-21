@@ -6,7 +6,7 @@ import { isWithin } from "../eval/util.mjs";
 import { transformSourceContent as transformSource } from './transforms.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
-const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "claude-skills-v1", "claude-agent-v1", "standalone-contracts-v1"]);
+const SOURCE_TRANSFORMS = new Set(["project-local-paths-v1", "codex-assets-v2", "claude-skills-v1", "claude-agent-v1", "standalone-contracts-v1"]);
 
 export class HarnessLockError extends Error {
   constructor(message, details = {}) {
@@ -173,15 +173,17 @@ export async function discoverHarnessOwnedFiles(root) {
     throw new HarnessLockError("Unable to resolve repository root", { root, cause: error });
   });
   const patterns = [
-    [".codex/internal-skills", () => true],
+    [".harness/internal-skills", () => true],
     [".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml")],
+    [".codex/harness", (entry) => entry.name.endsWith(".mjs")],
+    [".codex/scripts", (entry) => entry.name.endsWith(".mjs") && entry.name !== 'harness-orchestrator-hook.mjs'],
     [".claude/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")],
     [".claude/skills", () => true],
     [".claude/harness", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
-    [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
-    [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
-    [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
-    [".codex/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".harness/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
+    [".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
+    [".harness/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".harness/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".harness/src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".harness/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".schema.json")],
   ];
@@ -212,7 +214,7 @@ export async function discoverHarnessOwnedFiles(root) {
   for (const file of [".harness/contracts.mjs", ".github/workflows/harness-contracts.yml", ".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE/plan-set.md"]) {
     if (await assertOwnedFile(file)) files.add(file);
   }
-  const skillsRoot = resolve(root, ".agents/skills");
+  const skillsRoot = resolve(root, ".codex/skills");
   let skillDirectories;
   try {
     const information = await lstat(skillsRoot);
@@ -230,11 +232,10 @@ export async function discoverHarnessOwnedFiles(root) {
   for (const directory of skillDirectories) {
     if (directory.isSymbolicLink()) throw new HarnessLockError(`Harness-owned skill directory cannot be a symlink: ${directory.name}`, { path: resolve(skillsRoot, directory.name) });
     if (!directory.isDirectory()) continue;
-    const skillFile = resolve(skillsRoot, directory.name, "SKILL.md");
     try {
-      const relativePath = `.agents/skills/${directory.name}/SKILL.md`;
+      const relativePath = `.codex/skills/${directory.name}/SKILL.md`;
       if (await assertOwnedFile(relativePath)) {
-        for (const file of await walkOwnedDirectory(root, rootPath, `.agents/skills/${directory.name}`, () => true)) files.add(file);
+        for (const file of await walkOwnedDirectory(root, rootPath, `.codex/skills/${directory.name}`, () => true)) files.add(file);
       }
     } catch (error) {
       if (error instanceof HarnessLockError) throw error;

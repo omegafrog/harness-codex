@@ -34,5 +34,5 @@ jobs:
           if [[ -f .harness/contracts.mjs ]]; then
             node .harness/contracts.mjs check --root "$GITHUB_WORKSPACE" "${base_args[@]}"
           else
-            node .codex/scripts/harness-contracts.mjs check --root "$GITHUB_WORKSPACE" "${base_args[@]}"
+            node .harness/scripts/harness-contracts.mjs check --root "$GITHUB_WORKSPACE" "${base_args[@]}"
           fi

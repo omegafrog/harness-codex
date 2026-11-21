@@ -37,7 +37,7 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
   if (typeof config.observability?.victorialogs?.local?.enabled !== 'boolean') violations.push('Missing observability.victorialogs.local.enabled');
   try {
     const { validateContextBudget } = await import('./stage-runtime.mjs');
-    validateContextBudget(JSON.parse(await readFile(join(root, '.codex/context-budget.json'), 'utf8')));
+    validateContextBudget(JSON.parse(await readFile(join(root, '.harness/context-budget.json'), 'utf8')));
   } catch (error) { if (error.code && error.code !== 'ENOENT') throw error; violations.push(`Invalid context budget: ${error.message}`); }
   for (const path of ['CONTEXT.md', 'CONTEXT-MAP.md']) {
     try { if (!(await stat(join(root, path))).isFile()) throw new Error('Not a file'); }
@@ -47,7 +47,7 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
 }
 
 export async function inspectProjectReadiness({ workspace_root } = {}) {
-  const paths = ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html'];
+  const paths = ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html'];
   const violations = [];
   if (!isAbsolute(workspace_root || '')) violations.push('Absolute workspace_root is required');
   else for (const path of paths) {

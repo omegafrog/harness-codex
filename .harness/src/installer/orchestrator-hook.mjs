@@ -56,7 +56,7 @@ export async function retireProjectHooks(root) {
     if (groups.length && !config.hooks[event].length) delete config.hooks[event];
   }
   if (!retired) return;
-  const backup = `.codex/installer-backups/hooks-${randomUUID()}`;
+  const backup = `.harness/installer-backups/hooks-${randomUUID()}`;
   await assertWorkspaceTarget(root, `${backup}/hooks.json`);
   await mkdir(join(root, backup), { recursive: true, mode: 0o700 });
   await writeFile(join(root, backup, 'hooks.json'), text, { mode: 0o600 });

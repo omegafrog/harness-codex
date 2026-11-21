@@ -119,7 +119,7 @@ test('tactical completion blocks an empty ticket set', async (t) => {
 test('tactical-to-code runs the decisions, the ticket split, approved publication and the tickets in order, without any Spec', async (t) => {
   const flow = await prepareWorkflow(t);
   const { workspace, planSetId, treeGit, runStage, beginStage, submitStage, finishStage, invoke, statePath } = flow;
-  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: workspace, encoding: 'utf8' });
   const refused = (result, pattern) => { assert.notEqual(result.status, 0, result.stdout); assert.match(result.stderr, pattern, result.stderr); return result; };
   const state = async () => JSON.parse(await readFile(statePath, 'utf8'));
 
@@ -193,12 +193,12 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   refused(prepare('--stage-id', 'tactical-code'), /tactical-code needs --plan <ticket-id>/);
   refused(prepare('--stage-id', 'tactical-code', '--plan', 'post-write'), /tactical-code post-write cannot start before its prerequisite ticket auth-visitor-check is completed; ready tickets: auth-visitor-check/);
   refused(prepare('--stage-id', 'tactical-code', '--plan', 'missing'), /Plan missing is not part of plan set/);
-  const context = () => JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-context.mjs')], { cwd: workspace, encoding: 'utf8' }));
+  const context = () => JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-context.mjs')], { cwd: workspace, encoding: 'utf8' }));
   assert.deepEqual(context().ready_tickets, [{ plan_id: 'auth-visitor-check', depends_on: [] }]);
 
   // The stage marks the ticket completed with the installed tracker command, which rewrites the local ticket's status.
   const implementTicket = async (begun, ticket, files, summary) => {
-    const sync = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-tracker.mjs'), 'sync', '--root', workspace, '--ticket', `${plans}/${ticket}.md`, '--status', 'completed'], { cwd: workspace, encoding: 'utf8', env: { ...process.env, HARNESS_STAGE_EXECUTION_ID: begun.prepared.input.execution_id } });
+    const sync = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-tracker.mjs'), 'sync', '--root', workspace, '--ticket', `${plans}/${ticket}.md`, '--status', 'completed'], { cwd: workspace, encoding: 'utf8', env: { ...process.env, HARNESS_STAGE_EXECUTION_ID: begun.prepared.input.execution_id } });
     assert.equal(sync.status, 0, sync.stderr || sync.stdout);
     const paths = [...Object.keys(files), `${plans}/${ticket}.md`];
     await submitStage(begun, { files, summary, commit_request: { message: `tactical-code: ${planSetId}/${ticket}`, paths } });
@@ -227,7 +227,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   assert.match(await readFile(join(workspace, plans, 'auth-visitor-check.md'), 'utf8'), /^---\nstatus: completed\n---/);
   refused(prepare('--stage-id', 'tactical-code', '--plan', 'auth-visitor-check'), /Ticket auth-visitor-check is already completed; ready tickets: post-write/);
   assert.deepEqual(context().ready_tickets, [{ plan_id: 'post-write', depends_on: ['auth-visitor-check'] }]);
-  const gate = (...extra) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', workspace, '--workflow', 'tactical-to-code', '--worktree-id', flow.tree.worktree_id, '--base-ref', flow.tree.head, ...extra], { cwd: workspace, encoding: 'utf8' });
+  const gate = (...extra) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-workflow-complete.mjs'), '--root', workspace, '--workflow', 'tactical-to-code', '--worktree-id', flow.tree.worktree_id, '--base-ref', flow.tree.head, ...extra], { cwd: workspace, encoding: 'utf8' });
   // While a ticket is open the gate stays in progress, and a state file cannot claim the outcome.
   await writeFile(join(workspace, '.io/runtime/claim.json'), JSON.stringify({ required_outcome: { passed: true }, tests: { passed: true } }));
   const early = gate('--state', 'runtime/claim.json');
@@ -256,7 +256,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   // Nothing of the flow needed a Spec, and Git sees the project's documents and code but no Harness file.
   for (const spec of ['product-spec.md', 'architecture-spec.md']) assert.equal(await readFile(join(workspace, 'docs/specs', planSetId, spec), 'utf8').catch(() => null), null);
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');
-  assert.match(execFileSync('git', ['-C', workspace, 'check-ignore', '-v', '.codex/internal-skills/tactical-code/GUIDE.md', '.harness/src/workflow/tactical-tickets.mjs', '.io/runtime/orchestrator/state.json'], { encoding: 'utf8' }), /exclude/);
+  assert.match(execFileSync('git', ['-C', workspace, 'check-ignore', '-v', '.harness/internal-skills/tactical-code/GUIDE.md', '.harness/src/workflow/tactical-tickets.mjs', '.io/runtime/orchestrator/state.json'], { encoding: 'utf8' }), /exclude/);
 });
 
 // What the previous release installed: the tactical flow without ticket stages, and the plan-and-publish workflow that asked for a Spec review.
@@ -318,22 +318,22 @@ test('an update from the previous release brings the ticket stages and keeps pro
   git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture');
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  const lockPath = join(root, '.codex/harness-lock.json');
+  const lockPath = join(root, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
-  const ticketGuide = '.codex/internal-skills/to-ticket/GUIDE.md';
-  for (const [path, content] of [['.codex/workflows/tactical-to-code.yaml', PREVIOUS_TACTICAL_TO_CODE], ['.codex/workflows/to-ticket.yaml', PREVIOUS_TO_TICKET], [ticketGuide, '# Previous authoring instructions\n']]) {
+  const ticketGuide = '.harness/internal-skills/to-ticket/GUIDE.md';
+  for (const [path, content] of [['.harness/workflows/tactical-to-code.yaml', PREVIOUS_TACTICAL_TO_CODE], ['.harness/workflows/to-ticket.yaml', PREVIOUS_TO_TICKET], [ticketGuide, '# Previous authoring instructions\n']]) {
     await writeFile(join(root, path), content);
     lock.files[path].installed_sha256 = sha(content);
     lock.files[path].upstream_sha256 = sha(content);
   }
   await writeFile(lockPath, JSON.stringify(lock));
-  const documents = { 'docs/specs/old/tactical-design.md': '# project design\n', 'docs/plans/old/plans.md': '# project plans\n', 'docs/agents/EXEC.md': 'project execution notes\n' };
+  const documents = { 'docs/specs/old/tactical-design.md': '# project design\n', 'docs/plans/old/plans.md': '# project plans\n', '.harness/agents/EXEC.md': 'project execution notes\n' };
   for (const [path, content] of Object.entries(documents)) { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), content); }
   await writeFile(join(root, 'app.txt'), 'application edit\n');
 
   await updateProject({ sourceRoot, targetRoot: root });
   assert.match(await readFile(join(root, ticketGuide), 'utf8'), /exact design paths in `input_refs`/);
-  for (const name of ['tactical-to-code', 'to-ticket']) assert.equal(await readFile(join(root, `.codex/workflows/${name}.yaml`), 'utf8'), await readFile(join(sourceRoot, `.codex/workflows/${name}.yaml`), 'utf8'), `${name} is replaced by the new release`);
+  for (const name of ['tactical-to-code', 'to-ticket']) assert.equal(await readFile(join(root, `.harness/workflows/${name}.yaml`), 'utf8'), await readFile(join(sourceRoot, `.harness/workflows/${name}.yaml`), 'utf8'), `${name} is replaced by the new release`);
   const installed = await import(pathToFileURL(join(root, '.harness/src/workflow/loader.mjs')).href);
   assert.deepEqual((await installed.loadNamedWorkflow('tactical-to-code', { root })).stages.map(({ id }) => id), TACTICAL_IMPLEMENTATION_STAGES);
   assert.ok(!Object.values((await installed.loadNamedWorkflow('to-ticket', { root })).hooks).flat().includes('spec_reviews'));
@@ -342,7 +342,7 @@ test('an update from the previous release brings the ticket stages and keeps pro
   const status = git('status', '--short', '--untracked-files=all');
   assert.match(status, /^ M app\.txt$/m);
   for (const path of Object.keys(documents)) assert.match(status, new RegExp(`\\?\\? ${path.replaceAll('.', '\\.')}`), `${path} stays visible`);
-  assert.doesNotMatch(status, /\.codex\/|\.harness\/|\.agents\/|\.claude\/|\.io\//);
+  assert.doesNotMatch(status, /\.codex\/|\.harness\/(?!agents\/)|\.agents\/|\.claude\/|\.io\//);
   assert.match(git('check-ignore', '-v', ticketGuide, '.harness/src/workflow/plan-review.mjs'), /info\/exclude/);
   for (const [path, content] of Object.entries(documents)) assert.equal(await readFile(join(root, path), 'utf8'), content, `${path} is untouched`);
 });

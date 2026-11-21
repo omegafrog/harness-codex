@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve, relative } from "node:path";
 import { promisify } from "node:util";
 import { loadHarnessConfig, loadSuite, resolveFixture, resolvePortablePath } from "./case-loader.mjs";
-import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
+import { CodexProcessAdapter, resolveCodexCommand } from "../../../.codex/harness/eval/codex-adapter.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
 import { gradeOutcome } from "./graders/outcome.mjs";

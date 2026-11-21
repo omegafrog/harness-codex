@@ -64,8 +64,8 @@ async function fixture(skills, setup = SETUP) {
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), setup);
   for (const [name, text] of Object.entries(skills)) {
-    await mkdir(join(root, '.codex/internal-skills', name), { recursive: true });
-    await writeFile(join(root, '.codex/internal-skills', name, 'GUIDE.md'), text);
+    await mkdir(join(root, '.harness/internal-skills', name), { recursive: true });
+    await writeFile(join(root, '.harness/internal-skills', name, 'GUIDE.md'), text);
   }
   return root;
 }
@@ -83,10 +83,10 @@ async function install() {
 
 // Shapes an older consumer: no declarations in the skill documents, plus its obsolete registry file.
 async function makeLegacyConsumer(root, { bindings = '{"schema_version":1,"skills":{"spec-me":"high_performance","plantuml-diagrams":"low"},"main_session_skills":["orchestrator"]}\n', locked = true } = {}) {
-  const lockPath = join(root, '.codex/harness-lock.json');
+  const lockPath = join(root, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   for (const path of Object.keys(lock.files)) {
-    if (!/(^\.codex\/internal-skills\/[^/]+\/GUIDE\.md|^\.(agents|claude)\/skills\/[^/]+\/SKILL\.md)$/.test(path)) continue;
+    if (!/(^\.harness\/internal-skills\/[^/]+\/GUIDE\.md|^\.(agents|claude)\/skills\/[^/]+\/SKILL\.md)$/.test(path)) continue;
     const stripped = stripSkillDeclaration(await readFile(join(root, path), 'utf8'));
     await writeFile(join(root, path), stripped);
     lock.files[path].installed_sha256 = lock.files[path].upstream_sha256 = sha256(stripped);
@@ -148,7 +148,7 @@ test("a skill's tier comes from its own declaration and maps to agents.<provider
     await writeFile(join(root, '.harness/harness.yaml'), SETUP.replace('provider: codex', 'provider: claude-code'));
     assert.deepEqual(await resolveSkillBinding({ root, skill: 'light' }), { skill: 'light', provider: 'claude-code', model_tier: 'low_performance', model: 'haiku', reasoning_effort: 'low' });
     // Editing the declaration changes the tier and nothing else does.
-    await writeFile(join(root, '.codex/internal-skills/light/GUIDE.md'), guide('high_performance'));
+    await writeFile(join(root, '.harness/internal-skills/light/GUIDE.md'), guide('high_performance'));
     assert.equal((await resolveSkillBinding({ root, skill: 'light' })).model, 'opus');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -164,7 +164,7 @@ test('a skill whose document declares no usable tier fails resolution with a cle
     ok: guide('execution'),
   });
   try {
-    for (const skill of ['plain', 'framed']) await assert.rejects(resolveSkillBinding({ root, skill }), new RegExp(`Skill ${skill} declares no model_tier in \\.codex/internal-skills/${skill}/GUIDE\\.md; add`));
+    for (const skill of ['plain', 'framed']) await assert.rejects(resolveSkillBinding({ root, skill }), new RegExp(`Skill ${skill} declares no model_tier in \\.harness/internal-skills/${skill}/GUIDE\\.md; add`));
     await assert.rejects(resolveSkillBinding({ root, skill: 'legacy' }), /Invalid model declaration for skill legacy .*model_tier must be one of high_performance, implementation, execution, low_performance, not "low"/);
     await assert.rejects(resolveSkillBinding({ root, skill: 'both' }), /cannot both be declared/);
     await assert.rejects(resolveSkillBinding({ root, skill: 'twice' }), /model_tier is declared twice/);
@@ -200,17 +200,17 @@ test('a workflow stage may override the tier only with one of setup\'s four name
   const root = await fixture({ light: guide('low_performance') });
   try {
     await mkdir(join(root, '.codex/agents'), { recursive: true });
-    await mkdir(join(root, '.codex/workflows'), { recursive: true });
+    await mkdir(join(root, '.harness/workflows'), { recursive: true });
     await writeFile(join(root, '.codex/agents/r.toml'), 'name = "r"\n');
-    await writeFile(join(root, '.codex/workflows/tiers.yaml'), stage('execution'));
+    await writeFile(join(root, '.harness/workflows/tiers.yaml'), stage('execution'));
     assert.equal((await loadNamedWorkflow('tiers', { root })).stages[0].model_tier, 'execution');
     const binding = await resolveSkillBinding({ root, skill: 'light', workflow: 'tiers', stage: 'only' });
     assert.deepEqual([binding.model_tier, binding.model, binding.reasoning_effort], ['execution', 'codex-execution', 'low']);
-    await writeFile(join(root, '.codex/workflows/tiers.yaml'), stage(null));
+    await writeFile(join(root, '.harness/workflows/tiers.yaml'), stage(null));
     assert.equal((await resolveSkillBinding({ root, skill: 'light', workflow: 'tiers', stage: 'only' })).model_tier, 'low_performance');
   } finally { await rm(root, { recursive: true, force: true }); }
-  for (const name of await readdir(join(sourceRoot, '.codex/workflows'))) {
-    assert.doesNotMatch(await readFile(join(sourceRoot, '.codex/workflows', name), 'utf8'), /model_tier: low$/m, `${name} still uses the retired tier name`);
+  for (const name of await readdir(join(sourceRoot, '.harness/workflows'))) {
+    assert.doesNotMatch(await readFile(join(sourceRoot, '.harness/workflows', name), 'utf8'), /model_tier: low$/m, `${name} still uses the retired tier name`);
   }
 });
 
@@ -243,13 +243,13 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
     }
   };
   for (const directory of ['.harness', '.codex', '.claude', 'bin']) await walk(directory);
-  assert.deepEqual(offenders.filter((path) => path !== '.codex/harness-lock.json'), ['.harness/schemas/input.schema.json']);
+  assert.deepEqual(offenders, ['.harness/schemas/input.schema.json']);
   const schema = JSON.parse(await readFile(join(sourceRoot, '.harness/schemas/input.schema.json'), 'utf8'));
   const retired = schema.properties.context.properties.subagent_binding;
   assert.match(retired.description, /Retired: no runner writes this any more/);
   assert.ok(!(schema.properties.context.required || []).includes('subagent_binding'), 'old inputs that carry it stay valid, new ones need not');
   // The diagram launch rule asks the binding command instead.
-  for (const path of ['.codex/internal-skills/plantuml-diagrams/GUIDE.md']) {
+  for (const path of ['.harness/internal-skills/plantuml-diagrams/GUIDE.md']) {
     const text = await readFile(join(sourceRoot, path), 'utf8');
     assert.match(text, /harness-stage-runtime\.mjs binding --root <workspace_root> --skill /, path);
     assert.match(text, /(실패하면 멈추고 부모 모델을 상속하지 않는다|never inherit the parent model)/, path);
@@ -259,7 +259,7 @@ test('nothing but the retired input property mentions a stage-input sub-agent bi
 test('installed consumer: the binding command returns setup\'s values for a sub-agent skill and refuses the main-session skill', async () => {
   const { root } = await install();
   try {
-    const binding = (skill) => spawnSync(process.execPath, [join(root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
+    const binding = (skill) => spawnSync(process.execPath, [join(root, '.harness/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' });
     for (const skill of ['plantuml-diagrams', 'product-spec']) {
       const result = binding(skill);
       assert.equal(result.status, 0, result.stderr);
@@ -270,7 +270,7 @@ test('installed consumer: the binding command returns setup\'s values for a sub-
     assert.notEqual(main.status, 0);
     assert.match(main.stderr, /orchestrator runs in the main session and cannot be bound as a subagent/);
     // A skill whose declaration is gone stops the caller instead of falling back to a default model.
-    await writeFile(join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md'), '# no declaration\n');
+    await writeFile(join(root, '.harness/internal-skills/plantuml-diagrams/GUIDE.md'), '# no declaration\n');
     const missing = binding('plantuml-diagrams');
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /Skill plantuml-diagrams declares no model_tier/);
@@ -282,24 +282,24 @@ test('installed consumer: a fresh install has no bindings.json, resolves from de
   const { root, git, installed } = await install();
   try {
     await assert.rejects(readFile(join(root, BINDINGS)), { code: 'ENOENT' });
-    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8')).files, BINDINGS), false);
+    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8')).files, BINDINGS), false);
     assert.equal(installed.added.includes(BINDINGS), false);
     assert.doesNotMatch(await readFile(join(root, '.git/info/exclude'), 'utf8'), /bindings\.json/);
-    for (const provider of ['.agents', '.claude']) assert.deepEqual(parseSkillDeclaration(await readFile(join(root, provider, 'skills/eli5/SKILL.md'), 'utf8')), { model_tier: 'low_performance' });
+    for (const provider of ['.codex', '.claude']) assert.deepEqual(parseSkillDeclaration(await readFile(join(root, provider, 'skills/eli5/SKILL.md'), 'utf8')), { model_tier: 'low_performance' });
     assert.equal((await readSkillDeclaration({ root, skill: 'orchestrator' })).main_session, true);
     assert.deepEqual((await resolveSkillBinding({ root, skill: 'context-boundary' })).model_tier, 'high_performance');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     await writeFile(join(root, 'app.js'), 'export const application = true;\n');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.severity === 'error' && /^(skill_model_tier|execution_)/.test(item.code)), []);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'installer_retired_file' || item.code === 'installer_stale_lock_entry'), false);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /app\.js/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
-    git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
-    git('check-ignore', '-v', '.agents/skills/eli5/SKILL.md');
+    git('check-ignore', '-v', '.harness/internal-skills/plantuml-diagrams/GUIDE.md');
+    git('check-ignore', '-v', '.codex/skills/eli5/SKILL.md');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -316,22 +316,22 @@ test('installed consumer: update removes its obsolete tier registry and restores
     assert.ok(updated.retired.includes(BINDINGS));
     await assert.rejects(readFile(join(root, BINDINGS)), { code: 'ENOENT' });
     assert.equal(await readFile(join(updated.backup_directory, BINDINGS), 'utf8'), stale);
-    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8')).files, BINDINGS), false);
+    assert.equal(Object.hasOwn(JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8')).files, BINDINGS), false);
     assert.deepEqual((await resolveSkillBinding({ root, skill: 'plantuml-diagrams' })).model_tier, 'low_performance');
     assert.equal((await resolveSkillBinding({ root, skill: 'sync-contracts' })).model, 'codex-implementation');
     assert.deepEqual((await readSkillDeclaration({ root, skill: 'orchestrator' })).main_session, true);
 
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     await writeFile(join(root, 'app.js'), 'export const application = true;\n');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.deepEqual(doctor.diagnostics.filter((item) => item.severity === 'error' && /^(skill_model_tier|execution_)/.test(item.code)), []);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'installer_retired_file' && item.path.endsWith('bindings.json')), false);
     const status = git('status', '--short', '--untracked-files=all');
     assert.match(status, /app\.js/);
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.agents\/|\.claude\/|\.harness\/src\//);
-    git('check-ignore', '-v', '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
+    git('check-ignore', '-v', '.harness/internal-skills/plantuml-diagrams/GUIDE.md');
     // A second update has nothing left to retire.
     assert.equal((await updateProject({ sourceRoot, targetRoot: root })).retired.includes(BINDINGS), false);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -343,7 +343,7 @@ test('installed consumer: update retires an edited or unlocked tier registry whi
     try {
       const stale = await makeLegacyConsumer(root, { bindings: '{"skills":{"code-review":"execution"}}\n', locked: variant === 'edited' });
       if (variant === 'edited') {
-        const lockPath = join(root, '.codex/harness-lock.json');
+        const lockPath = join(root, '.harness/harness-lock.json');
         const lock = JSON.parse(await readFile(lockPath, 'utf8'));
         lock.files[BINDINGS].installed_sha256 = lock.files[BINDINGS].upstream_sha256 = sha256('what the installer wrote');
         await writeFile(lockPath, JSON.stringify(lock, null, 2));
@@ -360,7 +360,7 @@ test('installed consumer: update retires an edited or unlocked tier registry whi
 test('Doctor reports a malformed declaration and a workflow stage skill that declares nothing', async () => {
   const { root } = await install();
   try {
-    const ownDoc = (skill) => join(root, '.codex/internal-skills', skill, 'GUIDE.md');
+    const ownDoc = (skill) => join(root, '.harness/internal-skills', skill, 'GUIDE.md');
     await writeFile(ownDoc('implement'), (await readFile(ownDoc('implement'), 'utf8')).replace('model_tier: implementation', 'model_tier: low'));
     await writeFile(ownDoc('tactical-technology'), stripSkillDeclaration(await readFile(ownDoc('tactical-technology'), 'utf8')));
     const doctor = await runDoctor({ root, sourceRoot });

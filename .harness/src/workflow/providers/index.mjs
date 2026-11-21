@@ -1,7 +1,7 @@
 import { AGENT_KEYS, AGENT_PROVIDERS, legacyAgentKeys } from '../agent-config.mjs';
 
 const providers = {
-  codex: () => import('./codex.mjs'),
+  codex: () => import('../../../../.codex/harness/providers/codex.mjs'),
   // The Claude Code provider lives with the rest of its code under .claude/harness and exists only when it was installed.
   'claude-code': () => import('../../../../.claude/harness/providers/claude-code.mjs').catch((error) => {
     if (error.code === 'ERR_MODULE_NOT_FOUND') throw new Error('The claude-code provider is not installed; install Harness with --provider claude-code or all');

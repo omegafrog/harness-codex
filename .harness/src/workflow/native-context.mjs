@@ -78,7 +78,7 @@ function extractCompletedCodexTurns(entries) {
 
 export async function resolveNativeCodexThread({ root, parentSessionId, stage }) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentSessionId || '') || !stage?.native_agent_id) return null;
-  const { findRollout } = await import('./providers/codex.mjs');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), parentSessionId);
   if (!path) return null;
   const workspace = await realpath(root);
@@ -102,7 +102,7 @@ export async function resolveNativeCodexThread({ root, parentSessionId, stage })
 export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
   const threadId = resolvedThreadId || await resolveNativeCodexThread({ root, parentSessionId, stage });
   if (!threadId) return null;
-  const { findRollout } = await import('./providers/codex.mjs');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
   if (!path) return null;
   const workspace = await realpath(root);
@@ -265,7 +265,7 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     let dispatchedByMain = false;
     if (mainSession && state.orchestrator_provider === 'claude-code') dispatchedByMain = true;
     else if (mainSession && state.orchestrator_provider === 'codex' && /^[0-9a-f-]{36}$/i.test(childId || '')) {
-      const { findRollout } = await import('./providers/codex.mjs');
+      const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
       const childPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), childId);
       const metadata = childPath ? await readRolloutMetadata(childPath) : null;
       const spawn = metadata?.source?.subagent?.thread_spawn;
@@ -279,7 +279,7 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
       const stageEntries = Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id);
       for (const id of stageEntries.some((stage) => identities.has(stage.native_agent_id)) ? [] : parentIds) {
         if (!/^[0-9a-f-]{36}$/i.test(id)) continue;
-        const { findRollout } = await import('./providers/codex.mjs');
+        const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
         const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), id);
         if (!path) continue;
         const metadata = await readRolloutMetadata(path);
@@ -290,7 +290,7 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
       }
       matches = stageEntries.filter((stage) => identities.has(stage.native_agent_id));
       if (!matches.length && state.orchestrator_provider === 'codex' && (parentIds.includes(state.orchestrator_session_id) || parentIds.includes(childId)) && /^[0-9a-f-]{36}$/i.test(childId || '')) {
-        const { findRollout } = await import('./providers/codex.mjs');
+        const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
         const childPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), childId);
         if (childPath) {
           const metadata = await readRolloutMetadata(childPath);

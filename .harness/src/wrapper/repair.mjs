@@ -32,14 +32,14 @@ const MIN_BASIS_QUOTE_LENGTH = 6;
 const BASIS_SOURCES = new Set(["product_spec", "architecture_spec", "canonical_plan", "repository_standard"]);
 const FAST_ANSWER_SECONDS = 10;
 const INTENT_REF = /^(?:INT-[A-Z0-9-]+|BR-\d+|BASELINE-\d+)$/;
-const BASELINE_PATH = ".codex/internal-skills/code-review/references/baseline.md";
+const BASELINE_PATH = ".harness/internal-skills/code-review/references/baseline.md";
 const REPOSITORY_STANDARD_PATHS = [
   BASELINE_PATH,
-  ".codex/repository-conventions.md",
-  ".codex/internal-skills/code-review/references/default-rules.md",
-  ".codex/internal-skills/testing-guidance/GUIDE.md",
-  ".codex/internal-skills/ddd-design/",
-  "docs/agents/",
+  ".harness/repository-conventions.md",
+  ".harness/internal-skills/code-review/references/default-rules.md",
+  ".harness/internal-skills/testing-guidance/GUIDE.md",
+  ".harness/internal-skills/ddd-design/",
+  ".harness/agents/",
   "docs/architecture/",
   "docs/contracts/",
 ];

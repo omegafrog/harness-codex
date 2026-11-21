@@ -95,16 +95,16 @@ export function dependencyOwnerErrors({ skill, raw }) {
 // Read-only: decide whether `ownerStage` may be reopened for the blocked execution, and what that does.
 export async function resolveReopen({ root, session, state, ownerStage, blockedExecutionId }) {
   const stages = state.stages || {};
-  if (!SAFE_ID.test(blockedExecutionId || '')) throw refusal('Reopen refused: invalid blocked execution id', '--reopen-for takes the execution_id of the blocked stage result that names this stage as owner.', ['node .codex/scripts/harness-context.mjs shows the blocked stage and its execution_id']);
+  if (!SAFE_ID.test(blockedExecutionId || '')) throw refusal('Reopen refused: invalid blocked execution id', '--reopen-for takes the execution_id of the blocked stage result that names this stage as owner.', ['node .harness/scripts/harness-context.mjs shows the blocked stage and its execution_id']);
   const ownerIndex = REWIND_STAGES.indexOf(ownerStage);
-  if (ownerIndex < 0) throw refusal(`Reopen refused: ${ownerStage} cannot be reopened`, `Only the requirements, tactical design and tactical implementation stages up to to-ticket can be reopened forward (${REWIND_STAGES.join(' → ')}).`, ['node .codex/scripts/harness-context.mjs'], 'Report that the blocked result names a stage that cannot be reopened, and wait for the user.');
+  if (ownerIndex < 0) throw refusal(`Reopen refused: ${ownerStage} cannot be reopened`, `Only the requirements, tactical design and tactical implementation stages up to to-ticket can be reopened forward (${REWIND_STAGES.join(' → ')}).`, ['node .harness/scripts/harness-context.mjs'], 'Report that the blocked result names a stage that cannot be reopened, and wait for the user.');
   const found = Object.entries(stages).find(([, entry]) => entry?.execution_id === blockedExecutionId);
-  if (!found) throw refusal(`Reopen refused: no stage has execution ${blockedExecutionId} as its latest result`, 'The blocked execution was replaced by a newer one, or the id is mistyped.', ['node .codex/scripts/harness-context.mjs shows the current blocked stage and its execution_id']);
+  if (!found) throw refusal(`Reopen refused: no stage has execution ${blockedExecutionId} as its latest result`, 'The blocked execution was replaced by a newer one, or the id is mistyped.', ['node .harness/scripts/harness-context.mjs shows the current blocked stage and its execution_id']);
   const [blockedStage, blocked] = found;
   const blockedIndex = REWIND_STAGES.indexOf(blockedStage);
-  if (blockedIndex <= ownerIndex) throw refusal(`Reopen refused: ${blockedStage} does not come after ${ownerStage}`, `A stage is reopened only for a later stage that is blocked on it; ${blockedStage} is ${blockedIndex < 0 ? 'outside the rewindable flow' : 'not later in the flow'}.`, ['node .codex/scripts/harness-context.mjs']);
+  if (blockedIndex <= ownerIndex) throw refusal(`Reopen refused: ${blockedStage} does not come after ${ownerStage}`, `A stage is reopened only for a later stage that is blocked on it; ${blockedStage} is ${blockedIndex < 0 ? 'outside the rewindable flow' : 'not later in the flow'}.`, ['node .harness/scripts/harness-context.mjs']);
   if (state.current_stage !== blockedStage || blocked.status !== 'blocked' || blocked.code !== 'DEPENDENCY_INCOMPLETE' || !blocked.result_ref) {
-    throw refusal(`Reopen refused: ${blockedStage} is ${describe(blocked)}, not its latest blocked / DEPENDENCY_INCOMPLETE result`, 'The order guard allows a reopen only while the latest result of a later stage is blocked / DEPENDENCY_INCOMPLETE naming this owner.', ['node .codex/scripts/harness-context.mjs']);
+    throw refusal(`Reopen refused: ${blockedStage} is ${describe(blocked)}, not its latest blocked / DEPENDENCY_INCOMPLETE result`, 'The order guard allows a reopen only while the latest result of a later stage is blocked / DEPENDENCY_INCOMPLETE naming this owner.', ['node .harness/scripts/harness-context.mjs']);
   }
   const running = Object.entries(stages).find(([, entry]) => entry?.status === 'running');
   if (running) throw refusal(`Reopen refused: ${running[0]} is still running`, 'A stage cannot be reopened while another stage runs.', [`Wait for its native subagent, then run finish for ${running[1].execution_id}`]);

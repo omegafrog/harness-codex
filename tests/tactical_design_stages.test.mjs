@@ -16,10 +16,10 @@ import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_
 import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { READ_ONLY_REQUIREMENTS, READ_ONLY_DOCUMENT, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument, upTo } from './support/domain-model-fixture.mjs';
 
-const TEMPLATE = '.codex/internal-skills/domain-model/references/template.md';
-const LEGACY_TEMPLATE = '.codex/internal-skills/domain-model/references/legacy-template.md';
-const DEEPENING = '.codex/internal-skills/domain-model/references/deepening.md';
-const GATE = '.codex/scripts/harness-domain-model-check.mjs';
+const TEMPLATE = '.harness/internal-skills/domain-model/references/template.md';
+const LEGACY_TEMPLATE = '.harness/internal-skills/domain-model/references/legacy-template.md';
+const DEEPENING = '.harness/internal-skills/domain-model/references/deepening.md';
+const GATE = '.harness/scripts/harness-domain-model-check.mjs';
 const GATE_LIBRARY = '.harness/src/workflow/domain-model-gate.mjs';
 const README_PATH = 'README.md';
 const TACTICAL_TIERS = { 'domain-model': 'high_performance', 'aggregate-design': 'high_performance', 'domain-service': 'implementation', 'application-service': 'implementation', 'integration-design': 'high_performance', 'context-boundary': 'high_performance' };
@@ -47,7 +47,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.ok(readme.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')));
   assert.match(readme, /#### 전술 설계 흐름/);
   for (const stage of TACTICAL_DESIGN_STAGES) assert.ok(readme.includes(`| \`${stage}\` |`), `${stage} has a README row`);
-  const exec = await read('docs/agents/EXEC.md');
+  const exec = await read('.harness/agents/EXEC.md');
   assert.ok(exec.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join('→')), 'the E2E procedure names the tactical flow');
   assert.match(await read('docs/architecture/enforcement.md'), /TACTICAL_DESIGN_STAGES[\s\S]*harness-domain-model-check\.mjs/);
   assert.match(await read('docs/architecture/enforcement.md'), /domain-model-gate\.mjs[\s\S]*FINAL_TACTICAL_STAGE[\s\S]*`gate_error`[\s\S]*`owner_stage`[\s\S]*recordExecutionState/, 'the enforcement map names where the runner rejects a failing last tactical stage');
@@ -69,7 +69,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.match(legacy, /^## 7\. 결정 이력$/m);
 
   for (const [stage, tier] of Object.entries(TACTICAL_TIERS)) {
-    const guide = await read(`.codex/internal-skills/${stage}/GUIDE.md`);
+    const guide = await read(`.harness/internal-skills/${stage}/GUIDE.md`);
     assert.ok(guide.startsWith(`---\nmodel_tier: ${tier}\n---\n`), `${stage} declares its tier`);
     assert.match(guide, /domain-model\/references\/template\.md|\(references\/template\.md\)/, `${stage} links the template`);
     assert.match(guide, /references\/deepening\.md|\(references\/deepening\.md\)/, `${stage} uses the shared preflight and input rules`);
@@ -98,17 +98,17 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   await writeFile(join(root, '.harness/harness.yaml'), SETUP);
 
   const managed = [
-    ...TACTICAL_DESIGN_STAGES.map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    ...TACTICAL_DESIGN_STAGES.map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
     TEMPLATE, LEGACY_TEMPLATE, DEEPENING, GATE,
     '.harness/src/workflow/worktree-stages.mjs',
     '.harness/src/workflow/stage-commit.mjs',
     '.harness/src/workflow/stage-input.mjs',
     '.harness/src/workflow/requirements-restart.mjs',
-    GATE_LIBRARY, '.harness/src/workflow/execution-state.mjs', '.codex/scripts/harness-native-stage.mjs',
-    '.codex/scripts/harness-result.mjs',
+    GATE_LIBRARY, '.harness/src/workflow/execution-state.mjs', '.harness/scripts/harness-native-stage.mjs',
+    '.harness/scripts/harness-result.mjs',
     '.codex/skills/setup/assets/CONTEXT-MAP.md',
-  ].map((path) => path.replace('.codex/skills/setup', '.agents/skills/setup'));
-  const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
+  ];
+  const lock = JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8'));
   for (const path of managed) {
     assert.ok(existsSync(join(root, path)), `installed: ${path}`);
     assert.ok(lock.files[path], `lock inventory: ${path}`);
@@ -117,7 +117,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   }
 
   // The tiers resolve from the installed guides, and the installed gate and flow lists are the source ones.
-  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
+  const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
   for (const [stage, tier] of Object.entries(TACTICAL_TIERS)) assert.deepEqual(binding(stage), { skill: stage, provider: 'codex', model_tier: tier, model: MODELS[tier], reasoning_effort: tier === 'high_performance' ? 'high' : 'medium' }, stage);
   const installedStages = await import(pathToFileURL(join(root, '.harness/src/workflow/worktree-stages.mjs')));
   assert.deepEqual([...installedStages.PRE_SPEC_STAGES], PRE_SPEC_STAGES);
@@ -211,15 +211,15 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   // Doctor accepts the installation, reports a missing tactical asset, and update restores it without touching project documents.
   let doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
-  const removed = [TEMPLATE, LEGACY_TEMPLATE, DEEPENING, GATE, GATE_LIBRARY, '.codex/internal-skills/aggregate-design/GUIDE.md'];
+  const removed = [TEMPLATE, LEGACY_TEMPLATE, DEEPENING, GATE, GATE_LIBRARY, '.harness/internal-skills/aggregate-design/GUIDE.md'];
   for (const path of removed) await unlink(join(root, path));
-  await writeFile(join(root, '.codex/internal-skills/integration-design/GUIDE.md'), 'outdated guide\n');
+  await writeFile(join(root, '.harness/internal-skills/integration-design/GUIDE.md'), 'outdated guide\n');
   doctor = await runDoctor({ root, sourceRoot });
   for (const path of removed) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === join(root, path)), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
-  for (const path of [...removed, '.codex/internal-skills/integration-design/GUIDE.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  for (const path of [...removed, '.harness/internal-skills/integration-design/GUIDE.md']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
   // `harness-codex update` replaces a runner from before the gate enforcement, so installed consumers start enforcing it.
-  const outdated = [GATE_LIBRARY, '.codex/scripts/harness-native-stage.mjs', '.harness/src/workflow/execution-state.mjs'];
+  const outdated = [GATE_LIBRARY, '.harness/scripts/harness-native-stage.mjs', '.harness/src/workflow/execution-state.mjs'];
   for (const path of outdated) await writeFile(join(root, path), 'outdated\n');
   await updateProject({ sourceRoot, targetRoot: root, force: true });
   for (const path of outdated) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `updated: ${path}`);
@@ -451,7 +451,7 @@ test('the runner accepts the first five tactical stages without a gate and rejec
   assert.equal(JSON.parse(await readFile(rejection.feedback_path, 'utf8')).gate_rejections.length, 2, 'repeated rejection details accumulate instead of replacing the first correction input');
 
   // The state command cannot record the stage as completed around the gate either.
-  const recorded = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', boundary.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });
+  const recorded = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-execution-state.mjs'), '--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', boundary.prepared.input.execution_id, '--status', 'completed', '--code', 'OK'], { cwd: workspace, encoding: 'utf8' });
   assert.equal(recorded.status, 1);
   assert.match(JSON.parse(recorded.stderr).error, /^Tactical design gate failed for context-boundary: DECISION_NO_SOURCE \(CON-01\) \[aggregate-design\] /);
   assert.equal((await stageState('context-boundary')).status, 'running', 'the state command left the stage running');
@@ -572,14 +572,14 @@ test('a stage relaunched after a block gets the previous result labelled as evid
   assert.equal(revision.prepared.input.context.previous_result_note, undefined, 'a revision of a completed stage is not a retry of an attempt');
 
   // The installed guides tell the stage to re-run the gate before it blocks on an earlier stage, and they stay Harness-owned while the application work stays visible.
-  const owned = [DEEPENING, '.codex/internal-skills/integration-design/GUIDE.md', '.harness/src/workflow/stage-input.mjs'];
+  const owned = [DEEPENING, '.harness/internal-skills/integration-design/GUIDE.md', '.harness/src/workflow/stage-input.mjs'];
   for (const path of owned) {
     assert.equal(await readFile(join(workspace, path), 'utf8'), await read(path), `installed: ${path}`);
     assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   }
   const rules = await readFile(join(workspace, DEEPENING), 'utf8');
   assert.match(rules, /## 최종 검증과 차단 후 재개[\s\S]*현재 문서[\s\S]*harness-domain-model-check\.mjs --workspace-root <absolute workspace root>/);
-  assert.match(await readFile(join(workspace, '.codex/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /deepening\.md#relaunch-after-a-block/);
+  assert.match(await readFile(join(workspace, '.harness/internal-skills/context-boundary/GUIDE.md'), 'utf8'), /deepening\.md#relaunch-after-a-block/);
   // The stage contract the installer writes into the stage profile carries the same rule.
   assert.match(await readFile(join(workspace, '.codex/agents/workflow_stage.toml'), 'utf8'), /`context\.previous_result_note`\): re-run the check on the current files/);
   assert.match(treeGit('check-ignore', '-v', '.codex/agents/workflow_stage.toml'), /info\/exclude/);
@@ -646,7 +646,7 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   const tampered = JSON.parse(original);
   tampered.stages['domain-model'].status = 'failed';
   await writeFile(statePath, JSON.stringify(tampered, null, 2) + '\n');
-  const failed = spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), ...restartArgs('aggregate-design')], { cwd: workspace, encoding: 'utf8' });
+  const failed = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), ...restartArgs('aggregate-design')], { cwd: workspace, encoding: 'utf8' });
   await writeFile(statePath, original);
   assert.notEqual(failed.status, 0);
   assert.match(failed.stderr, /Previous stage is not completed/);
@@ -688,6 +688,6 @@ test('a plan set that an earlier Harness started is renamed to tactical-design.m
   treeGit('stash', 'pop');
 
   // Harness-owned files stay ignored, and the plan set documents and the project model index stay visible to Git.
-  for (const path of ['.codex/scripts/harness-prepare-input.mjs', '.harness/src/workflow/stage-commit.mjs', '.codex/internal-skills/domain-model/references/template.md']) assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
+  for (const path of ['.harness/scripts/harness-prepare-input.mjs', '.harness/src/workflow/stage-commit.mjs', '.harness/internal-skills/domain-model/references/template.md']) assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/, `ignored: ${path}`);
   for (const path of [current, legacy, projectIndex, requirements]) assert.throws(() => treeGit('check-ignore', '-q', path), `not ignored: ${path}`);
 });

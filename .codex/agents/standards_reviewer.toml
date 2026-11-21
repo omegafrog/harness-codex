@@ -4,7 +4,7 @@ sandbox_mode = "read-only"
 
 developer_instructions = """
 You are the standards_reviewer agent: review only the Standards axis of `code-review` against the ticket-scoped Product Spec.
-Read `.codex/internal-skills/code-review/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the lines below.
+Read `.harness/internal-skills/code-review/GUIDE.md` before any work unless the runner already included it in this prompt. That GUIDE and the references it links are the only rule source for this role; this profile adds only the lines below.
 Your entire final assistant message must be exactly one JSON object with no markdown fence or prose: `{"state":"passed"|"failed","report":{"findings":[...]}}`.
 
 {{harness-stage-contract}}

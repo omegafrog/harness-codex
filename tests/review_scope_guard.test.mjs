@@ -195,7 +195,7 @@ test('incident findings are judged against intent, not against how strict they s
   assert.equal(hiddenRetry.reason, 'unbacked_requirement');
   const emoji = judge({ id: 'EMOJI', kind: 'advisory', severity: 'minor', summary: '이모지 5,000개 입력 불가', evidence: 'x.ts:1' });
   assert.equal(emoji.action, 'complete');
-  const reports = judge(incident('REPORTS', { intent_ref: 'BASELINE-1', failure_scenario: '관리자가 원자적 경로를 우회해 신고 결과를 직접 고친다', basis: { source: 'repository_standard', path: '.codex/internal-skills/code-review/references/baseline.md', quote: '권한 우회 또는 다른 사용자 데이터 노출' } }));
+  const reports = judge(incident('REPORTS', { intent_ref: 'BASELINE-1', failure_scenario: '관리자가 원자적 경로를 우회해 신고 결과를 직접 고친다', basis: { source: 'repository_standard', path: '.harness/internal-skills/code-review/references/baseline.md', quote: '권한 우회 또는 다른 사용자 데이터 노출' } }));
   assert.equal(reports.action, 'repair');
 });
 

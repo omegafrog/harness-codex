@@ -53,15 +53,15 @@ export async function consumerWorkflow(t, request) {
   await protectLocalInstallArtifacts(primary, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
   await writeFile(join(primary, '.harness/harness.yaml'), SETUP);
-  await writeFile(join(primary, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  await writeFile(join(primary, '.harness/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
   }
   await writeFile(join(primary, 'app.txt'), 'baseline\n');
-  git('add', 'app.txt', 'docs', 'CONTEXT.md', 'CONTEXT-MAP.md');
+  git('add', 'app.txt', 'docs', '.harness/agents', 'CONTEXT.md', 'CONTEXT-MAP.md');
   git('commit', '-qm', 'baseline');
   const invoke = (cwd, script, args = [], input) => {
-    const result = spawnSync(process.execPath, [join(cwd, '.codex/scripts', script), ...args], { cwd, encoding: 'utf8', input });
+    const result = spawnSync(process.execPath, [join(cwd, '.harness/scripts', script), ...args], { cwd, encoding: 'utf8', input });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
   };
@@ -70,7 +70,7 @@ export async function consumerWorkflow(t, request) {
   const treeGit = gitIn(workspace);
   const planSetId = tree.plan_set_id;
   const specDirectory = `docs/specs/${planSetId}`;
-  const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
+  const specPath = (file) => execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-spec-path.mjs'), workspace, file], { cwd: workspace, encoding: 'utf8' }).trim();
 
   // The user's approval of the fixed requirements, logged as their own input after bounded-context finished.
   const REQUIREMENTS_APPROVAL = '확정된 요구사항을 승인합니다';
@@ -94,7 +94,7 @@ export async function consumerWorkflow(t, request) {
     const base = ['--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id];
     const started = invoke(workspace, 'harness-native-stage.mjs', ['start', ...base]);
     assert.equal(started.agent_profile, STAGE_PROFILES[stage] || (stage.startsWith('tactical-') ? 'tactical_designer' : 'workflow_stage'));
-    assert.equal(started.guide, join(workspace, `.codex/internal-skills/${stage}/GUIDE.md`));
+    assert.equal(started.guide, join(workspace, `.harness/internal-skills/${stage}/GUIDE.md`));
     assert.equal(started.binding.model_tier, STAGE_TIERS[stage]);
     assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
     const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
@@ -114,7 +114,7 @@ export async function consumerWorkflow(t, request) {
   }
 
   // finish as the runner answers it, without asserting, for the tests that expect a rejection.
-  const finishStage = ({ base }) => spawnSync(process.execPath, [join(workspace, '.codex/scripts/harness-native-stage.mjs'), 'finish', ...base], { cwd: workspace, encoding: 'utf8' });
+  const finishStage = ({ base }) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-native-stage.mjs'), 'finish', ...base], { cwd: workspace, encoding: 'utf8' });
 
   // One stage the way the orchestrator drives it: prepare, start, bind, the stage writes its documents, finish.
   async function runStage(stage, { files = {}, status = 'completed', code = 'OK', summary = '완료', artifacts = [], questions = [], extraArgs = [], expectCommit = true, commit_request = null, resultExtra = {} }) {

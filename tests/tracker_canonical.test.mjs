@@ -49,8 +49,8 @@ test('installer backs up and retires old Beads hooks while preserving project ho
     assert.equal((await inspectRetiredProjectHooks(root)).beads, 0);
     const hooks = JSON.parse(await readFile(join(root, '.codex/hooks.json'), 'utf8'));
     assert.deepEqual(hooks.hooks.SessionStart[0].hooks, [{ command: 'custom', type: 'command' }]);
-    const backup = (await readdir(join(root, '.codex/installer-backups')))[0];
-    assert.equal(await readFile(join(root, '.codex/installer-backups', backup, 'hooks.json'), 'utf8'), original);
+    const backup = (await readdir(join(root, '.harness/installer-backups')))[0];
+    assert.equal(await readFile(join(root, '.harness/installer-backups', backup, 'hooks.json'), 'utf8'), original);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -89,7 +89,7 @@ test('installed consumer uses local tracker and retires managed Beads assets wit
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(status, /app\.txt/);
     assert.match(status, /docs\/plans\/set\/P1\.md/);
-    assert.doesNotMatch(status, /\.codex\/internal-skills/);
+    assert.doesNotMatch(status, /\.harness\/internal-skills/);
     await assert.rejects(readFile(join(root, '.codex/internal-skills/beads/GUIDE.md')), { code: 'ENOENT' });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

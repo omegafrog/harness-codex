@@ -118,7 +118,7 @@ export async function transcriptInUse(path) {
 async function assertUnboundClaimAbandoned({ root, state, entry }) {
   const parent = state.orchestrator_session_id;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parent || '') || !Number.isFinite(Date.parse(entry.started_at || ''))) throw new Error('Running stage cannot be verified stopped');
-  const { findRollout } = await import('./providers/codex.mjs');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const found = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), parent);
   if (!found) throw new Error('Running stage cannot be verified stopped: the orchestrator transcript was not found');
   const path = await realpath(found);

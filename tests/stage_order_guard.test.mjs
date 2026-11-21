@@ -11,7 +11,7 @@ import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
 const done = { status: 'completed', code: 'OK', result_ref: 'runtime/executions/x/result.json' };
 const completed = (ids) => Object.fromEntries(ids.map((id) => [id, { ...done }]));
-const script = (workspace, name, args) => spawnSync(process.execPath, [join(workspace, '.codex/scripts', name), ...args], { cwd: workspace, encoding: 'utf8' });
+const script = (workspace, name, args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', name), ...args], { cwd: workspace, encoding: 'utf8' });
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 
 test('the order guard names the first earlier flow stage that is not completed and leaves workflows outside the flow alone', () => {
@@ -155,7 +155,7 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   const stale = script(workspace, 'harness-prepare-input.mjs', ['--stage-id', 'spec-me']);
   assert.notEqual(stale.status, 0);
   assert.match(stale.stderr, /spec-me has been removed/);
-  assert.match(stale.stderr, /node \.codex\/scripts\/harness-prepare-input\.mjs --stage-id spec-me --discard-out-of-order true/);
+  assert.match(stale.stderr, /node \.harness\/scripts\/harness-prepare-input\.mjs --stage-id spec-me --discard-out-of-order true/);
 
   // Nothing proves the orchestrator stopped yet: the transcript is missing, then held open by a live process, then it shows a started subagent.
   failure(discard(), /orchestrator transcript was not found/);
@@ -252,8 +252,8 @@ test('the orchestrator links the input guide that owns the stage order guard and
   assert.match(orchestrator, /references\/input\.md/);
   const enforcement = await read('docs/architecture/enforcement.md');
   assert.match(enforcement, /preSpecOrderViolation[\s\S]*discardOutOfOrderStage/);
-  const prepare = await read('.codex/scripts/harness-prepare-input.mjs');
+  const prepare = await read('.harness/scripts/harness-prepare-input.mjs');
   assert.match(prepare, /'discard-out-of-order'/);
-  assert.match(await read('.codex/scripts/harness-native-stage.mjs'), /preSpecOrderViolation/);
+  assert.match(await read('.harness/scripts/harness-native-stage.mjs'), /preSpecOrderViolation/);
   assert.ok(TACTICAL_DESIGN_STAGES.every((stage) => PRE_SPEC_STAGES.includes(stage)));
 });

@@ -23,7 +23,7 @@ const sessionsDirectory = () => join(resolve(process.env.CODEX_HOME || join(proc
 export async function verifyPreviousRunEnded({ root, session, state, entry }) {
   const parent = state.orchestrator_session_id;
   if (!UUID.test(parent || '')) throw stopped('the recorded orchestrator conversation has no Codex session id');
-  const { findRollout } = await import('./providers/codex.mjs');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const found = await findRollout(sessionsDirectory(), parent);
   if (!found) throw stopped('the orchestrator transcript was not found');
   const path = await realpath(found);

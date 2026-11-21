@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
@@ -75,12 +75,12 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
   await writeFile(join(root, '.harness/harness.yaml'), SETUP);
 
   const assets = [
-    '.codex/workflows/tactical-to-code.yaml',
-    '.codex/workflows/frontend-design.yaml',
-    ...['frontend-design', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.harness/workflows/tactical-to-code.yaml',
+    '.harness/workflows/frontend-design.yaml',
+    ...['frontend-design', 'frontend-implement', 'frontend-visual-review'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
     ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
-    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    '.codex/internal-skills/to-ticket/references/split.md',
+    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'plan-review', 'tracker-publish', 'tactical-code'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
+    '.harness/internal-skills/to-ticket/references/split.md',
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
     '.codex/agents/to_ticket.toml',
@@ -91,18 +91,18 @@ test('fresh install and update distribute the flow, Doctor inventories it, and i
     '.harness/src/workflow/tactical-tickets.mjs',
     '.harness/src/workflow/plan-review.mjs',
     '.harness/src/tracker/publication.mjs',
-    '.codex/scripts/harness-native-stage.mjs',
-    '.codex/scripts/harness-result.mjs',
-    '.codex/scripts/harness-context.mjs',
+    '.harness/scripts/harness-native-stage.mjs',
+    '.harness/scripts/harness-result.mjs',
+    '.harness/scripts/harness-context.mjs',
   ];
-  const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8'));
   for (const path of assets) {
     assert.ok(lock.files[path], `lock records ${path}`);
     assert.match(git('check-ignore', '-v', path), /info\/exclude/, `${path} ignored`);
   }
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ code, severity }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid'].includes(code)), []);
-  const frontendGuide = join(root, '.codex/internal-skills/frontend-design/GUIDE.md');
+  const frontendGuide = join(root, '.harness/internal-skills/frontend-design/GUIDE.md');
   const savedGuide = await readFile(frontendGuide);
   await rm(frontendGuide);
   assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path?.endsWith('frontend-design/GUIDE.md')));
@@ -154,10 +154,10 @@ test('update removes every retired spec-me asset from an installed consumer and 
   const retiredSkills = [...RETIRED_SKILL_NAMES];
   assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'beads', 'spec-me', ['skill', 'execution'].join('-')].sort());
   for (const path of RETIRED_ASSET_PATHS) assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
-  for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.codex/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
-  const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`);
+  for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.harness/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
+  const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`);
   for (const path of kept) assert.ok((await readFile(join(root, path), 'utf8')).length > 0, `${path} stays installed`);
-  assert.equal((await readFile(join(root, '.codex/internal-skills/requirements-fix/GUIDE.md'), 'utf8')).includes('spec-me/GUIDE.md'), false, 'a live stage guide links no retired guide');
+  assert.equal((await readFile(join(root, '.harness/internal-skills/requirements-fix/GUIDE.md'), 'utf8')).includes('spec-me/GUIDE.md'), false, 'a live stage guide links no retired guide');
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), false);
 
   // An earlier release installed these as managed, locked files; one copy was edited by the user, one never was in the lock.
@@ -175,7 +175,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
     '.agents/skills/spec-me/SKILL.md': 'previous public spec-me skill',
     '.claude/skills/spec-me/SKILL.md': 'previous public spec-me skill for Claude',
   };
-  const lockPath = join(root, '.codex/harness-lock.json');
+  const lockPath = join(root, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   for (const [path, content] of Object.entries(previous)) {
     await mkdir(join(root, path, '..'), { recursive: true });
@@ -189,7 +189,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
   await writeFile(join(root, notes), 'a note the user keeps next to the old guide\n');
   await writeFile(lockPath, JSON.stringify(lock));
   const projectDocuments = {
-    'docs/agents/EXEC.md': 'project execution notes\n',
+    '.harness/agents/EXEC.md': 'project execution notes\n',
     'docs/contracts/product.md': 'project product contract\n',
     'docs/specs/demo/product-spec.md': '# existing approved Product Spec\n',
     'docs/specs/demo/architecture-spec.md': '# existing approved Architecture Spec\n',
@@ -213,11 +213,12 @@ test('update removes every retired spec-me asset from an installed consumer and 
   assert.match(status, /^M app\.txt$/m);
   assert.match(status, /\?\? \.codex\/internal-skills\/spec-me\/notes\.md/, 'the user-owned note stays visible to Git');
   for (const path of Object.keys(projectDocuments)) assert.match(status, new RegExp(`\\?\\? ${path.replaceAll('.', '\\.')}`), `${path} stays visible`);
-  assert.doesNotMatch(status, /\.agents\/|\.claude\/|\.harness\/|\.io\/|installer-backups/);
+  assert.doesNotMatch(status, /\.agents\/|\.claude\/|\.harness\/(?!agents\/)|\.io\/|installer-backups/);
   for (const path of Object.keys(previous)) assert.doesNotMatch(status, new RegExp(path.replaceAll('.', '\\.')), `${path} is not left behind as a change`);
   const doctor = await runDoctor({ root, sourceRoot });
   assert.deepEqual(doctor.diagnostics.filter(({ severity, code }) => severity === 'error' && ['execution_asset_missing', 'workflow_invalid', 'broken_reference'].includes(code)), []);
-  assert.equal(doctor.diagnostics.some(({ path }) => /spec-me|architecture-spec|architecture-review|architecture_review_lead/.test(path || '') && !path.endsWith('notes.md')), false, 'Doctor neither requires nor reports the retired assets');
+  const retiredPaths = new Set([...RETIRED_ASSET_PATHS, ...Object.keys(previous)]);
+  assert.equal(doctor.diagnostics.some(({ path }) => path && retiredPaths.has(relative(root, path))), false, 'Doctor neither requires nor reports the retired assets');
   assert.deepEqual((await updateProject({ sourceRoot, targetRoot: root })).retired, [], 'a second update has nothing left to retire');
 });
 
@@ -228,7 +229,7 @@ test('installed prepare command enforces the tactical implementation order', asy
   for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
   state.current_stage = 'workflow-compose';
   await writeFile(statePath, JSON.stringify(state, null, 2) + '\n');
-  const prepare = (stage) => execFileSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', stage], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const prepare = (stage) => execFileSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', stage], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
   assert.throws(() => prepare('tactical-code'), (error) => /tactical-code cannot start before tactical-technology/.test(error.stderr));
   assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-code'], undefined, 'out-of-order preparation records no stage result');
@@ -238,7 +239,7 @@ test('installed prepare command enforces the tactical implementation order', asy
   staleState.stages['context-boundary'].status = 'blocked';
   staleState.stages['context-boundary'].code = 'DEPENDENCY_INCOMPLETE';
   await writeFile(statePath, JSON.stringify(staleState, null, 2) + '\n');
-  assert.throws(() => execFileSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-native-stage.mjs'), 'start', '--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', first.input.execution_id], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), (error) => /tactical-technology requires completed\/OK tactical design stage context-boundary/.test(error.stderr));
+  assert.throws(() => execFileSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), 'start', '--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', first.input.execution_id], { cwd: flow.workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), (error) => /tactical-technology requires completed\/OK tactical design stage context-boundary/.test(error.stderr));
   assert.notEqual(JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-technology']?.status, 'running', 'start rechecks tactical design and claims nothing after an upstream revision');
 });
 
@@ -265,7 +266,7 @@ test('installed decisions are committed alone and the ticket stages wait for the
       const schema = JSON.parse(await readFile(begun.started.schema_path, 'utf8'));
       assert.ok(schema.properties.result.required.includes('summary'));
       assert.equal(Object.hasOwn(schema.properties, 'summary'), false);
-      await flow.submitStage(begun, { files: { [path]: content, 'docs/agents/EXEC.md': '검증 명령: npm test\n' }, summary: '기술 결정 완료' });
+      await flow.submitStage(begun, { files: { [path]: content, '.harness/agents/EXEC.md': '검증 명령: npm test\n' }, summary: '기술 결정 완료' });
       const output = JSON.parse(await readFile(begun.started.output_path, 'utf8'));
       await writeFile(join(begun.started.output_path, '..', 'result.json'), JSON.stringify(output));
       delete output.result.summary;
@@ -297,11 +298,11 @@ test('installed decisions are committed alone and the ticket stages wait for the
     }
     if (stage === 'tactical-technology') technologyCommit = result.files;
   }
-  assert.ok(technologyCommit.includes('docs/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
+  assert.ok(technologyCommit.includes('.harness/agents/EXEC.md'), 'the technology stage commits optional execution guidance alongside its own decision');
 
   // The decisions alone do not start code: the ticket split and the user-approved publication come first. The ticket-by-ticket
   // run of tactical-code (profile, binding, one commit per ticket) is covered by tactical_ticket_flow.test.mjs.
-  const prepare = (...args) => spawnSync(process.execPath, [join(flow.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: flow.workspace, encoding: 'utf8' });
+  const prepare = (...args) => spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', ...args], { cwd: flow.workspace, encoding: 'utf8' });
   assert.match(prepare('--stage-id', 'tactical-code', '--plan', 'any-ticket').stderr, /tactical-code cannot start before to-ticket/);
   assert.match(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', '발행하세요').stderr, /tracker-publish cannot start before to-ticket/);
   const finalState = JSON.parse(await readFile(statePath, 'utf8'));

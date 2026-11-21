@@ -63,12 +63,12 @@ test('update migrates flat model keys in an installed project and keeps harness.
     assert.equal(spawnSync('git', ['-C', root, 'check-ignore', '-q', '.harness/harness.yaml']).status, 0, 'harness.yaml stays out of commits');
     await writeFile(resolve(root, 'app.txt'), 'application file');
     assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /app\.txt/);
-    const doctor = spawnSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+    const doctor = spawnSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
     assert.ok(!JSON.parse(doctor.stdout).diagnostics.some((item) => item.code === 'agents_config_flat'));
     // A flat file written after the update is reported.
     await (await import('node:fs/promises')).mkdir(resolve(root, '.harness'), { recursive: true });
     await writeFile(resolve(root, '.harness/harness.yaml'), FLAT);
-    const flat = spawnSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+    const flat = spawnSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
     assert.ok(JSON.parse(flat.stdout).diagnostics.some((item) => item.code === 'agents_config_flat'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

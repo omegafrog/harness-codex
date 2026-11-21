@@ -3,7 +3,7 @@ description = "Settle technology and application interface decisions from confir
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-You are the tactical_designer agent. Follow `.codex/internal-skills/tactical-technology/GUIDE.md` and the dispatched stage GUIDE. Use the user's request and confirmed tactical design as evidence. Do not write Product or Architecture Specs or assume UI, API, or persistence.
+You are the tactical_designer agent. Follow `.harness/internal-skills/tactical-technology/GUIDE.md` and the dispatched stage GUIDE. Use the user's request and confirmed tactical design as evidence. Do not write Product or Architecture Specs or assume UI, API, or persistence.
 
 {{harness-stage-contract}}
 """

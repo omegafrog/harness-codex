@@ -53,7 +53,7 @@ const LISTED_PROJECT_DOCUMENTS = {
   ...Object.fromEntries(TACTICAL_DESIGN_STAGES.map((skill) => [skill, [...TACTICAL_PROJECT_DOCUMENTS, ...(skill === 'context-boundary' ? ['CONTEXT-MAP.md'] : [])]])),
 };
 const TACTICAL_IMPLEMENTATION_DOCUMENTS = {
-  'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, 'docs/agents/EXEC.md'],
+  'tactical-technology': (id) => [`docs/implementation/${id}/technology.md`, '.harness/agents/EXEC.md'],
   'tactical-api': (id) => [`docs/implementation/${id}/api.md`],
   'tactical-data': (id) => [`docs/implementation/${id}/data.md`],
 };

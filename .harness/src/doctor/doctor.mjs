@@ -11,7 +11,10 @@ import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles, hashFi
 import { buildHarnessLock, discoverManagedAssetPaths } from "../installer/update.mjs";
 import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
+import { isHarnessSourceCheckout } from '../installer/source-checkout.mjs';
 import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/stage-runtime.mjs";
+import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
+import { HARNESS_LOCK_PATH, LEGACY_HARNESS_LOCK_PATH } from '../installer/config-location.mjs';
 import { inspectRetiredProjectHooks } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { completionKindForWorkflow } from "../workflow/completion.mjs";
@@ -21,14 +24,14 @@ import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
 const SCHEMA_VERSION = 1;
-const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
-const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
+const DEFAULT_WORKFLOW_DIR = ".harness/workflows";
+const DEFAULT_LOCK_PATH = HARNESS_LOCK_PATH;
 const execFileAsync = promisify(execFile);
 const PUBLIC_HARNESS_SKILLS = new Set(PUBLIC_SKILLS);
 
 async function inspectPublicSkills(root, diagnostics) {
   const lock = await readHarnessLock(join(root, DEFAULT_LOCK_PATH)).catch(() => null);
-  for (const directory of ['.agents/skills', '.claude/skills']) {
+  for (const directory of ['.agents/skills', '.codex/skills', '.claude/skills']) {
     const path = join(root, directory);
     const entries = await readdir(path, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
     for (const entry of entries) {
@@ -36,7 +39,7 @@ async function inspectPublicSkills(root, diagnostics) {
       const guide = join(path, entry.name, 'SKILL.md');
       const relative = `${directory}/${entry.name}/SKILL.md`;
       const sourcePath = lock?.files?.[relative]?.source_path;
-      if ([`.codex/internal-skills/${entry.name}/GUIDE.md`, `.codex/skills/${entry.name}/SKILL.md`].includes(sourcePath)) {
+      if ([`.harness/internal-skills/${entry.name}/GUIDE.md`, `.codex/skills/${entry.name}/SKILL.md`].includes(sourcePath)) {
         if (await lstat(guide).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) {
         diagnostics.push(diagnostic('harness_skill_exposed', 'warning', `Internal Harness skill is exposed as a public skill: ${entry.name}`, guide));
         }
@@ -49,7 +52,7 @@ async function inspectPublicSkills(root, diagnostics) {
 // Harness-owned, so a malformed declaration there is an error; so is a workflow stage whose skill declares none.
 async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
   const candidates = [];
-  const internal = join(root, '.codex/internal-skills');
+  const internal = join(root, '.harness/internal-skills');
   for (const entry of await readdir(internal, { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
     if (entry.isDirectory()) candidates.push({ skill: entry.name, path: join(internal, entry.name, 'GUIDE.md'), stage: false });
   }
@@ -74,61 +77,64 @@ async function inspectSkillDeclarations(root, diagnostics, stageSkills) {
   }
 }
 
-async function inspectExecutionAssets(root, diagnostics) {
+async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
   const config = await loadHarnessConfig(root).catch(() => ({}));
   // The runner schema directory (or, before it moved, the stage-runtime contract directory) marks a project that installed the stage runtime.
   const marker = async (path) => lstat(join(root, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
   if (!await marker('.harness/schemas')) return;
   const paths = [
-    '.codex/internal-skills/implement-wrapper/GUIDE.md',
-    '.codex/internal-skills/implement/references/ponytail.md',
-    '.codex/internal-skills/workflow-compose/GUIDE.md',
-    '.codex/internal-skills/e2e-test/GUIDE.md',
-    '.codex/internal-skills/e2e-test/references/verification-policy.md',
-    '.codex/internal-skills/e2e-test/references/failure-learning.md',
-    '.codex/internal-skills/e2e-telemetry/GUIDE.md',
-    '.codex/internal-skills/e2e-telemetry/scripts/report.mjs',
+    '.harness/internal-skills/implement-wrapper/GUIDE.md',
+    '.harness/internal-skills/implement/references/ponytail.md',
+    '.harness/internal-skills/workflow-compose/GUIDE.md',
+    '.harness/internal-skills/e2e-test/GUIDE.md',
+    '.harness/internal-skills/e2e-test/references/verification-policy.md',
+    '.harness/internal-skills/e2e-test/references/failure-learning.md',
+    '.harness/internal-skills/e2e-telemetry/GUIDE.md',
+    '.harness/internal-skills/e2e-telemetry/scripts/report.mjs',
     '.codex/agents/workflow_stage.toml',
     '.codex/agents/tracker_publisher.toml',
     '.codex/agents/pr_author.toml',
-    '.codex/workflows/tactical-to-code.yaml',
-    '.codex/workflows/frontend-design.yaml',
-    ...['frontend-design', 'frontend-figma', 'frontend-implement', 'frontend-visual-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
+    '.harness/workflows/tactical-to-code.yaml',
+    '.harness/workflows/frontend-design.yaml',
+    ...['frontend-design', 'frontend-figma', 'frontend-implement', 'frontend-visual-review'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
     ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
-    '.codex/internal-skills/technology-selection/GUIDE.md',
-    '.codex/internal-skills/stakeholder-analysis/GUIDE.md',
-    '.codex/internal-skills/stakeholder-analysis/references/output-template.md',
-    '.codex/internal-skills/stakeholder-analysis/references/lenses/domain.md',
-    '.codex/internal-skills/stakeholder-analysis/references/lenses/security.md',
-    '.codex/internal-skills/stakeholder-persona/GUIDE.md',
+    '.harness/internal-skills/technology-selection/GUIDE.md',
+    '.harness/internal-skills/stakeholder-analysis/GUIDE.md',
+    '.harness/internal-skills/stakeholder-analysis/references/output-template.md',
+    '.harness/internal-skills/stakeholder-analysis/references/lenses/domain.md',
+    '.harness/internal-skills/stakeholder-analysis/references/lenses/security.md',
+    '.harness/internal-skills/stakeholder-persona/GUIDE.md',
     '.codex/agents/stakeholder_persona.toml',
-    ...['subdomain-candidates', 'event-storming', 'subdomain-classification', 'bounded-context', 'ubiquitous-language', 'requirements-fix'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    '.codex/internal-skills/requirements-fix/references/template.md',
-    '.codex/internal-skills/requirements-fix/references/coverage.md',
-    '.codex/internal-skills/event-storming/references/diagrams.md',
-    ...['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'tactical-code', 'to-ticket', 'plan-review'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`),
-    ...['split', 'revision', 'execution-evidence', 'github-issue-template'].map((name) => `.codex/internal-skills/to-ticket/references/${name}.md`),
-    '.codex/internal-skills/domain-model/references/template.md',
-    '.codex/internal-skills/domain-model/references/legacy-template.md',
-    '.codex/internal-skills/domain-model/references/deepening.md',
-    ...['bootstrap', 'render'].map((name) => `.codex/tools/plantuml-${name}.mjs`),
-    '.codex/schemas/decision/architecture-decision.schema.yaml',
-    '.codex/scripts/harness-publication.mjs',
+    ...['subdomain-candidates', 'event-storming', 'subdomain-classification', 'bounded-context', 'ubiquitous-language', 'requirements-fix'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
+    '.harness/internal-skills/requirements-fix/references/template.md',
+    '.harness/internal-skills/requirements-fix/references/coverage.md',
+    '.harness/internal-skills/event-storming/references/diagrams.md',
+    ...['domain-model', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
+    ...['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'tactical-code', 'to-ticket', 'plan-review'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
+    ...['split', 'revision', 'execution-evidence', 'github-issue-template'].map((name) => `.harness/internal-skills/to-ticket/references/${name}.md`),
+    '.harness/internal-skills/domain-model/references/template.md',
+    '.harness/internal-skills/domain-model/references/legacy-template.md',
+    '.harness/internal-skills/domain-model/references/deepening.md',
+    ...['bootstrap', 'render'].map((name) => `.harness/tools/plantuml-${name}.mjs`),
+    '.harness/schemas/decision/architecture-decision.schema.yaml',
+    '.harness/scripts/harness-publication.mjs',
     ...['input', 'return', 'question', 'workflow-compose-result', 'workflow-compose-input', 'flows/common', 'flows/plan-review', 'flows/spec-review'].map((name) => `.harness/schemas/${name}.schema.json`),
-    ...['doctor', 'setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'agent-admission', 'fresh-agent', 'write-guard', 'contract-review', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.codex/scripts/harness-${name}.mjs`),
+    sourceCheckout ? 'bin/harness-doctor.mjs' : '.harness/scripts/harness-doctor.mjs',
+    ...['setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'fresh-agent', 'write-guard', 'contract-review', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.harness/scripts/harness-${name}.mjs`),
   ];
   // The orchestrator owns the stage coordination references; each installed provider copy carries them.
-  for (const skills of ['.agents/skills', '.claude/skills']) {
+  for (const skills of ['.codex/skills', '.claude/skills']) {
     if (await marker(`${skills}/orchestrator/SKILL.md`)) paths.push(...['capability-routing', 'coordination', 'dispatch', 'implementation', 'input', 'state', 'workflow-map'].map((name) => `${skills}/orchestrator/references/${name}.md`));
   }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'providers/codex', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
   }
+  if (await marker('.codex/skills/orchestrator/SKILL.md')) paths.push('.codex/harness/providers/codex.mjs', ...['agent-event', 'fresh-agent', 'write-guard'].map((name) => `.codex/scripts/harness-${name}.mjs`));
+  if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs');
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
@@ -146,7 +152,7 @@ async function inspectExecutionAssets(root, diagnostics) {
 async function inspectStakeholderCards(root, diagnostics) {
   try {
     const { problems } = await readRegistry(root);
-    for (const problem of problems) diagnostics.push(diagnostic('stakeholder_card_invalid', 'warning', `Invalid stakeholder card ${problem.path}: ${problem.message}; fix it or run node .codex/scripts/harness-stakeholder.mjs remove <SH-id>`, join(root, problem.path)));
+    for (const problem of problems) diagnostics.push(diagnostic('stakeholder_card_invalid', 'warning', `Invalid stakeholder card ${problem.path}: ${problem.message}; fix it or run node .harness/scripts/harness-stakeholder.mjs remove <SH-id>`, join(root, problem.path)));
   } catch (error) {
     diagnostics.push(diagnostic('stakeholder_card_invalid', 'warning', `Unable to inspect ${STAKEHOLDER_DIRECTORY}: ${safeMessage(error, 'unreadable stakeholder cards')}`, join(root, STAKEHOLDER_DIRECTORY)));
   }
@@ -256,9 +262,9 @@ async function inspectWorkflows(root, diagnostics, stageSkills) {
         diagnostics.push(diagnostic("completion_gate_scope", "warning", `Workflow ${workflow.id} declares contract_docs, but this completion scope ignores that gate`, path, { completion_kind: completionKindForWorkflow(workflow.id) }));
       }
       for (const stage of workflow.stages) stageSkills.set(stage.skill, workflow.references.skills[stage.skill]);
-      const legacySkillRoot = resolve(root, ".codex/skills");
+      const legacySkillRoot = resolve(root, ".agents/skills");
       for (const [skill, skillPath] of Object.entries(workflow.references.skills)) {
-        if (isWithin(legacySkillRoot, skillPath)) diagnostics.push(diagnostic("stale_skill_path", "warning", `Workflow ${workflow.id} resolves skill ${skill} from legacy .codex/skills`, skillPath));
+        if (isWithin(legacySkillRoot, skillPath)) diagnostics.push(diagnostic("stale_skill_path", "warning", `Workflow ${workflow.id} resolves skill ${skill} from legacy .agents/skills`, skillPath));
       }
     } catch (error) {
       diagnostics.push(diagnostic(classifyWorkflowError(error), "error", safeMessage(error, "Workflow validation failed"), error.details?.path || path));
@@ -331,7 +337,7 @@ async function inspectPermissions(root, diagnostics, nativePermissionProfiles = 
         if (!references.has(reference)) references.set(reference, []);
         references.get(reference).push(path);
       }
-      if (text.includes(".codex/skills/")) diagnostics.push(diagnostic("stale_agent_path", "warning", `Agent profile ${entry.name} contains a legacy .codex/skills reference`, path));
+      if (text.includes(".agents/skills/")) diagnostics.push(diagnostic("stale_agent_path", "warning", `Agent profile ${entry.name} contains a legacy .agents/skills reference`, path));
     }
   } catch (error) {
     if (error.code !== "ENOENT") diagnostics.push(diagnostic("permission_conflict", "error", safeMessage(error, "Unable to inspect agent permission references"), agentsDirectory));
@@ -392,7 +398,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
     const installedFiles = new Set(await discoverHarnessOwnedFiles(root));
     // Project-owned scripts may live beside Harness scripts; Git tracking does not make them managed assets.
-    const trackedScripts = new Set((await execFileAsync('git', ['-C', root, 'ls-files', '-z', '--', '.codex/scripts'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.split('\0').filter(Boolean));
+    const trackedScripts = new Set((await execFileAsync('git', ['-C', root, 'ls-files', '-z', '--', '.harness/scripts'], { encoding: 'utf8' }).catch(() => ({ stdout: '' }))).stdout.split('\0').filter(Boolean));
     const managedPaths = sourceRoot ? new Set(await discoverManagedAssetPaths(sourceRoot)) : installedFiles;
     const currentAssets = sourceRoot ? (await buildHarnessLock({ sourceRoot, targetRoot: root })).files : {};
     // A divergent, unregistered agent profile was preserved as consumer-owned during install.
@@ -404,7 +410,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".harness/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/stage-runtime.mjs', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/providers/codex.mjs', '.harness/src/workflow/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.codex/scripts/harness-context.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/scripts/harness-output-format.mjs', '.codex/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/stage-runtime.mjs', '.harness/src/workflow/providers/index.mjs', '.codex/harness/providers/codex.mjs', '.claude/harness/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.harness/scripts/harness-context.mjs', '.harness/scripts/harness-native-stage.mjs', '.harness/scripts/harness-output-format.mjs', '.claude/harness/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {
@@ -430,6 +436,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   } catch (error) {
     diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Unable to classify harness lock"), path));
   }
+  return lock;
 }
 
 async function inspectAuthoring(root, diagnostics) {
@@ -523,7 +530,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.harness/harness.yaml')));
   if (!claudeProvider && await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
-      const { inspectCodexHookTrust } = await import('../workflow/providers/codex.mjs');
+      const { inspectCodexHookTrust } = await import('../../../.codex/harness/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
       if (trust.ponytail_config_path) diagnostics.push(diagnostic('codex_ponytail_plugin_enabled', 'warning', 'The Codex Ponytail plugin can inject global instructions. Set [plugins."ponytail@ponytail"] enabled = false in this user config to use the Harness implementation-only guidance.', trust.ponytail_config_path));
       if (trust.retired_startup) diagnostics.push(diagnostic('retired_codex_user_orchestrator_hook', 'warning', 'The retired Harness startup hook remains in Codex user hooks; run setup with the codex provider after updating any other Harness checkouts that still use it', trust.hooks_path));
@@ -544,7 +551,7 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
       diagnostics.push(diagnostic('claude_orchestrator_hook_invalid', 'error', safeMessage(error, 'Invalid Claude Code orchestrator hook'), join(repositoryRoot, '.claude/settings.local.json')));
     }
   }
-  const budgetPath = join(repositoryRoot, '.codex/context-budget.json');
+  const budgetPath = join(repositoryRoot, '.harness/context-budget.json');
   try {
     const information = await lstat(budgetPath);
     if (!information.isFile()) throw new Error('Context budget must be a regular file');
@@ -556,9 +563,17 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectWorkflows(repositoryRoot, diagnostics, stageSkills);
   await inspectSkillDeclarations(repositoryRoot, diagnostics, stageSkills);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
-  await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
+  const sourceCheckout = sourceRoot && await isHarnessSourceCheckout(sourceRoot, repositoryRoot).catch((error) => error.code === 'ENOENT' ? false : Promise.reject(error));
+  const installation = await inspectLock(repositoryRoot, sourceCheckout && lockPath === DEFAULT_LOCK_PATH ? null : lockPath, sourceRoot, diagnostics);
   await inspectLegacyRuntime(repositoryRoot, diagnostics);
-  await inspectExecutionAssets(repositoryRoot, diagnostics);
+  await inspectExecutionAssets(repositoryRoot, diagnostics, sourceCheckout);
+  if (!sourceCheckout && lockPath === DEFAULT_LOCK_PATH && !installation && await lstat(join(repositoryRoot, LEGACY_HARNESS_LOCK_PATH)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) {
+    diagnostics.push(diagnostic('installer_layout_legacy', 'error', 'Harness uses the legacy installation layout. Run harness-codex update to move shared runtime files into .harness.', join(repositoryRoot, LEGACY_HARNESS_LOCK_PATH)));
+  }
+  if (installation?.files['.harness/src/workflow/project-readiness.mjs']) {
+    const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot });
+    if (readiness.status !== 'pass') diagnostics.push(diagnostic(readiness.reason, 'error', `Workflow compose is not ready: ${readiness.violations.join(', ')}. Update an older installation or run setup to prepare the missing project files.`, repositoryRoot, { violations: readiness.violations }));
+  }
   await inspectStakeholderCards(repositoryRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
   diagnostics.sort((left, right) => {

@@ -1,0 +1,17 @@
+<!-- 내부 workflow 전용. 사용자 공개 스킬로 등록하지 않는다. -->
+
+# implementation-guidance
+
+The guidance file is plain Markdown so it can be read by different agent providers and tooling. Use this skill when a user gives a reusable implementation constraint during ordinary project work, or when a specification workflow identifies an explicit implementation preference in the request or settled answers. Do not turn inferred preferences, one-ticket requirements, or unresolved architecture choices into durable guidance.
+
+## Record
+
+Maintain `.harness/agents/implementation-guidance.md` in the active project workspace. Read and write `<workspace_root>/.harness/agents/implementation-guidance.md`; in a managed workflow this is the selected worktree, not the original checkout. The file is tracked project memory and its update travels with the workflow branch when committed and pushed. Create it from `references/template.md` when needed. Each entry must state its identifier, scope, instruction, rationale, source (user message or specification section), and update date. Record the user's meaning without adding a solution they did not choose. Keep product and architecture contracts authoritative for ticket-specific requirements and decisions.
+
+When a new instruction conflicts with an existing entry, compare scope and source. Update or mark the old entry `superseded` with the replacing entry and date; do not silently keep both as active. Ask only when the user has not settled which rule applies. Specification and user-conversation workflows update the copy inside their active workspace, so the memory change is part of that branch. Ordinary implementation workers only read the file; the workflow owner updates it when the user explicitly establishes reusable guidance.
+
+## Read
+
+Every implementation worker reads `<workspace_root>/.harness/agents/implementation-guidance.md` before planning edits. Apply only entries whose scope matches the current project and change. If an entry conflicts with approved ticket requirements or design, report the conflict and stop for resolution; do not silently override either source.
+
+For scoped Spring Boot diagnostic logging changes, follow the project-owned schema in `docs/observability/victorialogs/` and the `spring-boot-diagnostic-log-v1` entry that `victorialogs-local-setup` records in the workspace guidance.

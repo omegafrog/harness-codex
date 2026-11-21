@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { readHarnessLock } from './lock.mjs';
+import { HARNESS_LOCK_PATH } from './config-location.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { protectLocalInstallArtifacts } from './local-exclude.mjs';
 import { retireProjectHooks } from './orchestrator-hook.mjs';
 
 // Linked worktrees inherit tracked application files, not ignored installed assets.
 export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
-  const lockPath = '.codex/harness-lock.json';
+  const lockPath = HARNESS_LOCK_PATH;
   let lock;
   try { lock = await readHarnessLock(join(sourceRoot, lockPath)); }
   catch (error) { if (error.code !== 'ENOENT' && error.cause?.code !== 'ENOENT') throw error; }
@@ -34,7 +35,7 @@ export async function provisionWorktreeRuntime(sourceRoot, targetRoot) {
     for (const [path, entry] of Object.entries(lock.files)) await copy(path, entry.installed_sha256);
     await copy(lockPath);
   }
-  for (const path of ['.harness/harness.yaml', '.codex/context-budget.json', 'docs/agents/EXEC.md', 'docs/agents/execution.json']) {
+  for (const path of ['.harness/harness.yaml', '.harness/context-budget.json', '.harness/agents/EXEC.md', '.harness/agents/execution.json', '.harness/agents/implementation-guidance.md', '.harness/agents/testing-guidance.md']) {
     try { await copy(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (lock) {

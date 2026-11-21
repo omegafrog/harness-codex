@@ -19,7 +19,7 @@ export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z'
   const { constants } = await import('node:fs');
   let path;
   if (provider === 'codex') {
-    const { findRollout } = await import('./providers/codex.mjs');
+    const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
     path = await findRollout(join(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex'), 'sessions'), sessionId);
   } else if (provider === 'claude-code') {
     const { readdir } = await import('node:fs/promises');

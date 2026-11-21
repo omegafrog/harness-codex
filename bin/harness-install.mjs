@@ -9,6 +9,7 @@ import { protectLocalInstallArtifacts } from "../.harness/src/installer/local-ex
 import { migrateLegacyHarnessConfig } from "../.harness/src/installer/config-location.mjs";
 import { PUBLIC_SKILLS } from "../.harness/src/installer/public-skills.mjs";
 import { isHarnessSourceCheckout } from "../.harness/src/installer/source-checkout.mjs";
+import { inspectProjectReadiness } from '../.harness/src/workflow/project-readiness.mjs';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -108,42 +109,42 @@ const pathSeparator = process.platform === "win32" ? "\\" : "/";
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     const providers = options.provider || "all";
-    const skillRoots = [...(providers !== "claude-code" ? [".agents/skills"] : []), ...(providers !== "codex" ? [".claude/skills"] : [])];
+    const skillRoots = [...(providers !== "claude-code" ? [".codex/skills"] : []), ...(providers !== "codex" ? [".claude/skills"] : [])];
     for (const name of PUBLIC_SKILLS) {
       for (const directory of skillRoots) await stat(join(projectRoot, directory, name, "SKILL.md"));
     }
     if (providers !== "codex") await stat(join(projectRoot, ".claude", "harness", "providers", "claude-code.mjs"));
-    const internalSkills = new Set(await readdir(join(projectRoot, ".codex", "internal-skills")));
-    const lock = JSON.parse(await readFile(join(projectRoot, ".codex", "harness-lock.json"), "utf8"));
+    const internalSkills = new Set(await readdir(join(projectRoot, ".harness", "internal-skills")));
+    const lock = JSON.parse(await readFile(join(projectRoot, ".harness", "harness-lock.json"), "utf8"));
     for (const directory of skillRoots) {
       const exposed = await readdir(join(projectRoot, directory));
       const unexpected = exposed.find((name) => internalSkills.has(name) && !PUBLIC_SKILLS.includes(name)
         && lock.files?.[`${directory}/${name}/SKILL.md`]
-        && [`.codex/internal-skills/${name}/GUIDE.md`, `.codex/skills/${name}/SKILL.md`].includes(lock.files[`${directory}/${name}/SKILL.md`].source_path));
+        && [`.harness/internal-skills/${name}/GUIDE.md`, `.codex/skills/${name}/SKILL.md`].includes(lock.files[`${directory}/${name}/SKILL.md`].source_path));
       if (unexpected) throw new Error(`Internal Harness skill is publicly exposed: ${directory}/${unexpected}`);
     }
-    await stat(join(projectRoot, ".codex", "internal-skills", "product-spec", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "code-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-design", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-figma", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-implement", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "frontend-visual-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "harness-maintenance", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "plan-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "contract-review", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
-    await stat(join(projectRoot, ".codex", "internal-skills", "stakeholder-persona", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "product-spec", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "code-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "frontend-design", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "frontend-figma", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "frontend-implement", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "frontend-visual-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "harness-maintenance", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "plan-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "contract-review", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "stakeholder-persona", "GUIDE.md"));
     for (const name of ["subdomain-candidates", "event-storming", "subdomain-classification", "bounded-context", "ubiquitous-language", "requirements-fix"]) {
-      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+      await stat(join(projectRoot, ".harness", "internal-skills", name, "GUIDE.md"));
     }
-    await stat(join(projectRoot, ".codex", "internal-skills", "requirements-fix", "references", "template.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "requirements-fix", "references", "template.md"));
     for (const name of ["domain-model", "aggregate-design", "domain-service", "application-service", "integration-design", "context-boundary"]) {
-      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+      await stat(join(projectRoot, ".harness", "internal-skills", name, "GUIDE.md"));
     }
     for (const name of ["tactical-technology", "tactical-ui", "tactical-api", "tactical-data", "tactical-code"]) {
-      await stat(join(projectRoot, ".codex", "internal-skills", name, "GUIDE.md"));
+      await stat(join(projectRoot, ".harness", "internal-skills", name, "GUIDE.md"));
     }
-    await stat(join(projectRoot, ".codex", "internal-skills", "domain-model", "references", "template.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "domain-model", "references", "template.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -171,11 +172,11 @@ async function verify(projectRoot, options) {
 async function verifyManagedRuntime(projectRoot) {
   for (const path of [
     ".github/pull_request_template.md",
-    ".codex/internal-skills/implement/references/ponytail.md",
-    ".codex/scripts/harness-workspace-preflight.mjs",
-    ".codex/workflows/code-review.yaml",
-    ".codex/workflows/frontend-design.yaml",
-    ".codex/workflows/tactical-to-code.yaml",
+    ".harness/internal-skills/implement/references/ponytail.md",
+    ".harness/scripts/harness-workspace-preflight.mjs",
+    ".harness/workflows/code-review.yaml",
+    ".harness/workflows/frontend-design.yaml",
+    ".harness/workflows/tactical-to-code.yaml",
     ".harness/src/workflow/stage-gates.mjs",
     ".harness/src/workflow/startup-state.mjs",
     ".harness/src/workflow/execution-state.mjs",
@@ -185,20 +186,20 @@ async function verifyManagedRuntime(projectRoot) {
     ".harness/src/workflow/review-attempts.mjs",
     ".harness/src/wrapper/repair.mjs",
     ".harness/src/knowledge/evidence.mjs",
-    ".codex/scripts/harness-plan-review.mjs",
-    ".codex/scripts/harness-contract-review.mjs",
-    ".codex/scripts/harness-stakeholder.mjs",
-    ".codex/scripts/harness-domain-model-check.mjs",
+    ".harness/scripts/harness-plan-review.mjs",
+    ".harness/scripts/harness-contract-review.mjs",
+    ".harness/scripts/harness-stakeholder.mjs",
+    ".harness/scripts/harness-domain-model-check.mjs",
     ".harness/src/workflow/domain-model-gate.mjs",
-    ".codex/scripts/harness-design-freeze-check.mjs",
+    ".harness/scripts/harness-design-freeze-check.mjs",
     ".harness/src/workflow/design-freeze-gate.mjs",
     ".harness/src/workflow/stakeholder-analysis-gate.mjs",
     ".harness/src/workflow/requirements-document-gate.mjs",
     ".harness/src/stakeholders/cards.mjs",
-    ".codex/scripts/harness-write-guard.mjs",
+    ".harness/scripts/harness-write-guard.mjs",
     ".harness/src/workflow/contract-review.mjs",
-    ".codex/scripts/harness-code-review.mjs",
-    ".codex/scripts/harness-review-status.mjs",
+    ".harness/scripts/harness-code-review.mjs",
+    ".harness/scripts/harness-review-status.mjs",
     ".harness/src/workflow/plan-review.mjs",
     ".harness/schemas/input.schema.json",
     ".harness/schemas/return.schema.json",
@@ -237,7 +238,7 @@ async function main() {
     return;
   }
   if (options.command === "install") {
-    if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
+    if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".codex", "skills"), "skill target directory");
     if (options.installAgents) await assertSafeDirectory(projectRoot, join(projectRoot, ".codex", "agents"), "agent target directory");
     const fullInstall = options.installSkills && options.installAgents;
     const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, provider: options.provider, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
@@ -251,12 +252,13 @@ async function main() {
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
     if (syncResult.removed_directories?.length) console.log(`Removed empty directories: ${syncResult.removed_directories.join(", ")}`);
-    console.log("Updated .codex/harness-lock.json");
+    console.log("Updated .harness/harness-lock.json");
+    if (fullInstall) await reportProjectReadiness(projectRoot, syncResult.copied_guidance);
     if (fullInstall) console.log("Setup available: invoke $setup for Codex native choices; the skill uses harness-setup.mjs --answers to validate and apply submitted selections. Observability uses the same setup path.");
     if (fullInstall) await noteCodexUserHooks(projectRoot, options);
   } else if (options.command === "lock") {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
-    console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
+    console.log(`Harness lock written: ${join(projectRoot, ".harness", "harness-lock.json")}`);
   } else {
     // update always matches the latest release for Harness-owned paths; local edits are backed up first.
     const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: true, noBackup: options.noBackup, provider: options.provider });
@@ -269,8 +271,15 @@ async function main() {
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+    await reportProjectReadiness(projectRoot, result.copied_guidance);
     await noteCodexUserHooks(projectRoot, options);
   }
+}
+
+async function reportProjectReadiness(projectRoot, copiedGuidance = []) {
+  if (copiedGuidance.length) console.log(`Copied project guidance: ${copiedGuidance.join(', ')}`);
+  const readiness = await inspectProjectReadiness({ workspace_root: projectRoot });
+  console.log(readiness.status === 'pass' ? 'Project readiness: ready' : `Project readiness: ${readiness.reason}. ${readiness.violations.join(', ')}`);
 }
 
 // Codex user-level hooks live in ~/.codex, which an update never edits; setup registers them and /hooks trusts them.
@@ -278,7 +287,7 @@ async function noteCodexUserHooks(projectRoot, options) {
   try {
     const config = await readFile(join(projectRoot, ".harness", "harness.yaml"), "utf8").catch(() => "");
     if (options.provider === "claude-code" || /^\s*provider:\s*claude-code\s*$/m.test(config)) return;
-    const { inspectCodexHookTrust } = await import(new URL("../.harness/src/workflow/providers/codex.mjs", import.meta.url).href);
+    const { inspectCodexHookTrust } = await import(new URL("../.codex/harness/providers/codex.mjs", import.meta.url).href);
     const trust = await inspectCodexHookTrust();
     if (trust.retired_startup) console.log("A retired Harness orchestrator hook remains in the Codex user hooks. Run $setup with the Codex provider after updating any other Harness checkout that still uses this hook.");
     if (trust.write_guard !== "trusted") console.log(`Codex user hook "Guarding Harness orchestrator writes" is ${trust.write_guard}: run $setup (codex provider) to register it, then trust it in /hooks, so the orchestrator main session cannot edit product code, tests or contracts.`);

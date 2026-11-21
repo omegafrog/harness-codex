@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runWorkspacePreflightCli } from "../.codex/scripts/workspace-preflight-cli.mjs";
+import { runWorkspacePreflightCli } from "../.harness/scripts/workspace-preflight-cli.mjs";
 
 try {
   await runWorkspacePreflightCli();

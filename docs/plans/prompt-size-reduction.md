@@ -15,7 +15,7 @@
 
 ## 2. 기준 측정 (176b7c3e)
 
-대상: `AGENTS.md`, `.codex/agents/*.toml`, `.codex/skills/**`, `.codex/internal-skills/**`, `.codex/workflows/*` 중 `.md|.toml|.yaml` (victorialogs `assets/` 제외).
+대상: `AGENTS.md`, `.codex/agents/*.toml`, `.codex/skills/**`, `.harness/internal-skills/**`, `.harness/workflows/*` 중 `.md|.toml|.yaml` (victorialogs `assets/` 제외).
 
 | 지표 | 값 |
 |---|---:|
@@ -41,7 +41,7 @@
 ## 3. 정본 배치 원칙
 
 1. **런타임이 결정하는 값은 지침에 다시 쓰지 않는다.** model tier·model·effort는 각 skill 문서 frontmatter의 `model_tier`와 `harness-stage-runtime.mjs binding`이 정한다. workspace 검사는 workflow `before_dispatch` gate가 수행한다. plan hash 정규화는 `harness-plan-review.mjs check`가 판정한다.
-2. **공통 규칙은 설치되는 관리 자산 한 곳에 둔다.** consumer의 `docs/agents/EXEC.md`는 프로젝트 소유이며 설치되지 않는다. 실제 테스트 consumer(`harness-test`)의 EXEC.md에는 "세션 파일 출력 경계" 섹션이 없다. 따라서 실행 산출물 경로 규칙(로그·임시 파일·스크린샷 등을 어디에 쓰는가)의 정본은 `EXEC.md`가 아니라 `.harness/src/installer/stage-contract.mjs`에 둔다.
+2. **공통 규칙은 설치되는 관리 자산 한 곳에 둔다.** consumer의 `.harness/agents/EXEC.md`는 프로젝트 소유이며 설치되지 않는다. 실제 테스트 consumer(`harness-test`)의 EXEC.md에는 "세션 파일 출력 경계" 섹션이 없다. 따라서 실행 산출물 경로 규칙(로그·임시 파일·스크린샷 등을 어디에 쓰는가)의 정본은 `EXEC.md`가 아니라 `.harness/src/installer/stage-contract.mjs`에 둔다.
 3. **링크는 그 실행이 실제로 따라야 할 문서만 건다.** 참고용 링크도 모델이 읽는 계기가 된다.
 4. **agent toml에는 역할별 차이만 둔다.** 공통 절차는 역할이 읽는 GUIDE가 소유한다.
 5. 한 파일 안에서는 같은 규칙을 한 번만 쓴다.
@@ -72,7 +72,7 @@
 
 | 항목 | 정본 | 각 사용처 처리 |
 |---|---|---|
-| 실행 산출물 경로 (GUIDE `## 세션 출력` 9곳 + agent toml 17곳) | 신규 `.harness/src/installer/stage-contract.mjs`. 현재 `docs/agents/EXEC.md` §"세션 파일 출력 경계"의 Harness 공통 부분을 옮긴다. | GUIDE는 섹션 삭제 후 필요 스킬만 링크 한 줄. agent toml은 공통 stage contract를 따르도록 교체. |
+| 실행 산출물 경로 (GUIDE `## 세션 출력` 9곳 + agent toml 17곳) | 신규 `.harness/src/installer/stage-contract.mjs`. 현재 `.harness/agents/EXEC.md` §"세션 파일 출력 경계"의 Harness 공통 부분을 옮긴다. | GUIDE는 섹션 삭제 후 필요 스킬만 링크 한 줄. agent toml은 공통 stage contract를 따르도록 교체. |
 | 테스트·서비스 실행 전제 (7곳) | `e2e-test/references/verification-policy.md` | "일반 검증은 EXEC.md의 native CLI, `harness-exec`는 명시적 E2E 전용"을 정본에 두고 사용처는 링크 한 줄. `e2e-test` 자신의 실행 절차는 유지한다. |
 | 소유 worktree 종료 (6곳) | `session-worktree/GUIDE.md` | 하위 단계(`code-review`, `e2e-test`, `implement`, `sync-contracts`)는 "상위 workflow의 worktree를 그대로 사용한다" 한 줄. 독립 workflow인 `frontend-design`, `gh-open-pr`만 링크를 남긴다. |
 | "내부 절차를 호출할 때 공개 스킬 검색 대신 …" (16곳) | the injected stage contract의 한 문장 | 각 파일 첫 줄 삭제. 본문에서 실제로 쓰는 GUIDE만 해당 위치에 링크한다. |
@@ -88,7 +88,7 @@
 - testing-guidance 읽기(24행, Flow 8단계)를 한 번으로 합친다.
 - tracker 상태 규칙(Flow 16, 51행, Rules 72-74·82·83행, `## Lifecycle 상태와 실행 단계`)을 "Tracker 상태" 한 섹션으로 모은다. 상태 이름 표 1개 + `harness-tracker.mjs sync/read` 명령 + 실패 처리만 남긴다.
 - PR 규칙(Flow 18, Rules 72, 86행)을 한 문장으로 합친다.
-- `## Harness source distribution`(18-20행)은 Harness 소스 저장소 전용인데 모든 consumer에 설치된다. AGENTS.md와 `.codex/internal-skills/implement/GUIDE.md`가 서로 참조하는 구조이므로 소스 전용 내용은 `harness-maintenance/GUIDE.md`로 옮기고, implement에는 "Harness 소스 저장소에서는 harness-maintenance를 따른다" 한 줄만 둔다. AGENTS.md의 참조도 함께 갱신한다.
+- `## Harness source distribution`(18-20행)은 Harness 소스 저장소 전용인데 모든 consumer에 설치된다. AGENTS.md와 `.harness/internal-skills/implement/GUIDE.md`가 서로 참조하는 구조이므로 소스 전용 내용은 `harness-maintenance/GUIDE.md`로 옮기고, implement에는 "Harness 소스 저장소에서는 harness-maintenance를 따른다" 한 줄만 둔다. AGENTS.md의 참조도 함께 갱신한다.
 - 첫 줄 링크에서 `spec-review`, `sync-contracts`, `session-worktree`, `ddd-design` GUIDE를 제거하고 실제 필요한 `ddd-design/references/model-continuity.md`만 본문에 남긴다.
 
 `code-review/GUIDE.md` (20 KB → 목표 13 KB 이하)
@@ -136,7 +136,7 @@ AGENTS.md는 설치되지 않는 소스 저장소 전용 파일이지만 이 저
 4. 신규 관리 자산(`runtime-artifact-paths.md`)과 이동한 내용을 포함해 임시 consumer에 fresh install과 update를 수행하고 Doctor inventory가 통과하는지 확인한다. 설치된 `.agents/skills/*`·`.claude/*` 변환본에서 링크가 해석되는지 확인한다.
 5. 설치 consumer에서 `git status --short`로 Harness 관리 파일이 ignore되고 프로젝트 소유 파일은 그대로인지 확인한다.
 6. §2와 같은 방식으로 재측정해 전후 표를 남긴다. 목표: 대상 전체 −55 KB 이상, `implement` 본문+직접 링크 94 KB → 60 KB 이하, `code-review` 69 KB → 45 KB 이하.
-7. 사용자가 원하면 `harness-test`에서 `docs/agents/EXEC.md`의 black-box 시나리오 1개를 실행해 spec-me → 구현 흐름의 동작 회귀가 없는지 확인한다(행동 검증은 사용자 승인 후 별도 실행).
+7. 사용자가 원하면 `harness-test`에서 `.harness/agents/EXEC.md`의 black-box 시나리오 1개를 실행해 spec-me → 구현 흐름의 동작 회귀가 없는지 확인한다(행동 검증은 사용자 승인 후 별도 실행).
 
 ## 6. 위험과 대응
 

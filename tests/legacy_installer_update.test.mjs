@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -19,14 +19,18 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     execFileSync('git', ['init', '-q', root]);
     await mkdir(resolve(root, '.codex/scripts'), { recursive: true });
     await mkdir(resolve(root, 'docs/agents'), { recursive: true });
+    await mkdir(resolve(root, '.harness/agents'), { recursive: true });
     const legacy = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/harness-doctor.mjs'));
     await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), legacy);
     await mkdir(resolve(root, '.harness/src/workflow'), { recursive: true });
     for (const [fixture, path] of [['project-readiness.mjs', '.harness/src/workflow/project-readiness.mjs'], ['harness-codex-run.mjs', '.codex/scripts/harness-codex-run.mjs']]) {
       await writeFile(resolve(root, path), await readFile(resolve(sourceRoot, `tests/fixtures/legacy/${fixture}`)));
     }
-    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files: {} }));
     await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
+    await writeFile(resolve(root, 'docs/agents/testing-guidance.md'), 'legacy tests');
+    await writeFile(resolve(root, '.harness/agents/testing-guidance.md'), 'current tests');
+    const budget = '{"schema_version":1,"context_window_tokens":20000,"max_plan_tokens":12000,"handoff_reserve_tokens":4000}\n';
+    await writeFile(resolve(root, '.codex/context-budget.json'), budget);
     const schemaPath = `${retiredTierDirectory}/schemas/flows/to-ticket-plan_finalize.schema.json`;
     await mkdir(resolve(root, `${retiredTierDirectory}/schemas/flows`), { recursive: true });
     const schema = await readFile(resolve(sourceRoot, 'tests/fixtures/legacy/to-ticket-plan.schema.json'));
@@ -47,13 +51,22 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     const files = Object.fromEntries([retiredPath, modifiedPath].map((path) => [path, { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: path }]));
     files[retiredClaudePath] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: '.codex/agents/plan_reviewer.toml', source_transform: 'claude-agent-v1' };
     await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify({ schema_version: 1, files }));
+    const sourceDoctor = spawnSync(process.execPath, [resolve(sourceRoot, 'bin/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' });
+    assert.ok(JSON.parse(sourceDoctor.stdout).diagnostics.some((item) => item.code === 'installer_layout_legacy'));
     const result = await updateProject({ sourceRoot, targetRoot: root });
     await protectLocalInstallArtifacts(root, sourceRoot);
-    for (const path of ['.codex/internal-skills/grill-with-docs/GUIDE.md', '.codex/internal-skills/product-spec/GUIDE.md']) {
+    assert.equal(await readFile(resolve(root, '.harness/agents/EXEC.md'), 'utf8'), 'project owned');
+    assert.equal(await readFile(resolve(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned');
+    assert.equal(await readFile(resolve(root, '.harness/agents/testing-guidance.md'), 'utf8'), 'current tests');
+    await assert.rejects(stat(resolve(root, '.codex/harness-lock.json')), { code: 'ENOENT' });
+    assert.equal(await readFile(resolve(root, '.harness/context-budget.json'), 'utf8'), budget);
+    await assert.rejects(stat(resolve(root, '.codex/context-budget.json')), { code: 'ENOENT' });
+
+    for (const path of ['.harness/internal-skills/grill-with-docs/GUIDE.md', '.harness/internal-skills/product-spec/GUIDE.md']) {
       assert.equal(await readFile(resolve(root, path), 'utf8'), await readFile(resolve(sourceRoot, path), 'utf8'));
       execFileSync('git', ['-C', root, 'check-ignore', '-q', path]);
     }
-    const specPathScript = '.codex/scripts/harness-spec-path.mjs';
+    const specPathScript = '.harness/scripts/harness-spec-path.mjs';
     assert.equal(await readFile(resolve(root, specPathScript), 'utf8'), await readFile(resolve(sourceRoot, specPathScript), 'utf8'));
     execFileSync('git', ['-C', root, 'check-ignore', '-q', specPathScript]);
     assert.deepEqual(await readFile(resolve(result.backup_directory, '.codex/scripts/harness-doctor.mjs')), legacy);
@@ -71,34 +84,38 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.ok(result.updated.includes(retiredClaudePath));
     assert.match(await readFile(resolve(root, retiredClaudePath), 'utf8'), /name: plan_reviewer/);
     assert.equal(await readFile(resolve(root, modifiedPath), 'utf8'), 'user modified');
-    assert.equal(JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8')).files[modifiedPath].retired, true);
+    assert.equal(JSON.parse(await readFile(resolve(root, '.harness/harness-lock.json'), 'utf8')).files[modifiedPath].retired, true);
     assert.equal(await readFile(resolve(root, unknownSchema), 'utf8'), 'user schema');
     assert.ok(result.skipped.some((item) => item.path === unknownSchema && item.status === 'legacy_unrecognized'));
-    let diagnostics;
-    try { diagnostics = execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
-    catch (error) { diagnostics = error.stdout; }
-    assert.ok(JSON.parse(diagnostics).diagnostics.some((item) => item.code === 'installer_retired_file' && item.path === resolve(root, modifiedPath)));
-    assert.equal(execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--help'], { encoding: 'utf8' }).includes('Usage:'), true);
+    const doctor = () => JSON.parse(spawnSync(process.execPath, [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' }).stdout);
+    const diagnostics = doctor().diagnostics;
+    assert.ok(diagnostics.some((item) => item.code === 'installer_retired_file' && item.path === resolve(root, modifiedPath)));
+    const preparation = diagnostics.find((item) => item.code === 'project_preparation_required');
+    assert.ok(preparation.violations.includes('Missing or invalid file: .harness/agents/execution.json'));
+    assert.ok(!preparation.violations.some((item) => item.endsWith('/EXEC.md')));
+    assert.equal(execFileSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--help'], { encoding: 'utf8' }).includes('Usage:'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC.md/);
+    assert.match(status, /\.harness\/agents\/EXEC.md/);
     assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
     assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/contracts.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
     assert.match(status, /to-ticket-plan_revision\.schema\.json/);
-    assert.doesNotMatch(status, /\.codex\/scripts\/harness-doctor/);
-    await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'custom doctor');
-    const lock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
-    delete lock.files['.codex/scripts/harness-doctor.mjs'];
-    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify(lock));
+    assert.doesNotMatch(status, /\.harness\/scripts\/harness-doctor/);
+    await rm(resolve(root, '.harness/agents/EXEC.md'));
+    assert.ok(doctor().diagnostics.find((item) => item.code === 'project_preparation_required').violations.includes('Missing or invalid file: .harness/agents/EXEC.md'));
+    await writeFile(resolve(root, '.harness/scripts/harness-doctor.mjs'), 'custom doctor');
+    const lock = JSON.parse(await readFile(resolve(root, '.harness/harness-lock.json'), 'utf8'));
+    delete lock.files['.harness/scripts/harness-doctor.mjs'];
+    await writeFile(resolve(root, '.harness/harness-lock.json'), JSON.stringify(lock));
     const second = await updateProject({ sourceRoot, targetRoot: root });
-    assert.equal(await readFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), 'utf8'), 'custom doctor');
-    assert.ok(second.skipped.some((item) => item.path === '.codex/scripts/harness-doctor.mjs' && item.status === 'unlocked'));
-    await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), await readFile(resolve(sourceRoot, 'bin/harness-doctor.mjs')));
+    assert.equal(await readFile(resolve(root, '.harness/scripts/harness-doctor.mjs'), 'utf8'), 'custom doctor');
+    assert.ok(second.skipped.some((item) => item.path === '.harness/scripts/harness-doctor.mjs' && item.status === 'unlocked'));
+    await writeFile(resolve(root, '.harness/scripts/harness-doctor.mjs'), await readFile(resolve(sourceRoot, 'bin/harness-doctor.mjs')));
     const runtime = '.harness/src/workflow/stage-runtime.mjs';
-    const secondLock = JSON.parse(await readFile(resolve(root, '.codex/harness-lock.json'), 'utf8'));
+    const secondLock = JSON.parse(await readFile(resolve(root, '.harness/harness-lock.json'), 'utf8'));
     delete secondLock.files[runtime];
-    await writeFile(resolve(root, '.codex/harness-lock.json'), JSON.stringify(secondLock));
+    await writeFile(resolve(root, '.harness/harness-lock.json'), JSON.stringify(secondLock));
     let report;
-    try { report = execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
+    try { report = execFileSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
     catch (error) { report = error.stdout; }
     assert.ok(JSON.parse(report).diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.severity === 'error' && item.path === resolve(root, runtime)));
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -109,10 +126,10 @@ test('Doctor reports a missing runtime without throwing', async () => {
   await mkdir(session, { recursive: true });
   const root = await mkdtemp(`${session}/broken-`);
   try {
-    await mkdir(resolve(root, '.codex/scripts'), { recursive: true });
-    await writeFile(resolve(root, '.codex/scripts/harness-doctor.mjs'), await readFile(resolve(process.cwd(), 'bin/harness-doctor.mjs')));
+    await mkdir(resolve(root, '.harness/scripts'), { recursive: true });
+    await writeFile(resolve(root, '.harness/scripts/harness-doctor.mjs'), await readFile(resolve(process.cwd(), 'bin/harness-doctor.mjs')));
     let output;
-    try { execFileSync('node', [resolve(root, '.codex/scripts/harness-doctor.mjs'), '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
+    try { execFileSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--json'], { encoding: 'utf8', stdio: 'pipe' }); }
     catch (error) { assert.equal(error.status, 1); output = error.stdout; }
     assert.equal(JSON.parse(output).diagnostics[0].code, 'doctor_runtime_unavailable');
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -126,28 +143,28 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, process.cwd());
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root, initialize: true });
-    await mkdir(resolve(root, 'docs/agents'), { recursive: true });
-    await writeFile(resolve(root, 'docs/agents/EXEC.md'), 'project owned');
+    await mkdir(resolve(root, '.harness/agents'), { recursive: true });
+    await writeFile(resolve(root, '.harness/agents/EXEC.md'), 'project owned');
     await updateProject({ sourceRoot: process.cwd(), targetRoot: root });
     for (const [path, pattern] of [
-      ['.codex/internal-skills/product-spec/GUIDE.md', /Ask about an ambiguity only when it is necessary to deliver the requested core behavior/],
-      ['.codex/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
-      ['.codex/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
+      ['.harness/internal-skills/product-spec/GUIDE.md', /Ask about an ambiguity only when it is necessary to deliver the requested core behavior/],
+      ['.harness/internal-skills/product-spec/GUIDE.md', /collect all currently answerable independent material decisions/],
+      ['.harness/internal-skills/grill-with-docs/GUIDE.md', /gather all currently identifiable material decisions/],
     ]) {
       assert.match(await readFile(resolve(root, path), 'utf8'), pattern);
       execFileSync('git', ['-C', root, 'check-ignore', '-q', path]);
     }
-    assert.equal(await readFile(resolve(root, 'docs/agents/EXEC.md'), 'utf8'), 'project owned');
-    assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /docs\/agents\/EXEC\.md/);
+    assert.equal(await readFile(resolve(root, '.harness/agents/EXEC.md'), 'utf8'), 'project owned');
+    assert.match(execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' }), /\.harness\/agents\/EXEC\.md/);
     const dir = resolve(root, '.io/runtime/e2e/run');
     await mkdir(dir, { recursive: true });
     const manifest = resolve(dir, 'artifacts.json');
-    const guard = resolve(root, '.codex/internal-skills/e2e-test/scripts/artifact-guard.mjs');
+    const guard = resolve(root, '.harness/internal-skills/e2e-test/scripts/artifact-guard.mjs');
     await writeFile(resolve(root, 'existing.txt'), 'existing');
     execFileSync('node', [guard, 'snapshot', '--root', root, '--manifest', manifest]);
     await writeFile(resolve(dir, 'receipt.json'), 'evidence');
-    const generatedDoc = 'docs/agents/generated-workflow-spec.md';
-    await mkdir(resolve(root, 'docs/agents'), { recursive: true });
+    const generatedDoc = '.harness/agents/generated-workflow-spec.md';
+    await mkdir(resolve(root, '.harness/agents'), { recursive: true });
     await writeFile(resolve(root, generatedDoc), 'project workflow output');
     await writeFile(resolve(root, 'temporary.txt'), 'temporary');
     await writeFile(resolve(root, 'owned.tmp'), 'owned');
@@ -159,7 +176,7 @@ test('installed E2E cleanup preserves session evidence and removes new external 
     assert.equal(await readFile(resolve(root, 'temporary.txt'), 'utf8'), 'temporary');
     assert.ok(result.preserved.includes(generatedDoc));
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/generated-workflow-spec\.md/);
+    assert.match(status, /\.harness\/agents\/generated-workflow-spec\.md/);
     const cleanup = (path) => execFileSync('node', [guard, 'cleanup', '--root', root, '--manifest', manifest, '--owned', path], { encoding: 'utf8' });
     const removed = JSON.parse(cleanup('owned.tmp'));
     assert.deepEqual(removed.removed, ['owned.tmp']);
@@ -178,14 +195,14 @@ test('update can replace managed skills without creating backups when explicitly
   const root = await mkdtemp(`${session}/no-backup-`);
   try {
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const path = '.codex/internal-skills/context-boundary/GUIDE.md';
+    const path = '.harness/internal-skills/context-boundary/GUIDE.md';
     await writeFile(resolve(root, path), 'local content to replace');
     await writeFile(resolve(root, '.codex/hooks.json'), '{}');
     await writeFile(resolve(root, '.claude/settings.local.json'), '{}');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     assert.equal(result.backup_directory, null);
     assert.deepEqual(await readFile(resolve(root, path)), await readFile(resolve(sourceRoot, path)));
-    await assert.rejects(readFile(resolve(root, '.codex/installer-backups'), 'utf8'), { code: 'ENOENT' });
+    await assert.rejects(readFile(resolve(root, '.harness/installer-backups'), 'utf8'), { code: 'ENOENT' });
     await assert.rejects(readFile(resolve(root, '.claude/installer-backups'), 'utf8'), { code: 'ENOENT' });
     assert.equal((await inspectRetiredProjectHooks(root)).startup, 0);
     assert.match(await readFile(resolve(root, '.claude/settings.local.json'), 'utf8'), /harness-agent-event\.mjs/);
@@ -206,14 +223,14 @@ test('update deletes retired skill files with their empty directories and keeps 
     const retiredFile = '.agents/skills/code-review/references/old.md';
     await mkdir(resolve(root, '.agents/skills/code-review/references'), { recursive: true });
     await writeFile(resolve(root, retiredFile), 'old managed');
-    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lockPath = resolve(root, '.harness/harness-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
     const oldHash = createHash('sha256').update('old managed').digest('hex');
     lock.files[retiredFile] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: '.codex/skills/code-review/references/old.md', source_transform: 'project-local-paths-v1' };
     await writeFile(lockPath, JSON.stringify(lock));
     // Empty directories left by earlier updates, plus project-owned skills that must survive.
     await mkdir(resolve(root, '.claude/skills/spec-me/references'), { recursive: true });
-    await mkdir(resolve(root, '.codex/internal-skills/static-caller'), { recursive: true });
+    await mkdir(resolve(root, '.harness/internal-skills/static-caller'), { recursive: true });
     await mkdir(resolve(root, '.agents/skills/my-skill'), { recursive: true });
     await mkdir(resolve(root, '.agents/skills/my-notes'), { recursive: true });
     await writeFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'project owned');
@@ -223,11 +240,11 @@ test('update deletes retired skill files with their empty directories and keeps 
 
     assert.deepEqual(result.retired, [retiredFile]);
     assert.equal(await readFile(resolve(result.backup_directory, retiredFile), 'utf8'), 'old managed');
-    for (const path of ['.agents/skills/code-review', '.claude/skills/spec-me', '.codex/internal-skills/static-caller']) assert.equal(await exists(path), false, path);
+    for (const path of ['.agents/skills/code-review', '.claude/skills/spec-me', '.harness/internal-skills/static-caller']) assert.equal(await exists(path), false, path);
     assert.ok(result.removed_directories.includes('.agents/skills/code-review'));
     assert.equal(await exists('.agents/skills/my-skill'), true, 'unknown empty skill directories are not Harness-owned');
     assert.equal(await readFile(resolve(root, '.agents/skills/my-notes/SKILL.md'), 'utf8'), 'project owned');
-    assert.equal(await exists('.agents/skills/orchestrator/SKILL.md'), true);
+    assert.equal(await exists('.codex/skills/orchestrator/SKILL.md'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '-uall', '.agents', '.claude', '.codex', 'app.txt'], { encoding: 'utf8' });
     assert.equal(status, '?? .agents/skills/my-notes/SKILL.md\n?? app.txt\n');
   } finally {
@@ -310,12 +327,12 @@ test('update to the latest release backs up and removes locally modified retired
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     const retired = '.codex/scripts/old-modified.mjs';
     await writeFile(resolve(root, retired), 'user modified');
-    const lockPath = resolve(root, '.codex/harness-lock.json');
+    const lockPath = resolve(root, '.harness/harness-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
     const oldHash = createHash('sha256').update('old managed').digest('hex');
     lock.files[retired] = { installed_sha256: oldHash, upstream_sha256: oldHash, source_path: retired };
     await writeFile(lockPath, JSON.stringify(lock));
-    const guide = '.codex/internal-skills/implement/GUIDE.md';
+    const guide = '.harness/internal-skills/implement/GUIDE.md';
     const installedGuide = await readFile(resolve(root, guide), 'utf8');
     await writeFile(resolve(root, guide), 'local edit');
     await mkdir(resolve(root, '.codex/harness-runtime/src/workflow'), { recursive: true });

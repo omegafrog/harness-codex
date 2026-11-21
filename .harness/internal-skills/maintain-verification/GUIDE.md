@@ -1,0 +1,28 @@
+---
+model_tier: high_performance
+---
+# Maintain verification coverage
+
+Use the existing project verification skill/map when available; otherwise seed `docs/verification/features.md` from affected user-facing commands/routes/use cases. Start with the main 3–5 journeys instead of cataloguing internals. The map is verification documentation, never a task board. For the Harness repository, the source-owned map lives at `docs/verification/features.md`; installed consumer projects discover their own surfaces rather than inheriting Harness CLI features.
+
+Each feature records stable requirement/rule IDs when available, user entrypoint, prerequisites, owning Context/model/source, canonical drive command or recipe, observable result and side effects, evidence/cleanup rules, and last verified commit/result. Read the [shared verification policy](../e2e-test/references/verification-policy.md): prefer focused lower-level checks; use E2E only when explicitly requested or justified by a changed critical cross-boundary risk that cheaper checks cannot establish. Put launch/server/infra configuration in `.harness/agents/EXEC.md` and link it; do not duplicate it in the map. Mark source-only recipes `not-run` until executed.
+
+## Reconciliation
+
+1. Read the index and affected source/tests/Spec IDs; detect missing, dead or duplicate journeys and mismatches. Use current code to establish facts, not to redefine expected business behavior.
+2. Verify prerequisites and readiness before driving. Use the project's actual entrypoint; internal setters/test-only endpoints do not prove the user journey. Capture action plus observable result, exit code, errors and side effects. A help command only proves help, not install/eval behavior.
+3. When the shared policy and approved plan require E2E, invoke the existing `e2e-test` skill and `e2e_test_runner` with the active absolute `workspace_root` and execution model. It owns process startup, health checks, evidence and cleanup. Keep the feature map as the scenario source and evidence outside cleanup scope. Do not create a parallel runner or enter `frontend-design` for this maintenance task.
+4. After an unexpected failure, recheck health and return to a known state before another attempt. Clean only owned processes and scratch data after failures and at completion; verify evidence survives cleanup. Never kill by global process name or delete pre-existing artifacts. Share prior attempt evidence across handoffs.
+5. Classify confirmed differences as map drift, verification-tool gap or product regression. Correct map/owned verification recipes only within scope; report product regressions to the existing tracker without rewriting expectations to match the bug. Map changes need a focused check of the map. Tool fixes need re-execution of an affected journey only when required by the shared policy; do not run unrelated E2E to verify lower-level changes.
+
+Report each feature's source/live coverage, unreachable prerequisite, evidence, cleanup and `clean`, `changed` or `blocked` outcome. Report `partial` when requested scope covers only a subset; never imply whole-map coverage. If execution is unavailable, retain `not-run`/`blocked` and name the missing condition. No automatic PR, publication, commit or external message is authorized by this skill.
+
+Origin: adapted from pstack [create-verification-skill](https://github.com/backnotprop/pstack/blob/6f131f137de64fdaf928278c0fd9ecec520ccbee/skills/create-verification-skill/SKILL.md) and [maintain-verification-skill](https://github.com/backnotprop/pstack/blob/6f131f137de64fdaf928278c0fd9ecec520ccbee/skills/maintain-verification-skill/SKILL.md), using Harness's existing E2E runner.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. 계약 갱신·seal은 [sync-contracts](../../../.harness/internal-skills/sync-contracts/GUIDE.md)에 따라 최종 구현 workflow만 수행하며 이 단계는 계약을 수정하지 않는다.
+
+## E2E 실패 재발 방지
+
+E2E 전·후에는 [공통 실패 학습 절차](../e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 현재 필수 테스트의 실패·미실행과 실제 미해결 blocker는 완료를 막는다. 과거 실패의 학습 분류·지침 갱신·예방 조치 검증 상태는 별도 pending으로 인계하며 테스트 결과나 완료 판정을 바꾸지 않는다. runner는 증거 수집만 맡고 caller가 승인 범위 안에서 EXEC/profile·제품/검사 수정과 검증된 lesson 반영을 맡는다.

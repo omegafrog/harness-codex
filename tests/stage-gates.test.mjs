@@ -117,7 +117,7 @@ test("installed review gate rejects missing and stale reviews and accepts the cu
     await writeClaim({ root, claim: { schema_version: 1, id: 'docs-backup', source_id: 'example-docs', statement: 'Backups are provided', locator: { section: 'Backup', excerpt: 'backups' }, retrieved_at: '2026-11-05T00:00:00Z', context: 'operations', qualifiers: [] } });
     await mkdir(join(root, '.io/runtime/executions/ask'), { recursive: true });
     await writeFile(join(root, '.io/runtime/executions/ask/decision-answers.json'), JSON.stringify([{ question_id: 'ask:1', answer: '관리형' }]));
-    const decisionCli = join(root, '.codex/scripts/harness-decision-gate.mjs');
+    const decisionCli = join(root, '.harness/scripts/harness-decision-gate.mjs');
     assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'approve', '--ticket', 'example', '--decision', 'db', '--answers', 'runtime/executions/ask/decision-answers.json', '--question', 'ask:1'], { cwd: root, encoding: 'utf8' })).status, 'accepted');
     assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'decision_evidence_complete', '--ticket', 'example'], { cwd: root, encoding: 'utf8' })).status, 'pass');
     assert.equal(JSON.parse(execFileSync(process.execPath, [decisionCli, 'decision_review_complete', '--ticket', 'example'], { cwd: root, encoding: 'utf8' })).status, 'pass');
@@ -161,7 +161,7 @@ test("installed decision gate CLI validates applicable Product and Architecture 
       await writeFile(join(directory, "sample.puml"), "@startuml\n@enduml\n");
       await writeFile(join(directory, "sample.svg"), "<svg></svg>\n");
       const gate = axis === "product" ? "product_diagram_completion" : "architecture_diagram_completion";
-      const result = JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-decision-gate.mjs"), gate, "--ticket", "example"], { cwd: root, encoding: "utf8" }));
+      const result = JSON.parse(execFileSync(process.execPath, [join(root, ".harness/scripts/harness-decision-gate.mjs"), gate, "--ticket", "example"], { cwd: root, encoding: "utf8" }));
       assert.equal(result.status, "pass");
       assert.equal(result.rule_id, gate);
     }
@@ -176,7 +176,7 @@ test("installed diagram gates block missing and inconsistent artifacts", async (
     execFileSync("git", ["init", "-q", root]);
     const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    const gateCli = join(root, ".codex/scripts/harness-decision-gate.mjs");
+    const gateCli = join(root, ".harness/scripts/harness-decision-gate.mjs");
     const specRoot = join(root, "docs/specs/example");
     const directory = join(specRoot, "diagrams/product");
     await mkdir(directory, { recursive: true });
@@ -229,7 +229,7 @@ test("installed Architecture review gate blocks Specs still marked as draft or p
     } }));
     const check = () => {
       try {
-        execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" });
+        execFileSync(process.execPath, [join(root, ".harness/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" });
         return null;
       } catch (error) {
         assert.equal(error.status, 1);
@@ -251,15 +251,15 @@ test("installed Architecture review gate blocks Specs still marked as draft or p
     const saved = JSON.parse(await readFile(reviewPath, "utf8"));
     delete saved.architecture.inputs;
     await writeFile(reviewPath, JSON.stringify(saved));
-    assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".codex/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
+    assert.equal(JSON.parse(execFileSync(process.execPath, [join(root, ".harness/scripts/harness-spec-review.mjs"), "check", "--root", root, "--ticket", "example", "--axis", "architecture", "--reviews", "runtime/spec-review-result.json"], { cwd: root, encoding: "utf8" })).status, "pass");
     saved.architecture.findings = [{ severity: "minor", description: "fabricated finding", evidence: "not recorded" }];
     await writeFile(reviewPath, JSON.stringify(saved));
     assert.match(check().reason, /authoritative passing result/);
 
     const status = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
     assert.match(status, /docs\/specs\/example\/product-spec\.md/);
-    assert.doesNotMatch(status, /\.codex\/scripts\/harness-spec-review\.mjs|\.harness\/src/);
-    assert.match(execFileSync("git", ["check-ignore", "-v", ".codex/scripts/harness-spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.codex/);
+    assert.doesNotMatch(status, /\.harness\/scripts\/harness-spec-review\.mjs|\.harness\/src/);
+    assert.match(execFileSync("git", ["check-ignore", "-v", ".harness/scripts/harness-spec-review.mjs"], { cwd: root, encoding: "utf8" }), /\.harness/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

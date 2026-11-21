@@ -49,5 +49,5 @@
 
 - 기존 용어·Context·Stakeholder·완료 Spec·이벤트·구현 근거에서 후보를 추출하는 읽기 전용 bootstrap 보고를 제공한다. 확정 가능한 항목만 기존 `sync plan/apply` 흐름으로 등록한다. 미해결 항목은 근거와 함께 남기고 이전 Plan Set은 재작성하지 않는다.
 - `installer/update.mjs`의 managed asset 탐색·변환과 Doctor inventory를 단계마다 확장한다. fresh install 및 이전 버전에서 update한 소비자 모두 CLI를 실행할 수 있어야 한다. `git status`와 `git check-ignore -v`로 설치 자산·런타임 캐시가 제외되고 `docs/domain/`, 생성된 `INDEX.md`, 매핑, 기존 프로젝트 문서가 Git에 보이는지 확인한다. CI 예제와 프로젝트 설정은 소비자 소유로 둔다.
-- 신규 프로젝트, 미마이그레이션 프로젝트에서 기능 추가, 병렬 Worktree 통합을 별도 시나리오로 실행한다. 서버가 필요한 E2E 전제와 명령은 `docs/agents/EXEC.md`와 실행 profile에 맞춘다. 동일 업무 요청과 도메인 자료로 변경 전후 Recall@5·도구 호출·입력 토큰·재사용·중복·실행 시간과 Stage 결과를 비교한다.
+- 신규 프로젝트, 미마이그레이션 프로젝트에서 기능 추가, 병렬 Worktree 통합을 별도 시나리오로 실행한다. 서버가 필요한 E2E 전제와 명령은 `.harness/agents/EXEC.md`와 실행 profile에 맞춘다. 동일 업무 요청과 도메인 자료로 변경 전후 Recall@5·도구 호출·입력 토큰·재사용·중복·실행 시간과 Stage 결과를 비교한다.
 - 첫 구현 PR은 Phase 1로 제한한다. Phase 2의 측정 방식을 확정하기 전 수치 목표를 고정하지 않는다. 의미 충돌 처리는 자동 승인과 분리하고 실제 검토 증거까지 확보한 뒤 전체 인수 기준을 판정한다.

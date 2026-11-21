@@ -78,7 +78,7 @@
 
 ## P8. 정리
 
-1. `harness-test`의 `docs/agents/EXEC.md`: 실행 binding이 setup과 같은 provider여야 한다는 점, Codex hook 신뢰 선행 조건, 매 실행의 `</dev/null`, 다음 질문 절차(`codex exec resume`)와 결과 전달 재개를 반영한다. (테스트 저장소 문서라서 사용자 승인 후 수정한다.)
+1. `harness-test`의 `.harness/agents/EXEC.md`: 실행 binding이 setup과 같은 provider여야 한다는 점, Codex hook 신뢰 선행 조건, 매 실행의 `</dev/null`, 다음 질문 절차(`codex exec resume`)와 결과 전달 재개를 반영한다. (테스트 저장소 문서라서 사용자 승인 후 수정한다.)
 2. 기존 실패 테스트 `installed to-ticket uses skill binding …`: 지금은 없어진 발행 방식을 실제 GitHub에 호출한다. 현행 `harness-publication.mjs` 계약에 맞게 fake `gh`로 다시 쓰거나 삭제한다.
 3. stage 안에서 `rm -f`가 막히는 문제는 영향이 작아 관찰만 한다.
 

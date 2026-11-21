@@ -39,24 +39,24 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-    assert.deepEqual((await readdir(join(root, '.agents/skills'))).sort(), ['eli5', 'harness-update', 'orchestrator', 'setup']);
+    assert.deepEqual((await readdir(join(root, '.codex/skills'))).sort(), ['eli5', 'harness-update', 'orchestrator', 'setup']);
     assert.deepEqual((await readdir(join(root, '.claude/skills'))).sort(), ['eli5', 'harness-update', 'orchestrator', 'setup']);
-    const policyPath = '.agents/skills/orchestrator/agents/openai.yaml';
+    const policyPath = '.codex/skills/orchestrator/agents/openai.yaml';
     const policy = await readFile(join(root, policyPath), 'utf8');
     assert.match(policy, /policy:\s*\n\s+allow_implicit_invocation:\s*false/);
     await writeFile(join(root, policyPath), policy.replace(/\npolicy:\s*\n\s+allow_implicit_invocation:\s*false\s*$/, '\n'));
 
-    const lock = JSON.parse(await readFile(join(root, '.codex/harness-lock.json'), 'utf8'));
+    const lock = JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8'));
     assert.ok(lock.files[policyPath], 'explicit-only invocation policy is managed');
-    for (const path of ['.harness/src/workflow/stage-checkpoint.mjs', '.codex/scripts/harness-native-stage.mjs', '.codex/agents/workflow_stage.toml', '.harness/schemas/return.schema.json']) {
+    for (const path of ['.harness/src/workflow/stage-checkpoint.mjs', '.harness/scripts/harness-native-stage.mjs', '.codex/agents/workflow_stage.toml', '.harness/schemas/return.schema.json']) {
       assert.ok(lock.files[path], `installer lock includes ${path}`);
       assert.ok((await readFile(join(root, path), 'utf8')).length > 0);
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
-    const lockPath = join(root, '.codex/harness-lock.json');
+    const lockPath = join(root, '.harness/harness-lock.json');
     const retired = [
-      ['.codex/scripts/harness-stage-listen.mjs', 'old listener'],
-      ['.codex/scripts/harness-agent-run.mjs', 'old runner'],
+      ['.harness/scripts/harness-stage-listen.mjs', 'old listener'],
+      ['.harness/scripts/harness-agent-run.mjs', 'old runner'],
       ['.harness/src/workflow/codex-wake.mjs', 'old wake'],
       ['.agents/skills/e2e-test/SKILL.md', 'old e2e public guide'],
       ['.claude/skills/e2e-test/SKILL.md', 'old claude e2e public guide'],
@@ -106,13 +106,13 @@ test('skill exposure migration retires old public copies for Codex and Claude sa
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/spec-me/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/.agents/skills/custom/SKILL.md')), false);
     assert.equal(doctor.diagnostics.some((item) => item.code === 'harness_skill_exposed' && item.path.endsWith('/code-review/SKILL.md')), false);
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution guide');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution guide');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.match(status, /\.agents\/skills\/custom\/SKILL\.md/);
-    assert.doesNotMatch(status, /\.codex\/internal-skills\/|\.codex\/scripts\/harness-stage-listen|\.harness\/src\/workflow\/stage-result-events|\.claude\/skills\/orchestrator\/|\.io\/installer-backups/);
-    execFileSync('git', ['check-ignore', '-v', '.codex/internal-skills/e2e-test/GUIDE.md'], { cwd: root });
+    assert.doesNotMatch(status, /\.harness\/internal-skills\/|\.harness\/scripts\/harness-stage-listen|\.harness\/src\/workflow\/stage-result-events|\.claude\/skills\/orchestrator\/|\.io\/installer-backups/);
+    execFileSync('git', ['check-ignore', '-v', '.harness/internal-skills/e2e-test/GUIDE.md'], { cwd: root });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -122,7 +122,7 @@ test('spec paths use the canonical plan set and reject traversal', async () => {
     await mkdir(join(root, '.io'));
     const planSetId = 'calculator-8762a95d-55a6-43fe-81e6-5d097396041a';
     await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ ...record, workspace: root, session_directory: join(root, '.io'), plan_set_id: planSetId }));
-    const script = fileURLToPath(new URL('../.codex/scripts/harness-spec-path.mjs', import.meta.url));
+    const script = fileURLToPath(new URL('../.harness/scripts/harness-spec-path.mjs', import.meta.url));
     assert.equal(execFileSync(process.execPath, [script, root, 'architecture-reviews/AR-CODE-STACK.yaml'], { encoding: 'utf8' }).trim(), `docs/specs/${planSetId}/architecture-reviews/AR-CODE-STACK.yaml`);
     for (const path of ['../outside', '/absolute', 'a/../b', 'a\\b']) assert.throws(() => specArtifactPath(planSetId, path));
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -131,8 +131,8 @@ test('spec paths use the canonical plan set and reject traversal', async () => {
 async function seedSetup(root) {
   await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
   await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    high_performance_model: example\n    high_performance_reasoning_effort: medium\n    low_performance_model: example\n    low_performance_reasoning_effort: medium\n');
-  await writeFile(join(root, '.codex/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n');
-  for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+  await writeFile(join(root, '.harness/context-budget.json'), '{"schema_version":1,"context_window_tokens":1000,"max_plan_tokens":600,"handoff_reserve_tokens":200}\n');
+  for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(root, path, '..'), { recursive: true });
     await writeFile(join(root, path), '');
   }
@@ -141,11 +141,11 @@ async function seedSetup(root) {
 test('startup identifies a new workspace before Git initialization', async () => {
   const root = await mkdtemp(join(tmpdir(), 'startup-new-'));
   try {
-    for (const path of ['.codex/skills/orchestrator/SKILL.md', '.codex/internal-skills/workflow-compose/GUIDE.md']) {
+    for (const path of ['.codex/skills/orchestrator/SKILL.md', '.harness/internal-skills/workflow-compose/GUIDE.md']) {
       await mkdir(join(root, path, '..'), { recursive: true });
       await writeFile(join(root, path), '');
     }
-    const cli = fileURLToPath(new URL('../.codex/scripts/harness-context.mjs', import.meta.url));
+    const cli = fileURLToPath(new URL('../.harness/scripts/harness-context.mjs', import.meta.url));
     const result = JSON.parse(execFileSync(process.execPath, [cli, '--entry'], { cwd: root, encoding: 'utf8' }));
     assert.equal(result.decision_hint, 'setup_candidate');
     await assert.rejects(readFile(join(root, '.git', 'HEAD')), { code: 'ENOENT' });
@@ -159,8 +159,8 @@ test('consumer update retires writer receipt runtime and preserves project files
     execFileSync('git', ['init', '-q', root]);
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true, noBackup: true });
-    const oldPaths = ['.codex/scripts/harness-spec-writer.mjs', '.harness/src/workflow/spec-writer.mjs', '.harness/src/workflow/spec-writer-loop.mjs'];
-    const lockPath = join(root, '.codex/harness-lock.json');
+    const oldPaths = ['.harness/scripts/harness-spec-writer.mjs', '.harness/src/workflow/spec-writer.mjs', '.harness/src/workflow/spec-writer-loop.mjs'];
+    const lockPath = join(root, '.harness/harness-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
     for (const path of oldPaths) {
       const content = `old managed ${path}`;
@@ -177,21 +177,21 @@ test('consumer update retires writer receipt runtime and preserves project files
       lock.files[path].upstream_sha256 = hash;
     }
     await writeFile(lockPath, JSON.stringify(lock));
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned\n');
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned\n');
     const result = await updateProject({ sourceRoot, targetRoot: root, noBackup: true });
     for (const path of oldPaths) {
       assert.ok(result.retired.includes(path));
       await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
     }
-    assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), 'project-owned\n');
+    assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), 'project-owned\n');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC\.md/);
+    assert.match(status, /\.harness\/agents\/EXEC\.md/);
     assert.doesNotMatch(status, /\.codex\/|\.harness\/src\//);
-    execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-native-stage.mjs'], { cwd: root });
-    const runner = await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'), 'utf8');
+    execFileSync('git', ['check-ignore', '-v', '.harness/scripts/harness-native-stage.mjs'], { cwd: root });
+    const runner = await readFile(join(root, '.harness/scripts/harness-native-stage.mjs'), 'utf8');
     const stageInput = await readFile(join(root, '.harness/src/workflow/stage-input.mjs'), 'utf8');
-    await assert.rejects(readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md')), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(root, '.harness/internal-skills/spec-me/GUIDE.md')), { code: 'ENOENT' });
     assert.doesNotMatch(runner, /spec-writer-loop|dispatchSpecWriter/);
     assert.match(stageInput, /decision-answers\.json/);
     assert.match(stageInput, /revisionWaiting/);
@@ -212,7 +212,7 @@ test('installed readiness checks required files without validating their content
     const legacyRuntimeText = 'legacy runtime';
     await mkdir(join(root, legacyRuntimePath, '..'), { recursive: true });
     await writeFile(join(root, legacyRuntimePath), legacyRuntimeText);
-    const runtimeLockPath = join(root, '.codex/harness-lock.json');
+    const runtimeLockPath = join(root, '.harness/harness-lock.json');
     const legacyLock = JSON.parse(await readFile(runtimeLockPath, 'utf8'));
     const legacyHash = createHash('sha256').update(legacyRuntimeText).digest('hex');
     legacyLock.files[legacyRuntimePath] = { installed_sha256: legacyHash, upstream_sha256: legacyHash, source_path: legacyRuntimePath };
@@ -224,12 +224,12 @@ test('installed readiness checks required files without validating their content
     assert.equal(await readFile(join(runtimeMigration.backup_directory, legacyRuntimePath), 'utf8'), legacyRuntimeText);
     const { checkRetirement } = await import('../.harness/src/gates/lifecycle.mjs');
     assert.equal((await checkRetirement({ retirement: { workspace_root: root, removed_paths: ['src', '.codex/harness-runtime/src'] } })).status, 'pass');
-    await assert.rejects(readFile(join(root, '.codex/internal-skills/spec-me/GUIDE.md')), { code: 'ENOENT' });
-    const installedGuidance = await readFile(join(root, '.codex/internal-skills/implementation-guidance/GUIDE.md'), 'utf8');
-    assert.match(installedGuidance, /<workspace_root>\/docs\/agents\/implementation-guidance\.md/);
+    await assert.rejects(readFile(join(root, '.harness/internal-skills/spec-me/GUIDE.md')), { code: 'ENOENT' });
+    const installedGuidance = await readFile(join(root, '.harness/internal-skills/implementation-guidance/GUIDE.md'), 'utf8');
+    assert.match(installedGuidance, /<workspace_root>\/\.harness\/agents\/implementation-guidance\.md/);
     assert.match(installedGuidance, /workflow branch when committed and pushed/);
-    await assert.rejects(readFile(join(root, '.codex/internal-skills/spec-me/references/adversarial-spec-review.md')), { code: 'ENOENT' });
-    const installedSpecReview = await readFile(join(root, '.codex/internal-skills/spec-review/GUIDE.md'), 'utf8');
+    await assert.rejects(readFile(join(root, '.harness/internal-skills/spec-me/references/adversarial-spec-review.md')), { code: 'ENOENT' });
+    const installedSpecReview = await readFile(join(root, '.harness/internal-skills/spec-review/GUIDE.md'), 'utf8');
     assert.match(installedSpecReview, /pre-dispatch preparation/);
     assert.match(installedSpecReview, /substantive 회차/);
     const { updateReviewAttempt: installedReviewAttempt } = await import(`file://${join(root, '.harness/src/workflow/review-attempts.mjs')}`);
@@ -256,9 +256,9 @@ test('installed readiness checks required files without validating their content
     assert.ok(generatedSchema.properties.result.required.includes('questions'));
     assert.deepEqual(evaluateWorkflowCondition('product_diagram_required', { product_diagram_required: true }), { condition_id: 'product_diagram_required', applies: true });
     assert.deepEqual(evaluateWorkflowCondition('architecture_diagram_required', { architecture_diagram_required: false }), { condition_id: 'architecture_diagram_required', applies: false });
-    const lockPath = join(root, '.codex/harness-lock.json');
+    const lockPath = join(root, '.harness/harness-lock.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
-    for (const path of ['.codex/scripts/harness-static-call.mjs', '.codex/internal-skills/static-caller/GUIDE.md']) {
+    for (const path of ['.harness/scripts/harness-static-call.mjs', '.harness/internal-skills/static-caller/GUIDE.md']) {
       await mkdir(join(root, path, '..'), { recursive: true });
       await writeFile(join(root, path), 'legacy managed asset');
       const hash = createHash('sha256').update('legacy managed asset').digest('hex');
@@ -266,32 +266,34 @@ test('installed readiness checks required files without validating their content
     }
     await writeFile(lockPath, JSON.stringify(lock));
     const updated = await updateProject({ sourceRoot, targetRoot: root });
-    for (const path of ['.codex/scripts/harness-static-call.mjs', '.codex/internal-skills/static-caller/GUIDE.md']) {
+    for (const path of ['.harness/scripts/harness-static-call.mjs', '.harness/internal-skills/static-caller/GUIDE.md']) {
       await assert.rejects(readFile(join(root, path)), { code: 'ENOENT' });
       assert.equal(await readFile(join(updated.backup_directory, path), 'utf8'), 'legacy managed asset');
     }
-    await readFile(join(root, '.codex/scripts/harness-native-stage.mjs'));
+    await readFile(join(root, '.harness/scripts/harness-native-stage.mjs'));
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  codex:\n    low_performance_model: example\ntracker:\n  mode: local-markdown\n  local_markdown:\n    directory: docs/plans\n');
-    const installedDoctor = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' }));
-    assert.equal(installedDoctor.passed, true);
+    const doctorRun = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' });
+    const installedDoctor = JSON.parse(doctorRun.stdout);
+    assert.equal(doctorRun.status, 1);
+    assert.ok(installedDoctor.diagnostics.some((item) => item.code === 'project_preparation_required'));
     assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.harness/harness.yaml')), false);
     const { runDoctor } = await import('../.harness/src/doctor/doctor.mjs');
     const doctor = await runDoctor({ root, sourceRoot });
     assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'blocked');
-    for (const path of ['docs/agents/EXEC.md', 'docs/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
+    for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
       await mkdir(join(root, path, '..'), { recursive: true });
       await writeFile(join(root, path), '');
     }
     assert.equal((await inspectProjectReadiness({ workspace_root: root })).status, 'pass');
     const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-    assert.match(status, /docs\/agents\/EXEC.md/);
+    assert.match(status, /\.harness\/agents\/EXEC.md/);
     assert.doesNotMatch(status, /\.codex|\.agents|\.harness\/src/);
     assert.doesNotMatch(status, /\.harness\/contracts\.mjs/, 'the contract runner is ignored like every other managed file');
     assert.match(execFileSync('git', ['check-ignore', '-v', '.harness/contracts.mjs'], { cwd: root, encoding: 'utf8' }), /\.git\/info\/exclude:\d+:\/\.harness\/contracts\.mjs\t\.harness\/contracts\.mjs/);
-    const ignoredHarnessFile = execFileSync('git', ['check-ignore', '-v', '.codex/scripts/harness-setup.mjs'], { cwd: root, encoding: 'utf8' });
-    assert.match(ignoredHarnessFile, /\.codex\/scripts\/harness-setup\.mjs/);
+    const ignoredHarnessFile = execFileSync('git', ['check-ignore', '-v', '.harness/scripts/harness-setup.mjs'], { cwd: root, encoding: 'utf8' });
+    assert.match(ignoredHarnessFile, /\.harness\/scripts\/harness-setup\.mjs/);
     const ignoredRuntimeFile = execFileSync('git', ['check-ignore', '-v', '.harness/src/installer/update.mjs'], { cwd: root, encoding: 'utf8' });
     assert.match(ignoredRuntimeFile, /\.harness\/src\/installer\/update\.mjs/);
     await mkdir(join(root, 'src'), { recursive: true });
@@ -305,7 +307,7 @@ test('installed readiness checks required files without validating their content
     assert.match(visibleApplicationFile, /\.codex\/application-notes\.md/);
     assert.match(visibleApplicationFile, /\.agents\/application-skill\/SKILL\.md/);
     assert.match(visibleApplicationFile, /\.harness\/application-notes\.md/);
-    assert.doesNotMatch(visibleApplicationFile, /\.codex\/scripts\/harness-setup\.mjs/);
+    assert.doesNotMatch(visibleApplicationFile, /\.harness\/scripts\/harness-setup\.mjs/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -319,12 +321,12 @@ test('installed setup writes reusable guidance to the active linked worktree', a
     git(root, 'init', '-q', '-b', 'main');
     git(root, 'config', 'user.name', 'Contract');
     git(root, 'config', 'user.email', 'contract@example.test');
-    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await mkdir(join(root, '.harness/agents'), { recursive: true });
     const original = '# Implementation guidance\n\n## Active guidance\n\n';
     const testOriginal = '# Testing guidance\n\n## Active guidance\n\n';
-    await writeFile(join(root, 'docs/agents/implementation-guidance.md'), original);
-    await writeFile(join(root, 'docs/agents/testing-guidance.md'), testOriginal);
-    git(root, 'add', 'docs/agents');
+    await writeFile(join(root, '.harness/agents/implementation-guidance.md'), original);
+    await writeFile(join(root, '.harness/agents/testing-guidance.md'), testOriginal);
+    git(root, 'add', '.harness/agents');
     git(root, '-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Add workspace memory');
     git(root, 'worktree', 'add', '-q', '-b', 'memory-worktree', workspace);
 
@@ -332,18 +334,18 @@ test('installed setup writes reusable guidance to the active linked worktree', a
     await protectLocalInstallArtifacts(workspace, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });
     await updateProject({ sourceRoot, targetRoot: workspace });
-    const helper = join(workspace, '.codex/scripts/harness-victorialogs.mjs');
+    const helper = join(workspace, '.harness/scripts/harness-victorialogs.mjs');
     execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--port', '19428', '--retention-days', '7'], { cwd: workspace, stdio: 'pipe' });
 
-    const activeGuidance = await readFile(join(workspace, 'docs/agents/implementation-guidance.md'), 'utf8');
+    const activeGuidance = await readFile(join(workspace, '.harness/agents/implementation-guidance.md'), 'utf8');
     assert.match(activeGuidance, /opentelemetry-local-observability-v2/);
-    assert.equal(await readFile(join(root, 'docs/agents/implementation-guidance.md'), 'utf8'), original);
-    assert.equal(await readFile(join(root, 'docs/agents/testing-guidance.md'), 'utf8'), testOriginal);
+    assert.equal(await readFile(join(root, '.harness/agents/implementation-guidance.md'), 'utf8'), original);
+    assert.equal(await readFile(join(root, '.harness/agents/testing-guidance.md'), 'utf8'), testOriginal);
     const worktreeStatus = git(workspace, 'status', '--short', '--untracked-files=all').toString('utf8');
-    assert.match(worktreeStatus, /docs\/agents\/implementation-guidance\.md/);
-    assert.match(worktreeStatus, /docs\/agents\/testing-guidance\.md/);
-    assert.match(worktreeStatus, /docs\/agents\/EXEC\.md/);
-    assert.doesNotMatch(worktreeStatus, /\.codex\/scripts\/harness-victorialogs\.mjs/);
+    assert.match(worktreeStatus, /\.harness\/agents\/implementation-guidance\.md/);
+    assert.match(worktreeStatus, /\.harness\/agents\/testing-guidance\.md/);
+    assert.match(worktreeStatus, /\.harness\/agents\/EXEC\.md/);
+    assert.doesNotMatch(worktreeStatus, /\.harness\/scripts\/harness-victorialogs\.mjs/);
     assert.throws(() => execFileSync(process.execPath, [helper, 'setup', '--root', workspace, '--shared-guidance-root', root], { cwd: workspace, stdio: 'pipe' }));
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
@@ -356,16 +358,16 @@ test('installed local tracker progresses split plans without Beads', async () =>
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await updateProject({ sourceRoot, targetRoot: root });
-    const answerGuide = await readFile(join(root, '.agents/skills/orchestrator/references/input.md'), 'utf8');
+    const answerGuide = await readFile(join(root, '.codex/skills/orchestrator/references/input.md'), 'utf8');
     assert.match(answerGuide, /\{"question_id":"<현재-질문-ID>","answer":/);
     assert.match(answerGuide, /“모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다/);
-    const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
+    const installedOrchestrator = await readFile(join(root, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
     assert.match(installedOrchestrator, /references\/input\.md#사용자-답변으로-재개/);
     await writeFile(join(root, 'consumer-change.txt'), 'visible application change');
     const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(consumerStatus, /consumer-change\.txt/);
-    assert.doesNotMatch(consumerStatus, /\.codex\/internal-skills\/|\.agents\/skills\/|\.harness\/src\/|\.io\//);
-    for (const path of ['.agents/skills/orchestrator/references/input.md', '.agents/skills/orchestrator/SKILL.md']) {
+    assert.doesNotMatch(consumerStatus, /\.harness\/internal-skills\/|\.agents\/skills\/|\.harness\/src\/|\.io\//);
+    for (const path of ['.codex/skills/orchestrator/references/input.md', '.codex/skills/orchestrator/SKILL.md']) {
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     assert.equal(await readFile(join(root, 'consumer-change.txt'), 'utf8'), 'visible application change');
@@ -394,10 +396,15 @@ test('compose preserves a failed worktree when project preparation is incomplete
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
-    await rm(join(root, 'docs/agents/EXEC.md'));
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    await rm(join(root, '.harness/agents/EXEC.md'));
+    await mkdir(join(root, 'docs/agents'), { recursive: true });
+    await writeFile(join(root, 'docs/agents/EXEC.md'), 'legacy execution instructions');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
-    assert.throws(() => execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
+    const diagnostic = (await runDoctor({ root, sourceRoot })).diagnostics.find(({ code }) => code === 'project_preparation_required');
+    assert.equal(diagnostic?.severity, 'error');
+    assert.deepEqual(diagnostic.violations, ['Missing or invalid file: .harness/agents/EXEC.md']);
+    assert.throws(() => execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
     const worktrees = git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
     assert.equal(worktrees.length, 2);
     const failed = JSON.parse(await readFile(join(worktrees[1], '.io/worktree.json'), 'utf8'));
@@ -429,10 +436,10 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await symlink(selectedWorktrees, selectedLink, 'dir');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), `${await readFile(join(root, '.harness/harness.yaml'), 'utf8')}\nworktrees:\n  directory: ${JSON.stringify(selectedLink)}\n`);
-    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('commit', '-m', 'setup baseline');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
-    const compose = (executionId) => JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', executionId], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
+    const compose = (executionId) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', executionId], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
     const validConfig = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), validConfig.replace(JSON.stringify(selectedLink), '"relative/path"'));
@@ -444,7 +451,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     secondTree = compose('compose-2');
     assert.equal(join(selectedWorktrees, tree.workspace.split('/').at(-1)), tree.workspace);
     assert.equal(join(selectedWorktrees, secondTree.workspace.split('/').at(-1)), secondTree.workspace);
-    assert.match(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-progress.mjs')], { cwd: root, encoding: 'utf8' }), /workflow-compose/);
+    assert.match(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-progress.mjs')], { cwd: root, encoding: 'utf8' }), /workflow-compose/);
     const prepared = { input: await readExecutionInput({ root: tree.workspace, execution_id: 'compose-1' }) };
     const worktreeRecord = JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8'));
     const secondWorktreeRecord = JSON.parse(await readFile(join(secondTree.session_directory, 'worktree.json'), 'utf8'));
@@ -462,7 +469,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(secondTree.worktree_ref, join(secondTree.session_directory, 'worktree.json'));
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions/compose-1/result.json'), 'utf8')).worktree_ref, tree.worktree_ref);
     assert.equal(JSON.parse(await readFile(join(secondTree.session_directory, 'runtime/executions/compose-2/result.json'), 'utf8')).worktree_ref, secondTree.worktree_ref);
-    assert.match(await readFile(join(tree.workspace, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8'), /slug에 UUID를 붙여 고유한 `plan_set_id`/);
+    assert.match(await readFile(join(tree.workspace, '.harness/internal-skills/workflow-compose/GUIDE.md'), 'utf8'), /slug에 UUID를 붙여 고유한 `plan_set_id`/);
     assert.equal(worktreeRecord.agent_sessions?.orchestrator, undefined);
     const resultRef = 'runtime/executions/compose-1/result.json';
     assert.equal(tree.status, 'completed');
@@ -473,7 +480,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(composeProgress.stages.find((stage) => stage.id === 'workflow-compose').status, 'completed');
     assert.equal(composeProgress.total_stages, null);
     await writeFile(join(tree.workspace, 'user-draft.txt'), 'preserve me');
-    const failedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/missing.json'], { cwd: tree.workspace, encoding: 'utf8' });
+    const failedCompletion = spawnSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-workflow-complete.mjs'), '--root', tree.workspace, '--workflow', 'spec-me', '--worktree-id', tree.worktree_id, '--base-ref', tree.head, '--state', 'runtime/spec-me/missing.json'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(failedCompletion.status, 0);
     assert.equal(await readFile(join(tree.workspace, 'user-draft.txt'), 'utf8'), 'preserve me');
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
@@ -482,7 +489,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'worktree.json'), 'utf8')).state, 'active');
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, resultRef), 'utf8')).worktree_ref, tree.worktree_ref);
     for (const provider of ['codex', 'claude-code']) {
-      const context = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-context.mjs'), '--entry'], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: provider }, encoding: 'utf8' }));
+      const context = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-context.mjs'), '--entry'], { cwd: root, env: { ...process.env, HARNESS_PROVIDER_ID: provider }, encoding: 'utf8' }));
       assert.equal(context.decision_hint, 'worktree_required');
       assert.match(context.next, /change directory to its workspace_root/);
       assert.match(context.next, /A distinct new workflow follows the composition route/);
@@ -495,13 +502,13 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(startup.worktree_candidates.length, 2);
     assert.ok(startup.worktree_candidates.every((candidate) => candidate.request === '계산기'));
     const sourceOrchestrator = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
-    const installedOrchestrator = await readFile(join(root, '.agents/skills/orchestrator/SKILL.md'), 'utf8');
+    const installedOrchestrator = await readFile(join(root, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
     assert.equal(installedOrchestrator, sourceOrchestrator);
     assert.match(installedOrchestrator, /workflow 명령은 현재 working directory가 소유 worktree일 때만 실행한다/);
     assert.match(installedOrchestrator, /여러 후보가 있거나 원래 요청을 확인할 수 없으면 후보 경로를 제시하고 사용할 worktree를 선택하게 한다/);
     assert.match(installedOrchestrator, /사용자가 그 디렉터리로 이동한 뒤 orchestrator를 다시 호출하도록 한다/);
-    const sourceComposerGuide = await readFile(join(sourceRoot, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
-    const installedComposerGuide = await readFile(join(root, '.codex/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
+    const sourceComposerGuide = await readFile(join(sourceRoot, '.harness/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
+    const installedComposerGuide = await readFile(join(root, '.harness/internal-skills/workflow-compose/GUIDE.md'), 'utf8');
     assert.equal(installedComposerGuide, sourceComposerGuide);
     assert.match(installedComposerGuide, /새로운 execution ID/);
     assert.match(installedComposerGuide, /생성 직전 Git에 등록된 worktree 목록/);
@@ -513,20 +520,20 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const missingRuntime = await runDoctor({ root, sourceRoot });
     assert.ok(missingRuntime.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path.endsWith('/.harness/src/workflow/composer-workspace.mjs')));
     await writeFile(installedComposerRuntime, composerRuntime);
-    assert.match(await readFile(join(root, '.agents/skills/orchestrator/references/workflow-map.md'), 'utf8'), /workflow_ref.*null/);
+    assert.match(await readFile(join(root, '.codex/skills/orchestrator/references/workflow-map.md'), 'utf8'), /workflow_ref.*null/);
     await writeFile(join(root, 'application-change.txt'), 'preserved');
-    await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned execution notes\n');
+    await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned execution notes\n');
     const consumerStatus = git('status', '--short', '--untracked-files=all');
     assert.match(consumerStatus, /application-change\.txt/);
-    assert.match(consumerStatus, /docs\/agents\/EXEC\.md/);
-    assert.doesNotMatch(consumerStatus, /\.codex\/|\.harness\/|\.io\//);
-    for (const path of ['.codex/internal-skills/workflow-compose/GUIDE.md', '.codex/scripts/harness-context.mjs', '.harness/src/workflow/composer-workspace.mjs', '.io/worktree.json']) {
+    assert.match(consumerStatus, /\.harness\/agents\/EXEC\.md/);
+    assert.doesNotMatch(consumerStatus, /\.codex\/|\.harness\/(?!agents\/)|\.io\//);
+    for (const path of ['.harness/internal-skills/workflow-compose/GUIDE.md', '.harness/scripts/harness-context.mjs', '.harness/src/workflow/composer-workspace.mjs', '.io/worktree.json']) {
       execFileSync('git', ['check-ignore', '-v', path], { cwd: root });
     }
     assert.equal(await readFile(join(root, 'application-change.txt'), 'utf8'), 'preserved');
     await rm(join(root, 'application-change.txt'));
-    await writeFile(join(root, 'docs/agents/EXEC.md'), '');
-    const invalidStage = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'product'], { cwd: tree.workspace, encoding: 'utf8' });
+    await writeFile(join(root, '.harness/agents/EXEC.md'), '');
+    const invalidStage = spawnSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'product'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(invalidStage.status, 0);
     assert.match(invalidStage.stderr, /Unregistered skill: product/);
     // The stage that owns requirement decisions in this flow is requirements-fix; the stages before it are recorded as done so that it may start.
@@ -534,18 +541,18 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const seededState = JSON.parse(await readFile(seededStatePath, 'utf8'));
     for (const id of ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'bounded-context']) seededState.stages[id] = { status: 'completed', code: 'OK' };
     await writeFile(seededStatePath, JSON.stringify(seededState, null, 2) + '\n');
-    const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'requirements-fix'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'requirements-fix'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(next.input.skill, 'requirements-fix');
     assert.equal(next.input.context.role, undefined);
     const stageInput = await findExecutionInput(tree.workspace, next.input.execution_id);
     const resultDir = join(tree.session_directory, 'runtime/executions', next.input.execution_id);
     await mkdir(resultDir, { recursive: true });
     const resultRefForQuestion = `runtime/executions/${next.input.execution_id}/result.json`;
-    const generatedSchema = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-output-schema.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' }));
+    const generatedSchema = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-output-schema.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' }));
     const schema = JSON.parse(await readFile(generatedSchema.path, 'utf8'));
     const rawOutput = join(resultDir, 'output.json');
     await writeFile(rawOutput, JSON.stringify({ status: 123 }));
-    const formatCheck = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-output-format.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' });
+    const formatCheck = spawnSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-output-format.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' });
     assert.equal(formatCheck.status, 1, formatCheck.stderr);
     const formatErrors = JSON.parse(formatCheck.stdout);
     assert.ok(formatErrors.errors.some((item) => item.path === '$.status' && item.value === 123));
@@ -570,12 +577,12 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
     await writeFile(join(resultDir, 'return.json'), JSON.stringify(answerEnvelope));
-    const resultCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--return', `runtime/executions/${next.input.execution_id}/return.json`];
+    const resultCommand = [join(tree.workspace, '.harness/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--return', `runtime/executions/${next.input.execution_id}/return.json`];
     const validated = JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     const rawResultPath = `runtime/executions/${next.input.execution_id}/output.json`;
     await writeFile(join(resultDir, 'output.json'), JSON.stringify({ ...answerEnvelope, execution_id: 'mistyped', result: { ...questionResult, execution_id: 'mistyped' } }));
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(answerEnvelope));
-    const rawCommand = [join(tree.workspace, '.codex/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--source', rawResultPath];
+    const rawCommand = [join(tree.workspace, '.harness/scripts/harness-result.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', next.input.execution_id, '--source', rawResultPath];
     const normalizedResult = JSON.parse(execFileSync(process.execPath, rawCommand, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(normalizedResult.execution_id, next.input.execution_id);
     assert.equal(normalizedResult.result.execution_id, next.input.execution_id);
@@ -603,7 +610,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SUBTASK_REQUIRED', result_ref: resultRefForQuestion });
     const { prepareStageInput } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-input.mjs')}`);
     await assert.rejects(prepareStageInput({ root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, stageId: 'requirements-fix', codexSessionId: record.worktree_id }), /pending subagent identity and result are not recorded.*in-place recovery is unsupported/i);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--subtask', '0'], { cwd: tree.workspace, stdio: 'pipe' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--subtask', '0'], { cwd: tree.workspace, stdio: 'pipe' }));
     const blockedStage = { ...questionResult, status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', questions: [] };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(blockedStage));
     await writeFile(join(resultDir, 'return.json'), JSON.stringify({ ...answerEnvelope, status: 'blocked', code: 'ENVIRONMENT_UNAVAILABLE', result: blockedStage }));
@@ -615,7 +622,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'spec-me', feedback: '고쳐' }), /User revision requires feedback for/);
     await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'implement-wrapper', feedback: '고쳐' }), /requires a plan, failure receipt and approval answer/);
     await assert.rejects(prepareStageInput({ ...userRevision, stageId: 'requirements-fix' }), /requires feedback/);
-    const unblocked = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '누락된 자료를 준비했습니다'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const unblocked = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '누락된 자료를 준비했습니다'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(unblocked.input.context.resume_session_id, undefined);
     assert.equal(unblocked.input.context.previous_result_ref, resultRefForQuestion);
     const conflicting = { ...questionResult, question: questionResult.questions[0] };
@@ -637,7 +644,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: resultRefForQuestion });
     const reviewFeedback = 'Reviewer findings: address the mismatch in decision-1; see review report in the prior result.';
-    const reviewResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', reviewFeedback], { cwd: tree.workspace, encoding: 'utf8' }));
+    const reviewResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', reviewFeedback], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(reviewResume.input.context.resume_session_id, undefined);
     assert.equal(reviewResume.input.context.previous_result_ref, resultRefForQuestion);
     assert.equal(await readFile(join(tree.session_directory, 'runtime/executions', reviewResume.input.execution_id, 'feedback.json'), 'utf8'), JSON.stringify({ feedback: reviewFeedback }, null, 2) + '\n');
@@ -654,7 +661,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.equal(JSON.parse(execFileSync(process.execPath, resultCommand, { cwd: tree.workspace, encoding: 'utf8' })).result.review_request, null);
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'REVIEW_REQUIRED', result_ref: resultRefForQuestion });
-    const implementationReviewResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', 'Implementation review findings: adjust behavior covered by test case A.'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const implementationReviewResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', 'Implementation review findings: adjust behavior covered by test case A.'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(implementationReviewResume.input.context.resume_session_id, undefined);
     const multi = { ...questionResult, questions: [questionResult.questions[0], { ...questionResult.questions[0], question_id: 'input', title: '입력 방식은?' }] };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(multi));
@@ -665,11 +672,11 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running' });
     const runningProgress = JSON.parse(await readFile(join(tree.session_directory, 'runtime/orchestrator/progress.json'), 'utf8'));
     assert.equal(runningProgress.status, 'running');
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix'], { cwd: tree.workspace, stdio: 'pipe' }), /Native subagent status is not confirmed/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix'], { cwd: tree.workspace, stdio: 'pipe' }), /Native subagent status is not confirmed/);
     await assert.rejects(prepareStageInput({ root: tree.workspace, session: tree.session_directory, worktreeRef: tree.worktree_ref, workflowRef: null, stageId: 'requirements-fix', orchestratorSession: { provider: 'claude-code', session_id: '4c1483d6-c69d-4df3-a6c1-481c7ac4ff44' } }), /Native subagent status is not confirmed/);
     // The stage ends with its recorded question, as `harness-native-stage finish` would record it.
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: answerEnvelope.status, code: answerEnvelope.code, result_ref: resultRefForQuestion });
-    const prepare = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix'];
+    const prepare = [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix'];
     const earlierAnswers = [{ question_id: 'earlier:1', answer: 'prior' }];
     await writeFile(join(resultDir, 'answers.json'), JSON.stringify(earlierAnswers));
     await writeFile(join(resultDir, 'decision-answers.json'), JSON.stringify(earlierAnswers, null, 2) + '\n');
@@ -730,13 +737,13 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(sameStageRevision));
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: sameStageRevision.status, code: sameStageRevision.code, result_ref: specRef, result: sameStageRevision }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: specRef });
-    const revisionResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '리뷰 지적을 수정하세요'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const revisionResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '리뷰 지적을 수정하세요'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(revisionResume.input.context.resume_session_id, undefined);
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', revisionResume.input.execution_id, 'feedback.json'), 'utf8')).feedback, '리뷰 지적을 수정하세요');
     await writeFile(join(tree.session_directory, specRef), JSON.stringify(specResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${next.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', result_ref: specRef, result: specResult }));
     await recordExecutionState({ root: tree.workspace, input: stageInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: specRef });
-    const planCommand = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'];
+    const planCommand = [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'];
     // to-ticket is a stage of the tactical flow: it waits for the settled design and decisions, and asks for no Spec review.
     assert.throws(() => execFileSync(process.execPath, planCommand, { cwd: tree.workspace, stdio: 'pipe' }), /to-ticket requires completed\/OK tactical design stage domain-model/);
     const settledPath = join(tree.session_directory, 'runtime/orchestrator/state.json');
@@ -752,7 +759,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(specDir, 'product-spec.md'), '# Product Spec\n확정된 요구사항\n');
     await writeFile(join(specDir, 'architecture-spec.md'), '# Architecture Spec\n확정된 설계\n');
     // Spec overwrite approval belonged to the retired spec-me stage; the option no longer exists.
-    const retiredOption = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--spec-overwrite-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' });
+    const retiredOption = spawnSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--spec-overwrite-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(retiredOption.status, 0);
     assert.match(retiredOption.stderr, /Invalid argument: --spec-overwrite-approved/);
     const { snapshotSpecReview } = await import(`file://${join(tree.workspace, '.harness/src/workflow/spec-review.mjs')}`);
@@ -766,7 +773,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const specEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'completed', code: 'OK', result_ref: specRef, result: specResult };
     await validateSkillReturn({ root: tree.workspace, input: stageInput.input, envelope: specEnvelope });
     assert.throws(() => execFileSync(process.execPath, [...planCommand, '--feedback', '허용되지 않는 전환 피드백'], { cwd: tree.workspace, stdio: 'pipe' }), /Feedback requires/);
-    const plan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const plan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(plan.input.context.transition.from_stage, 'requirements-fix');
     assert.equal(plan.input.context.transition.result_ref, specRef);
     const planInput = await findExecutionInput(tree.workspace, plan.input.execution_id);
@@ -776,7 +783,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, planRef), JSON.stringify(planResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${plan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: plan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef, result: planResult }));
     await recordExecutionState({ root: tree.workspace, input: planInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'SPEC_REVISION_REQUIRED', result_ref: planRef });
-    const revision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'requirements-fix', '--feedback', '수용 조건 보완'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const revision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'requirements-fix', '--feedback', '수용 조건 보완'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(revision.input.context.transition.code, 'SPEC_REVISION_REQUIRED');
     assert.equal(revision.input.context.transition.result_ref, planRef);
     assert.equal(revision.input.context.previous_result_ref, planRef);
@@ -788,7 +795,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, revisionRef), JSON.stringify(revisionResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${revision.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: revision.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef, result: revisionResult }));
     await recordExecutionState({ root: tree.workspace, input: revisionInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'PLAN_REVISION_REQUIRED', result_ref: revisionRef });
-    const replan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const replan = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(replan.input.context.transition.code, 'PLAN_REVISION_REQUIRED');
     assert.equal(replan.input.context.transition.result_ref, revisionRef);
     const replanInput = await findExecutionInput(tree.workspace, replan.input.execution_id);
@@ -799,7 +806,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await writeFile(join(tree.session_directory, waitingRef), JSON.stringify(waitingResult));
     await writeFile(join(tree.session_directory, `runtime/executions/${replan.input.execution_id}/return.json`), JSON.stringify({ schema_version: 1, execution_id: replan.input.execution_id, skill: 'to-ticket', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef, result: waitingResult }));
     await recordExecutionState({ root: tree.workspace, input: replanInput.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: waitingRef });
-    const resumed = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--answer', 'a'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const resumed = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', join(tree.session_directory, 'worktree.json'), '--stage-id', 'to-ticket', '--answer', 'a'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(resumed.input.context.resume_session_id, undefined);
     assert.equal(resumed.answer[0].question_id, `${replan.input.execution_id}:1`);
     const authorInput = await readExecutionInput({ root: tree.workspace, execution_id: resumed.input.execution_id });
@@ -850,9 +857,9 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await mkdir(join(tree.session_directory, 'runtime/to-ticket/drafts'), { recursive: true });
     for (const name of ['parent', 'slice']) await writeFile(join(tree.session_directory, `runtime/to-ticket/drafts/${name}.md`), `# ${name}\n`);
     // The orchestrator assigns the plan: a new implement-wrapper run without one, or with a plan outside the set, is refused.
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper'], { cwd: tree.workspace, stdio: 'pipe' }), /needs --plan/);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'nope'], { cwd: tree.workspace, stdio: 'pipe' }), /not part of plan set/);
-    let implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper'], { cwd: tree.workspace, stdio: 'pipe' }), /needs --plan/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'nope'], { cwd: tree.workspace, stdio: 'pipe' }), /not part of plan set/);
+    let implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(implementation.input.context.plan_id, 'slice');
     assert.equal(implementation.input.context.checkpoint_path, join(tree.session_directory, 'runtime/plans/slice/checkpoint.md'));
     const blockedRef = `runtime/executions/${implementation.input.execution_id}/result.json`;
@@ -864,25 +871,25 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result_ref: blockedRef });
     const { validateSkillReturn: validateImplementationReturn } = await import(`file://${join(tree.workspace, '.harness/src/workflow/stage-runtime.mjs')}`);
     await validateImplementationReturn({ root: tree.workspace, input: implementation.input, envelope: blockedEnvelope });
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish'], { cwd: tree.workspace, encoding: 'utf8' }), /user publication approval are required/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish'], { cwd: tree.workspace, encoding: 'utf8' }), /user publication approval are required/);
     const blockedStatePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
     const blockedState = JSON.parse(await readFile(blockedStatePath, 'utf8'));
     blockedState.stages['implement-wrapper'].code = 'ENVIRONMENT_UNAVAILABLE';
     await writeFile(blockedStatePath, JSON.stringify(blockedState));
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', 'draft 누락을 복구하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', 'draft 누락을 복구하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     blockedState.stages['implement-wrapper'].code = 'DEPENDENCY_INCOMPLETE';
     await writeFile(blockedStatePath, JSON.stringify(blockedState));
-    const planRevision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', '누락된 GitHub 초안을 정본 session 경로에 생성하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const planRevision = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', '누락된 GitHub 초안을 정본 session 경로에 생성하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(planRevision.input.context.user_revision, true);
     assert.equal(planRevision.input.context.previous_result_ref, reviewRef);
     assert.equal(JSON.parse(await readFile(blockedStatePath, 'utf8')).stages['to-ticket'].status, 'completed');
     // Publishing needs the user's own reply to the reviewed plan set, found in the log of the user's inputs after to-ticket finished.
     const approvalReply = '네, 검토한 계획 그대로 발행하세요';
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8', stdio: 'pipe' }), /Publication approval answer was not recorded/);
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8', stdio: 'pipe' }), /Publication approval answer was not recorded/);
     await mkdir(join(tree.session_directory, 'runtime/orchestrator'), { recursive: true });
     await codexUserPrompt(tree.workspace, approvalReply);
-    const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8' }));
+    const publisher = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', approvalReply], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(publisher.input.context.transition.from_stage, 'to-ticket');
     assert.deepEqual(publisher.input.context.execution_workspace, { workspace_root: tree.workspace, workspace_branch: worktreeRecord.branch });
     // This workspace is configured for local-markdown, where a plan file is its own ticket and no Issue drafts are prepared.
@@ -892,7 +899,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const publishingState = JSON.parse(await readFile(blockedStatePath, 'utf8'));
     publishingState.current_stage = 'implement-wrapper';
     await writeFile(blockedStatePath, JSON.stringify(publishingState));
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', 'draft 누락을 복구하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'to-ticket', '--feedback', 'draft 누락을 복구하세요.', '--user-revision', 'true'], { cwd: tree.workspace, encoding: 'utf8' }));
     publishingState.current_stage = 'tracker-publish';
     await writeFile(blockedStatePath, JSON.stringify(publishingState));
     const publisherRef = `runtime/executions/${publisherInput.execution_id}/result.json`;
@@ -909,7 +916,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     // A worktree that an older Harness ran through the retired spec-me records that stage's completed result; implementation still reads its Spec artifacts.
     implementationState.stages['spec-me'] = { ...implementationState.stages['requirements-fix'] };
     await writeFile(implementationStatePath, JSON.stringify(implementationState));
-    implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
+    implementation = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.ok(implementation.input.input_refs.some((item) => item.path === `docs/plans/${ticketId}/slice.md`));
     for (const axis of ['product', 'architecture']) assert.ok(implementation.input.input_refs.some((item) => item.path === `docs/specs/${ticketId}/${axis}-spec.md`));
     assert.equal(implementation.input.context.producer_result_refs['to-ticket'].path, reviewRef);
@@ -921,15 +928,15 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await recordExecutionState({ root: tree.workspace, input: implementation.input, binding: { model: 'example', reasoning_effort: 'low' }, status: 'completed', code: 'OK', result_ref: implementationRef });
     const receiptRef = 'runtime/execution/failure-1/receipt.json';
     await mkdir(join(tree.session_directory, 'runtime/execution/failure-1'), { recursive: true });
-    const profilePath = join(tree.workspace, 'docs/agents/execution.json');
-    await mkdir(join(tree.workspace, 'docs/agents'), { recursive: true });
+    const profilePath = join(tree.workspace, '.harness/agents/execution.json');
+    await mkdir(join(tree.workspace, '.harness/agents'), { recursive: true });
     const previousProfile = await readFile(profilePath).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     const profileContent = JSON.stringify({ profiles: { 'calculator-community-e2e': { purpose: 'e2e', timeout_ms: 300000 } } });
     await writeFile(profilePath, profileContent);
-    await writeFile(join(tree.session_directory, receiptRef), JSON.stringify({ status: 'blocked', profile_id: 'calculator-community-e2e', finished_at: '2026-01-01T00:00:00Z', config_hashes: { 'docs/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } }));
+    await writeFile(join(tree.session_directory, receiptRef), JSON.stringify({ status: 'blocked', profile_id: 'calculator-community-e2e', finished_at: '2026-01-01T00:00:00Z', config_hashes: { '.harness/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } }));
     await writeFile(join(tree.session_directory, 'runtime/reviews/implementation-slice-evidence.json'), JSON.stringify({ review_input: { implementation_commit_sha: git('rev-parse', 'HEAD').trim() } }));
     await codexUserPrompt(tree.workspace, '승인', { at: '2026-01-02T00:00:00Z' });
-    const revisionArgs = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice', '--user-revision', 'true', '--feedback', '설정을 수정하세요', '--repair-receipt', receiptRef, '--approval-answer', '승인'];
+    const revisionArgs = [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'implement-wrapper', '--plan', 'slice', '--user-revision', 'true', '--feedback', '설정을 수정하세요', '--repair-receipt', receiptRef, '--approval-answer', '승인'];
     assert.throws(() => execFileSync(process.execPath, [...revisionArgs.slice(0, -1), '네'], { cwd: tree.workspace, stdio: 'pipe' }), /approval was not recorded/);
     const implementationRevision = JSON.parse(execFileSync(process.execPath, revisionArgs, { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(implementationRevision.input.context.plan_id, 'slice');
@@ -943,7 +950,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     await mkdir(join(tree.session_directory, 'runtime/e2e/requests'), { recursive: true });
     const e2eRequest = { target_commit: git('rev-parse', 'HEAD').trim(), profile_id: 'calculator-community-e2e', timeout_ms: 300000, scenarios: ['E2E-01'], approval_answer: '승인', manifest_sha256: createHash('sha256').update(profileContent).digest('hex') };
     await writeFile(join(tree.session_directory, e2eRequestRef), JSON.stringify(e2eRequest));
-    const e2eArgs = [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'e2e-test'];
+    const e2eArgs = [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'e2e-test'];
     assert.throws(() => execFileSync(process.execPath, e2eArgs, { cwd: tree.workspace, stdio: 'pipe' }), /requires an approved request/);
     const e2e = JSON.parse(execFileSync(process.execPath, [...e2eArgs, '--e2e-request', e2eRequestRef], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(e2e.input.context.agent_profile, 'e2e_test_runner');
@@ -954,7 +961,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.throws(() => execFileSync(process.execPath, [...e2eArgs, '--e2e-request', e2eRequestRef], { cwd: tree.workspace, stdio: 'pipe' }), /execution profile has changed/);
     const fastReceiptRef = 'runtime/execution/failure-2/receipt.json';
     const fastFailureRef = 'runtime/e2e/run-2/failure.json';
-    const fastReceipt = { status: 'failed', phase: 'command', profile_id: 'calculator-community-e2e', head: git('rev-parse', 'HEAD').trim(), started_at: '2026-01-03T00:00:00Z', finished_at: '2026-01-03T00:01:00Z', config_hashes: { 'docs/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } };
+    const fastReceipt = { status: 'failed', phase: 'command', profile_id: 'calculator-community-e2e', head: git('rev-parse', 'HEAD').trim(), started_at: '2026-01-03T00:00:00Z', finished_at: '2026-01-03T00:01:00Z', config_hashes: { '.harness/agents/execution.json': createHash('sha256').update(profileContent).digest('hex') } };
     await mkdir(join(tree.session_directory, 'runtime/execution/failure-2'), { recursive: true });
     await mkdir(join(tree.session_directory, 'runtime/e2e/run-2'), { recursive: true });
     await writeFile(join(tree.session_directory, fastReceiptRef), JSON.stringify(fastReceipt));
@@ -985,7 +992,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     assert.match(git('ls-tree', '-r', '--name-only', 'HEAD'), /CONTEXT.md/);
     const status = git('status', '--short');
     assert.equal(status, '');
-    git('check-ignore', '-v', '.codex/scripts/harness-compose-workspace.mjs');
+    git('check-ignore', '-v', '.harness/scripts/harness-compose-workspace.mjs');
     const statePath = join(tree.session_directory, 'runtime/orchestrator/state.json');
     const failedState = JSON.parse(await readFile(statePath, 'utf8'));
     failedState.current_stage = 'requirements-fix';
@@ -996,7 +1003,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const invalidResult = { schema_version: 1, execution_id: 'requirements-fix-invalid-id', skill: 'requirements-fix', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', summary: '재생성 필요', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     const invalidEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'failed', code: 'ARTIFACT_WRITE_FAILED', result_ref: null, result: invalidResult };
     await writeFile(join(failedPrefix, 'output.json'), JSON.stringify(invalidEnvelope));
-    const repair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const repair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(repair.input.context.resume_session_id, undefined);
     assert.equal(JSON.parse(await readFile(join(tree.session_directory, 'runtime/executions', repair.input.execution_id, 'feedback.json'), 'utf8')).feedback, '반환 최상위와 중첩 execution_id를 일치시켜 다시 반환하세요.');
     failedState.stages['requirements-fix'].reason = 'Return status/code mismatch';
@@ -1005,16 +1012,16 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const rawRevision = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: rejectedRevision.status, code: rejectedRevision.code, result: rejectedRevision };
     const rawPath = join(failedPrefix, 'output.json');
     await writeFile(rawPath, JSON.stringify(rawRevision));
-    const revisionRepair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '상태와 코드를 계약에 맞게 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const revisionRepair = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '상태와 코드를 계약에 맞게 반환하세요.'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(revisionRepair.input.context.resume_session_id, undefined);
     assert.deepEqual(JSON.parse(await readFile(rawPath, 'utf8')), rawRevision);
     failedState.stages['requirements-fix'].native_finished = false;
     await writeFile(statePath, JSON.stringify(failedState));
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
     failedState.stages['requirements-fix'].native_finished = true;
     failedState.stages['requirements-fix'].reason = 'Stage provider exited with code 1';
     await writeFile(statePath, JSON.stringify(failedState));
-    const failedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const failedResume = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(failedResume.input.context.resume_session_id, undefined);
     const preservedReturn = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'PLAN_REVISION_REQUIRED', summary: '계획 수정', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(preservedReturn));
@@ -1022,16 +1029,16 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const failedResumeInput = await readExecutionInput({ root: tree.workspace, execution_id: failedResume.input.execution_id });
     await recordExecutionState({ root: tree.workspace, input: failedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'running', nativeClaim: true });
     await recordExecutionState({ root: tree.workspace, input: failedResumeInput, binding: { model: 'example', reasoning_effort: 'low' }, status: 'failed', code: 'EXECUTION_ERROR', reason: 'resume failed' });
-    const recovered = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', failedResume.input.execution_id, '--recover-from-execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' }));
+    const recovered = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', failedResume.input.execution_id, '--recover-from-execution-id', next.input.execution_id], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(recovered.stages['requirements-fix'].execution_id, next.input.execution_id);
     assert.equal(recovered.stages['requirements-fix'].status, 'waiting');
     assert.ok(recovered.stages['requirements-fix'].attempts.some((attempt) => attempt.execution_id === failedResume.input.execution_id && attempt.status === 'failed'));
-    const mismatchRecovery = spawnSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', failedResume.input.execution_id, '--recover-from-execution-id', 'missing-execution'], { cwd: tree.workspace, encoding: 'utf8' });
+    const mismatchRecovery = spawnSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-execution-state.mjs'), '--root', tree.workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', failedResume.input.execution_id, '--recover-from-execution-id', 'missing-execution'], { cwd: tree.workspace, encoding: 'utf8' });
     assert.notEqual(mismatchRecovery.status, 0);
     const missingSessionRecord = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
     delete missingSessionRecord.agent_sessions;
     await writeFile(tree.worktree_ref, JSON.stringify(missingSessionRecord));
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', tree.worktree_ref, '--stage-id', 'requirements-fix', '--feedback', '재개'], { cwd: tree.workspace, stdio: 'pipe' }));
   } finally {
     if (secondTree) await finishWorkflowWorktree({ workspace_root: secondTree.workspace, repository_root: root });
     if (tree) await finishWorkflowWorktree({ workspace_root: tree.workspace, repository_root: root });
@@ -1056,20 +1063,20 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(join(root, 'application.txt'), 'Application-owned content');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: codex\n  codex:\n    high_performance_model: gpt-6-luna\n    high_performance_reasoning_effort: medium\n    low_performance_model: gpt-6-luna-mini\n    low_performance_reasoning_effort: medium\n');
-    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git('add', 'application.txt', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Application');
     const workflowBinding = { provider: 'codex', model: 'gpt-6-luna', reasoning_effort: 'medium' };
     // A binding for a different provider than the current orchestrator is refused before creating a worktree.
     const claudeConfig = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), 'agents:\n  provider: claude-code\n  claude-code:\n    high_performance_model: haiku\n    high_performance_reasoning_effort: medium\n    low_performance_model: haiku\n    low_performance_reasoning_effort: medium\n');
-    const mixed = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'claude-code', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
+    const mixed = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-mixed', '--orchestrator-provider', 'claude-code', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } });
     assert.notEqual(mixed.status, 0);
     assert.match(mixed.stderr, /Workflow binding provider must match the current orchestrator provider/);
     assert.equal(execFileSync('git', ['worktree', 'list'], { cwd: root, encoding: 'utf8' }).trim().split('\n').length, 1);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), claudeConfig);
-    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
+    tree = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
     assert.deepEqual(tree.workflow_binding, workflowBinding);
     const found = await findExecutionInput(tree.workspace, 'compose-1');
     assert.equal(found.workspace, tree.workspace);
@@ -1092,7 +1099,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     const result = { schema_version: 1, execution_id: 'compose-1', skill: 'workflow-compose', status: 'completed', code: 'OK', summary: '준비 완료', artifacts: [], worktree_ref: join(tree.session_directory, 'worktree.json'), questions: [] };
     const envelope = { schema_version: 1, execution_id: 'compose-1', skill: 'workflow-compose', status: 'completed', code: 'OK', result_ref: 'runtime/executions/compose-1/result.json', result };
     assert.equal((await validateSkillReturn({ root: tree.workspace, input: found.input, envelope })).valid, true);
-    const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', result.worktree_ref, '--stage-id', 'grilling'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const next = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--worktree-ref', result.worktree_ref, '--stage-id', 'grilling'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(next.input.context.orchestrator_provider, 'codex');
     assert.equal(next.input.context.provider, workflowBinding.provider);
     assert.deepEqual(next.input.context.workflow_binding, workflowBinding);
@@ -1100,7 +1107,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(Object.hasOwn(next.input.context, 'subagent_binding'), false);
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'grilling', workflowBinding: next.input.context.workflow_binding }), { skill: 'grilling', provider: 'codex', model_tier: 'high_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
     assert.deepEqual(await resolveSkillBinding({ root: tree.workspace, skill: 'plantuml-diagrams' }), { skill: 'plantuml-diagrams', provider: 'codex', model_tier: 'low_performance', model: 'gpt-6-luna', reasoning_effort: 'medium' });
-    const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-stage-runtime.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
+    const roleBinding = JSON.parse(execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-stage-runtime.mjs'), 'binding', '--root', tree.workspace, '--skill', 'plantuml-diagrams'], { cwd: tree.workspace, encoding: 'utf8' }));
     assert.equal(roleBinding.provider, 'codex');
     assert.equal(roleBinding.model, 'gpt-6-luna');
     assert.equal(roleBinding.reasoning_effort, 'medium');
@@ -1108,8 +1115,8 @@ test('compose creates input only in the worktree and leaves main without .io', a
     assert.equal(next.input.shared_guidance_root, undefined);
     const mismatched = { ...next.input, execution_id: 'provider-mismatch', context: { ...next.input.context, orchestrator_provider: 'claude-code' } };
     await writeExecutionInput(tree.workspace, mismatched, tree.plan_set_id);
-    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.codex/scripts/harness-native-stage.mjs'), 'start', '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
-    await rm(join(tree.workspace, 'docs/agents/EXEC.md'));
+    assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-native-stage.mjs'), 'start', '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
+    await rm(join(tree.workspace, '.harness/agents/EXEC.md'));
     await assert.rejects(validateSkillReturn({ root: tree.workspace, input: found.input, envelope }), /Project preparation incomplete/);
     await assert.rejects(readFile(join(root, '.io', 'runtime', 'orchestrator', 'workflow.json')), { code: 'ENOENT' });
     const { lstat } = await import('node:fs/promises');
@@ -1190,7 +1197,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     await protectLocalInstallArtifacts(root, sourceRoot);
     await updateProject({ sourceRoot, targetRoot: root, initialize: true });
     await seedSetup(root);
-    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs');
+    git(root, 'add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git(root, 'commit', '-qm', 'setup baseline');
     git(root, 'worktree', 'add', '-qb', 'existing', workspace);
     await updateProject({ sourceRoot, targetRoot: workspace, initialize: true });
@@ -1201,16 +1208,16 @@ test('installed compose starts in an existing linked worktree without replacing 
     const before = git(root, 'worktree', 'list', '--porcelain');
     const { inspectStartupState } = await import('../.harness/src/workflow/startup-state.mjs');
     assert.equal((await inspectStartupState({ workspaceRoot: workspace })).decision_hint, 'compose_candidate');
-    const remote = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', 'remote-compose'], { cwd: root, encoding: 'utf8' });
+    const remote = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', 'remote-compose'], { cwd: root, encoding: 'utf8' });
     assert.notEqual(remote.status, 0);
     assert.match(remote.stderr, /inside the current linked worktree/);
     const originalSession = randomUUID();
-    const compose = (id) => JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', id, '--orchestrator-provider', 'codex', '--orchestrator-session-id', originalSession], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const compose = (id) => JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-compose-workspace.mjs'), '--root', workspace, '--plan-set-id', 'calculator', '--request', '계산기 UI', '--execution-id', id, '--orchestrator-provider', 'codex', '--orchestrator-session-id', originalSession], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     const result = compose('compose-existing');
     assert.equal(result.workspace, await realpath(workspace));
     assert.equal(result.workspace_ownership, 'existing');
     const current = 'b77aaa03-329c-4d59-b4c5-269746a893f2';
-    const entry = (cwd, sessionId = current) => JSON.parse(execFileSync(process.execPath, [join(cwd, '.codex/scripts/harness-context.mjs'), '--entry'], { cwd, env: { ...process.env, CODEX_THREAD_ID: sessionId }, encoding: 'utf8' }));
+    const entry = (cwd, sessionId = current) => JSON.parse(execFileSync(process.execPath, [join(cwd, '.harness/scripts/harness-context.mjs'), '--entry'], { cwd, env: { ...process.env, CODEX_THREAD_ID: sessionId }, encoding: 'utf8' }));
     await codexTranscript(root, current);
     assert.equal(entry(workspace).session_verified, false);
     assert.equal(JSON.parse(await readFile(result.worktree_ref, 'utf8')).agent_sessions.orchestrator.session_id, originalSession);
@@ -1230,9 +1237,9 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.throws(() => compose('compose-again'), /already has workflow state/);
     assert.equal((await finishWorkflowWorktree({ workspace_root: workspace, repository_root: root, worktree_id: result.worktree_id })).state, 'preserved');
     assert.equal(await readFile(join(workspace, 'app.mjs'), 'utf8'), 'project change\n');
-    const next = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling'], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const next = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling'], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.equal(next.input.context.execution_workspace.workspace_root, await realpath(workspace));
-    const native = [join(workspace, '.codex/scripts/harness-native-stage.mjs')];
+    const native = [join(workspace, '.harness/scripts/harness-native-stage.mjs')];
     const nativeArgs = ['--root', workspace, '--worktree-ref', result.worktree_ref, '--execution-id', next.input.execution_id];
     const started = JSON.parse(execFileSync(process.execPath, [...native, 'start', ...nativeArgs, '--verbose'], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(started.workspace, workspace);
@@ -1274,7 +1281,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     const wrongParent = reconcile(nativeArgs, [{ agent_name: '/root/agent-1', agent_status: { failed: 'error' } }], { ...hostEnv, CODEX_THREAD_ID: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
     assert.notEqual(wrongParent.status, 0);
     assert.match(wrongParent.stderr, /original Codex parent session/);
-    const commandRunner = join(workspace, '.codex/scripts/harness-native-command.mjs');
+    const commandRunner = join(workspace, '.harness/scripts/harness-native-command.mjs');
     const environment = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', next.input.execution_id, '--agent-id', 'agent-1', '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify({ id: process.env.HARNESS_STAGE_EXECUTION_ID, root: process.env.HARNESS_WORKSPACE_ROOT, session: process.env.HARNESS_SESSION_DIR }))'], { cwd: workspace, encoding: 'utf8' }));
     assert.deepEqual(environment, { id: next.input.execution_id, root: workspace, session: result.session_directory });
     assert.throws(() => execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', next.input.execution_id, '--agent-id', 'wrong', '--', process.execPath, '-e', ''], { cwd: workspace, stdio: 'pipe' }), /bound running subagent/);
@@ -1304,7 +1311,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     const finish = JSON.parse(finished.stdout);
     assert.equal(finish.status, 'blocked');
     assert.throws(() => execFileSync(process.execPath, [...native, 'finish', ...nativeArgs], { cwd: workspace, stdio: 'pipe' }), /not running/);
-    const resume = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'missing input is provided'], { cwd: workspace, encoding: 'utf8' }));
+    const resume = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'missing input is provided'], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(resume.input.context.resume_session_id, undefined);
     assert.ok(resume.input.input_refs.some(({ kind }) => kind === 'previous_execution_result'));
     const retryArgs = ['--root', workspace, '--worktree-ref', result.worktree_ref, '--execution-id', resume.input.execution_id];
@@ -1319,7 +1326,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.equal(submit(canonicalAgent.receive_command, stageOutput).status, 0);
     assert.deepEqual(JSON.parse(await readFile(retryStart.output_path, 'utf8')), stageOutput);
     const failedAnswer = JSON.stringify([{ question_id: 'prior-question:1', answer: 'user supplied response' }]);
-    const savedWhileRunning = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--answer', failedAnswer], { cwd: workspace, encoding: 'utf8' }));
+    const savedWhileRunning = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--answer', failedAnswer], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(savedWhileRunning.waiting_for_running_stage, true);
     await recordCodexTurn('/root/retry-agent', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'failed', 'usage limit exceeded');
     const failed = reconcile(retryArgs, [{ agent_name: '/root/retry-agent', agent_status: { failed: 'usage limit exceeded' } }]);
@@ -1327,7 +1334,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     const failure = JSON.parse(failed.stdout);
     assert.equal(failure.status, 'failed');
     assert.equal(failure.reason, 'usage limit exceeded');
-    const afterFailure = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'retry after tool failure'], { cwd: workspace, encoding: 'utf8' }));
+    const afterFailure = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'retry after tool failure'], { cwd: workspace, encoding: 'utf8' }));
     assert.ok(afterFailure.input.input_refs.some(({ kind }) => kind === 'previous_execution_input'));
     const deferred = afterFailure.input.input_refs.find(({ kind }) => kind === 'deferred_user_answers_unverified');
     assert.deepEqual(JSON.parse(await readFile(join(result.session_directory, deferred.path), 'utf8')), JSON.parse(failedAnswer));
@@ -1336,7 +1343,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     await writeFile(configPath, originalConfig.replace('agents:\n', 'agents:\n  claude-code:\n    high_performance_model: opus\n    high_performance_reasoning_effort: high\n'));
     const { bindOrchestratorSession } = await import(`file://${join(workspace, '.harness/src/workflow/startup-state.mjs')}`);
     await bindOrchestratorSession({ root: workspace, provider: 'claude-code', sessionId: '4c1483d6-c69d-4df3-a6c1-481c7ac4ff44' });
-    const claudeNext = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'resume with Claude'], { cwd: workspace, encoding: 'utf8' }));
+    const claudeNext = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'resume with Claude'], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(claudeNext.input.context.provider, 'claude-code');
     const claudeArgs = ['--root', workspace, '--worktree-ref', result.worktree_ref, '--execution-id', claudeNext.input.execution_id];
     const claudeStart = JSON.parse(execFileSync(process.execPath, [...native, 'start', ...claudeArgs], { cwd: workspace, encoding: 'utf8' }));
@@ -1346,11 +1353,11 @@ test('installed compose starts in an existing linked worktree without replacing 
     execFileSync(process.execPath, [...native, 'fail', ...claudeArgs, '--reason', 'native tool unavailable in fixture'], { cwd: workspace, encoding: 'utf8' });
     await bindOrchestratorSession({ root: workspace, provider: 'codex', sessionId: originalSession });
     const withPlanSet = JSON.parse(await readFile(result.worktree_ref, 'utf8'));
-    const questionNext = JSON.parse(execFileSync(process.execPath, [join(workspace, '.codex/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'resume with Codex'], { cwd: workspace, encoding: 'utf8' }));
+    const questionNext = JSON.parse(execFileSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'grilling', '--feedback', 'resume with Codex'], { cwd: workspace, encoding: 'utf8' }));
     const questionArgs = ['--root', workspace, '--worktree-ref', result.worktree_ref, '--execution-id', questionNext.input.execution_id];
     const questionStart = JSON.parse(execFileSync(process.execPath, [...native, 'start', ...questionArgs], { cwd: workspace, encoding: 'utf8' }));
     execFileSync(process.execPath, [...native, 'bind', ...questionArgs, '--agent-id', 'question-agent'], { cwd: workspace, encoding: 'utf8' });
-    const eventHook = join(workspace, '.codex/scripts/harness-agent-event.mjs');
+    const eventHook = join(workspace, '.harness/scripts/harness-agent-event.mjs');
     const stageEvent = { hook_event_name: 'SubagentStop', cwd: workspace, session_id: originalSession, agent_id: 'question-agent', agent_type: 'workflow_stage' };
     execFileSync(process.execPath, [eventHook], { cwd: workspace, input: JSON.stringify(stageEvent), encoding: 'utf8' });
     const stoppedHint = JSON.parse(execFileSync(process.execPath, [...native, 'inspect', ...questionArgs], { cwd: workspace, encoding: 'utf8' }));
@@ -1433,7 +1440,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     } finally { if (previousCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousCodexHome; }
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify({ ...specReviewEvent, hook_event_name: 'SubagentStart' }), encoding: 'utf8' });
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify({ ...specReviewEvent, hook_event_name: 'SubagentStop', last_assistant_message: JSON.stringify({ verdict: 'pass', findings: [] }) }), encoding: 'utf8' });
-    const reviewResult = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', questionNext.input.execution_id, '--agent-id', 'question-agent', '--', process.execPath, join(workspace, '.codex/scripts/harness-spec-review.mjs'), 'record', '--root', workspace, '--ticket', ticket, '--axis', 'architecture', '--attempt', admission.attempt_id], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const reviewResult = JSON.parse(execFileSync(process.execPath, [commandRunner, '--root', workspace, '--execution-id', questionNext.input.execution_id, '--agent-id', 'question-agent', '--', process.execPath, join(workspace, '.harness/scripts/harness-spec-review.mjs'), 'record', '--root', workspace, '--ticket', ticket, '--axis', 'architecture', '--attempt', admission.attempt_id], { cwd: workspace, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     assert.equal(reviewResult.status, 'pass');
     const mappedEvent = { hook_event_name: 'SubagentStart', cwd: workspace, session_id: parentThread, agent_id: 'mapped-child', agent_type: 'code_researcher' };
     execFileSync(process.execPath, [eventHook], { cwd: workspace, env: hookEnv, input: JSON.stringify(mappedEvent), encoding: 'utf8' });
@@ -1451,7 +1458,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     execFileSync(process.execPath, [eventHook], { cwd: workspace, input: JSON.stringify({ ...childEvent, agent_id: 'unrelated', session_id: 'other-session' }), encoding: 'utf8' });
     assert.equal(await readFile(subagentsPath, 'utf8'), priorEvents);
     const answer = JSON.stringify([{ question_id: `${questionNext.input.execution_id}:1`, answer: 'basic' }]);
-    const prepare = join(workspace, '.codex/scripts/harness-prepare-input.mjs');
+    const prepare = join(workspace, '.harness/scripts/harness-prepare-input.mjs');
     assert.throws(() => execFileSync(process.execPath, [prepare, '--verbose', '--stage-id', 'grilling', '--answer', 'basic'], { cwd: workspace, stdio: 'pipe' }), /must include question IDs/);
     const queued = JSON.parse(execFileSync(process.execPath, [prepare, '--verbose', '--stage-id', 'grilling', '--answer', answer], { cwd: workspace, encoding: 'utf8' }));
     assert.equal(queued.waiting_for_running_stage, true);
@@ -1514,7 +1521,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'running' }]).stdout).status, 'running');
     assert.equal(JSON.parse(reconcile(interruptedArgs, [{ agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }, { agent_name: '/root/interrupted-agent', agent_status: 'interrupted' }]).stdout).status, 'unknown');
     const beforeRecovery = git(workspace, 'status', '--short', '--untracked-files=all');
-    const contextArgs = [join(workspace, '.codex/scripts/harness-context.mjs')];
+    const contextArgs = [join(workspace, '.harness/scripts/harness-context.mjs')];
     const statusContext = (env) => JSON.parse(execFileSync(process.execPath, contextArgs, { cwd: workspace, env, encoding: 'utf8' }));
     assert.equal(statusContext({ ...hostEnv, CODEX_THREAD_ID: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }).stages.grilling.status, 'running');
     const resumeContext = statusContext(hostEnv);
@@ -1545,7 +1552,7 @@ test('the installed workflow routes a Harness update to maintenance without comp
     await writeFile(join(root, 'docs/contracts/project.md'), 'project contract\n');
     assert.match(await readFile(join(root, '.claude/skills/orchestrator/SKILL.md'), 'utf8'), /^disable-model-invocation: true$/m);
     const before = git('worktree', 'list', '--porcelain');
-    const result = spawnSync(process.execPath, [join(root, '.codex/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'harness-update', '--request', '하네스 업데이트해', '--execution-id', 'update-attempt'], { cwd: root, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'harness-update', '--request', '하네스 업데이트해', '--execution-id', 'update-attempt'], { cwd: root, encoding: 'utf8' });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Harness update is maintenance/);
     assert.equal(git('worktree', 'list', '--porcelain'), before);

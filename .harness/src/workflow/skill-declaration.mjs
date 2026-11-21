@@ -10,7 +10,7 @@ export const SKILL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const DECLARATION_LINE = /^(model_tier|main_session):[ \t]*(.*?)[ \t]*$/;
 
-const INTERNAL_ROOT = '.codex/internal-skills';
+const INTERNAL_ROOT = '.harness/internal-skills';
 const PUBLIC_ROOTS = ['.agents/skills', '.codex/skills', '.claude/skills'];
 
 // Lookup order for one skill's document: the internal GUIDE first, then the installed or source public skill.

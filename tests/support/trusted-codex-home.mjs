@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { codexHookTrustHash, codexSubagentHook } from '../../.harness/src/workflow/providers/codex.mjs';
+import { codexHookTrustHash, codexSubagentHook } from '../../.codex/harness/providers/codex.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'harness-codex-home-'));
 const hook = codexSubagentHook();

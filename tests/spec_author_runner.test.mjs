@@ -28,7 +28,7 @@ test('installed Claude question stage returns directly without writer receipts',
     await writeFile(ref, JSON.stringify({ schema_version: 1, worktree_id: 'a77aaa03-329c-4d59-b4c5-269746a893f2', workspace: root, common: await realpath(join(primary, '.git')), git_dir: await realpath(git(root, 'rev-parse', '--absolute-git-dir')), return_root: primary, session_directory: session, branch: 'spec-test', state: 'active', plan_set_id: 'example' }));
     const { writeExecutionInput } = await import(`file://${join(root, '.harness/src/workflow/execution-input.mjs')}`);
     await writeExecutionInput(root, { schema_version: 1, execution_id: id, skill: 'grilling', scope: '계산기', input_refs: [], context: { worktree_ref: ref, stage_id: 'grilling', provider: 'claude-code' } }, 'example');
-    const native = join(root, '.codex/scripts/harness-native-stage.mjs');
+    const native = join(root, '.harness/scripts/harness-native-stage.mjs');
     const base = ['--root', root, '--worktree-ref', ref, '--execution-id', id];
     const start = JSON.parse(execFileSync(process.execPath, [native, 'start', ...base], { cwd: root, encoding: 'utf8' }));
     assert.equal(start.binding.provider, 'claude-code');

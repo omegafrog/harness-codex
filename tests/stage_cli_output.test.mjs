@@ -15,7 +15,7 @@ const REQUEST = '게시글 삭제 기능을 추가해줘';
 const NATIVE = 'harness-native-stage.mjs';
 const PREPARE = 'harness-prepare-input.mjs';
 const bytes = (text) => Buffer.byteLength(text);
-const exec = (workspace, script, args = [], input) => spawnSync(process.execPath, [join(workspace, '.codex/scripts', script), ...args], { cwd: workspace, encoding: 'utf8', input });
+const exec = (workspace, script, args = [], input) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', script), ...args], { cwd: workspace, encoding: 'utf8', input });
 const ok = (result) => { assert.equal(result.status, 0, result.stderr || result.stdout); return JSON.parse(result.stdout); };
 // A refusal is one JSON object: what happened, why, and the exact next step or the decision the user makes.
 function assertActionable(body) {
@@ -30,7 +30,7 @@ const refusal = (result, code) => {
   assertActionable(body);
   return body;
 };
-// Runs a printed `node .codex/scripts/<script> ...` command the way the orchestrator does, filling the agent placeholder.
+// Runs a printed `node .harness/scripts/<script> ...` command the way the orchestrator does, filling the agent placeholder.
 const runPrinted = (workspace, command, agentId = 'agent-1') => {
   const parts = command.replace('<agent_id>', agentId).split(' ');
   assert.equal(parts[0], 'node', command);
@@ -96,7 +96,7 @@ test('an installed stage honors an explicit model and effort and refuses a misma
   assert.deepEqual(inspected.observed_bindings, [{ model: selected.model, reasoning_effort: selected.reasoning_effort, turn_id: 'turn' }]);
   assert.equal(ok(runPrinted(workspace, launched.next.finish)).code, 'OK');
   assert.equal(treeGit('status', '--short', '-uall'), '');
-  const asset = '.codex/scripts/harness-native-stage.mjs';
+  const asset = '.harness/scripts/harness-native-stage.mjs';
   await unlink(join(workspace, asset));
   assert.ok((await runDoctor({ root: workspace })).diagnostics.some(({ code, path }) => code === 'execution_asset_missing' && path === join(workspace, asset)));
   await writeFile(join(workspace, 'app.txt'), 'application edit\n');
@@ -122,7 +122,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
   assert.deepEqual(Object.keys(prepared), ['status', 'execution_id', 'stage_id', 'from_stage', 'from_code', 'next']);
   assert.equal(prepared.status, 'prepared');
   assert.equal(prepared.from_stage, 'stakeholder-analysis');
-  assert.equal(prepared.next, `node .codex/scripts/${NATIVE} start --execution-id ${prepared.execution_id}`);
+  assert.equal(prepared.next, `node .harness/scripts/${NATIVE} start --execution-id ${prepared.execution_id}`);
   assert.ok(bytes(compact.stdout) <= 500, `prepare is ${bytes(compact.stdout)} bytes`);
   assert.ok(bytes(compact.stdout) * 3 < bytes(full.stdout), 'prepare is a third of its verbose size or less');
 
@@ -138,7 +138,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
 
   // bind and finish.
   const bound = ok(exec(workspace, NATIVE, ['bind', '--execution-id', prepared.execution_id, '--agent-id', 'agent-1']));
-  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1', receive_command: `node .codex/scripts/${NATIVE} receive --execution-id ${prepared.execution_id} --agent-id 'agent-1'` });
+  assert.deepEqual(bound, { status: 'running', execution_id: prepared.execution_id, agent_id: 'agent-1', receive_command: `node .harness/scripts/${NATIVE} receive --execution-id ${prepared.execution_id} --agent-id 'agent-1'` });
   await submitStage({ stage, started }, { summary: SKIP(analysis) });
   const finishOutput = exec(workspace, NATIVE, ['finish', '--execution-id', prepared.execution_id]);
   const finished = ok(finishOutput);
@@ -182,7 +182,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const primaryGit = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
 
   // The managed module ships: it is in the installed lock, Git ignores it and Doctor requires it.
-  const lock = JSON.parse(await readFile(join(primary, '.codex/harness-lock.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(join(primary, '.harness/harness-lock.json'), 'utf8'));
   assert.ok(lock.files['.harness/src/workflow/stage-cli.mjs'], 'fresh install records the module');
   assert.match(primaryGit('check-ignore', '-v', '.harness/src/workflow/stage-cli.mjs'), /info\/exclude/);
   assert.equal(await readFile(join(workspace, '.harness/src/workflow/stage-cli.mjs'), 'utf8'), await readFile(join(sourceRoot, '.harness/src/workflow/stage-cli.mjs'), 'utf8'));
@@ -195,8 +195,8 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   assert.equal(launched.binding.model, 'codex-implementation');
   assert.equal(launched.binding.reasoning_effort, 'medium');
   for (const path of [launched.guide, launched.input_path, launched.schema_path]) assert.ok(existsSync(path), path);
-  assert.equal(launched.next.bind, `node .codex/scripts/${NATIVE} bind --execution-id ${launched.execution_id} --agent-id <agent_id>`);
-  assert.equal(launched.next.finish, `node .codex/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
+  assert.equal(launched.next.bind, `node .harness/scripts/${NATIVE} bind --execution-id ${launched.execution_id} --agent-id <agent_id>`);
+  assert.equal(launched.next.finish, `node .harness/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
   assert.ok(bytes(output.stdout) <= 1700, `launch is ${bytes(output.stdout)} bytes`);
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.stages['stakeholder-analysis'].status, 'running');
@@ -221,7 +221,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   assert.match(status, /^ M app\.txt$/m);
   assert.doesNotMatch(status, /\.io\/|\.harness\/|\.codex\/|\.claude\/|\.agents\//);
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application change in progress\n');
-  for (const path of ['.harness/src/workflow/stage-cli.mjs', '.codex/scripts/harness-native-stage.mjs', '.io/runtime/orchestrator/state.json']) assert.match(treeGit('check-ignore', '-v', path), /exclude/, path);
+  for (const path of ['.harness/src/workflow/stage-cli.mjs', '.harness/scripts/harness-native-stage.mjs', '.io/runtime/orchestrator/state.json']) assert.match(treeGit('check-ignore', '-v', path), /exclude/, path);
   assert.equal(primaryGit('status', '--short', '--untracked-files=all').trim(), '');
 
   // The next stage launches from the compact transition, again in one call.
@@ -258,7 +258,7 @@ test('update restores the output module of an installed consumer and Doctor requ
   const module = '.harness/src/workflow/stage-cli.mjs';
   const git = (...args) => spawnSync('git', ['-C', primary, ...args], { encoding: 'utf8' }).stdout;
   await unlink(join(primary, module));
-  const lockPath = join(primary, '.codex/harness-lock.json');
+  const lockPath = join(primary, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   delete lock.files[module];
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
@@ -281,7 +281,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   // Order guard: the stale instruction is named, with the stage the flow needs and its own next step.
   const order = refusal(exec(workspace, PREPARE, ['--stage-id', 'event-storming']), 'STAGE_ORDER');
   assert.match(order.error, /event-storming cannot start before stakeholder-analysis/);
-  assert.equal(order.next[0], `node .codex/scripts/${NATIVE} launch --stage-id stakeholder-analysis`);
+  assert.equal(order.next[0], `node .harness/scripts/${NATIVE} launch --stage-id stakeholder-analysis`);
   assert.equal(refusal(exec(workspace, NATIVE, ['launch', '--stage-id', 'event-storming']), 'STAGE_ORDER').next[0], order.next[0], 'launch passes the explained refusal on unchanged');
 
   // Arguments and workspace.
@@ -301,7 +301,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   const notStarted = refusal(exec(workspace, NATIVE, ['finish', '--execution-id', prepared.execution_id]), 'NOT_RUNNING');
   assert.match(ids(notStarted), /harness-context\.mjs/);
   const unbound = refusal(exec(workspace, NATIVE, ['finish', '--execution-id', id]), 'NOT_BOUND');
-  assert.equal(unbound.next[0], `node .codex/scripts/${NATIVE} bind --execution-id ${id} --agent-id <agent_id>`);
+  assert.equal(unbound.next[0], `node .harness/scripts/${NATIVE} bind --execution-id ${id} --agent-id <agent_id>`);
   // The stage is running now: it is not prepared or started twice.
   const pending = refusal(exec(workspace, PREPARE, ['--stage-id', 'stakeholder-analysis']), 'STAGE_RUNNING');
   assert.ok(pending.next.some((step) => step.includes(`inspect --execution-id ${id}`)));
@@ -366,7 +366,7 @@ test('every error the orchestrator can hit in the stage flow says what happened,
 });
 
 test('the explanation catalogue covers the errors the stage commands throw and each explanation leaves a next step', async () => {
-  const files = ['.harness/src/workflow/stage-input.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/stage-takeover.mjs', '.harness/src/workflow/execution-state.mjs', '.harness/src/workflow/worktree-stages.mjs', '.codex/scripts/harness-prepare-input.mjs', '.codex/scripts/harness-native-stage.mjs', '.harness/src/workflow/cli-context.mjs', '.harness/src/workflow/execution-input.mjs', '.harness/src/workflow/tactical-tickets.mjs'];
+  const files = ['.harness/src/workflow/stage-input.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/stage-takeover.mjs', '.harness/src/workflow/execution-state.mjs', '.harness/src/workflow/worktree-stages.mjs', '.harness/scripts/harness-prepare-input.mjs', '.harness/scripts/harness-native-stage.mjs', '.harness/src/workflow/cli-context.mjs', '.harness/src/workflow/execution-input.mjs', '.harness/src/workflow/tactical-tickets.mjs'];
   // Internal integrity failures name no recovery the orchestrator can run; they fall back to a report-to-user decision.
   const INTEGRITY = /^(Invalid process identity|Invalid workflow state schema|Workflow reference mismatch|Workflow already active|Current stage is not|Current workflow stage is not completed|Recovery target|Stage execution changed|Invalid terminal transition|Invalid orchestrator session|Unsafe|Invalid, duplicate|Invalid canonical|Invalid restart|Invalid interrupted|Cannot (archive|recover|establish)|Unknown interrupted|Stage workspace must|Planning workspace|Producer|Execution session|Restart input session|Invalid active worktree|Invalid execution input identity|Canonical worktree|Invalid E2E|Invalid test defect|Invalid deferred|Invalid ID|Cannot verify|Blocked implementation result|Legacy SUBTASK_REQUIRED|Multiple restart|Spec approval|Pending answers|Recorded decision|Dependency incomplete|Native output|Native agent|Native subagent (output|binding is)|Reconciliation|Input|Restart archive|Archived restart|Worktree reference does not match workflow|harness-.*printed no result)/;
   const messages = new Set();

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const cli = fileURLToPath(new URL('../.codex/scripts/harness-context.mjs', import.meta.url));
+const cli = fileURLToPath(new URL('../.harness/scripts/harness-context.mjs', import.meta.url));
 
 test('entry reports setup and rejects a session whose transcript belongs to another workspace', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'harness-entry-'));

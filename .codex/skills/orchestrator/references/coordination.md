@@ -4,7 +4,7 @@ stage 작업자의 반환 계약(status·code 조합, 질문 반환, 출력 파�
 
 사용자에게 질문을 제시할 때 질문 도구에는 `title`과 문자열 options만 전달하고 결과 객체를 그대로 전달하지 않는다.
 
-실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. stage의 모델·effort는 [실행 배정](dispatch.md#실행-배정)에서 지정한 사용자 값, worktree binding, setup tier 순으로 정한다. setup의 네 tier 중 어느 값을 쓸지는 skill 문서 frontmatter의 `model_tier`가 정하고 workflow stage의 선택적 `model_tier`가 덮어쓴다. stage 밖에서 배정하는 보조 작업자는 `node .codex/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill <skill>`로 기본값을 확인하고, 사용자 지정 범위에 포함되면 지정값을 우선한다. skill은 사용자 결정과 workflow 단계 전환을 caller에 반환한다.
+실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. stage의 모델·effort는 [실행 배정](dispatch.md#실행-배정)에서 지정한 사용자 값, worktree binding, setup tier 순으로 정한다. setup의 네 tier 중 어느 값을 쓸지는 skill 문서 frontmatter의 `model_tier`가 정하고 workflow stage의 선택적 `model_tier`가 덮어쓴다. stage 밖에서 배정하는 보조 작업자는 `node .harness/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill <skill>`로 기본값을 확인하고, 사용자 지정 범위에 포함되면 지정값을 우선한다. skill은 사용자 결정과 workflow 단계 전환을 caller에 반환한다.
 
 For an assigned stage, the caller starts a native subagent and hands it the selected internal GUIDE path and current input path. Load linked procedures only when their phase begins; do not preload later-phase references. On same-session resume, continue from new answers or feedback and the current phase without rereading unchanged entry instructions. If a new session or context compaction leaves required rules unavailable, reload the current phase's guide and authoritative references before proceeding.
 

@@ -6,15 +6,15 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { writeGuardDecision, shellWrites, patchFiles, ORCHESTRATOR_DOCUMENTS } from '../.codex/scripts/harness-write-guard.mjs';
-import { codexWriteGuardHook, codexHookTrustHash, inspectCodexHookTrust, syncCodexSubagentHook } from '../.harness/src/workflow/providers/codex.mjs';
+import { writeGuardDecision, shellWrites, patchFiles, ORCHESTRATOR_DOCUMENTS } from '../.harness/scripts/harness-write-guard.mjs';
+import { codexWriteGuardHook, codexHookTrustHash, inspectCodexHookTrust, syncCodexSubagentHook } from '../.codex/harness/providers/codex.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { inspectClaudeOrchestratorHook, syncClaudeOrchestratorHook } from '../.claude/harness/installer/claude-orchestrator-hook.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const guardScript = join(sourceRoot, '.codex/scripts/harness-write-guard.mjs');
+const guardScript = join(sourceRoot, '.harness/scripts/harness-write-guard.mjs');
 const patch = (...lines) => `*** Begin Patch\n${lines.join('\n')}\n*** End Patch`;
 const noStage = { ...process.env };
 delete noStage.HARNESS_STAGE_EXECUTION_ID;
@@ -44,7 +44,7 @@ test('Codex apply_patch writes to product code, tests and contracts are denied w
       ['*** Delete File: src/old.js'],
       ['*** Update File: src/a.js', '*** Move to: src/b.js'],
       ['*** Add File: docs/architecture/domain-model.md', '+# Model'],
-      ['*** Update File: .codex/scripts/harness-agent-run.mjs', '@@', '-a', '+b'],
+      ['*** Update File: .harness/scripts/harness-agent-run.mjs', '@@', '-a', '+b'],
       // One allowed file does not excuse a protected one in the same patch.
       ['*** Add File: .io/runtime/plans/p/checkpoint.md', '+ok', '*** Add File: src/sneaky.js', '+x'],
     ]) {
@@ -89,7 +89,7 @@ test('Claude Code Edit, Write, MultiEdit and NotebookEdit follow the same rule',
     ]) assert.match(decide(root, tool, input) ?? '', /orchestrator main session does not write/, `${tool} ${JSON.stringify(input).slice(0, 60)}`);
     for (const [tool, input] of [
       ['Write', { file_path: `${root}/.io/runtime/orchestrator/plan-note.md`, content: 'x' }],
-      ['Edit', { file_path: `${root}/docs/agents/testing-guidance.md`, old_string: 'a', new_string: 'b' }],
+      ['Edit', { file_path: `${root}/.harness/agents/testing-guidance.md`, old_string: 'a', new_string: 'b' }],
       ['Write', { file_path: '/tmp/outside-note.md', content: 'x' }],
     ]) assert.equal(decide(root, tool, input), null, `${tool} ${input.file_path}`);
     // Reads and other tools are never guarded.
@@ -108,9 +108,9 @@ test('shell commands: clearly identifiable writes to protected paths are denied,
     ];
     for (const command of denied) assert.match(decide(root, 'Bash', { command }) ?? '', /orchestrator main session does not write/, command);
     const allowed = [
-      'git status --short', 'node .codex/scripts/harness-context.mjs', 'node .codex/scripts/harness-agent-run.mjs --background true > .io/runtime/run.log 2>&1 &', 'echo hi | tee .io/runtime/x.log',
+      'git status --short', 'node .harness/scripts/harness-context.mjs', 'node .harness/scripts/harness-agent-run.mjs --background true > .io/runtime/run.log 2>&1 &', 'echo hi | tee .io/runtime/x.log',
       'ls src > /dev/null', 'npm test 2>&1 | tail -20', 'echo "a > src/not-a-redirect.js"', "echo 'x > docs/contracts/product.md'", 'cat <<EOF\n> src/inside-a-heredoc.js\nEOF', 'git diff > /tmp/review.diff',
-      'sed -n "1,20p" src/App.java', 'sed "s/a/b/" src/App.java', 'cp src/App.java /tmp/App.java', 'echo x > "$OUTPUT"', 'echo x > $(mktemp)', 'cd .io && echo x > note.md', 'tee docs/agents/testing-guidance.md < /tmp/t',
+      'sed -n "1,20p" src/App.java', 'sed "s/a/b/" src/App.java', 'cp src/App.java /tmp/App.java', 'echo x > "$OUTPUT"', 'echo x > $(mktemp)', 'cd .io && echo x > note.md', 'tee .harness/agents/testing-guidance.md < /tmp/t',
       'cat docs/contracts/product.md', 'ls -la docs/contracts', 'node --test tests/*.test.mjs',
     ];
     for (const command of allowed) assert.equal(decide(root, 'Bash', { command }), null, command);
@@ -171,8 +171,10 @@ test('the Codex user hook runs the script only for the main session of an active
   const plain = await workflowWorkspace({ record: false });
   try {
     for (const workspace of [root, plain]) {
+      await mkdir(join(workspace, '.harness/scripts'), { recursive: true });
+      await copyFile(guardScript, join(workspace, '.harness/scripts/harness-write-guard.mjs'));
       await mkdir(join(workspace, '.codex/scripts'), { recursive: true });
-      await copyFile(guardScript, join(workspace, '.codex/scripts/harness-write-guard.mjs'));
+      await copyFile(join(sourceRoot, '.codex/scripts/harness-write-guard.mjs'), join(workspace, '.codex/scripts/harness-write-guard.mjs'));
     }
     const command = codexWriteGuardHook().command;
     const run = (cwd, event, env = noStage) => spawnSync('sh', ['-c', command], { cwd, input: JSON.stringify(event), encoding: 'utf8', env });
@@ -205,7 +207,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
   try {
     const settingsPath = join(root, '.claude/settings.local.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.codex/scripts/harness-write-guard.mjs"', timeout: 10 }] }, { matcher: 'Agent', hooks: [{ type: 'command', command: 'HARNESS_NATIVE_ADMISSION=1 node "${CLAUDE_PROJECT_DIR}/.codex/scripts/harness-agent-admission.mjs"', timeout: 10 }] }]);
+    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.harness/scripts/harness-write-guard.mjs"', timeout: 10 }] }, { matcher: 'Agent', hooks: [{ type: 'command', command: 'HARNESS_NATIVE_ADMISSION=1 node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-agent-admission.mjs"', timeout: 10 }] }]);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
     const codes = async () => (await runDoctor({ root, sourceRoot })).diagnostics.map((item) => item.code);
     assert.equal((await codes()).includes('claude_orchestrator_hook_missing'), false);
@@ -232,7 +234,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
 
     // The installed script blocks the orchestrator session of an active worktree, and nothing Harness owns shows in git status.
     await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ schema_version: 1, state: 'active', workspace: root, session_directory: join(root, '.io') }));
-    const installed = join(root, '.codex/scripts/harness-write-guard.mjs');
+    const installed = join(root, '.harness/scripts/harness-write-guard.mjs');
     const run = (event, env = noStage) => spawnSync(process.execPath, [installed], { cwd: root, input: JSON.stringify(event), encoding: 'utf8', env });
     assert.equal(JSON.parse(run(pre(root, 'Write', { file_path: `${root}/src/app.js`, content: 'x' })).stdout).hookSpecificOutput.permissionDecision, 'deny');
     assert.equal(run(pre(root, 'Write', { file_path: `${root}/.io/note.md`, content: 'x' })).stdout, '');
@@ -242,7 +244,7 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
     assert.match(status, /src\/app\.js/, 'application-owned files stay visible');
     assert.doesNotMatch(status, /\.io\/|\.harness\/src|\.codex\/|\.claude\//, 'Harness-generated files stay out');
-    for (const path of ['.codex/scripts/harness-write-guard.mjs', '.claude/settings.local.json']) assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', path], { encoding: 'utf8' }), /\.git\/info\/exclude/, path);
+    for (const path of ['.harness/scripts/harness-write-guard.mjs', '.claude/settings.local.json']) assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', path], { encoding: 'utf8' }), /\.git\/info\/exclude/, path);
     // Doctor lists the guard script among the required execution assets.
     await rm(installed);
     assert.ok((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing' && /harness-write-guard\.mjs/.test(item.message)));
@@ -255,8 +257,8 @@ test('installed Codex consumer: Doctor reports the user-level write guard as mis
   const previousHome = process.env.CODEX_HOME;
   process.env.CODEX_HOME = home;
   try {
-    assert.ok(await readFile(join(root, '.codex/scripts/harness-write-guard.mjs'), 'utf8').then((text) => text.includes('writeGuardDecision')), 'the script is a managed asset');
-    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.codex/scripts/harness-write-guard.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude/);
+    assert.ok(await readFile(join(root, '.harness/scripts/harness-write-guard.mjs'), 'utf8').then((text) => text.includes('writeGuardDecision')), 'the script is a managed asset');
+    assert.match(execFileSync('git', ['-C', root, 'check-ignore', '-v', '.harness/scripts/harness-write-guard.mjs'], { encoding: 'utf8' }), /\.git\/info\/exclude/);
     const guardDiagnostic = async () => (await runDoctor({ root, sourceRoot })).diagnostics.find((item) => item.code === 'codex_write_guard_hook_untrusted');
     assert.match((await guardDiagnostic()).message, /missing from the Codex user hooks; run setup/);
 

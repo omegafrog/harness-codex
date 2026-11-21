@@ -78,7 +78,7 @@ export async function assertPrStageReadiness({ root, state, stageId }) {
 
 export async function resolveStageSkill({ root, stageId }) {
   if (stageId === 'spec-me') throw new Error('spec-me has been removed; continue from context-boundary with tactical-to-code');
-  const workflows = await readdir(join(root, '.codex/workflows'), { withFileTypes: true });
+  const workflows = await readdir(join(root, '.harness/workflows'), { withFileTypes: true });
   const matches = [];
   for (const file of workflows) {
     if (!file.isFile() || !/\.ya?ml$/i.test(file.name)) continue;
@@ -299,7 +299,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // feedback. The state claim marks downstream results stale in the same transaction that starts the owner.
   let reopenPlan = null;
   if (reopenFor !== null) {
-    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .codex/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
+    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .harness/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
     reopenPlan = await resolveReopen({ root, session, state, ownerStage: stageId, blockedExecutionId: reopenFor });
     feedback = reopenPlan.feedback;
   }
@@ -572,7 +572,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         if (testDefectFailure && !e2eReturn.result.artifacts.some((item) => item.base === 'session' && item.path === testDefectFailure && item.kind === 'e2e_failure')) throw new Error('Test defect evidence is not owned by the failed E2E stage');
       }
       if (!['failed', 'blocked', 'interrupted'].includes(receipt.status) || !receipt.profile_id || !receipt.finished_at) throw new Error('E2E failure receipt is not a finished failure');
-      if (!/^[a-f0-9]{64}$/.test(receipt.config_hashes?.['docs/agents/execution.json'] || '')) throw new Error('E2E failure receipt lacks profile evidence');
+      if (!/^[a-f0-9]{64}$/.test(receipt.config_hashes?.['.harness/agents/execution.json'] || '')) throw new Error('E2E failure receipt lacks profile evidence');
       const review = await readSkillSessionJson({ root, session_directory: taskSession, path: `runtime/reviews/implementation-${planId}-evidence.json` });
       const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
       if (review.review_input?.implementation_commit_sha !== head || (receipt.head && receipt.head !== head)) throw new Error('E2E failure target commit is stale');
@@ -666,7 +666,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const request = await readSkillSessionJson({ root, session_directory: taskSession, path: e2eRequest });
     const head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     if (request.target_commit !== head || !Array.isArray(request.scenarios) || !request.scenarios.length || !request.scenarios.every((item) => typeof item === 'string' && item.trim()) || !request.approval_answer || !request.profile_id || !Number.isInteger(request.timeout_ms) || request.timeout_ms <= 0) throw new Error('E2E request target, scenarios, approval or timeout is invalid');
-    const manifestText = await readFile(join(root, 'docs/agents/execution.json'));
+    const manifestText = await readFile(join(root, '.harness/agents/execution.json'));
     if (request.manifest_sha256 !== createHash('sha256').update(manifestText).digest('hex')) throw new Error('E2E request execution profile has changed');
     const manifest = JSON.parse(manifestText);
     const profile = manifest.profiles?.[request.profile_id];

@@ -16,14 +16,14 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   execFileSync('git', ['init', '-q', root]);
   await protectLocalInstallArtifacts(root, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: root, initialize: true });
-  const guidePath = join(root, '.codex/internal-skills/to-ticket/references/github-batch-publish.md');
-  const publisherPath = join(root, '.codex/internal-skills/tracker-publish/GUIDE.md');
-  const templatePath = join(root, '.codex/internal-skills/to-ticket/references/github-issue-template.md');
-  const implementationPath = join(root, '.codex/internal-skills/implement-wrapper/references/tracker/github.md');
-  const implementationSkillPath = join(root, '.codex/internal-skills/implement-wrapper/GUIDE.md');
-  const productTemplatePath = join(root, '.codex/internal-skills/product-spec/references/template.md');
-  const diagramGuidePath = join(root, '.codex/internal-skills/plantuml-diagrams/GUIDE.md');
-  const dddGuidePath = join(root, '.codex/internal-skills/ddd-design/GUIDE.md');
+  const guidePath = join(root, '.harness/internal-skills/to-ticket/references/github-batch-publish.md');
+  const publisherPath = join(root, '.harness/internal-skills/tracker-publish/GUIDE.md');
+  const templatePath = join(root, '.harness/internal-skills/to-ticket/references/github-issue-template.md');
+  const implementationPath = join(root, '.harness/internal-skills/implement-wrapper/references/tracker/github.md');
+  const implementationSkillPath = join(root, '.harness/internal-skills/implement-wrapper/GUIDE.md');
+  const productTemplatePath = join(root, '.harness/internal-skills/product-spec/references/template.md');
+  const diagramGuidePath = join(root, '.harness/internal-skills/plantuml-diagrams/GUIDE.md');
+  const dddGuidePath = join(root, '.harness/internal-skills/ddd-design/GUIDE.md');
   const plannerProfiles = ['.codex/agents/to_ticket.toml', '.claude/agents/to_ticket.md'];
   const checkPlanningGuidance = async () => {
     for (const path of plannerProfiles) {
@@ -31,7 +31,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
       assert.match(profile, /internal-skills\/to-ticket\/GUIDE\.md/);
       assert.doesNotMatch(profile, /\.(?:codex|agents|claude)\/skills\/to-ticket\/SKILL\.md/);
     }
-    const guide = await readFile(join(root, '.codex/internal-skills/to-ticket/GUIDE.md'), 'utf8');
+    const guide = await readFile(join(root, '.harness/internal-skills/to-ticket/GUIDE.md'), 'utf8');
     assert.match(guide, /their absence or empty content is not a plan-authoring prerequisite/);
     assert.match(guide, /Preserve the actual workspace identity, the settled tactical design and decision documents/);
     assert.doesNotMatch(guide, /Product and Architecture Specs|approved Specs/);
@@ -60,14 +60,14 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await checkArchitectureGuidance();
   await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
   await checkPlanningGuidance();
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), '');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), '');
   // A previous managed release must update both native profiles without force.
-  const lockPath = join(root, '.codex/harness-lock.json');
+  const lockPath = join(root, '.harness/harness-lock.json');
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
   for (const path of plannerProfiles) {
     const native = path.startsWith('.claude/') ? '.claude' : '.agents';
-    const old = (await readFile(join(root, path), 'utf8')).replaceAll('.codex/internal-skills/to-ticket/GUIDE.md', `${native}/skills/to-ticket/SKILL.md`);
+    const old = (await readFile(join(root, path), 'utf8')).replaceAll('.harness/internal-skills/to-ticket/GUIDE.md', `${native}/skills/to-ticket/SKILL.md`);
     await writeFile(join(root, path), old);
     lock.files[path].installed_sha256 = createHash('sha256').update(old).digest('hex');
     lock.files[path].upstream_sha256 = lock.files[path].installed_sha256;
@@ -77,7 +77,7 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   await updateProject({ sourceRoot, targetRoot: root });
   await checkPlanningGuidance();
   await assert.rejects(readFile(join(root, 'AGENTS.md')), { code: 'ENOENT' });
-  assert.equal(await readFile(join(root, 'docs/agents/EXEC.md'), 'utf8'), '');
+  assert.equal(await readFile(join(root, '.harness/agents/EXEC.md'), 'utf8'), '');
   const guide = await readFile(guidePath, 'utf8');
   assert.match(guide, /필요한 비테스트 검증을 템플릿의 해당 위치에 옮겨 적는다/);
   assert.match(guide, /GitHub Issue 본문 템플릿/);
@@ -106,19 +106,19 @@ test('installed and updated ticket guidance and renderer retain relations and ve
   assert.throws(() => renderSplitPlanIssue({ ...plan, design: [] }), /plan.design|design must be a non-empty list/);
   const { verification, ...legacyPlan } = plan;
   assert.doesNotMatch(renderSplitPlanIssue(legacyPlan), /필요한 비테스트 검증/);
-  await mkdir(join(root, 'docs/agents'), { recursive: true });
-  await writeFile(join(root, 'docs/agents/EXEC.md'), 'project-owned');
+  await mkdir(join(root, '.harness/agents'), { recursive: true });
+  await writeFile(join(root, '.harness/agents/EXEC.md'), 'project-owned');
   await writeFile(join(root, 'app.js'), 'application change');
   await writeFile(join(root, 'AGENTS.md'), 'project-owned instructions');
   const status = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
-  assert.match(status, /docs\/agents\/EXEC\.md/);
+  assert.match(status, /\.harness\/agents\/EXEC\.md/);
   assert.match(status, /CONTEXT\.md/);
   assert.match(status, /app\.js/);
   assert.match(status, /AGENTS\.md/);
   assert.equal(await readFile(join(root, 'AGENTS.md'), 'utf8'), 'project-owned instructions');
   assert.equal(await readFile(join(root, 'app.js'), 'utf8'), 'application change');
   assert.doesNotMatch(status, /\.harness\/src\/|\.agents\/skills\//);
-  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.codex/internal-skills/to-ticket/references/github-batch-publish.md', ...plannerProfiles], { cwd: root });
+  execFileSync('git', ['check-ignore', '-v', '.harness/src/tracker/render.mjs', '.harness/internal-skills/to-ticket/references/github-batch-publish.md', ...plannerProfiles], { cwd: root });
   const doctor = await runDoctor({ root, sourceRoot });
   assert.equal(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
 });

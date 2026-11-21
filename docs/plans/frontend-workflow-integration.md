@@ -124,8 +124,8 @@ provider adapter가 실행 경로에 caller identity를 전달하고, 명시적 
 
 | 근거 | 현재 동작 | 통합에 필요한 변경 |
 |---|---|---|
-| `.codex/internal-skills/frontend-design/GUIDE.md` | 참고 사례 조사, design brief, Figwright, 구현·시각 리뷰·수정 흐름이 이미 있다 | 디자인 단계가 승인 스펙을 만들도록 인계하고, 구현·리뷰는 공통 소유 단계로 이동 |
-| `.codex/workflows/frontend-design.yaml` | design → implementation → visual_review의 독립 workflow | 기존 진입점을 공통 흐름으로 이전한 뒤 중복 실행 경로 제거 |
+| `.harness/internal-skills/frontend-design/GUIDE.md` | 참고 사례 조사, design brief, Figwright, 구현·시각 리뷰·수정 흐름이 이미 있다 | 디자인 단계가 승인 스펙을 만들도록 인계하고, 구현·리뷰는 공통 소유 단계로 이동 |
+| `.harness/workflows/frontend-design.yaml` | design → implementation → visual_review의 독립 workflow | 기존 진입점을 공통 흐름으로 이전한 뒤 중복 실행 경로 제거 |
 | `AGENTS.md`, orchestrator의 capability-routing | 새 화면·대규모 재설계는 독립 frontend workflow, implement 등의 하위 단계 호출 금지 | 현재 규칙을 명시적으로 개정해야 한다. 기존 규칙을 둔 채 중첩 호출하지 않는다 |
 | `spec-me.yaml`, `to-ticket.yaml`, `implement-wrapper.yaml` | 스펙·계획·코드 리뷰는 있지만 UI 계약을 연결하는 조건부 단계가 없다 | UI 설계·검증의 적용 여부와 인계를 정본 snapshot에 연결 |
 | `frontend-visual-review/GUIDE.md` | 실제 screenshot, 반응형·상태·접근성 검사 요구 | 공통 완료 gate가 검증할 구조화된 evidence와 reviewer provenance 연결 |
@@ -568,7 +568,7 @@ review snapshot에는 OpenAPI 내용과 hash, Orval 설정·고정 버전, 실�
 
 생성 wire 타입은 domain Entity가 아니다. 기본 frontend client·Zod 출력은 `src/<context>/infra/http/generated/`에 두고, 선택한 UI hooks는 해당 Context의 `ui`에 배치한다. 기존 frontend 프로젝트에 도입할 때 현재 HTTP client·인증·에러 처리와 caller를 먼저 확인하고 Orval 연결에 필요한 최소 이전만 수행한다. 생성 코드를 직접 편집하거나 같은 HTTP DTO를 수기로 재정의하지 않는다.
 
-OpenAPI snapshot·Orval/Redocly 설정·의존성 lockfile·필요한 generated source는 프로젝트 소유다. 생성 source의 commit 또는 build 재생성 정책은 해당 Architecture Spec에 하나로 명시하고, 고정 입력으로 재현되는지 CI에서 확인한다. 실제 명령·서버 준비·검사 실패 해석은 `docs/agents/EXEC.md`에 기록한다. Harness 설치·업데이트가 이 파일을 강제로 덮어쓰거나 ignore하지 않는다. 구체 exporter·버전·client runtime 지원은 구현 대상 stack에서 확인하되 이 확인을 generator 재선정으로 취급하지 않는다.
+OpenAPI snapshot·Orval/Redocly 설정·의존성 lockfile·필요한 generated source는 프로젝트 소유다. 생성 source의 commit 또는 build 재생성 정책은 해당 Architecture Spec에 하나로 명시하고, 고정 입력으로 재현되는지 CI에서 확인한다. 실제 명령·서버 준비·검사 실패 해석은 `.harness/agents/EXEC.md`에 기록한다. Harness 설치·업데이트가 이 파일을 강제로 덮어쓰거나 ignore하지 않는다. 구체 exporter·버전·client runtime 지원은 구현 대상 stack에서 확인하되 이 확인을 generator 재선정으로 취급하지 않는다.
 
 아래는 2026-11-12 원 제작자 저장소/공식 문서 조사 결과다. 설치·성능 비교를 실제 수행한 결과는 아니다. 이 세션에는 Awwwards·Figwright MCP 도구가 노출되어 있지만 실제 연결 상태와 기능 범위는 별도 확인 대상이다.
 
@@ -672,7 +672,7 @@ OpenAPI snapshot·Orval/Redocly 설정·의존성 lockfile·필요한 generated 
 | 구현·리뷰 | `implement-wrapper`, `implement`, frontend 관련 GUIDE·profile, code-review·repair 문서 | 공통 소유자로 구현·수정·review dispatch 통일 |
 | runtime | `.harness/src/workflow/{loader,stage-gates,stage-input,output-schema,implementation-completion,completion}.mjs`, wrapper review/checkpoint seam | 조건, 결과 schema, 최신 evidence, 독립성·완료 검증 |
 | 배포 | `.harness/src/installer/{update,transforms,local-exclude,legacy-assets}.mjs`, `.harness/src/doctor/doctor.mjs` | discovery·provider 변환·구형 자산 이전·필수 inventory/diagnostics |
-| 정본·실행 | `docs/architecture/enforcement.md`, 현행 통합 계약, `docs/agents/EXEC.md` | 자동/수동 판정 경계와 명령·서버·준비·정리 문서화 |
+| 정본·실행 | `docs/architecture/enforcement.md`, 현행 통합 계약, `.harness/agents/EXEC.md` | 자동/수동 판정 경계와 명령·서버·준비·정리 문서화 |
 | 회귀 | workflow loader/gates, plan-review/tracker, review identity/completion, provider install/update 소비자 검사 | 정상 경로와 생략·변조·낡은 evidence 차단 |
 
 위 파일은 변경 후보이며 모두 무조건 수정하는 목록이 아니다. 구현 시작 시 callers·exports·schemas·fixtures를 추적해 실제 영향에 맞춘다. 새 범용 plugin manager나 browser adapter 계층은 만들지 않는다.
@@ -681,7 +681,7 @@ OpenAPI snapshot·Orval/Redocly 설정·의존성 lockfile·필요한 generated 
 
 현재 installer는 internal skills/supporting files·workflow YAML·agent profiles·runtime source를 discovery하고 provider별 경로/agent 형식을 변환한다. 새 문서가 source에 있다는 것만으로 배포 완료로 보지 않고 fresh install과 기존 consumer update 양쪽에서 결과를 검사한다.
 
-Harness 관리 자산은 lock/inventory와 `.git/info/exclude` 경로를 갱신한다. 새 runtime screenshot·cache는 기존 session artifact 위치를 재사용한다. 프로젝트 소유 Product/Architecture Spec, `docs/design/DESIGN.md`, lint 설정, `docs/agents/EXEC.md`, `docs/agents/execution.json`, `docs/contracts/**`는 강제 관리 자산이나 넓은 ignore 패턴에 넣지 않는다.
+Harness 관리 자산은 lock/inventory와 `.git/info/exclude` 경로를 갱신한다. 새 runtime screenshot·cache는 기존 session artifact 위치를 재사용한다. 프로젝트 소유 Product/Architecture Spec, `docs/design/DESIGN.md`, lint 설정, `.harness/agents/EXEC.md`, `.harness/agents/execution.json`, `docs/contracts/**`는 강제 관리 자산이나 넓은 ignore 패턴에 넣지 않는다.
 
 Doctor는 필수 내부 단계/지침 누락, 구형 frontend 실행 경로 잔존, 조건/gate/role 해석 실패를 진단한다. HTTP frontend 통합을 선언한 프로젝트에는 승인 조합의 명령·설정·snapshot 참조 누락을 진단하고, MSW/oasdiff와 선택 MCP·linter는 적용을 선언한 경우에만 readiness를 진단한다. HTTP frontend 통합이 없는 backend-only 프로젝트에 Orval/Zod 누락 오류를 만들지 않는다. 앱 runtime 실행은 Doctor의 기본 검사가 하지 않는다.
 
