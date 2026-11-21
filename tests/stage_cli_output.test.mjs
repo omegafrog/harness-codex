@@ -57,7 +57,7 @@ test('an installed stage honors an explicit model and effort and refuses a misma
   ok(runPrinted(workspace, launched.next.bind, agent));
   await submitStage({ stage, started: launched }, SKIPPED(specPath('stakeholder-analysis.md')));
   const head = treeGit('rev-parse', 'HEAD');
-  refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
+  refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_UNVERIFIED');
 
   const sessions = join(process.env.CODEX_HOME, 'sessions');
   const thread = randomUUID();
@@ -73,16 +73,27 @@ test('an installed stage honors an explicit model and effort and refuses a misma
     { type: 'turn_context', payload: { turn_id: 'turn', model, effort } },
     { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn', last_agent_message: 'fixture complete' } },
   ]);
+  const attest = async (model, effort) => {
+    const directory = join(workspace, '.io/runtime/executions', launched.execution_id);
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, 'native-attestation.jsonl'), `${JSON.stringify({
+      schema_version: 1, execution_id: launched.execution_id, stage_id: stage,
+      parent_session_id: parentId, native_agent_id: agent, thread_id: thread,
+      status: 'captured', turns: [{ turn_id: 'turn', status: 'completed', model, reasoning_effort: effort }],
+    })}\n`);
+  };
   for (const [model, effort] of [['gpt-6.2-astra', 'medium'], ['gpt-6-luna', 'low']]) {
     await worker(model, effort);
+    await attest(model, effort);
     const mismatch = refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
     assert.ok(mismatch.why.includes(`observed ${model}/${effort}`));
     assert.equal(treeGit('rev-parse', 'HEAD'), head);
   }
   await worker(selected.model, selected.reasoning_effort);
+  await attest(selected.model, selected.reasoning_effort);
   const inspected = ok(exec(workspace, NATIVE, ['inspect', '--execution-id', launched.execution_id]));
   assert.deepEqual(inspected.requested_binding, selected);
-  assert.deepEqual(inspected.observed_binding, { model: selected.model, reasoning_effort: selected.reasoning_effort });
+  assert.deepEqual(inspected.observed_bindings, [{ model: selected.model, reasoning_effort: selected.reasoning_effort, turn_id: 'turn' }]);
   assert.equal(ok(runPrinted(workspace, launched.next.finish)).code, 'OK');
   assert.equal(treeGit('status', '--short', '-uall'), '');
   const asset = '.codex/scripts/harness-native-stage.mjs';
