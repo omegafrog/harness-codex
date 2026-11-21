@@ -152,7 +152,7 @@ test('update removes every retired spec-me asset from an installed consumer and 
 
   // What nothing reads any more is neither installed nor required; what a live stage still links stays installed.
   const retiredSkills = [...RETIRED_SKILL_NAMES];
-  assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'beads', 'spec-me']);
+  assert.deepEqual(retiredSkills.sort(), ['architecture-review', 'architecture-spec', 'beads', 'spec-me', ['skill', 'execution'].join('-')].sort());
   for (const path of RETIRED_ASSET_PATHS) assert.equal(await readFile(join(root, path), 'utf8').catch(() => null), null, `fresh install excludes ${path}`);
   for (const name of retiredSkills) assert.equal(await readFile(join(sourceRoot, '.codex/internal-skills', name, 'GUIDE.md'), 'utf8').catch(() => null), null, `source no longer has ${name}`);
   const kept = ['product-spec', 'spec-review', 'technology-selection', 'to-ticket', 'plan-review', 'tracker-publish'].map((name) => `.codex/internal-skills/${name}/GUIDE.md`);
