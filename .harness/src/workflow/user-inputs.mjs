@@ -6,7 +6,7 @@ import { isHarnessUpdateRequest, orchestratorRequest } from './request-routing.m
 import { isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 
 // Approval evidence is read from the provider's own transcript, never from an assistant-written argument.
-export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false }) {
+export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowExplicitPublicationReply = false }) {
   const wanted = String(text || '').trim();
   if (!wanted || !Number.isFinite(Date.parse(since)) || (until && !Number.isFinite(Date.parse(until)))) return false;
   let record;
@@ -67,6 +67,7 @@ export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z'
             if (!item.text.trim().startsWith('<send_user_message_question_reply>')) {
               const request = orchestratorRequest(item.text);
               if (request && !isHarnessUpdateRequest(request)) texts.push(request);
+              else if (allowExplicitPublicationReply && /^(?:승인합니다|승인해요|승인한다고 (?:그냥|걍) (?:진행해|하라고)|발행 승인|발행하세요|발행해 주세요|발행해줘|ㅇ|ㅇㅇ)[.!]*$/u.test(item.text.trim())) texts.push(item.text);
               continue;
             }
             try {

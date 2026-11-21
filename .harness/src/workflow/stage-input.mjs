@@ -315,7 +315,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
   if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
   // The provider transcript must contain the user's reply after the reviewed plan set finished.
-  if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z' }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
+  if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z', allowExplicitPublicationReply: true }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   // The shared contract describes the integrated result, so it is written only after every plan is implemented.
@@ -369,11 +369,31 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (reviewInput.context?.plan_id !== planId) throw new Error('Frontend review belongs to a different ticket');
     input_refs.push({ base: 'session', path: last.result_ref, kind: 'frontend_review_feedback' });
   }
+  // A tactical workflow has no implement-wrapper E2E plan to reopen.
+  // A caller may resubmit the same approved run after a committed test-only correction.
+  let standaloneE2eRetry = false;
+  if (stageId === 'e2e-test' && lastStage === stageId && last.status === 'waiting'
+      && last.code === 'IMPLEMENTATION_REVISION_REQUIRED' && last.result_ref
+      && state.stages?.['tactical-code']?.code === 'OK' && !state.stages?.['implement-wrapper']
+      && feedback && /^runtime\/e2e\/requests\/[A-Za-z0-9._-]+\.json$/.test(e2eRequest || '')) {
+    const oldInput = await readExecutionInput({ root, execution_id: last.execution_id });
+    const originalRefs = oldInput.input_refs.filter((ref) => ref.kind === 'approved_e2e_request' && ref.base === 'session');
+    if (originalRefs.length === 1) {
+      const before = await readSkillSessionJson({ root, session_directory: session, path: originalRefs[0].path });
+      const after = await readSkillSessionJson({ root, session_directory: session, path: e2eRequest });
+      const { target_commit: beforeHead, ...beforeConditions } = before;
+      const { target_commit: afterHead, ...afterConditions } = after;
+      if (/^[a-f0-9]{40}$/.test(beforeHead) && /^[a-f0-9]{40}$/.test(afterHead) && isDeepStrictEqual(beforeConditions, afterConditions)) {
+        const diff = execFileSync('git', ['-C', root, 'diff', '--name-only', '-z', beforeHead, afterHead, '--'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+        standaloneE2eRetry = diff.length > 0 && diff.every((path) => path.startsWith('scripts/e2e/'));
+      }
+    }
+  }
   const requirementsRevision = userRevision && REQUIREMENTS_REVISION_STAGES.includes(stageId);
   const reopensCompletedWork = userRevision && target?.result_ref
     && (requirementsRevision && !(last?.code === 'ENVIRONMENT_UNAVAILABLE' || last?.code === 'DEPENDENCY_INCOMPLETE')
       || target.status === 'completed' && target.code === 'OK' && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status)));
-  if (!reopenPlan && !frontendDesignHandoff && !deferredFrontend && !frontendCorrection && !reopensCompletedWork && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
+  if (!reopenPlan && !frontendDesignHandoff && !deferredFrontend && !frontendCorrection && !reopensCompletedWork && !standaloneE2eRetry && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
     if (allowed[last.code] && allowed[last.code] !== stageId) throw new Error(`Revision must return to ${allowed[last.code]}`);
@@ -582,7 +602,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
-    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
+    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || standaloneE2eRetry || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
     if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
@@ -653,6 +673,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (profile?.purpose !== 'e2e' || profile.timeout_ms !== request.timeout_ms) throw new Error('E2E request does not match the execution profile');
     const orchestratorId = orchestratorSession?.session_id || codexSessionId;
     if (!orchestratorId || !await userSaidAfter({ root, text: request.approval_answer, sessionId: orchestratorId, provider })) throw new Error('E2E request approval was not recorded');
+    // The current request supersedes any approval reference inherited during a retry.
+    // The previous execution input remains available as historical evidence.
+    for (let index = input_refs.length - 1; index >= 0; index -= 1) {
+      if (input_refs[index].kind === 'approved_e2e_request') input_refs.splice(index, 1);
+    }
     input_refs.push({ base: 'session', path: e2eRequest, kind: 'approved_e2e_request', sha256: createHash('sha256').update(await readFile(join(taskSession, e2eRequest))).digest('hex') });
   }
   let plan_review_admission;

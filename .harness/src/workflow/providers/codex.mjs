@@ -51,6 +51,16 @@ const retiredStartup = (item) => item?.type === 'command' && item.statusMessage 
 const retiredGroup = (group) => Array.isArray(group?.hooks) && group.hooks.some(retiredStartup);
 const OWNED_HOOKS = [...SUBAGENT_EVENTS.map((event) => ({ event, status: SUBAGENT_STATUS, handler: codexSubagentHook })), { event: 'PreToolUse', status: FRESH_AGENT_STATUS, handler: codexFreshAgentHook }, { event: 'PreToolUse', status: WRITE_GUARD_STATUS, handler: codexWriteGuardHook }];
 
+// Keep the exact command from the provider-neutral release. Codex invalidates
+// stored trust if an installer rewrites even an equivalent command.
+const compatibleHook = (handler, desired) => {
+  const legacy = desired.command
+    .replace('f="${HARNESS_WORKSPACE_ROOT:-.}/.codex/scripts/', 'r="${HARNESS_WORKSPACE_ROOT:-.}"; f="$r/.codex/scripts/')
+    .replace('f="$r/.codex/scripts/', 'd="$r/.harness/scripts"; [ -d "$d" ] || d="$r/.codex/scripts"; f="$d/');
+  return [desired.command, legacy].some((command) =>
+    codexHookTrustHash('', handler) === codexHookTrustHash('', { ...desired, command }));
+};
+
 export async function syncCodexSubagentHook(env = process.env, { retireStartupOnly = false } = {}) {
   const configuredPath = join(codexHome(env), 'hooks.json');
   // Account managers can share hooks.json by symlink. Write its target so all accounts keep the same file.
@@ -82,7 +92,7 @@ export async function syncCodexSubagentHook(env = process.env, { retireStartupOn
     const want = handler();
     const groups = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
     const owned = groups.flatMap((group) => group.hooks || []).filter((item) => item?.statusMessage === status);
-    if (owned.length === 1 && JSON.stringify(owned[0]) === JSON.stringify(want)) continue;
+    if (owned.length === 1 && compatibleHook(owned[0], want)) continue;
     const kept = groups.map((group) => ({ ...group, hooks: (group.hooks || []).filter((item) => item?.statusMessage !== status) })).filter((group) => group.hooks.length);
     config.hooks[event] = [...kept, { hooks: [want] }];
     changed = true;
