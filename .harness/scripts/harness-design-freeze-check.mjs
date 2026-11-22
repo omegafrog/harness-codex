@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic design-freeze gate: the implementation-design documents (api.md, data.md, ui-handoff.md) add no scope, and every
+// Deterministic design-freeze gate: technology.md settles the implementation stack, the other implementation-design documents add no scope, and every
 // requirement is covered, against requirements.md and tactical-design.md. The runner runs it when tactical-data reports
 // completed/OK and before to-ticket starts; this command runs the same check by hand. The checks live in the workflow module.
 import { readFile, realpath } from 'node:fs/promises';
@@ -9,19 +9,19 @@ import { checkDesignFreeze, checkWorkspaceDesignFreeze } from '../../.harness/sr
 
 export { checkDesignFreeze } from '../../.harness/src/workflow/design-freeze-gate.mjs';
 
-const USAGE = 'Usage: harness-design-freeze-check.mjs --workspace-root <absolute-workspace-root> | --requirements <path> --tactical-design <path> [--api <path>] [--data <path>] [--ui <path>]';
+const USAGE = 'Usage: harness-design-freeze-check.mjs --workspace-root <absolute-workspace-root> | --requirements <path> --tactical-design <path> [--technology <path>] [--api <path>] [--data <path>] [--ui <path>]';
 
 async function main() {
   const args = process.argv.slice(2);
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--workspace-root', '--requirements', '--tactical-design', '--api', '--data', '--ui'].includes(args[i]) || args[i + 1] === undefined) throw new Error(USAGE);
+    if (!['--workspace-root', '--requirements', '--tactical-design', '--technology', '--api', '--data', '--ui'].includes(args[i]) || args[i + 1] === undefined) throw new Error(USAGE);
     options[args[i].slice(2)] = args[i + 1];
   }
   let verdict;
   if (options.requirements && options['tactical-design']) {
     const documents = {};
-    for (const kind of ['api', 'data', 'ui']) if (options[kind]) documents[kind] = await readFile(options[kind], 'utf8');
+    for (const kind of ['technology', 'api', 'data', 'ui']) if (options[kind]) documents[kind] = await readFile(options[kind], 'utf8');
     verdict = checkDesignFreeze({ requirements: await readFile(options.requirements, 'utf8'), tacticalDesign: await readFile(options['tactical-design'], 'utf8'), documents });
   } else {
     const root = options['workspace-root'];

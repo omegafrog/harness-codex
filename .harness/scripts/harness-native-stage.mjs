@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { constants, existsSync } from 'node:fs';
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { open, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliSession } from '../../.harness/src/workflow/cli-session.mjs';
@@ -11,16 +11,65 @@ import { resolveCommandContext } from '../../.harness/src/workflow/cli-context.m
 import { executionInputAbsolutePath } from '../../.harness/src/workflow/execution-input.mjs';
 import { recordExecutionState } from '../../.harness/src/workflow/execution-state.mjs';
 import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
-import { stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
+import { sessionOutputPath, stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
-import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchAttemptDirectory, launchChildError, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
 
-const lastJson = (text) => { try { return JSON.parse(String(text || '').trim().split('\n').filter(Boolean).pop()); } catch { return null; } };
+const PROCESS_EVIDENCE_LIMIT = 64 * 1024;
+const SPAWN_REFUSALS = new Set(['E2BIG', 'EACCES', 'ENOENT', 'ENOTDIR', 'EPERM']);
+const validExecutionId = (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id);
+
+function lastJson(text) {
+  const output = String(text || '').trimEnd();
+  try {
+    const parsed = JSON.parse(output.slice(output.lastIndexOf('\n') + 1));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+}
+
+function runStageCommand(command, { cwd, env, phase } = {}) {
+  const startedAt = new Date().toISOString();
+  let child;
+  try {
+    child = spawnSync(command[0], command.slice(1), { cwd, env, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (error) { child = { error }; }
+  const stream = (output) => Buffer.isBuffer(output) ? output : Buffer.from(output || '');
+  const stdout = stream(child.stdout), stderr = stream(child.stderr);
+  const metadata = {
+    schema_version: 1,
+    // Launch arguments can include user answers and feedback. The command identity is sufficient for diagnosis.
+    command: phase ? command.slice(0, 2) : command,
+    ...(phase ? { phase } : {}),
+    cwd,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    pid: child.pid || null,
+    exit_code: child.status ?? null,
+    signal: child.signal || null,
+    spawn_error: child.error ? { name: child.error.name, message: child.error.message.slice(0, 1024), code: child.error.code || null } : null,
+    stdout_bytes: stdout.length,
+    stderr_bytes: stderr.length,
+    stdout_truncated: stdout.length > PROCESS_EVIDENCE_LIMIT,
+    stderr_truncated: stderr.length > PROCESS_EVIDENCE_LIMIT,
+  };
+  return { metadata, stdout, stderr };
+}
+
+async function saveStageCommand(root, directory, run) {
+  const refs = { stdout_path: `${directory}/stdout.log`, stderr_path: `${directory}/stderr.log`, process_path: `${directory}/process.json` };
+  const paths = Object.fromEntries(Object.entries(refs).map(([key, ref]) => [key, sessionOutputPath(root, ref)]));
+  const options = { flag: 'wx', mode: 0o600 };
+  const metadata = { ...run.metadata, ...refs };
+  await writeFile(paths.stdout_path, run.stdout.subarray(-PROCESS_EVIDENCE_LIMIT), options);
+  await writeFile(paths.stderr_path, run.stderr.subarray(-PROCESS_EVIDENCE_LIMIT), options);
+  await writeFile(paths.process_path, `${JSON.stringify(metadata, null, 2)}\n`, options);
+  return metadata;
+}
 
 async function persistGateRejection({ session, paths, gate, stage, executionId, errors, instruction }) {
   await assertWorkspaceTarget(session, paths.refs.feedback);
@@ -54,14 +103,6 @@ async function printGateError({ session, paths, gate, stage, executionId, errors
   process.stdout.write(`${JSON.stringify(gateErrorResult({ gate, executionId, stage, errors, instruction, outputPath: paths.files.raw, feedbackPath: paths.files.feedback, retryInput }))}\n`);
 }
 
-// A failed child command already printed its explanation as one JSON object: pass it on instead of wrapping it.
-const childFailure = (child, context = {}) => {
-  const printed = lastJson(child.stderr);
-  const error = new Error(printed?.error || String(child.stderr || '').trim() || 'The command failed');
-  if (printed?.code && printed.why) error.explained = { ...printed, ...context };
-  return error;
-};
-
 // Stage-binding validation is handled separately before taking over the requested stage.
 function takeOverStage(args) {
   const index = args.indexOf('--take-over');
@@ -74,9 +115,61 @@ function takeOverStage(args) {
 // prepare + start in one call: the orchestrator gets exactly what it needs to spawn the subagent and then bind it.
 // With --take-over true the stage another (ended) Codex conversation left running is first recorded as interrupted and
 // this conversation becomes the orchestrator; the launch then resumes that stage with a fresh execution.
-function launchStage(requestedArgs, verbose) {
+async function launchStage(requestedArgs, verbose) {
   const scripts = fileURLToPath(new URL('.', import.meta.url));
-  const run = (script, scriptArgs) => spawnSync(process.execPath, [join(scripts, script), ...scriptArgs], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const attemptId = randomUUID();
+  const directory = launchAttemptDirectory(attemptId);
+  const receiptRef = `${directory}/prepared.json`;
+  const stageIndex = requestedArgs.findIndex((argument, index) => index % 2 === 0 && argument === '--stage-id');
+  const stageId = stageIndex < 0 ? undefined : requestedArgs[stageIndex + 1];
+  errorContext.stageId = stageId;
+  const launchWorkspace = async () => {
+    const context = resolveCommandContext();
+    return context.worktree_ref ? { ...context, session: await cliSession(context.root, context.worktree_ref) } : null;
+  };
+  const run = (script, scriptArgs, phase) => runStageCommand([process.execPath, join(scripts, script), ...scriptArgs], {
+    cwd: process.cwd(), phase,
+    ...(phase === 'prepare' ? { env: { ...process.env, HARNESS_NATIVE_LAUNCH_ATTEMPT_ID: attemptId } } : {}),
+  });
+  const succeeded = ({ metadata }) => metadata.exit_code === 0 && !metadata.spawn_error;
+
+  async function preparedReceipt(root) {
+    const file = await open(sessionOutputPath(root, receiptRef, { create: false }), constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || info.nlink !== 1 || info.size > 1024) return null;
+      return JSON.parse(await file.readFile('utf8')).execution_id;
+    } finally { await file.close(); }
+  }
+
+  async function confirmedPreparedId({ root, session, worktree_ref }, printedId) {
+    const id = printedId || await preparedReceipt(root);
+    if (!validExecutionId(id)) return null;
+    const input = await readExecutionInput({ root, execution_id: id });
+    if (input.session_directory !== session || input.context?.worktree_ref !== worktree_ref || input.context?.stage_id !== stageId) return null;
+    await validateSkillInput({ root, input });
+    return id;
+  }
+
+  async function launchFailure(run, knownExecutionId) {
+    const phase = run.metadata.phase;
+    const context = await launchWorkspace().catch(() => null);
+    const preparedExecutionId = phase === 'prepare' && context ? await confirmedPreparedId(context, knownExecutionId).catch(() => null) : knownExecutionId;
+    const startWasRefused = phase === 'start' && !run.metadata.pid && SPAWN_REFUSALS.has(run.metadata.spawn_error?.code);
+    const canStart = Boolean(preparedExecutionId && (phase === 'prepare' || startWasRefused));
+    const printed = !succeeded(run) && lastJson(run.stderr);
+    const explained = typeof printed?.error === 'string' && typeof printed.code === 'string' && typeof printed.why === 'string' ? printed : null;
+    let command = run.metadata, evidenceError = 'No registered launch workspace';
+    if (context) {
+      try {
+        command = await saveStageCommand(context.root, directory, run);
+        evidenceError = undefined;
+      } catch (error) { evidenceError = error.code || error.message; }
+    }
+    const payload = launchChildError({ phase, missingResult: succeeded(run), command, preparedExecutionId, canStart, explained, evidenceError });
+    return Object.assign(new Error(payload.error), { explained: payload });
+  }
+
   const bindingIndex = requestedArgs.indexOf('--stage-binding');
   const bindingArgs = bindingIndex < 0 ? [] : requestedArgs.slice(bindingIndex, bindingIndex + 2);
   if (bindingIndex >= 0 && (!bindingArgs[1] || bindingArgs[1].startsWith('--') || requestedArgs.lastIndexOf('--stage-binding') !== bindingIndex)) throw new Error('Invalid argument: --stage-binding requires one JSON value');
@@ -84,24 +177,30 @@ function launchStage(requestedArgs, verbose) {
   let args = requestedArgs, taken = null;
   if (takeOverId) {
     errorContext.stageId = takeOverId;
-    const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true', ...bindingArgs]);
-    if (takeover.status !== 0) throw childFailure(takeover);
+    const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true', ...bindingArgs], 'takeover');
     taken = lastJson(takeover.stdout);
-    if (!taken) throw new Error('harness-prepare-input.mjs printed no result');
+    if (!succeeded(takeover) || taken?.status !== 'ready' || taken.stage_id !== takeOverId || !validExecutionId(taken.execution_id)) throw await launchFailure(takeover);
     args = ['--stage-id', takeOverId, '--feedback', TAKEOVER_FEEDBACK, ...bindingArgs];
   }
-  const prepare = run('harness-prepare-input.mjs', [...args, '--verbose']);
-  if (prepare.status !== 0) throw childFailure(prepare);
+  const prepare = run('harness-prepare-input.mjs', [...args, '--verbose'], 'prepare');
   const prepared = lastJson(prepare.stdout);
-  if (!prepared) throw new Error('harness-prepare-input.mjs printed no result');
+  const id = prepared?.input?.execution_id;
+  const hasInput = validExecutionId(id) && prepared.input.context?.stage_id === stageId;
+  const noStart = !prepared?.input && (prepared?.waiting_for_answers === true || prepared?.waiting_for_running_stage === true || (prepared?.status === 'ready' && prepared.stage_id === stageId));
+  if (!succeeded(prepare) || (!hasInput && !noStart)) throw await launchFailure(prepare, hasInput ? id : undefined);
   // A saved answer, a partial answer batch or a restart/discard does not start a stage: show what prepare reports.
-  if (!prepared.input?.execution_id) return verbose ? prepared : compactPrepared(prepared);
-  const id = prepared.input.execution_id;
+  if (!hasInput) return verbose ? prepared : compactPrepared(prepared);
   errorContext.executionId = id;
-  const start = run('harness-native-stage.mjs', ['start', '--execution-id', id, ...(verbose ? ['--verbose'] : [])]);
-  if (start.status !== 0) throw childFailure(start, { prepared_execution_id: id });
+  const start = run('harness-native-stage.mjs', ['start', '--execution-id', id, ...(verbose ? ['--verbose'] : [])], 'start');
   const started = lastJson(start.stdout);
-  if (!started) throw new Error('harness-native-stage.mjs start printed no result');
+  if (!succeeded(start) || !started?.binding || !['input_path', 'guide', 'schema_path', 'output_path', 'agent_profile'].every((field) => typeof started[field] === 'string' && started[field]) || (verbose && started.execution_id !== id)) throw await launchFailure(start, id);
+  try {
+    const context = await launchWorkspace();
+    if (context) {
+      await unlink(sessionOutputPath(context.root, receiptRef, { create: false }));
+      await rmdir(sessionOutputPath(context.root, directory, { create: false }));
+    }
+  } catch { /* Cleanup must not replace a valid launch result. */ }
   const launched = launchResult({ prepared, started });
   const takenOver = taken ? { taken_over: { previous_execution_id: taken.execution_id, previous_session_id: taken.previous_session_id, verified: taken.verified, ...(verbose ? { backup: taken.backup } : {}) } } : {};
   return verbose ? { ...launched, ...takenOver, input: prepared.input } : { ...launched, ...takenOver };
@@ -113,7 +212,8 @@ try {
   errorContext.action = action;
   const { args, verbose } = extractVerbose(rest);
   if (action === 'launch') {
-    process.stdout.write(`${JSON.stringify(launchStage(args, verbose))}\n`);
+    const launched = await launchStage(args, verbose);
+    await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify(launched)}\n`, (error) => error ? reject(error) : resolve()));
     process.exit(0);
   }
   for (let i = 0; i < args.length; i += 2) {
@@ -323,9 +423,9 @@ try {
       process.exit(0);
     }
     if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
-      const { readNativeCodexAttestation, refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
+      const { refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
       const target = { root, parentSessionId: input.context.orchestrator_session_id, stage: { ...current, stage_id: input.context?.stage_id || input.skill } };
-      const observed = await refreshNativeCodexAttestation(target) || await readNativeCodexAttestation(target);
+      const observed = await refreshNativeCodexAttestation(target);
       if (observed.status !== 'captured') throw new Error(`Requested stage binding cannot be verified: native attestation ${observed.reason || observed.status}`);
       const mismatches = observed.turns.filter((turn) => turn.status !== 'completed' || turn.model !== binding.model || turn.reasoning_effort !== binding.reasoning_effort);
       if (!observed.turns.length || mismatches.length) {
@@ -389,49 +489,24 @@ try {
     }
     await commitStageRequest({ root, rawPath: paths.files.raw });
     const resultCommand = [process.execPath, join(root, '.harness/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw];
-    const resultCommandStartedAt = new Date().toISOString();
-    const resultCommandRun = spawnSync(resultCommand[0], resultCommand.slice(1), { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-    const resultCommandFinishedAt = new Date().toISOString();
+    const resultCommandRun = runStageCommand(resultCommand, { cwd: root });
     const resultCommandDirectory = `runtime/executions/${id}/result-command-attempts/${randomUUID()}`;
-    const resultCommandFiles = {
-      stdout: `${resultCommandDirectory}/stdout.log`,
-      stderr: `${resultCommandDirectory}/stderr.log`,
-      process: `${resultCommandDirectory}/process.json`,
-    };
-    for (const path of Object.values(resultCommandFiles)) await assertWorkspaceTarget(session, path);
-    await mkdir(join(session, resultCommandDirectory), { recursive: true, mode: 0o700 });
-    for (const path of Object.values(resultCommandFiles)) await assertWorkspaceTarget(session, path);
-    const resultCommandStdout = typeof resultCommandRun.stdout === 'string' ? resultCommandRun.stdout : String(resultCommandRun.stdout || '');
-    const resultCommandStderr = typeof resultCommandRun.stderr === 'string' ? resultCommandRun.stderr : String(resultCommandRun.stderr || '');
-    const resultCommandMetadata = {
-      schema_version: 1,
-      command: resultCommand,
-      cwd: root,
-      started_at: resultCommandStartedAt,
-      finished_at: resultCommandFinishedAt,
-      pid: resultCommandRun.pid || null,
-      exit_code: resultCommandRun.status,
-      signal: resultCommandRun.signal || null,
-      spawn_error: resultCommandRun.error ? { name: resultCommandRun.error.name, message: resultCommandRun.error.message, code: resultCommandRun.error.code || null } : null,
-      stdout_path: resultCommandFiles.stdout,
-      stderr_path: resultCommandFiles.stderr,
-      process_path: resultCommandFiles.process,
-    };
-    await writeFile(join(session, resultCommandFiles.stdout), resultCommandStdout, { flag: 'wx', mode: 0o600 });
-    await writeFile(join(session, resultCommandFiles.stderr), resultCommandStderr, { flag: 'wx', mode: 0o600 });
-    await writeFile(join(session, resultCommandFiles.process), JSON.stringify(resultCommandMetadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    if (resultCommandRun.error || resultCommandRun.status !== 0) {
-      const childJsonError = lastJson(resultCommandStderr)?.error;
-      const childDetail = childJsonError || resultCommandStderr.trim()
-        || (resultCommandRun.error ? `${resultCommandRun.error.name}: ${resultCommandRun.error.message}` : null)
-        || (resultCommandRun.signal ? `child terminated by signal ${resultCommandRun.signal}` : `child exited with status ${resultCommandRun.status}`);
+    let resultCommandMetadata = resultCommandRun.metadata, evidenceError;
+    try { resultCommandMetadata = await saveStageCommand(root, resultCommandDirectory, resultCommandRun); }
+    catch (error) { evidenceError = error.code || error.message; }
+    const { exit_code: exitCode, signal, spawn_error: spawnError } = resultCommandMetadata;
+    if (spawnError || exitCode !== 0) {
+      const childJsonError = lastJson(resultCommandRun.stderr)?.error;
+      const childDetail = childJsonError || String(resultCommandRun.stderr.subarray(-1024)).trim()
+        || (spawnError ? `${spawnError.name}: ${spawnError.message}` : null)
+        || (signal ? `child terminated by signal ${signal}` : `child exited with status ${exitCode}`);
       const message = `Result rejected: ${childDetail}`;
       throw Object.assign(new Error(message), { explained: {
         error: message,
         code: 'RESULT_REJECTED',
-        why: `The output passed the schema, but harness-result exited unsuccessfully (status ${resultCommandRun.status ?? 'unknown'}${resultCommandRun.signal ? `, signal ${resultCommandRun.signal}` : ''}). Raw child output and process metadata were preserved in ${resultCommandDirectory}. Nothing was committed or recorded and the stage is still running.`,
-        next: [`Review ${resultCommandFiles.process}, stdout.log and stderr.log before retrying.`, `After addressing the recorded child failure, run: ${nativeCommand('finish', id)}`],
-        result_command: { ...resultCommandMetadata, error: resultCommandRun.error?.message || null },
+        why: `The output passed the schema, but harness-result exited unsuccessfully (status ${exitCode ?? 'unknown'}${signal ? `, signal ${signal}` : ''}). ${evidenceError ? 'Writing the child evidence failed.' : `Raw child output and process metadata were preserved in ${resultCommandDirectory}.`} The workflow stage is still running.`,
+        next: [...(evidenceError ? [] : [`Review ${resultCommandMetadata.process_path}, stdout.log and stderr.log before retrying.`]), `After addressing the recorded child failure, run: ${nativeCommand('finish', id)}`],
+        result_command: { ...resultCommandMetadata, error: spawnError?.message || null, ...(evidenceError ? { evidence_error: evidenceError } : {}) },
       } });
     }
     const { applyDomainSync, assertStageDomainSync, readStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');

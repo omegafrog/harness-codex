@@ -65,6 +65,46 @@ test('installed tracker marks execution in progress but leaves Done until PR mer
     assert.equal((await readTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#1', run })).canonical_status, 'planned');
     assert.equal(calls.filter((call) => call === 'project field-list').length, 2);
 
+    const ref = 'owner/repo#1';
+    const blockedRead = async () => { throw new Error('Project read rate limited'); };
+    const unobserved = await inspectTrackerSync({ workspace_root: root, ticket_refs: [ref], run: blockedRead });
+    assert.equal(unobserved.status, 'unverified');
+    assert.match(unobserved.warnings[0], /Project read rate limited/);
+    assert.deepEqual(unobserved.ticket_refs, [ref]);
+    const mismatch = await inspectTrackerSync({ workspace_root: root, ticket_refs: [ref], expected_status: 'completed', run });
+    assert.equal(mismatch.status, 'unverified');
+    assert.equal(mismatch.reason, 'project_status_mismatch');
+    assert.match(mismatch.warnings[0], /expected completed, observed planned/);
+    const failedWrite = await syncTrackerStatus({ workspace_root: root, ticket_ref: ref, status: 'completed', run: async (command, args) => {
+      if (args[0] === 'project' && args[1] === 'item-edit') throw new Error('Project write denied');
+      return run(command, args);
+    } });
+    assert.equal(failedWrite.status, 'fail');
+    assert.equal(failedWrite.tracker_updated, false);
+    assert.match(failedWrite.violations[0], /Project write denied/);
+
+    const bin = join(root, '.io/bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'gh'), '#!/bin/sh\necho "Project status cannot be read" >&2\nexit 1\n', { mode: 0o700 });
+    const gateUrl = pathToFileURL(join(root, '.harness/src/gates/lifecycle.mjs')).href;
+    const completionUrl = pathToFileURL(join(root, '.harness/src/workflow/completion.mjs')).href;
+    const gateCode = `
+      await import(${JSON.stringify(completionUrl)});
+      const { LifecycleGateRegistry } = await import(${JSON.stringify(gateUrl)});
+      const registry = new LifecycleGateRegistry();
+      registry.registerHook('before_complete', ['tracker_sync']);
+      const state = { workspace_root: ${JSON.stringify(root)}, tracker_sync: { ticket_refs: ['owner/repo#1'] } };
+      const verdict = await registry.run('before_complete', state, { eventWriter: { append() {} } });
+      console.log(JSON.stringify(verdict));
+    `;
+    const gate = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', gateCode], {
+      cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    }));
+    assert.equal(gate.status, 'pass', 'the configured optional project does not block unrelated completion checks');
+    assert.equal(gate.reason, 'checks_passed_with_unverified_evidence');
+    assert.equal(gate.checks[0].status, 'unverified');
+    assert.match(gate.checks[0].details.warnings[0], /Project status cannot be read/);
+
     const gitStatus = execFileSync('git', ['-C', root, 'status', '--short', '-uall'], { encoding: 'utf8' });
     assert.match(gitStatus, /consumer-change\.txt/);
     assert.doesNotMatch(gitStatus, /\.harness\/src\/|\.io\//);

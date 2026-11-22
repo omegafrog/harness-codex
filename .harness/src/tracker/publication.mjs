@@ -189,7 +189,7 @@ export async function activatePublication({ root, planSetId, run = defaultComman
   } finally { await rm(temporary, { force: true }); }
   const { inspectTrackerSync } = await import('./lifecycle.mjs');
   const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
-  if (check.status !== 'pass') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
+  if (check.status === 'fail') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
   return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), tracker_check: check, warnings: [...warnings, ...(check.warnings || [])] };
 }
 

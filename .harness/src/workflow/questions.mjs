@@ -6,25 +6,31 @@ export function identifyQuestions(executionId, questions) {
   });
 }
 
-// `previous` holds answers already stored for the batch; `incoming` is one call's answers. While the batch is still
-// open (`revisePending`), an incoming answer for a question that already has a stored one corrects it. Otherwise a stored
-// answer is final and an incoming answer for the same question is rejected. Unknown, empty and repeated IDs inside one
-// incoming batch are always rejected.
+export function isQuestionResponse(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).length !== 2) return false;
+  return Object.hasOwn(entry, 'question_id') && typeof entry.question_id === 'string' && Boolean(entry.question_id.trim())
+    && ['answer', 'clarification'].some((key) => Object.hasOwn(entry, key) && typeof entry[key] === 'string' && entry[key].trim());
+}
+
+// An open batch keeps one response per question. A clarification leaves that decision pending until an answer
+// replaces it. A finalized batch accepts only answers. Unknown, empty and repeated IDs in a batch are rejected.
 export function mergeAnswers(questions, previous, incoming, { revisePending = false } = {}) {
   if (!Array.isArray(questions) || !Array.isArray(previous) || !Array.isArray(incoming)) throw new Error('Invalid answers');
   const ids = new Set(questions.map((question) => question.question_id));
   if (ids.size !== questions.length || ids.has(undefined)) throw new Error('Invalid question IDs');
-  const answers = new Map();
-  const usable = (entry) => entry && ids.has(entry.question_id) && typeof entry.answer === 'string' && entry.answer.trim();
+  const responses = new Map();
+  const usable = (entry) => isQuestionResponse(entry) && ids.has(entry.question_id) && (revisePending || Object.hasOwn(entry, 'answer'));
   for (const entry of previous) {
-    if (!usable(entry) || answers.has(entry.question_id)) throw new Error('Invalid, duplicate, or stale answer');
-    answers.set(entry.question_id, entry.answer);
+    if (!usable(entry) || responses.has(entry.question_id)) throw new Error('Invalid, duplicate, or stale answer');
+    responses.set(entry.question_id, entry);
   }
   const batch = new Set();
   for (const entry of incoming) {
-    if (!usable(entry) || batch.has(entry.question_id) || (answers.has(entry.question_id) && !revisePending)) throw new Error('Invalid, duplicate, or stale answer');
+    if (!usable(entry) || batch.has(entry.question_id) || (responses.has(entry.question_id) && !revisePending)) throw new Error('Invalid, duplicate, or stale answer');
     batch.add(entry.question_id);
-    answers.set(entry.question_id, entry.answer);
+    responses.set(entry.question_id, entry);
   }
-  return { answers: [...answers].map(([question_id, answer]) => ({ question_id, answer })), complete: answers.size === ids.size };
+  const answers = [...responses.values()].filter((entry) => Object.hasOwn(entry, 'answer')).map(({ question_id, answer }) => ({ question_id, answer }));
+  const clarifications = [...responses.values()].filter((entry) => Object.hasOwn(entry, 'clarification')).map(({ question_id, clarification }) => ({ question_id, clarification }));
+  return { answers, complete: answers.length === ids.size, ...(clarifications.length ? { clarifications } : {}) };
 }

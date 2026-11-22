@@ -40,5 +40,5 @@ try {
   if (command !== 'comment' && options.body !== undefined) throw new Error('--body applies only to comment');
   const result = await (command === 'comment' ? commentTracker({ ...options, ticket_ref: refs[0] }) : command === 'check' ? inspectTrackerSync({ ...options, ticket_refs: refs.length ? refs : null }) : command === 'read' ? readTrackerStatus({ ...options, ticket_ref: refs[0] }) : syncTrackerStatus({ ...options, ticket_ref: refs[0] }));
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (result.status !== 'pass') process.exitCode = 1;
+  if (!['pass', 'unverified'].includes(result.status)) process.exitCode = 1;
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

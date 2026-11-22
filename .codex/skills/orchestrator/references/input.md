@@ -17,16 +17,30 @@ compose 명령에는 `harness-context.mjs --entry`가 확인한 `--orchestrator-
 
 질문의 `title`과 선택지 `label`은 원문 그대로 보여 준다. `decision_kind: "technology"`이면 각 선택지의 `evidence`에 있는 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. 보충 설명은 질문과 분리한다.
 
-`USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 실제 `question_id`를 읽고, 각 답을 `question_id`와 문자열 `answer`를 가진 JSON 배열로 전달한다. 질문 제목이나 임의의 업무 키를 ID로 만들지 않는다. 사용자가 선택지에 조건을 덧붙였거나 직접 설명했으면 선택지 ID 대신 사용자의 답 원문 전체를 `answer`로 넘긴다. 예시의 ID는 형식 설명이며 실제 호출에는 현재 결과의 ID를 그대로 사용한다.
+`USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 `question_id`를 읽는다. 사용자 메시지가 여러 항목에 답하면, 각 항목에 해당하는 확정된 선택이나 답변 구절을 연결한다. 사용자가 조건을 붙이거나 직접 정한 동작은 뜻을 바꾸지 않고 해당 답변 구절을 `answer`에 전달한다.
+
+답변과 확인 질문을 한 메시지로 받으면 확인 질문에 먼저 대화로 답한다. 요청과 정본 결과를 근거로 설명하며, 추가 결정이 필요한 항목은 확인을 기다린다. 항목의 결정을 내리기 전에 사용자가 설명을 요청했다면 해당 `question_id`에 `clarification`으로 연결하고 응답이 확정된 다른 항목은 `answer`로 전달한다. 답변이 확정된 항목에 사용자가 별도 질문을 덧붙인 경우에는 확정 구절만 `answer`에 넣는다. 하나의 ID에는 한 형태만 전달한다. 아래 ID는 예시이므로 실제 호출에는 현재 결과의 ID를 사용한다.
+
+확정 답변을 전달하는 예시
 
 ```bash
 node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage-id> --answer '[{"question_id":"<현재-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"}]'
 ```
 
-한 번에 일부 질문만 답해 `waiting_for_answers: true`가 반환되면 실행하지 않고 남은 질문의 실제 답을 같은 단계에 전달한다. 모든 답이 모이면 `launch`가 새 실행을 예약해 `answered: true`와 함께 반환하므로 native 서브에이전트를 호출한다. 준비기만 실행했다면 `harness-native-stage.mjs start`로 예약한다. provider와 관계없이 새 실행에는 새 작업자가 이전 결과와 전달받은 답변을 읽는다. 모든 답이 모이기 전에는 이미 전달한 답을 고칠 수 있다. 같은 `question_id`의 새 답이 이전 답을 대체하며, 한 번의 호출에 같은 ID를 두 번 담지 않는다. 모든 답이 모여 `decision-answers.json`이 기록된 뒤에는 다른 답으로 바꿀 수 없다. 이전 결과의 ID, 중복 답변이나 임의의 객체 형태를 사용하지 않는다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에만 답변으로 사용한다.
+확정 답변과 다른 항목의 확인 질문을 함께 전달하는 예시
+
+```bash
+node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage-id> --answer '[{"question_id":"<확정된-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"},{"question_id":"<미결-질문-ID>","clarification":"<사용자의-확인-질문>"}]'
+```
+
+`waiting_for_answers: true`이면 남은 `questions`에 대한 사용자 결정을 기다린다. 사용자가 `clarification`을 보낸 항목은 같은 ID에 실제 답을 받으면 재개한다. 이미 전달한 답은 대기 중 보존되며 같은 ID의 새 응답으로 고칠 수 있다. 모든 답이 모이면 `launch`가 새 실행을 예약해 `answered: true`를 반환한다. 준비기만 실행했다면 `harness-native-stage.mjs start`로 예약한다. 새 작업자는 이전 결과와 확정 답변을 읽는다. `decision-answers.json`에 기록된 뒤에는 다른 답으로 바꿀 수 없다. 추천안은 사용자가 선택했거나 그 선택을 위임한 경우에 답으로 사용한다.
 
 실행 중 `--answer`가 도착하면 준비기는 질문 ID와 답을 보존하고 `waiting_for_running_stage: true`를 반환한다. 새 실행을 만들지 않는다. 기존 에이전트의 실제 종료를 확인하고 `finish` 또는 `fail`을 처리한다. `finish` 결과가 질문 대기이면 `launch --stage-id <stage-id>`를 다시 실행한다. 보존된 답은 해당 질문 ID를 검증해 수집하며 다시 묻지 않는다. 실패 후 재개할 때는 `deferred_user_answers_unverified` 입력으로 보존하며 기존 질문과 대조하기 전에는 적용하지 않는다.
 
 “모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다. 이후 새 결과의 질문에는 새 사용자 답변이 필요하다. 단, 사용자가 앞으로의 질문에도 적용하도록 명시적으로 위임한 경우에는 그 범위에 따른다.
 
 질문을 반환한 실행의 `decision-answers.json`은 그 질문에 대한 확정 답변이다. 재개 실행의 `answers.json`은 그 실행에 전달된 입력 답변이다. 재개 실행은 답변과 피드백이 있을 때만 `answers_path`·`feedback_path`를 반환한다. 이 절대 경로와 입력에 명시된 참조를 사용한다. 수정 반환으로 같은 stage를 재개할 때는 `--feedback`에 구체적인 수정 지적을 전달한다. 새 작업자가 해당 실행의 입력과 이전 결과를 읽는다.
+
+## 사용자 승인 답변 전달
+
+텍스트로 승인을 받을 때는 승인 질문을 보여 주는 시점에 사용자의 답변 형식도 안내한다. 같은 worktree의 소유 대화에서 Codex는 `$orchestrator <승인 답변>`, Claude Code는 `/orchestrator <승인 답변>`을 독립 메시지로 보내도록 안내한다. 예를 들어 사용자가 `$orchestrator 승인하고 진행`이라고 답하면 `--approval-answer '승인하고 진행'`을 전달한다. 지원되는 질문 도구로 승인받은 경우 도구의 사용자 답변 원문을 전달한다. 실행기는 승인 대상 stage 완료 뒤의 provider 대화 기록과 답을 대조한다.

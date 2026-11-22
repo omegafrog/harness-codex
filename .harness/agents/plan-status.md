@@ -65,6 +65,6 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 
 ## 상태 확인과 갱신
 
-`harness-tracker.mjs sync`는 선택된 tracker의 상태를 변경하고 재조회한다. GitHub Project 조회나 동기화 실패는 경고로 반환한다. workspace preflight는 tracker를 조회하지 않는다.
+`harness-tracker.mjs sync`는 선택된 tracker의 상태를 변경하고 재조회한다. GitHub Project를 조회할 수 없으면 `unverified`와 원인을 반환하고, 갱신을 시도했으나 실패하면 `tracker_sync_failed`와 실제 오류를 반환한다. 완료 gate에서 Project 상태를 조회할 수 없거나 보조 표시가 구현 기록과 다르면 `unverified`와 관측 근거를 남긴다. 구현 완료 여부는 실행 기록과 커밋으로 판정한다. workspace preflight는 tracker를 조회하지 않는다.
 
 GitHub 보드는 configured Workflow Status로 group/filter하며 기본 Status는 workflow 판단에서 제외한다. 기본 Status 열 숨김은 view 설정으로 안내하고 field 자체나 기존 item 상태는 삭제하지 않는다. Done은 구현·검증 완료이며 Issue closure는 integration PR merge lifecycle이다.

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, symlink, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
@@ -57,7 +57,8 @@ test('an installed stage honors an explicit model and effort and refuses a misma
   ok(runPrinted(workspace, launched.next.bind, agent));
   await submitStage({ stage, started: launched }, SKIPPED(specPath('stakeholder-analysis.md')));
   const head = treeGit('rev-parse', 'HEAD');
-  refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_UNVERIFIED');
+  const missing = refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_UNVERIFIED');
+  assert.ok(missing.next.some((step) => step.endsWith(launched.next.finish)));
 
   const sessions = join(process.env.CODEX_HOME, 'sessions');
   const thread = randomUUID();
@@ -83,10 +84,16 @@ test('an installed stage honors an explicit model and effort and refuses a misma
     })}\n`);
   };
   for (const [model, effort] of [['gpt-6.2-astra', 'medium'], ['gpt-6-luna', 'low']]) {
-    await worker(model, effort);
-    await attest(model, effort);
+    await worker(selected.model, selected.reasoning_effort);
+    await attest(selected.model, selected.reasoning_effort);
+    await appendFile(join(sessions, `rollout-fixture-${thread}.jsonl`), [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'repair' } },
+      { type: 'turn_context', payload: { turn_id: 'repair', model, effort } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'repair', last_agent_message: 'mismatching repair' } },
+    ].map((event) => `${JSON.stringify(event)}\n`).join(''));
     const mismatch = refusal(runPrinted(workspace, launched.next.finish), 'MODEL_BINDING_MISMATCH');
-    assert.ok(mismatch.why.includes(`observed ${model}/${effort}`));
+    assert.ok(mismatch.why.includes(`${model}/${effort} (completed)`));
+    assert.ok(mismatch.next.every((step) => !step.includes('finish')));
     assert.equal(treeGit('rev-parse', 'HEAD'), head);
   }
   await worker(selected.model, selected.reasoning_effort);
@@ -198,6 +205,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   assert.equal(launched.next.bind, `node .harness/scripts/${NATIVE} bind --execution-id ${launched.execution_id} --agent-id <agent_id>`);
   assert.equal(launched.next.finish, `node .harness/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
   assert.ok(bytes(output.stdout) <= 1700, `launch is ${bytes(output.stdout)} bytes`);
+  assert.deepEqual(await readdir(join(workspace, '.io/runtime/launch-attempts')), [], 'successful launch removes its temporary receipt');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.stages['stakeholder-analysis'].status, 'running');
   assert.equal(state.stages['stakeholder-analysis'].execution_id, launched.execution_id);
@@ -447,6 +455,76 @@ test('finish preserves harness-result stdout, stderr, exit status and signal whe
   assert.equal(metadata.exit_code, 23);
   assert.equal(metadata.signal, null);
   assert.deepEqual(metadata.command.slice(1, 2), [join(workspace, '.harness/scripts/harness-result.mjs')]);
+});
+
+test('launch preserves prepare spawn failures and signals, then recovers an exact input when prepare exits with empty stdout', async (t) => {
+  const { workspace, tree, treeGit } = await consumerWorkflow(t, REQUEST);
+  const io = join(workspace, '.io');
+  const stage = 'stakeholder-analysis';
+  const args = ['launch', '--stage-id', stage];
+  const preparePath = join(workspace, '.harness/scripts', PREPARE);
+  const originalPrepare = await readFile(preparePath, 'utf8');
+  const wrapper = join(io, 'missing-executable.cjs');
+  const missingExecutable = join(io, 'nonexistent-node');
+  await writeFile(wrapper, `Object.defineProperty(process, 'execPath', { value: ${JSON.stringify(missingExecutable)} });\n`);
+  const failedSpawn = refusal(spawnSync(process.execPath, ['--require', wrapper, join(workspace, '.harness/scripts', NATIVE), ...args], { cwd: workspace, encoding: 'utf8' }), 'LAUNCH_CHILD_FAILED');
+  assert.equal(failedSpawn.launch_command.exit_code, null);
+  assert.equal(failedSpawn.launch_command.signal, null);
+  assert.equal(failedSpawn.launch_command.spawn_error.code, 'ENOENT');
+  assert.equal(failedSpawn.prepared_execution_id, undefined);
+  const spawnEvidence = JSON.parse(await readFile(join(io, failedSpawn.launch_command.process_path), 'utf8'));
+  assert.deepEqual(spawnEvidence, failedSpawn.launch_command);
+
+  await writeFile(preparePath, "process.kill(process.pid, 'SIGTERM');\n");
+  const signalled = refusal(exec(workspace, NATIVE, args), 'LAUNCH_CHILD_FAILED');
+  assert.equal(signalled.launch_command.signal, 'SIGTERM');
+  assert.equal(signalled.launch_command.exit_code, null);
+  assert.equal(signalled.launch_command.spawn_error, null);
+  assert.equal(signalled.prepared_execution_id, undefined);
+
+  await writeFile(preparePath, originalPrepare.replace(/  process\.stdout\.write\(`\$\{JSON\.stringify\(verbose \? prepared : compactPrepared\(prepared\)\)\}.*\);/, "  process.stderr.write('prepare fixture diagnostic\\n');"));
+  const noOutput = refusal(exec(workspace, NATIVE, args), 'LAUNCH_RESULT_MISSING');
+  assert.equal(noOutput.launch_command.exit_code, 0);
+  assert.equal(noOutput.launch_command.stdout_bytes, 0);
+  assert.equal(await readFile(join(io, noOutput.launch_command.stdout_path), 'utf8'), '');
+  assert.equal(await readFile(join(io, noOutput.launch_command.stderr_path), 'utf8'), 'prepare fixture diagnostic\n');
+  assert.match(noOutput.prepared_execution_id, /^stakeholder-analysis-/);
+  assert.deepEqual(await readdir(join(io, tree.plan_set_id, stage)), [noOutput.prepared_execution_id]);
+  const statePath = join(io, 'runtime/orchestrator/state.json');
+  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages[stage], undefined);
+  assert.deepEqual(noOutput.next, [`node .harness/scripts/${NATIVE} start --execution-id ${noOutput.prepared_execution_id}`]);
+  ok(runPrinted(workspace, noOutput.next[0]));
+  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages[stage].execution_id, noOutput.prepared_execution_id);
+  assert.equal(treeGit('status', '--short', '-uall'), '');
+});
+
+test('launch diagnoses malformed start output without restarting an existing claim and retains bounded child evidence', async (t) => {
+  const { workspace } = await consumerWorkflow(t, REQUEST);
+  const io = join(workspace, '.io');
+  const nativePath = join(workspace, '.harness/scripts', NATIVE);
+  const originalNative = await readFile(nativePath, 'utf8');
+  await writeFile(nativePath, originalNative.replace("process.stdout.write(`${JSON.stringify(verbose ? started : compactStarted(started, { executionId: id }))}\\n`);", "process.stdout.write('x'.repeat(80 * 1024) + '\\n{truncated json');"));
+  const failure = refusal(exec(workspace, NATIVE, ['launch', '--stage-id', 'stakeholder-analysis']), 'LAUNCH_RESULT_MISSING');
+  assert.equal(failure.launch_command.phase, 'start');
+  assert.equal(failure.launch_command.exit_code, 0);
+  assert.equal(failure.launch_command.stdout_truncated, true);
+  const stdout = await readFile(join(io, failure.launch_command.stdout_path));
+  assert.equal(stdout.length, 64 * 1024);
+  assert.match(stdout.toString(), /\{truncated json$/);
+  assert.deepEqual(failure.next, [`node .harness/scripts/${NATIVE} inspect --execution-id ${failure.prepared_execution_id}`]);
+  assert.equal(ok(runPrinted(workspace, failure.next[0])).execution_id, failure.prepared_execution_id);
+});
+
+test('launch preserves the child refusal when writing evidence is unsafe', async (t) => {
+  const { workspace } = await consumerWorkflow(t, REQUEST);
+  const outside = join(dirname(workspace), 'outside-launch-evidence');
+  await mkdir(outside);
+  await symlink(outside, join(workspace, '.io/runtime/launch-attempts'));
+  const result = refusal(exec(workspace, NATIVE, ['launch', '--stage-id', 'event-storming']), 'STAGE_ORDER');
+  assert.equal(result.launch_command.exit_code, 1);
+  assert.match(result.launch_command.evidence_error, /must not be a symlink/);
+  assert.equal(result.launch_command.process_path, undefined);
+  assert.deepEqual(await readdir(outside), []);
 });
 
 test('the orchestrator and the dispatch guide name launch, the compact output and the rule against reading Harness source', async () => {

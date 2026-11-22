@@ -231,7 +231,7 @@ export async function planDependencies({ workspace_root: root, plan_set_id: plan
   return { status: incomplete.length ? 'blocked' : 'pass', plan_id: planId, dependencies, incomplete: incomplete.map((item) => item.plan_id) };
 }
 
-export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, run = defaultRun } = {}) {
+export async function inspectTrackerSync({ workspace_root: root, ticket_refs = null, expected_plan_id = null, expected_status = null, run = defaultRun } = {}) {
   try {
     const config = await projectConfig(root);
     let refs = ticket_refs;
@@ -253,10 +253,18 @@ export async function inspectTrackerSync({ workspace_root: root, ticket_refs = n
     if (config.mode === 'github' && refs.length) {
       for (const ref of refs) githubReference(config, ref);
       try { statuses = await githubTickets(root, config, refs, run, context); }
-      catch (error) { return { status: 'pass', reason: 'project_status_unavailable', warnings: [error.message], violations: [], tickets: [] }; }
+      catch (error) {
+        return { status: 'unverified', reason: 'project_status_unavailable', warnings: [error.message], violations: [], tickets: [], ticket_refs: refs };
+      }
     }
     const tickets = [];
     for (const ref of refs) tickets.push({ ref, status: (statuses ? statuses.get(ref) : await readTracker(root, config, ref, run, context)).status });
+    const mismatches = expected_status ? tickets.filter((ticket) => ticket.status !== expected_status) : [];
+    if (mismatches.length) {
+      const differences = mismatches.map(({ ref, status }) => `${ref}: expected ${expected_status}, observed ${status}`);
+      if (config.mode === 'github') return { status: 'unverified', reason: 'project_status_mismatch', warnings: differences, violations: [], tickets, expected_status };
+      return { status: 'fail', reason: 'tracker_status_mismatch', violations: differences, tickets, expected_status };
+    }
     return { status: 'pass', reason: refs.length ? 'tracker_tickets_current' : 'no_managed_tracker_tickets', violations: [], tickets };
   } catch (error) {
     return { status: 'fail', reason: 'tracker_status_unresolved', violations: [error.message] };
@@ -290,7 +298,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   const config = await projectConfig(root);
   if (expected_plan_id) {
     const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: [ref], expected_plan_id, run });
-    if (check.status !== 'pass') throw new Error(check.violations.join('; '));
+    if (check.status === 'fail') throw new Error(check.violations.join('; '));
   }
   const context = {};
   if (config.mode === 'github') githubReference(config, ref);
@@ -299,7 +307,7 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
   try { tracker = await readTracker(root, config, ref, run, context); }
   catch (error) {
     if (config.mode !== 'github') throw error;
-    return { status: 'pass', reason: 'project_status_unavailable', ticket_ref: ref, warnings: [error.message], tracker_updated };
+    return { status: 'unverified', reason: 'project_status_unavailable', ticket_ref: ref, warnings: [error.message], tracker_updated };
   }
   const evidence = sessionOutputPath(root, `runtime/tracker-sync/${createHash('sha256').update(ref).digest('hex')}.jsonl`);
   const writer = await new JsonlEventWriter(resolve(root, evidence), { streamId: `tracker:${ref}` }).init();
@@ -340,6 +348,6 @@ export async function syncTrackerStatus({ workspace_root: root, ticket_ref: ref,
     if (config.mode === 'github') await forgetProjectMetadata(context);
     const result = { status: 'fail', reason: 'tracker_sync_failed', ticket_ref: ref, tracker_updated, phase, classification, violations: [error.message], retry: 'Read the latest tracker status before retrying', evidence_path: evidence };
     await writer.append('tracker_sync', result, { critical: true });
-    return config.mode === 'github' ? { ...result, status: 'pass', reason: 'project_sync_unavailable', warnings: result.violations, violations: [] } : result;
+    return result;
   } finally { await writer.close(); }
 }

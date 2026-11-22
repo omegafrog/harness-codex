@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { readExecutionInput, validateSkillInput } from './stage-runtime.mjs';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
@@ -76,18 +77,18 @@ function extractCompletedCodexTurns(entries) {
   return [...turns.values()].filter((turn) => turn.status === 'completed');
 }
 
-export async function resolveNativeCodexThread({ root, parentSessionId, stage }) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentSessionId || '') || !stage?.native_agent_id) return null;
+async function nativeCodexThreadEvidence({ root, parentSessionId, stage }) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentSessionId || '') || !stage?.native_agent_id) return { invalid: 'native_binding_identity_invalid' };
   const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), parentSessionId);
-  if (!path) return null;
+  if (!path) return {};
   const workspace = await realpath(root);
   const { entries } = await readTranscriptEntries(path);
   const metadata = entries[0]?.payload;
-  if (entries[0]?.type !== 'session_meta' || metadata?.id !== parentSessionId || metadata?.cwd !== workspace) return null;
+  if (entries[0]?.type !== 'session_meta' || metadata?.id !== parentSessionId || metadata?.cwd !== workspace) return { invalid: 'parent_transcript_identity_mismatch' };
   const previousEnd = [...(stage.attempts || [])].reverse().find((item) => item.finished_at)?.finished_at;
   const cutoff = Date.parse(previousEnd || stage.started_at || '');
-  if (!Number.isFinite(cutoff)) return null;
+  if (!Number.isFinite(cutoff)) return { invalid: 'native_binding_identity_invalid' };
   const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
   const candidates = new Set();
   for (const entry of entries.slice(1)) {
@@ -96,7 +97,12 @@ export async function resolveNativeCodexThread({ root, parentSessionId, stage })
     if (entry.type !== 'event_msg' || entry.payload?.type !== 'item_completed' || item?.type !== 'SubAgentActivity' || item.kind !== 'started' || item.agent_path !== expectedPath || !Number.isFinite(timestamp) || timestamp < cutoff || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.agent_thread_id || '')) continue;
     candidates.add(item.agent_thread_id);
   }
-  return candidates.size === 1 ? [...candidates][0] : null;
+  if (candidates.size > 1) return { invalid: 'parent_child_binding_ambiguous' };
+  return { threadId: [...candidates][0] };
+}
+
+export async function resolveNativeCodexThread(target) {
+  return (await nativeCodexThreadEvidence(target)).threadId || null;
 }
 
 export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
@@ -144,7 +150,7 @@ export async function verifyNativeCodexWorkerBinding({ root, parentSessionId, st
   return { status: 'verified', agent_id: normalizedAgentId, thread_id: threadId, outcome: 'completed', turns };
 }
 
-async function captureNativeCodexAttestation({ root, session, executionId, stageId, stage, parentSessionId, event, source = 'codex-subagent-stop-hook' }) {
+async function observeNativeCodexAttestation({ root, executionId, stageId, stage, parentSessionId, event, source = 'codex-subagent-stop-hook' }) {
   const attestation = {
     schema_version: 1,
     source,
@@ -167,7 +173,7 @@ async function captureNativeCodexAttestation({ root, session, executionId, stage
     const metadata = entries[0]?.payload;
     const spawn = metadata?.source?.subagent?.thread_spawn;
     const expectedPath = stage.native_agent_id.startsWith('/') ? stage.native_agent_id : `/root/${stage.native_agent_id}`;
-    if (entries[0]?.type !== 'session_meta' || metadata.id !== event.agent_id || metadata.cwd !== root || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) throw new Error('transcript_identity_mismatch');
+    if (entries[0]?.type !== 'session_meta' || metadata?.id !== event.agent_id || metadata.cwd !== root || metadata.parent_thread_id !== parentSessionId || spawn?.parent_thread_id !== parentSessionId || spawn.depth !== 1 || spawn.agent_path !== expectedPath) throw new Error('transcript_identity_mismatch');
     attestation.turns = extractCompletedCodexTurns(entries);
     if (!attestation.turns.length) throw new Error('completed_turn_metadata_missing');
     attestation.status = 'captured';
@@ -175,6 +181,11 @@ async function captureNativeCodexAttestation({ root, session, executionId, stage
   } catch (error) {
     attestation.reason = error.message === 'Unsafe or oversized Codex transcript' ? 'transcript_unreadable' : error.message;
   }
+  return attestation;
+}
+
+async function persistNativeCodexAttestation(session, attestation) {
+  const executionId = attestation.execution_id;
   const relative = `runtime/executions/${executionId}/native-attestation.jsonl`;
   await assertWorkspaceTarget(session, relative);
   const directory = join(session, 'runtime/executions', executionId);
@@ -187,27 +198,39 @@ async function captureNativeCodexAttestation({ root, session, executionId, stage
   } finally { await file.close(); }
 }
 
-// Codex's SubagentStop hook can run just before the child rollout receives its final task_complete row.
-// Re-read only a child proven to have been spawned by this parent/stage after the worker has ended.
-// This closes that timing window while keeping the same identity and completed-turn checks as the hook.
-export async function refreshNativeCodexAttestation({ root, parentSessionId, stage }) {
-  const threadId = await resolveNativeCodexThread({ root, parentSessionId, stage });
-  if (!threadId || !stage?.execution_id) return null;
+export async function refreshNativeCodexAttestation(target) {
+  const existing = await readNativeCodexAttestation(target);
+  if (existing.status !== 'captured' && !['attestation_not_recorded', 'completed_turn_metadata_missing', 'transcript_unavailable'].includes(existing.reason)) return existing;
+
+  const { root, parentSessionId, stage } = target;
+  const { threadId, invalid } = await nativeCodexThreadEvidence(target);
+  if (invalid) return { status: 'invalid', reason: invalid };
+  if (!threadId) return existing;
+  if (existing.thread_id && existing.thread_id !== threadId) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
   const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
   const transcriptPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
-  if (!transcriptPath) return null;
+  if (!transcriptPath) return existing;
   const workspace = await realpath(root);
-  await captureNativeCodexAttestation({
+  const observation = {
     root: workspace,
-    session: join(workspace, '.io'),
     executionId: stage.execution_id,
     stageId: stage.stage_id || stage.skill,
     stage,
     parentSessionId,
     event: { hook_event_name: 'SubagentStop', agent_id: threadId, agent_transcript_path: transcriptPath },
     source: 'codex-finish-transcript-refresh',
-  });
-  return readNativeCodexAttestation({ root: workspace, parentSessionId, stage });
+  };
+
+  // Check the same child for newer completed turns, such as a repair after a gate refusal.
+  // SubagentStop and finish can both precede task_complete in that rollout.
+  let attestation = await observeNativeCodexAttestation(observation);
+  for (const delay of [100, 250, 400]) {
+    if (existing.status === 'captured' || attestation.reason !== 'completed_turn_metadata_missing') break;
+    await wait(delay);
+    attestation = await observeNativeCodexAttestation(observation);
+  }
+  await persistNativeCodexAttestation(join(workspace, '.io'), attestation);
+  return readNativeCodexAttestation(target);
 }
 
 export async function readNativeCodexAttestation({ root, parentSessionId, stage }) {
@@ -227,7 +250,9 @@ export async function readNativeCodexAttestation({ root, parentSessionId, stage 
     for (const row of rows) {
       let entry;
       try { entry = JSON.parse(row); } catch { return { status: 'invalid', reason: 'attestation_record_malformed' }; }
-      if (entry.schema_version !== 1 || entry.execution_id !== executionId || !stageIds.has(entry.stage_id) || entry.parent_session_id !== parentSessionId || entry.native_agent_id !== stage.native_agent_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.thread_id || '')) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
+      if (entry?.schema_version !== 1 || entry.execution_id !== executionId || !stageIds.has(entry.stage_id) || entry.parent_session_id !== parentSessionId || entry.native_agent_id !== stage.native_agent_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.thread_id || '') || (latest && latest.thread_id !== entry.thread_id)) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
+      if (!['captured', 'unavailable'].includes(entry.status) || (entry.status === 'captured' && (!Array.isArray(entry.turns) || !entry.turns.every((turn) => typeof turn?.turn_id === 'string' && typeof turn.status === 'string')))) return { status: 'invalid', reason: 'attestation_record_malformed' };
+      if (latest?.status === 'captured' && entry.status === 'unavailable' && entry.reason === 'completed_turn_metadata_missing') continue;
       latest = entry;
     }
     if (!latest) return { status: 'unavailable', reason: 'attestation_not_recorded' };
@@ -277,7 +302,8 @@ export async function recordNativeStageObservation(root, event) {
   } finally { await file.close(); }
   if (state.orchestrator_provider === 'codex' && event.hook_event_name === 'SubagentStop') {
     const stageId = Object.entries(state.stages || {}).find(([, stage]) => stage === matches[0])?.[0] || matches[0].skill || 'unknown';
-    await captureNativeCodexAttestation({ root: workspace, session, executionId: matches[0].execution_id, stageId, stage: matches[0], parentSessionId: state.orchestrator_session_id, event });
+    const attestation = await observeNativeCodexAttestation({ root: workspace, executionId: matches[0].execution_id, stageId, stage: matches[0], parentSessionId: state.orchestrator_session_id, event });
+    await persistNativeCodexAttestation(session, attestation);
   }
   return true;
 }

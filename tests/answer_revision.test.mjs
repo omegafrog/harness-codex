@@ -84,10 +84,39 @@ test('one answer batch never repeats a question ID, and unknown or empty answers
     [reply(q1, 'changed'), reply(q1, 'changed again')],
     [reply('ask:99', 'stale')],
     [reply(q2, '')],
+    [{ ...reply(q2, 'confirmed'), clarification: 'What does it mean?' }],
+    [reply(q2, 'confirmed'), { question_id: q2, clarification: 'What does it mean?' }],
+    [{ question_id: 'ask:99', clarification: 'What does it mean?' }],
+    [{ question_id: q2, clarification: ' ' }],
     [null],
   ]) await assert.rejects(send(collectAnswers, directory, entries), rejection, JSON.stringify(entries));
   await assert.rejects(collectAnswers(directory, PREFIX, questions, 'not json'), /Answers must be a JSON array/);
   assert.deepEqual(await json(directory, 'pending-answers.json'), [reply(q1, 'one')], 'a rejected batch changes nothing');
+});
+
+test('a clarification alone stays pending and is replaced by a later confirmed answer', async (t) => {
+  const directory = await session(t);
+  const clarification = { question_id: q1, clarification: 'What would this option change?' };
+  const queued = [reply(q1, 'old selection')];
+  const pending = await send(collectAnswers, directory, [clarification], queued);
+  assert.deepEqual(pending, { answers: [], complete: false, clarifications: [clarification] });
+  await assert.rejects(readFile(join(directory, PREFIX, 'decision-answers.json')), { code: 'ENOENT' });
+
+  const freeText = 'Preserve the title "Delete?" in the activity record.';
+  const confirmed = [reply(q1, freeText), reply(q2, 'two'), reply(q3, 'three')];
+  const partial = await send(collectAnswers, directory, confirmed.slice(1), queued);
+  assert.equal(partial.complete, false, 'the older queued answer cannot settle the clarification');
+  assert.deepEqual(partial.clarifications, [clarification]);
+  const complete = await send(collectAnswers, directory, [confirmed[0]]);
+  assert.equal(complete.complete, true);
+  assert.deepEqual(await json(directory, 'decision-answers.json'), complete.answers);
+  assert.deepEqual(complete.answers.find(({ question_id }) => question_id === q1), confirmed[0]);
+  assert.equal(complete.clarifications, undefined);
+
+  // An interrupted write may leave the pending file behind after the decision was recorded.
+  await writeFile(join(directory, PREFIX, 'pending-answers.json'), JSON.stringify([clarification]));
+  assert.deepEqual(await send(collectAnswers, directory, [confirmed[0]]), complete);
+  await assert.rejects(send(collectAnswers, directory, [clarification]), rejection);
 });
 
 test('once the decision is recorded, a differing answer is rejected and the decision stays as recorded', async (t) => {

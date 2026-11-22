@@ -10,7 +10,7 @@ import { inspectContracts } from "../contracts/contracts.mjs";
 import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 import { inspectPlanSet } from "../workflow/plan-review.mjs";
 
-const STATUSES = new Set(["pass", "fail", "blocked"]);
+const STATUSES = new Set(["pass", "fail", "blocked", "unverified"]);
 
 export const DEFAULT_HOOK_CHECKS = Object.freeze({
   before_dispatch: Object.freeze([
@@ -246,9 +246,10 @@ export async function checkContractDocs(state) {
   return inspectContracts({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, base_ref: state?.contract_base_ref || null });
 }
 
-export async function checkTrackerSync(state) {
+export async function checkTrackerSync(state, { expected_status = null } = {}) {
   const ticketRefs = Array.isArray(state?.tracker_sync?.ticket_refs) ? state.tracker_sync.ticket_refs : null;
-  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, ticket_refs: ticketRefs });
+  const { status, reason, violations, ...details } = await inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.workspace_root, ticket_refs: ticketRefs, expected_status });
+  return { status, reason, violations, details };
 }
 
 const DEFAULT_CHECKS = Object.freeze({
@@ -455,12 +456,13 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
   const blockedChecks = checkResults.filter((check) => check.status === "blocked");
   const status = failedChecks.length > 0 ? "fail" : blockedChecks.length > 0 ? "blocked" : "pass";
   const firstUnresolved = failedChecks[0] || blockedChecks[0] || null;
+  const hasUnverifiedEvidence = checkResults.some((check) => check.status === "unverified");
   const verdict = {
     schema_version: SCHEMA_VERSION,
     hook: hookLabel,
     rule_id: `lifecycle.${hookLabel}`,
     status,
-    reason: firstUnresolved?.reason || "all_checks_passed",
+    reason: firstUnresolved?.reason || (hasUnverifiedEvidence ? "checks_passed_with_unverified_evidence" : "all_checks_passed"),
     evidence_path: evidencePath,
     checks: checkResults,
     violations: [...new Set(failedChecks.flatMap((check) => check.violations))],

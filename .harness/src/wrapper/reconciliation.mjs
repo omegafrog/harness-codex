@@ -100,7 +100,7 @@ export function evaluateCompletion({
   pr = {},
 } = {}) {
   const unresolved = [];
-  if (trackerSync && trackerSync.status !== "pass") unresolved.push(`tracker_sync:${trackerSync.reason}`);
+  if (trackerSync && !["pass", "unverified"].includes(trackerSync.status)) unresolved.push(`tracker_sync:${trackerSync.reason}`);
   if (planReview?.status !== "pass") unresolved.push(`plan_review:${planReview?.reason || "missing"}`);
   const deferred = completionKind === 'plan_implemented' && contractDocs?.status === 'deferred' && contractDocs.reason === 'sync_after_implementation_complete';
   if (contractDocs?.status !== "pass" && !deferred) unresolved.push(`contract_docs:${contractDocs?.reason || "missing"}`);

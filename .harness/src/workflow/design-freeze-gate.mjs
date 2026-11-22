@@ -5,6 +5,7 @@
 // fails. Every finding names the stage that owns the failing document (`owner_stage`), so a failure tells which stage to reopen.
 //
 // It holds only what must be true whatever the design, and reads documents by their table key columns:
+// - technology.md settles the applicable implementation stack in its coverage table;
 // - api.md: every endpoint row (a table with a `Method / path` column) cites, in its `근거` column, an `AS-xx` use case that
 //   tactical-design.md declares; any BIZ/INV/EX/AC it cites exists in requirements.md;
 // - data.md (rows with a `저장 상태` column) and ui-handoff.md (rows with a `화면` column): the `근거` column cites an existing
@@ -17,6 +18,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { EXTERNAL, clean, ids, isBlank, names, outsideFences, parseTables, planSetDocument, readContextDesign, rowsOf, sections, stakeholderAnalysisSkipped, unique } from './domain-model-gate.mjs';
+import { sessionOutputPath } from './session-output.mjs';
 import { TACTICAL_DESIGN_DOCUMENT, WORKTREE_STAGE } from './worktree-stages.mjs';
 
 export const FREEZE_STAGE = WORKTREE_STAGE.TACTICAL_DATA;
@@ -28,12 +30,33 @@ const BIZ_ID = /\bBIZ-\d+\b/g;
 const PORT_CONTRACT = ['시그니처', '소유 위치', '사용 메서드', '실패 계약'];
 const BINDING_FIELDS = ['인터페이스 경로', '구현체', '구현체 경로', '기술·구현 선언', '조립 위치', '데이터 매핑', '트랜잭션 공유'];
 const NOT_APPLICABLE = /^해당 없음\s*[—–-]\s*\S/;
+const UNDECIDED = /^(?:미정|미확정|해당 없음|TBD|TODO|unknown|pending|n\/a)(?:[\s:—–-]|$)/i;
+const STACK_AREAS = ['runtime', 'language-build', 'server-api', 'ui', 'storage', 'storage-access', 'migration', 'transactions', 'outbound', 'unit-test-tool', 'unit-test-cli'];
+const STACK_COLUMNS = ['항목', '판정', '결정·근거'];
 
 const DOCUMENTS = Object.freeze({
   api: { name: 'api.md', owner: WORKTREE_STAGE.TACTICAL_API, key: (header) => header.some((name) => /method/i.test(name) && /path/i.test(name)), item: (row, header) => clean(row[header.find((name) => /method/i.test(name) && /path/i.test(name))]), kind: 'API endpoint', needsUseCase: true },
   data: { name: 'data.md', owner: WORKTREE_STAGE.TACTICAL_DATA, key: (header) => header.includes('저장 상태'), item: (row) => `${clean(row['소유 컨텍스트'] || '')} ${clean(row['저장 상태'])}`.trim(), kind: 'stored entity', skip: (row) => /^(?:없음|해당 없음)(?:\s|$|[—–-])/.test(clean(row['저장 상태'])) || isBlank(row['저장 상태']) },
   ui: { name: 'ui-handoff.md', owner: WORKTREE_STAGE.TACTICAL_UI, key: (header) => header.includes('화면'), item: (row) => clean(row['화면']), kind: 'screen' },
 });
+
+function checkTechnology(technology, required, fail) {
+  const report = (code, message, area) => fail(code, message, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, area);
+  const rows = rowsOf(technology, ...STACK_COLUMNS);
+  if (!rows.length) {
+    report('TECHNOLOGY_COVERAGE_MISSING', 'technology.md must declare the implementation stack coverage table (항목, 판정, 결정·근거)');
+    return;
+  }
+  for (const area of STACK_AREAS) {
+    const matches = rows.filter((row) => clean(row['항목']) === area);
+    const row = matches[0];
+    const status = clean(row?.['판정']);
+    const decision = clean(row?.['결정·근거']);
+    if (matches.length !== 1 || isBlank(decision) || UNDECIDED.test(decision) || (status !== 'SETTLED' && (status !== 'NOT_APPLICABLE' || required.has(area)))) {
+      report('TECHNOLOGY_COVERAGE_INCOMPLETE', `technology.md must give one concrete decision for ${area}, or a reasoned NOT_APPLICABLE where the frozen design does not require it`, area);
+    }
+  }
+}
 
 // The traced rows of a document: every row of a table that has the document's key column, with what each row cites.
 function tracedRows(kind, text) {
@@ -104,15 +127,16 @@ function checkBindings(contexts, data, fail) {
   }
 }
 
-export function checkDesignFreeze({ requirements, tacticalDesign, documents = {} }) {
+export function checkDesignFreeze({ requirements, tacticalDesign, documents = {}, frontendApproved = false }) {
   const errors = [];
   const fail = (code, message, owner_stage, id) => errors.push({ code, message, ...(id ? { id } : {}), owner_stage });
   const known = new Set([...String(requirements).matchAll(/^\s*(?:[-*]\s+|#{3}\s+)((?:BIZ|INV|EX|AC)-\d+)\b/gm)].map((match) => match[1]));
   const contexts = readContextDesign(tacticalDesign);
   const parts = contexts ? {} : sections(tacticalDesign);
   const designLocation = contexts ? 'bounded context Application Service methods' : 'section 4';
+  const application = contexts ? contexts.flatMap(({ application }) => application) : rowsOf(parts[4], 'AS', '업무');
   const useCases = new Map();
-  for (const row of contexts ? contexts.flatMap(({ application }) => application) : rowsOf(parts[4], 'AS', '업무')) {
+  for (const row of application) {
     for (const id of ids(row['AS'], AS_ID)) useCases.set(id, unique([...(useCases.get(id) || []), ...ids(row['업무'], BIZ_ID)]));
   }
   const owner = (kind) => DOCUMENTS[kind].owner;
@@ -130,6 +154,22 @@ export function checkDesignFreeze({ requirements, tacticalDesign, documents = {}
       if (unknownUseCases.length || unknownRequirements.length) fail('UNTRACED_ITEM', `${label} cites ${[...unknownUseCases, ...unknownRequirements].join(', ')}, which ${TACTICAL_DESIGN_DOCUMENT} ${designLocation} / requirements.md does not declare. No scope is added after the requirements: remove the item`, owner(kind), row.item);
       else if (spec.needsUseCase ? !row.useCases.length : !row.useCases.length && !row.requirements.length) fail('UNTRACED_ITEM', `${label}: ${how} no ${spec.needsUseCase ? `application-service use case (AS-xx of ${designLocation})` : 'use case (AS-xx) or requirement ID'}. Cite the use case that serves it, or remove the item: scope is never added after the requirements`, owner(kind), row.item);
     }
+  }
+  if (documents.technology !== undefined) {
+    const uiApplicable = frontendApproved || traced.ui.length > 0;
+    const required = new Set();
+    if (useCases.size || traced.api.length || uiApplicable || traced.data.length) {
+      for (const area of ['runtime', 'language-build', 'unit-test-tool', 'unit-test-cli']) required.add(area);
+    }
+    if (traced.api.length) required.add('server-api');
+    if (uiApplicable) required.add('ui');
+    if (traced.data.length) {
+      required.add('storage');
+      required.add('storage-access');
+    }
+    if (application.some((row) => /\bT\d+\s*:/.test(clean(row['트랜잭션 경계'])))) required.add('transactions');
+    if (contexts?.some(({ interfaces }) => interfaces.length > 0)) required.add('outbound');
+    checkTechnology(documents.technology, required, fail);
   }
 
   // 2. Every BIZ that an external system does not own alone has a use case, and a user-facing BIZ has an endpoint or screen.
@@ -150,7 +190,7 @@ export function checkDesignFreeze({ requirements, tacticalDesign, documents = {}
     if (!surfaces.some((row) => row.requirements.includes(id) || row.useCases.some((as) => mine.includes(as)))) fail('REQUIREMENT_UNCOVERED', `${id} has a user actor and use cases (${mine.join(', ')}) but no endpoint or screen cites it or one of them`, traced.api.length ? owner('api') : owner('ui'), id);
   }
   if (contexts) checkBindings(contexts, documents.data, fail);
-  const order = [WORKTREE_STAGE.APPLICATION_SERVICE, WORKTREE_STAGE.TACTICAL_UI, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA];
+  const order = [WORKTREE_STAGE.APPLICATION_SERVICE, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_UI, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA];
   return { ok: errors.length === 0, errors: errors.sort((a, b) => order.indexOf(a.owner_stage) - order.indexOf(b.owner_stage)) };
 }
 
@@ -163,7 +203,7 @@ async function implementationDocument(root, planSetId, name) {
 // The gate on the plan set's documents of a workspace: what the command, the runner and the to-ticket start guard all run. A plan
 // set that skipped the requirements flow, or whose requirements/tactical design do not exist (the tactical design gate owns that),
 // has nothing to trace.
-export async function checkWorkspaceDesignFreeze({ root, planSetId }) {
+export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology = false, allowLegacyTechnology = false }) {
   const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
   const requirements = await planSetDocument(root, planSetId, 'requirements.md');
@@ -171,21 +211,30 @@ export async function checkWorkspaceDesignFreeze({ root, planSetId }) {
   if (requirements.text === null || tacticalDesign.text === null) return { ok: true, skipped: true, errors: [] };
   const documents = {};
   for (const [kind, spec] of Object.entries(DOCUMENTS)) documents[kind] = await implementationDocument(root, planSetId, spec.name);
-  return checkDesignFreeze({ requirements: requirements.text, tacticalDesign: tacticalDesign.text, documents });
+  const technology = await implementationDocument(root, planSetId, 'technology.md');
+  const readSession = (ref) => readFile(sessionOutputPath(root, ref, { create: false }), 'utf8')
+    .then(JSON.parse, (error) => { if (error.code === 'ENOENT') return null; throw error; });
+  const state = await readSession('runtime/orchestrator/state.json');
+  const legacyTechnology = allowLegacyTechnology && !parseTables(technology || '').some(({ header }) => STACK_COLUMNS.every((column) => header.includes(column)));
+  if (!legacyTechnology && (technology !== null || requireTechnology || state?.stages?.[WORKTREE_STAGE.TACTICAL_TECHNOLOGY])) documents.technology = technology;
+  const ui = state?.stages?.[WORKTREE_STAGE.TACTICAL_UI];
+  const handoff = ui?.status === 'completed' && ui.code === 'OK' && !ui.stale && ui.result_ref ? await readSession(ui.result_ref) : null;
+  const frontendApproved = handoff?.artifacts?.some((item) => item.kind === 'frontend_design_brief') === true;
+  return checkDesignFreeze({ requirements: requirements.text, tacticalDesign: tacticalDesign.text, documents, frontendApproved });
 }
 
 export async function evaluateDesignFreezeGate({ root, input, envelope }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
   if (stage !== FREEZE_STAGE || envelope?.status !== 'completed' || !planSetId) return null;
-  return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId })) };
+  return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology: true })) };
 }
 
 export function freezeFailureInstruction(verdict) {
   const earlier = unique(verdict.errors.map((error) => error.owner_stage)).filter((stage) => stage !== verdict.stage);
   const head = `The runner ran the design-freeze gate (harness-design-freeze-check.mjs) once for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. The design must add no scope: every item traces to a use case and requirement that already exist.`;
   if (!earlier.length) return `${head} Repair your own document (data.md): cite the use case or requirement of each stored entity and settle the concrete binding of every declared outbound interface. Remove undeclared items. Never edit requirements.md or an earlier document to make the gate pass. Rewrite your output file if its summary or artifacts change, then run finish again.`;
-  return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in documents of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage ${earlier[0]} (the earliest stage to reopen: an UNTRACED_ITEM is removed by its owner, a REQUIREMENT_UNCOVERED use case or endpoint is added by it) and result.dependency_gap holding these errors as the evidence, without editing any earlier document, and rewrite your output file, then run finish again. The orchestrator reopens ${earlier[0]} itself with --reopen-for and re-runs the stale stages in order, without asking the user. Never ask the user whether to include the item in scope.`;
+  return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in documents of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage ${earlier[0]} (the earliest stage to reopen) and result.dependency_gap holding these errors as the evidence, without editing any earlier document, and rewrite your output file, then run finish again. The orchestrator reopens ${earlier[0]} itself with --reopen-for and re-runs the stale stages in order, without asking the user about reopening. Never ask the user whether to include the item in scope.`;
 }
 
 export class DesignFreezeError extends Error {
@@ -203,9 +252,9 @@ export async function assertDesignFreezeGate(options) {
 }
 
 // to-ticket splits a frozen design: it starts only while the gate passes on the current documents.
-export async function designNotFrozen({ root, planSetId }) {
+export async function designNotFrozen({ root, planSetId, allowLegacyTechnology = false }) {
   if (!planSetId) return null;
-  const verdict = await checkWorkspaceDesignFreeze({ root, planSetId });
+  const verdict = await checkWorkspaceDesignFreeze({ root, planSetId, allowLegacyTechnology });
   if (verdict.ok) return null;
   return `DESIGN_NOT_FROZEN: to-ticket splits a frozen design and does not start while the design-freeze gate fails (${verdict.errors.map((error) => `${error.code}${error.id ? ` ${error.id}` : ''} [${error.owner_stage}]`).join(', ')}). Re-run tactical-data so the gate passes (node .harness/scripts/harness-design-freeze-check.mjs --workspace-root <root> shows the errors); a design change is made by the stage that owns it, never by to-ticket`;
 }

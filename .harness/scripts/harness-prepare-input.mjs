@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 const base = new URL('../../.harness/src/workflow/', import.meta.url);
 const { prepareStageInput, resolveStageSkill } = await import(new URL('stage-input.mjs', base));
 const { parseWorktreeRecord } = await import(new URL('worktrees.mjs', base));
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await import(new URL('stage-runtime.mjs', base));
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
-const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
+const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchAttemptDirectory, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
+const { sessionOutputPath } = await import(new URL('session-output.mjs', base));
 // What the error output needs to know about this call.
 const errorContext = { script: 'prepare', stageId: undefined, root: undefined, mode: null };
 try {
@@ -97,6 +98,14 @@ try {
   if (options.restart !== undefined && options.restart !== 'true') throw new Error('restart must be true');
   if (options['user-revision'] !== undefined && options['user-revision'] !== 'true') throw new Error('user-revision must be true');
   const prepared = await prepareStageInput({ root, session, worktreeRef, workflowRef, stageId: options['stage-id'], codexSessionId, orchestratorSession: orchestrator, answer: options.answer ?? null, feedback: options.feedback ?? null, userRevision: options['user-revision'] === 'true', planId: options.plan ?? null, repairReceipt: options['repair-receipt'] ?? null, approvalAnswer: options['approval-answer'] ?? null, e2eRequest: options['e2e-request'] ?? null, testDefectFailure: options['test-defect-failure'] ?? null, reviewAdmissionRef: options['review-admission-ref'] ?? null, publicationApproved: options['publication-approved'] === 'true', requirementsApproved: options['requirements-approved'] === 'true', restart: options.restart === 'true', reopenFor: options['reopen-for'] ?? null, requestedStageBinding });
+  const attemptId = process.env.HARNESS_NATIVE_LAUNCH_ATTEMPT_ID;
+  if (attemptId && prepared.input?.execution_id) {
+    // This receipt is independent of stdout. Record it only after prepare's inputs and support files are ready.
+    try {
+      const path = sessionOutputPath(root, `${launchAttemptDirectory(attemptId)}/prepared.json`);
+      await writeFile(path, `${JSON.stringify({ execution_id: prepared.input.execution_id })}\n`, { flag: 'wx', mode: 0o600 });
+    } catch { /* A receipt write must not prevent delivery of the normal result. */ }
+  }
   process.stdout.write(`${JSON.stringify(verbose ? prepared : compactPrepared(prepared))}\n`);
 } catch (error) {
   writeError(process.stderr, error, errorContext);

@@ -17,6 +17,20 @@ import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const REQUEST = '커뮤니티 게시글 작성 기능을 기존 전술 설계에 따라 구현한다';
 const APPROVAL = '네, 검토한 ticket 계획 그대로 발행하세요';
+const TECHNOLOGY = [
+  '| 항목 | 판정 | 결정·근거 |', '|---|---|---|',
+  '| runtime | SETTLED | Node.js 22.x |',
+  '| language-build | SETTLED | JavaScript ESM, npm |',
+  '| server-api | SETTLED | node:http, node src/server.mjs |',
+  '| ui | NOT_APPLICABLE | 서버 전용 요청 |',
+  '| storage | SETTLED | PostgreSQL 18 |',
+  '| storage-access | SETTLED | pg 8 |',
+  '| migration | SETTLED | psql로 버전 관리 SQL을 적용한다 |',
+  '| transactions | SETTLED | pg PoolClient 단일 트랜잭션 |',
+  '| outbound | NOT_APPLICABLE | 별도 외부 통신이 없다 |',
+  '| unit-test-tool | SETTLED | node:test |',
+  '| unit-test-cli | SETTLED | node --test |',
+].join('\n');
 
 const REQUIREMENTS = `# 요구사항 명세
 
@@ -128,7 +142,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   refused(prepare('--stage-id', 'to-ticket'), /to-ticket cannot start before tactical-technology/);
   refused(prepare('--stage-id', 'tactical-code', '--plan', 'post-write'), /tactical-code cannot start before tactical-technology/);
 
-  const decisions = [['tactical-technology', 'technology.md', 'Node 20과 `node --test`를 쓴다.\n'], ['tactical-ui', null, '서버 전용 요청이라 UI는 없다.'], ['tactical-api', 'api.md', '`POST /posts`를 둔다.\n'], ['tactical-data', 'data.md', '`posts` table을 둔다.\n']];
+  const decisions = [['tactical-technology', 'technology.md', TECHNOLOGY], ['tactical-ui', null, '서버 전용 요청이라 UI는 없다.'], ['tactical-api', 'api.md', '`POST /posts`를 둔다.\n'], ['tactical-data', 'data.md', '`posts` table을 둔다.\n']];
   for (const [stage, name, content] of decisions) await runStage(stage, { files: name ? { [`docs/implementation/${planSetId}/${name}`]: content } : {}, summary: content, expectCommit: Boolean(name) });
   refused(prepare('--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', APPROVAL), /tracker-publish cannot start before to-ticket/);
 
@@ -229,13 +243,14 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   assert.deepEqual(context().ready_tickets, [{ plan_id: 'post-write', depends_on: ['auth-visitor-check'] }]);
   const gate = (...extra) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-workflow-complete.mjs'), '--root', workspace, '--workflow', 'tactical-to-code', '--worktree-id', flow.tree.worktree_id, '--base-ref', flow.tree.head, ...extra], { cwd: workspace, encoding: 'utf8' });
   // While a ticket is open the gate stays in progress, and a state file cannot claim the outcome.
-  await writeFile(join(workspace, '.io/runtime/claim.json'), JSON.stringify({ required_outcome: { passed: true }, tests: { passed: true } }));
+  await writeFile(join(workspace, '.io/runtime/claim.json'), JSON.stringify({ required_outcome: { passed: true }, tests: { passed: true }, tracker_sync: { ticket_refs: [] } }));
   const early = gate('--state', 'runtime/claim.json');
   assert.notEqual(early.status, 0);
   const claimed = JSON.parse(early.stdout);
   assert.equal(claimed.state, 'in-progress');
   assert.equal(claimed.verdict.checks.find((check) => check.rule_id === 'required_outcome').reason, 'tickets_not_completed');
-  assert.deepEqual(claimed.ignored_state_keys, ['required_outcome'], 'a state file cannot claim the ticket outcome');
+  assert.equal(claimed.verdict.checks.find((check) => check.rule_id === 'tracker_sync').details.tickets.length, 2);
+  assert.deepEqual(claimed.ignored_state_keys, ['required_outcome', 'tests', 'tracker_sync'], 'a state file cannot claim the ticket or E2E outcome');
   await implementTicket(await startTicket('post-write'), 'post-write', { 'src/post.mjs': 'export const write = (text) => text.length <= 1000;\n', 'test/BIZ-02.test.mjs': "import assert from 'node:assert/strict';\nimport { write } from '../src/post.mjs';\nassert.equal(write('a'), true);\n" }, '게시글 작성 구현');
   assert.equal(context().ready_tickets, undefined, 'no ticket is left');
 
@@ -260,9 +275,68 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   await writeFile(statePath, currentStateText);
 
   // The final gate reads the tracker and the recorded runs; the review of the published plan set stays current.
-  const completion = JSON.parse(gate('--final-workflow').stdout);
+  const completion = JSON.parse(gate().stdout);
   assert.equal(completion.state, 'completed', JSON.stringify(completion.verdict));
   assert.equal(completion.completion_kind, 'tickets_implemented');
+  assert.equal(completion.verdict.checks.find((check) => check.rule_id === 'tests'), undefined);
+
+  const profileId = 'post-flow-e2e';
+  const manifestPath = '.harness/agents/execution.json';
+  const fixtureCommand = [process.execPath, '-e', "require('node:assert/strict').ok(true)"];
+  const manifest = JSON.stringify({ schema_version: 1, profiles: { [profileId]: { purpose: 'e2e', command: fixtureCommand,
+    required_env: [], prepare: [], verify_config: [fixtureCommand], dependencies: [], config_inputs: ['src/post.mjs'],
+    timeout_ms: 5000, readiness_timeout_ms: 5000, poll_interval_ms: 100 } } });
+  await writeFile(join(workspace, manifestPath), manifest);
+  treeGit('add', '-f', manifestPath);
+  treeGit('commit', '-qm', 'e2e profile fixture');
+  const head = treeGit('rev-parse', 'HEAD').trim();
+  const e2eAnswer = '이 커밋의 게시글 E2E 실행을 승인합니다';
+  await codexUserPrompt(workspace, e2eAnswer);
+  const requestRef = 'runtime/e2e/requests/post-flow.json';
+  const request = { target_commit: head, profile_id: profileId, timeout_ms: 5000, scenarios: ['E2E-01'],
+    approval_answer: e2eAnswer, manifest_sha256: createHash('sha256').update(manifest).digest('hex') };
+  await mkdir(join(workspace, '.io', requestRef, '..'), { recursive: true });
+  await writeFile(join(workspace, '.io', requestRef), JSON.stringify(request));
+  const tests = (result) => result.verdict.checks.find((check) => check.rule_id === 'tests');
+  const pending = gate('--state', 'runtime/claim.json', '--final-workflow');
+  assert.equal(pending.status, 1, pending.stdout);
+  assert.equal(tests(JSON.parse(pending.stdout)).reason, 'approved_e2e_incomplete');
+
+  const preparedE2e = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'e2e-test', '--e2e-request', requestRef]);
+  const e2eBase = ['--root', workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', preparedE2e.input.execution_id];
+  const startedE2e = invoke(workspace, 'harness-native-stage.mjs', ['start', ...e2eBase]);
+  invoke(workspace, 'harness-native-stage.mjs', ['bind', ...e2eBase, '--agent-id', 'e2e-runner']);
+  const run = invoke(workspace, 'harness-exec.mjs', ['--root', workspace, '--profile', profileId]);
+  const receiptRef = run.evidence_path.slice(join(workspace, '.io').length + 1);
+  const cleanupRef = 'runtime/e2e/post-flow-run/cleanup.json';
+  await mkdir(join(workspace, '.io', cleanupRef, '..'), { recursive: true });
+  await writeFile(join(workspace, '.io', cleanupRef), JSON.stringify({ status: 'passed' }));
+  assert.equal(tests(JSON.parse(gate().stdout)).reason, 'approved_e2e_incomplete', 'the raw execution receipt cannot replace its accepted stage result');
+  await submitStage({ stage: 'e2e-test', started: startedE2e }, { resultExtra: { artifacts: [
+    { base: 'session', path: receiptRef, kind: 'e2e_receipt' },
+    { base: 'session', path: cleanupRef, kind: 'e2e_cleanup' },
+  ] } });
+  assert.equal(JSON.parse(finishStage({ base: e2eBase }).stdout).status, 'completed');
+  const verified = JSON.parse(gate('--final-workflow').stdout);
+  assert.equal(verified.state, 'completed', JSON.stringify(verified.verdict));
+  assert.equal(tests(verified).reason, 'approved_e2e_passed');
+  assert.equal(tests(verified).details.receipt, receiptRef);
+  const newerRequest = join(workspace, '.io/runtime/e2e/requests/followup.json');
+  await writeFile(newerRequest, JSON.stringify({ ...request, scenarios: ['E2E-02'] }));
+  assert.equal(tests(JSON.parse(gate().stdout)).reason, 'approved_e2e_incomplete');
+  await rm(newerRequest);
+
+  const testedFile = join(workspace, 'src/post.mjs');
+  const testedContent = await readFile(testedFile);
+  await writeFile(testedFile, 'export const write = () => false;');
+  assert.equal(tests(JSON.parse(gate().stdout)).reason, 'e2e_receipt_config_changed');
+  await writeFile(testedFile, testedContent);
+  await writeFile(join(workspace, 'src/auth.mjs'), 'export const visitor = () => false;');
+  assert.equal(tests(JSON.parse(gate().stdout)).reason, 'e2e_receipt_stale');
+  treeGit('restore', 'src/auth.mjs');
+  await writeFile(join(workspace, '.io', cleanupRef), '{}');
+  assert.equal(tests(JSON.parse(gate().stdout)).reason, 'approved_e2e_evidence_invalid');
+  await writeFile(join(workspace, '.io', cleanupRef), JSON.stringify({ status: 'passed' }));
 
   // The published plan set stays tied to the design it was reviewed against: a changed decision makes the gate wait again.
   const api = join(workspace, 'docs/implementation', planSetId, 'api.md');

@@ -192,6 +192,8 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const managed = [
     ...REQUIREMENTS_STAGES.slice(1).map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
     '.harness/src/workflow/output-schema.mjs',
+    '.harness/src/workflow/questions.mjs',
+    '.harness/src/workflow/stage-input.mjs',
     '.harness/scripts/harness-result.mjs',
     '.harness/src/workflow/requirements-restart.mjs',
     '.harness/src/workflow/worktree-stages.mjs',
@@ -217,7 +219,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `same content: ${path}`);
   }
   // The stage coordination references travel with the orchestrator skill (path rewritten for the provider copy).
-  for (const name of ['dispatch', 'workflow-map']) {
+  for (const name of ['coordination', 'dispatch', 'input', 'workflow-map']) {
     const path = `.codex/skills/orchestrator/references/${name}.md`;
     assert.ok(lock.files[path], `lock inventory: ${path}`);
     assert.equal(lock.files[path].source_path, `.codex/skills/orchestrator/references/${name}.md`);
@@ -266,6 +268,7 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   const schemaModule = join(root, '.harness/src/workflow/output-schema.mjs');
   const contextGuide = join(root, '.harness/internal-skills/bounded-context/GUIDE.md');
   const restartModule = join(root, '.harness/src/workflow/requirements-restart.mjs');
+  const inputGuide = join(root, '.codex/skills/orchestrator/references/input.md');
   const dispatchGuide = join(root, '.codex/skills/orchestrator/references/dispatch.md');
   const freshHook = join(root, '.harness/scripts/harness-fresh-agent.mjs');
   await unlink(template);
@@ -275,12 +278,14 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   await writeFile(contextGuide, 'outdated guide\n');
   await unlink(restartModule);
   await unlink(dispatchGuide);
+  await unlink(inputGuide);
   await unlink(freshHook);
   doctor = await runDoctor({ root, sourceRoot });
-  for (const path of [template, renderer, restartModule, dispatchGuide, freshHook, schemaModule]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
+  for (const path of [template, renderer, restartModule, dispatchGuide, inputGuide, freshHook, schemaModule]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
   for (const path of [TEMPLATE, '.harness/tools/plantuml-render.mjs', '.harness/internal-skills/requirements-fix/references/coverage.md', '.harness/internal-skills/bounded-context/GUIDE.md', '.harness/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/output-schema.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
   assert.match(await readFile(dispatchGuide, 'utf8'), /fork_turns: "none"/, 'update restores the orchestrator dispatch reference');
+  assert.match(await readFile(inputGuide, 'utf8'), /"clarification"/, 'update restores the orchestrator answer protocol');
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);
   assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some((item) => item.code === 'execution_asset_missing'), false);
   assert.equal(await readFile(join(root, 'docs/specs/community/requirements.md'), 'utf8'), '# 요구사항 명세\n');
@@ -345,20 +350,35 @@ test('the requirements stages run in order as workflow stages and the tactical d
   });
   assert.deepEqual(language.files, ['CONTEXT.md', requirements]);
 
-  // 4. event-storming asks its hotspots in one batch, then resumes with the answer and commits tables and diagrams together.
+  // 4. event-storming preserves the confirmed decision while the user asks for clarification about the other hotspot.
   const eventFiles = { [`${specDirectory}/diagrams/events/SD-01.events.puml`]: '@startuml\n@enduml\n', [`${specDirectory}/diagrams/events/SD-01.events.svg`]: '<svg xmlns="http://www.w3.org/2000/svg"/>\n', [`${specDirectory}/diagrams/events/cross-subdomain.events.puml`]: '@startuml\n@enduml\n', [`${specDirectory}/diagrams/events/cross-subdomain.events.svg`]: '<svg xmlns="http://www.w3.org/2000/svg"/>\n' };
-  const question = { question_id: 'hotspot-1', title: '[BIZ-01] HS-01 삭제한 게시글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요청은 삭제만 말한다', decision_kind: null };
+  const recoveryQuestion = { question_id: 'hotspot-2', title: '[BIZ-01] HS-02 삭제한 게시글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요청은 삭제만 말한다', decision_kind: null };
+  const authorQuestion = { question_id: 'hotspot-1', title: '[BIZ-01] HS-01 게시글의 삭제 권한은 누구에게 있나요?', options: [{ id: 'author', label: '작성자만 삭제', consequence: '다른 회원은 삭제할 수 없다', evidence: [] }, { id: 'member', label: '모든 회원이 삭제', consequence: '작성자 이외의 회원도 삭제할 수 있다', evidence: [] }], recommended_option_id: 'author', rationale: '작성자가 자신의 게시글을 지운다', decision_kind: null };
+  const eventDraft = '# 요구사항 명세\n\n- 상태: draft\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 게시글의 삭제 권한 | BIZ-01 | 대기 | | |\n| HS-02 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 대기 | | |\n';
   const waiting = await runStage('event-storming', {
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 대기 | | |\n' },
-    status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: 'hotspot 1건 질문', artifacts: [artifact(requirements, 'requirements')], questions: [question], expectCommit: false,
+    files: { [requirements]: eventDraft },
+    status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: 'hotspot 2건 질문', artifacts: [artifact(requirements, 'requirements')], questions: [authorQuestion, recoveryQuestion], expectCommit: false,
   });
   assert.equal(waiting.prepared.input.context.transition.from_stage, 'ubiquitous-language');
   assert.ok(waiting.prepared.input.input_refs.some((reference) => reference.path === 'CONTEXT.md'), 'event-storming receives the early glossary');
-  assert.equal(waiting.finished.result.questions[0].question_id.length > 0, true, 'the runner identifies the question');
-  const questionId = waiting.finished.result.questions[0].question_id;
+  const [authorId, recoveryId] = waiting.finished.result.questions.map(({ question_id }) => question_id);
+  const confirmed = { question_id: authorId, answer: 'author' };
+  const clarification = { question_id: recoveryId, clarification: '댓글이 달린 글도 같은 방식으로 처리하나요?' };
+  const mixed = invoke(workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', 'event-storming', '--answer', JSON.stringify([confirmed, clarification])]);
+  assert.equal(mixed.waiting_for_answers, true);
+  assert.equal(mixed.execution_id, undefined, 'clarification leaves the existing stage waiting');
+  assert.equal(mixed.answered, 1);
+  assert.deepEqual(mixed.questions.map(({ question_id }) => question_id), [recoveryId]);
+  assert.deepEqual(mixed.clarifications, [clarification]);
+  assert.match(mixed.next, /Address the user’s clarifications in chat/);
+  const waitingDirectory = dirname(waiting.started.output_path);
+  assert.equal(existsSync(join(waitingDirectory, 'decision-answers.json')), false);
+  assert.equal(await readFile(join(workspace, requirements), 'utf8'), eventDraft);
+
+  const recovery = { question_id: recoveryId, answer: '댓글이 달린 글도 삭제한 뒤 복구할 수 없게 한다.' };
   const resumed = await runStage('event-storming', {
-    extraArgs: ['--answer', 'no'],
-    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 4. 서브도메인 간 이벤트\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 해결 | 복구할 수 없다 → INV-01 | answers.json |\n', [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n\n요청 범위 밖 관찰: LENS-DOMAIN (event-storming)\n`, ...eventFiles },
+    extraArgs: ['--answer', JSON.stringify([recovery])],
+    files: { [requirements]: '# 요구사항 명세\n\n- 상태: draft\n\n## 4. 서브도메인 간 이벤트\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 게시글의 삭제 권한 | BIZ-01 | 해결 | 작성자만 삭제 → INV-01 | answers.json |\n| HS-02 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 해결 | 복구할 수 없다 → EX-01 | answers.json |\n', [analysis]: `# Stakeholder 분석\n\n> ${REQUEST}\n\n요청 범위 밖 관찰: LENS-DOMAIN (event-storming)\n`, ...eventFiles },
     artifacts: [artifact(requirements, 'requirements'), artifact(analysis, 'stakeholder_analysis'), artifact(`${specDirectory}/diagrams/events`, 'event_diagrams')],
   });
   assert.deepEqual(resumed.files, [analysis, requirements, ...Object.keys(eventFiles).sort()].sort());
@@ -366,7 +386,8 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(resumedResult.artifacts.find(({ kind }) => kind === 'event_diagrams').sha256, null);
   assert.ok(resumed.prepared.input.input_refs.some((reference) => reference.kind === 'previous_execution_result'), 'the resumed stage reads its previous result');
   const answers = JSON.parse(await readFile(join(dirname(resumed.started.output_path), 'answers.json'), 'utf8'));
-  assert.deepEqual(answers.map((entry) => [entry.question_id, entry.answer]), [[questionId, 'no']], 'the stage receives the actual answer under the identified question');
+  assert.deepEqual(answers, [confirmed, recovery], 'only confirmed decisions reach the worker');
+  assert.deepEqual(JSON.parse(await readFile(join(waitingDirectory, 'decision-answers.json'), 'utf8')), answers);
 
   // 5. subdomain-classification confirms the set and the classes with the user, then commits the plan set documents only.
   const classQuestion = { question_id: 'draft-classification', title: '[서브도메인 분류] SD-01 게시판의 분류는 무엇인가요?', options: [{ id: 'core', label: 'core', consequence: '이 요청의 차별점이다', evidence: [] }, { id: 'supporting', label: 'supporting', consequence: '필요하지만 차별되지 않는다', evidence: [] }], recommended_option_id: 'core', rationale: '글 삭제가 요청의 핵심이다', decision_kind: null };
@@ -440,9 +461,11 @@ test('the requirements stages run in order as workflow stages and the tactical d
   // The user approves the fixed requirements before tactical design: bounded-context's finish tells the orchestrator to show them
   // and ask, and the runner refuses domain-model without the user's own logged reply.
   assert.match(JSON.parse(fixed.stdout).next, /Show the fixed requirements\.md to the user[\s\S]*--requirements-approved true --approval-answer/);
+  assert.match(JSON.parse(fixed.stdout).next, /standalone `\$orchestrator <approval>`/);
   const unapproved = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(unapproved.status, 0);
   assert.equal(JSON.parse(unapproved.stderr).code, 'PRECONDITION');
+  assert.match(JSON.parse(unapproved.stderr).user_decision, /standalone `\$orchestrator <approval>`/);
   assert.match(unapproved.stderr, /Requirements approval answer was not recorded/);
   const claimed = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(claimed.status, 0, 'a bare flag with words the user never said is not approval');

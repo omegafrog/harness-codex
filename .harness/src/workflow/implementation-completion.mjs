@@ -10,7 +10,8 @@ import { readEvidence } from '../wrapper/review-input.mjs';
 import { readExecutionManifest } from './execution.mjs';
 import { inspectContractReview } from './contract-review.mjs';
 import { snapshotPlanSet } from './plan-review.mjs';
-import { sessionOutputPath } from './session-output.mjs';
+import { sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
+import { readExecutionInput, readSkillSessionJson, validateSkillReturn } from './stage-runtime.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -154,6 +155,65 @@ async function changedConfiguration(root, receipt) {
   return changed;
 }
 
+async function receiptBasisProblem(root, receipt, head) {
+  if (receipt.exit_code !== 0 || !receipt.config_hashes || typeof receipt.config_hashes !== 'object') return { reason: 'e2e_receipt_incomplete' };
+  if (!SHA.test(receipt.head || '')) return { reason: 'e2e_receipt_commit_missing', why: 'the receipt does not record the commit it ran; run the profile again' };
+  if (!(await isAncestor(root, receipt.head, head))) return { reason: 'e2e_receipt_not_in_history', receipt_commit: receipt.head };
+  const uncommitted = (receipt.uncommitted_paths || []).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path));
+  if (uncommitted.length || receipt.uncommitted_truncated) return { reason: 'e2e_receipt_ran_on_uncommitted_changes', paths: uncommitted.slice(0, MAX_LISTED) };
+  const configuration = await changedConfiguration(root, receipt);
+  if (configuration.length) return { reason: 'e2e_receipt_config_changed', files: configuration.slice(0, MAX_LISTED) };
+  const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path) && !isRepositoryIgnorePath(path));
+  if (changed.length) return { reason: 'e2e_receipt_stale', receipt_commit: receipt.head, head, paths: changed.slice(0, MAX_LISTED), path_count: changed.length };
+  return null;
+}
+
+export async function deriveApprovedTacticalE2E({ root, planSetId, session }) {
+  const read = (path) => readSkillSessionJson({ root, session_directory: session, path });
+  const state = await read('runtime/orchestrator/state.json').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+  const stage = state?.stages?.['e2e-test'];
+  const approvedDirectory = 'runtime/e2e/requests';
+  const approved = await readdir(sessionOutputPath(root, approvedDirectory, { create: false }), { withFileTypes: true })
+    .catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+  const requests = approved.filter((file) => file.isFile() && file.name.endsWith('.json'));
+  if (!stage && !requests.length) return null;
+  if (!stage || stage.status !== 'completed' || stage.code !== 'OK') {
+    const details = { execution_id: stage?.execution_id, stage_status: stage?.status };
+    return stage?.status === 'failed' ? fail('tests', 'approved_e2e_failed', [stage.execution_id || 'e2e-test'], details) : blocked('approved_e2e_incomplete', details);
+  }
+  const id = stage.execution_id;
+  try {
+    const input = await readExecutionInput({ root, execution_id: id });
+    const paths = stageExecutionPaths(root, id, { create: false });
+    const envelope = await read(paths.refs.returned);
+    const result = await read(paths.refs.result);
+    if (input.skill !== 'e2e-test' || input.context?.plan_set_id !== planSetId || stage.result_ref !== paths.refs.result || envelope.result_ref !== stage.result_ref || envelope.status !== 'completed' || envelope.code !== 'OK') {
+      throw new Error('Recorded E2E result does not belong to the completed stage of this plan set');
+    }
+    await validateSkillReturn({ root, input, envelope: { ...envelope, result } });
+    const request = input.input_refs.find((item) => item.kind === 'approved_e2e_request');
+    const receiptRef = result.artifacts.find((item) => item.kind === 'e2e_receipt');
+    const cleanup = result.artifacts.find((item) => item.kind === 'e2e_cleanup');
+    for (const item of [request, receiptRef, cleanup]) {
+      const file = sessionOutputPath(root, item.path, { create: false });
+      if (item.base !== 'session' || sha256(await readFile(file)) !== item.sha256) throw new Error(`E2E evidence changed: ${item.path}`);
+    }
+    for (const entry of requests) {
+      const ref = `${approvedDirectory}/${entry.name}`;
+      if (ref === request.path) continue;
+      const info = await stat(sessionOutputPath(root, ref, { create: false }));
+      if (info.mtimeMs > Date.parse(stage.started_at)) return blocked('approved_e2e_incomplete', { request: ref });
+    }
+    const receipt = await read(receiptRef.path);
+    const head = (await git(root, 'rev-parse', 'HEAD')).trim();
+    const basis = await receiptBasisProblem(root, receipt, head);
+    if (basis) return blocked(basis.reason, { ...basis, receipt: receiptRef.path, next: 'Approve and run E2E again from the committed application and test code with the current execution configuration' });
+    return pass('approved_e2e_passed', { execution_id: id, profile_id: receipt.profile_id, receipt: receiptRef.path, head: receipt.head });
+  } catch (error) {
+    return blocked('approved_e2e_evidence_invalid', { execution_id: id, error: error.message });
+  }
+}
+
 // The final E2E passes only when the latest E2E run of each profile the `e2e` plan names (a run that reached a verdict,
 // `passed` or `failed`) passed AND is a receipt of the code that is now in the branch: written by harness-exec.mjs with
 // the commit it ran, that commit is HEAD or an ancestor of it, no application/test file differs between that commit and
@@ -177,15 +237,8 @@ async function deriveTests({ root, plans, head }) {
     selected.push({ profile_id: profileId, ...latest });
     const { receipt } = latest;
     if (receipt.status === 'failed') { problems.push({ profile_id: profileId, reason: 'tests_not_passed', negative: true, receipt: latest.ref, exit_code: receipt.exit_code ?? null }); continue; }
-    if (receipt.exit_code !== 0 || !receipt.config_hashes || typeof receipt.config_hashes !== 'object') { problems.push({ profile_id: profileId, reason: 'e2e_receipt_incomplete', receipt: latest.ref }); continue; }
-    if (!SHA.test(receipt.head || '')) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_commit_missing', receipt: latest.ref, why: 'the receipt does not record the commit it ran; run the profile again' }); continue; }
-    if (!(await isAncestor(root, receipt.head, head))) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_not_in_history', receipt: latest.ref, receipt_commit: receipt.head }); continue; }
-    const uncommitted = (receipt.uncommitted_paths || []).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path));
-    if (uncommitted.length || receipt.uncommitted_truncated) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_ran_on_uncommitted_changes', receipt: latest.ref, paths: uncommitted.slice(0, MAX_LISTED) }); continue; }
-    const configuration = await changedConfiguration(root, receipt);
-    if (configuration.length) { problems.push({ profile_id: profileId, reason: 'e2e_receipt_config_changed', receipt: latest.ref, files: configuration.slice(0, MAX_LISTED) }); continue; }
-    const changed = (await changedSince(root, receipt.head)).filter((path) => !isDocumentationPath(path) && !isGeneratedPythonCache(path) && !isRepositoryIgnorePath(path));
-    if (changed.length) problems.push({ profile_id: profileId, reason: 'e2e_receipt_stale', receipt: latest.ref, receipt_commit: receipt.head, head, paths: changed.slice(0, MAX_LISTED), path_count: changed.length });
+    const basis = await receiptBasisProblem(root, receipt, head);
+    if (basis) problems.push({ profile_id: profileId, ...basis, receipt: latest.ref });
   }
   const learning = e2eLearningComplete({ e2e_failures: failures }) ? 'complete' : 'pending';
   if (!problems.length) return { verdict: pass('tests_passed', { e2e_learning: learning, profiles: selected.map((item) => ({ profile_id: item.profile_id, receipt: item.ref, head: item.receipt.head })) }), selected };

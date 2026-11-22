@@ -8,7 +8,7 @@
 
 `stakeholder-analysis`가 기존 승인 업무 안의 자명한 변경으로 `판정: 생략`이면 나머지 요구사항·전술 설계 stage는 문서 없이 생략 결과를 기록한다. 이해관계자 등록 요청은 `node .harness/scripts/harness-stakeholder.mjs add`로 사용자 소유 카드를 작성하도록 안내한다. worktree에서 사용할 카드는 커밋되어 있어야 한다.
 
-`bounded-context`가 완료되면 확정된 `requirements.md`의 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트를 보여 준다. 사용자가 직접 승인한 뒤에만 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`을 실행한다. 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
+`bounded-context`가 완료되면 확정된 `requirements.md`의 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트를 보여 주고 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 승인한 뒤에만 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`을 실행한다. 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
 
 ## 전술 설계
 

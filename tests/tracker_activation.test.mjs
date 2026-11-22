@@ -77,6 +77,7 @@ test('installed tracker activation links directly published Issues despite Proje
 
     const result = await activatePublication({ root, planSetId: 'example', run });
     assert.equal(result.status, 'activated');
+    assert.equal(result.tracker_check.status, 'unverified');
     assert.match(result.warnings[0], /Project rate limit/);
     assert.deepEqual(result.issues.map((issue) => issue.number), [100, 101, 102]);
     assert.deepEqual([...calls.labels].sort(), ['harness:intake', 'harness:plan', 'harness:plan-set']);
@@ -85,7 +86,7 @@ test('installed tracker activation links directly published Issues despite Proje
     await verifyActivatedPublication({ root, planSetId: 'example', run: async () => { throw new Error('unexpected GitHub call'); } });
     const { syncTrackerStatus } = await import(runtime('tracker/lifecycle.mjs'));
     const warning = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#101', status: 'in-progress', run: async () => { throw new Error('rate limit'); } });
-    assert.equal(warning.status, 'pass');
+    assert.equal(warning.status, 'unverified');
     assert.equal(warning.tracker_updated, false);
     assert.match(warning.warnings[0], /rate limit/);
     items[1].body = items[1].body.replace(/<!-- harness-plan [^\n]* -->/, '').trimEnd();

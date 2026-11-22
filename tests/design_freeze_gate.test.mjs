@@ -67,6 +67,20 @@ const DESIGN = `# 전술 설계
 const API = (rows) => `# API\n\n| Method / path | 요청 | 성공 응답 | 근거 |\n|---|---|---|---|\n${rows.join('\n')}\n`;
 const GOOD_ROWS = ['| `POST /calculations` | `{ "operator": "add" \\| "divide" }` | `200` | AS-01 (BIZ-01) |', '| `POST /auth/signup` | 입력 | `201` | AS-02 (BIZ-02, INV-03) |', '| `POST /auth/login` | 입력 | `200` | AS-03 |'];
 const DATA = '# 데이터\n\n| 소유 컨텍스트 | 저장 상태 | 최소 값 | 근거 |\n|---|---|---|---|\n| 사용자 인증 | 사용자 | 이메일 | AS-02, INV-03 |\n| 계산 | 없음 | - | - |\n';
+const TECHNOLOGY = `| 항목 | 판정 | 결정·근거 |
+|---|---|---|
+| runtime | SETTLED | Node.js 22.x |
+| language-build | SETTLED | JavaScript ESM, npm |
+| server-api | SETTLED | node:http, node src/server.mjs |
+| ui | NOT_APPLICABLE | 인증 API만 제공한다 |
+| storage | SETTLED | PostgreSQL 18 |
+| storage-access | SETTLED | pg 8 |
+| migration | SETTLED | psql로 버전 관리 SQL을 적용한다 |
+| transactions | SETTLED | pg PoolClient 단일 트랜잭션 |
+| outbound | SETTLED | pg 8로 인증 Repository를 연결한다 |
+| unit-test-tool | SETTLED | node:test |
+| unit-test-cli | SETTLED | node --test |
+`;
 const PORT = 'UserRepository | save(user: User) → UserId | auth 도메인 | AS-02 Auth.signup | 저장 실패를 반환한다';
 const CONTEXT_DESIGN = `# 전술 설계
 
@@ -108,6 +122,24 @@ const found = (verdict) => verdict.errors.map((error) => [error.code, error.id, 
 test('a fully traced design freezes, and tables that hold escaped pipes are still read', () => {
   assert.deepEqual(check({ api: API(GOOD_ROWS), data: DATA }), { ok: true, errors: [] });
   assert.deepEqual(check({}), { ok: true, errors: [] }, 'no API/UI/data tables: nothing to trace');
+});
+
+test('freeze requires concrete applicable stack decisions and a reason for omitted surfaces', () => {
+  const documents = { api: API(GOOD_ROWS), data: DATA };
+  const incomplete = TECHNOLOGY
+    .replace('SETTLED | Node.js 22.x', 'UNRESOLVED | 애플리케이션이 없다')
+    .replace('SETTLED | node:http, node src/server.mjs', 'NOT_APPLICABLE | 아직 framework를 선택하지 않았다')
+    .replace('SETTLED | pg 8', 'SETTLED | 미정')
+    .replace('SETTLED | node --test', 'SETTLED | -');
+  assert.deepEqual(found(check({ ...documents, technology: incomplete })), ['runtime', 'server-api', 'storage-access', 'unit-test-cli'].map((area) => ['TECHNOLOGY_COVERAGE_INCOMPLETE', area, 'tactical-technology']));
+  assert.deepEqual(found(check({ ...documents, technology: '# 미정\n' })), [['TECHNOLOGY_COVERAGE_MISSING', undefined, 'tactical-technology']]);
+  assert.deepEqual(check({ ...documents, technology: TECHNOLOGY }), { ok: true, errors: [] });
+  const frontendApproved = checkDesignFreeze({ requirements: REQUIREMENTS, tacticalDesign: DESIGN, documents: { ...documents, technology: TECHNOLOGY }, frontendApproved: true });
+  assert.deepEqual(found(frontendApproved), [['TECHNOLOGY_COVERAGE_INCOMPLETE', 'ui', 'tactical-technology']]);
+  const contextTechnology = TECHNOLOGY.replace('SETTLED | pg PoolClient 단일 트랜잭션', 'NOT_APPLICABLE | 트랜잭션이 없다')
+    .replace('SETTLED | pg 8로 인증 Repository를 연결한다', 'NOT_APPLICABLE | 인터페이스가 없다');
+  const components = checkDesignFreeze({ requirements: REQUIREMENTS, tacticalDesign: CONTEXT_DESIGN, documents: { api: API(GOOD_ROWS), data: DATA_WITH_BINDING, technology: contextTechnology } });
+  assert.deepEqual(found(components), ['transactions', 'outbound'].map((area) => ['TECHNOLOGY_COVERAGE_INCOMPLETE', area, 'tactical-technology']));
 });
 
 test('context component design freezes with bindings for its actual outbound interfaces', () => {
@@ -173,6 +205,8 @@ test('the gate is run only by the runner on the completed result of tactical-dat
   await writeFile(join(root, 'docs/specs/set/requirements.md'), REQUIREMENTS);
   await writeFile(join(root, 'docs/specs/set/tactical-design.md'), DESIGN);
   const api = join(root, 'docs/implementation/set/api.md');
+  const technology = join(root, 'docs/implementation/set/technology.md');
+  await writeFile(technology, TECHNOLOGY);
   const input = (skill, planSetId = 'set') => ({ skill, context: planSetId ? { plan_set_id: planSetId } : {} });
   const completed = { status: 'completed', code: 'OK' };
 
@@ -305,7 +339,8 @@ test('installed consumer: tactical-data must complete a binding, and to-ticket o
   const impl = `docs/implementation/${planSetId}`;
   const api = `${impl}/api.md`;
   const invented = API([...GOOD_ROWS, '| `POST /auth/logout` | 인증 정보 | `204` | BIZ-02 |']);
-  await runStage('tactical-technology', { files: { [`${impl}/technology.md`]: 'node --test\n' } });
+  const technology = `${impl}/technology.md`;
+  await runStage('tactical-technology', { files: { [technology]: TECHNOLOGY } });
   await runStage('tactical-ui', { expectCommit: false });
   await runStage('tactical-api', { files: { [api]: invented }, summary: 'API 계약' });
 
@@ -340,13 +375,16 @@ test('installed consumer: tactical-data must complete a binding, and to-ticket o
 
   // to-ticket starts on a frozen design, and not once a document changed to add scope after the freeze.
   await writeFile(join(workspace, api), invented);
+  await writeFile(join(workspace, technology), TECHNOLOGY.replace('SETTLED | pg 8', 'PARTIAL | 드라이버 미정'));
   treeGit('add', 'docs'); treeGit('commit', '-qm', 'scope added after the freeze');
   const refused = prepare('--stage-id', 'to-ticket');
   assert.notEqual(refused.status, 0, refused.stdout);
   const explained = JSON.parse(refused.stderr.trim().split('\n').pop());
   assert.equal(explained.code, 'DESIGN_NOT_FROZEN', refused.stderr);
+  assert.match(explained.why, /TECHNOLOGY_COVERAGE_INCOMPLETE storage-access \[tactical-technology\]/);
   assert.match(explained.why, /UNTRACED_ITEM POST \/auth\/logout \[tactical-api\]/);
   await writeFile(join(workspace, api), API(GOOD_ROWS));
+  await writeFile(join(workspace, technology), TECHNOLOGY);
   treeGit('add', 'docs'); treeGit('commit', '-qm', 'scope removed');
   const started = await beginStage('to-ticket');
   assert.equal(started.prepared.input.skill, 'to-ticket');

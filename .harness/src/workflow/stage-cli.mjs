@@ -22,6 +22,28 @@ export const nativeCommand = (action, executionId, extra = '') => `${NATIVE} ${a
 export const nativeReceiveCommand = (executionId, agentId) => nativeCommand('receive', executionId, `--agent-id '${agentId.replaceAll("'", "'\\''")}'`);
 export const contextCommand = () => CONTEXT;
 
+export function launchAttemptDirectory(attemptId) {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(attemptId || '')) throw new Error('Invalid native launch attempt ID');
+  return `runtime/launch-attempts/${attemptId}`;
+}
+
+export function launchChildError({ phase, missingResult, command, preparedExecutionId, canStart, explained, evidenceError }) {
+  const outcome = command.spawn_error ? `${command.spawn_error.code || command.spawn_error.name}: ${command.spawn_error.message}`
+    : command.signal ? `signal ${command.signal}` : `exit status ${command.exit_code ?? 'unknown'}`;
+  const message = `Native launch ${phase} ${missingResult ? 'returned no usable result' : 'failed'} (${outcome}).`;
+  const inspect = preparedExecutionId && phase === 'start' && !canStart ? nativeCommand('inspect', preparedExecutionId) : CONTEXT;
+  return {
+    ...(explained || {
+      error: message,
+      code: missingResult ? 'LAUNCH_RESULT_MISSING' : 'LAUNCH_CHILD_FAILED',
+      why: message,
+      next: canStart ? [nativeCommand('start', preparedExecutionId)] : [inspect],
+    }),
+    ...(preparedExecutionId ? { prepared_execution_id: preparedExecutionId } : {}),
+    launch_command: { ...command, ...(evidenceError ? { evidence_error: evidenceError } : {}) },
+  };
+}
+
 // The feedback a taken-over stage resumes with. It is internal agent input, so it is English, and it holds no quote
 // because the printed command wraps it in single quotes.
 export const TAKEOVER_FEEDBACK = 'The previous run of this stage was interrupted when the Codex conversation that started it ended, and it recorded no result. Continue from the committed documents and the previous input, and keep any answers already given.';
@@ -62,11 +84,14 @@ export function compactPrepared(prepared) {
   if (!input?.execution_id) {
     // waiting_for_answers / waiting_for_running_stage / restart / discard results: already small, keep them and add the step.
     const { questions, answers, ...rest } = prepared;
+    const waitingInstruction = prepared.clarifications?.length
+      ? 'Address the user’s clarifications in chat and wait for their decisions on the outstanding questions (ids above).'
+      : 'Ask the user the remaining questions (ids above) and wait for their decisions.';
     return {
       ...rest,
       ...(questions ? { questions: questions.map(({ question_id, title }) => ({ question_id, title })) } : {}),
       ...(answers ? { answered: Array.isArray(answers) ? answers.length : Object.keys(answers).length } : {}),
-      ...(prepared.waiting_for_answers ? { next: `Ask the user the remaining questions (ids above), then pass their answers: ${PREPARE} --stage-id <stage> ${ANSWER_ARG}` } : {}),
+      ...(prepared.waiting_for_answers ? { next: `${waitingInstruction} Use ${PREPARE} --stage-id <stage> ${ANSWER_ARG} to pass the confirmed answers.` } : {}),
       ...(prepared.waiting_for_running_stage ? { next: `The answer is saved. Wait for the running native subagent to end, then ${nativeCommand('finish', prepared.execution_id)}; if the stage asks again, prepare it again (no new answer needed).` } : {}),
     };
   }
@@ -159,12 +184,13 @@ export function compactContext(context) {
 
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 const REQUIREMENTS_APPROVAL_ARGS = "--requirements-approved true --approval-answer '<the user's reply verbatim>'";
+const APPROVAL_REPLY_INSTRUCTION = 'When asking in chat, tell the user to send a standalone `$orchestrator <approval>` (Codex) or `/orchestrator <approval>` (Claude Code) in this worktree’s owner conversation. Pass the exact reply after the command prefix.';
 export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true }) {
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && stageId === 'frontend-visual-review' && (!ownerStage || ownerStage === 'frontend-implementation')) return `The visual review found implementation defects. Run the frontend correction for the same ticket: ${launchCommand('frontend-implementation', "--plan <ticket-id> --feedback '<visual review findings>'")}. The correction receives the persisted review result; after it completes, rerun frontend-visual-review. Do not ask the user or use --reopen-for.`;
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
-  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the fixed requirements.md to the user (every BIZ with its rules, exceptions and completion conditions, the subdomains and the bounded contexts) and ask whether to approve them before tactical design. Only after the user's own approval: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}. For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage.`;
+  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the fixed requirements.md to the user (every BIZ with its rules, exceptions and completion conditions, the subdomains and the bounded contexts) and ask whether to approve them before tactical design. ${APPROVAL_REPLY_INSTRUCTION} Only after the user's own approval: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}. For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage.`;
   if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${launchCommand(staleOrder[0])}. Do not ask the user for approval of this stage.`;
-  if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. Only after the user's own reply: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
+  if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user's own approval: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
   if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user verbatim and wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
@@ -317,6 +343,11 @@ const stageAfter = (previous) => {
 const RULES = [
   { re: /^Stage feedback must be a regular unshared file$/, explain: ({ stage }) => ({ code: 'INVALID_ARGUMENT', why: 'Feedback must be stored in a regular file inside the workspace; linked or shared files are refused.', next: [`Write the feedback JSON to a new regular file inside the worktree, then retry ${launchCommand(stage || '<stage-id>')} with --feedback <workspace-relative-path>.`] }) },
   { re: /^Stage feedback must contain a JSON object$/, explain: ({ stage }) => ({ code: 'INVALID_ARGUMENT', why: 'The feedback file is not a JSON object.', next: [`Write a JSON object to a new regular file inside the worktree, then retry ${launchCommand(stage || '<stage-id>')} with --feedback <workspace-relative-path>.`] }) },
+  { re: /^Requested stage binding cannot be verified: native attestation (completed_turn_metadata_missing|attestation_not_recorded|transcript_unavailable)$/, explain: ({ message, context }) => ({
+    code: 'MODEL_BINDING_UNVERIFIED',
+    why: `${message}. The requested model and effort require a completed turn from this execution's bound Codex worker.`,
+    next: [`Once the bound worker's completed turn is recorded, repeat: ${nativeCommand('finish', context.executionId)}`, `If the metadata is still missing, inspect: ${nativeCommand('inspect', context.executionId)}`],
+  }) },
   { re: /^Requested stage binding cannot be verified: native attestation (.+)$/, explain: ({ message, context }) => ({ code: 'MODEL_BINDING_UNVERIFIED', why: `${message}. The native stage has no valid file attestation for its observed model and effort.`, next: [nativeCommand('inspect', context.executionId)], decision: 'Do not accept or relaunch this result using transcript text. Report that the binding could not be verified and ask the user how to proceed.' }) },
   { re: /^Native subagent already served another execution/, explain: ({ context }) => ({ code: 'FRESH_AGENT_REQUIRED', why: 'Every new execution requires a fresh native worker in this provider session.', next: ['Spawn the assigned profile without forking or resuming a previous agent.', nativeCommand('bind', context.executionId, '--agent-id <new_agent_id>')] }) },
   { re: /^spec-me has been removed/, explain: ({ message }) => ({ code: 'WORKFLOW_RETIRED', why: message, next: [
@@ -490,8 +521,8 @@ const RULES = [
   { re: /^tactical-code \S+ cannot start before its prerequisite|^Ticket \S+ is already completed/, explain: ({ message }) => ({ code: 'TICKET_ORDER', why: `tactical-code builds one published ticket per run, after the tickets it depends on are completed (${message}).`, next: [`${CONTEXT} lists ready_tickets with the tickets still open and their prerequisites`, launchCommand('tactical-code', '--plan <ticket-id>')], decision: 'Pick a ready ticket; do not start a ticket whose prerequisite is open, and do not mark a ticket completed yourself.' }) },
   { re: /^Ticket \S+ is not a frontend ticket|^Frontend implementation requires completed tracker publication|^Frontend ticket requires completed\/OK|^Frontend .+ belongs to a different ticket|^Frontend visual review does not cover the current implementation/, explain: ({ message }) => ({ code: 'FRONTEND_ORDER', why: message, next: [CONTEXT], decision: 'Use the same ready frontend ticket and finish publication, design, implementation and visual review in order.' }) },
   { re: /needs --plan|needs the assigned \S+ from its previous input|needs the assigned ticket or plan|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan and tactical-code exactly one ticket that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, ready_tickets, plan_tickets and implementation_reviews; pick the next ready one from there`, launchCommand('tactical-code', '--plan <ticket-id>')] }) },
-  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: 'Show the whole reviewed plan set to the user and ask whether to publish it; only after the user replies, pass that reply verbatim: ' + launchCommand('tracker-publish', PUBLISH_ARGS) }) },
-  { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: () => ({ code: 'PRECONDITION', why: 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: 'Show the fixed requirements.md to the user and ask whether to approve it; only after the user replies, pass that reply verbatim: ' + launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS) }) },
+  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user replies, pass that reply verbatim: ${launchCommand('tracker-publish', PUBLISH_ARGS)}` }) },
+  { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: () => ({ code: 'PRECONDITION', why: 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: `Show the fixed requirements.md to the user and ask whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user replies, pass that reply verbatim: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}` }) },
   { re: /^Fixed requirements with domain IDs require a domain sync plan/, explain: ({ stage }) => ({ code: 'DOMAIN_SYNC_MISSING', why: 'bounded-context fixed requirements.md, which holds shared domain IDs, without writing the shared definition sync plan. The stage is still running and nothing was recorded.', next: ['Send this to the same subagent: create the proposal for the fixed requirements and run node .harness/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace-relative proposal path>, save its output as domain-sync.json in the execution directory (runtime/executions/<execution_id>/domain-sync.json), as its GUIDE step 9 says', `Then run the same finish again: ${nativeCommand('finish', '<execution_id>')}`], decision: 'If the subagent cannot write the plan after a repeat, report the error to the user and stop; do not write it yourself.' }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },

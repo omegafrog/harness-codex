@@ -37,6 +37,8 @@ model_tier: low_performance
 
 매번 `docs/implementation/<plan-set-id>/technology.md`에 체크리스트의 적용 판정과 확정된 stack 및 버전 범위, 실제 실행·검증 명령과 전제, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거·결정 주체, 수용한 단점을 한국어로 기록한다. 구현에 필수인 미결정은 면담에서 해소하며, 비차단 불확실성은 명시한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `.harness/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
 
+Freeze가 읽는 표의 열 이름은 `항목 | 판정 | 결정·근거`다. `runtime`, `language-build`, `server-api`, `ui`, `storage`, `storage-access`, `migration`, `transactions`, `outbound`, `unit-test-tool`, `unit-test-cli`를 각각 한 행에 적는다. `SETTLED` 행에는 구체 결정과 근거를, `NOT_APPLICABLE` 행에는 적용되지 않는 이유를 적는다. 저장소 엔진은 `storage`에, 접근 client/driver/ORM 또는 파일 접근 방식은 `storage-access`에 적는다. 선언한 outbound 포트가 저장소 포트뿐이면 `outbound`에 해당 포트가 재사용할 저장 기술을 기록한다. 테스트 CLI는 모듈·인자까지 실제로 실행할 명령을 적는다. 서버/API 또는 UI를 framework 없이 구현하는 경우에도 구현 방식과 실행 명령을 `SETTLED`로 기록한다.
+
 결과는 `completed/OK` 또는 `action_required/USER_DECISION_REQUIRED`다. 기술 선택 질문의 근거는 질문 결과에 적고 `answers.json`을 보존한다. 이 stage는 code, Product Spec, Architecture Spec, `docs/contracts/`를 수정하지 않는다.
 
 앞선 전술 설계 stage의 산출물이 부족해 진행할 수 없으면 `blocked/DEPENDENCY_INCOMPLETE`로 반환하고 `result.owner_stage`(빈틈을 소유한 가장 앞 stage)와 `result.dependency_gap`(그 stage가 추가하거나 고쳐야 할 내용과 근거)을 반드시 적는다. 실행기는 둘이 없으면 반려하며, orchestrator가 사용자에게 묻지 않고 그 stage를 다시 열어 이 stage까지 순서대로 다시 진행한다. 업무 결정이 필요하면 이 코드가 아니라 `USER_DECISION_REQUIRED` 질문을 쓴다.

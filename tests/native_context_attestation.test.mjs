@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { readNativeCodexAttestation, refreshNativeCodexAttestation, verifyNativeCodexWorkerBinding } from '../.harness/src/workflow/native-context.mjs';
 
 const parentId = '11111111-1111-4111-8111-111111111111';
@@ -34,8 +35,21 @@ test('finish-time attestation refresh captures a child rollout completed after S
       row('session_meta', { id: childId, cwd: root, parent_thread_id: parentId, source: { subagent: { thread_spawn: { parent_thread_id: parentId, depth: 1, agent_path: agentPath } } } }),
       row('turn_context', { turn_id: turnId, model: 'gpt-6-luna', effort: 'medium' }),
       row('event_msg', { type: 'task_started', turn_id: turnId }),
-      row('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: 'submitted' }),
     ].join('\n') + '\n');
+
+    const target = { root, parentSessionId: parentId, stage };
+    const attestationPath = join(root, '.io/runtime/executions/exec-123/native-attestation.jsonl');
+    await mkdir(join(root, '.io/runtime/executions/exec-123'), { recursive: true });
+    const missing = { schema_version: 1, execution_id: stage.execution_id, stage_id: stage.stage_id, parent_session_id: parentId, native_agent_id: agentPath, thread_id: childId, status: 'unavailable', reason: 'completed_turn_metadata_missing' };
+    const appendAttestation = (entry) => appendFile(attestationPath, `${JSON.stringify(entry)}\n`);
+    await appendAttestation(missing);
+    const refresh = refreshNativeCodexAttestation(target);
+    await wait(425);
+    await appendFile(childFile, row('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: 'submitted' }) + '\n');
+    const attestation = await refresh;
+    assert.equal(attestation.status, 'captured');
+    assert.equal(attestation.source, 'codex-finish-transcript-refresh');
+    assert.deepEqual(attestation.turns, [{ turn_id: turnId, status: 'completed', model: 'gpt-6-luna', reasoning_effort: 'medium' }]);
 
     const wrongBinding = await verifyNativeCodexWorkerBinding({ root, parentSessionId: parentId, stage, nativeAgentId: 'unrelated-agent-id', requestedBinding: { model: 'gpt-6-luna', reasoning_effort: 'medium' } });
     assert.equal(wrongBinding.status, 'unavailable');
@@ -44,15 +58,20 @@ test('finish-time attestation refresh captures a child rollout completed after S
     assert.equal(verifiedBinding.status, 'verified');
     assert.equal(verifiedBinding.thread_id, childId);
 
-    const attestation = await refreshNativeCodexAttestation({ root, parentSessionId: parentId, stage });
-    assert.equal(attestation.status, 'captured');
-    assert.equal(attestation.source, 'codex-finish-transcript-refresh');
-    assert.deepEqual(attestation.turns, [{ turn_id: turnId, status: 'completed', model: 'gpt-6-luna', reasoning_effort: 'medium' }]);
-    const attestationPath = join(root, '.io/runtime/executions/exec-123/native-attestation.jsonl');
-    await appendFile(attestationPath, `${JSON.stringify({ ...attestation, stage_id: 'frontend-design' })}\n`);
-    const readBack = await readNativeCodexAttestation({ root, parentSessionId: parentId, stage });
+    await appendAttestation({ ...attestation, stage_id: 'frontend-design' });
+    await appendAttestation(missing);
+    const readBack = await readNativeCodexAttestation(target);
     assert.equal(readBack.status, 'captured');
     assert.equal(readBack.stage_id, 'frontend-design');
+
+    await unlink(parentFile);
+    assert.deepEqual(await refreshNativeCodexAttestation(target), readBack);
+    await appendAttestation({ ...missing, thread_id: '44444444-4444-4444-8444-444444444444' });
+    assert.deepEqual(await refreshNativeCodexAttestation(target), { status: 'invalid', reason: 'attestation_binding_mismatch' });
+
+    await unlink(attestationPath);
+    await writeFile(parentFile, row('session_meta', { id: parentId, cwd: codexHome }) + '\n');
+    assert.deepEqual(await refreshNativeCodexAttestation(target), { status: 'invalid', reason: 'parent_transcript_identity_mismatch' });
   } finally {
     if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome;
     if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;

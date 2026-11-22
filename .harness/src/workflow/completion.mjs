@@ -3,13 +3,13 @@ import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadNamedWorkflow } from './loader.mjs';
-import { LifecycleGateRegistry, runLifecycleHook } from '../gates/lifecycle.mjs';
+import { checkTrackerSync, LifecycleGateRegistry, runLifecycleHook } from '../gates/lifecycle.mjs';
 import { JsonlEventWriter } from '../eval/journal.mjs';
 import { parseWorktreeRecord } from './worktrees.mjs';
 import { sessionDirectory, sessionOutputPath } from './session-output.mjs';
 import { inspectWorkspace } from '../eval/workspace-preflight.mjs';
 import { completeExecutionState } from './execution-state.mjs';
-import { DERIVED_STATE_KEYS, deriveImplementationCompletion } from './implementation-completion.mjs';
+import { DERIVED_STATE_KEYS, deriveApprovedTacticalE2E, deriveImplementationCompletion } from './implementation-completion.mjs';
 import { deriveTacticalOutcome } from './tactical-tickets.mjs';
 const execFileAsync = promisify(execFile);
 
@@ -83,12 +83,16 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     // The ticket-by-ticket outcome of tactical-to-code is read from the tracker and the recorded tactical-code runs only,
     // so a state file cannot claim it, and the published plan set must still be the reviewed one.
     let derivedOutcome = null;
+    let tacticalE2E = null;
     if (workflow.id === 'tactical-to-code') {
-      ignoredStateKeys = ['required_outcome', 'plan_set_id', 'plans_index', 'plan_review'].filter((key) => state?.[key] !== undefined);
-      state = Object.fromEntries(Object.entries(state || {}).filter(([key]) => !['required_outcome', 'plan_set_id', 'plans_index', 'plan_review'].includes(key)));
-      derivedOutcome = await deriveTacticalOutcome({ root: workspace_root, planSetId: worktreeRecord?.plan_set_id || null, session: sessionDirectory(workspace_root) });
+      const canonicalKeys = ['required_outcome', 'plan_set_id', 'plans_index', 'plan_review', 'tests', 'tracker_sync'];
+      ignoredStateKeys = canonicalKeys.filter((key) => state?.[key] !== undefined);
+      state = Object.fromEntries(Object.entries(state || {}).filter(([key]) => !canonicalKeys.includes(key)));
+      const context = { root: workspace_root, planSetId: worktreeRecord?.plan_set_id || null, session: sessionDirectory(workspace_root) };
+      derivedOutcome = await deriveTacticalOutcome(context);
+      tacticalE2E = await deriveApprovedTacticalE2E(context);
     }
-    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['to-ticket', 'tactical-to-code'].includes(workflow.id) ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
+    const required = ['tracker_sync', ...(finalImplementation ? ['contract_docs'] : []), ...(workflow.id === 'implement-wrapper' ? ['contract_review'] : []), ...(tacticalE2E || state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['to-ticket', 'tactical-to-code'].includes(workflow.id) ? ['plan_review'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_review'] : [])];
     if (['to-ticket', 'tactical-to-code'].includes(workflow.id)) state = { ...state, plan_set_id: worktreeRecord?.plan_set_id, plans_index: { workspace_root, plan_set_id: worktreeRecord?.plan_set_id }, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, phase: 'planning' } };
     if (workflow.id === 'implement') state = { ...state, plan_review: { plan_set_id: worktreeRecord?.plan_set_id, ...state.plan_review, plan_id: state.plan_review?.plan_id || state.plan_id, phase: 'completion' } };
     const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete.filter((check) => check !== 'contract_docs' || finalImplementation)])] };
@@ -98,6 +102,8 @@ export async function completeWorkflow({ workflow_id, worktree_id = null, worksp
     const registry = new LifecycleGateRegistry({ hooks });
     for (const [ruleId, verdictOfRecords] of Object.entries(derived?.checks || {})) registry.replace(ruleId, () => verdictOfRecords);
     if (derivedOutcome) registry.replace('required_outcome', () => derivedOutcome);
+    if (derivedOutcome?.status === 'pass') registry.replace('tracker_sync', (gateState) => checkTrackerSync(gateState, { expected_status: 'completed' }));
+    if (tacticalE2E) registry.replace('tests', () => tacticalE2E);
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry, eventWriter: writer, evidencePath: evidence_path });
     signal?.throwIfAborted();
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: workspace_root, encoding: 'utf8' })).stdout.trim();

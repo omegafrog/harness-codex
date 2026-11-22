@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
-import { mergeAnswers } from './questions.mjs';
+import { isQuestionResponse, mergeAnswers } from './questions.mjs';
 import { findExecutionInput, writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
@@ -217,9 +217,8 @@ function storedStageInput(input) {
   return { ...rest, context };
 }
 
-// While the batch has no recorded decision, answers stay open: an incoming answer replaces the stored (pending) answer
-// for the same question, so the user can correct one before the last question is answered. `decision-answers.json` is
-// written once, when the batch completes, and is final: after that an answer that differs is rejected.
+// An incoming response replaces the pending response for the same question. Clarifications stay in the pending file.
+// `decision-answers.json` is written once all questions have answers, and is final: after that differing replies are rejected.
 // `deferred` holds answers queued while the stage ran. They only fill questions not answered since, because a
 // queued answer is older than any answer stored or sent after the questions were asked.
 export async function collectAnswers(session, prefix, questions, answer, deferred = []) {
@@ -238,11 +237,18 @@ export async function collectAnswers(session, prefix, questions, answer, deferre
   if (!Array.isArray(incoming)) throw new Error('Answers must be a JSON array');
   const decisionPath = join(session, prefix, 'decision-answers.json');
   await assertWorkspaceTarget(session, decisionPath);
-  const revisePending = !await lstat(decisionPath).then(() => true, (error) => error.code === 'ENOENT' ? false : Promise.reject(error));
-  if (incoming.some((entry) => !entry || typeof entry !== 'object')) throw new Error('Invalid, duplicate, or stale answer');
+  const decisionInfo = await lstat(decisionPath).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+  if (decisionInfo && (!decisionInfo.isFile() || decisionInfo.isSymbolicLink() || decisionInfo.nlink > 1)) throw new Error('Recorded decision answers differ or are not a regular unshared file');
+  if (decisionInfo && Array.isArray(previous) && previous.some((entry) => entry && Object.hasOwn(entry, 'clarification'))) {
+    // A previous attempt may have recorded the decision before it could refresh the pending file.
+    previous = JSON.parse(await readFile(decisionPath, 'utf8'));
+  }
+  const revisePending = decisionInfo === null;
+  if (incoming.some((entry) => !isQuestionResponse(entry)) || new Set(incoming.map((entry) => entry.question_id)).size !== incoming.length) throw new Error('Invalid, duplicate, or stale answer');
+  if (!revisePending && incoming.some((entry) => Object.hasOwn(entry, 'clarification'))) throw new Error('Invalid, duplicate, or stale answer');
   if (revisePending) {
-    const answered = new Set([...previous, ...incoming].map((entry) => entry?.question_id));
-    incoming = [...deferred.filter((item) => !answered.has(item.question_id)), ...incoming];
+    const responded = new Set([...previous, ...incoming].map((entry) => entry?.question_id));
+    incoming = [...deferred.filter((item) => !responded.has(item.question_id)), ...incoming];
   } else {
     if (deferred.length) {
       const queued = new Map(deferred.map((item) => [item.question_id, item.answer]));
@@ -273,7 +279,8 @@ export async function collectAnswers(session, prefix, questions, answer, deferre
       }
     }
   }
-  await writeFile(path, JSON.stringify(merged.answers, null, 2) + '\n', { mode: 0o600 });
+  const pending = [...merged.answers, ...(merged.clarifications ?? [])];
+  await writeFile(path, JSON.stringify(pending, null, 2) + '\n', { mode: 0o600 });
   return merged;
 }
 
@@ -485,15 +492,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     executionWorkspace = await resolveExecutionWorkspace(root, plan_set_id || null);
     historicalBinding = record.workflow_binding || null;
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
-    // to-ticket splits a frozen design: a fresh start (or a re-run after a rewind) needs the design-freeze gate to pass on the current
-    // documents. A to-ticket that already recorded a result resumes, answers and revises without the check.
     await assertRequirementsApproval({ root, state, stage: stageId, planSetId: plan_set_id, approval: requirementsApproval });
-    const ticketEntry = state.stages?.['to-ticket'];
-    if (stage.skill === 'to-ticket' && plan_set_id && (!(ticketEntry?.result_ref || ticketEntry?.attempts?.some((attempt) => attempt?.result_ref)) || ticketEntry.stale)) {
-      const { designNotFrozen } = await import('./design-freeze-gate.mjs');
-      const notFrozen = await designNotFrozen({ root, planSetId: plan_set_id });
-      if (notFrozen) throw new Error(notFrozen);
-    }
     if (stageId === 'sync-contracts') {
       // implement-wrapper reads completed/OK after every single plan, so the plan set's own tracker decides when it is done.
       const { snapshotPlanSet } = await import('./plan-review.mjs');
@@ -509,7 +508,17 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const history = JSON.parse(await readFile(historyPath, 'utf8'));
       if (history.attempts?.at(-1)?.status === 'active') throw new Error('Cannot restart while a plan review is active');
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const recovered = await existingRestartInput({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, worktreeRef });
+  }
+  // Fresh or stale planning needs the current freeze checks. A validated restart of a previously dispatched stage
+  // can keep the prior technology format. Requirements traceability and any structured coverage still apply.
+  const ticketEntry = state.stages?.['to-ticket'];
+  if (stage.skill === 'to-ticket' && plan_set_id && (!(ticketEntry?.result_ref || ticketEntry?.attempts?.some((attempt) => attempt?.result_ref)) || ticketEntry.stale)) {
+    const { designNotFrozen } = await import('./design-freeze-gate.mjs');
+    const notFrozen = await designNotFrozen({ root, planSetId: plan_set_id, allowLegacyTechnology: restart && !ticketEntry.stale });
+    if (notFrozen) throw new Error(notFrozen);
+  }
+  if (restart) {
+    const recovered = await existingRestartInput({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: ticketEntry.execution_id, worktreeRef });
     if (recovered) return recovered;
   }
   let review_admission;
@@ -700,7 +709,11 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (deferred.length !== deferredAnswers.length) input_refs.push({ base: 'session', path: `${prefix}/deferred-answers.json`, kind: 'deferred_user_answers_unverified' });
     }
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer, deferred);
-    if (!batchAnswers.complete) return { waiting_for_answers: true, questions: result.questions, answers: batchAnswers.answers };
+    if (!batchAnswers.complete) {
+      const answered = new Set(batchAnswers.answers.map(({ question_id }) => question_id));
+      const questions = result.questions.filter(({ question_id }) => !answered.has(question_id));
+      return { waiting_for_answers: true, questions, answers: batchAnswers.answers, ...(batchAnswers.clarifications ? { clarifications: batchAnswers.clarifications } : {}) };
+    }
     answer = batchAnswers.answers;
     conversation = { previous_result_ref: previous.result_ref };
   }
