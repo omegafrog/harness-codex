@@ -11,6 +11,8 @@ model_tier: low_performance
 
 요청, 완료된 tactical design, `tactical-technology`와 `tactical-api` 결과, 현재 모델·저장소·database migration 관례를 읽는다. preflight를 실행해 workspace와 project readiness를 확인한다. 기존 domain owner, table/schema, repository와 transaction convention을 먼저 재사용한다.
 
+디자인 freeze 전에 `technology.md`가 tactical-technology 체크리스트의 모든 적용 항목을 정했는지 확인한다. 특히 구현에 필요한 runtime·언어·framework, 저장소 client/driver, 테스트 도구·실행 CLI가 비었거나 `미정`이면 `blocked/DEPENDENCY_INCOMPLETE`로 `result.owner_stage: tactical-technology`와 구체적인 `result.dependency_gap`을 반환해 발행 전에 소유 stage를 다시 열게 한다. 해당 없는 영역은 근거를 확인하며 여기서 임의로 기술을 고르지 않는다.
+
 전술 설계와 요청 또는 현재 codebase 근거로 상태 저장이 필요 없다는 점이 명확하면 근거를 기록한다. 단순히 사용자가 저장소를 언급하지 않았다는 이유로 생략하지 않는다. 필요 여부가 불분명하거나 선택이 data retention, privacy, consistency, 비용, 장애 복구를 바꾸면 그 결정만 질문한다. 저장 기술의 필수 결정이 빠졌으면 그 결정을 소유한 `tactical-technology`로 빈틈을 반환한다.
 
 ## 인프라 바인딩
