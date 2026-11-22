@@ -59,7 +59,7 @@ export async function completeExecutionState({ root, session_directory }) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, nativeClaim = false, nativeAgentId = null, nativeTerminalAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
+export async function recordExecutionState({ root, input, binding, status, code = null, result_ref = null, reason = null, nativeClaim = false, nativeAgentId = null, nativeAgentRebindVerified = false, nativeTerminalAgentId = null, instruction_delivery = null, recoverFromExecutionId = null, beforeTransition = null }) {
   if (nativeAgentId !== null && (typeof nativeAgentId !== 'string' || !/^(?:\/root\/)?[A-Za-z0-9][A-Za-z0-9._:\/-]{0,248}$/.test(nativeAgentId))) throw new Error('Invalid native subagent ID');
   const session = await resolveSkillSession(root, input.context?.control_session_directory || input.session_directory);
   const codexSessionId = input.context?.codex_session_id || (input.context?.orchestrator_provider === 'claude-code' ? null : process.env.CODEX_THREAD_ID || null);
@@ -100,7 +100,8 @@ export async function recordExecutionState({ root, input, binding, status, code 
     if (orchestratorSessionId) { state.orchestrator_session_id = orchestratorSessionId; state.orchestrator_provider = orchestratorProvider; }
     const previous = state.stages?.[stage];
     if (nativeTerminalAgentId !== null && (status === 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || previous.native_agent_id !== nativeTerminalAgentId)) throw new Error('Native stage changed before terminal transition');
-    if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId))) throw new Error('Native subagent binding mismatch');
+    if (nativeAgentId !== null && (status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || (previous.native_agent_id && previous.native_agent_id !== nativeAgentId && !nativeAgentRebindVerified))) throw new Error('Native subagent binding mismatch');
+    if (nativeAgentRebindVerified && (nativeAgentId === null || status !== 'running' || !previous?.native_managed || previous.execution_id !== input.execution_id || previous.status !== 'running' || !previous.native_agent_id || previous.native_agent_id === nativeAgentId)) throw new Error('Invalid verified native subagent rebind');
     if (nativeAgentId !== null) {
       const parent = orchestratorSessionId || previousParent;
       const identity = (id) => binding.provider === 'codex' ? id?.replace(/^\/root\//, '') : id;

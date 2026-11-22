@@ -239,6 +239,26 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   await implementTicket(await startTicket('post-write'), 'post-write', { 'src/post.mjs': 'export const write = (text) => text.length <= 1000;\n', 'test/BIZ-02.test.mjs': "import assert from 'node:assert/strict';\nimport { write } from '../src/post.mjs';\nassert.equal(write('a'), true);\n" }, '게시글 작성 구현');
   assert.equal(context().ready_tickets, undefined, 'no ticket is left');
 
+  // A blocked generic code-review overlay is outside tactical-to-code and cannot strand its authorized plan re-review.
+  const currentStateText = await readFile(statePath, 'utf8');
+  const current = JSON.parse(currentStateText);
+  current.current_stage = 'code-review';
+  const reviewExecution = 'code-review-overlay';
+  const reviewResultRef = `runtime/executions/${reviewExecution}/result.json`;
+  const { writeExecutionInput } = await import('../.harness/src/workflow/execution-input.mjs');
+  await writeExecutionInput(workspace, { execution_id: reviewExecution, skill: 'code-review', context: { stage_id: 'code-review', plan_set_id: planSetId } }, planSetId);
+  await mkdir(join(workspace, '.io/runtime/executions', reviewExecution), { recursive: true });
+  const reviewResultPath = join(workspace, '.io', reviewResultRef);
+  await writeFile(reviewResultPath, JSON.stringify({ summary: 'A different missing input blocks review.' }));
+  current.stages['code-review'] = { status: 'blocked', code: 'INPUT_MISSING', execution_id: reviewExecution, result_ref: reviewResultRef };
+  await writeFile(statePath, JSON.stringify(current, null, 2) + '\n');
+  refused(prepare('--stage-id', 'to-ticket', '--user-revision', 'true', '--feedback', 'Run a fresh independent completion review; preserve the published plan set.'), /Previous stage has no usable result: code-review is blocked\/INPUT_MISSING/);
+  await writeFile(reviewResultPath, JSON.stringify({ summary: `The required Architecture Spec is missing at docs/specs/${planSetId}/architecture-spec.md.` }));
+  const reviewRecovery = JSON.parse(prepare('--stage-id', 'to-ticket', '--user-revision', 'true', '--feedback', 'Run a fresh independent completion review; preserve the published plan set.').stdout);
+  assert.equal(reviewRecovery.input.context.user_revision, true);
+  assert.deepEqual(reviewRecovery.input.context.out_of_workflow_stage, { stage_id: 'code-review', execution_id: reviewExecution, result_ref: reviewResultRef, reason: 'out_of_workflow_review_stage' });
+  await writeFile(statePath, currentStateText);
+
   // The final gate reads the tracker and the recorded runs; the review of the published plan set stays current.
   const completion = JSON.parse(gate('--final-workflow').stdout);
   assert.equal(completion.state, 'completed', JSON.stringify(completion.verdict));

@@ -29,3 +29,5 @@ Live agent 확인이 필요한 경우에는 사전 승인한 task와 task/enviro
 ## 실행 전제 변경
 
 단위·회귀 검증은 `verification_files`와 실행 가능한 기본 CLI `verification_command`를 기록한다. 실행 인자·환경·설정·인프라가 바뀌는 plan-set의 최종 사용자 흐름 E2E만 execution.json profile과 EXEC 갱신 범위에 포함한다. 실제 entrypoint·config loader·infra/CI를 확인해 argv, 환경, 설정 검사, dependency readiness를 지정한다. E2E profile에는 `purpose: "e2e"`를 명시한다.
+
+사용자 흐름 E2E에 필요한 실제 DB·브로커 등 인프라는 Docker로 준비하도록 계획한다. 해당 프로젝트가 소유하는 EXEC와 profile에 이미지·버전, 설정·네트워크·포트, readiness, 로그, 실행 소유 컨테이너의 정리와 실패 시 정리를 명시한다. 의존 서비스가 없으면 `해당 없음`과 이유를 기록한다. 앱과 브라우저의 실행 위치는 실제 프로젝트 계약을 따른다. 일반 단위·회귀 검증에 Docker를 추가하지 않는다.

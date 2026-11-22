@@ -41,8 +41,51 @@ export async function assertFrontendTicketOrder({ root, session, state, stageId,
   if (required !== 'frontend-design-brief') {
     const input = await readExecutionInput({ root, execution_id: previous.execution_id });
     if (input.context?.plan_id !== planId) throw new Error(`Frontend ${required} belongs to a different ticket`);
-    if (required === 'frontend-visual-review' && input.context?.transition?.result_ref !== state.stages?.['frontend-implementation']?.result_ref) throw new Error('Frontend visual review does not cover the current implementation');
+    if (required === 'frontend-visual-review' && !await visualReviewCoversImplementation({ root, reviewInput: input, planId, implementationRef: state.stages?.['frontend-implementation']?.result_ref })) throw new Error('Frontend visual review does not cover the current implementation');
   }
+}
+
+async function unrelatedCodeReviewBlock({ root, session, state, stageId, userRevision, target, lastStage, last, planSetId }) {
+  if (!userRevision || stageId !== 'to-ticket' || target?.status !== 'completed' || target.code !== 'OK'
+    || lastStage !== 'code-review' || last?.status !== 'blocked' || last.code !== 'INPUT_MISSING'
+    || state.stages?.['tracker-publish']?.status !== 'completed' || state.stages?.['tracker-publish']?.code !== 'OK'
+    || state.stages?.['tactical-code']?.status !== 'completed' || state.stages?.['tactical-code']?.code !== 'OK') return null;
+  const planSet = planSetId || parseWorktreeRecord(await readFile(join(session, 'worktree.json'), 'utf8')).plan_set_id;
+  if (!planSet) return null;
+  const input = await readExecutionInput({ root, execution_id: last.execution_id }).catch(() => null);
+  if (input?.skill !== 'code-review' || input.context?.plan_set_id !== planSet) return null;
+  const result = await readSkillSessionJson({ root, session_directory: session, path: last.result_ref }).catch(() => null);
+  const expectedSpec = `docs/specs/${planSet}/architecture-spec.md`;
+  if (!result?.summary?.includes(expectedSpec)) return null;
+  const [tactical, legacyCodeReview] = await Promise.all([
+    loadNamedWorkflow('tactical-to-code.yaml', { root }),
+    loadNamedWorkflow('code-review.yaml', { root }),
+  ]);
+  if (tactical.stages.some((stage) => stage.id === 'code-review') || !tactical.stages.some((stage) => stage.id === 'to-ticket')
+    || legacyCodeReview.id !== 'code-review') return null;
+  const existingSpec = await lstat(join(root, expectedSpec)).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  const tacticalDesign = `docs/specs/${planSet}/tactical-design.md`;
+  const hasTacticalDesign = await lstat(join(root, tacticalDesign)).then((info) => info.isFile() && !info.isSymbolicLink(), (error) => { if (error.code === 'ENOENT') return false; throw error; });
+  if (existingSpec || !hasTacticalDesign) return null;
+  return { stage_id: lastStage, execution_id: last.execution_id, result_ref: last.result_ref, reason: 'out_of_workflow_review_stage' };
+}
+
+async function visualReviewCoversImplementation({ root, reviewInput, planId, implementationRef }) {
+  if (!implementationRef) return false;
+  const visited = new Set();
+  let input = reviewInput;
+  for (let depth = 0; depth < 32; depth += 1) {
+    if (input.skill !== 'frontend-visual-review' || input.context?.plan_id !== planId) return false;
+    const transition = input.context?.transition;
+    if (transition) return transition.from_stage === 'frontend-implementation' && transition.code === 'OK' && transition.result_ref === implementationRef;
+    const previousRef = input.context?.previous_result_ref;
+    const match = /^runtime\/executions\/([A-Za-z0-9_.-]+)\/result\.json$/.exec(previousRef || '');
+    if (!match || visited.has(match[1])) return false;
+    visited.add(match[1]);
+    try { input = await readExecutionInput({ root, execution_id: match[1] }); }
+    catch { return false; }
+  }
+  return false;
 }
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
 // A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
@@ -351,6 +394,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // The user may also revise a completed Spec or plan while a later stage waits on a question: the revision replaces
   // that question (the later stage restarts from the revised plan), so it must not have to be answered first.
   const target = state.stages?.[stageId];
+  const outOfWorkflowStage = await unrelatedCodeReviewBlock({ root, session, state, stageId, userRevision, target, lastStage, last, planSetId: state.stages?.['workflow-compose']?.plan_set_id });
   // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
   const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
   const frontendDesignHandoff = stageId === 'frontend-design-brief' && lastStage === 'tactical-ui' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
@@ -392,7 +436,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   const requirementsRevision = userRevision && REQUIREMENTS_REVISION_STAGES.includes(stageId);
   const reopensCompletedWork = userRevision && target?.result_ref
     && (requirementsRevision && !(last?.code === 'ENVIRONMENT_UNAVAILABLE' || last?.code === 'DEPENDENCY_INCOMPLETE')
-      || target.status === 'completed' && target.code === 'OK' && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status)));
+      || target.status === 'completed' && target.code === 'OK' && (last?.status === 'completed' && last.code === 'OK' || last?.status === 'waiting' && lastStage !== stageId || blockedByEarlierFlowStage || Boolean(outOfWorkflowStage) || stageId === 'implement-wrapper' && lastStage === 'e2e-test' && ['failed', 'blocked', 'waiting'].includes(last?.status)));
   if (!reopenPlan && !frontendDesignHandoff && !deferredFrontend && !frontendCorrection && !reopensCompletedWork && !standaloneE2eRetry && last && (lastStage !== stageId || Object.hasOwn(REVISION_TARGETS, last.code))) {
     if (!last.result_ref || !['completed', 'waiting'].includes(last.status)) throw new Error(`Previous stage has no usable result: ${lastStage} is ${last.status}${last.code ? `/${last.code}` : ''}${last.result_ref ? '' : ' without a recorded result'}`);
     const allowed = REVISION_TARGETS;
@@ -602,7 +646,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     }
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
-    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || standaloneE2eRetry || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
+    if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || standaloneE2eRetry || frontendCorrection || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
     if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
     if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
@@ -626,7 +670,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
       if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     }
-    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}) };
+    conversation = { ...(userRevision ? { user_revision: true } : {}), ...(outOfWorkflowStage ? { out_of_workflow_stage: outOfWorkflowStage } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}) };
   }
   let deferredAnswers = null;
   if (!userRevision && !staleMark && previous?.status === 'waiting' && previous.code === 'USER_DECISION_REQUIRED') {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { constants, existsSync } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
@@ -117,7 +118,7 @@ try {
   }
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i]?.replace(/^--/, '');
-    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
+    if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id', 'repair-binding'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
     opts[key] = args[i + 1];
   }
   if (!['start', 'inspect', 'reconcile', 'recover-interrupted', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
@@ -133,6 +134,7 @@ try {
   if (['fail', 'cancel'].includes(action) && !opts.reason?.trim()) throw new Error('A native subagent failure reason is required');
   if (!['fail', 'cancel'].includes(action) && opts.reason) throw new Error('Failure reason applies only to fail');
   if ((action === 'bind' || action === 'receive') !== Boolean(opts['agent-id'])) throw new Error('Native agent ID is required only for bind and receive');
+  if (opts['repair-binding'] && (action !== 'bind' || opts['repair-binding'] !== 'true')) throw new Error('--repair-binding true is only valid with bind');
   const session = await cliSession(root, opts['worktree-ref']);
   const input = await readExecutionInput({ root, execution_id: id });
   await validateSkillInput({ root, input });
@@ -175,7 +177,7 @@ try {
       const workflowState = state.state || state;
       if (binding.provider === 'codex' && current.native_agent_id) {
         const { resolveNativeCodexThread, readNativeCodexOutcome, readNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
-        const target = { root, parentSessionId: workflowState.orchestrator_session_id, stage: current };
+        const target = { root, parentSessionId: workflowState.orchestrator_session_id, stage: { ...current, stage_id: input.context?.stage_id || input.skill } };
         const threadId = await resolveNativeCodexThread(target);
         if (threadId) codexOutcome = { thread_id: threadId, outcome: await readNativeCodexOutcome(target, threadId).catch(() => null) };
         if (input.context?.requested_stage_binding) modelAttestation = await readNativeCodexAttestation(target);
@@ -209,7 +211,27 @@ try {
     }
     if (action === 'bind') {
       const agentId = opts['agent-id'];
-      await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: agentId });
+      let verifiedRebind = null;
+      if (opts['repair-binding'] === 'true') {
+        if (binding.provider !== 'codex' || !input.context?.orchestrator_session_id || !input.context?.requested_stage_binding || !current.native_agent_id || current.native_agent_id === agentId) throw new Error('Native binding repair requires a differently bound Codex stage with a requested model binding');
+        const { verifyNativeCodexWorkerBinding } = await import('../../.harness/src/workflow/native-context.mjs');
+        const verify = (nativeAgentId) => verifyNativeCodexWorkerBinding({ root, parentSessionId: input.context.orchestrator_session_id, stage: current, nativeAgentId, requestedBinding: binding });
+        const previous = await verify(current.native_agent_id);
+        if (previous.status === 'verified') throw new Error('Existing native binding is valid; refusing replacement');
+        verifiedRebind = await verify(agentId);
+        if (verifiedRebind.status !== 'verified') throw new Error(`Replacement native binding is not verified: ${verifiedRebind.reason || verifiedRebind.status}`);
+      }
+      await recordExecutionState({ root, input, binding, status: 'running', nativeAgentId: agentId, nativeAgentRebindVerified: Boolean(verifiedRebind) });
+      if (verifiedRebind) {
+        const relative = `runtime/executions/${id}/native-binding-repairs.jsonl`;
+        await assertWorkspaceTarget(session, relative);
+        const file = await open(join(session, 'runtime/executions', id, 'native-binding-repairs.jsonl'), constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+        try {
+          const info = await file.stat();
+          if (!info.isFile() || info.nlink !== 1 || info.size > 1024 * 1024) throw new Error('Unsafe native binding repair log');
+          await file.writeFile(`${JSON.stringify({ schema_version: 1, execution_id: id, stage_id: input.context?.stage_id || input.skill, parent_session_id: input.context.orchestrator_session_id, previous_agent_id: current.native_agent_id, repaired_agent_id: verifiedRebind.agent_id, child_thread_id: verifiedRebind.thread_id, verified_turns: verifiedRebind.turns.map(({ turn_id, model, reasoning_effort, status }) => ({ turn_id, model, reasoning_effort, status })), verified_at: new Date().toISOString() })}\n`);
+        } finally { await file.close(); }
+      }
       process.stdout.write(`${JSON.stringify({ status: 'running', execution_id: id, agent_id: agentId, receive_command: nativeReceiveCommand(id, agentId) })}\n`);
       process.exit(0);
     }
@@ -301,8 +323,9 @@ try {
       process.exit(0);
     }
     if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
-      const { readNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
-      const observed = await readNativeCodexAttestation({ root, parentSessionId: input.context.orchestrator_session_id, stage: current });
+      const { readNativeCodexAttestation, refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
+      const target = { root, parentSessionId: input.context.orchestrator_session_id, stage: { ...current, stage_id: input.context?.stage_id || input.skill } };
+      const observed = await refreshNativeCodexAttestation(target) || await readNativeCodexAttestation(target);
       if (observed.status !== 'captured') throw new Error(`Requested stage binding cannot be verified: native attestation ${observed.reason || observed.status}`);
       const mismatches = observed.turns.filter((turn) => turn.status !== 'completed' || turn.model !== binding.model || turn.reasoning_effort !== binding.reasoning_effort);
       if (!observed.turns.length || mismatches.length) {
@@ -365,8 +388,52 @@ try {
       await assertNoUnrecordedNativeReview({ root, scope });
     }
     await commitStageRequest({ root, rawPath: paths.files.raw });
-    try { execFileSync(process.execPath, [join(root, '.harness/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw], { cwd: root, stdio: 'pipe' }); }
-    catch (error) { throw new Error(`Result rejected: ${lastJson(error.stderr)?.error || String(error.stderr || error.message).trim()}`); }
+    const resultCommand = [process.execPath, join(root, '.harness/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw];
+    const resultCommandStartedAt = new Date().toISOString();
+    const resultCommandRun = spawnSync(resultCommand[0], resultCommand.slice(1), { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+    const resultCommandFinishedAt = new Date().toISOString();
+    const resultCommandDirectory = `runtime/executions/${id}/result-command-attempts/${randomUUID()}`;
+    const resultCommandFiles = {
+      stdout: `${resultCommandDirectory}/stdout.log`,
+      stderr: `${resultCommandDirectory}/stderr.log`,
+      process: `${resultCommandDirectory}/process.json`,
+    };
+    for (const path of Object.values(resultCommandFiles)) await assertWorkspaceTarget(session, path);
+    await mkdir(join(session, resultCommandDirectory), { recursive: true, mode: 0o700 });
+    for (const path of Object.values(resultCommandFiles)) await assertWorkspaceTarget(session, path);
+    const resultCommandStdout = typeof resultCommandRun.stdout === 'string' ? resultCommandRun.stdout : String(resultCommandRun.stdout || '');
+    const resultCommandStderr = typeof resultCommandRun.stderr === 'string' ? resultCommandRun.stderr : String(resultCommandRun.stderr || '');
+    const resultCommandMetadata = {
+      schema_version: 1,
+      command: resultCommand,
+      cwd: root,
+      started_at: resultCommandStartedAt,
+      finished_at: resultCommandFinishedAt,
+      pid: resultCommandRun.pid || null,
+      exit_code: resultCommandRun.status,
+      signal: resultCommandRun.signal || null,
+      spawn_error: resultCommandRun.error ? { name: resultCommandRun.error.name, message: resultCommandRun.error.message, code: resultCommandRun.error.code || null } : null,
+      stdout_path: resultCommandFiles.stdout,
+      stderr_path: resultCommandFiles.stderr,
+      process_path: resultCommandFiles.process,
+    };
+    await writeFile(join(session, resultCommandFiles.stdout), resultCommandStdout, { flag: 'wx', mode: 0o600 });
+    await writeFile(join(session, resultCommandFiles.stderr), resultCommandStderr, { flag: 'wx', mode: 0o600 });
+    await writeFile(join(session, resultCommandFiles.process), JSON.stringify(resultCommandMetadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    if (resultCommandRun.error || resultCommandRun.status !== 0) {
+      const childJsonError = lastJson(resultCommandStderr)?.error;
+      const childDetail = childJsonError || resultCommandStderr.trim()
+        || (resultCommandRun.error ? `${resultCommandRun.error.name}: ${resultCommandRun.error.message}` : null)
+        || (resultCommandRun.signal ? `child terminated by signal ${resultCommandRun.signal}` : `child exited with status ${resultCommandRun.status}`);
+      const message = `Result rejected: ${childDetail}`;
+      throw Object.assign(new Error(message), { explained: {
+        error: message,
+        code: 'RESULT_REJECTED',
+        why: `The output passed the schema, but harness-result exited unsuccessfully (status ${resultCommandRun.status ?? 'unknown'}${resultCommandRun.signal ? `, signal ${resultCommandRun.signal}` : ''}). Raw child output and process metadata were preserved in ${resultCommandDirectory}. Nothing was committed or recorded and the stage is still running.`,
+        next: [`Review ${resultCommandFiles.process}, stdout.log and stderr.log before retrying.`, `After addressing the recorded child failure, run: ${nativeCommand('finish', id)}`],
+        result_command: { ...resultCommandMetadata, error: resultCommandRun.error?.message || null },
+      } });
+    }
     const { applyDomainSync, assertStageDomainSync, readStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');
     const domainPlan = raw.status === 'completed' && raw.code === 'OK' ? await readStageDomainSync(root, input) : null;
     if (domainPlan) {

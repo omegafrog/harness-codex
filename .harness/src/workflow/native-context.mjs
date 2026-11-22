@@ -125,10 +125,29 @@ export async function readNativeCodexOutcome({ root, parentSessionId, stage }, r
   return outcome;
 }
 
-async function captureNativeCodexAttestation({ root, session, executionId, stageId, stage, parentSessionId, event }) {
+export async function verifyNativeCodexWorkerBinding({ root, parentSessionId, stage, nativeAgentId, requestedBinding }) {
+  if (typeof nativeAgentId !== 'string' || !nativeAgentId.trim()) return { status: 'unavailable', reason: 'agent_id_unavailable' };
+  const normalizedAgentId = nativeAgentId.startsWith('/') ? nativeAgentId : `/root/${nativeAgentId}`;
+  const candidateStage = { ...stage, native_agent_id: normalizedAgentId };
+  const threadId = await resolveNativeCodexThread({ root, parentSessionId, stage: candidateStage });
+  if (!threadId) return { status: 'unavailable', reason: 'parent_child_binding_not_found' };
+  const outcome = await readNativeCodexOutcome({ root, parentSessionId, stage: candidateStage }, threadId);
+  if (outcome?.status !== 'completed') return { status: 'unavailable', reason: 'native_worker_not_completed', thread_id: threadId, outcome: outcome?.status || null };
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
+  const transcriptPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
+  if (!transcriptPath) return { status: 'unavailable', reason: 'native_worker_transcript_missing', thread_id: threadId };
+  const { entries } = await readTranscriptEntries(transcriptPath, { maxBytes: 32 * 1024 * 1024 });
+  const turns = extractCompletedCodexTurns(entries);
+  if (!turns.length) return { status: 'unavailable', reason: 'completed_turn_metadata_missing', thread_id: threadId };
+  const mismatches = turns.filter((turn) => turn.status !== 'completed' || turn.model !== requestedBinding?.model || turn.reasoning_effort !== requestedBinding?.reasoning_effort);
+  if (mismatches.length) return { status: 'mismatch', reason: 'requested_binding_mismatch', thread_id: threadId, turns };
+  return { status: 'verified', agent_id: normalizedAgentId, thread_id: threadId, outcome: 'completed', turns };
+}
+
+async function captureNativeCodexAttestation({ root, session, executionId, stageId, stage, parentSessionId, event, source = 'codex-subagent-stop-hook' }) {
   const attestation = {
     schema_version: 1,
-    source: 'codex-subagent-stop-hook',
+    source,
     execution_id: executionId,
     stage_id: stageId,
     parent_session_id: parentSessionId,
@@ -168,10 +187,33 @@ async function captureNativeCodexAttestation({ root, session, executionId, stage
   } finally { await file.close(); }
 }
 
+// Codex's SubagentStop hook can run just before the child rollout receives its final task_complete row.
+// Re-read only a child proven to have been spawned by this parent/stage after the worker has ended.
+// This closes that timing window while keeping the same identity and completed-turn checks as the hook.
+export async function refreshNativeCodexAttestation({ root, parentSessionId, stage }) {
+  const threadId = await resolveNativeCodexThread({ root, parentSessionId, stage });
+  if (!threadId || !stage?.execution_id) return null;
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
+  const transcriptPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
+  if (!transcriptPath) return null;
+  const workspace = await realpath(root);
+  await captureNativeCodexAttestation({
+    root: workspace,
+    session: join(workspace, '.io'),
+    executionId: stage.execution_id,
+    stageId: stage.stage_id || stage.skill,
+    stage,
+    parentSessionId,
+    event: { hook_event_name: 'SubagentStop', agent_id: threadId, agent_transcript_path: transcriptPath },
+    source: 'codex-finish-transcript-refresh',
+  });
+  return readNativeCodexAttestation({ root: workspace, parentSessionId, stage });
+}
+
 export async function readNativeCodexAttestation({ root, parentSessionId, stage }) {
   const executionId = stage?.execution_id;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) return { status: 'unavailable', reason: 'execution_id_invalid' };
-  const stageId = stage.stage_id || stage.skill;
+  const stageIds = new Set([stage.stage_id, stage.skill].filter((value) => typeof value === 'string' && value));
   const session = join(await realpath(root), '.io');
   const relative = `runtime/executions/${executionId}/native-attestation.jsonl`;
   await assertWorkspaceTarget(session, relative);
@@ -185,7 +227,7 @@ export async function readNativeCodexAttestation({ root, parentSessionId, stage 
     for (const row of rows) {
       let entry;
       try { entry = JSON.parse(row); } catch { return { status: 'invalid', reason: 'attestation_record_malformed' }; }
-      if (entry.schema_version !== 1 || entry.execution_id !== executionId || entry.stage_id !== stageId || entry.parent_session_id !== parentSessionId || entry.native_agent_id !== stage.native_agent_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.thread_id || '')) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
+      if (entry.schema_version !== 1 || entry.execution_id !== executionId || !stageIds.has(entry.stage_id) || entry.parent_session_id !== parentSessionId || entry.native_agent_id !== stage.native_agent_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.thread_id || '')) return { status: 'invalid', reason: 'attestation_binding_mismatch' };
       latest = entry;
     }
     if (!latest) return { status: 'unavailable', reason: 'attestation_not_recorded' };

@@ -422,6 +422,33 @@ test('the explanation catalogue covers the errors the stage commands throw and e
   assert.deepEqual(extractVerbose(['--stage-id', 'x']), { args: ['--stage-id', 'x'], verbose: false });
 });
 
+test('finish preserves harness-result stdout, stderr, exit status and signal when recording fails', async (t) => {
+  const { workspace, beginStage, submitStage, finishStage, specPath } = await consumerWorkflow(t, REQUEST);
+  const begun = await beginStage('stakeholder-analysis');
+  await submitStage(begun, SKIPPED(specPath('stakeholder-analysis.md')));
+
+  await writeFile(join(workspace, '.harness/scripts/harness-result.mjs'), "process.stdout.write('fixture stdout\\n'); process.exitCode = 23;\n");
+  const result = await finishStage(begun);
+  assert.notEqual(result.status, 0);
+  const body = JSON.parse(result.stderr);
+  assert.equal(body.code, 'RESULT_REJECTED');
+  assert.match(body.why, /status 23/);
+  assert.equal(body.result_command.exit_code, 23);
+  assert.equal(body.result_command.signal, null);
+  assert.equal(body.result_command.spawn_error, null);
+
+  const stdoutPath = join(workspace, '.io', body.result_command.stdout_path);
+  const stderrPath = join(workspace, '.io', body.result_command.stderr_path);
+  const metadataPath = join(workspace, '.io', body.result_command.process_path);
+  assert.equal(await readFile(stdoutPath, 'utf8'), 'fixture stdout\n');
+  assert.equal(await readFile(stderrPath, 'utf8'), '');
+  const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  assert.ok(Number.isInteger(metadata.pid) && metadata.pid > 0);
+  assert.equal(metadata.exit_code, 23);
+  assert.equal(metadata.signal, null);
+  assert.deepEqual(metadata.command.slice(1, 2), [join(workspace, '.harness/scripts/harness-result.mjs')]);
+});
+
 test('the orchestrator and the dispatch guide name launch, the compact output and the rule against reading Harness source', async () => {
   const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
   assert.match(skill, /harness-native-stage\.mjs launch --stage-id <stage>/);

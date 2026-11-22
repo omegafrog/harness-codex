@@ -13,7 +13,19 @@ model_tier: low_performance
 
 `.harness/internal-skills/technology-selection/GUIDE.md`의 기준 도출·후보 비교·공신력 있는 근거·불확실성 구분 원칙을 적용한다. 실행 환경이 달라지거나 운영 책임·비용·보안·데이터 제어·성능이 달라지는 중요 선택만 다룬다. 기존 stack을 유지하면 근거와 예외를 기록한다. 자료로 판정할 수 없는 중요한 선택만 한국어 한 묶음의 질문으로 반환한다. 답변을 요구하지 않은 기본값으로 기록하지 않는다.
 
-적용성이 확인되지 않은 UI/API/database를 가정하지 않는다. 요구와 전술 설계로 UI/API/data 저장이 명확하지 않으면 해당 영역은 미정으로 남기고 후속 계약 stage가 확인한다. 근거·답변이 없는 기술은 선택했다고 쓰지 않는다.
+## 구현 기술 결정과 면담 완료 조건
+
+구현이나 티켓 발행 전에 이 stage가 실제 구현 가능한 기술 stack을 확정한다. 확정된 요구·전술 설계·저장소를 근거로 다음 체크리스트의 적용 여부를 먼저 판정한다. 적용되는 항목은 구체적인 제품·버전 범위 또는 실행 명령까지 정하고, 적용되지 않는 항목은 해당 없음과 근거를 기록한다.
+
+- 애플리케이션 runtime과 버전 범위, 구현 언어 및 module/build/package 도구.
+- 적용되는 서버/API와 UI의 framework 또는 의도적으로 framework를 사용하지 않는 방식, 실행·개발 명령.
+- 영속 저장소와 database engine, 접근 client/driver 또는 ORM, migration 도구, transaction 방식. 저장하지 않는 경우 그 이유.
+- 필요할 때 외부 통신·메시징 등 outbound 연동 구현에 필요한 라이브러리와 조립 제약.
+- 구현에 사용할 단위 테스트 도구와 실제 실행 CLI, 필요 인프라와 실행 전제.
+
+기존 프로젝트의 유효한 기술·명시된 사용자 선택을 우선 재사용한다. 근거 있는 일반 엔지니어링 선택과 명시적 위임은 사용자 선택인 것처럼 쓰지 않고 출처와 이유를 구별한다. UI/API/data 저장을 무조건 추가하지 않는다. 적용 여부가 불분명하면 관련 요구와 전술 설계부터 확인하고, 필요한 범위 여부가 여전히 불명확하면 질문한다. 구현에 필요한 항목을 단순히 `미정`으로 둔 채 `completed/OK`를 반환하지 않는다.
+
+필수 체크리스트를 coverage로 삼아 [grill-with-docs](../grill-with-docs/GUIDE.md)를 batch mode로 실행한다. 질문 전 그 GUIDE와 `references/how-to-grill.md`를 읽고, 모든 항목을 `SETTLED`, `PARTIAL`, `UNRESOLVED`, `NOT_APPLICABLE`로 분류한다. 독립적인 미결정을 한 묶음으로 모으고, 호환되는 stack 조합과 근거·추천을 제시한다. 사용자의 재질문·이의·미확정 제안은 수용으로 간주하지 말고 답하거나 조사한 뒤 결정이 해소될 때까지 필요한 후속 질문을 반복한다. 명시적 위임은 존중하며 이미 정해진 선택을 반복 확인하지 않는다. 영역이 모두 `SETTLED` 또는 근거 있는 `NOT_APPLICABLE`이고 충돌·차단 질문이 없어야 면담과 stage를 완료한다. 이 stage의 문서 소유 범위는 아래 산출물 규칙을 그대로 따른다.
 
 컨텍스트별 Application Service가 사용하는 outbound 인터페이스를 확인해, 필요한 저장·외부 통신·메시징·트랜잭션의 구현 기술과 재사용할 기존 도구를 결정한다. 인터페이스의 코드 위치·구현체·조립은 `tactical-data`가 정하므로 그 결정에 필요한 기술과 기존 조립 관례를 `technology.md`에 남긴다.
 
@@ -23,7 +35,7 @@ model_tier: low_performance
 
 ## 산출물
 
-매번 `docs/implementation/<plan-set-id>/technology.md`에 현재 stack, 검토한 실행·검증 명령, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거, 수용한 단점 및 미확정 항목을 한국어로 기록한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `.harness/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
+매번 `docs/implementation/<plan-set-id>/technology.md`에 체크리스트의 적용 판정과 확정된 stack 및 버전 범위, 실제 실행·검증 명령과 전제, 필요한 후보, 요구 기준, 출처/확인일, 선택 근거·결정 주체, 수용한 단점을 한국어로 기록한다. 구현에 필수인 미결정은 면담에서 해소하며, 비차단 불확실성은 명시한다. 계획 ID는 현재 worktree의 canonical `plan_set_id`를 사용한다. 필요하고 확인된 실행 방법 또는 infrastructure 전제가 달라질 때만 project-owned `.harness/agents/EXEC.md`의 관련 지침도 갱신한다. 실행기가 완료 시 이 두 stage-owned 문서 경로만 자동 commit한다. 다른 파일을 수정하지 않는다.
 
 결과는 `completed/OK` 또는 `action_required/USER_DECISION_REQUIRED`다. 기술 선택 질문의 근거는 질문 결과에 적고 `answers.json`을 보존한다. 이 stage는 code, Product Spec, Architecture Spec, `docs/contracts/`를 수정하지 않는다.
 
