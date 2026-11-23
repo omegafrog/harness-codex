@@ -240,7 +240,39 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   assert.equal(await readFile(join(workspace, 'app.txt'), 'utf8'), 'application change in progress\n');
 });
 
-test('installed consumer: the two steps and a repeated command are safe, and a stage whose agent was never bound is taken over from the transcript alone', async (t) => {
+test('takeover accepts a later worktree turn when session metadata cwd is the source checkout', async (t) => {
+  const f = await interruptedWorkflow(t);
+  const source = await realpath(sourceRoot);
+  const claim = Date.parse(f.entry.started_at);
+  const event = (value) => JSON.stringify(value);
+  const meta = { type: 'session_meta', payload: { id: f.old, cwd: source } };
+  const started = { timestamp: new Date(claim + 1000).toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: `/root/${f.agent}`, agent_thread_id: f.thread } } };
+  const turnContext = (at) => ({ timestamp: new Date(at).toISOString(), type: 'turn_context', payload: { cwd: f.workspaceReal } });
+  await writeFile(f.parentFile, [meta, turnContext(claim + 1000), started].map(event).join('\n') + '\n');
+  assert.match(f.refusal(f.run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true'])).why, /does not belong to this worktree/);
+  await writeFile(f.parentFile, [meta, turnContext(claim - 1000), started].map(event).join('\n') + '\n');
+  await f.writeAgent();
+  const result = f.ok(f.run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true']));
+  assert.equal(result.status, 'launched');
+  assert.match(result.taken_over.verified, /no process holds the orchestrator or agent transcript/);
+});
+
+test('takeover of a bound stage with no spawned child requires proof no subagent started after the claim', async (t) => {
+  const f = await interruptedWorkflow(t);
+  const claim = Date.parse(f.entry.started_at);
+  const row = (value) => JSON.stringify(value);
+  const meta = { type: 'session_meta', payload: { id: f.old, cwd: f.workspaceReal } };
+  const turn = { timestamp: new Date(claim - 1000).toISOString(), type: 'turn_context', payload: { cwd: f.workspaceReal } };
+  const startedWithoutThread = { timestamp: new Date(claim + 1000).toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: `/root/${f.agent}`, agent_thread_id: randomUUID() } } };
+  await writeFile(f.parentFile, [meta, turn, startedWithoutThread].map(row).join('\n') + '\n');
+  assert.match(f.refusal(f.run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true'])).why, /subagent started after the claim but its bound transcript cannot be found/);
+  await writeFile(f.parentFile, [meta, turn].map(row).join('\n') + '\n');
+  const result = f.ok(f.run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true']));
+  assert.equal(result.status, 'launched');
+  assert.match(result.taken_over.verified, /no subagent started after the claim/);
+});
+
+test('installed consumer: the two steps and a repeated command are safe, and an unbound stage is taken over only when no subagent started', async (t) => {
   const f = await interruptedWorkflow(t, { bind: false });
   const { treeGit, readState, old, fresh, run, ok, refusal, launched, entry, writeParent, hold, untouched, parentFile } = f;
   const prepare = (args, sessionId = fresh) => run(PREPARE, args, sessionId);
@@ -251,15 +283,15 @@ test('installed consumer: the two steps and a repeated command are safe, and a s
   assert.match(refusal(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true'])).why, /still open/);
   await untouched(entry);
   await release();
-  // A subagent that was started but never bound died with its conversation: the conversation's end is the proof.
-  await writeParent({ timestamp: new Date(Date.parse(entry.started_at) + 60_000).toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: '/root/unbound', agent_thread_id: randomUUID() } } });
+  // With no binding and no post-claim spawn event, the closed parent transcript proves no child is running.
+  await writeParent();
 
   // The mutation alone prints the exact next command; repeating it changes nothing and still names the same one.
   const first = ok(prepare(['--stage-id', STAGE, '--take-over-interrupted', 'true']));
   assert.equal(first.status, 'ready');
   assert.equal(first.already_taken_over, undefined);
   assert.equal(first.previous_session_id, old);
-  assert.match(first.verified, /never bound an agent/);
+  assert.match(first.verified, /no subagent started after the claim/);
   assert.equal(first.next, `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: node .harness/scripts/${NATIVE} launch --stage-id ${STAGE} --feedback '${TAKEOVER_FEEDBACK}'`);
   const failed = (await readState()).stages[STAGE];
   assert.equal(failed.status, 'failed');

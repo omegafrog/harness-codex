@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseWorktreeRecord } from './worktrees.mjs';
-import { readNativeCodexOutcome, readRolloutMetadata, resolveNativeCodexThread } from './native-context.mjs';
+import { readNativeCodexOutcome, readRolloutMetadata, readTranscriptEntries, resolveNativeCodexThread } from './native-context.mjs';
 import { transcriptInUse } from './requirements-restart.mjs';
 import { bindOrchestratorSession, refreshWorkflowProgress } from './startup-state.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
@@ -28,12 +28,29 @@ export async function verifyPreviousRunEnded({ root, session, state, entry }) {
   if (!found) throw stopped('the orchestrator transcript was not found');
   const path = await realpath(found);
   const metadata = await readRolloutMetadata(path);
-  if (metadata?.id !== parent || metadata.cwd !== await realpath(root)) throw stopped('the orchestrator transcript does not belong to this worktree');
+  const workspace = await realpath(root);
+  if (metadata?.id !== parent) throw stopped('the orchestrator transcript does not belong to this worktree');
+  const { entries } = await readTranscriptEntries(path);
+  const claimedAt = Date.parse(entry.started_at || '');
+  const hasWorktreeTurn = Number.isFinite(claimedAt) && entries.some((item) => item.type === 'turn_context' && item.payload?.cwd === workspace && Number.isFinite(Date.parse(item.timestamp)) && Date.parse(item.timestamp) <= claimedAt);
+  if (metadata.cwd !== workspace && !hasWorktreeTurn) throw stopped('the orchestrator transcript does not belong to this worktree');
   if (await transcriptInUse(path)) throw stopped('the orchestrator Codex session is still open; close it first');
-  if (!entry.native_agent_id) return 'the orchestrator conversation that started it is closed and it never bound an agent';
+  if (!entry.native_agent_id) {
+    if (!Number.isFinite(claimedAt) || entries.some((item) => item.type === 'event_msg' && item.payload?.item?.type === 'SubAgentActivity' && item.payload.item.kind === 'started' && Number.isFinite(Date.parse(item.timestamp)) && Date.parse(item.timestamp) >= claimedAt)) throw stopped('a subagent started after the claim and was never bound; bind it or inspect it before discarding');
+    return 'the orchestrator conversation that started it is closed and no subagent started after the claim';
+  }
   const thread = await resolveNativeCodexThread({ root, parentSessionId: parent, stage: entry });
   const agentPath = thread ? await findRollout(sessionsDirectory(), thread) : null;
-  if (agentPath && await transcriptInUse(await realpath(agentPath))) throw stopped('the native agent transcript is still open; its agent may still be running');
+  if (!agentPath) {
+    if (entries.some((item) => item.type === 'event_msg' && item.payload?.item?.type === 'SubAgentActivity' && item.payload.item.kind === 'started' && Number.isFinite(Date.parse(item.timestamp)) && Date.parse(item.timestamp) >= claimedAt)) throw stopped('a subagent started after the claim but its bound transcript cannot be found');
+    return 'the orchestrator conversation that started it is closed and no subagent started after the claim';
+  }
+  const agentTranscript = await realpath(agentPath);
+  const agentMetadata = await readRolloutMetadata(agentTranscript);
+  const spawn = agentMetadata?.source?.subagent?.thread_spawn;
+  const expectedAgentPath = entry.native_agent_id.startsWith('/') ? entry.native_agent_id : `/root/${entry.native_agent_id}`;
+  if (agentMetadata?.id !== thread || agentMetadata.cwd !== workspace || agentMetadata.parent_thread_id !== parent || spawn?.parent_thread_id !== parent || spawn.depth !== 1 || spawn.agent_path !== expectedAgentPath) throw stopped('the bound native agent transcript does not match this stage');
+  if (await transcriptInUse(agentTranscript)) throw stopped('the native agent transcript is still open; its agent may still be running');
   const outcome = await readNativeCodexOutcome({ root, parentSessionId: parent, stage: entry });
   if (outcome?.status === 'completed' && existsSync(stageExecutionPaths(root, entry.execution_id, { create: false }).files.raw)) throw refuse(`its native agent already completed and wrote its output; record it with ${nativeCommand('finish', entry.execution_id)}`);
   if (outcome?.status === 'interrupted' || outcome?.status === 'failed') return `native agent ${outcome.status} and the orchestrator conversation that started it is closed`;

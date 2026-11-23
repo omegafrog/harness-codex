@@ -30,7 +30,7 @@ export async function readRolloutMetadata(path) {
   } finally { await handle.close(); }
 }
 
-async function readTranscriptEntries(path, { maxBytes = 32 * 1024 * 1024, tolerateMalformedRows = true } = {}) {
+export async function readTranscriptEntries(path, { maxBytes = 32 * 1024 * 1024, tolerateMalformedRows = true } = {}) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = await handle.stat();
@@ -84,7 +84,9 @@ export async function resolveNativeCodexThread({ root, parentSessionId, stage })
   const workspace = await realpath(root);
   const { entries } = await readTranscriptEntries(path);
   const metadata = entries[0]?.payload;
-  if (entries[0]?.type !== 'session_meta' || metadata?.id !== parentSessionId || metadata?.cwd !== workspace) return null;
+  const claimedAt = Date.parse(stage.started_at || '');
+  const hasWorktreeTurn = Number.isFinite(claimedAt) && entries.some((entry) => entry.type === 'turn_context' && entry.payload?.cwd === workspace && Number.isFinite(Date.parse(entry.timestamp)) && Date.parse(entry.timestamp) <= claimedAt);
+  if (entries[0]?.type !== 'session_meta' || metadata?.id !== parentSessionId || metadata?.cwd !== workspace && !hasWorktreeTurn) return null;
   const previousEnd = [...(stage.attempts || [])].reverse().find((item) => item.finished_at)?.finished_at;
   const cutoff = Date.parse(previousEnd || stage.started_at || '');
   if (!Number.isFinite(cutoff)) return null;
