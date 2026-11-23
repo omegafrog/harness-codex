@@ -107,6 +107,51 @@ test('an installed stage honors an explicit model and effort and refuses a misma
   for (const path of [asset, '.harness/schemas/input.schema.json']) assert.match(treeGit('check-ignore', '-v', path), /info\/exclude/);
 });
 
+test('installed receive recovers the bound worker final JSON from the owner conversation', async (t) => {
+  const { workspace, tree, treeGit, specPath, submitStage } = await consumerWorkflow(t, REQUEST);
+  const record = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
+  const { session_id: parentId } = record.agent_sessions.orchestrator;
+  const stage = 'stakeholder-analysis';
+  const started = ok(exec(workspace, NATIVE, ['launch', '--stage-id', stage]));
+  const agent = '/root/analysis_worker';
+  ok(runPrinted(workspace, started.next.bind, agent));
+  await submitStage({ stage, started }, SKIPPED(specPath('stakeholder-analysis.md')));
+  const final = (await readFile(started.output_path, 'utf8')).trim();
+  await unlink(started.output_path);
+
+  const childId = randomUUID();
+  const sessions = join(process.env.CODEX_HOME, 'sessions');
+  await mkdir(sessions, { recursive: true });
+  const writeRollout = (id, rows) => writeFile(join(sessions, `rollout-fixture-${id}.jsonl`), rows.map((row) => JSON.stringify(row) + '\n').join(''));
+  await writeRollout(parentId, [
+    { type: 'session_meta', payload: { id: parentId, cwd: workspace } },
+    { type: 'event_msg', timestamp: new Date().toISOString(), payload: { type: 'item_completed', item: { type: 'SubAgentActivity', kind: 'started', agent_path: agent, agent_thread_id: childId } } },
+  ]);
+  const receive = (threadId) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), 'receive', '--execution-id', started.execution_id, '--agent-id', agent], {
+    cwd: workspace, encoding: 'utf8', input: '', env: { ...process.env, CODEX_THREAD_ID: threadId },
+  });
+  const childRows = [
+    { type: 'session_meta', payload: { id: childId, cwd: workspace, parent_thread_id: parentId, source: { subagent: { thread_spawn: { parent_thread_id: parentId, depth: 1, agent_path: agent } } } } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'worker-turn' } },
+  ];
+  await writeRollout(childId, childRows);
+  refusal(receive(parentId), 'WORKER_OUTPUT_UNVERIFIED');
+  const complete = (message) => writeRollout(childId, [...childRows, { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'worker-turn', last_agent_message: message } }]);
+  await complete('I finished the work.');
+  refusal(receive(parentId), 'NATIVE_OUTPUT_EMPTY');
+  await complete(final);
+  refusal(receive(randomUUID()), 'RECEIVE_INPUT_EMPTY');
+  assert.equal(existsSync(started.output_path), false);
+
+  assert.deepEqual(ok(receive(parentId)), { status: 'received', execution_id: started.execution_id, source: 'native_transcript', thread_id: childId });
+  assert.equal(await readFile(started.output_path, 'utf8'), final);
+  await writeFile(started.output_path, final + '\n');
+  assert.equal(ok(receive(parentId)).status, 'already_received');
+  assert.equal(await readFile(started.output_path, 'utf8'), final + '\n');
+  assert.equal(ok(runPrinted(workspace, started.next.finish)).code, 'OK');
+  assert.equal(treeGit('status', '--short', '-uall'), '');
+});
+
 test('the stage commands print only what the next step needs, and --verbose prints the full detail', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace, tree, specPath, runStage, beginStage, submitStage } = flow;

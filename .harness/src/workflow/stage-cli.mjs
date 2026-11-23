@@ -477,6 +477,21 @@ const RULES = [
   } },
   { re: /^Recovery requires the original Codex parent session/, explain: () => ({ code: 'RECOVERY_SESSION_MISMATCH', why: 'Only the original Codex parent can reconcile its bound agent. Inspect the workflow for the supported next action in this conversation.', next: [CONTEXT] }) },
   { re: /^Native stage must be bound to the actual subagent ID/, explain: ({ context }) => ({ code: 'NOT_BOUND', why: 'finish only reads the output of a subagent that was bound to the execution; the real agent id has not been recorded yet.', next: [nativeCommand('bind', context.executionId || '<execution_id>', '--agent-id <agent_id>')] }) },
+  { re: /^Native subagent output is empty$/, explain: ({ context }) => ({
+    code: 'RECEIVE_INPUT_EMPTY',
+    why: 'No output was provided on standard input. Only the registered Codex orchestrator conversation can recover the bound worker result directly.',
+    next: [nativeCommand('inspect', context.executionId), 'Use the returned receive_command in the registered Codex conversation, or pipe the worker’s unchanged final JSON to that command.'],
+  }) },
+  { re: /^The bound Codex worker has no verified completed turn$/, explain: ({ context }) => ({
+    code: 'WORKER_OUTPUT_UNVERIFIED',
+    why: 'The bound worker transcript does not prove a completed turn. No result was recorded.',
+    next: [nativeCommand('inspect', context.executionId), 'If the bound worker is running, wait for its completion notice before repeating receive.'],
+  }) },
+  { re: /^The bound Codex worker final message is not one JSON object$/, explain: ({ context }) => ({
+    code: 'NATIVE_OUTPUT_EMPTY',
+    why: 'The verified worker’s final message did not contain a single stage result object. No result was recorded.',
+    next: [nativeCommand('inspect', context.executionId), 'Send the returned receive_command and schema_path to the same worker and ask it for its result.'],
+  }) },
   { re: /^Invalid verified native subagent rebind|^Native binding repair requires|^Existing native binding is valid|^Replacement native binding is not verified/, explain: ({ message, context }) => ({ code: 'BIND_REPAIR_REFUSED', why: `${message}. The runner only repairs an invalid binding when the current owner transcript uniquely proves the replacement worker and its requested completed model/effort.`, next: [`Inspect the unchanged stage: ${nativeCommand('inspect', context.executionId || '<execution_id>')}`, 'Do not edit workflow state or accept output from a different/unverified worker.'] }) },
   { re: /^--repair-binding true is only valid with bind/, explain: ({ message, context }) => ({ code: 'INVALID_ARGUMENT', why: `The command line was rejected (${message}).`, next: [`Use ${nativeCommand('bind', context.executionId || '<execution_id>', '--agent-id <verified-agent-id>', '--repair-binding true')} only for an invalid existing binding.`] }) },
   { re: /^Native subagent binding|^Native stage changed before terminal|^Invalid native subagent ID/, explain: ({ context }) => ({ code: 'BIND_MISMATCH', why: 'The agent id does not match the one bound to this running execution, or the stage changed while this command ran.', next: [`State and bound agent: ${nativeCommand('inspect', context.executionId || '<execution_id>')}`, 'Use the agent id returned by the spawn tool, never a guessed one.'] }) },

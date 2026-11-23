@@ -223,7 +223,12 @@ Codex 테스트 전에 `/hooks`에서 서브에이전트 식별 훅의 신뢰 �
 2. 사용자가 기존 worktree 삭제를 요청한 경우 테스트 저장소에 등록된 linked worktree 전부를 조사한다. 각 경로의 HEAD·branch·Git status·전체 tracked/untracked/ignored 내용과 `.io`를 source session에 백업하고 hash를 검증한 뒤 제거한다. primary checkout과 다른 저장소는 삭제하지 않는다. 새 테스트가 만든 worktree는 종료 뒤 산출물 검증을 위해 보존한다.
 3. `/home/jiwoo/workspace/harness-test`가 clean `main`인지 확인하고 start HEAD, installed version/lock, settings, hooks를 기록한다. Existing linked worktrees are backed up/deleted only on explicit user request; preserve all other repositories. Source push/update/Doctor are prerequisites; consumer settings are not modified.
 4. Use the checklist's launch environment and exact prompts. If an existing matching workflow is found, wait for the real user choice. After choosing new, verify execution ID, Git inventory, canonical `worktree.json`, and binding; never guess a missing worktree path.
-5. In the returned worktree, resume the user prompt and observe requirements, tactical design, then `tactical-to-code` through implementation. Stop after successful implementation and inspect outputs.
+5. 반환된 worktree에서 두 번째 `codex exec`를 시작해 아래 순서로 진행하는지 관찰한다. 구현을 정상적으로 마치면 관찰을 끝내고 산출물을 검증한다.
+
+   - 요구사항 흐름은 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context` 순서다.
+   - 전술 설계 흐름은 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서다.
+   - `tactical-to-code`는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → 사용자 발행 승인 후 `tracker-publish` → ticket별 `tactical-code` 순서다.
+
 6. Do not answer, delegate, edit, recover, or relaunch on a question, approval wait, failure, or interruption. Preserve raw response, time, stage, session, and evidence. Only actual user input may continue the workflow.
 7. Verify requirements/approval/diagram/context artifacts, scoped revision behavior, tactical model/service/integration/ADR and domain gate, and code decisions/assembly/design gate/code/tests/completion. File presence or agent success text alone does not prove completion.
 
@@ -244,13 +249,13 @@ node -e 'const p=require("node:path"),e=process.env,b=JSON.parse(e.HARNESS_WORKF
 
 첫 두 호출은 아래의 정확한 prompt와 `--json --model gpt-6-luna`, reasoning `medium`, `approval_policy="never"`, auto-compact 140000, `features.subagent_default_context_limits=false`, `--sandbox danger-full-access`, `-C <workspace>`를 사용한다. stdin은 `</dev/null`로 닫는다. Hook 신뢰를 검토한 경우에만 hook bypass를 추가한다.
 
-`codex exec resume`은 `--sandbox`, `--add-dir`, `-C`를 받지 않는다. resume은 대상 worktree를 cwd로 실행하고 아래 override를 항상 포함한다. 실제 사용자 응답만 prompt에 넣는다.
+`codex exec resume`은 `--sandbox`, `--add-dir`, `-C`를 받지 않는다. resume은 대상 worktree를 cwd로 실행하고 아래 override를 항상 포함한다. 질문이나 승인에 대한 실제 사용자 답변을 그대로 넘겨 스킬을 호출한다. [orchestrator 스킬](../../.codex/skills/orchestrator/SKILL.md)
 
 ```bash
 codex exec resume --json --model gpt-6-luna \
   -c 'model_reasoning_effort="medium"' -c 'approval_policy="never"' \
   -c model_auto_compact_token_limit=140000 -c features.subagent_default_context_limits=false \
-  -c 'sandbox_mode="danger-full-access"' <thread-id> '<실제 사용자 응답>' </dev/null
+  -c 'sandbox_mode="danger-full-access"' <thread-id> '$orchestrator <사용자 답변 그대로>' </dev/null
 ```
 
 resume 전에도 위 환경 변수를 다시 export·검증하고 session tmp를 만든다. `codex exec --help`와 `codex exec resume --help`를 확인해 설치된 CLI가 각 명령에 필요한 옵션을 지원하는지 검증한다. 실제 실행 인자, cwd, prompt, exit code를 `resume-<stage>-invocation.json`에 기록하고, 세션/binding은 `.io/worktree.json`, `runtime/orchestrator/state.json`, `subagents.jsonl`와 대조한다. 도움말에 없는 옵션을 추측하거나 권한을 넓히지 않는다.
@@ -267,7 +272,7 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
   -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해' </dev/null
 ```
 
-질문이 workflow 생성 전 발생해도 resume에 binding을 전달하고, 생성 후에는 canonical `worktree.json`과 대조한다. Prompt를 바꾸거나 승인 문구를 덧붙이지 않는다. 전용 runner가 실제 Codex를 직접 실행하며 일반 app E2E/profile이나 내부 stage CLI로 대체하지 않는다.
+질문이 workflow 생성 전 발생해도 resume에 binding을 전달하고, 생성 후에는 canonical `worktree.json`과 대조한다. 전용 runner가 실제 Codex를 직접 실행하며 일반 app E2E/profile이나 내부 stage CLI로 대체하지 않는다.
 
 Resume invocation evidence and stage identity are recorded as specified in the checklist above; do not build resume argv from a previous shell's environment.
 

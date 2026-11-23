@@ -310,16 +310,48 @@ try {
       if (current.native_agent_id !== opts['agent-id']) throw new Error('Native subagent binding mismatch');
       let text = '';
       for await (const chunk of process.stdin) { text += chunk; if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('Native output exceeds size limit'); }
-      if (!text.trim()) throw new Error('Native subagent output is empty');
+      let transcriptThread = null;
+      if (!text.trim()) {
+        const parentSessionId = (state.state || state).orchestrator_session_id;
+        if (binding.provider !== 'codex' || !parentSessionId || process.env.CODEX_THREAD_ID !== parentSessionId) {
+          throw new Error('Native subagent output is empty');
+        }
+        const { readNativeCodexOutcome } = await import('../../.harness/src/workflow/native-context.mjs');
+        const outcome = await readNativeCodexOutcome({ root, parentSessionId, stage: current });
+        if (outcome?.status !== 'completed') throw new Error('The bound Codex worker has no verified completed turn');
+        const message = outcome.output.trim();
+        const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/.exec(message);
+        text = (fenced ? fenced[1] : message).trim();
+        if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('Native output exceeds size limit');
+        let result;
+        try { result = JSON.parse(text); } catch { /* The worker's final message may be prose. */ }
+        if (!result || typeof result !== 'object' || Array.isArray(result)) {
+          throw new Error('The bound Codex worker final message is not one JSON object');
+        }
+        transcriptThread = outcome.thread_id;
+      }
       await assertWorkspaceTarget(session, paths.refs.raw);
-      const file = await open(paths.files.raw, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+      const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | (transcriptThread ? constants.O_EXCL : 0);
+      const file = await open(paths.files.raw, flags, 0o600).catch((error) => {
+        if (transcriptThread && error.code === 'EEXIST') return null;
+        throw error;
+      });
+      if (!file) {
+        const existing = await open(paths.files.raw, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+          const info = await existing.stat();
+          if (!info.isFile() || info.nlink !== 1) throw new Error('Native output must be a regular unshared file');
+        } finally { await existing.close(); }
+        process.stdout.write(`${JSON.stringify({ status: 'already_received', execution_id: id, thread_id: transcriptThread, next: nativeCommand('finish', id) })}\n`);
+        process.exit(0);
+      }
       try {
         const info = await file.stat();
         if (!info.isFile() || info.nlink !== 1) throw new Error('Native output must be a regular unshared file');
         await file.truncate(0);
         await file.writeFile(text);
       } finally { await file.close(); }
-      process.stdout.write(`${JSON.stringify({ status: 'received', execution_id: id })}\n`);
+      process.stdout.write(`${JSON.stringify({ status: 'received', execution_id: id, ...(transcriptThread ? { source: 'native_transcript', thread_id: transcriptThread } : {}) })}\n`);
       process.exit(0);
     }
     if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
