@@ -28,7 +28,7 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 
 ## Process
 
-1. Work in the active workspace. Run `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` before anything else and return `blocked` with its output when it fails. Locate each document with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Run `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` before anything else and return `blocked` with its output when it fails. Locate only the plan-set documents under `docs/specs/<plan-set-id>/` with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`. Read the repository-root `CONTEXT.md` directly; never pass it to `harness-spec-path.mjs`.
 2. A `판정: 생략` in `stakeholder-analysis.md` ends this stage at once: write nothing, put the skip and its evidence path in the result summary, and return `completed/OK`.
 3. `context.user_revision`, `context.reopen` 또는 `context.revalidation_mark`가 있으면 이전 산출물과 지금의 근거를 대조한다. 사용자 수정은 영향받는 `BIZ`의 `출처·변경 이력`에 원문을 `사용자 수정 지시`로 남긴다. 나머지 유효한 결정·ID를 보존하고 영향받는 행만 수정한다. 문서를 `draft`로 두고 컨텍스트의 업무·규칙 소유권이 바뀌는지 요약에 적는다.
 4. On resume, read the previous result, `requirements.md` and the actual answers. Continue at step 7 when answers exist.
