@@ -15,7 +15,7 @@
    | `docs/implementation/<plan-set-id>/technology.md`, `api.md`, `data.md` | 기술·API·데이터 및 인터페이스 바인딩. ticket이 의존하는 결정이다 |
    | `input_refs`의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design이다. 참조가 없으면 brief를 찾지 않는다 |
 
-   `requirements.md`에서 범위 내 BIZ와 각 INV·EX·AC를 먼저 식별하고, 전술 설계는 그 BIZ와 연결된 절·표만 읽는다. 경계·의존 순서에 근거가 필요하면 해당 호출이나 참조의 반대편 절과 링크를 따라간다. 기존 번호별 형식도 해당 절·표를 사용한다. 요청 원문은 입력의 `scope`에서 확인하고, 프로젝트 계약이나 다이어그램은 적용할 판단의 정확한 참조가 있을 때 연다. `stakeholder-analysis`가 `판정: 생략`이라 두 문서가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 필수 입력이 없거나 문서의 빈칸·모순 때문에 분할을 정할 수 없으면 `blocked/INPUT_MISSING`과 `DESIGN_NOT_FROZEN:`으로 시작하는 summary(정본 경로·항목·요구 ID)를 반환한다. `owner_stage`·`dependency_gap`은 `null`이다.
+   `requirements.md`에서 범위 내 BIZ와 각 INV·EX·AC를 먼저 식별하고, 전술 설계는 그 BIZ와 연결된 절·표만 읽는다. 경계·의존 순서에 근거가 필요하면 해당 호출이나 참조의 반대편 절과 링크를 따라간다. 기존 번호별 형식도 해당 절·표를 사용한다. 요청 원문은 입력의 `scope`에서 확인하고, 프로젝트 계약이나 다이어그램은 적용할 판단의 정확한 참조가 있을 때 연다. `stakeholder-analysis`가 `판정: 생략`이라 두 문서가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 필수 입력이 없거나 설계 문서의 빈칸·모순 때문에 분할을 결정할 수 없으면 `blocked/DEPENDENCY_INCOMPLETE`를 반환하고, 가장 앞선 소유 stage와 정본 경로·항목·요구 ID·결정 근거를 각각 `owner_stage`와 `dependency_gap`에 기록한다. 이전 문서에 직접 쓰지 않는다.
 3. 활성 workspace의 `<workspace_root>/.harness/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 ticket 예상 토큰과 산정 근거를 기록하고, 각 ticket이 한도 안에 들도록 나눈다.
 
 ## 분할 기준

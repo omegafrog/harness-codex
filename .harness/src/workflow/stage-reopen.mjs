@@ -59,9 +59,10 @@ export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_
 // missing or insufficient". tactical-ui is excluded: its DEPENDENCY_INCOMPLETE also hands off to frontend-design-brief.
 // subdomain-candidates is included: a requested feature without content to cut a BIZ from names stakeholder-analysis.
 // bounded-context is included: a boundary that needs a requirement the document lacks names requirements-fix as its owner.
-// to-ticket is excluded too: it splits a frozen design and never rewinds to a design stage; a design defect it finds is reported
-// as blocked / INPUT_MISSING (DESIGN_NOT_FROZEN) to the user, and a DEPENDENCY_INCOMPLETE from it is refused (dependencyOwnerErrors).
-export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA]);
+// to-ticket may discover a post-freeze gap while splitting (for example, a user decision recorded after tactical-data passed).
+// It can name the earliest prior owner and use the same forward-reopen path; the design-freeze gate still prevents a known
+// incomplete design from entering to-ticket, and ticket review findings remain owned by to-ticket itself.
+export const OWNER_REQUIRED_STAGES = Object.freeze([WORKTREE_STAGE.SUBDOMAIN_CANDIDATES, WORKTREE_STAGE.SUBDOMAIN_CLASSIFICATION, WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT, ...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY, WORKTREE_STAGE.TACTICAL_API, WORKTREE_STAGE.TACTICAL_DATA, WORKTREE_STAGE.TO_TICKET]);
 
 export function markRequirementsRevision(state, stage, previousExecutionId, executionId, now) {
   const stages = state.stages;
@@ -78,9 +79,6 @@ export function markRequirementsRevision(state, stage, previousExecutionId, exec
 
 // Format errors for a finish whose blocked / DEPENDENCY_INCOMPLETE result does not name a valid earlier owner; null otherwise.
 export function dependencyOwnerErrors({ skill, raw }) {
-  if (skill === WORKTREE_STAGE.TO_TICKET && raw?.status === 'blocked' && raw?.code === 'DEPENDENCY_INCOMPLETE') {
-    return [{ path: '$.code', rule: 'enum', expected: 'to-ticket never rewinds to a design stage: it returns blocked / INPUT_MISSING with a summary starting `DESIGN_NOT_FROZEN:` that names the defect and its document, and owner_stage and dependency_gap stay null', value: raw.code }];
-  }
   if (!OWNER_REQUIRED_STAGES.includes(skill) || raw?.status !== 'blocked' || raw?.code !== 'DEPENDENCY_INCOMPLETE') return null;
   const owner = raw.result?.owner_stage;
   const earlier = REWIND_STAGES.slice(0, REWIND_STAGES.indexOf(skill));
