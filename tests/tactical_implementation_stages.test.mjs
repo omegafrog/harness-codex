@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -15,6 +16,7 @@ import { loadNamedWorkflow } from '../.harness/src/workflow/loader.mjs';
 import { PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, tacticalImplementationOrderViolation, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
 import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
+import { fakeBrowser } from './support/fake-browser.mjs';
 
 test('tactical implementation is ordered after completed tactical design and remains outside pre-spec restarts', async () => {
   assert.deepEqual(TACTICAL_IMPLEMENTATION_STAGES, ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code']);
@@ -343,6 +345,12 @@ test('an installed consumer can defer interrupted UI and prepare API with no fro
 
 test('installed frontend design is dispatched independently and its brief enters plan review', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 작성 화면을 만든다');
+  // The visual review's start launches a browser in its preflight; a stand-in Chromium keeps the test independent of the host.
+  const browserDirectory = await mkdtemp(join(tmpdir(), 'harness-fake-browser-'));
+  const browser = await fakeBrowser(browserDirectory);
+  const previousBrowser = process.env.HARNESS_BROWSER_EXECUTABLE;
+  process.env.HARNESS_BROWSER_EXECUTABLE = browser.path;
+  t.after(async () => { if (previousBrowser === undefined) delete process.env.HARNESS_BROWSER_EXECUTABLE; else process.env.HARNESS_BROWSER_EXECUTABLE = previousBrowser; await rm(browserDirectory, { recursive: true, force: true }); });
   const statePath = join(flow.workspace, '.io/runtime/orchestrator/state.json');
   const state = JSON.parse(await readFile(statePath, 'utf8'));
   for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
@@ -353,16 +361,42 @@ test('installed frontend design is dispatched independently and its brief enters
   const briefArgs = ['--verbose', '--stage-id', 'frontend-design-brief'];
   const direction = '게시글 작성 화면의 입력·오류·등록 흐름 승인';
   assert.throws(() => flow.invoke(flow.workspace, 'harness-prepare-input.mjs', [...briefArgs, '--approval-answer', direction]), /Frontend direction answer was not recorded/);
-  await codexUserPrompt(flow.workspace, direction);
+  const blockedUi = JSON.parse(await readFile(statePath, 'utf8')).stages['tactical-ui'];
+  const blockedResultPath = join(flow.workspace, '.io', blockedUi.result_ref);
+  const blockedResult = JSON.parse(await readFile(blockedResultPath, 'utf8'));
+  blockedResult.questions = [];
+  await writeFile(blockedResultPath, JSON.stringify(blockedResult));
+  const originalExecutionId = 'tactical-ui-original-answer';
+  const questionId = `${originalExecutionId}:1`;
+  const originalDirectory = join(flow.workspace, '.io/runtime/executions', originalExecutionId);
+  await mkdir(originalDirectory, { recursive: true });
+  await writeFile(join(originalDirectory, 'result.json'), JSON.stringify({ questions: [{ question_id: questionId, prompt: '화면을 분리할까요?' }] }));
+  const recordedAnswers = join(originalDirectory, 'decision-answers.json');
+  await writeFile(recordedAnswers, JSON.stringify([{ question_id: 'tactical-ui-unrelated:1', answer: direction }]));
+  const stateWithPriorAnswer = JSON.parse(await readFile(statePath, 'utf8'));
+  stateWithPriorAnswer.stages['tactical-ui'].attempts = [{
+    execution_id: originalExecutionId,
+    result_ref: `runtime/executions/${originalExecutionId}/result.json`,
+    result_session_directory: join(flow.workspace, '.io'),
+  }];
+  await writeFile(statePath, JSON.stringify(stateWithPriorAnswer));
+  assert.throws(() => flow.invoke(flow.workspace, 'harness-prepare-input.mjs', [...briefArgs, '--approval-answer', direction]), /Frontend direction answer was not recorded/, 'an unrelated answer cannot authorize the handoff');
+  await writeFile(recordedAnswers, JSON.stringify([{ question_id: questionId, answer: direction }]));
   const prepared = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', [...briefArgs, '--approval-answer', direction]);
+  assert.deepEqual(prepared.input.context.frontend_direction_approval, {
+    answer: direction,
+    source: { stage_id: 'tactical-ui', execution_id: originalExecutionId, question_id: questionId },
+  });
   assert.equal(prepared.input.skill, 'frontend-design');
   assert.equal(prepared.input.context.agent_profile, 'frontend_designer');
-  assert.equal(prepared.input.context.frontend_direction_approval.answer, direction);
   const base = ['--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', prepared.input.execution_id];
   const started = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...base, '--verbose']);
-  assert.equal(started.sandbox, 'read-only');
+  assert.equal(started.sandbox, 'workspace-write', 'the designer renders and captures style samples in the session');
   flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', 'designer']);
-  const result = { schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', summary: '화면 설계 완료', artifacts: [], questions: [], review_request: null, owner_stage: null, dependency_gap: null, artifact_contents: [{ name: 'frontend-design.md', kind: 'frontend_design_brief', content: '# 게시글 작성 화면\n' }] };
+  const briefPath = `runtime/executions/${prepared.input.execution_id}/artifacts/frontend-design.md`;
+  await mkdir(join(flow.workspace, '.io', briefPath, '..'), { recursive: true });
+  await writeFile(join(flow.workspace, '.io', briefPath), '# 게시글 작성 화면\n');
+  const result = { schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', summary: '화면 설계 완료', artifacts: [{ base: 'session', path: briefPath, kind: 'frontend_design_brief' }], questions: [], review_request: null, owner_stage: null, dependency_gap: null };
   await writeFile(started.output_path, JSON.stringify({ schema_version: 1, skill: 'frontend-design', status: 'completed', code: 'OK', result }));
   const finished = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...base, '--verbose']);
   const brief = finished.result.artifacts.find((item) => item.kind === 'frontend_design_brief');
@@ -428,9 +462,43 @@ test('installed frontend design is dispatched independently and its brief enters
     return { ...prepared, ...finished };
   };
   await dispatch('frontend-implementation', 'frontend-implement', 'frontend_implementation_agent');
-  const review = await dispatch('frontend-visual-review', 'frontend-visual-review', 'frontend_visual_reviewer', {
-    status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', owner_stage: 'frontend-implementation', dependency_gap: '성공 재시도 후 로컬 실패 항목을 제거해 메시지 중복을 막는다',
-  });
+  // A reviewer role without network is refused before any worker exists: the stage stays unstarted and the fix is named.
+  const reviewerProfile = join(flow.workspace, '.codex/agents/frontend_visual_reviewer.toml');
+  const reviewerToml = await readFile(reviewerProfile, 'utf8');
+  await writeFile(reviewerProfile, reviewerToml.replace(/^network_access = true\n/m, ''));
+  const blockedReview = flow.invoke(flow.workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'frontend-visual-review', '--plan', 'ui']);
+  const blockedArgs = ['--root', flow.workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', blockedReview.input.execution_id];
+  const refusedStart = spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), 'start', ...blockedArgs], { cwd: flow.workspace, encoding: 'utf8' });
+  assert.equal(refusedStart.status, 2, refusedStart.stdout);
+  const refusal = JSON.parse(refusedStart.stderr.trim().split('\n').at(-1));
+  assert.equal(refusal.code, 'ENVIRONMENT_UNAVAILABLE');
+  assert.deepEqual(refusal.failed_checks.map((check) => check.id), ['role_network_access']);
+  assert.match(refusal.failed_checks[0].fix, /network_access = true/);
+  assert.match(refusal.next[0], new RegExp(`start --execution-id ${blockedReview.input.execution_id}`));
+  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages['frontend-visual-review'], undefined, 'nothing is recorded and no worker is spawned');
+  // launch (prepare + start) hands the orchestrator the same explanation, with the prepared execution it can start after the fix.
+  const refusedLaunch = spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), 'launch', '--stage-id', 'frontend-visual-review', '--plan', 'ui'], { cwd: flow.workspace, encoding: 'utf8' });
+  assert.notEqual(refusedLaunch.status, 0, refusedLaunch.stdout);
+  const launchRefusal = JSON.parse(refusedLaunch.stderr.trim().split('\n').at(-1));
+  assert.equal(launchRefusal.code, 'ENVIRONMENT_UNAVAILABLE');
+  assert.deepEqual(launchRefusal.failed_checks.map((check) => check.id), ['role_network_access']);
+  assert.match(launchRefusal.next[0], /harness-native-stage\.mjs start --execution-id frontend-visual-review-/);
+  assert.match(launchRefusal.user_decision, /do not spawn the reviewer/);
+  assert.ok(launchRefusal.prepared_execution_id, 'the prepared execution is named so it can be started after the fix');
+  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).stages['frontend-visual-review'], undefined, 'a refused launch records nothing either');
+  await writeFile(reviewerProfile, reviewerToml);
+  // After the fix the same prepared execution starts with a short browser TMPDIR that the worker's commands receive.
+  const reviewStarted = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['start', ...blockedArgs, '--verbose']);
+  const browserRecord = JSON.parse(await readFile(reviewStarted.browser_environment_path, 'utf8'));
+  assert.match(browserRecord.tmpdir, /^\/tmp\/hb-/);
+  assert.ok(browserRecord.tmpdir.length <= 48);
+  flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['bind', ...blockedArgs, '--agent-id', 'visual-reviewer']);
+  const tmp = spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-command.mjs'), '--root', flow.workspace, '--execution-id', blockedReview.input.execution_id, '--agent-id', 'visual-reviewer', '--', process.execPath, '-e', 'process.stdout.write(process.env.TMPDIR)'], { cwd: flow.workspace, encoding: 'utf8' });
+  assert.equal(tmp.stdout, browserRecord.tmpdir, tmp.stderr);
+  const reviewResult = { schema_version: 1, skill: 'frontend-visual-review', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '완료', artifacts: [], questions: [], review_request: null, owner_stage: 'frontend-implementation', dependency_gap: '성공 재시도 후 로컬 실패 항목을 제거해 메시지 중복을 막는다' };
+  await writeFile(reviewStarted.output_path, JSON.stringify({ schema_version: 1, skill: 'frontend-visual-review', status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: reviewResult }));
+  const review = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['finish', ...blockedArgs]);
+  assert.equal(existsSync(browserRecord.tmpdir), false, 'the browser directory is removed when the stage ends');
   assert.match(review.next, /frontend-implementation --plan <ticket-id> --feedback/);
   assert.doesNotMatch(review.next, /--reopen-for frontend-visual-review-/);
   const correctionFeedback = 'The independent visual review found duplicate retry-success rendering; remove the local failure item after success and verify it in Chromium.';

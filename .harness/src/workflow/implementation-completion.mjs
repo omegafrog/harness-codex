@@ -168,6 +168,22 @@ async function receiptBasisProblem(root, receipt, head) {
   return null;
 }
 
+// The approved scope is the request's `use_cases` (use-case IDs the user approved), or its `scenarios` when the request
+// names none. A receipt whose run reported what it exercised must cover every approved ID: the record itself then shows
+// an approved use case was not run, so completion is blocked. A run that reported nothing cannot be judged either way;
+// that is `unverified` (passes, and the completion verdict says it passed with unverified evidence). Blocking only on a
+// positive record keeps every E2E command written before this report existed passing, with the gap stated.
+export function useCaseCoverage({ request, receipt }) {
+  const approved = [...new Set((Array.isArray(request?.use_cases) && request.use_cases.length ? request.use_cases : request?.scenarios || []).filter((id) => typeof id === 'string' && id.trim()))].sort();
+  const source = Array.isArray(request?.use_cases) && request.use_cases.length ? 'use_cases' : 'scenarios';
+  const reported = receipt?.use_cases;
+  if (!approved.length) return { status: 'none_approved', approved_source: source, approved, exercised: null, uncovered: [] };
+  if (!reported || reported.status !== 'reported' || !Array.isArray(reported.exercised)) return { status: 'unreported', approved_source: source, approved, exercised: null, uncovered: approved };
+  const exercised = new Set(reported.exercised);
+  const uncovered = approved.filter((id) => !exercised.has(id));
+  return { status: uncovered.length ? 'uncovered' : 'covered', approved_source: source, approved, exercised: [...exercised].sort(), uncovered, outside_approved: [...exercised].filter((id) => !approved.includes(id)).sort() };
+}
+
 export async function deriveApprovedTacticalE2E({ root, planSetId, session }) {
   const read = (path) => readSkillSessionJson({ root, session_directory: session, path });
   const state = await read('runtime/orchestrator/state.json').catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
@@ -208,7 +224,11 @@ export async function deriveApprovedTacticalE2E({ root, planSetId, session }) {
     const head = (await git(root, 'rev-parse', 'HEAD')).trim();
     const basis = await receiptBasisProblem(root, receipt, head);
     if (basis) return blocked(basis.reason, { ...basis, receipt: receiptRef.path, next: 'Approve and run E2E again from the committed application and test code with the current execution configuration' });
-    return pass('approved_e2e_passed', { execution_id: id, profile_id: receipt.profile_id, receipt: receiptRef.path, head: receipt.head });
+    const details = { execution_id: id, profile_id: receipt.profile_id, receipt: receiptRef.path, head: receipt.head };
+    const coverage = useCaseCoverage({ request: await read(request.path), receipt });
+    if (coverage.status === 'uncovered') return blocked('approved_e2e_use_cases_uncovered', { ...details, use_case_coverage: coverage, next: `The approved E2E did not exercise ${coverage.uncovered.join(', ')}; add those use cases to the E2E scenario and run the approved E2E again` });
+    if (coverage.status === 'unreported') return { status: 'unverified', reason: 'approved_e2e_use_cases_unreported', violations: [], details: { ...details, use_case_coverage: coverage, warning: `The E2E run did not report which use cases it exercised (HARNESS_E2E_USE_CASES_FILE); coverage of ${coverage.approved.join(', ')} is unverified` } };
+    return pass('approved_e2e_passed', { ...details, use_case_coverage: coverage });
   } catch (error) {
     return blocked('approved_e2e_evidence_invalid', { execution_id: id, error: error.message });
   }

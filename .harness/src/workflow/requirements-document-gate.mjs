@@ -62,11 +62,11 @@ export function checkRequirementsDocument({ requirements, stage, complete = fals
 }
 
 // The runner's verdict when a requirements stage returns its questions or completes; null when the check does not apply.
-export async function evaluateRequirementsDocumentGate({ root, input, envelope }) {
+export async function evaluateRequirementsDocumentGate({ root, input, envelope, draftExecutionId }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
   if (!REQUIREMENTS_STAGES.includes(stage) || !planSetId || !['completed', 'action_required'].includes(envelope?.status)) return null;
-  const requirements = await planSetDocument(root, planSetId, 'requirements.md');
+  const requirements = await planSetDocument(root, planSetId, 'requirements.md', draftExecutionId);
   if (requirements.text === null) return null;
   return { stage, ...checkRequirementsDocument({ requirements: requirements.text, stage, complete: envelope.status === 'completed' && envelope.code === 'OK' }) };
 }

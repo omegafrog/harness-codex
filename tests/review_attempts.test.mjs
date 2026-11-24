@@ -6,6 +6,146 @@ import { join } from 'node:path';
 import { updateReviewAttempt, inspectReviewHistory, reviewAdmissionPreviousInputs, assertReviewAttempt, assertNoUnrecordedNativeReview } from '../.harness/src/workflow/review-attempts.mjs';
 import { snapshotPlanSet } from '../.harness/src/workflow/plan-review.mjs';
 import { reviewDelta } from '../.harness/src/workflow/review-delta.mjs';
+import { executionStatus, isInterruption, reviewerLiveness, REVIEWER_BIND_GRACE_MS, REVIEWER_STALE_AFTER_MS, REVIEWER_TRANSCRIPT_LOOKUP_GRACE_MS } from '../.harness/src/workflow/review-liveness.mjs';
+
+test('a missing transcript lookup cannot release a recently active reviewer at the stale boundary', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-liveness-'));
+  try {
+    const started = new Date(Date.now() - REVIEWER_STALE_AFTER_MS - 1000).toISOString();
+    const attempt = { native_review: { agent_id: 'reviewer', execution_id: 'exec', started_at: started, transcript_path: join(root, 'transcript.jsonl') } };
+    const atBoundary = reviewerLiveness({ root, attempt, now: Date.now() });
+    assert.equal(atBoundary.live, true);
+    assert.equal(atBoundary.state, 'live');
+    const beyondGrace = reviewerLiveness({ root, attempt, now: Date.now() + REVIEWER_TRANSCRIPT_LOOKUP_GRACE_MS + 2000 });
+    assert.equal(beyondGrace.live, false);
+    assert.equal(beyondGrace.state, 'stale');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a reviewer result arriving after interrupted lock release cannot be recorded as approval', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-interrupted-'));
+  try {
+    const inputs = { plan: 'v1' };
+    const first = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs });
+    await updateReviewAttempt({ root, scope: 'plan-example', action: 'claim', attemptId: first.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'dispatch', parentSessionId: 'parent', executionId: 'exec' });
+    await updateReviewAttempt({ root, scope: 'plan-example', action: 'bind-native', attemptId: first.attempt_id, nativeAgentId: 'agent', parentSessionId: 'parent' });
+    await mkdir(join(root, '.io/runtime/orchestrator'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/orchestrator/workflow.json'), JSON.stringify({ state: { stages: { review: { status: 'failed', execution_id: 'exec' } } } }));
+    const interruption = await updateReviewAttempt({ root, scope: 'plan-example', action: 'mark-interrupted', attemptId: first.attempt_id, interruptedBy: 'write-guard' });
+    assert.equal(interruption.reviewer_state, 'execution_terminal');
+    const nativeReview = { verdict: 'pass', findings: [] };
+    const nativeResult = JSON.stringify(nativeReview);
+    await updateReviewAttempt({ root, scope: 'plan-example', action: 'stop-native', attemptId: first.attempt_id, nativeAgentId: 'agent', parentSessionId: 'parent', nativeResult, nativeReview });
+    await assert.rejects(updateReviewAttempt({ root, scope: 'plan-example', action: 'record', attemptId: first.attempt_id, inputs, review: { ...nativeReview, reviewer_id: 'reviewer', author_ids: ['parent'], fork_turns: 'none' } }), /marked interrupted.*cannot be accepted/i);
+    const next = await updateReviewAttempt({ root, scope: 'plan-example', action: 'begin', inputs });
+    assert.equal(next.round, 2);
+    const history = JSON.parse(await readFile(join(root, '.io/runtime/reviews/plan-example.json'), 'utf8'));
+    assert.equal(history.attempts[0].status, 'aborted');
+    assert.equal(history.attempts[0].interrupted.reason, 'execution_terminal');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('reviewer liveness separates a normal stop from an interruption and reads each execution record shape', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-liveness-signals-'));
+  try {
+    const now = Date.now(), at = (ms) => new Date(now - ms).toISOString();
+    const native = (extra = {}) => ({ native_review: { agent_id: 'agent', execution_id: 'exec', claimed_at: at(1000), started_at: at(1000), ...extra } });
+    assert.equal(REVIEWER_STALE_AFTER_MS, 30 * 60 * 1000);
+    assert.equal(REVIEWER_BIND_GRACE_MS, 5 * 60 * 1000);
+    assert.deepEqual(['live', 'unclaimed'], [reviewerLiveness({ root, attempt: native(), now }).state, reviewerLiveness({ root, attempt: {}, now }).state]);
+    // A stop is a release, not an interruption; a claim with no start, a silent bound reviewer and a terminal stage are.
+    const stopped = reviewerLiveness({ root, attempt: native({ stopped: true, stopped_at: at(10) }), now });
+    assert.deepEqual([stopped.live, stopped.state, isInterruption(stopped)], [false, 'stopped', false]);
+    const unbound = reviewerLiveness({ root, attempt: { native_review: { execution_id: 'exec', claimed_at: at(REVIEWER_BIND_GRACE_MS + 1000) } }, now });
+    assert.deepEqual([unbound.state, isInterruption(unbound)], ['unbound_stale', true]);
+    assert.equal(reviewerLiveness({ root, attempt: { native_review: { execution_id: 'exec', claimed_at: at(REVIEWER_BIND_GRACE_MS - 1000) } }, now }).state, 'live');
+    const silent = reviewerLiveness({ root, attempt: native({ claimed_at: at(REVIEWER_STALE_AFTER_MS + 1000), started_at: at(REVIEWER_STALE_AFTER_MS + 1000) }), now });
+    assert.deepEqual([silent.state, isInterruption(silent)], ['stale', true]);
+    assert.equal(reviewerLiveness({ root, attempt: native({ claimed_at: at(REVIEWER_STALE_AFTER_MS - 1000), started_at: at(REVIEWER_STALE_AFTER_MS - 1000) }), now }).state, 'live');
+    assert.equal(reviewerLiveness({ root, attempt: { interrupted: { reason: 'stale' }, ...native() }, now }).state, 'interrupted', 'an earlier mark stays');
+    assert.equal(reviewerLiveness({ root, attempt: native(), now: now + 1000 * 1000 }).state, 'live', 'clock skew inside the window');
+
+    // The execution record is the workflow.json state or the older state.json; an earlier attempt of a stage counts too.
+    assert.equal(executionStatus(root, 'exec'), null, 'no record');
+    await mkdir(join(root, '.io/runtime/orchestrator'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/orchestrator/state.json'), JSON.stringify({ stages: { 'to-ticket': { status: 'running', execution_id: 'now', attempts: [{ status: 'cancelled', execution_id: 'old' }] } } }));
+    assert.deepEqual([executionStatus(root, 'now'), executionStatus(root, 'old'), executionStatus(root, 'other')], ['running', 'cancelled', null]);
+    await writeFile(join(root, '.io/runtime/orchestrator/workflow.json'), JSON.stringify({ state: { stages: { 'to-ticket': { status: 'completed', execution_id: 'now' } } } }));
+    assert.equal(executionStatus(root, 'now'), 'completed', 'workflow.json wins over state.json');
+    for (const status of ['failed', 'cancelled', 'blocked', 'completed']) {
+      await writeFile(join(root, '.io/runtime/orchestrator/workflow.json'), JSON.stringify({ state: { stages: { s: { status, execution_id: 'exec' } } } }));
+      assert.equal(reviewerLiveness({ root, attempt: native(), now }).state, 'execution_terminal', status);
+    }
+    for (const status of ['running', 'waiting', 'pending']) {
+      await writeFile(join(root, '.io/runtime/orchestrator/workflow.json'), JSON.stringify({ state: { stages: { s: { status, execution_id: 'exec' } } } }));
+      assert.equal(reviewerLiveness({ root, attempt: native(), now }).live, true, status);
+    }
+    await writeFile(join(root, '.io/runtime/orchestrator/workflow.json'), 'not json');
+    assert.equal(reviewerLiveness({ root, attempt: native(), now }).live, true, 'an unreadable record never releases a lock by itself');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('mark-interrupted marks only a plan attempt whose reviewer is gone, once, and never touches a live or stopped one', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'plan-review-mark-'));
+  try {
+    const inputs = { plan: 'v1' }, scope = 'plan-example', file = join(root, '.io/runtime/reviews/plan-example.json');
+    const mark = (attemptId) => updateReviewAttempt({ root, scope, action: 'mark-interrupted', attemptId, interruptedBy: 'write-guard' });
+    const first = await updateReviewAttempt({ root, scope, action: 'begin', inputs });
+    await assert.rejects(mark(first.attempt_id), /claimed reviewer/, 'an attempt without a reviewer has no lock to release');
+    await updateReviewAttempt({ root, scope, action: 'claim', attemptId: first.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'dispatch', parentSessionId: 'parent', executionId: 'exec' });
+    await updateReviewAttempt({ root, scope, action: 'bind-native', attemptId: first.attempt_id, nativeAgentId: 'agent', parentSessionId: 'parent', transcriptPath: join(root, 'agent.jsonl') });
+    const bound = JSON.parse(await readFile(file, 'utf8')).attempts[0].native_review;
+    assert.deepEqual([typeof bound.claimed_at, typeof bound.started_at, bound.transcript_path], ['string', 'string', join(root, 'agent.jsonl')]);
+    const before = await readFile(file, 'utf8');
+    const live = await mark(first.attempt_id);
+    assert.deepEqual([live.interrupted, live.reviewer_state], [null, 'live']);
+    assert.equal(await readFile(file, 'utf8'), before, 'a live reviewer leaves the history file untouched');
+    await assert.rejects(mark('another-attempt'), /Only the active plan review attempt/);
+    await assert.rejects(updateReviewAttempt({ root, scope: 'spec-example-architecture', action: 'mark-interrupted', attemptId: first.attempt_id, interruptedBy: 'x' }), /Only the active plan review attempt/);
+
+    await mkdir(join(root, '.io/runtime/orchestrator'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/orchestrator/state.json'), JSON.stringify({ stages: { review: { status: 'cancelled', execution_id: 'exec' } } }));
+    const marked = await mark(first.attempt_id);
+    assert.equal(marked.interrupted.reason, 'execution_terminal');
+    assert.equal(marked.interrupted.detected_by, 'write-guard');
+    assert.ok(marked.interrupted.detected_at && Object.hasOwn(marked.interrupted, 'last_activity_at'));
+    const settled = await readFile(file, 'utf8');
+    assert.deepEqual((await mark(first.attempt_id)).interrupted, marked.interrupted);
+    assert.equal(await readFile(file, 'utf8'), settled, 'a second mark changes nothing');
+    assert.equal((await inspectReviewHistory({ root, scope })).interrupted.reason, 'execution_terminal');
+
+    // A reviewer that stopped normally is not marked, even when its stage execution has ended.
+    const stoppedScope = 'plan-stopped', stoppedInputs = { plan: 'v2' };
+    const second = await updateReviewAttempt({ root, scope: stoppedScope, action: 'begin', inputs: stoppedInputs });
+    await updateReviewAttempt({ root, scope: stoppedScope, action: 'claim', attemptId: second.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'dispatch', parentSessionId: 'parent', executionId: 'exec' });
+    await updateReviewAttempt({ root, scope: stoppedScope, action: 'bind-native', attemptId: second.attempt_id, nativeAgentId: 'agent-2', parentSessionId: 'parent' });
+    const nativeReview = { verdict: 'pass', findings: [] };
+    await updateReviewAttempt({ root, scope: stoppedScope, action: 'stop-native', attemptId: second.attempt_id, nativeAgentId: 'agent-2', parentSessionId: 'parent', nativeResult: JSON.stringify(nativeReview), nativeReview });
+    const stopped = await updateReviewAttempt({ root, scope: stoppedScope, action: 'mark-interrupted', attemptId: second.attempt_id, interruptedBy: 'write-guard' });
+    assert.deepEqual([stopped.interrupted, stopped.reviewer_state], [null, 'stopped']);
+    assert.equal((await updateReviewAttempt({ root, scope: stoppedScope, action: 'record', attemptId: second.attempt_id, inputs: stoppedInputs, review: null, requireNative: true })).reason, 'pass');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('only a plan review settles a vanished reviewer when the next review begins; other scopes keep their active attempt', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-vanished-scope-'));
+  try {
+    await mkdir(join(root, '.io/runtime/orchestrator'), { recursive: true });
+    await writeFile(join(root, '.io/runtime/orchestrator/state.json'), JSON.stringify({ stages: { review: { status: 'failed', execution_id: 'exec' } } }));
+    for (const scope of ['spec-example-architecture', 'plan-example']) {
+      const admission = await updateReviewAttempt({ root, scope, action: 'begin', inputs: { plan: 'v1' } });
+      await updateReviewAttempt({ root, scope, action: 'claim', attemptId: admission.attempt_id, reviewerId: 'reviewer', nativeAgentId: 'dispatch', parentSessionId: 'parent', executionId: 'exec' });
+      await updateReviewAttempt({ root, scope, action: 'bind-native', attemptId: admission.attempt_id, nativeAgentId: `agent-${scope}`, parentSessionId: 'parent' });
+      if (scope.startsWith('spec-')) await assert.rejects(updateReviewAttempt({ root, scope, action: 'begin', inputs: { plan: 'v2' } }), /A review is already active/);
+      else {
+        const next = await updateReviewAttempt({ root, scope, action: 'begin', inputs: { plan: 'v1' } });
+        assert.equal(next.round, 2, 'the interrupted attempt is an aborted round and unchanged inputs may be reviewed again');
+        const history = JSON.parse(await readFile(join(root, `.io/runtime/reviews/${scope}.json`), 'utf8'));
+        assert.deepEqual([history.attempts[0].status, history.attempts[0].interrupted.detected_by, history.attempts[0].reason.startsWith('interrupted: ')], ['aborted', 'review-begin', true]);
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test('a fresh plan reviewer can review unchanged inputs after revise without discarding findings', async () => {
   const root = await mkdtemp(join(tmpdir(), 'plan-review-retry-'));

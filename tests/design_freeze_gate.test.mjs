@@ -252,12 +252,11 @@ test('the command prints the verdict and fails the process on a failing design',
   assert.match(relative.stderr, /absolute path/);
 });
 
-test('to-ticket never rewinds: it is not an owner-naming stage and a DEPENDENCY_INCOMPLETE from it is refused', () => {
-  assert.equal(OWNER_REQUIRED_STAGES.includes('to-ticket'), false);
-  const owned = dependencyOwnerErrors({ skill: 'to-ticket', raw: { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: { owner_stage: 'application-service', dependency_gap: '로그아웃 operation이 없다' } } });
-  assert.equal(owned[0].path, '$.code');
-  assert.match(owned[0].expected, /DESIGN_NOT_FROZEN/);
-  assert.equal(dependencyOwnerErrors({ skill: 'to-ticket', raw: { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: {} } })[0].path, '$.code');
+test('to-ticket can identify an earlier owner for a design gap discovered during ticket splitting', () => {
+  assert.equal(OWNER_REQUIRED_STAGES.includes('to-ticket'), true);
+  const owned = dependencyOwnerErrors({ skill: 'to-ticket', raw: { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: { owner_stage: 'tactical-api', dependency_gap: 'GET /data-bundles is absent from api.md' } } });
+  assert.equal(owned, null);
+  assert.equal(dependencyOwnerErrors({ skill: 'to-ticket', raw: { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: {} } })[0].path, '$.result.owner_stage');
   assert.equal(dependencyOwnerErrors({ skill: 'to-ticket', raw: { status: 'blocked', code: 'INPUT_MISSING', result: {} } }), null);
   assert.equal(dependencyOwnerErrors({ skill: 'tactical-data', raw: { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', result: { owner_stage: 'tactical-api', dependency_gap: 'x' } } }), null);
 });
@@ -270,8 +269,8 @@ test('the guidance forbids new scope in every tactical and implementation-design
   for (const stage of ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) assert.match(await read(`.harness/internal-skills/${stage}/GUIDE.md`), /## 범위 추가 금지[\s\S]*범위 질문/, stage);
   assert.match(await read('.harness/internal-skills/tactical-api/GUIDE.md'), /`근거` 열[\s\S]*UNTRACED_ITEM/);
   const toTicket = await read('.harness/internal-skills/to-ticket/GUIDE.md');
-  assert.match(toTicket, /DESIGN_NOT_FROZEN/);
-  assert.doesNotMatch(toTicket, /orchestrator then reopens that stage/);
+  assert.match(toTicket, /DEPENDENCY_INCOMPLETE/);
+  assert.match(toTicket, /orchestrator reopens the named owner/);
 });
 
 test('update restores the design-freeze gate of an installed consumer, Doctor requires it and Git ignores it', async (t) => {
@@ -389,13 +388,14 @@ test('installed consumer: tactical-data must complete a binding, and to-ticket o
   const started = await beginStage('to-ticket');
   assert.equal(started.prepared.input.skill, 'to-ticket');
 
-  // A design defect found by to-ticket is reported, not rewound: its DEPENDENCY_INCOMPLETE is returned to the subagent as a format error.
-  await submitStage(started, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '설계 빈틈', resultExtra: { owner_stage: 'application-service', dependency_gap: '로그아웃 operation이 없다' } });
-  const returned = finishStage(started);
-  assert.equal(returned.status, 1, returned.stdout);
-  assert.equal(JSON.parse(returned.stdout).errors[0].path, '$.code');
-  await submitStage(started, { status: 'blocked', code: 'INPUT_MISSING', summary: 'DESIGN_NOT_FROZEN: api.md의 항목을 ticket으로 나눌 수 없다' });
-  const reported = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...started.base]);
-  assert.equal(reported.code, 'INPUT_MISSING');
-  assert.doesNotMatch(reported.next, /--reopen-for/);
+  // A post-freeze decision gap found during decomposition returns to its API owner and revalidates tactical-data and to-ticket.
+  await submitStage(started, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '사용자가 정한 조회 API가 설계에 없다', resultExtra: { owner_stage: 'tactical-api', dependency_gap: 'api.md에 사용자가 정한 GET /data-bundles와 GeoJSON 사각형 교차 규칙이 없다' } });
+  const blockedTicket = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...started.base]);
+  assert.equal(blockedTicket.code, 'DEPENDENCY_INCOMPLETE');
+  assert.match(blockedTicket.next, new RegExp(`launch --stage-id tactical-api --reopen-for ${started.prepared.input.execution_id}`));
+  const reopenedTicketOwner = await beginStage('tactical-api', { extraArgs: ['--reopen-for', started.prepared.input.execution_id] });
+  assert.equal(reopenedTicketOwner.prepared.input.context.reopen.blocked_stage, 'to-ticket');
+  const staleState = await state();
+  assert.ok(staleState.stages['tactical-data'].stale);
+  assert.ok(staleState.stages['to-ticket'].stale);
 });

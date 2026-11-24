@@ -5,6 +5,8 @@ model_tier: high_performance
 
 # context-boundary
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 마지막 전술 설계 검토다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 확정 요구사항, 승인 답변, Context Map, 관련 ADR과 [전술 설계](../domain-model/references/template.md)를 대조한다.
 
 - 실제 사용 관계의 방향과 판단 소유자가 Context Map에 맞는지 확인한다. 다른 BC의 데이터·Repository·내부 타입 접근이나 순환 의존이 있는지 계약과 호출을 읽어 점검한다.

@@ -127,6 +127,31 @@
             "type": "string",
             "minLength": 1
           },
+          "context": {
+            "type": "object",
+            "description": "What the user needs to decide without following the agent's work. Required of every new question; earlier stored questions may omit it.",
+            "additionalProperties": false,
+            "required": [
+              "settled_rules",
+              "why_now"
+            ],
+            "properties": {
+              "settled_rules": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Already-settled business rules that bear on this decision, quoted from settled documents or answers; never a new rule.",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "why_now": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Why this must be decided now."
+              }
+            }
+          },
           "options": {
             "type": "array",
             "minItems": 2,
@@ -150,6 +175,16 @@
                 "consequence": {
                   "type": "string",
                   "minLength": 1
+                },
+                "effect": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What this option changes on screen or in behavior. Required of every option of a new question."
+                },
+                "example": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The same concrete situation applied to this option, for example two pins of one owner on a map; illustrative, never a requirement; differs per option. Required of every option of a new question."
                 }
               }
             }

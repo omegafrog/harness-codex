@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PRE_SPEC_STAGES, REWIND_STAGES, TACTICAL_DESIGN_STAGES, isCurrentStage, nextRequiredPreSpecStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from '../.harness/src/workflow/worktree-stages.mjs';
-import { dependencyOwnerErrors } from '../.harness/src/workflow/stage-reopen.mjs';
+import { dependencyOwnerErrors, resolveReopen } from '../.harness/src/workflow/stage-reopen.mjs';
 import { consumerWorkflow, SETUP, sourceRoot } from './support/consumer-workflow.mjs';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
@@ -50,13 +50,42 @@ test('a blocked dependency result must name an earlier owner and the gap', () =>
   assert.equal(check('tactical-data', { dependency_gap: 'x' })[0].missing, true);
   assert.equal(check('tactical-data', { owner_stage: 'tactical-data', dependency_gap: 'x' })[0].path, '$.result.owner_stage', 'a stage cannot own its own gap');
   assert.equal(check('tactical-data', { owner_stage: 'to-ticket', dependency_gap: 'x' })[0].path, '$.result.owner_stage', 'a later stage cannot own it');
-  assert.equal(check('to-ticket', { owner_stage: 'application-service', dependency_gap: 'x' })[0].path, '$.code', 'to-ticket never rewinds');
+  assert.deepEqual(check('to-ticket', { owner_stage: 'tactical-api', dependency_gap: 'The user decision is not recorded in api.md.' }), null, 'to-ticket can return a design gap to its earlier owner');
+  assert.equal(check('to-ticket', { owner_stage: 'to-ticket', dependency_gap: 'x' })[0].path, '$.result.owner_stage', 'to-ticket cannot own an upstream dependency gap');
   assert.equal(check('application-service', { owner_stage: 'aggregate-design', dependency_gap: '' })[0].path, '$.result.dependency_gap');
   assert.equal(check('tactical-ui', { owner_stage: null, dependency_gap: null }), null, 'tactical-ui hands off to the frontend design brief');
   assert.equal(check('implement-wrapper', { owner_stage: null }), null);
   assert.equal(check('to-ticket', {}, 'completed', 'OK'), null);
   assert.equal(check('to-ticket', {}, 'blocked', 'INPUT_MISSING'), null);
   assert.equal(check('tactical-data', {}, 'blocked', 'INPUT_MISSING'), null);
+});
+
+test('installed consumer: to-ticket can reopen a prior design owner when decomposition exposes a post-freeze gap', async (t) => {
+  const flow = await consumerWorkflow(t, REQUEST);
+  const { workspace } = flow;
+  await writeFile(join(workspace, '.harness/harness.yaml'), SETUP);
+  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  for (const stage of REWIND_STAGES.slice(0, REWIND_STAGES.indexOf('to-ticket'))) {
+    state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  }
+  const executionId = 'ticket-design-gap';
+  const resultPath = join(workspace, `.io/runtime/executions/${executionId}/result.json`);
+  await mkdir(join(resultPath, '..'), { recursive: true });
+  await writeFile(resultPath, JSON.stringify({
+    status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', owner_stage: 'tactical-api',
+    dependency_gap: 'api.md lacks GET /data-bundles and GeoJSON rectangle-intersection behavior confirmed by the user.',
+  }));
+  state.current_stage = 'to-ticket';
+  state.stages['to-ticket'] = { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', execution_id: executionId, result_ref: `runtime/executions/${executionId}/result.json` };
+  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n');
+
+  const reopened = await resolveReopen({ root: workspace, session: join(workspace, '.io'), state, ownerStage: 'tactical-api', blockedExecutionId: executionId });
+  assert.equal(reopened.owner_stage, 'tactical-api');
+  assert.equal(reopened.blocked_stage, 'to-ticket');
+  assert.deepEqual(reopened.mark, ['tactical-data', 'to-ticket'], 'completed downstream design and ticket stages must be revalidated');
+  assert.deepEqual(reopened.stale.rerun_order, ['tactical-api', 'tactical-data', 'to-ticket']);
+  assert.match(reopened.feedback, /api\.md lacks GET \/data-bundles/);
 });
 
 test('installed consumer: a blocked design decision stage reopens its owner forward and re-runs the stale stages in order', async (t) => {

@@ -5,6 +5,8 @@ model_tier: implementation
 
 # domain-service
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 `aggregate-design`이 자연스러운 Entity·Value Object 소유자를 찾지 못한 도메인 판단을 구현 가능한 메서드로 정의한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 모델 표와 규칙 책임 표를 채운다.
 
 1. 확정 요구사항, 적용된 사용자 답변과 앞 단계의 소유 모델을 대조한다. 다른 Entity나 Value Object가 자연스럽게 소유할 수 있는 규칙은 `domain-model`이나 `aggregate-design`으로 반환한다.

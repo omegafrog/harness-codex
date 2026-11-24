@@ -1,9 +1,51 @@
+import { lstat, open, realpath } from 'node:fs/promises';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
+
 export function identifyQuestions(executionId, questions) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId) || !Array.isArray(questions)) throw new Error('Invalid question batch');
   return questions.map((question, index) => {
     if (!question || typeof question !== 'object' || Array.isArray(question) || Object.hasOwn(question, 'question_id')) throw new Error('Invalid question');
     return { ...question, question_id: `${executionId}:${index + 1}` };
   });
+}
+
+const filled = (value) => typeof value === 'string' && value.trim().length > 0;
+const sameText = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+// What a user needs to decide without having followed the agent's work: the business rules already settled that bear on the
+// decision, why it must be decided now, and for every option what changes on screen or in behavior (`effect`) and the same
+// concrete situation applied to that option (`example`). An example is an illustration the user may react to; it is not a
+// requirement. Returns the problems of one question, [] when it is complete. A visual_direction question still gives an
+// `effect` and a text `example`, because the question UI may not display its previews.
+export function questionContextProblems(question) {
+  const problems = [];
+  const context = question?.context;
+  if (!context || typeof context !== 'object' || Array.isArray(context)) problems.push('context {settled_rules, why_now} is missing');
+  else {
+    if (!Array.isArray(context.settled_rules) || !context.settled_rules.length || !context.settled_rules.every(filled)) problems.push('context.settled_rules must list the already-settled business rules that bear on this decision, at least one non-empty entry');
+    if (!filled(context.why_now)) problems.push('context.why_now must say why this has to be decided now');
+  }
+  const first = { effect: new Map(), example: new Map() };
+  for (const option of Array.isArray(question?.options) ? question.options : []) {
+    for (const field of ['effect', 'example']) {
+      if (!filled(option?.[field])) { problems.push(`option ${option?.id} needs ${field}`); continue; }
+      const key = sameText(option[field]);
+      if (first[field].has(key)) problems.push(`option ${option.id} repeats the ${field} of option ${first[field].get(key)}; give each option its own`);
+      else first[field].set(key, option.id);
+    }
+    if (filled(option?.effect) && filled(option?.example) && sameText(option.effect) === sameText(option.example)) problems.push(`option ${option.id} gives the same text as effect and example; the example is a concrete case of the effect`);
+  }
+  return problems;
+}
+
+// The gate for a stage's new question batch (harness-result runs it; stored questions are never checked, so questions written
+// before this rule stay readable). `schema` is the output schema the worker was given: an execution started before the rule has
+// a schema without `context`, its worker could not have written one, so its batch is accepted as it is.
+export function assertQuestionContext(questions, { schema = null } = {}) {
+  if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
+  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => questionContextProblems(question).map((problem) => `question ${index + 1}: ${problem}`));
+  if (!problems.length) return;
+  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements.`);
 }
 
 export function isQuestionResponse(entry) {
@@ -33,4 +75,57 @@ export function mergeAnswers(questions, previous, incoming, { revisePending = fa
   const answers = [...responses.values()].filter((entry) => Object.hasOwn(entry, 'answer')).map(({ question_id, answer }) => ({ question_id, answer }));
   const clarifications = [...responses.values()].filter((entry) => Object.hasOwn(entry, 'clarification')).map(({ question_id, clarification }) => ({ question_id, clarification }));
   return { answers, complete: answers.length === ids.size, ...(clarifications.length ? { clarifications } : {}) };
+}
+
+const IMAGE_SIGNATURES = {
+  '.png': (bytes) => bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  '.jpg': (bytes) => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  '.jpeg': (bytes) => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  '.webp': (bytes) => bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP',
+};
+
+// A session file a question shows the user: a regular, unshared file inside the session directory (no symlink on the way).
+async function sessionFile(session, path, what) {
+  if (typeof path !== 'string' || !path.trim()) throw new Error(`${what} needs a path`);
+  const base = await realpath(session);
+  const target = isAbsolute(path) ? resolve(path) : resolve(base, path);
+  const rel = relative(base, target);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel) || (!isAbsolute(path) && path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'))) throw new Error(`${what} ${path} is outside the session directory`);
+  const info = await lstat(target).catch((error) => { if (error.code === 'ENOENT') throw new Error(`${what} ${path} does not exist`); throw error; });
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error(`${what} ${path} must be a regular session file`);
+  const real = relative(base, await realpath(target));
+  if (!real || real.startsWith('..') || isAbsolute(real)) throw new Error(`${what} ${path} is outside the session directory`);
+  return target;
+}
+
+async function head(path, length) {
+  const handle = await open(path, 'r');
+  try { const { buffer, bytesRead } = await handle.read(Buffer.alloc(length), 0, length, 0); return buffer.subarray(0, bytesRead); }
+  finally { await handle.close(); }
+}
+
+// Every preview an option carries is a real image in the session. A visual_direction question offers each style with at
+// least a desktop and a mobile screenshot and names, in its title, the comparison page that shows them side by side.
+export async function assertQuestionPreviews({ session, question }) {
+  if (!question || !Array.isArray(question.options)) throw new Error('Invalid question');
+  const visual = question.decision_kind === 'visual_direction';
+  for (const option of question.options) {
+    const previews = option.previews ?? [];
+    if (!Array.isArray(previews)) throw new Error(`Option ${option.id} previews must be an array`);
+    if (visual) {
+      if (!previews.length) throw new Error(`Visual direction option ${option.id} needs preview screenshots`);
+      for (const viewport of ['desktop', 'mobile']) if (!previews.some((item) => item?.viewport === viewport)) throw new Error(`Visual direction option ${option.id} needs a ${viewport} preview`);
+    }
+    for (const preview of previews) {
+      const what = `Preview of option ${option.id}`;
+      const target = await sessionFile(session, preview?.path, what);
+      const signature = IMAGE_SIGNATURES[extname(target).toLowerCase()];
+      if (!signature || !signature(await head(target, 12))) throw new Error(`${what} ${preview.path} is not a PNG, JPEG or WebP image`);
+    }
+  }
+  if (visual) {
+    const pages = [...String(question.title).matchAll(/[^\s"'`<>()[\]]+\.html?\b/g)].map((match) => match[0].replace(/^file:\/\//, '').replace(/^(?:.*\/)?\.io\//, ''));
+    if (!pages.length) throw new Error('Visual direction question title must name the comparison page');
+    for (const page of pages) await sessionFile(session, page, 'Comparison page');
+  }
 }

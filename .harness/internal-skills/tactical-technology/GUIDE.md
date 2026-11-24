@@ -3,6 +3,8 @@ model_tier: low_performance
 ---
 # tactical-technology
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 ## 목적
 
 확정된 전술 설계로 구현을 시작하기 전에 필요한 runtime·framework·언어·라이브러리 결정을 정리한다. 기존 기술 선택 절차의 기준과 근거 검증을 재사용하되 결과는 이 workflow의 산출물로만 보관한다. 새 Product/Architecture Spec을 작성하지 않는다.

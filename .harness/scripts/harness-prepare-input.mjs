@@ -8,11 +8,13 @@ const { resolveSkillSession, readSkillSessionJson, readExecutionInput } = await 
 const { readSkillDeclaration } = await import(new URL('skill-declaration.mjs', base));
 const { TAKEOVER_FEEDBACK, compactPrepared, extractVerbose, launchAttemptDirectory, launchCommand, stageAfter, writeError } = await import(new URL('stage-cli.mjs', base));
 const { sessionOutputPath } = await import(new URL('session-output.mjs', base));
+const PREPARE_OPTIONS = ['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'requirements-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure', 'reopen-for', 'stage-binding'];
+if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write(`Usage: node .harness/scripts/harness-prepare-input.mjs --stage-id STAGE [--<option> VALUE ...] [--verbose] (run inside the workflow worktree)\nOptions: ${PREPARE_OPTIONS.map((o) => `--${o}`).join(' ')}\nEach option takes one value. Prefer harness-native-stage.mjs launch, which accepts the same options.\n`); process.exit(0); }
 // What the error output needs to know about this call.
 const errorContext = { script: 'prepare', stageId: undefined, root: undefined, mode: null };
 try {
   const { args: rawArgs, verbose } = extractVerbose(process.argv.slice(2));
-  const allowed = new Set(['worktree-ref', 'stage-id', 'answer', 'feedback', 'review-admission-ref', 'publication-approved', 'requirements-approved', 'restart', 'restart-requirements', 'discard-out-of-order', 'take-over-interrupted', 'user-revision', 'plan', 'repair-receipt', 'approval-answer', 'e2e-request', 'test-defect-failure', 'reopen-for', 'stage-binding']);
+  const allowed = new Set(PREPARE_OPTIONS);
   const options = {};
   for (let i = 0; i < rawArgs.length; i += 2) {
     const key = rawArgs[i]?.replace(/^--/, '');

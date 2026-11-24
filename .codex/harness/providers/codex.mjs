@@ -114,6 +114,15 @@ export function codexHookTrustHash(eventName, handler) {
   return createHash('sha256').update(JSON.stringify(sortedKeys({ event_name: eventName, hooks: [{ async: false, ...handler }] }))).digest('hex');
 }
 
+// Codex (0.171) deprecates `[features].multi_agent`: it only controls the V1 fallback and Codex prints a warning on every
+// invocation. Multi-agent tools are on by default; `[agents].enabled = false` is the setting that turns them off. Harness
+// never writes this key, so this only recognizes it in a user's or project's Codex config for Doctor to report.
+export function deprecatedMultiAgentFeature(configText) {
+  const text = String(configText || '');
+  const table = text.split(/^[ \t]*\[/m).find((section) => /^features\][ \t]*(?:#.*)?(?:\r?\n|$)/.test(section));
+  return /^[ \t]*multi_agent[ \t]*=/m.test(table || '') || /^[ \t]*features\.multi_agent[ \t]*=/m.test(text.split(/^[ \t]*\[/m)[0]);
+}
+
 // Codex runs a hook only after the user trusts it with `/hooks`; trust is recorded in
 // `$CODEX_HOME/config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<handler>"]` with a trusted hash.
 export async function inspectCodexHookTrust(env = process.env) {
@@ -124,6 +133,7 @@ export async function inspectCodexHookTrust(env = process.env) {
   const config = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const ponytailTable = config.split(/^[ \t]*\[/m).find((section) => /^plugins\."ponytail@ponytail"\]/.test(section));
   const ponytail_config_path = /^[ \t]*enabled[ \t]*=[ \t]*true\b/m.test(ponytailTable || '') ? configPath : null;
+  const deprecated_multi_agent_config_path = deprecatedMultiAgentFeature(config) ? configPath : null;
   const trusted = new Map();
   let current = null;
   for (const line of config.split('\n')) {
@@ -149,7 +159,7 @@ export async function inspectCodexHookTrust(env = process.env) {
   };
   const retired_startup = RETIRED_EVENTS.some((event) => Array.isArray(hooks[event]) && hooks[event].some(retiredGroup));
   const writeGuard = slotState('PreToolUse', WRITE_GUARD_STATUS);
-  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath, ponytail_config_path };
+  return { trusted: !missing.length && !untrusted.length, missing, untrusted, fresh_agent_check: freshAgentCheck, write_guard: writeGuard, retired_startup, hooks_path: hooksPath, ponytail_config_path, deprecated_multi_agent_config_path };
 }
 
 

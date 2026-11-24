@@ -33,13 +33,15 @@ function verifyLinks(requirements, links, entries) {
   }
 }
 
-export async function planDomainSync(root, planSetId, proposal) {
+export async function planDomainSync(root, planSetId, proposal, { draftExecutionId } = {}) {
   const requirementsPath = specPath(planSetId, 'requirements.md');
   const linksPath = specPath(planSetId, 'domain-links.json');
-  const requirements = await readDomainFile(root, requirementsPath);
+  const requirements = draftExecutionId
+    ? (await (await import('../workflow/stage-documents.mjs')).readStageDocument(root, requirementsPath, draftExecutionId))?.toString('utf8') || ''
+    : await readDomainFile(root, requirementsPath);
   if (!/^- 상태: fixed\s*$/m.test(requirements)) throw new Error('Domain sync requires fixed requirements');
   if (!proposal || proposal.schema_version !== 1 || !Array.isArray(proposal.changes) || !Object.hasOwn(proposal, 'links')) throw new Error('Invalid domain sync proposal');
-  const snapshot = await loadDomainSnapshot(root);
+  const snapshot = await loadDomainSnapshot(root, { draftExecutionId });
   const entries = new Map(snapshot.documents.map((entry) => [entry.metadata.id, entry]));
   const originals = new Map(entries);
   const touched = new Set();
@@ -148,6 +150,25 @@ export async function readStageDomainSync(root, input) {
   if (plan.plan_set_id !== input.context.plan_set_id) throw new Error('Domain sync belongs to another Plan Set');
   if (plan.proposal?.changes?.some(({ operation }) => operation === 'implement')) throw new Error('Implementation evidence cannot be promoted by a requirements/design stage');
   return plan;
+}
+
+export async function prepareStageDomainSync(root, input, draftExecutionId) {
+  const existing = await readStageDomainSync(root, input);
+  const planSetId = input.context?.plan_set_id;
+  if (!draftExecutionId || !isDomainSyncStage(input.skill) || !planSetId) return existing;
+  const source = await readOptional(root, `.io/runtime/executions/${input.execution_id}/domain-sync-proposal.json`);
+  const proposal = source === null ? existing?.proposal : JSON.parse(source);
+  if (!proposal) {
+    if (input.skill === 'bounded-context') {
+      const { readStageDocument } = await import('../workflow/stage-documents.mjs');
+      const requirements = (await readStageDocument(root, specPath(planSetId, 'requirements.md'), draftExecutionId))?.toString('utf8');
+      if (requirements && /\| 이벤트 ID \|.*\| 공통 ID \|/.test(requirements)
+          && await readOptional(root, specPath(planSetId, 'domain-links.json')) === null) throw new Error('Fixed requirements with domain IDs require a domain sync plan');
+    }
+    return null;
+  }
+  if (proposal.changes?.some(({ operation }) => operation === 'implement')) throw new Error('Implementation evidence cannot be promoted by a requirements/design stage');
+  return planDomainSync(root, planSetId, proposal, { draftExecutionId });
 }
 
 export async function assertStageDomainSync(root, input) {

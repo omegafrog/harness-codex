@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { lstat, open, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -98,8 +98,54 @@ async function* transcriptLines(path) {
   }
 }
 
+// Exposure is counted from what the rollout recorded. Token sizes are estimates (UTF-8 bytes / 4) of the description
+// text the rollout holds; full MCP tool schemas are not in the rollout, so their size is reported as unavailable.
+const estimateTokens = (text) => Math.ceil(Buffer.byteLength(text) / 4);
+function toolExposure(worldTools, builtinTools) {
+  if (!worldTools && !builtinTools) return { status: 'unavailable', reason: 'world_state_not_recorded' };
+  const mcp = Object.entries(worldTools || {}).filter(([name]) => name.startsWith('mcp__'));
+  return {
+    status: worldTools ? 'recorded' : 'partial',
+    mcp_namespaces: worldTools ? mcp.length : null,
+    mcp_namespace_names: mcp.map(([name]) => label(name, 'unnamed')).sort(),
+    mcp_summary_estimated_tokens: worldTools ? mcp.reduce((sum, [name, text]) => sum + estimateTokens(name + String(text ?? '')), 0) : null,
+    mcp_tool_schemas: 'unavailable',
+    builtin_namespaces: builtinTools ? builtinTools.length : null,
+    builtin_tools_estimated_tokens: builtinTools ? estimateTokens(JSON.stringify(builtinTools)) : null,
+    estimate: 'utf8_bytes_div_4',
+  };
+}
+
+function exposureByRole(threads) {
+  const roles = {};
+  for (const thread of threads) {
+    const exposure = thread.tool_exposure;
+    const role = thread.role || (thread.parent_thread_id ? 'subagent' : 'orchestrator');
+    const item = roles[role] ||= { status: 'unavailable', threads: 0, recorded: 0, max_mcp_namespaces: null, max_mcp_summary_estimated_tokens: null, max_builtin_tools_estimated_tokens: null };
+    item.threads += 1;
+    if (!exposure || exposure.status === 'unavailable') continue;
+    item.recorded += 1;
+    for (const [key, value] of [['max_mcp_namespaces', exposure.mcp_namespaces], ['max_mcp_summary_estimated_tokens', exposure.mcp_summary_estimated_tokens], ['max_builtin_tools_estimated_tokens', exposure.builtin_tools_estimated_tokens]]) {
+      if (Number.isFinite(value)) item[key] = Math.max(item[key] ?? 0, value);
+    }
+  }
+  // A role no thread recorded a full world state for is unavailable (null values), never zero.
+  for (const item of Object.values(roles)) item.status = !item.recorded ? 'unavailable' : item.recorded === item.threads ? 'recorded' : 'partial';
+  return roles;
+}
+
+async function hookTiming(root, since) {
+  const { HOOK_TIMING_LOG, summarizeHookTiming } = await import('../../../../.harness/src/observability/hook-timing.mjs');
+  let text;
+  try { text = await readFile(sessionOutputPath(root, HOOK_TIMING_LOG, { create: false }), 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return { status: 'not_recorded', enable: 'HARNESS_HOOK_TIMING=1', hooks: {} }; throw error; }
+  const rows = text.split('\n').filter(Boolean).map(parseJson).filter(Boolean);
+  return { status: 'recorded', since: since === null ? null : new Date(since).toISOString(), hooks: summarizeHookTiming(rows, since), note: 'Invocations filtered by the installed shell wrapper before node starts are not measured.' };
+}
+
 async function inspectRollout(path, id, parent, since) {
   const record = { thread_id: id, parent_thread_id: parent, rollout: path, role: null, tokens: {}, calls: [], compactions: [], children: [], invalid_lines: 0 };
+  let worldTools = null, builtinTools = null;
   const responses = new Set(), calls = new Map(), callIdentities = new Set(), compactionsSeen = new Set();
   let metadata = false, fallback = null, lineNumber = 0, turn = null;
   for await (const line of transcriptLines(path)) {
@@ -116,6 +162,10 @@ async function inspectRollout(path, id, parent, since) {
     }
     if (!entry) { record.invalid_lines += 1; continue; }
     if (entry.type === 'turn_context') turn = label(item?.turn_id);
+    // What the thread was shown, whatever the time window: the full world_state lists the MCP namespaces with a short
+    // description each; additional_tools carries the built-in tool namespaces with their full descriptions.
+    if (entry.type === 'world_state' && item?.full === true && item.state?.tools && typeof item.state.tools === 'object') worldTools = item.state.tools;
+    if (entry.type === 'response_item' && item?.type === 'additional_tools' && Array.isArray(item.tools)) builtinTools = item.tools;
     if (!item || (since !== null && !(Date.parse(entry.timestamp) >= since))) continue;
     if (entry.type === 'token_usage_record' && item.thread_id === id && item.response_id && item.usage && !responses.has(item.response_id)) {
       responses.add(item.response_id);
@@ -151,6 +201,7 @@ async function inspectRollout(path, id, parent, since) {
     }
   }
   if (!metadata) throw new Error('Transcript is empty');
+  record.tool_exposure = toolExposure(worldTools, builtinTools);
   if (!responses.size && fallback && since === null) addTokens(record.tokens, fallback);
   record.token_source = responses.size ? 'token_usage_record' : Object.keys(record.tokens).length ? 'token_count' : null;
   return record;
@@ -304,6 +355,25 @@ function countCalls(report) {
   return { tools, candidates, copied_calls_excluded: copied, calls: threads.reduce((sum, thread) => sum + thread.calls.length, 0) };
 }
 
+function exposureLines(report) {
+  const roles = report.tool_exposure_by_role;
+  if (!roles || roles.status === 'unavailable') return ['- 역할별 MCP 노출 수집 불가', ''];
+  const value = (item) => item === null || item === undefined ? '수집 불가' : item.toLocaleString('ko-KR');
+  return [
+    '| 역할 | 스레드 | MCP namespace | MCP 요약 추정 토큰 | 기본 도구 설명 추정 토큰 |',
+    '|---|---:|---:|---:|---:|',
+    ...Object.entries(roles).map(([role, item]) => '| ' + [role, item.threads, value(item.max_mcp_namespaces), value(item.max_mcp_summary_estimated_tokens), value(item.max_builtin_tools_estimated_tokens)].join(' | ') + ' |'),
+    '',
+    '추정 토큰은 rollout에 기록된 설명 텍스트의 UTF-8 바이트/4다. MCP 도구별 전체 schema는 rollout에 없어 수집 불가다.',
+    '',
+  ];
+}
+
+function hookLines(timing) {
+  if (!timing || timing.status !== 'recorded') return ['- PreToolUse hook 시간 기록 없음 (`HARNESS_HOOK_TIMING=1`로 켠다)', ''];
+  return [...Object.entries(timing.hooks).map(([hook, item]) => '- hook ' + hook + ' ' + item.invocations + '회 · 합계 ' + item.total_ms + 'ms · 평균 ' + item.mean_ms + 'ms · 최대 ' + item.max_ms + 'ms'), ''];
+}
+
 function markdown(report) {
   const { status, tokens, threads, calls, tools, candidates, missing, compactions } = report;
   const format = (value) => value === undefined ? '수집 불가' : value.toLocaleString('ko-KR');
@@ -329,6 +399,8 @@ function markdown(report) {
         format(thread.tokens.cached_input_tokens), format(thread.tokens.output_tokens), thread.calls.length, thread.compactions.length].join(' | ')).map((row) => '| ' + row + ' |'),
       '',
     ] : [],
+    ...exposureLines(report),
+    ...hookLines(report.hook_timing),
     '캐시 입력은 전체 입력에 포함된다. 후보 유형은 같은 호출에서 겹칠 수 있다.',
     '스레드별 집계와 원본 줄 번호는 [telemetry.json](telemetry.json)에 있다. 호출 후보의 필요 여부는 당시 입력과 지침을 대조하여 판단한다.',
     '',
@@ -361,6 +433,8 @@ async function main() {
   const report = await (values.provider === 'claude-code' ? measureClaude : measure)(values.thread, since);
   report.provider = values.provider;
   Object.assign(report, countCalls(report));
+  report.tool_exposure_by_role = values.provider === 'codex' ? exposureByRole(report.threads) : { status: 'unavailable', reason: 'claude_code_transcript_does_not_record_tool_exposure' };
+  report.hook_timing = await hookTiming(values.root, since);
   const base = 'runtime/e2e/' + values['run-id'] + '/';
   const json = await save(values.root, base + 'telemetry.json', JSON.stringify(report, null, 2) + '\n');
   const summary = await save(values.root, base + 'telemetry.md', markdown(report));

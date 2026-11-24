@@ -1,6 +1,6 @@
 # Workflow 지도
 
-현재 요청과 정본 결과를 기준으로 완료되지 않은 첫 단계를 고른다. `workflow-compose` 완료는 worktree 준비 완료다. `workflow_ref`가 `null`이고 다음 stage가 기록되지 않았으면 정본 원 요청으로 필요한 흐름을 고른다. 직접 요청은 [기능 라우팅](capability-routing.md), Spec 기반 legacy 구현은 [구현 workflow 조율](implementation.md)을 따른다.
+현재 요청과 정본 결과를 기준으로 완료되지 않은 첫 단계를 고른다. `workflow-compose` 완료는 worktree 준비 완료다. 그 출력의 입력·결과 파일은 `refs.*.absolute`로 읽는다([기준 설명](../../../../.harness/internal-skills/workflow-compose/GUIDE.md#준비-명령)). `workflow_ref`가 `null`이고 다음 stage가 기록되지 않았으면 정본 원 요청으로 필요한 흐름을 고른다. 직접 요청은 [기능 라우팅](capability-routing.md), Spec 기반 legacy 구현은 [구현 workflow 조율](implementation.md)을 따른다.
 
 ## 요구사항과 승인
 

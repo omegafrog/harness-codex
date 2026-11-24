@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { inspectContracts } from '../contracts/contracts.mjs';
+import { relative } from 'node:path';
+import { inspectContracts, resolveContractFile } from '../contracts/contracts.mjs';
 import { inspectActiveReviewAttempt, inspectReviewHistory, updateReviewAttempt } from './review-attempts.mjs';
 import { sessionOutputPath } from './session-output.mjs';
+import { assertReviewDraftComposed } from './stage-documents.mjs';
 
 // The semantic review of the integrated contract. `harness-contracts.mjs check` proves the contract is well formed;
 // this review is where an independent reviewer compares what it says (rules owned by the right objects, call paths,
@@ -25,10 +26,13 @@ export function contractReviewScope(planSetId) {
 // What the review is about: the sealed contract revision and the snapshot the seal recorded (contract files, CONTEXT,
 // Specs, plans and every source root). Any later change to one of them changes these values, so a review never
 // carries over to a different contract or different source.
-export async function snapshotContractReview({ root }) {
-  const check = await inspectContracts({ workspace_root: root });
+export async function snapshotContractReview({ root, executionId }) {
+  const check = await inspectContracts({ workspace_root: root, executionId, includeManifest: true });
   requireValue(check.status === 'pass', `Contracts must pass harness-contracts.mjs check and be sealed before the semantic review (${check.reason}${check.violations?.length ? `: ${check.violations[0]}` : ''})`);
-  const manifest = JSON.parse(await readFile(join(root, 'docs/contracts/manifest.json'), 'utf8'));
+  return sealedSnapshot(check.manifest);
+}
+
+function sealedSnapshot(manifest) {
   const hashes = manifest.hashes || {};
   const inputs = {
     revision: String(manifest.revision),
@@ -48,10 +52,15 @@ async function e2eReceipts(root) {
 }
 
 // Pointers for the reviewer, not evidence: it reads the files itself, and the gate trusts only the hook's record.
-async function reviewBrief({ root, planSetId, snapshot }) {
+export async function contractReviewBrief({ root, planSetId, snapshot, executionId }) {
+  const diagrams = (snapshot.manifest.diagrams || []).map((diagram) => diagram.source).filter(Boolean);
+  const contractFiles = ['docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', ...diagrams.flatMap((path) => [path, path.replace(/\.puml$/, '.svg')])];
+  const sources = await Promise.all(contractFiles.map(async (path) => [path, relative(root, await resolveContractFile(root, path, executionId))]));
+  const drafts = sources.filter(([path, source]) => path !== source);
   return {
     contract_revision: snapshot.revision,
-    contract_files: ['docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', ...(snapshot.manifest.diagrams || []).map((diagram) => diagram.source).filter(Boolean)],
+    contract_files: contractFiles,
+    ...(drafts.length ? { contract_file_sources: Object.fromEntries(drafts) } : {}),
     source_roots: snapshot.manifest.source_roots || [],
     spec_directory: `docs/specs/${planSetId}`,
     plan_directory: `docs/plans/${planSetId}`,
@@ -59,22 +68,22 @@ async function reviewBrief({ root, planSetId, snapshot }) {
   };
 }
 
-export async function updateContractReview({ root, planSetId, action, attemptId, reason }) {
+export async function updateContractReview({ root, planSetId, action, attemptId, reason, executionId }) {
   const scope = contractReviewScope(planSetId);
   if (action === 'begin') {
-    const snapshot = await snapshotContractReview({ root });
+    await assertReviewDraftComposed(root, executionId, 'sync-contracts');
+    const snapshot = await snapshotContractReview({ root, executionId });
+    const brief = await contractReviewBrief({ root, planSetId, snapshot, executionId });
     const result = await updateReviewAttempt({ root, scope, action: 'begin', inputs: snapshot.inputs });
-    return { ...result, contract_revision: snapshot.revision, brief: await reviewBrief({ root, planSetId, snapshot }) };
+    return { ...result, contract_revision: snapshot.revision, brief };
   }
   if (action === 'record') {
     // Inside a stage the reviewer must have been bound to this attempt by the subagent hook, in this execution.
-    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
+    const active = await inspectActiveReviewAttempt({ root, scope });
     if (executionId) {
-      requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && EXECUTION_ID.test(executionId), 'Contract review requires its runtime workspace and execution identity');
-      const active = await inspectActiveReviewAttempt({ root, scope });
       requireValue(active.attempt_id === attemptId && active.native_review?.execution_id === executionId && active.native_review.agent_id && active.native_review.stopped, 'Contract review record requires a stopped native reviewer bound to this attempt by the subagent hook');
     }
-    const snapshot = await snapshotContractReview({ root });
+    const snapshot = await snapshotContractReview({ root, executionId });
     return updateReviewAttempt({ root, scope, action: 'record', inputs: snapshot.inputs, attemptId, requireNative: true });
   }
   if (action === 'abort' || action === 'resolve') return updateReviewAttempt({ root, scope, action, attemptId, reason });
@@ -101,12 +110,12 @@ async function hookRecordProblem({ root, scope, attemptId, native }) {
 
 // The completion gate: a passing independent review of exactly the contract revision that is sealed now, read from the
 // canonical review history and the hook log. Nothing a caller passes in can satisfy it.
-export async function inspectContractReview({ root, planSetId } = {}) {
+export async function inspectContractReview({ root, planSetId, executionId } = {}) {
   try {
     const scope = contractReviewScope(planSetId);
-    const contracts = await inspectContracts({ workspace_root: root });
+    const contracts = await inspectContracts({ workspace_root: root, executionId, includeManifest: true });
     if (contracts.status !== 'pass') return blocked('contract_review_contracts_not_sealed', { contracts_reason: contracts.reason, next: 'Run the sync-contracts stage: fix the contract, seal it and have it independently reviewed' });
-    const current = (await snapshotContractReview({ root })).inputs;
+    const current = sealedSnapshot(contracts.manifest).inputs;
     const history = await inspectReviewHistory({ root, scope });
     const review = history.last_review;
     if (history.recorded_state !== 'pass' || review?.verdict !== 'pass') return blocked('contract_review_missing', { current_revision: Number(current.revision), recorded_state: history.recorded_state, next: 'The sync-contracts stage must run the independent contract review (harness-contract-review.mjs begin/record) and pass it' });

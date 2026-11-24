@@ -32,7 +32,7 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
-The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files, make design decisions, invoke `code-research` recursively or spawn another agent, and returns only the Output sections plus blockers, with a file path for every concrete claim and the inspected commit. The caller reads the result and decides what to pass to the next skill.
+The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. In Codex, start it with `spawn_agent` and `fork_turns: "none"`: the fresh-agent hook denies an omitted or forked start before anything runs, and after that denial the caller repeats the same call with `fork_turns: "none"` (it is not a stage failure). Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files, make design decisions, invoke `code-research` recursively or spawn another agent, and returns only the Output sections plus blockers, with a file path for every concrete claim and the inspected commit. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out
 

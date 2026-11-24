@@ -28,7 +28,7 @@ async function main() {
     const { parseWorktreeRecord } = await import('../../.harness/src/workflow/worktrees.mjs');
     const record = parseWorktreeRecord(await readFile(join(root, '.io/worktree.json'), 'utf8'));
     if (await realpath(root) !== await realpath(record.workspace)) throw new Error('Workspace does not match worktree.json');
-    verdict = await checkWorkspaceTacticalDesign({ root, planSetId: record.plan_set_id });
+    verdict = await checkWorkspaceTacticalDesign({ root, planSetId: record.plan_set_id, draftExecutionId: process.env.HARNESS_STAGE_EXECUTION_ID });
   }
   process.stdout.write(`${JSON.stringify(verdict, null, 2)}\n`);
   if (!verdict.ok) process.exitCode = 1;

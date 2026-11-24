@@ -4,7 +4,8 @@ import { appendFile, mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { readNativeCodexAttestation, refreshNativeCodexAttestation, verifyNativeCodexWorkerBinding } from '../.harness/src/workflow/native-context.mjs';
+import { readNativeCodexAttestation, readNativeCodexSubmission, refreshNativeCodexAttestation, verifyNativeCodexWorkerBinding } from '../.harness/src/workflow/native-context.mjs';
+import { appendRollout, childRollout, parentRollout, rolloutPath, writeRollout } from './support/codex-subagent-rollout.mjs';
 
 const parentId = '11111111-1111-4111-8111-111111111111';
 const childId = '22222222-2222-4222-8222-222222222222';
@@ -75,6 +76,87 @@ test('finish-time attestation refresh captures a child rollout completed after S
   } finally {
     if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome;
     if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// A real worker's SubagentStop hook fires before Codex appends task_complete, so the hook-time record never holds the
+// completed turn (observed: hook 10:59:43.871Z, task_complete 10:59:43.890Z). The refresh that finish runs captures it.
+test('the attestation recorded at SubagentStop lacks the completed turn that the transcript refresh later captures', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-attestation-real-'));
+  const codexHome = join(root, 'codex-home');
+  const sessions = join(codexHome, 'sessions');
+  const previousHome = process.env.CODEX_HOME;
+  const stage = { stage_id: 'tactical-data', skill: 'tactical-data', execution_id: 'tactical-data-1', native_agent_id: '/root/tactical_data_jsonb', started_at: '2026-11-22T00:00:00.000Z' };
+  try {
+    process.env.CODEX_HOME = codexHome;
+    await mkdir(join(root, '.io/runtime/executions', stage.execution_id), { recursive: true });
+    const child = childRollout({ parentId, childId, cwd: root, agentPath: stage.native_agent_id, agentRole: 'tactical_designer' });
+    const childFile = rolloutPath(sessions, childId);
+    await writeRollout(rolloutPath(sessions, parentId), parentRollout({ parentId, cwd: root, childId, agentPath: stage.native_agent_id, startedAt: '2026-11-22T00:00:01.000Z' }));
+    await writeRollout(childFile, [...child.stoppedRows, ...child.finalRows('{"status":"completed"}')]);
+    const target = { root, parentSessionId: parentId, stage };
+    // The hook ran: it recorded that no completed turn exists yet.
+    const attestationPath = join(root, '.io/runtime/executions', stage.execution_id, 'native-attestation.jsonl');
+    await writeFile(attestationPath, `${JSON.stringify({ schema_version: 1, source: 'codex-subagent-stop-hook', execution_id: stage.execution_id, stage_id: stage.stage_id, parent_session_id: parentId, native_agent_id: stage.native_agent_id, thread_id: childId, status: 'unavailable', turns: [], reason: 'completed_turn_metadata_missing' })}\n`);
+    assert.equal((await readNativeCodexAttestation(target)).reason, 'completed_turn_metadata_missing');
+    // Codex then appends task_complete with the final message.
+    await appendRollout(childFile, [child.completeRow('{"status":"completed"}')]);
+    const refreshed = await refreshNativeCodexAttestation(target);
+    assert.equal(refreshed.status, 'captured');
+    assert.equal(refreshed.source, 'codex-finish-transcript-refresh');
+    assert.deepEqual(refreshed.turns, [{ turn_id: 'turn-child-1', status: 'completed', model: 'gpt-6-luna', reasoning_effort: 'medium' }]);
+    assert.equal((await readNativeCodexAttestation(target)).status, 'captured');
+    // A model that differs from the request is still reported as a mismatch, never as verified.
+    const verified = await verifyNativeCodexWorkerBinding({ root, parentSessionId: parentId, stage, nativeAgentId: stage.native_agent_id, requestedBinding: { model: 'gpt-6-luna', reasoning_effort: 'medium' } });
+    assert.equal(verified.status, 'verified');
+    const mismatch = await verifyNativeCodexWorkerBinding({ root, parentSessionId: parentId, stage, nativeAgentId: stage.native_agent_id, requestedBinding: { model: 'gpt-6-luna', reasoning_effort: 'high' } });
+    assert.equal(mismatch.status, 'mismatch');
+  } finally {
+    if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the bound worker\'s final output is read from its own transcript only when it is one completed JSON object', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-submission-'));
+  const sessions = join(root, 'codex-home', 'sessions');
+  const previousHome = process.env.CODEX_HOME;
+  const stage = { stage_id: 'tactical-data', skill: 'tactical-data', execution_id: 'tactical-data-1', native_agent_id: '/root/tactical_data_jsonb', started_at: '2026-11-22T00:00:00.000Z' };
+  const target = { root, parentSessionId: parentId, stage };
+  const result = '{"schema_version":1,"skill":"tactical-data","status":"completed","code":"OK","result":{"summary":"완료"}}';
+  try {
+    process.env.CODEX_HOME = join(root, 'codex-home');
+    await mkdir(root, { recursive: true });
+    await writeRollout(rolloutPath(sessions, parentId), parentRollout({ parentId, cwd: root, childId, agentPath: stage.native_agent_id, startedAt: '2026-11-22T00:00:01.000Z' }));
+    const child = childRollout({ parentId, childId, cwd: root, agentPath: stage.native_agent_id, agentRole: 'tactical_designer' });
+    const childFile = rolloutPath(sessions, childId);
+    const write = (rows) => writeRollout(childFile, [...child.stoppedRows, ...rows]);
+
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'unavailable', reason: 'native_worker_outcome_unavailable', thread_id: childId }, 'no child transcript yet');
+    await write([]);
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'running', thread_id: childId }, 'the turn has started and not completed');
+    await write([...child.finalRows(result)]);
+    assert.equal((await readNativeCodexSubmission(target)).status, 'running', 'the final message is written before task_complete');
+    await write([...child.finalRows(result), child.completeRow(result)]);
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'completed', thread_id: childId, output: result });
+    await write([child.completeRow(`\`\`\`json\n${result}\n\`\`\``)]);
+    assert.equal((await readNativeCodexSubmission(target)).output, result, 'one code fence around the JSON object is removed');
+    await write([child.completeRow(null)]);
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'completed_without_json', thread_id: childId, reason: 'final_message_empty' });
+    await write([child.completeRow('Done. The result file is attached.')]);
+    assert.equal((await readNativeCodexSubmission(target)).reason, 'final_message_not_json_object');
+    await write([child.completeRow('[1,2]')]);
+    assert.equal((await readNativeCodexSubmission(target)).status, 'completed_without_json', 'a JSON array is not a stage result');
+    await write([child.failedRow('context window exceeded')]);
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'failed', thread_id: childId, error: 'context window exceeded' });
+    await write([child.abortedRow()]);
+    assert.deepEqual(await readNativeCodexSubmission(target), { status: 'interrupted', thread_id: childId });
+    // A different agent path in the child's own metadata is not the bound worker.
+    await writeRollout(childFile, [...childRollout({ parentId, childId, cwd: root, agentPath: '/root/another_agent' }).stoppedRows, child.completeRow(result)]);
+    assert.equal((await readNativeCodexSubmission(target)).status, 'unavailable');
+  } finally {
+    if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome;
     await rm(root, { recursive: true, force: true });
   }
 });

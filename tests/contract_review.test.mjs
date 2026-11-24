@@ -2,13 +2,16 @@ import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+import { contractDocumentOutputRoot, documentDraftRoot } from '../.harness/src/workflow/stage-documents.mjs';
+import { inspectContractReview } from '../.harness/src/workflow/contract-review.mjs';
+import { composeReviewDraft } from './support/composed-review-draft.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const PLAN_SET = 'sample';
@@ -59,6 +62,25 @@ async function consumer() {
   c.seal('first seal');
   return c;
 }
+
+test('the installed standalone contract CLI checks and seals without workflow modules', async () => {
+  const c = await consumer();
+  try {
+    await rm(join(c.root, '.harness/src'), { recursive: true });
+    const runner = join(c.root, '.harness/contracts.mjs');
+    const run = (...args) => spawnSync(process.execPath, [runner, ...args, '--root', c.root], { cwd: c.root, encoding: 'utf8', env: c.env });
+
+    const checked = run('check', '--base-ref', 'HEAD');
+    assert.equal(checked.status, 0, checked.stderr || checked.stdout);
+    assert.equal(JSON.parse(checked.stdout).reason, 'contracts_current');
+
+    const revision = await c.revision();
+    await appendFile(join(c.root, 'docs/contracts/product.md'), '\nRefresh the product contract.\n');
+    const sealed = run('seal', '--summary', 'Refresh the product contract');
+    assert.equal(sealed.status, 0, sealed.stderr || sealed.stdout);
+    assert.equal(await c.revision(), revision + 1);
+  } finally { await rm(c.root, { recursive: true, force: true }); }
+});
 
 test('the review needs a sealed contract, binds the hook-recorded reviewer to its revision and is read back by check', async () => {
   const c = await consumer();
@@ -146,6 +168,72 @@ test('a finding that comes back after a fix stops the loop and asks the user, wh
     assert.equal(third.begin.round, 1);
     assert.equal(third.record.json.reason, 'pass');
     assert.equal(c.cli('check').json.status, 'pass');
+  } finally { await rm(c.root, { recursive: true, force: true }); }
+});
+
+test('the installed sealer and reviewer use composed contracts without publishing them', async () => {
+  const c = await consumer();
+  try {
+    const drafts = documentDraftRoot(c.root, STAGE);
+    const generated = contractDocumentOutputRoot(c.root, STAGE);
+    const product = 'docs/contracts/product.md';
+    const architecture = 'docs/contracts/architecture.md';
+    const manifestPath = 'docs/contracts/manifest.json';
+    const html = 'docs/contracts/architecture.html';
+    const canonical = await Promise.all([product, architecture, manifestPath, html].map((path) => readFile(join(c.root, path), 'utf8')));
+    await mkdir(join(drafts, 'docs/contracts'), { recursive: true });
+    await writeFile(join(drafts, product), '# Revised Product\n\n[Architecture](architecture.md)\n');
+    await writeFile(join(drafts, architecture), '# Revised Architecture\n');
+    const proposedManifest = JSON.stringify({ ...manifest, empty_project_reason: 'The stage proposes a project inventory note' });
+    await writeFile(join(drafts, manifestPath), proposedManifest);
+    const contracts = (...args) => spawnSync(process.execPath, [join(c.root, '.harness/scripts/harness-contracts.mjs'), ...args, '--root', c.root], { cwd: c.root, encoding: 'utf8', env: c.env });
+    const unsealed = contracts('check');
+    assert.equal(JSON.parse(unsealed.stdout).reason, 'contracts_out_of_sync');
+    assert.match(c.cli('begin').stderr, /document writer/);
+    assert.match(contracts('seal', '--summary', 'Attempt before composition').stderr, /document writer/);
+    const composedProduct = '# Final Product\n\n[Architecture](architecture.md#revision-note)\n';
+    const composedArchitecture = '# Final Architecture\n\n<a id="revision-note"></a>\n';
+    const composedManifest = { ...manifest, empty_project_reason: 'The writer finalizes the project inventory note' };
+    await composeReviewDraft({
+      root: c.root, executionId: STAGE, skill: 'sync-contracts', planSetId: PLAN_SET,
+      documents: { [product]: composedProduct, [architecture]: composedArchitecture, [manifestPath]: JSON.stringify(composedManifest) },
+    });
+    assert.match(c.cli('begin').stderr, /pass harness-contracts\.mjs check and be sealed/);
+    const sealed = contracts('seal', '--summary', 'Review new contract wording');
+    assert.equal(sealed.status, 0, sealed.stdout + sealed.stderr);
+    assert.equal(JSON.parse(sealed.stdout).revision, (await c.revision()) + 1);
+    assert.equal(contracts('check').status, 0);
+    assert.equal(await readFile(join(drafts, manifestPath), 'utf8'), proposedManifest);
+    assert.deepEqual(await Promise.all([product, architecture, manifestPath, html].map((path) => readFile(join(c.root, path), 'utf8'))), canonical);
+
+    const reviewed = await c.round('reviewer-of-drafts', 'pass');
+    assert.deepEqual(reviewed.begin.brief.contract_files, [product, architecture, manifestPath]);
+    const sources = reviewed.begin.brief.contract_file_sources;
+    assert.deepEqual(Object.keys(sources), [product, architecture, manifestPath]);
+    for (const [path, expected] of [[product, composedProduct], [architecture, composedArchitecture]]) {
+      assert.equal(await readFile(join(c.root, sources[path]), 'utf8'), expected);
+      assert.notEqual(sources[path], relative(c.root, join(drafts, path)));
+    }
+    assert.equal(sources[manifestPath], relative(c.root, join(generated, manifestPath)));
+    assert.equal(JSON.parse(await readFile(join(c.root, sources[manifestPath]), 'utf8')).empty_project_reason, composedManifest.empty_project_reason);
+    assert.equal(reviewed.record.json.reason, 'pass', reviewed.record.stderr);
+    assert.equal(c.cli('check').json.status, 'pass');
+    assert.equal((await inspectContractReview({ root: c.root, planSetId: PLAN_SET })).reason, 'contract_review_stale');
+
+    for (const path of [product, architecture, manifestPath]) await copyFile(join(c.root, sources[path]), join(c.root, path));
+    await copyFile(join(generated, html), join(c.root, html));
+    assert.equal((await inspectContractReview({ root: c.root, planSetId: PLAN_SET })).status, 'pass');
+
+    const nextId = 'sync-contracts-next';
+    const nextDrafts = documentDraftRoot(c.root, nextId);
+    await mkdir(join(nextDrafts, 'docs/contracts'), { recursive: true });
+    await writeFile(join(nextDrafts, product), `${composedProduct}\nLater draft edit.\n`);
+    await composeReviewDraft({ root: c.root, executionId: nextId, skill: 'sync-contracts', planSetId: PLAN_SET });
+    c.env.HARNESS_STAGE_EXECUTION_ID = nextId;
+    const resealed = contracts('seal', '--summary', 'Review the later edit');
+    assert.equal(resealed.status, 0, resealed.stdout + resealed.stderr);
+    assert.equal(c.cli('check').json.reason, 'contract_review_stale');
+    assert.equal((await inspectContractReview({ root: c.root, planSetId: PLAN_SET })).status, 'pass');
   } finally { await rm(c.root, { recursive: true, force: true }); }
 });
 

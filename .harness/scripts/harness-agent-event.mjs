@@ -27,7 +27,7 @@ try {
   if (!['SubagentStart', 'SubagentStop'].includes(event.hook_event_name) || typeof event.session_id !== 'string' || typeof event.agent_id !== 'string' || !event.agent_id || typeof event.agent_type !== 'string') throw new Error('Invalid Claude subagent event');
   const { nativeHookContext, recordNativeStageObservation } = await import('../../.harness/src/workflow/native-context.mjs');
   if (!process.env.HARNESS_STAGE_EXECUTION_ID) await recordNativeStageObservation(typeof event.cwd === 'string' ? event.cwd : process.cwd(), event);
-  const native = process.env.HARNESS_STAGE_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer'].includes(event.agent_type) });
+  const native = process.env.HARNESS_STAGE_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'stage_document_writer'].includes(event.agent_type) });
   const session = process.env.HARNESS_SESSION_DIR || native?.session, executionId = process.env.HARNESS_STAGE_EXECUTION_ID || native?.executionId;
   if (native && !process.env.HARNESS_REVIEW_TICKET_ID && native.planSetId) process.env.HARNESS_REVIEW_TICKET_ID = native.planSetId;
   if (!executionId) {
@@ -87,10 +87,16 @@ try {
       record.admitted = false;
       if (forked) record.forked = true;
     } else if (event.hook_event_name === 'SubagentStart') {
+      // The plan review snapshot is taken when its reviewer starts, so edits made after `begin` are reviewed, not aborted.
+      if (scope.startsWith('plan-') && !attempt.native_review?.agent_id) {
+        const { captureReviewSnapshotAtLaunch } = await import(new URL('../../.harness/src/workflow/plan-review.mjs', import.meta.url).href);
+        try { const captured = await captureReviewSnapshotAtLaunch({ root: process.cwd(), planSetId: ticketId }); if (captured.refreshed) record.snapshot_captured_at_launch = captured.changed_paths; }
+        catch (error) { record.snapshot_capture_error = error.message; }
+      }
       // Claude Code claims the attempt before dispatch (PreToolUse admission); Codex has no such hook, so claim here.
       if (!attempt.native_review) await updateReviewAttempt({ root: process.cwd(), scope, action: 'claim', attemptId: attempt.attempt_id, reviewerId: event.agent_id, nativeAgentId: event.agent_id, parentSessionId: event.session_id, executionId });
       else if (attempt.native_review.parent_session_id !== event.session_id || attempt.native_review.execution_id !== executionId) throw new Error('Native reviewer session or execution does not match the admitted caller');
-      await updateReviewAttempt({ root: process.cwd(), scope, action: 'bind-native', attemptId: attempt.attempt_id, nativeAgentId: event.agent_id, parentSessionId: event.session_id });
+      await updateReviewAttempt({ root: process.cwd(), scope, action: 'bind-native', attemptId: attempt.attempt_id, nativeAgentId: event.agent_id, parentSessionId: event.session_id, transcriptPath: event.agent_transcript_path });
       record.review_attempt_id = attempt.attempt_id;
     } else if (attempt.native_review?.agent_id === event.agent_id) {
       const nativeReview = JSON.parse(event.last_assistant_message || 'null');

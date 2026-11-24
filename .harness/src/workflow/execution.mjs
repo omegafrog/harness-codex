@@ -106,6 +106,28 @@ async function codeUnderTest(root) {
   } catch { return { head: null, uncommitted_paths: [], uncommitted_truncated: false }; }
 }
 
+// The use cases (or scenario IDs) the E2E command reports it actually exercised. harness-exec gives the command the
+// file in HARNESS_E2E_USE_CASES_FILE; the test appends one ID per line (or {"use_case":"UC-01"}) once that use case's
+// assertions ran. Without the file the receipt says the run did not report coverage; it never guesses it.
+export const USE_CASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const MAX_USE_CASE_REPORT_BYTES = 1024 * 1024;
+export async function readReportedUseCases(path) {
+  let text;
+  try {
+    const handle = await open(path, 'r');
+    try { const { buffer, bytesRead } = await handle.read(Buffer.alloc(MAX_USE_CASE_REPORT_BYTES), 0, MAX_USE_CASE_REPORT_BYTES, 0); text = buffer.toString('utf8', 0, bytesRead); }
+    finally { await handle.close(); }
+  } catch (error) { if (error.code === 'ENOENT') return { status: 'unreported', exercised: [] }; throw error; }
+  const exercised = new Set();
+  let invalid = 0;
+  for (const line of text.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 10_000)) {
+    let id = line;
+    if (line.startsWith('{')) { try { const parsed = JSON.parse(line); id = parsed.use_case ?? parsed.id; } catch { id = null; } }
+    if (typeof id === 'string' && USE_CASE_ID.test(id)) exercised.add(id); else invalid += 1;
+  }
+  return { status: 'reported', exercised: [...exercised].sort(), ...(invalid ? { invalid_lines: invalid } : {}) };
+}
+
 export async function runExecution({ workspace_root, profile_id, environment = process.env, signal } = {}) {
   // 명시된 E2E profile을 준비·검증·readiness 확인 후 실행하고 재현 가능한 receipt를 남긴다.
   requireValue(isAbsolute(workspace_root || '') && ID.test(profile_id || ''), 'Absolute workspace_root and profile_id are required');
@@ -130,7 +152,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     requireValue(profile.purpose === 'e2e', 'harness-exec is reserved for end-to-end tests');
     const temporary = sessionOutputPath(root, 'tmp');
     await mkdir(temporary, { recursive: true, mode: 0o700 });
-    const env = { ...environment, HARNESS_SESSION_DIR: sessionDirectory(root), HARNESS_EXECUTION_DIR: directory, TMPDIR: temporary, TMP: temporary, TEMP: temporary };
+    const env = { ...environment, HARNESS_SESSION_DIR: sessionDirectory(root), HARNESS_EXECUTION_DIR: directory, HARNESS_E2E_USE_CASES_FILE: join(directory, 'use-cases.txt'), TMPDIR: temporary, TMP: temporary, TEMP: temporary };
     for (const key of profile.required_env) requireValue(typeof env[key] === 'string' && env[key].trim(), `Missing required environment value: ${key}`);
     // Resolve every command before side effects, including parameters used only by a later readiness check.
     const prepare = profile.prepare.map((argv) => expand(argv, env));
@@ -174,6 +196,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
     Object.assign(receipt, await codeUnderTest(root));
     receipt.exit_code = await step('command', main, profile.timeout_ms);
     receipt.status = receipt.exit_code === 0 ? 'passed' : 'failed';
+    receipt.use_cases = await readReportedUseCases(env.HARNESS_E2E_USE_CASES_FILE).catch((error) => ({ status: 'unreported', exercised: [], error: error.message }));
   } catch (error) { receipt.status = signal?.aborted ? 'interrupted' : receipt.phase === 'command' ? 'failed' : 'blocked'; receipt.error = error.message; }
   finally {
     if (cleanups.length && step) {

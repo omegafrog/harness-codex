@@ -15,6 +15,7 @@ import { checkTacticalDesign } from '../.harness/src/workflow/domain-model-gate.
 import { PRE_SPEC_STAGES, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES, WORKTREE_STAGE } from '../.harness/src/workflow/worktree-stages.mjs';
 import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { READ_ONLY_REQUIREMENTS, READ_ONLY_DOCUMENT, REQUIREMENTS, STATELESS_DOCUMENT, STATELESS_REQUIREMENTS, templateDocument, upTo } from './support/domain-model-fixture.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
 
 const TEMPLATE = '.harness/internal-skills/domain-model/references/template.md';
 const LEGACY_TEMPLATE = '.harness/internal-skills/domain-model/references/legacy-template.md';
@@ -235,7 +236,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
 
 const draft = (marker) => `# 요구사항 명세\n\n- 상태: draft\n\n<!-- ${marker} -->\n`;
 const projectModel = (version) => `# 모델 색인\n\n| Context / 모델 ID | 상태 | Root / 소유 코드 | 규칙 ID → enforcement | 데이터 / transaction | 공개 계약 / 통신 | deployment / extraction trigger | 근거 |\n|---|---|---|---|---|---|---|---|\n| 커뮤니티 / 게시글 | accepted-target | ${version} | - | - | - | - | docs/specs |\n`;
-const question = (id, title) => ({ question_id: id, title, options: [{ id: 'a', label: '첫째', consequence: '첫째 결과', evidence: [] }, { id: 'b', label: '둘째', consequence: '둘째 결과', evidence: [] }], recommended_option_id: 'a', rationale: '요구사항이 그렇게 말한다', decision_kind: null });
+const question = (id, title) => withDecisionContext({ question_id: id, title, options: [{ id: 'a', label: '첫째', consequence: '첫째 결과', evidence: [] }, { id: 'b', label: '둘째', consequence: '둘째 결과', evidence: [] }], recommended_option_id: 'a', rationale: '요구사항이 그렇게 말한다', decision_kind: null });
 // The rule a design answer adds to the owning BIZ, and the rows that map it.
 const NEW_RULE = '  - INV-05 신고는 접수한 뒤 하루 안에 닫힌다 — 출처: answers.json `q-deadline`\n';
 const withNewRule = (document) => document

@@ -31,7 +31,23 @@ async function safePath(root, path) {
   if (rel.startsWith("..") || isAbsolute(rel) || (await lstat(target)).isSymbolicLink()) throw new Error(`Path escapes workspace or is a symlink: ${path}`);
   return target;
 }
-const read = async (root, path) => readFile(await safePath(root, path), "utf8");
+export function contractExecutionId(root) {
+  const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
+  if (executionId && (process.env.HARNESS_WORKSPACE_ROOT !== root || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId))) {
+    throw new Error("Contract command requires its runtime workspace and execution identity");
+  }
+  return executionId;
+}
+
+export async function resolveContractFile(root, path, executionId) {
+  if (!executionId || !path.startsWith(`${DIRECTORY}/`)) return safePath(root, path);
+  const { resolveStageDocument } = await import("../workflow/stage-documents.mjs");
+  const target = await resolveStageDocument(root, path, executionId);
+  if (target === null) throw Object.assign(new Error(`The stage removed ${path}`), { code: "ENOENT" });
+  return safePath(root, relative(root, target));
+}
+
+const contractReader = (root, executionId) => async (path) => readFile(await resolveContractFile(root, path, executionId), "utf8");
 const execFileAsync = promisify(execFile);
 async function git(root, args) { return (await execFileAsync("git", args, { cwd: root, encoding: "utf8" })).stdout; }
 async function previous(root, baseRef) {
@@ -52,7 +68,7 @@ function model(manifest) {
   const { revision, updated_at, change_summary, no_contract_change, hashes, ...content } = manifest;
   return content;
 }
-async function snapshot(root, manifest) {
+async function snapshot(root, manifest, executionId) {
   const files = new Set([`${DIRECTORY}/product.md`, `${DIRECTORY}/architecture.md`, "CONTEXT.md", "CONTEXT-MAP.md"]);
   const emptyInventory = Array.isArray(manifest.features) && manifest.features.length === 0 && Array.isArray(manifest.components) && manifest.components.length === 0;
   if (!Array.isArray(manifest.source_roots) || (!manifest.source_roots.length && !(emptyInventory && text(manifest.empty_project_reason)))) throw new Error("source_roots must cover the implementation or document an empty project");
@@ -70,7 +86,7 @@ async function snapshot(root, manifest) {
     if (diagram.source) { files.add(diagram.source); files.add(diagram.source.replace(/\.puml$/, ".svg")); }
   }
   const hashes = { "@model": sha(JSON.stringify(model(manifest))) };
-  for (const path of [...files].sort()) hashes[path] = sha(await readFile(await safePath(root, path)));
+  for (const path of [...files].sort()) hashes[path] = sha(await readFile(await resolveContractFile(root, path, executionId)));
   return hashes;
 }
 const escape = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -80,10 +96,10 @@ function prose(body) {
     return `<a href="${href.replace(/^architecture\.md#/, "#")}">${label}</a>`;
   });
 }
-async function viewer(root, manifest) {
-  const architecture = sections(await read(root, `${DIRECTORY}/architecture.md`));
+async function viewer(read, manifest) {
+  const architecture = sections(await read(`${DIRECTORY}/architecture.md`));
   const overview = manifest.diagrams.find((d) => d.kind === "ddd");
-  let svg = overview?.source ? await read(root, overview.source.replace(/\.puml$/, ".svg")) : "";
+  let svg = overview?.source ? await read(overview.source.replace(/\.puml$/, ".svg")) : "";
   // Inline only local generated SVG; reject executable markup and remote resource loads.
   if (/<(?:script|foreignObject|image|use)\b|\bon[a-z]+\s*=|(?:javascript|data):/i.test(svg)) throw new Error("Unsafe SVG content");
   svg = svg.replace(/(?:xlink:)?href="[^"#]*architecture\.md#([a-z0-9-]+)"/g, 'href="#$1"').replace(/<\?xml[^>]*>|<!DOCTYPE[^>]*>/g, "");
@@ -91,7 +107,7 @@ async function viewer(root, manifest) {
   return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>DDD 아키텍처</title><style>body{max-width:1200px;margin:2rem auto;font:16px system-ui;padding:1rem}svg{max-width:100%;height:auto}pre{white-space:pre-wrap;line-height:1.6}section:target{background:#fff5cc}a{color:#174eb6}</style><h1>DDD 아키텍처 · v${manifest.revision}</h1>${svg}${details}</html>\n`;
 }
 
-async function validate(root, manifest) {
+async function validate(root, manifest, read) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
   require(manifest.schema_version === 1, "Unsupported schema_version");
@@ -105,8 +121,8 @@ async function validate(root, manifest) {
   require(Array.isArray(manifest.diagrams), "diagrams are required");
   // Revision, date and summary are written by seal; the rest of the checks still run so every gap is listed at once.
   if (![manifest.features, manifest.components, manifest.diagrams].every(Array.isArray)) return errors;
-  const productText = await read(root, `${DIRECTORY}/product.md`);
-  const architectureText = await read(root, `${DIRECTORY}/architecture.md`);
+  const productText = await read(`${DIRECTORY}/product.md`);
+  const architectureText = await read(`${DIRECTORY}/architecture.md`);
   const product = sections(productText), architecture = sections(architectureText);
   const ids = new Set();
   const checkSection = (item, document, fields) => {
@@ -153,7 +169,7 @@ async function validate(root, manifest) {
     require(["ddd", "class", "sequence", "state"].includes(diagram.kind), `Unknown diagram kind: ${diagram.kind}`);
     if (!diagram.source) { require(diagram.kind !== "sequence" && (diagram.kind !== "ddd" || emptyInventory) && text(diagram.reason), "Diagram omission needs a reason"); continue; }
     require(diagram.source.startsWith(`${DIRECTORY}/diagrams/`) && diagram.source.endsWith(".puml"), `Invalid diagram path: ${diagram.source}`);
-    const source = await read(root, diagram.source), svg = await read(root, diagram.source.replace(/\.puml$/, ".svg"));
+    const source = await read(diagram.source), svg = await read(diagram.source.replace(/\.puml$/, ".svg"));
     require(!/^\s*!include/m.test(source), `Canonical diagrams must be self-contained: ${diagram.source}`);
     require(svg.includes(`harness-source-sha256: ${sha(source)}`), `Stale/unverified SVG: ${diagram.source}`);
     require(svg.includes("<svg"), `Invalid SVG: ${diagram.source}`);
@@ -167,55 +183,76 @@ async function validate(root, manifest) {
       const href = match[1]; if (/^https:\/\//.test(href)) continue;
       const [file, anchor] = href.split("#");
       const target = file ? relative(root, resolve(root, dirname(path), file)) : path;
-      const linked = await read(root, target);
+      const linked = await read(target);
       if (anchor) require(linked.includes(`<a id="${anchor}"></a>`), `Broken anchor: ${path} -> ${href}`);
     }
   }
   return errors;
 }
 
-export async function inspectContracts({ workspace_root, base_ref = null } = {}) {
+export async function inspectContracts({ workspace_root, base_ref = null, executionId, includeManifest = false } = {}) {
   try {
     if (!isAbsolute(workspace_root || "")) throw new Error("Absolute workspace_root is required");
-    const manifest = JSON.parse(await read(workspace_root, MANIFEST));
-    const errors = await validate(workspace_root, manifest);
+    const read = contractReader(workspace_root, executionId);
+    const manifest = JSON.parse(await read(MANIFEST));
+    const errors = await validate(workspace_root, manifest, read);
     // A missing source_roots inventory is one more content gap, not a reason to hide every other violation.
-    const hashes = await snapshot(workspace_root, manifest).catch((error) => { errors.push(error.message); return null; });
+    const hashes = await snapshot(workspace_root, manifest, executionId).catch((error) => { errors.push(error.message); return null; });
     if (hashes && JSON.stringify(hashes) !== JSON.stringify(manifest.hashes)) errors.push("Contract/source snapshot changed; reconcile and seal");
     const old = await previous(workspace_root, base_ref);
     if (old && JSON.stringify(old) !== JSON.stringify(manifest) && manifest.revision <= old.revision) errors.push("Contract revision must increase from base");
-    const view = await viewer(workspace_root, manifest).catch(() => null);
-    if (view === null || await read(workspace_root, `${DIRECTORY}/architecture.html`) !== view) errors.push("Architecture HTML is stale");
+    const view = await viewer(read, manifest).catch(() => null);
+    const sealedView = await read(`${DIRECTORY}/architecture.html`).catch((error) => { if (error.code === "ENOENT") return null; throw error; });
+    if (view === null || sealedView !== view) errors.push("Architecture HTML is stale");
     // seal writes revision, date, summary, snapshot and the HTML view; everything else needs a contract edit first.
     const sealed = (message) => /^(revision must be a positive integer|updated_at must be YYYY-MM-DD|change_summary is required|Contract\/source snapshot changed|Architecture HTML is stale|Contract revision must increase)/.test(message);
     const content = errors.filter((message) => !sealed(message));
     return { status: errors.length ? "fail" : "pass", reason: errors.length ? "contracts_out_of_sync" : "contracts_current", revision: manifest.revision, violations: errors,
       ...(errors.length ? { content_violations: content, next_step: content.length ? "Fix every content_violations entry in docs/contracts, then run harness-contracts.mjs seal" : "Run harness-contracts.mjs seal --summary <what changed>" } : {}),
+      ...(!errors.length && includeManifest ? { manifest } : {}),
       evidence_path: MANIFEST };
   } catch (error) {
     return { status: "fail", reason: "contracts_invalid", violations: [error.message], evidence_path: MANIFEST };
   }
 }
 
-export async function sealContracts({ workspace_root, change_summary, no_contract_change = null } = {}) {
+export async function sealContracts({ workspace_root, change_summary, no_contract_change = null, executionId } = {}) {
   if (!isAbsolute(workspace_root || "")) throw new Error("Absolute workspace_root is required");
   if (!text(change_summary)) throw new Error("A review change summary is required");
-  const manifest = JSON.parse(await read(workspace_root, MANIFEST));
-  const hashes = await snapshot(workspace_root, manifest);
+  const stage = executionId ? await import("../workflow/stage-documents.mjs") : null;
+  if (stage) await stage.assertReviewDraftComposed(workspace_root, executionId, "sync-contracts");
+  const read = contractReader(workspace_root, executionId);
+  const manifest = JSON.parse(await read(MANIFEST));
+  const hashes = await snapshot(workspace_root, manifest, executionId);
   const old = await previous(workspace_root);
-  const baseline = manifest.hashes || old?.hashes;
+  // A draft manifest can supply just the authored fields. Keep the existing revision and source baseline.
+  const canonical = executionId ? await contractReader(workspace_root)(MANIFEST).then(JSON.parse).catch((error) => {
+    if (error.code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
+  }) : null;
+  const baseline = manifest.hashes || canonical?.hashes || old?.hashes;
   const sourcesChanged = baseline && Object.keys({ ...baseline, ...hashes }).some((p) => !p.startsWith(DIRECTORY) && p !== "@model" && baseline[p] !== hashes[p]);
   const docsChanged = !baseline || ["product.md", "architecture.md"].some((p) => baseline[`${DIRECTORY}/${p}`] !== hashes[`${DIRECTORY}/${p}`]);
   if (sourcesChanged && !docsChanged && !text(no_contract_change)) throw new Error("Source changed without contract edits; record a reviewed no_contract_change reason or update the contract");
-  if (JSON.stringify(hashes) === JSON.stringify(manifest.hashes)) return inspectContracts({ workspace_root });
-  manifest.revision = Math.max(manifest.revision || 0, old?.revision || 0) + 1;
+  if (JSON.stringify(hashes) === JSON.stringify(manifest.hashes)) return inspectContracts({ workspace_root, executionId });
+  manifest.revision = Math.max(manifest.revision || 0, canonical?.revision || 0, old?.revision || 0) + 1;
   manifest.updated_at = new Date().toISOString().slice(0, 10);
   manifest.change_summary = change_summary;
   manifest.no_contract_change = no_contract_change;
   manifest.hashes = hashes;
-  const errors = await validate(workspace_root, manifest);
+  const errors = await validate(workspace_root, manifest, read);
   if (errors.length) throw new Error(errors.join("\n"));
-  const html = await viewer(workspace_root, manifest);
+  const html = await viewer(read, manifest);
+  if (stage) {
+    const { sessionDirectory, sessionOutputPath } = await import("../workflow/session-output.mjs");
+    const session = sessionDirectory(workspace_root, { create: false });
+    const generated = relative(session, stage.contractDocumentOutputRoot(workspace_root, executionId));
+    const htmlPath = sessionOutputPath(workspace_root, `${generated}/${DIRECTORY}/architecture.html`);
+    const manifestPath = sessionOutputPath(workspace_root, `${generated}/${MANIFEST}`);
+    await writeFile(htmlPath, html, { mode: 0o600 });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    return inspectContracts({ workspace_root, executionId });
+  }
   // The generated view may not exist on first setup; validate its existing parent before creating it.
   const htmlPath = resolve(await safePath(workspace_root, DIRECTORY), "architecture.html");
   try {
@@ -228,7 +265,8 @@ export async function sealContracts({ workspace_root, change_summary, no_contrac
   return inspectContracts({ workspace_root });
 }
 
-export async function runContractsCli(argv = process.argv.slice(2)) {
+// The installer also ships this module as a standalone CI entry point.
+export async function runContractsCli(argv = process.argv.slice(2), { useStageContext = false } = {}) {
 try {
   const [command, ...args] = argv;
   const options = { workspace_root: process.cwd() };
@@ -239,6 +277,7 @@ try {
   }
   options.workspace_root = resolve(options.workspace_root);
   if (!['check', 'seal'].includes(command)) throw new Error('Usage: harness-contracts.mjs check|seal [--root DIR] [--base-ref REF] [--summary TEXT] [--no-contract-change REASON]');
+  if (useStageContext) options.executionId = contractExecutionId(options.workspace_root);
   const result = await (command === 'seal' ? sealContracts : inspectContracts)(options);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status !== 'pass') process.exitCode = 1;

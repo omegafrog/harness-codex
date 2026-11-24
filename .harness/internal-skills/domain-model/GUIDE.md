@@ -5,6 +5,8 @@ model_tier: high_performance
 
 # domain-model
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 `bounded-context`가 확정한 요구사항을 BC별 도메인 모델로 옮긴다. [공통 절차](references/deepening.md)에 따라 preflight와 문서 경로 확인을 마친 뒤 [전술 설계 템플릿](references/template.md)의 모델 표를 채운다.
 
 1. 요청 원문, 확정된 `requirements.md`의 BIZ·INV·EX·AC·이벤트·SD·BC, 적용된 사용자 답변, `CONTEXT.md`와 `CONTEXT-MAP.md`, 기존 프로젝트 모델·연결된 ADR을 읽는다. 앞 단계가 확정한 BC 경계와 용어를 사용한다.

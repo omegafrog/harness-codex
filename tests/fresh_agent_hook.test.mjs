@@ -16,6 +16,10 @@ test('the fresh-agent hook refuses a parent history fork for every installed Har
     assert.match(freshAgentDecision(spawn({ agent_type: agent, message: 'x' })), /fresh context/, 'an omitted fork_turns is refused too');
     assert.equal(freshAgentDecision(spawn({ agent_type: agent, fork_turns: 'none', message: 'x' })), null);
   }
+  // A denial starts nothing and is not a stage failure; the message says so and names the retry.
+  const denial = freshAgentDecision(spawn({ agent_type: 'code_researcher', fork_turns: 'all', message: 'x' }));
+  assert.match(denial, /Nothing was started/);
+  assert.match(denial, /do not call finish or fail/);
   assert.equal(freshAgentDecision(spawn({ agent_type: 'unrelated', fork_turns: 'all' })), null);
   assert.equal(freshAgentDecision({ hook_event_name: 'PreToolUse', tool_name: 'exec_command', tool_input: { cmd: 'ls' } }), null);
   // The installed shell filter runs the script for spawn_agent calls and prints the deny decision.

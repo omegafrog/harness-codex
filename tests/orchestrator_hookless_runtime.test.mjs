@@ -108,6 +108,39 @@ test('Claude approval proof excludes sidechains and unrelated tool outputs', asy
   for (const [text, expected] of [['real approval', true], ['form approval', true], ['side approval', false], ['fake approval', false]]) assert.equal(await userSaidAfter({ root, text }), expected, text);
 });
 
+test('Claude approval search names a plain message that lacks /orchestrator and skips sidechains', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'harness-claude-search-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, 'claude');
+  t.after(() => { if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = previous; });
+  const id = '33333333-3333-3333-3333-333333333333';
+  await mkdir(join(root, '.io'), { recursive: true });
+  await mkdir(join(process.env.CLAUDE_CONFIG_DIR, 'projects', 'project'), { recursive: true });
+  await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ agent_sessions: { orchestrator: { session_id: id, provider: 'claude-code' } } }));
+  const base = { sessionId: id, cwd: root, isSidechain: false };
+  const rows = [
+    { ...base, timestamp: '2026-01-02T00:00:01.000Z', type: 'user', message: { role: 'user', content: '승인 · 다음 단계 진행' } },
+    { ...base, timestamp: '2026-01-02T00:00:02.000Z', type: 'user', isSidechain: true, message: { role: 'user', content: '/orchestrator 승인 · 다음 단계 진행' } },
+    { ...base, timestamp: '2026-01-02T00:00:03.000Z', type: 'user', message: { role: 'user', content: '<command-name>/orchestrator</command-name><command-args>다른 요청</command-args>' } },
+  ];
+  await writeFile(join(process.env.CLAUDE_CONFIG_DIR, 'projects', 'project', `${id}.jsonl`), rows.map(JSON.stringify).join('\n') + '\n');
+  const { inspectUserReply } = await import('../.harness/src/workflow/user-inputs.mjs');
+  const since = '2026-01-01T00:00:00Z';
+  const plain = await inspectUserReply({ root, text: '승인 · 다음 단계 진행', since });
+  assert.equal(plain.matched, false);
+  assert.equal(plain.search.provider, 'claude-code');
+  assert.deepEqual(plain.search.candidates, [{ at: '2026-01-02T00:00:01.000Z', form: 'plain_user_message', problems: ['missing_orchestrator_prefix'] }], 'the sidechain copy is not a candidate');
+  assert.deepEqual(plain.search.counts, { orchestrator_requests: 1, plain_user_messages: 1, form_replies: 0 });
+  // The same text after the command is the accepted form; a message before the gate names that reason.
+  rows.push({ ...base, timestamp: '2026-01-02T00:00:04.000Z', type: 'user', message: { role: 'user', content: '<command-name>/orchestrator</command-name><command-args>승인 · 다음 단계 진행</command-args>' } });
+  await writeFile(join(process.env.CLAUDE_CONFIG_DIR, 'projects', 'project', `${id}.jsonl`), rows.map(JSON.stringify).join('\n') + '\n');
+  assert.equal((await inspectUserReply({ root, text: '승인 · 다음 단계 진행', since })).matched, true);
+  const gated = await inspectUserReply({ root, text: '승인 · 다음 단계 진행', since: '2026-01-02T00:00:05Z' });
+  assert.equal(gated.matched, false);
+  assert.deepEqual(gated.search.candidates.map(({ form, problems }) => ({ form, problems })), [{ form: 'plain_user_message', problems: ['missing_orchestrator_prefix', 'sent_before_gate'] }, { form: 'orchestrator_request', problems: ['sent_before_gate'] }]);
+});
+
 test('entry routes an uninitialized directory to setup', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'harness-uninitialized-'));
   t.after(() => rm(root, { recursive: true, force: true }));

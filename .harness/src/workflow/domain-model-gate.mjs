@@ -348,21 +348,27 @@ const result = (errors) => ({ ok: errors.length === 0, errors: [...errors].sort(
 const SKIPPED_ANALYSIS = /^\s*(?:[-*]\s*)?판정\s*:\s*생략\s*$/m;
 export const stakeholderAnalysisSkipped = (text) => SKIPPED_ANALYSIS.test(String(text));
 
-export async function planSetDocument(root, planSetId, name) {
+export async function planSetDocument(root, planSetId, name, draftExecutionId) {
   const path = specArtifactPath(planSetId, name);
   await assertWorkspaceTarget(root, path);
+  if (draftExecutionId) {
+    const { readStageDocument } = await import('./stage-documents.mjs');
+    const draft = await readStageDocument(root, path, draftExecutionId);
+    return { path, text: draft?.toString('utf8') ?? null };
+  }
   try { return { path, text: await readFile(join(root, path), 'utf8') }; }
   catch (error) { if (error.code === 'ENOENT') return { path, text: null }; throw error; }
 }
 
 // The gate on the plan set's documents of a workspace: what the command and the runner both run.
-export async function checkWorkspaceTacticalDesign({ root, planSetId, stage = FINAL_TACTICAL_STAGE }) {
-  const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
+export async function checkWorkspaceTacticalDesign({ root, planSetId, stage = FINAL_TACTICAL_STAGE, draftExecutionId }) {
+  const document = (name) => planSetDocument(root, planSetId, name, draftExecutionId);
+  const analysis = await document('stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
-  const requirements = await planSetDocument(root, planSetId, 'requirements.md');
-  const tacticalDesign = await planSetDocument(root, planSetId, TACTICAL_DESIGN_DOCUMENT);
+  const requirements = await document('requirements.md');
+  const tacticalDesign = await document(TACTICAL_DESIGN_DOCUMENT);
   if (stage !== FINAL_TACTICAL_STAGE && tacticalDesign.text === null && requirements.text !== null) {
-    const legacy = await planSetDocument(root, planSetId, LEGACY_TACTICAL_DESIGN_DOCUMENT);
+    const legacy = await document(LEGACY_TACTICAL_DESIGN_DOCUMENT);
     if (Object.keys(sections(legacy.text)).length) return { ok: true, skipped: true, errors: [] };
   }
   const missing = [[requirements, WORKTREE_STAGE.REQUIREMENTS_FIX], [tacticalDesign, TACTICAL_DESIGN_STAGES[0]]].filter(([document]) => document.text === null);
@@ -376,8 +382,8 @@ export async function checkWorkspaceTacticalDesign({ root, planSetId, stage = FI
   const { errors } = checkTacticalDesign({ requirements: requirements.text, tacticalDesign: tacticalDesign.text });
   const diagrams = stage === WORKTREE_STAGE.AGGREGATE_DESIGN || stage === FINAL_TACTICAL_STAGE ? (contexts || []).filter(needsClassDiagram) : [];
   for (const context of diagrams) {
-    const source = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'puml'));
-    const svg = await planSetDocument(root, planSetId, classDiagramPath(context.id, 'svg'));
+    const source = await document(classDiagramPath(context.id, 'puml'));
+    const svg = await document(classDiagramPath(context.id, 'svg'));
     const sourceHash = source.text === null ? null : createHash('sha256').update(source.text).digest('hex');
     if (!/^\s*@startuml\b/m.test(source.text ?? '') || !/<svg\b/.test(svg.text ?? '') || !svg.text.includes(`<!-- harness-source-sha256: ${sourceHash} -->`)) errors.push({
       code: 'CLASS_DIAGRAM_ARTIFACT_INVALID', message: `Render ${source.path} to ${svg.path} with the installed PlantUML renderer`, id: context.id, owner_stage: WORKTREE_STAGE.AGGREGATE_DESIGN,
@@ -387,11 +393,11 @@ export async function checkWorkspaceTacticalDesign({ root, planSetId, stage = FI
 }
 
 // Use the stored stage identity and plan set when accepting a successful result.
-export async function evaluateTacticalDesignGate({ root, input, envelope }) {
+export async function evaluateTacticalDesignGate({ root, input, envelope, draftExecutionId }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
   if (!TACTICAL_DESIGN_STAGES.includes(stage) || envelope?.status !== 'completed' || envelope?.code !== 'OK' || !planSetId) return null;
-  return { stage, ...(await checkWorkspaceTacticalDesign({ root, planSetId, stage })) };
+  return { stage, ...(await checkWorkspaceTacticalDesign({ root, planSetId, stage, draftExecutionId })) };
 }
 
 // What the caller does with a rejection. A finding of the returning stage's own section is repaired by that stage; a finding

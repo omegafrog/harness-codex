@@ -7,7 +7,7 @@ model_tier: high_performance
 
 ## 기준
 
-최초 독립 리뷰는 admission의 `files`가 준 정확한 경로로 계획 index와 모든 canonical ticket을 열고, 요구사항의 BIZ·INV·EX·AC 전체와 양방향으로 대조한다. 전술 설계에서는 각 BIZ와 ticket이 의존하는 모델·Aggregate·Application Service·통합·컨텍스트 경계의 절·표만 읽는다. 기술·API·데이터 결정도 같은 방식으로 연결된 근거를 확인한다. frontend design과 과거 `ui-handoff.md`는 admission에 포함된 경우에 읽는다. 문서 경로를 재검색하지 않는다. 각 ticket의 `max_plan_tokens`, ticket 간 의존·인계, 업무 규칙 단위 테스트와 경계 강제 검사도 검토한다.
+최초 독립 리뷰는 admission의 `files`에 담긴 계획 index와 모든 canonical ticket의 내용을 읽고, 요구사항의 BIZ·INV·EX·AC 전체와 양방향으로 대조한다. `files[].path`는 인용할 정본 경로다. 이번 실행에서 writer가 작성한 문서는 `files[].content`에 포함된다. 전술 설계에서는 각 BIZ와 ticket이 의존하는 모델·Aggregate·Application Service·통합·컨텍스트 경계의 절·표만 읽는다. 기술·API·데이터 결정도 같은 방식으로 연결된 근거를 확인한다. frontend design과 과거 `ui-handoff.md`는 admission에 포함된 경우에 읽는다. 문서 경로를 재검색하지 않는다. 각 ticket의 `max_plan_tokens`, ticket 간 의존·인계, 업무 규칙 단위 테스트와 경계 강제 검사도 검토한다.
 
 양방향으로 대조한다. 요구사항의 모든 BIZ·INV·EX·AC가 정확히 한 ticket에 소유되고 검증 테스트를 갖는지, 반대로 ticket의 모든 규칙·제한·동작·테스트 기대값이 `requirements.md`나 전술 설계에 근거가 있는지 확인한다. 사용자 승인 기록이 있어도 근거 없는 규칙을 더하거나 규칙을 더 엄격하게 만든 ticket은 major로 지적한다. 그 변경은 `SPEC_REVISION_REQUIRED`로 요구사항에 먼저 반영한다.
 
@@ -33,9 +33,11 @@ Reviewer는 `verdict` (`pass` 또는 `revise`), `findings` (각각 `severity`, `
 
 ## to-ticket review loop
 
+[to-ticket](../to-ticket/GUIDE.md)의 writer 배정 절차에 따라 계획이 작성되면 같은 stage 작업자가 `review_ready`를 확인하고 `begin`을 실행한다. reviewer의 finding을 반영해 문서 변경안을 바꿨으면 `draft-ready`부터 다시 진행한다.
+
 1. 매 최초·재검토 전에 `node .harness/scripts/harness-plan-review.mjs begin --root <workspace_root> --plan-set <plan-set-id>`를 실행한다. begin 결과 전체를 session의 JSON으로 저장한다. 실행기가 반환한 `reviewer_input_ref`를 reviewer에게 전달한다. Reviewer는 이 runner-owned JSON의 `execution_id`, `attempt_id`, `plan_set_id`, `inputs`, `files`, `previous_inputs`, `previous_findings`를 현재 admission으로 사용한다. JSON에 `workspace_root`, `session_directory`, `review_delta`를 요구하거나 `.io`를 검색하지 않는다. 설계 문서, 계획 index, canonical ticket은 admission의 `files`에서 대조한다. 재리뷰는 현재·이전 hash를 비교하고 변경된 파일 전체와 직전 지적·직접 영향 관계를 검토한다.
    이전 Codex 실행이 종료됐지만 reviewer 결과가 없는 경우 begin은 종료 증거를 확인해 이전 시도를 aborted로 보존하고 새 리뷰를 연다. 종료를 확인할 수 없으면 오류에 표시된 attempt와 execution을 진단하고 무작정 중단하거나 재시도하지 않는다. 명시적으로 중단할 때는 표시된 attempt ID를 `abort --attempt <attempt_id> --reason <reason>`으로 전달한다.
-2. `to-ticket`은 독립 subagent를 직접 생성하며 작성자 대화를 reviewer context에 복사하지 않는다. 실행기가 제공한 `reviewer_input_ref`와 명시된 문서 기준을 전달한다. Reviewer는 schema 필드와 구체적 근거를 반환한다.
+2. `to-ticket`은 독립 subagent를 직접 생성하며 작성자 대화를 reviewer context에 복사하지 않는다. 실행기는 reviewer가 시작될 때 admission snapshot을 현재 파일로 다시 캡처하므로 계획 수정은 reviewer 시작 전에 끝낸다. reviewer 시작부터 write guard가 admission 파일 쓰기를 거부한다. 이 잠금은 reviewer가 살아 있는 동안만 유지되며, reviewer의 SubagentStop이 기록되거나 소속 stage 실행이 `failed`·`cancelled`·`blocked`·`completed`가 되거나 30분(claim 뒤 시작 신호가 없으면 5분) 동안 활동이 없으면 스스로 풀린다. 결과 없이 사라진 reviewer의 attempt는 `interrupted`로 표시되어 `record`가 (늦게 도착한 결과도) 거부되고 다음 `begin`이 `aborted`(`interrupted: ...`)로 정리한다. 통과로 기록되지 않는다. 실행기가 제공한 `reviewer_input_ref`와 명시된 문서 기준을 전달한다. Reviewer는 schema 필드와 구체적 근거를 반환한다.
 3. reviewer가 끝나면 `node .harness/scripts/harness-plan-review.mjs record --root <workspace_root> --plan-set <plan-set-id> --attempt <attempt_id>`로 기록한다. reviewer 신원과 결과를 담은 파일을 직접 만들어 넘기지 않는다. `pass` 이후 반드시 `check --phase planning`을 실행한다. 통과 전에는 발행 stage로 이동하거나 tracker를 변경하지 않는다.
-4. `revise`이면 `to-ticket`은 findings를 반영해 계획을 수정하고 새 attempt와 새 native reviewer로 재검토한다. 최대 3회차 뒤 미해결 항목은 범위 또는 결정을 묻는 실제 사용자 질문으로 반환한다. 사용자 답변은 해당 결정을 해결할 뿐 review pass로 간주하지 않는다.
+4. `revise`이면 `to-ticket`은 findings를 반영해 계획을 수정하고 새 attempt와 새 native reviewer로 재검토한다. 최대 3회차 뒤 미해결 항목은 범위 또는 결정을 묻는 실제 사용자 질문으로 반환한다. 질문은 [질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)을 따른다: 확정된 계획 범위와 지금 정해야 하는 이유, 선택지마다 `effect`와 `example`. 사용자 답변은 해당 결정을 해결할 뿐 review pass로 간주하지 않는다.
 5. `pass`이면 `to-ticket`은 현재 snapshot 확인 뒤 completed/OK를 반환한다. Orchestrator는 전체 계획을 사용자에게 보여주고 사용자 본인의 발행 승인 답을 받은 뒤 `tracker-publish` stage를 dispatch한다. 그 stage와 workflow completion gate도 review record와 현재 snapshot을 재검증한다.

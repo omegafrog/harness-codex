@@ -19,3 +19,7 @@ Codex의 `ContextCompaction`과 Claude Code의 `compact_boundary`에서 오케�
 호출 ID와 도구·인자가 모두 같은 복사본은 한 번만 집계하고, 제외 건수를 보고한다. ID가 없거나 실제로 다시 호출한 도구는 별도 집계한다. 테스트 후보는 셸 명령 시작을 기준으로 판별하므로 `rg`의 검색 문자열에 테스트 명령이 들어 있어도 테스트 실행에 넣지 않는다.
 
 보고서의 호출 후보를 원본 줄에서 대조한다. 앞 단계가 이미 제공한 경로를 다시 찾은 경우, 관련 변경 없이 같은 범위를 반복해서 읽은 경우, 동일 상태에서 무관하거나 중복된 테스트를 실행한 경우를 실제 비효율로 보고한다. `cat` 등으로 정해진 파일을 직접 읽은 호출은 정상일 수 있다. 원본 프롬프트·명령·출력은 분석 보고서에 복사하지 않는다. 개별 호출의 토큰 비용은 추정하지 않는다.
+
+역할별 도구 노출은 각 스레드의 rollout에 기록된 전체 `world_state`와 `additional_tools`에서 센다. `telemetry.json`의 `tool_exposure_by_role`은 역할마다 스레드 수, 기록을 확인한 스레드 수, 최대 MCP namespace 수, MCP 요약과 기본 도구 설명의 추정 토큰(설명 텍스트 UTF-8 바이트/4)을 담는다. MCP 도구별 전체 schema는 rollout에 없어 `mcp_tool_schemas`를 수집 불가로 표시하고, 전체 `world_state`가 없는 스레드는 0이 아니라 수집 불가로 둔다. 호출 후보와 마찬가지로 노출 수치는 정책 위반 판정이 아니라 불필요한 컨텍스트 후보를 찾는 근거다. Claude Code transcript는 도구 노출을 기록하지 않으므로 수집 불가다.
+
+`HARNESS_HOOK_TIMING=1`로 실행한 세션에는 `runtime/hooks/pretooluse-timing.jsonl`이 있고, `telemetry.json`의 `hook_timing`이 hook별 호출 수와 합계·평균·최대 시간을 `--since` 이후 기준으로 보여 준다. 파일이 없으면 `not_recorded`다. 설치된 shell 필터가 node 시작 전에 걸러 낸 호출과 node 기동 비용은 스크립트 시간에 들어가지 않는다(`max_node_uptime_ms`가 기동 포함 상한을 보여 준다).

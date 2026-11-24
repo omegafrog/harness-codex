@@ -5,7 +5,7 @@ export const FRESH_AGENT_TYPES = [
   'frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer', 'human_approver',
   'implementation_agent', 'knowledge_claim_extractor', 'knowledge_principle_reviewer',
   'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author',
-  'spec_adversarial_reviewer', 'spec_reviewer', 'stakeholder_persona', 'standards_reviewer',
+  'spec_adversarial_reviewer', 'spec_reviewer', 'stage_document_writer', 'stakeholder_persona', 'standards_reviewer',
   'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage',
 ];
 
@@ -13,7 +13,7 @@ export function freshAgentDecision(event) {
   if (event?.hook_event_name !== 'PreToolUse' || !/spawn_agent$/.test(event.tool_name || '')) return null;
   const input = event.tool_input || {};
   if (!FRESH_AGENT_TYPES.includes(input.agent_type) || input.fork_turns === 'none') return null;
-  return `Harness: ${input.agent_type} must start with a fresh context. Call spawn_agent again with fork_turns "none" and pass what it needs in the message.`;
+  return `Harness: ${input.agent_type} must start with a fresh context. Nothing was started. Call spawn_agent again with fork_turns "none" and pass what it needs in the message; this denial is not a stage failure, so do not call finish or fail because of it.`;
 }
 
 export async function runFreshAgentHook() {

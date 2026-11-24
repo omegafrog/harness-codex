@@ -194,24 +194,29 @@ export function checkDesignFreeze({ requirements, tacticalDesign, documents = {}
   return { ok: errors.length === 0, errors: errors.sort((a, b) => order.indexOf(a.owner_stage) - order.indexOf(b.owner_stage)) };
 }
 
-async function implementationDocument(root, planSetId, name) {
+async function implementationDocument(root, planSetId, name, draftExecutionId) {
   const path = `docs/implementation/${planSetId}/${name}`;
   await assertWorkspaceTarget(root, path);
+  if (draftExecutionId) {
+    const { readStageDocument } = await import('./stage-documents.mjs');
+    return (await readStageDocument(root, path, draftExecutionId))?.toString('utf8') ?? null;
+  }
   try { return await readFile(join(root, path), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
 // The gate on the plan set's documents of a workspace: what the command, the runner and the to-ticket start guard all run. A plan
 // set that skipped the requirements flow, or whose requirements/tactical design do not exist (the tactical design gate owns that),
 // has nothing to trace.
-export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology = false, allowLegacyTechnology = false }) {
-  const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
+export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology = false, allowLegacyTechnology = false, draftExecutionId }) {
+  const document = (name) => planSetDocument(root, planSetId, name, draftExecutionId);
+  const analysis = await document('stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
-  const requirements = await planSetDocument(root, planSetId, 'requirements.md');
-  const tacticalDesign = await planSetDocument(root, planSetId, TACTICAL_DESIGN_DOCUMENT);
+  const requirements = await document('requirements.md');
+  const tacticalDesign = await document(TACTICAL_DESIGN_DOCUMENT);
   if (requirements.text === null || tacticalDesign.text === null) return { ok: true, skipped: true, errors: [] };
   const documents = {};
-  for (const [kind, spec] of Object.entries(DOCUMENTS)) documents[kind] = await implementationDocument(root, planSetId, spec.name);
-  const technology = await implementationDocument(root, planSetId, 'technology.md');
+  for (const [kind, spec] of Object.entries(DOCUMENTS)) documents[kind] = await implementationDocument(root, planSetId, spec.name, draftExecutionId);
+  const technology = await implementationDocument(root, planSetId, 'technology.md', draftExecutionId);
   const readSession = (ref) => readFile(sessionOutputPath(root, ref, { create: false }), 'utf8')
     .then(JSON.parse, (error) => { if (error.code === 'ENOENT') return null; throw error; });
   const state = await readSession('runtime/orchestrator/state.json');
@@ -223,11 +228,11 @@ export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechn
   return checkDesignFreeze({ requirements: requirements.text, tacticalDesign: tacticalDesign.text, documents, frontendApproved });
 }
 
-export async function evaluateDesignFreezeGate({ root, input, envelope }) {
+export async function evaluateDesignFreezeGate({ root, input, envelope, draftExecutionId }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
   if (stage !== FREEZE_STAGE || envelope?.status !== 'completed' || !planSetId) return null;
-  return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology: true })) };
+  return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology: true, draftExecutionId })) };
 }
 
 export function freezeFailureInstruction(verdict) {

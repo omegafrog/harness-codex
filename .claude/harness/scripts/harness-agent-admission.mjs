@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import { updateReviewAttempt, inspectActiveReviewAttempt, assertActiveReviewAdmission } from '../../../.harness/src/workflow/review-attempts.mjs';
 import { snapshotSpecReview } from '../../../.harness/src/workflow/spec-review.mjs';
-import { snapshotPlanSet } from '../../../.harness/src/workflow/plan-review.mjs';
-import { snapshotContractReview } from '../../../.harness/src/workflow/contract-review.mjs';
+import { captureReviewSnapshotAtLaunch, snapshotPlanSet } from '../../../.harness/src/workflow/plan-review.mjs';
+import { contractReviewBrief, snapshotContractReview } from '../../../.harness/src/workflow/contract-review.mjs';
+import { assertReviewDraftComposed, readWriterAssignment, readWriterBatch } from '../../../.harness/src/workflow/stage-documents.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { sessionOutputPath } from '../../../.harness/src/workflow/session-output.mjs';
 import { normalizeReviewContent } from '../../../.harness/src/workflow/review-delta.mjs';
 import { FRESH_AGENT_TYPES } from '../../../.harness/scripts/harness-fresh-agent.mjs';
+await import('../../../.harness/src/observability/hook-timing.mjs').then((module) => module.startHookTiming('agent-admission'), () => null);
 
 function deny(reason) {
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })}\n`);
@@ -35,6 +37,12 @@ try {
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;
   const ticketId = process.env.HARNESS_REVIEW_TICKET_ID || native?.planSetId;
+  if (type === 'stage_document_writer') {
+    if (!root || root !== process.cwd() || !executionId || event.agent_id) throw new Error('Only the main Claude orchestrator may dispatch its prepared stage document writer');
+    const batch = await readWriterBatch(root, executionId);
+    if (batch.binding.provider !== 'claude-code' || !batch.binding.model || tool.model !== batch.binding.model) throw new Error(`Pass the configured stage document writer model explicitly to Agent: ${batch.binding.model || 'unavailable'}`);
+    if (await readWriterAssignment(root, executionId)) throw new Error('The stage document writer is already assigned');
+  }
   if (!root || root !== process.cwd() || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(ticketId || '')) {
     if (!isReviewer) process.exit(0);
     throw new Error('Canonical review execution context is unavailable');
@@ -47,11 +55,17 @@ try {
   }
   if (!active.length && !isReviewer) process.exit(0);
   if (active.length !== 1 || !isReviewer || active[0].scope !== (isSpecReviewer ? specScope : isPlanReviewer ? planScope : contractScope)) throw new Error('An independent review admission is active; dispatch only its required reviewer profile');
-  const { scope, attempt } = active[0];
+  const { scope } = active[0];
+  let { attempt } = active[0];
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '') || typeof tool.prompt !== 'string' || tool.resume || tool.run_in_background) throw new Error('Architecture reviewers must start fresh and finish before the caller continues');
   if (attempt.native_review) throw new Error('The active Architecture review admission is already claimed');
+  if (isPlanReviewer && attempt.admission_execution_id !== executionId) throw new Error('Plan review admission does not belong to the running execution');
+  // A plan review's snapshot is taken at this launch: edits made after `begin` are re-captured into the admission.
+  if (isPlanReviewer && (await captureReviewSnapshotAtLaunch({ root, planSetId: ticketId })).refreshed) attempt = await inspectActiveReviewAttempt({ root, scope });
   await assertActiveReviewAdmission({ root, scope, attemptId: attempt.attempt_id, inputs: attempt.inputs });
-  const currentInputs = isSpecReviewer ? await snapshotSpecReview({ root, ticketId }) : isPlanReviewer ? (await snapshotPlanSet({ root, planSetId: ticketId })).inputs : (await snapshotContractReview({ root })).inputs;
+  if (isContractReviewer) await assertReviewDraftComposed(root, executionId, 'sync-contracts');
+  const contract = isContractReviewer ? await snapshotContractReview({ root, executionId }) : null;
+  const currentInputs = isSpecReviewer ? await snapshotSpecReview({ root, ticketId }) : isPlanReviewer ? (await snapshotPlanSet({ root, planSetId: ticketId, executionId })).inputs : contract.inputs;
   if (JSON.stringify(currentInputs) !== JSON.stringify(attempt.inputs)) throw new Error('Architecture review admission is stale');
   let reviewerInputRef = null;
   if (isPlanReviewer) {
@@ -66,9 +80,10 @@ try {
   }
   const reviewerId = `claude-${executionId}-${attempt.attempt_id}`;
   const nativeAgentId = `pending-${event.tool_use_id || attempt.attempt_id}`;
+  const contractInputs = contract ? await contractReviewBrief({ root, planSetId: ticketId, snapshot: contract, executionId }) : null;
   await updateReviewAttempt({ root, scope, action: 'claim', attemptId: attempt.attempt_id, reviewerId, nativeAgentId, parentSessionId: event.session_id, executionId });
   const target = isSpecReviewer ? `ticket_id=${ticketId}; axis=architecture` : isContractReviewer ? `plan_set_id=${ticketId}; contract_revision=${attempt.inputs.revision}` : `plan_set_id=${ticketId}`;
-  const prompt = `${tool.prompt}\n\nHarness review admission (runtime-bound): ${target}; attempt_id=${attempt.attempt_id}; reviewer_id=${reviewerId}${reviewerInputRef ? `; reviewer_input_ref=${reviewerInputRef}` : ''}. This reviewer identity is bound by the host. For plan review, treat the listed files and captured contents in reviewer_input_ref as the complete current admission; do not search .io or use archived restart documents as current input. Return only a JSON object with exactly the keys verdict and findings; do not include identity or prose. Do not delegate or spawn another reviewer.`;
+  const prompt = `${tool.prompt}\n\nHarness review admission (runtime-bound): ${target}; attempt_id=${attempt.attempt_id}; reviewer_id=${reviewerId}${reviewerInputRef ? `; reviewer_input_ref=${reviewerInputRef}` : ''}. This reviewer identity is bound by the host.${reviewerInputRef ? ' Read the listed files and captured contents in reviewer_input_ref as the complete current admission.' : ''}${contractInputs ? ` Read the exact references in this contract brief. Use contract_file_sources when it specifies a different location for a contract file. ${JSON.stringify(contractInputs)}` : ''} Return only a JSON object with exactly the keys verdict and findings; do not include identity or prose. Do not delegate or spawn another reviewer.`;
   process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Active independent review admission claimed', updatedInput: { ...tool, prompt } } })}\n`);
 } catch (error) {
   deny(`Independent reviewer dispatch denied: ${error.message}`);

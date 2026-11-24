@@ -5,6 +5,8 @@ model_tier: implementation
 
 # subdomain-candidates
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 ## Purpose
 
 Second step of the requirements flow, after `stakeholder-analysis` and before `ubiquitous-language`. Group the business of the request into subdomain candidates (`SD-xx`) and cut it into business activities (`BIZ-xx`), then write both into `requirements.md`. A candidate is a hypothesis about how the work splits; `subdomain-classification` later checks it against the event flows and has the user confirm it. Nothing here is written to project-wide documents and nothing is decided about bounded contexts, modules or technology. No persona runs and the user is not asked, except for the case under Questions.
@@ -12,8 +14,9 @@ Second step of the requirements flow, after `stakeholder-analysis` and before `u
 ## Inputs
 
 - The user request (`scope` of the execution input), read verbatim.
+- Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
 - `docs/specs/<plan-set-id>/requirements.md` with its `### 요구사항 초안`, and `stakeholder-analysis.md` with its candidate table and decisions. Both are resolved with `harness-spec-path.mjs`.
-- Existing areas, read-only and only when present: `CONTEXT-MAP.md`, `docs/architecture/domain-model.md` and `CONTEXT.md`.
+- Existing areas, read-only and only when present, at the repository root (not under `docs/specs/`): `CONTEXT-MAP.md`, `docs/architecture/domain-model.md` and `CONTEXT.md`.
 - The [requirements.md template](../requirements-fix/references/template.md), which owns the shape of the SD table and the `BIZ` sections.
 
 ## Prohibited
@@ -37,7 +40,7 @@ Second step of the requirements flow, after `stakeholder-analysis` and before `u
 
 ## Questions
 
-Ask only when two plausible groupings of the same request change which work is in scope, not merely how it is arranged. A feature the request names is never such a choice: its inclusion is settled by the requester. Write the questions in Korean in one batch, show what each option includes and excludes, give each a recommended option with a rationale from the request, and return `action_required` / `USER_DECISION_REQUIRED`. Record the answer with its `answers.json` source. A grouping preference alone is never a question.
+Ask only when two plausible groupings of the same request change which work is in scope, not merely how it is arranged. A feature the request names is never such a choice: its inclusion is settled by the requester. Write the questions in Korean in one batch, show what each option includes and excludes, give each a recommended option with a rationale from the request, add the [question format](../grilling/GUIDE.md#ask-questions-the-user-can-answer) (settled scope as context; per option its effect and one concrete work item landing under it as an example), and return `action_required` / `USER_DECISION_REQUIRED`. Record the answer with its `answers.json` source. A grouping preference alone is never a question.
 
 ## Completion
 

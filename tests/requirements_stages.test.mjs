@@ -13,6 +13,8 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { WORKTREE_STAGE, REQUIREMENTS_STAGES, TACTICAL_DESIGN_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { MODELS, SETUP, STAGE_TIERS, consumerWorkflow, gitIn, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
+import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 
 const TEMPLATE = '.harness/internal-skills/requirements-fix/references/template.md';
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
@@ -126,6 +128,27 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.harness/internal-skills/product-spec/GUIDE.md'), /`상태: fixed`[\s\S]*requirements\.md BIZ-xx/);
   assert.match(await read('.harness/internal-skills/ddd-design/GUIDE.md'), /requirements\.md` when present/);
   assert.match(await read('.harness/internal-skills/ddd-design/GUIDE.md'), /do not compare the boundaries again/);
+});
+
+// Attempt 008: a feedback recovery of event-storming spawned a persona and interrupted it 2.6 seconds later. The tables from
+// the first run already held the persona output, so the guides must say when a resumed run spawns none.
+test('a feedback or recovery run reuses the recorded persona output and the guides name the markers the runner writes for it', async () => {
+  const input = await read('.harness/src/workflow/stage-input.mjs');
+  assert.ok(input.includes('previous_result_ref') && input.includes("kind: 'previous_execution_result'"), 'the runner writes both resume markers');
+  const analysis = await read('.harness/internal-skills/stakeholder-analysis/GUIDE.md');
+  const events = await read('.harness/internal-skills/event-storming/GUIDE.md');
+  for (const guide of [analysis, events]) {
+    assert.match(guide, /`context\.previous_result_ref`/);
+    assert.match(guide, /`kind: previous_execution_result`/);
+  }
+  assert.match(analysis, /A `--feedback`, recovery or takeover run \(the input has[^)]*\) whose `stakeholder-analysis\.md` holds a candidate table spawns no persona: those rows are their output, so reuse them and the prior result's refs\./);
+  assert.match(analysis, /Spawn only a selected persona that has no recorded candidates, or round 2 for a `CONF` the new input opens\./);
+  assert.match(events, /`--feedback`·복구·인계로 재개한 실행\(입력에[^)]*\)은 `requirements\.md`의 BIZ마다 `이벤트 흐름` 표나 `이벤트 없음 — 이유`가 있고 `## 5` hotspot 목록이 있으면 그 표가 persona 결과다\./);
+  assert.match(events, /4·5단계를 건너뛰고 기록된 표와 이전 결과의 refs를 재사용하며 persona를 시작하지 않는다\./);
+  assert.match(events, /표가 없는 BIZ가 남았을 때만 그 BIZ의 skeleton만 보내 4단계를 실행한다\./);
+  assert.match(events, /Rerunning the persona after the user answered or on a feedback\/recovery run that finds the event tables recorded/);
+  // Only these two guides start personas; the other requirements stages say that none runs.
+  for (const stage of ['subdomain-candidates', 'ubiquitous-language', 'subdomain-classification', 'bounded-context']) assert.match(await read(`.harness/internal-skills/${stage}/GUIDE.md`), /No persona runs/, stage);
 });
 
 test('the requester is a stakeholder: requested features are settled, and a persona candidate anchored in the request is never dropped as out of scope', async () => {
@@ -336,6 +359,8 @@ test('the requirements stages run in order as workflow stages and the tactical d
     artifacts: [artifact(requirements, 'requirements')],
   });
   assert.equal(second.prepared.input.context.transition.from_stage, 'stakeholder-analysis');
+  // Earlier stages' canonical results reach the worker as refs, so it never searches .io for them.
+  assert.deepEqual(second.prepared.input.context.upstream, [{ stage_id: 'stakeholder-analysis', execution_id: first.prepared.input.execution_id, result_ref: first.finished.result_ref }]);
   assert.ok(second.prepared.input.input_refs.some((reference) => reference.path === requirements && reference.kind === 'requirements'));
   assert.deepEqual(second.files, [requirements]);
   const secondPackRef = second.prepared.input.input_refs.find(({ kind }) => kind === 'domain_context_pack');
@@ -349,11 +374,12 @@ test('the requirements stages run in order as workflow stages and the tactical d
     artifacts: [artifact(requirements, 'requirements'), artifact('CONTEXT.md', 'glossary')],
   });
   assert.deepEqual(language.files, ['CONTEXT.md', requirements]);
+  assert.deepEqual(language.prepared.input.context.upstream.map(({ stage_id, result_ref }) => [stage_id, result_ref]), [['stakeholder-analysis', first.finished.result_ref], ['subdomain-candidates', second.finished.result_ref]]);
 
   // 4. event-storming preserves the confirmed decision while the user asks for clarification about the other hotspot.
   const eventFiles = { [`${specDirectory}/diagrams/events/SD-01.events.puml`]: '@startuml\n@enduml\n', [`${specDirectory}/diagrams/events/SD-01.events.svg`]: '<svg xmlns="http://www.w3.org/2000/svg"/>\n', [`${specDirectory}/diagrams/events/cross-subdomain.events.puml`]: '@startuml\n@enduml\n', [`${specDirectory}/diagrams/events/cross-subdomain.events.svg`]: '<svg xmlns="http://www.w3.org/2000/svg"/>\n' };
-  const recoveryQuestion = { question_id: 'hotspot-2', title: '[BIZ-01] HS-02 삭제한 게시글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요청은 삭제만 말한다', decision_kind: null };
-  const authorQuestion = { question_id: 'hotspot-1', title: '[BIZ-01] HS-01 게시글의 삭제 권한은 누구에게 있나요?', options: [{ id: 'author', label: '작성자만 삭제', consequence: '다른 회원은 삭제할 수 없다', evidence: [] }, { id: 'member', label: '모든 회원이 삭제', consequence: '작성자 이외의 회원도 삭제할 수 있다', evidence: [] }], recommended_option_id: 'author', rationale: '작성자가 자신의 게시글을 지운다', decision_kind: null };
+  const recoveryQuestion = withDecisionContext({ question_id: 'hotspot-2', title: '[BIZ-01] HS-02 삭제한 게시글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요청은 삭제만 말한다', decision_kind: null });
+  const authorQuestion = withDecisionContext({ question_id: 'hotspot-1', title: '[BIZ-01] HS-01 게시글의 삭제 권한은 누구에게 있나요?', options: [{ id: 'author', label: '작성자만 삭제', consequence: '다른 회원은 삭제할 수 없다', evidence: [] }, { id: 'member', label: '모든 회원이 삭제', consequence: '작성자 이외의 회원도 삭제할 수 있다', evidence: [] }], recommended_option_id: 'author', rationale: '작성자가 자신의 게시글을 지운다', decision_kind: null });
   const eventDraft = '# 요구사항 명세\n\n- 상태: draft\n\n## 5. hotspot\n\n| HS | 질문 | 관련 BIZ | 상태 | 결정 | 출처 |\n|---|---|---|---|---|---|\n| HS-01 | 게시글의 삭제 권한 | BIZ-01 | 대기 | | |\n| HS-02 | 삭제한 글을 복구할 수 있는가 | BIZ-01 | 대기 | | |\n';
   const waiting = await runStage('event-storming', {
     files: { [requirements]: eventDraft },
@@ -390,12 +416,16 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.deepEqual(JSON.parse(await readFile(join(waitingDirectory, 'decision-answers.json'), 'utf8')), answers);
 
   // 5. subdomain-classification confirms the set and the classes with the user, then commits the plan set documents only.
-  const classQuestion = { question_id: 'draft-classification', title: '[서브도메인 분류] SD-01 게시판의 분류는 무엇인가요?', options: [{ id: 'core', label: 'core', consequence: '이 요청의 차별점이다', evidence: [] }, { id: 'supporting', label: 'supporting', consequence: '필요하지만 차별되지 않는다', evidence: [] }], recommended_option_id: 'core', rationale: '글 삭제가 요청의 핵심이다', decision_kind: null };
-  const boundaryQuestion = { question_id: 'draft-boundary', title: '[서브도메인 경계] SD-01 글 삭제를 게시판에 둘까요?', options: [{ id: 'keep', label: '게시판에 유지', consequence: '글 작성과 삭제를 같은 업무 영역이 소유한다', evidence: [] }, { id: 'split', label: '별도 운영 영역으로 분리', consequence: '삭제의 판단을 운영 영역이 소유한다', evidence: [] }], recommended_option_id: 'keep', rationale: '글의 소유권은 작성자에게 있다', decision_kind: null };
+  const classQuestion = withDecisionContext({ question_id: 'draft-classification', title: '[서브도메인 분류] SD-01 게시판의 분류는 무엇인가요?', options: [{ id: 'core', label: 'core', consequence: '이 요청의 차별점이다', evidence: [] }, { id: 'supporting', label: 'supporting', consequence: '필요하지만 차별되지 않는다', evidence: [] }], recommended_option_id: 'core', rationale: '글 삭제가 요청의 핵심이다', decision_kind: null });
+  const boundaryQuestion = withDecisionContext({ question_id: 'draft-boundary', title: '[서브도메인 경계] SD-01 글 삭제를 게시판에 둘까요?', options: [{ id: 'keep', label: '게시판에 유지', consequence: '글 작성과 삭제를 같은 업무 영역이 소유한다', evidence: [] }, { id: 'split', label: '별도 운영 영역으로 분리', consequence: '삭제의 판단을 운영 영역이 소유한다', evidence: [] }], recommended_option_id: 'keep', rationale: '글의 소유권은 작성자에게 있다', decision_kind: null });
   const classifying = await runStage('subdomain-classification', {
     status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '경계와 분류 질문', questions: [boundaryQuestion, classQuestion], expectCommit: false,
   });
   const [boundary, classification] = classifying.finished.result.questions;
+  // The confirmed answers of event-storming are recorded on the execution that asked them.
+  const eventUpstream = classifying.prepared.input.context.upstream.find(({ stage_id }) => stage_id === 'event-storming');
+  assert.deepEqual(eventUpstream, { stage_id: 'event-storming', execution_id: resumed.prepared.input.execution_id, result_ref: resumed.finished.result_ref, answers_refs: [`runtime/executions/${waiting.prepared.input.execution_id}/decision-answers.json`] });
+  assert.deepEqual(JSON.parse(await readFile(join(workspace, '.io', eventUpstream.answers_refs[0]), 'utf8')), answers);
   assert.deepEqual([boundary.title, classification.title], [boundaryQuestion.title, classQuestion.title]);
   const answersArg = (question, answer) => ['--answer', JSON.stringify([{ question_id: question.question_id, answer }])];
   const waitingForBoundary = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'subdomain-classification', ...answersArg(classification, 'core')]);
@@ -469,6 +499,17 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(unapproved.stderr, /Requirements approval answer was not recorded/);
   const claimed = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(claimed.status, 0, 'a bare flag with words the user never said is not approval');
+  // The user's words sent as a plain message (attempt 025's headless resume) are in the owner transcript but are not an orchestrator
+  // request: the installed command refuses them and says exactly why and how to send them.
+  await codexUserPrompt(workspace, '요구사항 좋아요, 승인', { prefix: '' });
+  const plainApproval = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-native-stage.mjs'), 'launch', '--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '요구사항 좋아요, 승인'], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(plainApproval.status, 0);
+  const plainRefusal = JSON.parse(plainApproval.stderr);
+  assert.equal(plainRefusal.code, 'PRECONDITION');
+  assert.deepEqual(plainRefusal.approval_search.candidates.map(({ form, problems }) => ({ form, problems })), [{ form: 'plain_user_message', problems: ['missing_orchestrator_prefix'] }]);
+  assert.match(plainRefusal.error, /plain user message at \S+ with exactly that text, but it has no leading `\$orchestrator`/);
+  assert.match(plainRefusal.user_decision, /`\$orchestrator <reply>` \(Codex; headless: `codex exec resume <session-id> '\$orchestrator <reply>'`\) or `\/orchestrator <reply>` \(Claude Code\)/);
+  assert.match(plainRefusal.user_decision, /send the same text as `\$orchestrator 요구사항 좋아요, 승인`/);
   const misplaced = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'aggregate-design', '--requirements-approved', 'true', '--approval-answer', '승인'], { cwd: workspace, encoding: 'utf8' });
   assert.match(misplaced.stderr, /Requirements approval is only valid for domain-model/);
   const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'domain-model', ...await flow.approveRequirements('요구사항 좋아요, 승인')]);

@@ -200,7 +200,18 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   assert.equal(publish.started.agent_profile, 'tracker_publisher');
   const { resolveAgentSandbox } = await import(pathToFileURL(join(workspace, '.harness/src/workflow/stage-runtime.mjs')).href);
   assert.deepEqual(await resolveAgentSandbox({ root: workspace, input: { skill: 'tracker-publish' }, workflow: 'tactical-to-code', stage: 'tracker-publish' }), { profile: 'tracker_publisher', sandbox: 'danger-full-access' }, 'the publisher is the one stage with network and tracker access');
+  const publishSchema = JSON.parse(await readFile(publish.started.schema_path, 'utf8')).properties.result;
+  assert.ok(publishSchema.required.includes('published_issues'), 'created Issue URLs have their own result field, not file artifacts');
   await submitStage(publish, { summary: '계획을 발행했다' });
+  assert.equal(JSON.parse(finishStage(publish).stdout).status, 'format_error', 'a publication result without published_issues is sent back to the stage');
+  // The field is a list of {plan_id, url}: a malformed Issue URL is a format error, and with no GitHub tracker nothing was published.
+  await submitStage(publish, { summary: '계획을 발행했다', resultExtra: { published_issues: [{ plan_id: '@parent', url: 'issue-83' }] } });
+  assert.equal(JSON.parse(finishStage(publish).stdout).status, 'format_error');
+  await submitStage(publish, { summary: '계획을 발행했다', resultExtra: { published_issues: [{ plan_id: '@parent', url: 'https://github.com/owner/repo/issues/83' }] } });
+  const unpublished = finishStage(publish);
+  assert.doesNotMatch(unpublished.stdout, /"status":"completed"/, 'a local-markdown publication has no Issue to report');
+  assert.match(unpublished.stdout + unpublished.stderr, /published_issues must be empty when no GitHub tracker is configured/);
+  await submitStage(publish, { summary: '계획을 발행했다', resultExtra: { published_issues: [] } });
   assert.equal(JSON.parse(finishStage(publish).stdout).status, 'completed');
 
   // tactical-code builds one ticket per run, after the tickets it depends on.
@@ -232,6 +243,7 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
 
   // A ticket that cannot proceed is blocked; the same ticket resumes with feedback and no --plan, and stays the one ticket in flight.
   const blockedRun = await startTicket('auth-visitor-check');
+  assert.equal(JSON.parse(await readFile(blockedRun.started.schema_path, 'utf8')).properties.result.properties.published_issues, undefined, 'only tracker-publish reports published Issues');
   await submitStage(blockedRun, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: 'api.md가 인증 API를 정하지 않았다' });
   assert.equal(JSON.parse(finishStage(blockedRun).stdout).status, 'blocked');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'a blocked ticket commits nothing');
@@ -319,7 +331,9 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   assert.equal(JSON.parse(finishStage({ base: e2eBase }).stdout).status, 'completed');
   const verified = JSON.parse(gate('--final-workflow').stdout);
   assert.equal(verified.state, 'completed', JSON.stringify(verified.verdict));
-  assert.equal(tests(verified).reason, 'approved_e2e_passed');
+  assert.equal(tests(verified).reason, 'approved_e2e_use_cases_unreported', 'a run that reports no use cases passes with unverified coverage');
+  assert.equal(tests(verified).status, 'unverified');
+  assert.deepEqual(tests(verified).details.use_case_coverage.uncovered, ['E2E-01']);
   assert.equal(tests(verified).details.receipt, receiptRef);
   const newerRequest = join(workspace, '.io/runtime/e2e/requests/followup.json');
   await writeFile(newerRequest, JSON.stringify({ ...request, scenarios: ['E2E-02'] }));
@@ -337,6 +351,45 @@ test('tactical-to-code runs the decisions, the ticket split, approved publicatio
   await writeFile(join(workspace, '.io', cleanupRef), '{}');
   assert.equal(tests(JSON.parse(gate().stdout)).reason, 'approved_e2e_evidence_invalid');
   await writeFile(join(workspace, '.io', cleanupRef), JSON.stringify({ status: 'passed' }));
+
+  // A run that reports the use cases it exercised is compared with the approved scope: an approved use case it did not run
+  // is named and blocks completion; covering every approved use case passes.
+  const approvedRun = async (name, scenarios, reported) => {
+    const source = JSON.parse(manifest);
+    source.profiles[profileId].command = [process.execPath, '-e', `require('node:fs').appendFileSync(process.env.HARNESS_E2E_USE_CASES_FILE, ${JSON.stringify(reported.map((id) => `${id}\n`).join(''))})`];
+    const text = JSON.stringify(source);
+    await writeFile(join(workspace, manifestPath), text);
+    treeGit('add', '-f', manifestPath);
+    treeGit('commit', '-qm', `e2e profile reports ${reported.join(',')}`);
+    const answer = `${name} E2E 실행을 승인합니다`;
+    await codexUserPrompt(workspace, answer);
+    const ref = `runtime/e2e/requests/${name}.json`;
+    await writeFile(join(workspace, '.io', ref), JSON.stringify({ target_commit: treeGit('rev-parse', 'HEAD').trim(), profile_id: profileId, timeout_ms: 5000, scenarios, approval_answer: answer, manifest_sha256: createHash('sha256').update(text).digest('hex') }));
+    const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'e2e-test', '--e2e-request', ref]);
+    const base = ['--root', workspace, '--worktree-ref', flow.tree.worktree_ref, '--execution-id', prepared.input.execution_id];
+    const started = invoke(workspace, 'harness-native-stage.mjs', ['start', ...base]);
+    invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${name}-runner`]);
+    const executed = invoke(workspace, 'harness-exec.mjs', ['--root', workspace, '--profile', profileId]);
+    const cleanup = `runtime/e2e/${name}-run/cleanup.json`;
+    await mkdir(join(workspace, '.io', cleanup, '..'), { recursive: true });
+    await writeFile(join(workspace, '.io', cleanup), JSON.stringify({ status: 'passed' }));
+    await submitStage({ stage: 'e2e-test', started }, { resultExtra: { artifacts: [
+      { base: 'session', path: executed.evidence_path.slice(join(workspace, '.io').length + 1), kind: 'e2e_receipt' },
+      { base: 'session', path: cleanup, kind: 'e2e_cleanup' },
+    ] } });
+    assert.equal(JSON.parse(finishStage({ base }).stdout).status, 'completed');
+  };
+  await approvedRun('partial', ['E2E-01', 'E2E-02'], ['E2E-01', 'E2E-01']);
+  const uncovered = gate('--final-workflow');
+  assert.equal(uncovered.status, 1, uncovered.stdout);
+  assert.equal(tests(JSON.parse(uncovered.stdout)).reason, 'approved_e2e_use_cases_uncovered');
+  assert.deepEqual(tests(JSON.parse(uncovered.stdout)).details.use_case_coverage, { status: 'uncovered', approved_source: 'scenarios', approved: ['E2E-01', 'E2E-02'], exercised: ['E2E-01'], uncovered: ['E2E-02'], outside_approved: [] });
+  assert.match(tests(JSON.parse(uncovered.stdout)).details.next, /E2E-02/);
+  await approvedRun('complete', ['E2E-01', 'E2E-02'], ['E2E-01', 'E2E-02']);
+  const covered = JSON.parse(gate('--final-workflow').stdout);
+  assert.equal(covered.state, 'completed', JSON.stringify(covered.verdict));
+  assert.equal(tests(covered).reason, 'approved_e2e_passed');
+  assert.equal(tests(covered).details.use_case_coverage.status, 'covered');
 
   // The published plan set stays tied to the design it was reviewed against: a changed decision makes the gate wait again.
   const api = join(workspace, 'docs/implementation', planSetId, 'api.md');

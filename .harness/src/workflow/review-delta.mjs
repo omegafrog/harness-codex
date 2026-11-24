@@ -30,10 +30,10 @@ function sections(text) {
 }
 
 // Full input hashes remain the admission and completion gate; this only narrows reviewer reading.
-export async function reviewDelta({ root, inputs, previousInputs }) {
+export async function reviewDelta({ root, inputs, previousInputs, readContent = (path) => readFile(resolve(root, path)) }) {
   const changed = [];
   for (const [path, hash] of Object.entries(inputs)) {
-    const content = normalizeReviewContent(path, await readFile(resolve(root, path)));
+    const content = normalizeReviewContent(path, await readContent(path));
     if (digest(content) !== hash) throw new Error(`Review input changed during admission: ${path}`);
     const cache = sessionOutputPath(root, `runtime/reviews/content/${hash}`);
     try { await writeFile(cache, content, { flag: 'wx', mode: 0o600 }); }

@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('stage-runtime.mjs', installed));
-const { identifyQuestions } = await import(new URL('questions.mjs', installed));
+const { assertQuestionContext, identifyQuestions } = await import(new URL('questions.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
@@ -69,20 +69,29 @@ try {
   }
   if (Object.hasOwn(envelope.result, 'artifact_contents')) {
     const profile = input.context?.agent_profile || input.context?.role;
-    if (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8'))) throw new Error('Inline artifacts require a read-only agent profile');
+    const { finishedWriterBatch, readDocumentWriterReceipt, readWriterBatch } = await import(new URL('stage-documents.mjs', installed));
+    const batch = await readWriterBatch(opts.root, input.execution_id, { required: false });
     const items = envelope.result.artifact_contents;
     if (!Array.isArray(items) || items.length > 32) throw new Error('Invalid inline artifacts');
+    if (items.length && !batch && (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8')))) throw new Error('Inline artifacts require a stage writer receipt');
     const names = new Set();
     for (const item of items) {
       if (!item || Object.keys(item).sort().join(',') !== 'content,kind,name' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(item.name || '') || item.name === '.' || item.name === '..' || names.has(item.name) || typeof item.kind !== 'string' || !item.kind.trim() || typeof item.content !== 'string' || Buffer.byteLength(item.content) > 1024 * 1024) throw new Error('Invalid inline artifact');
       names.add(item.name);
     }
+    const written = batch ? await finishedWriterBatch(opts.root, batch) : null;
+    if (batch && (!written || !await readDocumentWriterReceipt(opts.root, written))) throw new Error('Inline artifacts are waiting for the stage document writer');
     for (const item of items) {
       const relative = `${prefix}/artifacts/${item.name}`;
       await assertWorkspaceTarget(session, relative);
-      await mkdir(join(session, prefix, 'artifacts'), { recursive: true, mode: 0o700 });
-      await assertWorkspaceTarget(session, relative);
-      await writeFile(join(session, relative), item.content, { flag: 'wx', mode: 0o600 });
+      if (batch) {
+        if (!batch.entries.some(({ base, path, content }) => base === 'session' && path === relative
+            && content === Buffer.from(item.content).toString('base64'))) throw new Error(`Inline artifact does not match its stage writer batch: ${relative}`);
+      } else {
+        await mkdir(join(session, prefix, 'artifacts'), { recursive: true, mode: 0o700 });
+        await assertWorkspaceTarget(session, relative);
+        await writeFile(join(session, relative), item.content, { flag: 'wx', mode: 0o600 });
+      }
       envelope.result.artifacts.push({ base: 'session', path: relative, kind: item.kind, sha256: null });
     }
     delete envelope.result.artifact_contents;
@@ -92,9 +101,17 @@ try {
     const withoutId = ({ question_id, ...question }) => question;
     const questions = (envelope.result.questions || []).map(withoutId);
     if (questions.some((question, index) => questions.slice(0, index).some((prior) => isDeepStrictEqual(prior, question)))) throw new Error('Duplicate questions in batch');
+    // A new batch carries the context and per-option examples a user needs; the schema the worker was given decides whether it could.
+    const outputSchema = await readSkillSessionJson({ root: opts.root, session_directory: session, path: paths.refs.schema }).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    assertQuestionContext(questions, { schema: outputSchema });
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
   }
   if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');
+  // Issue URLs are tracker references: tracker-publish reports them in published_issues, never as files to look up.
+  if (input.skill === 'tracker-publish' && input.context?.plan_set_id) {
+    const { normalizePublishedIssues } = await import(new URL('../tracker/publication.mjs', installed));
+    await normalizePublishedIssues({ root: opts.root, planSetId: input.context.plan_set_id, result: envelope.result });
+  }
   // The runner, not the model, fingerprints returned artifacts; a model-typed hash can be wrong.
   for (const artifact of Array.isArray(envelope.result.artifacts) ? envelope.result.artifacts : []) {
     if (!artifact || typeof artifact.path !== 'string' || isAbsolute(artifact.path)) continue;

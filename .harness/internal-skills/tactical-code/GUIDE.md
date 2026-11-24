@@ -9,7 +9,7 @@ model_tier: implementation
 
 ## 입력과 경계
 
-먼저 ticket 파일 `docs/plans/<plan-set-id>/<plan_id>.md`(`input_refs`의 kind `ticket`)를 끝까지 읽는다. ticket이 구현할 규칙(INV/EX/AC)과 강제 위치, 검증 테스트, 접하는 컨텍스트와 경계 규칙, 의존한 결정, 선행 ticket, 완료 기준을 정한다. 그다음 ticket이 인용한 근거만 읽는다: `docs/specs/<plan-set-id>/tactical-design.md`에서 ticket이 가리킨 모델·Aggregate·Application Service 메서드·인터페이스·메서드별 통합·경계 행, `docs/implementation/<plan-set-id>/`의 인용된 `technology.md`·`api.md`·`data.md`, UI design artifact, `CONTEXT.md`의 용어. 설계 전체나 다른 ticket 문서를 한꺼번에 읽지 않는다. 선행 ticket이 만든 코드는 저장소의 현재 코드로 읽는다.
+먼저 ticket 파일 `docs/plans/<plan-set-id>/<plan_id>.md`(`input_refs`의 kind `ticket`)를 끝까지 읽는다. ticket이 구현할 규칙(INV/EX/AC)과 강제 위치, 검증 테스트, 접하는 컨텍스트와 경계 규칙, 의존한 결정, 선행 ticket, 완료 기준을 정한다. 그다음 ticket이 인용한 근거만 읽는다: `docs/specs/<plan-set-id>/tactical-design.md`에서 ticket이 가리킨 모델·Aggregate·Application Service 메서드·인터페이스·메서드별 통합·경계 행, `docs/implementation/<plan-set-id>/`의 인용된 `technology.md`·`api.md`·`data.md`, UI design artifact, `CONTEXT.md`의 용어. 설계 전체나 다른 ticket 문서를 한꺼번에 읽지 않는다. 선행 ticket이 만든 코드는 저장소의 현재 코드로 읽는다. 끝난 뒤 `harness-execution-audit.mjs read-scope`가 읽은 파일을 ticket이 선언한 모듈과 비교해 관찰하므로(차단하지 않는다), ticket에 없는 파일을 읽어야 했다면 그 이유를 결과 summary에 한 줄로 남긴다.
 
 workflow 시작 시점과 현재 `HEAD`, branch, dirty status를 확인하고 사용자의 기존 변경을 보존한다. `harness-workspace-preflight.mjs --for-implementation`을 통과하지 않으면 수정하지 않는다. 편집 전에 ticket을 `in-progress`로 바꾼다: `node .harness/scripts/harness-tracker.mjs sync --root <workspace_root> --ticket <ref> --status in-progress`. `<ref>`는 local-markdown이면 ticket 경로, GitHub mode이면 `harness-context.mjs`의 `plan_tickets`에 있는 이 ticket의 값이다.
 

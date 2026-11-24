@@ -5,6 +5,8 @@ model_tier: implementation
 
 # application-service
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 확정된 업무의 Use Case를 실제 모델과 포트 호출로 조합한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Application Service·사용 인터페이스를 채운다.
 
 1. 요구사항의 업무별 시나리오·규칙·예외·결과·이벤트 흐름, 적용된 사용자 답변, 모델의 메서드·책임·Aggregate, 관련 ADR과 Context Map의 방향·판단 소유자를 읽는다. 외부 시스템이 업무 전체를 소유하는 BIZ는 외부 시스템의 공개 메서드와 업무 연결로 표현한다.

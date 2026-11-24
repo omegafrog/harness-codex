@@ -15,7 +15,7 @@
    | `docs/implementation/<plan-set-id>/technology.md`, `api.md`, `data.md` | 기술·API·데이터 및 인터페이스 바인딩. ticket이 의존하는 결정이다 |
    | `input_refs`의 `frontend_design_brief` artifact | UI가 적용될 때 독립 frontend workflow가 확정한 design이다. 참조가 없으면 brief를 찾지 않는다 |
 
-   `requirements.md`에서 범위 내 BIZ와 각 INV·EX·AC를 먼저 식별하고, 전술 설계는 그 BIZ와 연결된 절·표만 읽는다. 경계·의존 순서에 근거가 필요하면 해당 호출이나 참조의 반대편 절과 링크를 따라간다. 기존 번호별 형식도 해당 절·표를 사용한다. 요청 원문은 입력의 `scope`에서 확인하고, 프로젝트 계약이나 다이어그램은 적용할 판단의 정확한 참조가 있을 때 연다. `stakeholder-analysis`가 `판정: 생략`이라 두 문서가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 필수 입력이 없거나 문서의 빈칸·모순 때문에 분할을 정할 수 없으면 `blocked/INPUT_MISSING`과 `DESIGN_NOT_FROZEN:`으로 시작하는 summary(정본 경로·항목·요구 ID)를 반환한다. `owner_stage`·`dependency_gap`은 `null`이다.
+   `requirements.md`에서 범위 내 BIZ와 각 INV·EX·AC를 먼저 식별하고, 전술 설계는 그 BIZ와 연결된 절·표만 읽는다. 경계·의존 순서에 근거가 필요하면 해당 호출이나 참조의 반대편 절과 링크를 따라간다. 기존 번호별 형식도 해당 절·표를 사용한다. 요청 원문은 입력의 `scope`에서 확인하고, 프로젝트 계약이나 다이어그램은 적용할 판단의 정확한 참조가 있을 때 연다. `stakeholder-analysis`가 `판정: 생략`이라 두 문서가 없으면 요청 원문, 결정 문서와 현재 코드(`code-research`)로 나누되 규칙을 새로 정하지 않는다. 필수 입력이 없거나 설계 문서의 빈칸·모순 때문에 분할을 결정할 수 없으면 `blocked/DEPENDENCY_INCOMPLETE`를 반환하고, 가장 앞선 소유 stage와 정본 경로·항목·요구 ID·결정 근거를 각각 `owner_stage`와 `dependency_gap`에 기록한다. 이전 문서에 직접 쓰지 않는다.
 3. 활성 workspace의 `<workspace_root>/.harness/context-budget.json`에서 `max_plan_tokens`를 읽는다. 로딩·구현·업무 규칙 단위 테스트·수정 근거를 포함해 각 ticket 예상 토큰과 산정 근거를 기록하고, 각 ticket이 한도 안에 들도록 나눈다.
 
 ## 분할 기준
@@ -24,7 +24,7 @@
 
 - 단위: 컨텍스트 하나가 소유한 BIZ 하나를 한 ticket으로 한다. 한도를 넘으면 그 BIZ의 INV·EX·AC 묶음으로 나눈다. ticket은 domain → application → `api.md`가 정한 entry → `data.md`가 정한 저장까지 수직으로 구현하며 계층별로 나누지 않는다. 한 ticket은 한 컨텍스트의 모델만 바꾸고 다른 컨텍스트는 컨텍스트 경계가 허용한 공개 API·port로만 접한다.
 - 의존 순서: 호출하는 Application Service 메서드의 통합 결정과 컨텍스트 경계의 코드 의존 방향을 따른다. 상류 컨텍스트가 공개하는 API·이벤트를 만드는 ticket이 그것을 쓰는 하류 ticket보다 먼저다. 하류가 소유하는 port와 조립 adapter는 상류 공개 API ticket에 의존한다. 즉시 일관성(`CON-xx`의 동기 확인·호출)은 쓰는 쪽이 제공하는 쪽에 의존한다. 순환 의존은 만들지 않고 의존하는 ticket은 `의존성` 절과 index에 선행 ticket ID로 적는다.
-- UI가 필요하면 화면 구현 ticket을 만들고 YAML frontmatter에 `frontend: true`를 넣는다. 이 ticket은 필요한 backend ticket에 의존하고 design artifact와 화면 구현·visual review 완료 기준을 포함한다. backend 규칙과 API 구현을 이 ticket에 넣지 않아 visual review 전에 선행 ticket에서 사용할 수 있게 한다. 업무 규칙 소유권은 backend ticket에 두고 UI ticket은 표현·상호작용과 응답 표시를 검증한다. 구현과 visual review는 발행 뒤 독립 `frontend-design` workflow가 수행한다. UI가 없는 ticket에는 이 표시를 넣지 않는다.
+- UI가 필요하면 화면 구현 ticket을 만들고 YAML frontmatter에 `frontend: true`를 넣는다. 이 ticket은 필요한 backend ticket에 의존하고 design artifact와 화면 구현·visual review 완료 기준을 포함한다. backend 규칙과 API 구현을 이 ticket에 넣지 않아 visual review 전에 선행 ticket에서 사용할 수 있게 한다. 업무 규칙 소유권은 backend ticket에 두고 UI ticket은 표현·상호작용과 응답 표시를 검증한다. 구현과 visual review는 발행 뒤 독립 `frontend-design` workflow가 수행한다. UI가 없는 ticket에는 이 표시를 넣지 않는다. 완료 기준에 실제 브라우저 확대(예: 200%) 확인이 있으면 같은 frontmatter에 `requires_real_zoom: true`를 넣는다. 이 키가 visual review 시작 점검에 headed display를 요구하는 명시적 신호이며, 기준 문구에 `200%`나 `확대`가 있다는 사실만으로는 요구되지 않는다. 확대 문구를 인용하지만 headed 확인이 필요 없으면 `requires_real_zoom: false`를 넣는다.
 - 규칙 소유: 모든 BIZ·INV·EX·AC는 정확히 한 ticket이 소유하고 `소유 규칙과 검증` 표에 강제 위치와 검증 테스트를 적는다. 규칙의 강제 메서드, Application Service의 호출 순서와 트랜잭션 경계, 컨텍스트 경계의 데이터 소유·허용 의존·강제 방식은 원문대로 옮기고 줄이거나 바꾸지 않는다.
 - 구현에 필요한 outbound 인터페이스의 사용 메서드·시그니처·실패 계약, 구현체와 인터페이스·구현 파일, 구체 기술 선언, 조립 위치, 데이터 매핑과 트랜잭션 공유를 `의존한 결정`에 `data.md` 행을 인용해 전달한다. 호출하지 않는 인터페이스는 ticket에 넣지 않는다.
 - E2E ticket은 만들지 않는다. 사용자 경로 E2E는 사용자가 요청할 때 별도 `e2e-test` stage가 소유한다. 단위·회귀 검증은 직접 실행하는 기본 CLI 명령으로 기록하고 완료 gate는 별도 기록한다.

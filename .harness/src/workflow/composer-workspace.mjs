@@ -31,7 +31,7 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     const input = await readExecutionInput({ root: record.workspace, execution_id });
     await validateSkillInput({ root: record.workspace, input });
     await prepareComposerWorkspace({ root: record.workspace, session: record.session_directory, input, inputPath: input_path });
-    if (orchestrator_session_id) await recordWorkflowSession({ workspace_root: record.workspace, repository_root: root, key: 'orchestrator', session_id: orchestrator_session_id, execution_id, provider: orchestrator_provider });
+    const orchestrator = orchestrator_session_id ? await recordWorkflowSession({ workspace_root: record.workspace, repository_root: root, key: 'orchestrator', session_id: orchestrator_session_id, execution_id, provider: orchestrator_provider }) : null;
     const result_ref = `runtime/executions/${execution_id}/result.json`;
     const result = { schema_version: 1, execution_id, skill: 'workflow-compose', status: 'completed', code: 'OK', summary: '작업 workspace 준비 완료', artifacts: [], worktree_ref: storedInput.context.worktree_ref, questions: [] };
     const envelope = { schema_version: 1, execution_id, skill: 'workflow-compose', status: 'completed', code: 'OK', result_ref, result };
@@ -41,7 +41,18 @@ export async function createComposerWorkspace({ root, plan_set_id, request, exec
     await writeFile(join(directory, 'result.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     await writeFile(join(directory, 'return.json'), JSON.stringify(envelope, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     await recordExecutionState({ root: record.workspace, input, binding: { model: null, reasoning_effort: null }, status: 'completed', code: 'OK', result_ref });
-    return { ...record, execution_id, input_path, status: 'completed', code: 'OK', worktree_ref: storedInput.context.worktree_ref, result_ref };
+    // `input_path` is relative to the new worktree and `result_ref` to its session directory, not to the checkout that ran
+    // compose. `refs` names each base and the absolute path so the next read needs no joining.
+    const worktree_ref = storedInput.context.worktree_ref;
+    const refs = {
+      worktree_ref: { base: 'absolute', path: worktree_ref, absolute: worktree_ref },
+      input_path: { base: 'workspace', path: input_path, absolute: join(record.workspace, input_path) },
+      result_ref: { base: 'session_directory', path: result_ref, absolute: join(record.session_directory, result_ref) },
+      return_path: { base: 'session_directory', path: `runtime/executions/${execution_id}/return.json`, absolute: join(directory, 'return.json') },
+    };
+    // worktree.json has no top-level execution_id: the compose execution is the owner entry's `execution_id` until the next prompt replaces it.
+    const worktree_record = { ref: worktree_ref, plan_set_id: record.plan_set_id, branch: record.branch, state: record.state, orchestrator: orchestrator ? { field: 'agent_sessions.orchestrator', provider: orchestrator.provider, session_id: orchestrator.session_id, execution_id: orchestrator.execution_id } : null };
+    return { ...record, execution_id, input_path, status: 'completed', code: 'OK', worktree_ref, result_ref, refs, worktree_record };
   } catch (error) {
     try { await recordWorktreeOutcome({ workspace_root: record.workspace, repository_root: record.return_root, worktree_id: record.worktree_id, outcome: 'failed' }); }
     catch (recordError) { error.message += `; outcome recording failed: ${recordError.message}`; }

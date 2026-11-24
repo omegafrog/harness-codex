@@ -92,7 +92,7 @@ test('installed skill guides and agent profiles reference files that exist', asy
 // Agent profiles are pasted next to the stage GUIDE, so rules live in the GUIDE only; the shared stage contract is a
 // marker line the installer replaces (.harness/src/installer/stage-contract.mjs).
 // These roles have no single owning GUIDE: workflow_stage runs whichever stage GUIDE the caller hands it.
-const PROFILES_WITHOUT_OWNING_GUIDE = new Set(['execution_runner', 'spec_document_writer', 'workflow_stage']);
+const PROFILES_WITHOUT_OWNING_GUIDE = new Set(['execution_runner', 'stage_document_writer', 'workflow_stage']);
 
 test('agent profiles only name their role and point at the GUIDE that owns the rules', async () => {
   const dir = '.codex/agents';

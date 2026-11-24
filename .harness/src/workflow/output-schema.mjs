@@ -37,10 +37,16 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   // Structured output requires every property; earlier results without these fields stay valid in the stored schema.
   // A blocked / DEPENDENCY_INCOMPLETE result names the owner of the gap; the runner checks that pairing at finish (dependencyOwnerErrors).
   for (const key of ['owner_stage', 'dependency_gap']) if (result[key] && !schema.properties.result.required.includes(key)) schema.properties.result.required.push(key);
+  // Created Issue URLs are tracker references, not files: only tracker-publish reports them, in their own field.
+  if (flow === 'tracker-publish') { if (result.published_issues) schema.properties.result.required.push('published_issues'); }
+  else delete result.published_issues;
   const question = result.questions?.items;
   if (question?.properties?.decision_kind && !question.required.includes('decision_kind')) question.required = [...question.required, 'decision_kind'];
   const option = question?.properties?.options?.items;
   if (option?.properties?.evidence && !option.required.includes('evidence')) option.required = [...option.required, 'evidence'];
+  // A new question gives the user its settled rules and why now, and each option its effect and example (questions.mjs assertQuestionContext).
+  if (question?.properties?.context && !question.required.includes('context')) question.required = [...question.required, 'context'];
+  for (const key of ['effect', 'example']) if (option?.properties?.[key] && !option.required.includes(key)) option.required = [...option.required, key];
   if (result.review_request) {
     // A review can run any sub-agent skill, that is, any skill whose document declares a setup tier.
     const skills = (await listDeclaredSkills(root)).filter((item) => !item.main_session).map((item) => item.skill);
@@ -53,12 +59,10 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     item.required = item.required.map((key) => key === 'role' ? 'agent_profile' : key);
   }
   const profile = input.context?.agent_profile || input.context?.role;
-  if (profile) {
-    const text = await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8');
-    if (/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(text)) {
-      result.artifact_contents = { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'content'], properties: { name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' }, kind: { type: 'string', minLength: 1 }, content: { type: 'string' } } } };
-      schema.properties.result.required.push('artifact_contents');
-    }
+  const readOnly = profile && /^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(root, '.codex/agents', `${profile}.toml`), 'utf8'));
+  if (flow !== 'workflow-compose') {
+    result.artifact_contents = { type: 'array', description: 'Optional new text reports for the final stage document writer. Do not write these reports to their final paths.', items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'content'], properties: { name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' }, kind: { type: 'string', minLength: 1 }, content: { type: 'string' } } } };
+    if (readOnly) schema.properties.result.required.push('artifact_contents');
   }
   delete schema.$schema;
   delete schema.properties.result.$schema;
@@ -80,6 +84,11 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('Output schema must be a regular unshared file');
     const existing = JSON.parse(await readFile(path, 'utf8'));
     if (isDeepStrictEqual(existing, providerSchema)) return;
+    const beforeDocumentWriter = structuredClone(providerSchema);
+    const priorResult = beforeDocumentWriter.properties.result.properties;
+    if (readOnly) delete priorResult.artifact_contents.description;
+    else delete priorResult.artifact_contents;
+    if (isDeepStrictEqual(existing, beforeDocumentWriter)) return;
     // A prepared execution may already have the previous schema on disk.
     artifacts.items = previousArtifact;
     if (!isDeepStrictEqual(existing, providerSchema)) throw new Error('Existing output schema does not match the execution');

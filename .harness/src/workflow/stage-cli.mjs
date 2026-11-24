@@ -8,6 +8,7 @@ import { cliContext, orchestratorState } from './cli-context.mjs';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { OWNER_REQUIRED_STAGES } from './stage-reopen.mjs';
+import { summarizeReplySearch } from './approval-search.mjs';
 
 const NATIVE = 'node .harness/scripts/harness-native-stage.mjs';
 const PREPARE = 'node .harness/scripts/harness-prepare-input.mjs';
@@ -21,6 +22,14 @@ export const launchCommand = (stage, extra = '') => `${NATIVE} launch --stage-id
 export const nativeCommand = (action, executionId, extra = '') => `${NATIVE} ${action} --execution-id ${executionId}${extra ? ` ${extra}` : ''}`;
 export const nativeReceiveCommand = (executionId, agentId) => nativeCommand('receive', executionId, `--agent-id '${agentId.replaceAll("'", "'\\''")}'`);
 export const contextCommand = () => CONTEXT;
+
+// How the orchestrator starts a stage's worker. A Codex start that omits `fork_turns: "none"` (or forks the parent history)
+// is denied by the Harness fresh-agent hook before anything starts, so the instruction states it in the launch result.
+export function spawnInstruction({ agent_profile: profile, binding } = {}) {
+  const name = profile || 'workflow_stage';
+  if (binding?.provider === 'claude-code') return `Start a fresh Agent with subagent_type "${name}" and without the parent conversation`;
+  return `spawn_agent {agent_type: "${name}", fork_turns: "none"} with the binding's model and reasoning_effort; a start without fork_turns: "none" is denied and starts nothing, so repeat it`;
+}
 
 export function launchAttemptDirectory(attemptId) {
   if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(attemptId || '')) throw new Error('Invalid native launch attempt ID');
@@ -117,7 +126,7 @@ export function compactStarted(started, { executionId }) {
   return {
     ...rest,
     binding: modelBinding,
-    next: `Spawn the subagent, then bind its real id: ${nativeCommand('bind', executionId, '--agent-id <agent_id>')}`,
+    next: `${spawnInstruction({ ...started, binding })}. Then bind its real id: ${nativeCommand('bind', executionId, '--agent-id <agent_id>')}`,
   };
 }
 
@@ -136,6 +145,7 @@ export function launchResult({ prepared, started }) {
     ...(prepared.answer !== undefined ? { answered: true } : {}),
     ...rest,
     next: {
+      spawn: spawnInstruction(started),
       bind: nativeCommand('bind', executionId, '--agent-id <agent_id>'),
       finish: nativeCommand('finish', executionId),
     },
@@ -184,7 +194,23 @@ export function compactContext(context) {
 
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 const REQUIREMENTS_APPROVAL_ARGS = "--requirements-approved true --approval-answer '<the user's reply verbatim>'";
-const APPROVAL_REPLY_INSTRUCTION = 'When asking in chat, tell the user to send a standalone `$orchestrator <approval>` (Codex) or `/orchestrator <approval>` (Claude Code) in this worktree’s owner conversation. Pass the exact reply after the command prefix.';
+const APPROVAL_REPLY_INSTRUCTION = 'When asking in chat, tell the user to send a standalone `$orchestrator <approval>` (Codex) or `/orchestrator <approval>` (Claude Code) in this worktree’s owner conversation. Pass the exact reply after the command prefix. A reply collected elsewhere (an outer controller or UI form) counts only when it is sent to that conversation the same way.';
+// The guard reads only the owner conversation's transcript, so an answer collected anywhere else has to be sent there.
+const APPROVAL_ACCEPTED_FORMS = 'Accepted: a new message in the owner conversation, sent after the gate, as `$orchestrator <reply>` (Codex; headless: `codex exec resume <session-id> \'$orchestrator <reply>\'`) or `/orchestrator <reply>` (Claude Code), or the answer to an approval form that the owner conversation itself asked. Not accepted: a plain message without the prefix, a reply collected in another conversation (an outer controller, wrapper or UI form), the orchestrator\'s own words or a bare flag. Pass the reply after the prefix verbatim.';
+const approvalRefusalWhy = (message, base, search) => {
+  const tail = search ? summarizeReplySearch(search) : message.replace(/^(?:Requirements|Publication) approval answer was not recorded:?\s*/, '');
+  return tail ? `${base} Refused because ${tail.charAt(0).toLowerCase()}${tail.slice(1)}${/[.!?]$/.test(tail) ? '' : '.'} The full search is in \`error\`.` : base;
+};
+// The nearest candidate decides what the user has to do next; the refusal never asks for a different decision.
+const approvalRefusalAction = (search) => {
+  const near = search?.candidates?.find((candidate) => candidate.problems.length === 1 && candidate.problems[0] === 'missing_orchestrator_prefix') ?? search?.candidates?.at(-1);
+  if (near?.problems?.length === 1 && near.problems[0] === 'missing_orchestrator_prefix') return `The user's exact words are already in the owner transcript as a plain message, so do not ask a new question: ask them to send the same text as \`$orchestrator ${search.wanted}\` (Claude Code: \`/orchestrator ${search.wanted}\`) in the owner conversation${search.session_id ? ` (${search.provider} session ${search.session_id})` : ''}.`;
+  if (near?.problems?.includes('sent_before_gate')) return 'The matching message predates the gate, so it is not approval of the current result: show the current result and ask again.';
+  if (near?.problems?.includes('other_workspace')) return 'The matching message was sent while the conversation worked in another directory: ask the user to send it again from this worktree.';
+  if (search?.outcome === 'not_owner_session') return `Continue in the owner conversation${search.owner ? ` (${search.owner.provider} session ${search.owner.session_id})` : ''}; this conversation's transcript is not read.`;
+  if (search?.outcome === 'no_matching_message') return `Ask the user for the approval in the owner conversation${search.session_id ? ` (${search.provider} session ${search.session_id})` : ''}; none of their messages after the gate matches the reply passed.`;
+  return '';
+};
 export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true }) {
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && stageId === 'frontend-visual-review' && (!ownerStage || ownerStage === 'frontend-implementation')) return `The visual review found implementation defects. Run the frontend correction for the same ticket: ${launchCommand('frontend-implementation', "--plan <ticket-id> --feedback '<visual review findings>'")}. The correction receives the persisted review result; after it completes, rerun frontend-visual-review. Do not ask the user or use --reopen-for.`;
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
@@ -233,6 +259,65 @@ export function formatErrorResult({ executionId, agentId, errors, schemaPath, ou
       'If the same errors come back after the rewrite, report them to the user and stop.',
     ],
   };
+}
+
+// finish found no output file for a bound worker: that is a worker that has not submitted yet, not a schema error, so
+// the answer says what to wait for and how its result reaches Harness. `errors` and `receive_command` keep the format_error shape.
+export function outputMissingResult({ executionId, agentId, errors, schemaPath, outputPath }) {
+  const receive = nativeReceiveCommand(executionId, agentId);
+  return {
+    status: 'output_missing',
+    execution_id: executionId,
+    errors,
+    schema_path: schemaPath,
+    output_path: outputPath,
+    receive_command: receive,
+    code: 'WORKER_OUTPUT_MISSING',
+    why: 'The bound worker has not submitted a result for this execution, so there is nothing to record yet. This is not a schema error: the stage is still running and nothing was recorded.',
+    next: [
+      'If the worker is still running, wait for its completion notice instead of polling or running finish again.',
+      `A worker submits by piping its one JSON object to the receive_command on standard input. If it ended without submitting, run ${receive} from the orchestrator conversation: a completed Codex worker's final JSON is read from its own transcript. In any other case pipe that final JSON unchanged: printf %s '<final JSON>' | ${receive}`,
+      `Then run: ${nativeCommand('finish', executionId)}`,
+    ],
+  };
+}
+
+// receive had no JSON on standard input and the bound Codex worker's own transcript gives no usable final output.
+const FAIL_THEN_RELAUNCH = (executionId, stageId, reason, prefix = '') => [
+  `${prefix}Record the ended worker: ${nativeCommand('fail', executionId, `--reason '${reason}'`)}`,
+  `Then relaunch the same stage; it keeps its earlier answers and documents: ${launchCommand(stageId || '<stage-id>', FEEDBACK_ARG)}`,
+];
+export function receiveRecoveryError(kind, { executionId, stageId, agentId, detail = '' }) {
+  const receive = nativeReceiveCommand(executionId, agentId);
+  const finish = nativeCommand('finish', executionId);
+  const cases = {
+    running: {
+      code: 'WORKER_NOT_FINISHED',
+      why: 'The bound worker has not completed its turn, so there is no final output to record. Nothing was recorded and the stage is still running.',
+      next: ['Wait for the worker\'s completion notice (do not poll).', `After it ended, run ${receive} again without piping anything: Harness reads a completed Codex worker\'s final JSON from its own transcript.`],
+    },
+    empty: {
+      code: 'NATIVE_OUTPUT_EMPTY',
+      why: `The bound worker completed its turn, but its final message holds no JSON object and it wrote no output (${detail || 'empty final message'}). Nothing was recorded and the stage is still running.`,
+      next: [
+        `Ask the same worker to submit its result: send it ${receive} and tell it to pipe the one JSON object matching its schema to that command on standard input.`,
+        `Then run: ${finish}`,
+        ...FAIL_THEN_RELAUNCH(executionId, stageId, 'Native worker completed without a JSON result', 'Only if the worker cannot be reached or ends without a result again: '),
+      ],
+    },
+    failed: {
+      code: 'WORKER_FAILED',
+      why: `The bound worker's turn failed (${detail || 'no reason recorded'}), so it produced no result. Nothing was recorded and the stage is still running.`,
+      next: FAIL_THEN_RELAUNCH(executionId, stageId, detail.replaceAll("'", '').slice(0, 200) || 'Native worker failed'),
+    },
+    interrupted: {
+      code: 'WORKER_INTERRUPTED',
+      why: 'The bound worker\'s turn was interrupted by the host, so it produced no result. Nothing was recorded and the stage is still running.',
+      next: [`Record the interruption: ${nativeCommand('recover-interrupted', executionId)}`, `Then relaunch the same stage: ${launchCommand(stageId || '<stage-id>', FEEDBACK_ARG)}`],
+    },
+  };
+  const explained = cases[kind];
+  return { error: `receive had no JSON on standard input and the bound worker's transcript gives no usable final output (${explained.code})`, ...explained };
 }
 
 export function gateErrorResult({ gate, executionId, stage, errors, instruction, outputPath, feedbackPath, retryInput }) {
@@ -415,7 +500,7 @@ const RULES = [
     next: [`If the user gives an instruction: ${launchCommand(stage || '<owner-stage>', `--user-revision true ${USER_FEEDBACK_ARG}`)}`],
     decision: 'Report to the user that this revision returned the same unresolved result twice (summary: ' + CONTEXT + ') and ask whether to give a new instruction, change the requirement, or stop. Do not retry without new evidence.',
   }) },
-  { re: /^DESIGN_NOT_FROZEN/, explain: ({ message }) => ({ code: 'DESIGN_NOT_FROZEN', why: `${message} to-ticket never reopens a design stage and no scope question is asked to the user.`, next: [launchCommand('tactical-data'), 'node .harness/scripts/harness-design-freeze-check.mjs --workspace-root <workspace root>'], decision: 'If the gate keeps failing, report its errors (owner_stage, code) to the user and wait; a scope change is made only through the requirements flow the user restarts.' }) },
+  { re: /^DESIGN_NOT_FROZEN/, explain: ({ message }) => ({ code: 'DESIGN_NOT_FROZEN', why: `${message} The design-freeze check prevents ticket authoring until the owning design stage closes each reported gap.`, next: [launchCommand('tactical-data'), 'node .harness/scripts/harness-design-freeze-check.mjs --workspace-root <workspace root>'], decision: 'Run tactical-data so the runner can return a documented owner_stage and reopen it through the forward-revalidation path. Do not author tickets until the design-freeze check passes.' }) },
   { re: /^Dependency incomplete: (\S+)/, explain: ({ m, state }) => { const resume = resumeStage(m[1], entryOf(state, m[1]), state); return { code: 'DEPENDENCY_INCOMPLETE', why: `${m[1]} must be completed before this stage; it is ${describe(entryOf(state, m[1]))}.`, next: resume.steps, decision: resume.decision }; } },
   { re: /^User revision requires feedback for/, explain: ({ stage }) => ({ code: 'USER_REVISION_REFUSED', why: `--user-revision needs --feedback with the user's instruction verbatim and a stage that can be revised (${[...REQUIREMENTS_REVISION_STAGES, 'a tactical design stage', 'to-ticket', 'implement-wrapper'].join(', ')})${stage ? `. Requested: ${stage}` : ''}.`, next: [launchCommand(stage || '<stage-id>', `--user-revision true ${USER_FEEDBACK_ARG}`)], decision: 'If the user did not give a correction, run the stage normally.' }) },
   { re: /^Requirements revision cannot start after/, explain: ({ message }) => ({ code: 'USER_REVISION_REFUSED', why: message, decision: 'Report the published or implemented work affected by the correction to the user.' }) },
@@ -507,7 +592,57 @@ const RULES = [
     };
   } },
   { re: /^Recovery requires the original Codex parent session/, explain: () => ({ code: 'RECOVERY_SESSION_MISMATCH', why: 'Only the original Codex parent can reconcile its bound agent. Inspect the workflow for the supported next action in this conversation.', next: [CONTEXT] }) },
-  { re: /^Native stage must be bound to the actual subagent ID/, explain: ({ context }) => ({ code: 'NOT_BOUND', why: 'finish only reads the output of a subagent that was bound to the execution; the real agent id has not been recorded yet.', next: [nativeCommand('bind', context.executionId || '<execution_id>', '--agent-id <agent_id>')] }) },
+  { re: /^The active independent review belongs to a different stage execution$/, explain: ({ context }) => ({
+    code: 'REVIEW_EXECUTION_MISMATCH',
+    why: 'The active review was admitted for another execution and does not cover this stage’s current document batch.',
+    next: [
+      nativeCommand('inspect', context.executionId || '<execution_id>'),
+      'Record the previous review in its owning execution if its reviewer finished. If the review was interrupted, abort that attempt with the owning review command and the actual reason. Then ask the current stage worker to admit a new review.',
+    ],
+  }) },
+  { re: /^Only the bound plan or contract stage worker can request a writer before submitting its result$/, explain: ({ context }) => {
+    const id = context.executionId || '<execution_id>';
+    return {
+      code: 'DRAFT_HANDOFF_REFUSED',
+      why: 'Only the assigned to-ticket or sync-contracts worker can prepare a writer for independent review. Its final result must still be pending.',
+      next: [
+        nativeCommand('inspect', id),
+        `If the owning worker already submitted a result, run ${nativeCommand('finish', id)}. Otherwise, only for to-ticket or sync-contracts, have the bound worker run ${nativeCommand('draft-ready', id, '--agent-id <bound_stage_agent_id>')}.`,
+      ],
+    };
+  } },
+  { re: /^Native stage must have a bound worker before assigning a writer$/, explain: ({ context }) => {
+    const id = context.executionId || '<execution_id>';
+    return {
+      code: 'NOT_BOUND',
+      why: 'The writer must receive a document batch from a bound stage worker. No worker is bound to this execution yet.',
+      next: [
+        nativeCommand('inspect', id),
+        `Start the fresh stage worker using the launch assignment and bind its actual ID: ${nativeCommand('bind', id, '--agent-id <agent_id>')}`,
+        'Wait for the bound worker’s handoff before assigning a writer.',
+      ],
+    };
+  } },
+  { re: /^Native stage must be bound to the actual subagent ID/, explain: ({ context }) => ({
+    code: 'NOT_BOUND',
+    why: 'finish and receive only act on the subagent that was bound to this execution, and none is bound yet: its worker was never started (a spawn the fresh-agent hook denied or that failed starts nothing) or its real agent id was not recorded. The stage is still running and nothing was recorded.',
+    next: [
+      'Spawn the fresh worker for this execution now. The launch output has its agent_profile, binding and guide; on Codex call spawn_agent with that agent_type and fork_turns: "none" (after a fresh-agent hook denial, repeat the same call with fork_turns: "none").',
+      nativeCommand('bind', context.executionId || '<execution_id>', '--agent-id <agent_id>'),
+      `Then wait for the worker and run: ${nativeCommand('finish', context.executionId || '<execution_id>')}`,
+    ],
+  }) },
+  { re: /^Native subagent output is empty$/, explain: ({ context }) => {
+    const id = context.executionId || '<execution_id>';
+    return {
+      code: 'RECEIVE_INPUT_EMPTY',
+      why: 'receive records the subagent\'s final JSON from standard input and none arrived: the command ran without a pipe, and this conversation cannot read the worker\'s final output from its transcript instead. Nothing was recorded and the stage is still running.',
+      next: [
+        `If the worker already submitted its result itself, run: ${nativeCommand('finish', id)}`,
+        `Otherwise relay the worker's final JSON unchanged on standard input: printf %s '<final JSON>' | ${nativeCommand('receive', id, "--agent-id '<agent_id>'")}`,
+      ],
+    };
+  } },
   { re: /^Invalid verified native subagent rebind|^Native binding repair requires|^Existing native binding is valid|^Replacement native binding is not verified/, explain: ({ message, context }) => ({ code: 'BIND_REPAIR_REFUSED', why: `${message}. The runner only repairs an invalid binding when the current owner transcript uniquely proves the replacement worker and its requested completed model/effort.`, next: [`Inspect the unchanged stage: ${nativeCommand('inspect', context.executionId || '<execution_id>')}`, 'Do not edit workflow state or accept output from a different/unverified worker.'] }) },
   { re: /^--repair-binding true is only valid with bind/, explain: ({ message, context }) => ({ code: 'INVALID_ARGUMENT', why: `The command line was rejected (${message}).`, next: [`Use ${nativeCommand('bind', context.executionId || '<execution_id>', '--agent-id <verified-agent-id>', '--repair-binding true')} only for an invalid existing binding.`] }) },
   { re: /^Native subagent binding|^Native stage changed before terminal|^Invalid native subagent ID/, explain: ({ context }) => ({ code: 'BIND_MISMATCH', why: 'The agent id does not match the one bound to this running execution, or the stage changed while this command ran.', next: [`State and bound agent: ${nativeCommand('inspect', context.executionId || '<execution_id>')}`, 'Use the agent id returned by the spawn tool, never a guessed one.'] }) },
@@ -521,8 +656,8 @@ const RULES = [
   { re: /^tactical-code \S+ cannot start before its prerequisite|^Ticket \S+ is already completed/, explain: ({ message }) => ({ code: 'TICKET_ORDER', why: `tactical-code builds one published ticket per run, after the tickets it depends on are completed (${message}).`, next: [`${CONTEXT} lists ready_tickets with the tickets still open and their prerequisites`, launchCommand('tactical-code', '--plan <ticket-id>')], decision: 'Pick a ready ticket; do not start a ticket whose prerequisite is open, and do not mark a ticket completed yourself.' }) },
   { re: /^Ticket \S+ is not a frontend ticket|^Frontend implementation requires completed tracker publication|^Frontend ticket requires completed\/OK|^Frontend .+ belongs to a different ticket|^Frontend visual review does not cover the current implementation/, explain: ({ message }) => ({ code: 'FRONTEND_ORDER', why: message, next: [CONTEXT], decision: 'Use the same ready frontend ticket and finish publication, design, implementation and visual review in order.' }) },
   { re: /needs --plan|needs the assigned \S+ from its previous input|needs the assigned ticket or plan|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan and tactical-code exactly one ticket that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, ready_tickets, plan_tickets and implementation_reviews; pick the next ready one from there`, launchCommand('tactical-code', '--plan <ticket-id>')] }) },
-  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: () => ({ code: 'PRECONDITION', why: 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user replies, pass that reply verbatim: ${launchCommand('tracker-publish', PUBLISH_ARGS)}` }) },
-  { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: () => ({ code: 'PRECONDITION', why: 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', next: [], decision: `Show the fixed requirements.md to the user and ask whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user replies, pass that reply verbatim: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}` }) },
+  { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
+  { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the fixed requirements.md to the user and ask whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
   { re: /^Fixed requirements with domain IDs require a domain sync plan/, explain: ({ stage }) => ({ code: 'DOMAIN_SYNC_MISSING', why: 'bounded-context fixed requirements.md, which holds shared domain IDs, without writing the shared definition sync plan. The stage is still running and nothing was recorded.', next: ['Send this to the same subagent: create the proposal for the fixed requirements and run node .harness/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace-relative proposal path>, save its output as domain-sync.json in the execution directory (runtime/executions/<execution_id>/domain-sync.json), as its GUIDE step 9 says', `Then run the same finish again: ${nativeCommand('finish', '<execution_id>')}`], decision: 'If the subagent cannot write the plan after a repeat, report the error to the user and stop; do not write it yourself.' }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },
@@ -548,7 +683,7 @@ export function explainError(error, context = {}) {
   let explained = null;
   for (const rule of RULES) {
     const m = rule.re.exec(message);
-    if (m) { explained = rule.explain({ m, message, state, stage, context }); break; }
+    if (m) { explained = rule.explain({ m, message, state, stage, context, error }); break; }
   }
   explained ??= FALLBACK(message);
   const current = state?.current_stage;
@@ -564,6 +699,7 @@ export function explainError(error, context = {}) {
     why: explained.why,
     ...(next.length ? { next } : {}),
     ...(decision || !next.length ? { user_decision: decision || `Report this to the user and wait for their direction. ${NO_SOURCE}` } : {}),
+    ...(explained.approval_search ? { approval_search: explained.approval_search } : {}),
     ...(context.preparedExecutionId ? { prepared_execution_id: context.preparedExecutionId } : {}),
   };
 }

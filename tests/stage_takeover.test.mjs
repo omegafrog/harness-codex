@@ -11,13 +11,14 @@ import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { TAKEOVER_FEEDBACK, explainError, foreignRunningStage } from '../.harness/src/workflow/stage-cli.mjs';
 import { PRE_SPEC_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { consumerWorkflow, sourceRoot, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 const STAGE = 'stakeholder-analysis';
 const NATIVE = 'harness-native-stage.mjs';
 const PREPARE = 'harness-prepare-input.mjs';
 const MODULE = '.harness/src/workflow/stage-takeover.mjs';
-const question = { question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null };
+const question = withDecisionContext({ question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null });
 const SKIPPED = (analysis) => ({ files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
 
 // A printed `node .harness/scripts/<script> ...` command, run the way the orchestrator runs it.

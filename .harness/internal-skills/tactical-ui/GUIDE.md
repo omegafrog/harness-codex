@@ -9,7 +9,7 @@ model_tier: low_performance
 
 ## 적용 여부
 
-읽을 근거는 사용자의 원 요청, 완료된 tactical design, `requirements.md`, 기존 UI/routes다. UI가 없다는 이유로 API가 없다고 추론하지 않고, API가 있다는 이유로 UI가 있다고 추론하지 않는다. 사용자가 이번 실행에서 UI를 제외·보류했거나 승인된 작업 계획에 UI 변경이 없거나 확정 use case와 현재 구조가 UI를 필요로 하지 않는 근거를 보이면, 결과의 `summary`에 근거를 기록하고 `completed/OK`로 반환한다. 이 경우 프런트엔드 스킬을 호출하거나 브리프를 참조하지 않는다. UI 보류는 이번 실행 범위에만 적용하며 제품 요구사항은 유지한다. 단순히 UI가 언급되지 않은 경우는 생략 근거가 아니다. 적용 여부를 판단할 수 없으면 구체적인 UX 범위를 물어 `action_required/USER_DECISION_REQUIRED`를 반환한다.
+읽을 근거는 사용자의 원 요청, 완료된 tactical design, `requirements.md`, 기존 UI/routes다. UI가 없다는 이유로 API가 없다고 추론하지 않고, API가 있다는 이유로 UI가 있다고 추론하지 않는다. 사용자가 이번 실행에서 UI를 제외·보류했거나 승인된 작업 계획에 UI 변경이 없거나 확정 use case와 현재 구조가 UI를 필요로 하지 않는 근거를 보이면, 결과의 `summary`에 근거를 기록하고 `completed/OK`로 반환한다. 이 경우 프런트엔드 스킬을 호출하거나 브리프를 참조하지 않는다. UI 보류는 이번 실행 범위에만 적용하며 제품 요구사항은 유지한다. 단순히 UI가 언급되지 않은 경우는 생략 근거가 아니다. 적용 여부를 판단할 수 없으면 구체적인 UX 범위를 [질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)에 따라(확정된 요구, 지금 정해야 하는 이유, 선택지마다 화면 변화와 예시) 물어 `action_required/USER_DECISION_REQUIRED`를 반환한다.
 
 ## 범위 추가 금지
 

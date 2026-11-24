@@ -5,6 +5,8 @@ model_tier: implementation
 
 # ubiquitous-language
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 ## Purpose
 
 Step of the requirements flow after `subdomain-candidates` and before `event-storming`. Settle confusing business terms from the request and candidate activities before event tables and diagrams are written. Record them in `## 3` of `requirements.md` and the project glossary `CONTEXT.md`. Candidate subdomains are not bounded contexts: scope new terms to their BIZ or existing proven context, and mark the scope provisional until `bounded-context` assigns it. No persona runs. Ask only when a meaning changes the outcome.
@@ -12,8 +14,10 @@ Step of the requirements flow after `subdomain-candidates` and before `event-sto
 ## Inputs
 
 - The user request (`scope` of the execution input), read verbatim.
+- Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
 - `docs/specs/<plan-set-id>/requirements.md` resolved with `harness-spec-path.mjs`. Its draft `BIZ` text and SD term candidates are the sources; event tables, classifications and new bounded contexts do not exist yet.
-- `stakeholder-analysis.md` for adopted candidates, and existing `CONTEXT.md` plus `CONTEXT-MAP.md` for canonical and retired terms and any already established context names.
+- `stakeholder-analysis.md` (resolved with `harness-spec-path.mjs`) for adopted candidates.
+- The existing repository-root `<workspace_root>/CONTEXT.md` and `<workspace_root>/CONTEXT-MAP.md` (not under `docs/specs/`) for canonical and retired terms and any already established context names.
 - [Language lifecycle](../domain-modeling/references/language-lifecycle.md) and the [requirements.md template](../requirements-fix/references/template.md).
 
 ## Prohibited

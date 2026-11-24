@@ -11,6 +11,7 @@ const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await
 const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
 const { staleStages } = await import(new URL('../../.harness/src/workflow/stage-reopen.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
+if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write('Usage: node .harness/scripts/harness-context.mjs [--entry | --root DIR | --worktree-ref FILE] [--verbose]\n  --entry: main orchestrator entry routing (provider, session_id, decision_hint, next). Read-only.\n'); process.exit(0); }
 try {
   const entryMode = process.argv.includes('--entry');
   const { args, verbose } = extractVerbose(process.argv.slice(2).filter((arg) => arg !== '--entry'));
@@ -113,7 +114,7 @@ try {
     }
     const plansDir = ctx.plan_set_id ? join(ctx.root, 'docs/plans', ctx.plan_set_id) : null;
     const plans = plansDir && existsSync(plansDir) ? readdirSync(plansDir).filter((name) => name.endsWith('.md') && name !== 'plans.md').map((name) => name.slice(0, -3)) : [];
-    const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length })) }]));
+    const reviews = Object.fromEntries(plans.map((plan) => [plan, read(join(ctx.root, `.io/runtime/reviews/implementation-${plan}-evidence.json`))]).filter(([, e]) => e).map(([plan, e]) => [plan, { fixed_point: e.review_input?.fixed_point, commit: e.review_input?.implementation_commit_sha, passed: Boolean(e.passed), reviews: (e.reviews || []).map((r) => ({ role: r.role, state: r.state, findings: (r.report?.findings || []).length, ...(r.recurrence ? { recurring: r.recurrence.recurring } : {}) })), ...(e.recurrence?.compared ? { recurring_findings: e.recurrence.recurring, new_findings: e.recurrence.new } : {}) }]));
     const lastTurn = await lastOrchestratorTurn(ctx.root);
     const latestStage = Math.max(0, ...Object.values(state?.stages || {}).map((stage) => Date.parse(stage.updated_at || 0) || 0));
     const context = {

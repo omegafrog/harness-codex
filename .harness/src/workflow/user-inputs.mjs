@@ -4,17 +4,31 @@ import { join } from 'node:path';
 import { planSetDocument } from './domain-model-gate.mjs';
 import { isHarnessUpdateRequest, orchestratorRequest } from './request-routing.mjs';
 import { isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
+import { approvalRefusal, clip, describeReplySearch } from './approval-search.mjs';
 
-// Approval evidence is read from the provider's own transcript, never from an assistant-written argument.
-export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowExplicitPublicationReply = false }) {
+export { approvalRefusal, describeReplySearch, summarizeReplySearch } from './approval-search.mjs';
+
+// Approval evidence is read from the provider's own transcript, never from an assistant-written argument. Only a message
+// the user sent as an orchestrator request (`$orchestrator <reply>`, `/orchestrator <reply>`) or as a reply to a form this
+// conversation asked counts. The result also says what was searched and why the closest candidates failed.
+export async function userSaidAfter(options) { return (await inspectUserReply(options)).matched; }
+
+export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowExplicitPublicationReply = false }) {
   const wanted = String(text || '').trim();
-  if (!wanted || !Number.isFinite(Date.parse(since)) || (until && !Number.isFinite(Date.parse(until)))) return false;
+  const search = { wanted: clip(wanted), since, ...(until ? { until } : {}), provider: provider || null, session_id: sessionId || null, transcript: null, workspace: null, counts: { orchestrator_requests: 0, plain_user_messages: 0, form_replies: 0 }, candidates: [], outcome: 'no_matching_message' };
+  const refuse = (outcome, extra = {}) => ({ matched: false, search: { ...search, ...extra, outcome } });
+  if (!wanted) return refuse('empty_answer');
+  if (!Number.isFinite(Date.parse(since)) || (until && !Number.isFinite(Date.parse(until)))) return refuse('invalid_window');
   let record;
-  try { record = JSON.parse(await readFile(join(root, '.io/worktree.json'), 'utf8')); } catch { return false; }
+  try { record = JSON.parse(await readFile(join(root, '.io/worktree.json'), 'utf8')); } catch { return refuse('no_worktree_record'); }
   const owner = record.agent_sessions?.orchestrator;
+  const ownerIdentity = owner?.session_id ? { owner: { provider: owner.provider || 'codex', session_id: owner.session_id } } : {};
   sessionId ||= owner?.session_id;
   provider ||= owner?.provider || 'codex';
-  if (!sessionId || (!allowHistoricalOwner && (owner?.session_id !== sessionId || (owner?.provider || 'codex') !== provider)) || !/^[0-9a-f-]{36}$/i.test(sessionId)) return false;
+  search.provider = provider; search.session_id = sessionId || null; Object.assign(search, ownerIdentity);
+  if (!sessionId) return refuse('no_owner_session');
+  if (!allowHistoricalOwner && (owner?.session_id !== sessionId || (owner?.provider || 'codex') !== provider)) return refuse('not_owner_session');
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return refuse('invalid_session_id');
   const { realpath, open } = await import('node:fs/promises');
   const { constants } = await import('node:fs');
   let path;
@@ -28,22 +42,24 @@ export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z'
     const paths = dirs.filter((entry) => entry.isDirectory()).map((entry) => join(projects, entry.name, `${sessionId}.jsonl`)).filter(existsSync);
     if (paths.length === 1) path = paths[0];
   }
-  if (!path) return false;
+  if (!path) return refuse('no_transcript');
+  search.transcript = path;
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
-  if (!handle) return false;
+  if (!handle) return refuse('unreadable_transcript');
   let rows;
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.nlink !== 1) return false;
+    if (!stat.isFile() || stat.nlink !== 1) return refuse('unreadable_transcript');
     const lines = (await handle.readFile('utf8')).split('\n');
     lines.pop(); // A concurrent writer may still be appending the last record.
     rows = lines.filter(Boolean).map((line) => JSON.parse(line));
-  } catch { return false; } finally { await handle.close(); }
+  } catch { return refuse('unreadable_transcript'); } finally { await handle.close(); }
   const workspace = await realpath(root);
+  search.workspace = workspace;
   const calls = new Set(), asyncCalls = new Map(), accepted = new Set();
   if (provider === 'codex') {
     const meta = rows[0];
-    if (meta?.type !== 'session_meta' || meta.payload?.id !== sessionId || meta.payload?.parent_thread_id || meta.payload?.source?.subagent) return false;
+    if (meta?.type !== 'session_meta' || meta.payload?.id !== sessionId || meta.payload?.parent_thread_id || meta.payload?.source?.subagent) return refuse('not_root_session');
   }
   let codexCwd = rows[0]?.payload?.cwd;
   for (const row of rows) {
@@ -90,10 +106,61 @@ export async function userSaidAfter({ root, text, since = '1970-01-01T00:00:00Z'
       }
       else if (Array.isArray(content) && content.some((item) => item.type === 'tool_result' && calls.has(item.tool_use_id) && !item.is_error)) texts = Object.values(row.toolUseResult?.answers || {}).filter((item) => typeof item === 'string');
     }
-    if (texts.some((value) => typeof value === 'string' && value.trim() === wanted)) return true;
+    if (texts.some((value) => typeof value === 'string' && value.trim() === wanted)) return { matched: true, search: { ...search, outcome: 'matched' } };
   }
-  return false;
+  return refuse('no_matching_message', surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until }));
 }
+
+// Read-only survey of a transcript that held no qualifying reply: what the user did send, and why the messages equal to
+// the answer do not count. It never decides acceptance; the loop above does.
+function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until }) {
+  const counts = { orchestrator_requests: 0, plain_user_messages: 0, form_replies: 0 };
+  const candidates = [];
+  const from = Date.parse(since), to = until ? Date.parse(until) : Infinity;
+  let cwd = rows[0]?.payload?.cwd;
+  const note = (row, at, form, text, here) => {
+    const inWindow = Number.isFinite(at) && at >= from && at <= to;
+    if (here && inWindow) counts[form === 'orchestrator_request' ? 'orchestrator_requests' : form === 'form_reply' ? 'form_replies' : 'plain_user_messages'] += 1;
+    if (text.trim() !== wanted) return;
+    const problems = [
+      form === 'plain_user_message' && 'missing_orchestrator_prefix',
+      Number.isFinite(at) && at < from && 'sent_before_gate',
+      Number.isFinite(at) && at > to && 'sent_after_window',
+      !here && 'other_workspace',
+    ].filter(Boolean);
+    if (problems.length) candidates.push({ at: row.timestamp, form, problems, ...(!here ? { cwd: clip(cwd, 200) } : {}) });
+  };
+  for (const row of rows) {
+    const at = Date.parse(row.timestamp);
+    if (provider === 'codex') {
+      if (row.type === 'turn_context' && typeof row.payload?.cwd === 'string') cwd = row.payload.cwd;
+      const p = row.payload || {};
+      if (row.type !== 'response_item' || p.type !== 'message' || p.role !== 'user' || !Array.isArray(p.internal_chat_message_metadata_passthrough?.content_item_kinds)) continue;
+      for (const [index, item] of (p.content || []).entries()) {
+        if (p.internal_chat_message_metadata_passthrough.content_item_kinds[index] !== 'user.text' || item.type !== 'input_text' || typeof item.text !== 'string') continue;
+        if (item.text.trim().startsWith('<send_user_message_question_reply>')) {
+          try { for (const reply of JSON.parse(item.text.trim().match(/^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/)?.[1] || 'null')) if (typeof reply.answer === 'string') note(row, at, 'form_reply', reply.answer, cwd === workspace); } catch { /* A malformed form reply is not a candidate. */ }
+          continue;
+        }
+        const request = orchestratorRequest(item.text);
+        if (request !== null && isHarnessUpdateRequest(request)) continue;
+        note(row, at, request !== null ? 'orchestrator_request' : 'plain_user_message', request ?? item.text, cwd === workspace);
+      }
+    } else if (provider === 'claude-code' && row.type === 'user' && row.sessionId === sessionId && !row.isSidechain && !row.isMeta && typeof row.message?.content === 'string') {
+      const content = row.message.content;
+      const command = content.match(/<command-name>([^<]*)<\/command-name>/);
+      const args = content.match(/<command-args>([\s\S]*?)<\/command-args>/);
+      const request = command ? (command[1] === '/orchestrator' ? args?.[1] ?? '' : null) : orchestratorRequest(content);
+      if (command && request === null) continue;
+      if (request !== null && isHarnessUpdateRequest(request)) continue;
+      cwd = row.cwd;
+      note(row, at, request !== null ? 'orchestrator_request' : 'plain_user_message', request ?? content, row.cwd === workspace);
+    }
+  }
+  return { counts, candidates: candidates.slice(-3) };
+}
+
+const REQUIREMENTS_REFUSAL = 'Requirements approval answer was not recorded';
 
 export async function assertRequirementsApproval({ root, state, stage, planSetId, approval = null }) {
   if (!planSetId || !TACTICAL_DESIGN_STAGES.includes(stage)) return;
@@ -107,6 +174,15 @@ export async function assertRequirementsApproval({ root, state, stage, planSetId
     // Older versions did not record the approval receipt. Their first domain-model launch enforced the user reply.
     if (!design?.requirements_approval && !fixed.attempts?.length && Date.parse(design?.started_at || design?.finished_at) >= Date.parse(fixed.finished_at)) return;
   }
-  if (current && stage === 'domain-model' && approval?.execution_id === fixed.execution_id && typeof approval.answer === 'string' && await userSaidAfter({ root, text: approval.answer, since: fixed.finished_at })) return;
-  throw new Error('Requirements approval answer was not recorded: show the fixed requirements.md to the user and pass their reply after bounded-context finished');
+  if (current && stage === 'domain-model' && approval?.execution_id === fixed.execution_id && typeof approval.answer === 'string') {
+    const { matched, search } = await inspectUserReply({ root, text: approval.answer, since: fixed.finished_at });
+    if (matched) return;
+    throw approvalRefusal(REQUIREMENTS_REFUSAL, describeReplySearch(search, { gate: `bounded-context ${fixed.execution_id} finished` }), search);
+  }
+  const fixedState = fixed ? `${fixed.status}${fixed.code ? `/${fixed.code}` : ''}${fixed.stale ? ', stale' : ''}` : 'never run';
+  if (!current) throw approvalRefusal(REQUIREMENTS_REFUSAL, `bounded-context has not fixed the current requirements (${fixedState}), so there is nothing to approve yet`);
+  if (!approval) throw approvalRefusal(REQUIREMENTS_REFUSAL, design?.stale ? 'domain-model is stale after an upstream change and needs a new user approval of the fixed requirements; no --approval-answer was passed' : stage === 'domain-model' ? 'no --approval-answer was passed; a bare --requirements-approved flag is not approval' : `domain-model records no approval receipt for bounded-context ${fixed.execution_id}; start domain-model with the user's approval first`);
+  if (stage !== 'domain-model') throw approvalRefusal(REQUIREMENTS_REFUSAL, `${stage} cannot carry the approval; only the domain-model launch records it`);
+  if (approval.execution_id !== fixed.execution_id) throw approvalRefusal(REQUIREMENTS_REFUSAL, `the approval names bounded-context ${approval.execution_id ?? 'none'} but the current fixed requirements come from ${fixed.execution_id}; ask the user to approve the current requirements`);
+  throw approvalRefusal(REQUIREMENTS_REFUSAL, 'the passed --approval-answer is empty or not text');
 }

@@ -77,6 +77,46 @@ function extractCompletedCodexTurns(entries) {
   return [...turns.values()].filter((turn) => turn.status === 'completed');
 }
 
+export async function verifyCodexDocumentWriter({ root, assignment, batch, threadId, completed = false }) {
+  if (!/^[0-9a-f-]{36}$/i.test(threadId || '')) throw new Error('The stage document writer has no Codex thread identity');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
+  const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
+  if (!path) throw new Error('The bound stage document writer transcript is unavailable');
+  const { entries } = await readTranscriptEntries(path);
+  const metadata = entries[0]?.type === 'session_meta' ? entries[0].payload : null;
+  const spawn = metadata?.source?.subagent?.thread_spawn;
+  const expected = assignment.agent_id.startsWith('/') ? assignment.agent_id : `${assignment.parent_agent_path || '/root'}/${assignment.agent_id}`;
+  if (metadata?.id !== threadId || metadata.cwd !== await realpath(root) || metadata.forked_from_id
+      || metadata.parent_thread_id !== assignment.parent_session_id || spawn?.parent_thread_id !== assignment.parent_session_id
+      || spawn.depth !== (assignment.parent_agent_path ? 2 : 1) || spawn.agent_role !== batch.agent_profile
+      || assignment.agent_id !== threadId && spawn.agent_path !== expected
+      || !Number.isFinite(Date.parse(metadata.timestamp)) || Date.parse(metadata.timestamp) < Date.parse(batch.prepared_at)) {
+    throw new Error('The command does not belong to the assigned fresh Codex stage document writer');
+  }
+  const { model, reasoning_effort } = batch.binding;
+  const turns = completed ? extractCompletedCodexTurns(entries) : entries.filter((entry) => entry.type === 'turn_context').map(({ payload }) => ({ model: payload.model, reasoning_effort: payload.effort }));
+  const latest = entries.findLast((entry) => entry.type === 'event_msg' && ['task_complete', 'task_started', 'turn_aborted'].includes(entry.payload?.type))?.payload;
+  if (!turns.length || turns.some((turn) => turn.model !== model || turn.reasoning_effort !== reasoning_effort)
+      || completed && (latest?.type !== 'task_complete' || latest.error)) {
+    throw new Error(`The stage document writer did not ${completed ? 'complete' : 'run'} with the configured Codex binding ${model}/${reasoning_effort}`);
+  }
+  return threadId;
+}
+
+export async function codexDocumentWriterParent({ root, sessionId, stageAgentId, threadId = process.env.CODEX_THREAD_ID }) {
+  if (!/^[0-9a-f-]{36}$/i.test(threadId || '')) throw new Error('The stage document writer must be dispatched by its bound stage worker');
+  const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
+  const path = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), threadId);
+  const metadata = path && await readRolloutMetadata(path);
+  const spawn = metadata?.source?.subagent?.thread_spawn;
+  const expected = stageAgentId.startsWith('/') ? stageAgentId : `/root/${stageAgentId}`;
+  if (metadata?.id !== threadId || metadata.cwd !== await realpath(root) || metadata.parent_thread_id !== sessionId
+      || spawn?.parent_thread_id !== sessionId || spawn.depth !== 1 || stageAgentId !== threadId && spawn.agent_path !== expected) {
+    throw new Error('The stage document writer must be dispatched by its bound stage worker');
+  }
+  return { sessionId: threadId, agentPath: spawn.agent_path };
+}
+
 async function nativeCodexThreadEvidence({ root, parentSessionId, stage }) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentSessionId || '') || !stage?.native_agent_id) return { invalid: 'native_binding_identity_invalid' };
   const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
@@ -105,7 +145,7 @@ export async function resolveNativeCodexThread(target) {
   return (await nativeCodexThreadEvidence(target)).threadId || null;
 }
 
-export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null) {
+export async function readNativeCodexOutcome({ root, parentSessionId, stage }, resolvedThreadId = null, { emptyFinalMessage = false } = {}) {
   const threadId = resolvedThreadId || await resolveNativeCodexThread({ root, parentSessionId, stage });
   if (!threadId) return null;
   const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
@@ -125,10 +165,37 @@ export async function readNativeCodexOutcome({ root, parentSessionId, stage }, r
     else if (turn && event.turn_id === turn && event.type === 'task_complete') {
       outcome = event.error
         ? typeof event.error.message === 'string' && event.error.message.trim() ? { status: 'failed', thread_id: threadId, error: event.error.message } : null
-        : typeof event.last_agent_message === 'string' ? { status: 'completed', thread_id: threadId, output: event.last_agent_message } : null;
+        : typeof event.last_agent_message === 'string' ? { status: 'completed', thread_id: threadId, output: event.last_agent_message }
+          : emptyFinalMessage && (event.last_agent_message === null || event.last_agent_message === undefined) ? { status: 'completed', thread_id: threadId, output: '' } : null;
     } else if (turn && event.turn_id === turn && event.type === 'turn_aborted') outcome = { status: 'interrupted', thread_id: threadId };
   }
   return outcome;
+}
+
+// The final output of the bound Codex worker as its own transcript records it. A worker returns its stage result as the
+// whole final message (a read-only profile must; any other may), and the orchestrator that never received it on stdin
+// reads it here instead. Only a completed turn whose message is one JSON object is usable; everything else is reported
+// with its outcome so the caller can say what to do.
+export async function readNativeCodexSubmission({ root, parentSessionId, stage }) {
+  let threadId;
+  try { threadId = await resolveNativeCodexThread({ root, parentSessionId, stage }); }
+  catch { return { status: 'unavailable', reason: 'transcript_unreadable' }; }
+  if (!threadId) return { status: 'unavailable', reason: 'parent_child_binding_not_found' };
+  let outcome;
+  try { outcome = await readNativeCodexOutcome({ root, parentSessionId, stage }, threadId, { emptyFinalMessage: true }); }
+  catch { return { status: 'unavailable', reason: 'transcript_unreadable', thread_id: threadId }; }
+  if (!outcome) return { status: 'unavailable', reason: 'native_worker_outcome_unavailable', thread_id: threadId };
+  if (outcome.status !== 'completed') return { status: outcome.status, thread_id: threadId, ...(outcome.error ? { error: outcome.error } : {}) };
+  const message = outcome.output.trim();
+  // A worker may wrap its single JSON object in one Markdown code fence.
+  const fenced = /^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/.exec(message);
+  const text = (fenced ? fenced[1] : message).trim();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { /* a prose or truncated final message */ }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { status: 'completed_without_json', thread_id: threadId, reason: !message ? 'final_message_empty' : 'final_message_not_json_object' };
+  }
+  return { status: 'completed', thread_id: threadId, output: text };
 }
 
 export async function verifyNativeCodexWorkerBinding({ root, parentSessionId, stage, nativeAgentId, requestedBinding }) {
@@ -331,7 +398,7 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     // a Codex event must come from a thread the orchestrator itself spawned (depth 1) with the reviewer's role, so a
     // reviewer from any other thread is never bound to the stage.
     let dispatchedByMain = false;
-    if (mainSession && state.orchestrator_provider === 'claude-code') dispatchedByMain = true;
+    if (mainSession && state.orchestrator_provider === 'claude-code') dispatchedByMain = parentIds.includes(state.orchestrator_session_id);
     else if (mainSession && state.orchestrator_provider === 'codex' && /^[0-9a-f-]{36}$/i.test(childId || '')) {
       const { findRollout } = await import('../../../.codex/harness/providers/codex.mjs');
       const childPath = await findRollout(join(resolve(process.env.CODEX_HOME || join(process.env.HOME || '', '.codex')), 'sessions'), childId);

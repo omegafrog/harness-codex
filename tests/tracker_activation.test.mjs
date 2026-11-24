@@ -84,6 +84,38 @@ test('installed tracker activation links directly published Issues despite Proje
     assert.deepEqual(calls.appliedLabels, [['100', 'harness:plan-set'], ['101', 'harness:plan'], ['102', 'harness:plan']]);
     assert.deepEqual([...issues.get(100).subIssues].sort(), ['issue-101', 'issue-102']);
     await verifyActivatedPublication({ root, planSetId: 'example', run: async () => { throw new Error('unexpected GitHub call'); } });
+
+    // The created Issues are reported as published_issues, never as file artifacts the runner would look up and drop.
+    const url = (number) => `https://github.com/owner/repo/issues/${number}`;
+    const published = [{ plan_id: '@parent', url: url(100) }, { plan_id: 'auth', url: url(101) }, { plan_id: 'posts', url: url(102) }];
+    assert.deepEqual(result.published_issues, published);
+    const { assertPublishedIssues, normalizePublishedIssues, publishedIssues } = await import(runtime('tracker/publication.mjs'));
+    await assertPublishedIssues({ root, planSetId: 'example', result: { published_issues: published } });
+    await assert.rejects(assertPublishedIssues({ root, planSetId: 'example', result: { published_issues: published.slice(1) } }), /omits activated Issues: @parent/);
+    await assert.rejects(assertPublishedIssues({ root, planSetId: 'example', result: { published_issues: [{ plan_id: '@parent', url: url(101) }, ...published.slice(2)] } }), /does not match the activated plan mapping/);
+    await assert.rejects(assertPublishedIssues({ root, planSetId: 'example', result: { published_issues: [...published, { plan_id: 'other', url: 'https://github.com/else/repo/issues/1' }] } }), /configured repository/);
+    await assertPublishedIssues({ root, planSetId: 'example', result: { artifacts: [] } });
+    // A model that still lists the URLs as artifacts has them moved, named from the activated mapping, with nothing dropped.
+    const legacy = { summary: 'published', artifacts: [{ base: 'workspace', path: 'docs/plans/example/plans.md', kind: 'plan_index' }, ...published.map(({ url: path }) => ({ base: 'workspace', path, kind: 'issue' }))] };
+    assert.deepEqual(publishedIssues(legacy), published.map(({ url: path }) => ({ plan_id: null, url: path })), 'an old stored result stays readable');
+    assert.deepEqual(await normalizePublishedIssues({ root, planSetId: 'example', result: legacy }), published.map((issue) => issue.url));
+    assert.deepEqual(legacy.artifacts.map((artifact) => artifact.path), ['docs/plans/example/plans.md']);
+    assert.deepEqual(legacy.published_issues, published);
+    assert.deepEqual(publishedIssues(legacy), published);
+    await assertPublishedIssues({ root, planSetId: 'example', result: legacy });
+    // The orchestrator's compact finish output carries the Issues, and the file artifacts stay what they were.
+    const { compactResult } = await import('../.harness/src/workflow/stage-cli.mjs');
+    const compact = compactResult({ summary: 'published', artifacts: legacy.artifacts, published_issues: published });
+    assert.deepEqual(compact.published_issues, published);
+    assert.deepEqual(compact.artifacts.map((artifact) => artifact.path), ['docs/plans/example/plans.md']);
+    await assert.rejects(normalizePublishedIssues({ root, planSetId: 'example', result: { artifacts: [{ base: 'workspace', path: url(999), kind: 'issue' }] } }), /not in the activated plan mapping/);
+    // An activation receipt of an earlier Harness has only the child tickets; their URLs still verify.
+    const receiptPath = join(root, '.io/runtime/to-ticket/example-issues.json');
+    const receipt = await readFile(receiptPath, 'utf8');
+    const { issues: _issues, ...olderReceipt } = JSON.parse(receipt);
+    await writeFile(receiptPath, JSON.stringify(olderReceipt));
+    await assertPublishedIssues({ root, planSetId: 'example', result: { published_issues: published.slice(1) } });
+    await writeFile(receiptPath, receipt);
     const { syncTrackerStatus } = await import(runtime('tracker/lifecycle.mjs'));
     const warning = await syncTrackerStatus({ workspace_root: root, ticket_ref: 'owner/repo#101', status: 'in-progress', run: async () => { throw new Error('rate limit'); } });
     assert.equal(warning.status, 'unverified');

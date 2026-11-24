@@ -92,11 +92,13 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
     '.harness/internal-skills/e2e-telemetry/GUIDE.md',
     '.harness/internal-skills/e2e-telemetry/scripts/report.mjs',
     '.codex/agents/workflow_stage.toml',
+    '.codex/agents/stage_document_writer.toml',
     '.codex/agents/tracker_publisher.toml',
     '.codex/agents/pr_author.toml',
     '.harness/workflows/tactical-to-code.yaml',
     '.harness/workflows/frontend-design.yaml',
     ...['frontend-design', 'frontend-figma', 'frontend-implement', 'frontend-visual-review'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
+    '.harness/internal-skills/frontend-design/scripts/capture-style-options.mjs',
     ...['frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer'].map((name) => `.codex/agents/${name}.toml`),
     '.codex/agents/tactical_designer.toml',
     '.codex/agents/tactical_implementation_agent.toml',
@@ -122,7 +124,9 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
     '.harness/scripts/harness-publication.mjs',
     ...['input', 'return', 'question', 'workflow-compose-result', 'workflow-compose-input', 'flows/common', 'flows/plan-review', 'flows/spec-review'].map((name) => `.harness/schemas/${name}.schema.json`),
     sourceCheckout ? 'bin/harness-doctor.mjs' : '.harness/scripts/harness-doctor.mjs',
-    ...['setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'fresh-agent', 'write-guard', 'contract-review', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check'].map((name) => `.harness/scripts/harness-${name}.mjs`),
+    ...['setup', 'prepare-input', 'compose-workspace', 'output-schema', 'output-format', 'context', 'native-stage', 'native-command', 'execution-state', 'agent-event', 'fresh-agent', 'write-guard', 'contract-review', 'result', 'workflow-session', 'stakeholder', 'domain', 'domain-model-check', 'design-freeze-check', 'execution-audit'].map((name) => `.harness/scripts/harness-${name}.mjs`),
+    '.harness/src/workflow/execution-audit.mjs', '.harness/src/observability/hook-timing.mjs', '.harness/src/wrapper/review-recurrence.mjs',
+    '.harness/src/workflow/browser-environment.mjs',
   ];
   // The orchestrator owns the stage coordination references; each installed provider copy carries them.
   for (const skills of ['.codex/skills', '.claude/skills']) {
@@ -130,8 +134,8 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
   }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
-    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/stakeholders/cards.mjs');
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'approval-search', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/review-attempts.mjs', '.harness/src/workflow/review-liveness.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/workflow/stage-documents.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (await marker('.codex/skills/orchestrator/SKILL.md')) paths.push('.codex/harness/providers/codex.mjs', ...['agent-event', 'fresh-agent', 'write-guard'].map((name) => `.codex/scripts/harness-${name}.mjs`));
   if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs');
@@ -173,6 +177,9 @@ function safeMessage(error, fallback) {
     return fallback;
   }
 }
+
+// Codex 0.171 prints this deprecation on every invocation while `[features].multi_agent` exists. Harness never writes the key.
+const DEPRECATED_MULTI_AGENT_MESSAGE = '[features].multi_agent is deprecated in Codex (it only controls the V1 fallback) and makes every Codex run print a warning. Harness does not write or need it: remove the multi_agent line from [features] in this Codex config (multi-agent tools are on by default; [agents] enabled = false is what turns them off). Harness does not edit this user-owned file.';
 
 function diagnostic(code, severity, message, path, details = {}) {
   return { code, severity, message, path, ...details };
@@ -530,8 +537,11 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   if (flatAgentKeys.length) diagnostics.push(diagnostic('agents_config_flat', 'error', `agents.${flatAgentKeys[0]} is a flat key; run harness-codex update to move the model settings under agents.${agentConfig.agents?.provider || 'codex'}`, join(repositoryRoot, '.harness/harness.yaml')));
   if (!claudeProvider && await loadHarnessConfig(repositoryRoot).then((config) => (runtimeAgentProvider() || config.agents?.provider || 'codex') === 'codex', () => false)) {
     try {
-      const { inspectCodexHookTrust } = await import('../../../.codex/harness/providers/codex.mjs');
+      const { deprecatedMultiAgentFeature, inspectCodexHookTrust } = await import('../../../.codex/harness/providers/codex.mjs');
+      const projectConfig = join(repositoryRoot, '.codex/config.toml');
+      if (deprecatedMultiAgentFeature(await readFile(projectConfig, 'utf8').catch(() => ''))) diagnostics.push(diagnostic('codex_multi_agent_feature_deprecated', 'warning', DEPRECATED_MULTI_AGENT_MESSAGE, projectConfig));
       const trust = await inspectCodexHookTrust();
+      if (trust.deprecated_multi_agent_config_path) diagnostics.push(diagnostic('codex_multi_agent_feature_deprecated', 'warning', DEPRECATED_MULTI_AGENT_MESSAGE, trust.deprecated_multi_agent_config_path));
       if (trust.ponytail_config_path) diagnostics.push(diagnostic('codex_ponytail_plugin_enabled', 'warning', 'The Codex Ponytail plugin can inject global instructions. Set [plugins."ponytail@ponytail"] enabled = false in this user config to use the Harness implementation-only guidance.', trust.ponytail_config_path));
       if (trust.retired_startup) diagnostics.push(diagnostic('retired_codex_user_orchestrator_hook', 'warning', 'The retired Harness startup hook remains in Codex user hooks; run setup with the codex provider after updating any other Harness checkouts that still use it', trust.hooks_path));
       if (trust.fresh_agent_check !== 'trusted') diagnostics.push(diagnostic('codex_fresh_agent_hook_untrusted', 'warning', trust.fresh_agent_check === 'missing' ? 'Harness fresh-agent hook is missing from the Codex user hooks; run setup with the codex provider' : 'Harness fresh-agent hook is not trusted; run /hooks in Codex and trust "Checking Harness fresh agent" (PreToolUse) so forked Harness agents are refused before they start', null));

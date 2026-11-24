@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
 
 test('installed Claude question stage returns directly without writer receipts', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'spec-author-runner-'));
@@ -35,7 +36,7 @@ test('installed Claude question stage returns directly without writer receipts',
     execFileSync(process.execPath, [native, 'bind', ...base, '--agent-id', 'claude-agent'], { cwd: root });
     await mkdir(join(root, 'docs/specs/example'), { recursive: true });
     await writeFile(join(root, 'docs/specs/example/product-spec.md'), '# Product\n');
-    const q = { question_id: 'question', title: '계속할까요?', decision_kind: null, options: [{ id: 'yes', label: '예', consequence: '계속', evidence: [] }, { id: 'no', label: '아니요', consequence: '대기', evidence: [] }], recommended_option_id: 'yes', rationale: '결정 필요' };
+    const q = withDecisionContext({ question_id: 'question', title: '계속할까요?', decision_kind: null, options: [{ id: 'yes', label: '예', consequence: '계속', evidence: [] }, { id: 'no', label: '아니요', consequence: '대기', evidence: [] }], recommended_option_id: 'yes', rationale: '결정 필요' });
     const result = { schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '진행 중', artifacts: [], questions: [q], review_request: null, owner_stage: null, dependency_gap: null };
     const received = spawnSync(process.execPath, [native, 'receive', ...base, '--agent-id', 'claude-agent'], { cwd: root, encoding: 'utf8', input: JSON.stringify({ schema_version: 1, skill: 'grilling', status: result.status, code: result.code, result }) });
     assert.equal(received.status, 0, received.stderr);

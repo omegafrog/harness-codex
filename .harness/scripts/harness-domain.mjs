@@ -26,7 +26,7 @@ try {
     result = await checkDomainMerge(root, { ...values, structuralOnly: values['structural-only'], reviewed: values.review ? JSON.parse(await readDomainFile(root, values.review)) : undefined });
     if (result.status !== 'PASS') process.exitCode = 1;
   } else if (command === 'sync' && args[0] === 'plan' && args.length === 3) {
-    result = await planDomainSync(root, args[1], JSON.parse(await readDomainFile(root, args[2])));
+    result = await planDomainSync(root, args[1], JSON.parse(await readDomainFile(root, args[2])), { draftExecutionId: process.env.HARNESS_STAGE_EXECUTION_ID });
   } else if (command === 'sync' && args[0] === 'apply' && args.length === 2) {
     result = { paths: await applyDomainSync(root, JSON.parse(await readDomainFile(root, args[1]))) };
   } else if (command === 'validate' && !args.length) {

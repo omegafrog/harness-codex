@@ -48,10 +48,10 @@ export function checkStakeholderAnalysis({ request, analysis }) {
 }
 
 // The runner's verdict when stakeholder-analysis returns its questions or completes; null when the check does not apply.
-export async function evaluateStakeholderAnalysisGate({ root, input, envelope }) {
+export async function evaluateStakeholderAnalysisGate({ root, input, envelope, draftExecutionId }) {
   const planSetId = input?.context?.plan_set_id;
   if (input?.skill !== STAGE || !planSetId || !['completed', 'action_required'].includes(envelope?.status)) return null;
-  const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md');
+  const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md', draftExecutionId);
   if (analysis.text === null) return { stage: STAGE, ok: false, errors: [error('DOCUMENT_MISSING', `${analysis.path} does not exist; write it at this exact path (resolve it with harness-spec-path.mjs) before the stage returns.`)] };
   return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text }) };
 }

@@ -1,27 +1,31 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, posix } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { assertActiveReviewAdmission, updateReviewAttempt, inspectActiveReviewAttempt, inspectReviewHistory } from './review-attempts.mjs';
-import { normalizeReviewContent } from './review-delta.mjs';
+import { normalizeReviewContent, reviewDelta } from './review-delta.mjs';
 import { sessionDirectory, sessionOutputPath, stageExecutionPaths } from './session-output.mjs';
+import { assertReviewDraftComposed, resolveStageDocument, resolveStageSessionDocument, stageDocumentDrafts } from './stage-documents.mjs';
 import { readSkillSessionJson } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
 import { LEGACY_TACTICAL_DESIGN_DOCUMENT, TACTICAL_DESIGN_DOCUMENT } from './worktree-stages.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const EXECUTION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const EXECUTION_CONTEXT_REQUIRED = 'Plan review admission requires its runner workspace and execution identity';
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 function requireValue(value, message) { if (!value) throw new Error(message); }
 
-export async function assertPlanIssueDrafts({ root, plans, session = sessionDirectory(root) }) {
+export async function assertPlanIssueDrafts({ root, plans, session = sessionDirectory(root), executionId }) {
   const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
   if (parseYaml(config).tracker?.mode !== 'github') return;
   const missing = [];
   for (const name of ['parent', ...plans.map((plan) => plan.id)]) {
     const path = `runtime/to-ticket/drafts/${name}.md`;
     await assertWorkspaceTarget(session, path);
-    const body = await readFile(join(session, path), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
+    const body = await readFile(executionId ? await resolveStageSessionDocument(root, path, executionId) : join(session, path), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
     if (!body.trim()) missing.push(path);
   }
   requireValue(!missing.length, `to-ticket must save a GitHub Issue draft for the plan set and every plan in the session directory before completing; missing or empty: ${missing.join(', ')}`);
@@ -34,12 +38,14 @@ export function validateCanonicalPlanReference(reference) {
   requireValue(!isAbsolute(reference.reference) && !reference.reference.split(/[\\/]/).some((part) => !part || part === '.' || part === '..') && !reference.reference.includes('#'), 'Canonical plan file must be workspace-relative');
 }
 
-async function safeFile(root, path) {
+async function safeFile(root, path, executionId) {
   requireValue(typeof path === 'string' && path && !path.startsWith('/') && !path.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), `Invalid workspace-relative path: ${path}`);
   await assertWorkspaceTarget(root, path);
-  const info = await lstat(join(root, path));
+  const target = executionId && path.startsWith('docs/plans/') ? await resolveStageDocument(root, path, executionId) : join(root, path);
+  if (target === null) throw Object.assign(new Error(`The stage removed ${path}`), { code: 'ENOENT' });
+  const info = await lstat(target);
   requireValue(info.isFile() && !info.isSymbolicLink(), `Expected a regular non-symlink file: ${path}`);
-  const content = await readFile(join(root, path));
+  const content = await readFile(target);
   return { content, sha256: hash(content) };
 }
 
@@ -68,15 +74,26 @@ export async function planDesignPaths({ root, planSetId }) {
   return paths;
 }
 
-async function discoverPlans({ root, base }) {
-  const entries = await readdir(join(root, base), { withFileTypes: true });
+async function discoverPlans({ root, base, executionId }) {
+  const entries = await readdir(join(root, base), { withFileTypes: true }).catch((error) => {
+    if (error.code === 'ENOENT' && executionId) return [];
+    throw error;
+  });
+  const paths = new Set(entries.filter((entry) => entry.isFile()).map((entry) => `${base}/${entry.name}`));
+  if (executionId) {
+    for (const { path } of await stageDocumentDrafts(root, executionId)) {
+      if (posix.dirname(path) !== base) continue;
+      if (await resolveStageDocument(root, path, executionId) === null) paths.delete(path);
+      else paths.add(path);
+    }
+  }
   const plans = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.md') || entry.name === 'plans.md') continue;
-    const id = entry.name.slice(0, -3);
-    requireValue(ID.test(id), `Invalid canonical plan filename: ${entry.name}`);
-    const path = `${base}/${entry.name}`;
-    const file = await safeFile(root, path);
+  for (const path of paths) {
+    const name = posix.basename(path);
+    if (!name.endsWith('.md') || name === 'plans.md') continue;
+    const id = name.slice(0, -3);
+    requireValue(ID.test(id), `Invalid canonical plan filename: ${name}`);
+    const file = await safeFile(root, path, executionId);
     plans.push({ id, path, body: file.content.toString('utf8'), sha256: hash(normalizeReviewContent(path, file.content)) });
   }
   if (plans.length) return plans.sort((a, b) => a.id.localeCompare(b.id));
@@ -84,7 +101,7 @@ async function discoverPlans({ root, base }) {
   throw new Error(`No canonical plan documents found under ${base}`);
 }
 
-export async function snapshotPlanSet({ root, planSetId } = {}) {
+export async function snapshotPlanSet({ root, planSetId, executionId } = {}) {
   requireValue(ID.test(planSetId || ''), 'Valid plan-set ID is required');
   let executionWorkspace = null;
   let worktreeText;
@@ -96,7 +113,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
     executionWorkspace = await resolveExecutionWorkspace(root, planSetId);
   }
   const base = `docs/plans/${planSetId}`;
-  const indexFile = await safeFile(root, `${base}/plans.md`);
+  const indexFile = await safeFile(root, `${base}/plans.md`, executionId);
   const designPaths = await planDesignPaths({ root, planSetId });
   const session = sessionDirectory(root, { create: false });
   const statePath = join(session, 'runtime/orchestrator/state.json');
@@ -113,7 +130,7 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
     }
   }
   const specPaths = (await Promise.all(legacySpecPaths(planSetId).map((path) => exists(root, path)))).every(Boolean) ? legacySpecPaths(planSetId) : [];
-  const plans = await discoverPlans({ root, base });
+  const plans = await discoverPlans({ root, base, executionId });
   requireValue(plans.length > 0, 'Plan set has no split plans');
   requireValue(designPaths.length + specPaths.length > 0, `Plan set has no design basis: expected the tactical flow's documents (docs/specs/${planSetId}/tactical-design.md, docs/implementation/${planSetId}/*.md)`);
 
@@ -131,31 +148,30 @@ export async function snapshotPlanSet({ root, planSetId } = {}) {
 
 export async function validatePlanReviewAdmission({ root, planSetId, admission, requireActive = true }) {
   requireValue(ID.test(planSetId || '') && admission?.status === 'pass' && typeof admission.attempt_id === 'string', 'Invalid plan review admission target');
-  const snapshot = await snapshotPlanSet({ root, planSetId });
+  const scope = `plan-${planSetId}`;
   const inputs = admission.inputs;
-  requireValue(inputs && Object.keys(snapshot.inputs).length === Object.keys(inputs).length && Object.entries(snapshot.inputs).every(([path, value]) => inputs[path] === value), 'Plan review admission snapshot is stale');
-  const historyRoot = root;
-  await assertActiveReviewAdmission({ root: historyRoot, scope: `plan-${planSetId}`, attemptId: admission.attempt_id, inputs, requireActive });
+  const { executionId } = await assertActiveReviewAdmission({ root, scope, attemptId: admission.attempt_id, inputs, requireActive });
+  const snapshot = await snapshotPlanSet({ root, planSetId, executionId });
+  requireValue(sameInputs(snapshot.inputs, inputs), 'Plan review admission snapshot is stale');
   if (admission.review_delta) {
     const { reviewAdmissionPreviousInputs } = await import('./review-attempts.mjs');
-    const { reviewDelta } = await import('./review-delta.mjs');
-    const previousInputs = await reviewAdmissionPreviousInputs({ root: historyRoot, scope: `plan-${planSetId}`, attemptId: admission.attempt_id });
+    const previousInputs = await reviewAdmissionPreviousInputs({ root, scope, attemptId: admission.attempt_id });
     requireValue(JSON.stringify(admission.previous_inputs) === JSON.stringify(previousInputs), 'Plan review delta baseline does not match history');
-    requireValue(JSON.stringify(admission.review_delta) === JSON.stringify(await reviewDelta({ root, inputs, previousInputs })), 'Plan review delta does not match admitted inputs');
+    requireValue(JSON.stringify(admission.review_delta) === JSON.stringify(await planReviewDelta({ root, inputs, previousInputs, executionId })), 'Plan review delta does not match admitted inputs');
   }
   return admission;
 }
 
 
-export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
+export async function inspectPlanSet({ root, planSetId, phase, planId, executionId } = {}) {
   try {
     requireValue(['planning', 'dispatch', 'completion'].includes(phase), 'Valid plan-set phase is required');
-    const snapshot = await snapshotPlanSet({ root, planSetId });
-    if (phase === 'planning') await assertPlanIssueDrafts({ root, plans: snapshot.plans });
+    const snapshot = await snapshotPlanSet({ root, planSetId, executionId: phase === 'planning' ? executionId : undefined });
+    if (phase === 'planning') await assertPlanIssueDrafts({ root, plans: snapshot.plans, executionId });
     const history = await inspectReviewHistory({ root, scope: `plan-${planSetId}` });
     const review = history.last_review;
     requireValue(history.recorded_state === 'pass' && review?.verdict === 'pass', 'Fresh independent plan review is missing or not passing');
-    requireValue(Object.keys(snapshot.inputs).length === Object.keys(review.inputs || {}).length && Object.entries(snapshot.inputs).every(([path, digest]) => review.inputs[path] === digest), 'Plan review is stale; review changed sections and affected relationships with a fresh reviewer');
+    requireValue(sameInputs(snapshot.inputs, review.inputs), 'Plan review is stale; review changed sections and affected relationships with a fresh reviewer');
     if (phase === 'dispatch' || (phase === 'completion' && planId)) requireValue(snapshot.plans.some((plan) => plan.id === planId), `Plan ${planId || '(missing)'} is not in the reviewed plan set`);
     const selected = planId ? snapshot.plans.find((plan) => plan.id === planId) : null;
     const canonicalBody = selected?.body || '';
@@ -173,9 +189,9 @@ export async function inspectPlanSet({ root, planSetId, phase, planId } = {}) {
 }
 
 
-export async function inspectPlanSetImpact({ root, planSetId } = {}) {
+export async function inspectPlanSetImpact({ root, planSetId, executionId } = {}) {
   try {
-    const snapshot = await snapshotPlanSet({ root, planSetId });
+    const snapshot = await snapshotPlanSet({ root, planSetId, executionId });
     const history = await inspectReviewHistory({ root, scope: `plan-${planSetId}` });
     const prior = history.last_review?.inputs || {};
     const changed_paths = [...new Set([...Object.keys(prior), ...Object.keys(snapshot.inputs)])].filter((path) => prior[path] !== snapshot.inputs[path]).sort();
@@ -186,43 +202,88 @@ export async function inspectPlanSetImpact({ root, planSetId } = {}) {
   } catch (error) { return { status: 'blocked', reason: error.message, plan_set_id: planSetId }; }
 }
 
-async function mainSessionExecutionId(root) {
+function sameInputs(current, reviewed) {
+  return reviewed && Object.keys(current).length === Object.keys(reviewed).length && Object.entries(current).every(([path, digest]) => reviewed[path] === digest);
+}
+
+function planReviewDelta({ root, inputs, previousInputs, executionId }) {
+  return reviewDelta({ root, inputs, previousInputs, readContent: async (path) => (await safeFile(root, path, executionId)).content });
+}
+
+// The exact contents a reviewer reads, checked against the snapshot hashes.
+async function captureReviewerFiles(root, snapshot, executionId) {
+  const files = [];
+  for (const path of Object.keys(snapshot.inputs)) {
+    const file = await safeFile(root, path, executionId);
+    const plan = snapshot.plans.find((item) => item.path === path);
+    const capturedHash = plan ? hash(normalizeReviewContent(path, file.content)) : hash(file.content);
+    requireValue(capturedHash === snapshot.inputs[path], `Plan review input changed while preparing its admission: ${path}`);
+    files.push({ path, sha256: capturedHash, normalization: plan ? 'frontmatter-status-excluded-v1' : 'raw-v1', content: file.content.toString('utf8') });
+  }
+  return files;
+}
+
+// Called by the SubagentStart hook of a plan reviewer, before the reviewer is bound: the admission is re-captured from the
+// current files, so the review covers the plan set as it is when the reviewer starts, not as it was at `begin`. From the
+// launch on, the write guard denies edits to the admitted files until the attempt is recorded or aborted.
+export async function captureReviewSnapshotAtLaunch({ root, planSetId }) {
+  const scope = `plan-${planSetId}`;
+  const active = await inspectActiveReviewAttempt({ root, scope });
+  if (!active.admission_ref || active.native_review?.agent_id) return { refreshed: false, attempt_id: active.attempt_id };
+  const executionId = active.admission_execution_id;
+  await assertReviewDraftComposed(root, executionId, 'to-ticket');
+  const snapshot = await snapshotPlanSet({ root, planSetId, executionId });
+  if (sameInputs(snapshot.inputs, active.inputs)) return { refreshed: false, attempt_id: active.attempt_id };
+  const files = await captureReviewerFiles(root, snapshot, executionId);
+  const path = sessionOutputPath(root, active.admission_ref, { create: false });
+  const original = await readFile(path, 'utf8');
+  const admission = JSON.parse(original);
+  requireValue(admission.attempt_id === active.attempt_id && admission.plan_set_id === planSetId && admission.execution_id === active.admission_execution_id, 'Plan review admission does not match its active attempt');
+  await planReviewDelta({ root, inputs: snapshot.inputs, executionId });
+  const replace = async (text) => { const temporary = `${path}.${randomUUID()}.tmp`; await writeFile(temporary, text, { flag: 'wx', mode: 0o600 }); await rename(temporary, path); };
+  await replace(`${JSON.stringify({ ...admission, inputs: snapshot.inputs, files, captured_at_launch: true }, null, 2)}\n`);
+  try { await updateReviewAttempt({ root, scope, action: 'refresh-inputs', attemptId: active.attempt_id, inputs: snapshot.inputs }); }
+  catch (error) { await replace(original); throw error; }
+  return { refreshed: true, attempt_id: active.attempt_id, changed_paths: Object.keys({ ...active.inputs, ...snapshot.inputs }).filter((key) => active.inputs[key] !== snapshot.inputs[key]).sort() };
+}
+
+export async function planReviewExecutionId(root) {
+  const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
+  if (executionId) {
+    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && EXECUTION_ID.test(executionId), EXECUTION_CONTEXT_REQUIRED);
+    return executionId;
+  }
   if (process.cwd() !== root) return null;
   const { currentStageExecutionId } = await import('./native-context.mjs');
   return currentStageExecutionId(root);
 }
 
 export async function updatePlanReview({ root, planSetId, action, attemptId, review, reason, requireNative = false }) {
-  const snapshot = ['abort', 'resolve'].includes(action) ? null : await snapshotPlanSet({ root, planSetId });
-  if (action === 'begin') await assertPlanIssueDrafts({ root, plans: snapshot.plans });
-  let reviewer_input_ref;
+  requireValue(ID.test(planSetId || ''), 'Valid plan-set ID is required');
+  const scope = `plan-${planSetId}`;
+  let snapshot;
+  let executionId;
   let reviewerFiles;
   if (action === 'begin') {
     // When the stage cannot start the reviewer, its caller (the main session) opens the admission for the current stage
     // execution: the stage returned REVIEW_REQUIRED and is waiting for this review.
-    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID || await mainSessionExecutionId(root);
-    requireValue((process.env.HARNESS_STAGE_EXECUTION_ID ? process.env.HARNESS_WORKSPACE_ROOT === root : Boolean(executionId)) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review admission requires its runner workspace and execution identity');
-    process.env.HARNESS_STAGE_EXECUTION_ID = executionId;
-    reviewerFiles = [];
-    for (const path of Object.keys(snapshot.inputs)) {
-      const file = await safeFile(root, path);
-      const plan = snapshot.plans.find((item) => item.path === path);
-      const capturedHash = plan ? hash(normalizeReviewContent(path, file.content)) : hash(file.content);
-      requireValue(capturedHash === snapshot.inputs[path], `Plan review input changed while preparing its admission: ${path}`);
-      reviewerFiles.push({ path, sha256: capturedHash, normalization: plan ? 'frontmatter-status-excluded-v1' : 'raw-v1', content: file.content.toString('utf8') });
-    }
-  }
-  // Inside a stage, both providers bind the reviewer through the subagent hook before a record is accepted.
-  if (action === 'record' && process.env.HARNESS_STAGE_EXECUTION_ID) {
-    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
-    requireValue(process.env.HARNESS_WORKSPACE_ROOT === root && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || ''), 'Plan review requires its runtime workspace and execution identity');
-    const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
-    const native = active.native_review;
-    requireValue(active.attempt_id === attemptId && native?.execution_id === active.admission_execution_id && native.agent_id && native.stopped, 'Plan review record requires a stopped native reviewer bound to this admission by the subagent hook');
+    executionId = await planReviewExecutionId(root);
+    await assertReviewDraftComposed(root, executionId, 'to-ticket');
+    snapshot = await snapshotPlanSet({ root, planSetId, executionId });
+    await assertPlanIssueDrafts({ root, plans: snapshot.plans, executionId });
+    requireValue(EXECUTION_ID.test(executionId || ''), EXECUTION_CONTEXT_REQUIRED);
+    reviewerFiles = await captureReviewerFiles(root, snapshot, executionId);
   }
   if (action === 'record') {
-    const active = await inspectActiveReviewAttempt({ root, scope: `plan-${planSetId}` });
+    const active = await inspectActiveReviewAttempt({ root, scope });
+    if (process.env.HARNESS_STAGE_EXECUTION_ID) {
+      await planReviewExecutionId(root);
+      const native = active.native_review;
+      requireValue(!active.interrupted, `This plan review was marked interrupted (${active.interrupted?.detail || active.interrupted?.reason}); its result cannot be accepted. Abort it with a reason, or begin a fresh review, which settles it`);
+      requireValue(active.attempt_id === attemptId && native?.execution_id === active.admission_execution_id && native.agent_id && native.stopped, 'Plan review record requires a stopped native reviewer bound to this admission by the subagent hook');
+    }
     requireValue(active.admission_ref && active.attempt_id === attemptId, 'Plan review attempt has no runner-owned admission file');
+    snapshot = await snapshotPlanSet({ root, planSetId, executionId: active.admission_execution_id });
     const admitted = JSON.parse(await readFile(sessionOutputPath(root, active.admission_ref, { create: false }), 'utf8'));
     requireValue(admitted.attempt_id === attemptId && admitted.plan_set_id === planSetId && admitted.execution_id === active.admission_execution_id && JSON.stringify(admitted.inputs) === JSON.stringify(active.inputs), 'Recorded plan review does not match its runner-owned admission');
     requireValue(Array.isArray(admitted.files) && admitted.files.length === Object.keys(active.inputs).length && new Set(admitted.files.map((file) => file.path)).size === admitted.files.length && admitted.files.every((file) => {
@@ -231,22 +292,18 @@ export async function updatePlanReview({ root, planSetId, action, attemptId, rev
       return hash(file.normalization === 'frontmatter-status-excluded-v1' ? normalizeReviewContent(file.path, content) : content) === file.sha256;
     }), 'Plan review admission contents do not match its snapshot');
   }
-  const result = await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action, inputs: snapshot?.inputs, attemptId, review, reason, requireNative });
-  if (action === 'begin') {
-    const executionId = process.env.HARNESS_STAGE_EXECUTION_ID;
-    if (executionId) {
-      const ref = `runtime/executions/${executionId}/plan-review-admission-${result.attempt_id}.json`;
-      try {
-        const { directory } = stageExecutionPaths(root, executionId);
-        await mkdir(directory, { recursive: true, mode: 0o700 });
-        await writeFile(join(directory, `plan-review-admission-${result.attempt_id}.json`), `${JSON.stringify({ schema_version: 1, execution_id: executionId, attempt_id: result.attempt_id, plan_set_id: planSetId, inputs: snapshot.inputs, files: reviewerFiles, previous_inputs: result.previous_inputs, previous_findings: result.previous_findings }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-        await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action: 'bind-admission', attemptId: result.attempt_id, executionId, admissionRef: ref });
-      } catch (error) {
-        await updateReviewAttempt({ root, scope: `plan-${planSetId}`, action: 'abort', attemptId: result.attempt_id, reason: `pre-dispatch preparation: could not persist reviewer admission: ${error.message}` });
-        throw error;
-      }
-      reviewer_input_ref = ref;
-    }
+  const result = await updateReviewAttempt({ root, scope, action, inputs: snapshot?.inputs, attemptId, review, reason, requireNative });
+  if (action !== 'begin') return result;
+  const ref = `runtime/executions/${executionId}/plan-review-admission-${result.attempt_id}.json`;
+  try {
+    const review_delta = await planReviewDelta({ root, inputs: result.inputs, previousInputs: result.previous_inputs, executionId });
+    const { directory } = stageExecutionPaths(root, executionId);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(join(directory, `plan-review-admission-${result.attempt_id}.json`), `${JSON.stringify({ schema_version: 1, execution_id: executionId, attempt_id: result.attempt_id, plan_set_id: planSetId, inputs: snapshot.inputs, files: reviewerFiles, previous_inputs: result.previous_inputs, previous_findings: result.previous_findings }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    await updateReviewAttempt({ root, scope, action: 'bind-admission', attemptId: result.attempt_id, executionId, admissionRef: ref });
+    return { ...result, review_delta, reviewer_input_ref: ref };
+  } catch (error) {
+    await updateReviewAttempt({ root, scope, action: 'abort', attemptId: result.attempt_id, reason: `pre-dispatch preparation: could not persist reviewer admission: ${error.message}` });
+    throw error;
   }
-  return { ...result, ...(reviewer_input_ref ? { reviewer_input_ref } : {}) };
 }

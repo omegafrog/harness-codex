@@ -12,13 +12,14 @@ export async function codexTranscript(root, sessionId) {
   return path;
 }
 
-export async function codexUserPrompt(root, text, { at = new Date().toISOString(), sessionId } = {}) {
+// `prefix: ''` is a plain chat message the user typed without the orchestrator command.
+export async function codexUserPrompt(root, text, { at = new Date().toISOString(), sessionId, prefix = '$orchestrator ' } = {}) {
   const path = await codexTranscript(root, sessionId);
   await appendFile(path, JSON.stringify({
     timestamp: at, type: 'response_item',
     payload: {
-      type: 'message', role: 'user', content: [{ type: 'input_text', text: `$orchestrator ${text}` }],
-      internal_chat_message_metadata_passthrough: { content_item_kinds: ['user.text'] },
+      type: 'message', role: 'user', content: [{ type: 'input_text', text: `${prefix}${text}` }],
+      internal_chat_message_metadata_passthrough: { content_item_kinds: ['user.text'], content_item_metadata: [{ provenance: { type: 'user' } }] },
     },
   }) + '\n');
   return path;

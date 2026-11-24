@@ -21,6 +21,11 @@ try {
   const stage = (document.state || document).stages?.[input.context?.stage_id || input.skill];
   if (stage?.status !== 'running' || !stage.native_managed || stage.execution_id !== input.execution_id || stage.native_agent_id !== opts['agent-id']) throw new Error('Native command does not match the bound running subagent');
   const env = { ...process.env, HARNESS_SESSION_DIR: input.session_directory, HARNESS_CONTROL_SESSION_DIR: control, HARNESS_STAGE_EXECUTION_ID: input.execution_id, HARNESS_WORKSPACE_ROOT: root, HARNESS_PROVIDER_ID: input.context?.provider || 'codex', HARNESS_REVIEW_EXECUTION_ID: input.execution_id, HARNESS_REVIEW_TICKET_ID: input.context?.plan_set_id || '' };
+  // A browser stage's start recorded a short private directory: Chromium's sockets do not fit under the session path.
+  const { readStageBrowserEnvironment, stageBrowserVariables } = await import('../../.harness/src/workflow/browser-environment.mjs');
+  const { stageExecutionPaths } = await import('../../.harness/src/workflow/session-output.mjs');
+  const browser = await readStageBrowserEnvironment(stageExecutionPaths(root, input.execution_id, { create: false }).directory);
+  if (browser) Object.assign(env, stageBrowserVariables(browser));
   const child = spawn(args[separator + 1], args.slice(separator + 2), { cwd: root, env, stdio: 'inherit' });
   child.on('error', (error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
   child.on('exit', (code, signal) => { process.exitCode = Number.isInteger(code) ? code : 1; if (signal) process.stderr.write(`Native command terminated by ${signal}\n`); });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants, existsSync } from 'node:fs';
-import { open, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { open, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
 import { spawnSync } from 'node:child_process';
@@ -12,10 +12,11 @@ import { executionInputAbsolutePath } from '../../.harness/src/workflow/executio
 import { recordExecutionState } from '../../.harness/src/workflow/execution-state.mjs';
 import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
 import { sessionOutputPath, stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
+import { archiveWriterComposition, assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareStageDocumentDrafts, prepareWriterBrief, readWriterAssignment, readWriterBatch, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch, stageDocumentPolicy, writeStageDocumentBatch } from '../../.harness/src/workflow/stage-documents.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
-import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchAttemptDirectory, launchChildError, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchAttemptDirectory, launchChildError, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, outputMissingResult, receiveRecoveryError, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
@@ -23,6 +24,38 @@ const errorContext = { script: 'native-stage', action: undefined, executionId: u
 const PROCESS_EVIDENCE_LIMIT = 64 * 1024;
 const SPAWN_REFUSALS = new Set(['E2BIG', 'EACCES', 'ENOENT', 'ENOTDIR', 'EPERM']);
 const validExecutionId = (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id);
+
+async function printWriterPending(root, batch) {
+  const id = batch.execution_id;
+  const assigned = await readWriterAssignment(root, id);
+  process.stdout.write(`${JSON.stringify({ status: assigned ? 'writer_running' : 'writer_required', execution_id: id, agent_profile: batch.agent_profile, binding: batch.binding, dispatch_owner: batch.binding.provider === 'claude-code' || batch.phase !== 'review' ? 'orchestrator' : 'stage_worker', ...(assigned ? { agent_id: assigned.agent_id } : {}), next: { ...(assigned ? {} : { bind: nativeCommand('bind-writer', id, '--agent-id <writer_agent_id>') }), finish: nativeCommand('finish', id) } })}\n`);
+}
+
+const reviewedDocuments = (skill) => ['to-ticket', 'sync-contracts'].includes(skill);
+const reviewScope = (skill, planSetId) => `${skill === 'to-ticket' ? 'plan' : 'contracts'}-${planSetId}`;
+
+async function printClaudeReviewHandoff({ root, input, planSetId, current }) {
+  const { inspectActiveReviewAttempt } = await import('../../.harness/src/workflow/review-attempts.mjs');
+  let attempt;
+  try { attempt = await inspectActiveReviewAttempt({ root, scope: reviewScope(input.skill, planSetId) }); }
+  catch (error) { if (error.message === 'No active review attempt') return false; throw error; }
+  const id = input.execution_id;
+  if (attempt.admission_execution_id && attempt.admission_execution_id !== id || attempt.native_review && attempt.native_review.execution_id !== id) {
+    throw new Error('The active independent review belongs to a different stage execution');
+  }
+  const review = { attempt_id: attempt.attempt_id, agent_profile: input.skill === 'to-ticket' ? 'plan_reviewer' : 'contract_reviewer',
+    ...(attempt.admission_ref ? { reviewer_input_ref: attempt.admission_ref } : {}) };
+  const native = attempt.native_review;
+  const status = native ? native.stopped ? 'review_record_required' : 'review_running' : 'review_dispatch_required';
+  process.stdout.write(`${JSON.stringify({ status, execution_id: id, agent_id: current.native_agent_id, review,
+    ...(native?.agent_id ? { reviewer_agent_id: native.agent_id } : {}), next: nativeCommand('finish', id) })}\n`);
+  return true;
+}
+
+async function archiveRejectedSubmission(root, paths, id) {
+  const backup = sessionOutputPath(root, `runtime/executions/${id}/document-drafts/rejected-result-${randomUUID()}.json`);
+  await rename(paths.files.raw, backup);
+}
 
 function lastJson(text) {
   const output = String(text || '').trimEnd();
@@ -206,6 +239,8 @@ async function launchStage(requestedArgs, verbose) {
   return verbose ? { ...launched, ...takenOver, input: prepared.input } : { ...launched, ...takenOver };
 }
 
+const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
+if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write(`${NATIVE_STAGE_USAGE}\n`); process.exit(0); }
 try {
   const [requestedAction, ...rest] = process.argv.slice(2), opts = {};
   let action = requestedAction;
@@ -221,7 +256,7 @@ try {
     if (!args[i]?.startsWith('--') || !['root', 'worktree-ref', 'execution-id', 'reason', 'agent-id', 'repair-binding'].includes(key) || !args[i + 1] || Object.hasOwn(opts, key)) throw new Error('Invalid native stage arguments');
     opts[key] = args[i + 1];
   }
-  if (!['start', 'inspect', 'reconcile', 'recover-interrupted', 'bind', 'receive', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
+  if (!['start', 'inspect', 'reconcile', 'recover-interrupted', 'bind', 'receive', 'draft-ready', 'bind-writer', 'write-documents', 'finish', 'fail', 'cancel'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(opts['execution-id'] || '')) throw new Error('Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|draft-ready|bind-writer|write-documents|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically)');
   errorContext.executionId = opts['execution-id'];
   // --root and --worktree-ref are optional: the current worktree supplies them, and an explicit value must match it.
   const commandContext = resolveCommandContext({ root: opts.root, worktreeRef: opts['worktree-ref'] });
@@ -233,7 +268,7 @@ try {
   errorContext.root = root;
   if (['fail', 'cancel'].includes(action) && !opts.reason?.trim()) throw new Error('A native subagent failure reason is required');
   if (!['fail', 'cancel'].includes(action) && opts.reason) throw new Error('Failure reason applies only to fail');
-  if ((action === 'bind' || action === 'receive') !== Boolean(opts['agent-id'])) throw new Error('Native agent ID is required only for bind and receive');
+  if (['bind', 'receive', 'draft-ready', 'bind-writer', 'write-documents'].includes(action) !== Boolean(opts['agent-id'])) throw new Error('Native agent ID is required only for bind, receive, draft-ready, bind-writer and write-documents');
   if (opts['repair-binding'] && (action !== 'bind' || opts['repair-binding'] !== 'true')) throw new Error('--repair-binding true is only valid with bind');
   const session = await cliSession(root, opts['worktree-ref']);
   const input = await readExecutionInput({ root, execution_id: id });
@@ -245,6 +280,7 @@ try {
   const binding = await resolveSkillBinding({ root, skill: input.skill, workflow, stage, workflowBinding: input.context?.workflow_binding || null, executionProvider: input.context?.provider || null, requestedStageBinding: input.context?.requested_stage_binding });
   if ((input.context?.provider && input.context.provider !== binding.provider) || (input.context?.orchestrator_provider && input.context.orchestrator_provider !== binding.provider) || (input.context?.resume_provider && input.context.resume_provider !== binding.provider)) throw new Error('Execution provider must match the orchestrator and binding');
   const paths = stageExecutionPaths(root, id);
+  const planSetId = input.context?.plan_set_id || commandContext.plan_set_id;
   if (action === 'start') {
     // An input prepared before the flow was complete (or by an older Harness) still cannot start a stage out of order.
     const flow = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
@@ -260,9 +296,17 @@ try {
     const guide = [`.harness/internal-skills/${input.skill}/GUIDE.md`, `.codex/skills/${input.skill}/SKILL.md`, `.claude/skills/${input.skill}/SKILL.md`].find((path) => existsSync(join(root, path)));
     if (!guide) throw new Error(`Skill instruction is missing: ${input.skill}`);
     const { profile, sandbox } = await resolveAgentSandbox({ root, input, workflow, stage });
-    await recordExecutionState({ root, input, binding, status: 'running', nativeClaim: true });
+    const documentDraft = stageDocumentPolicy(input.skill, planSetId) ? await prepareStageDocumentDrafts(root, id) : null;
+    // A browser stage checks its role's network, a Chromium launch and (for real zoom) a headed display before any worker
+    // exists; a failure is ENVIRONMENT_UNAVAILABLE with each fix and leaves the prepared execution unstarted.
+    const { prepareStageBrowserEnvironment, releaseStageBrowserEnvironment } = await import('../../.harness/src/workflow/browser-environment.mjs');
+    const browserEnvironment = await prepareStageBrowserEnvironment({ root, input, profile: profile || 'workflow_stage', provider: binding.provider, executionDirectory: paths.directory, startCommand: nativeCommand('start', id) });
+    try { await recordExecutionState({ root, input, binding, status: 'running', nativeClaim: true }); }
+    catch (error) { if (browserEnvironment) await releaseStageBrowserEnvironment(paths.directory); throw error; }
     const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding,
+      ...(documentDraft ? { document_draft_root: documentDraft } : {}),
       ...(existsSync(paths.files.answers) ? { answers_path: paths.files.answers } : {}),
+      ...(browserEnvironment ? { browser_environment_path: browserEnvironment.path } : {}),
       ...(existsSync(paths.files.feedback) ? { feedback_path: paths.files.feedback } : {}),
     };
     process.stdout.write(`${JSON.stringify(verbose ? started : compactStarted(started, { executionId: id }))}\n`);
@@ -270,6 +314,56 @@ try {
     const state = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' });
     const current = (state.state || state).stages?.[input.context?.stage_id || input.skill];
     if (current?.status !== 'running' || current.execution_id !== id || !current.native_managed) throw new Error('Native stage is not running for this execution');
+    if (action === 'draft-ready') {
+      if (!reviewedDocuments(input.skill) || opts['agent-id'] !== current.native_agent_id || existsSync(paths.files.raw)) throw new Error('Only the bound plan or contract stage worker can request a writer before submitting its result');
+      const proposal = { root, input, envelope: {}, planSetId, binding, beforeReview: true };
+      let batch;
+      try { batch = await stageDocumentBatch(proposal); }
+      catch (error) {
+        if (!/changed after their writer batch/.test(error.message)) throw error;
+        const pending = await readWriterBatch(root, id);
+        const { inspectReviewHistory } = await import('../../.harness/src/workflow/review-attempts.mjs');
+        const history = await inspectReviewHistory({ root, scope: reviewScope(input.skill, planSetId) });
+        if (history.recorded_state === 'active' || history.last_native_review?.execution_id === id && history.recorded_state === 'pass') throw error;
+        const reviewed = await finishedWriterBatch(root, pending);
+        if (!reviewed) throw error;
+        await assertStageDocumentWriterCompleted(root, reviewed);
+        await archiveWriterComposition(root, pending);
+        batch = await stageDocumentBatch(proposal);
+      }
+      const composed = batch ? await finishedWriterBatch(root, batch) : null;
+      if (batch && !composed) await printWriterPending(root, batch);
+      else {
+        if (composed) await assertStageDocumentWriterCompleted(root, composed);
+        process.stdout.write(`${JSON.stringify({ status: 'review_ready', execution_id: id })}\n`);
+      }
+      process.exit(0);
+    }
+    if (['bind-writer', 'write-documents'].includes(action)) {
+      if (!current.native_agent_id) throw new Error('Native stage must have a bound worker before assigning a writer');
+      const agentId = opts['agent-id'];
+      let writerStep;
+      if (action === 'bind-writer') {
+        const batch = await readWriterBatch(root, id);
+        let parentSessionId = (state.state || state).orchestrator_session_id;
+        let parentAgentPath;
+        if (batch.phase === 'review' && binding.provider === 'codex') {
+          const { codexDocumentWriterParent } = await import('../../.harness/src/workflow/native-context.mjs');
+          const owner = await codexDocumentWriterParent({ root, sessionId: parentSessionId, stageAgentId: current.native_agent_id });
+          parentSessionId = owner.sessionId;
+          parentAgentPath = owner.agentPath;
+        }
+        const assignment = await bindStageDocumentWriter({ root, id, agentId, workerId: current.native_agent_id, parentSessionId, parentAgentPath });
+        const brief = await prepareWriterBrief(root, batch);
+        writerStep = { status: 'writer_bound', ...assignment, ...(brief ? { writer_brief_path: brief } : {}), write_command: nativeCommand('write-documents', id, `--agent-id '${agentId}'`) };
+      } else {
+        const threadId = await authenticateWriterCommand({ root, id, agentId });
+        const composition = await receiveWriterComposition({ root, id, agentId, threadId });
+        writerStep = { status: 'documents_composed', execution_id: id, documents: composition.entries.length };
+      }
+      process.stdout.write(`${JSON.stringify(writerStep)}\n`);
+      process.exit(0);
+    }
     if (action === 'inspect') {
       let observation = null;
       let codexOutcome = null;
@@ -280,7 +374,14 @@ try {
         const target = { root, parentSessionId: workflowState.orchestrator_session_id, stage: { ...current, stage_id: input.context?.stage_id || input.skill } };
         const threadId = await resolveNativeCodexThread(target);
         if (threadId) codexOutcome = { thread_id: threadId, outcome: await readNativeCodexOutcome(target, threadId).catch(() => null) };
-        if (input.context?.requested_stage_binding) modelAttestation = await readNativeCodexAttestation(target);
+        if (input.context?.requested_stage_binding) {
+          modelAttestation = await readNativeCodexAttestation(target);
+          // The hook-time record is written before the worker's task_complete exists; read the finished transcript now.
+          if (modelAttestation.status === 'unavailable' && ['completed_turn_metadata_missing', 'attestation_not_recorded', 'transcript_unavailable'].includes(modelAttestation.reason) && codexOutcome?.outcome?.status === 'completed') {
+            const { refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
+            modelAttestation = await refreshNativeCodexAttestation(target);
+          }
+        }
       }
       const threadId = codexOutcome?.thread_id || null;
       const relative = `runtime/executions/${id}/native-observations.jsonl`;
@@ -373,7 +474,8 @@ try {
           process.exit(0);
         }
         action = 'finish';
-        if (!existsSync(paths.files.raw) && hostStatus.completed.trim()) {
+        const reviewBatch = ['to-ticket', 'sync-contracts'].includes(input.skill) && await readWriterBatch(root, id, { required: false });
+        if (!existsSync(paths.files.raw) && hostStatus.completed.trim() && reviewBatch?.phase !== 'review') {
           await assertWorkspaceTarget(session, paths.refs.raw);
           const file = await open(paths.files.raw, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
           try { await file.writeFile(hostStatus.completed); } finally { await file.close(); }
@@ -392,6 +494,7 @@ try {
       }
     }
     if (action === 'fail' || action === 'cancel') {
+      await rollbackStageDocumentWrite(root, id, { includeWritten: true });
       const status = action === 'cancel' ? 'cancelled' : 'failed';
       const code = status === 'cancelled' ? 'CANCELLED' : 'EXECUTION_ERROR';
       const beforeTransition = input.skill === 'implement-wrapper' && input.context?.plan_id
@@ -402,6 +505,7 @@ try {
         await recordExecutionState({ root, input, binding, status: 'failed', code: 'EXECUTION_ERROR', reason: error.message, nativeTerminalAgentId: current.native_agent_id || null });
         throw error;
       }
+      await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
       process.stdout.write(`${JSON.stringify({ status, execution_id: id, reason: opts.reason })}\n`);
       process.exit(0);
     }
@@ -410,7 +514,27 @@ try {
       if (current.native_agent_id !== opts['agent-id']) throw new Error('Native subagent binding mismatch');
       let text = '';
       for await (const chunk of process.stdin) { text += chunk; if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('Native output exceeds size limit'); }
-      if (!text.trim()) throw new Error('Native subagent output is empty');
+      let source = null;
+      if (!text.trim()) {
+        // The worker's final JSON belongs on standard input. The orchestrator conversation that ran this bare command may
+        // instead take it from the bound Codex worker's own transcript; nothing else can stand in for the worker's output.
+        const parent = (state.state || state).orchestrator_session_id;
+        if (binding.provider !== 'codex' || !parent || process.env.CODEX_THREAD_ID !== parent) throw new Error('Native subagent output is empty');
+        const { readNativeCodexSubmission } = await import('../../.harness/src/workflow/native-context.mjs');
+        const stageId = input.context?.stage_id || input.skill;
+        const submission = await readNativeCodexSubmission({ root, parentSessionId: parent, stage: { ...current, stage_id: stageId } });
+        const details = { executionId: id, stageId, agentId: current.native_agent_id };
+        if (submission.status === 'completed') { text = submission.output; source = { source: 'native_transcript', thread_id: submission.thread_id }; }
+        else if (submission.status === 'completed_without_json' && existsSync(paths.files.raw)) {
+          process.stdout.write(`${JSON.stringify({ status: 'already_received', execution_id: id, thread_id: submission.thread_id, next: nativeCommand('finish', id) })}\n`);
+          process.exit(0);
+        }
+        else if (submission.status === 'unavailable') throw new Error('Native subagent output is empty');
+        else {
+          const kind = { running: 'running', failed: 'failed', interrupted: 'interrupted' }[submission.status] || 'empty';
+          throw Object.assign(new Error('Native subagent output is empty'), { explained: receiveRecoveryError(kind, { ...details, detail: submission.error || (submission.reason || '').replaceAll('_', ' ') }) });
+        }
+      }
       await assertWorkspaceTarget(session, paths.refs.raw);
       const file = await open(paths.files.raw, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
       try {
@@ -419,8 +543,25 @@ try {
         await file.truncate(0);
         await file.writeFile(text);
       } finally { await file.close(); }
-      process.stdout.write(`${JSON.stringify({ status: 'received', execution_id: id })}\n`);
+      process.stdout.write(`${JSON.stringify({ status: 'received', execution_id: id, ...(source || {}) })}\n`);
       process.exit(0);
+    }
+    const preparingReview = reviewedDocuments(input.skill) && !existsSync(paths.files.raw);
+    if (preparingReview && binding.provider === 'claude-code' && await printClaudeReviewHandoff({ root, input, planSetId, current })) process.exit(0);
+    const reviewWriter = preparingReview ? await readWriterBatch(root, id, { required: false }) : null;
+    if (reviewWriter?.phase === 'review') {
+      const written = await finishedWriterBatch(root, reviewWriter);
+      if (!written) await printWriterPending(root, reviewWriter);
+      else {
+        await assertStageDocumentWriterCompleted(root, written);
+        process.stdout.write(`${JSON.stringify({ status: 'review_ready', execution_id: id, agent_id: current.native_agent_id, document_composition_root: join(paths.directory, 'document-drafts/composition/workspace'), next: nativeCommand('finish', id) })}\n`);
+      }
+      process.exit(0);
+    }
+    // No output file: the bound worker has not submitted. Say so before any check that needs its finished turn.
+    if (!existsSync(paths.files.raw)) {
+      process.stdout.write(`${JSON.stringify(outputMissingResult({ executionId: id, agentId: current.native_agent_id, errors: [{ path: '$', rule: 'required', expected: 'output file', value: null, missing: true }], schemaPath: paths.files.schema, outputPath: paths.files.raw }))}\n`);
+      process.exit(1);
     }
     if (binding.provider === 'codex' && input.context?.requested_stage_binding) {
       const { refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
@@ -443,6 +584,14 @@ try {
     }
     const formatDetails = { executionId: id, agentId: current.native_agent_id, schemaPath: paths.files.schema, outputPath: paths.files.raw, verbose };
     if (!format.valid) { process.stdout.write(`${JSON.stringify(formatErrorResult({ ...formatDetails, errors: format.errors }))}\n`); process.exit(1); }
+    // Codex runs the SubagentStop hook before it appends the worker's task_complete, so the hook-time attestation of every
+    // finished worker lacks its completed turn. The submitted worker has ended by now: record the completed turn from its
+    // transcript (an execution with a requested model and effort did this above and blocks on a mismatch; the others only
+    // gain telemetry, so a failure here never stops the stage).
+    if (binding.provider === 'codex' && !input.context?.requested_stage_binding && input.context?.orchestrator_session_id) {
+      const { refreshNativeCodexAttestation } = await import('../../.harness/src/workflow/native-context.mjs');
+      await refreshNativeCodexAttestation({ root, parentSessionId: input.context.orchestrator_session_id, stage: { ...current, stage_id: input.context?.stage_id || input.skill } }).catch(() => null);
+    }
     // A blocked / DEPENDENCY_INCOMPLETE result of a later flow stage must name the earlier stage that owns the gap, so the
     // orchestrator can reopen it by itself. The stage stays running and the subagent corrects its output.
     const { dependencyOwnerErrors, staleStages } = await import('../../.harness/src/workflow/stage-reopen.mjs');
@@ -450,43 +599,72 @@ try {
     if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ ...formatDetails, errors: ownerErrors }))}\n`); process.exit(1); }
     const { assertTacticalRequirementsReadOnly, commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
     await assertTacticalRequirementsReadOnly(root, input);
+    const batch = await stageDocumentBatch({ root, input, envelope: raw, planSetId, binding, allowInline: Boolean(schema.properties.result.properties.artifact_contents) });
+    const writtenBatch = batch ? await finishedWriterBatch(root, batch) : null;
+    if (batch && !writtenBatch) {
+      await printWriterPending(root, batch);
+      process.exit(0);
+    }
+    if (writtenBatch) await assertStageDocumentWriterCompleted(root, writtenBatch);
+    const rejectDraft = async (details) => {
+      if (writtenBatch) {
+        // Reviewer staleness requires a new independent attempt against the same composed bytes.
+        // Other failed document gates allow the worker to revise its brief.
+        if (details.gate !== 'document_review_check') await archiveWriterComposition(root, writtenBatch);
+        await archiveRejectedSubmission(root, paths, id);
+      }
+      await printGateError({ session, paths, executionId: id, ...details });
+      process.exit(1);
+    };
     // stakeholder-analysis is accepted (its questions or its completion) only when the requester's features are recorded as settled
     // and no anchored persona candidate was dropped as out of scope. A rejection leaves the stage running for the same subagent.
     const { evaluateStakeholderAnalysisGate, stakeholderAnalysisFailureInstruction } = await import('../../.harness/src/workflow/stakeholder-analysis-gate.mjs');
-    const analysisGate = await evaluateStakeholderAnalysisGate({ root, input, envelope: raw });
+    const analysisGate = await evaluateStakeholderAnalysisGate({ root, input, envelope: raw, draftExecutionId: id });
     if (analysisGate && !analysisGate.ok) {
-      await printGateError({ session, paths, gate: 'stakeholder_analysis_check', executionId: id, stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate) });
-      process.exit(1);
+      await rejectDraft({ gate: 'stakeholder_analysis_check', stage: analysisGate.stage, errors: analysisGate.errors, instruction: stakeholderAnalysisFailureInstruction(analysisGate) });
     }
     // Check BIZ field shape and, at requirements completion, the rule, exception and acceptance entries.
     const { evaluateRequirementsDocumentGate, requirementsDocumentFailureInstruction } = await import('../../.harness/src/workflow/requirements-document-gate.mjs');
-    const documentGate = await evaluateRequirementsDocumentGate({ root, input, envelope: raw });
+    const documentGate = await evaluateRequirementsDocumentGate({ root, input, envelope: raw, draftExecutionId: id });
     if (documentGate && !documentGate.ok) {
-      await printGateError({ session, paths, gate: 'requirements_document_check', executionId: id, stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate) });
-      process.exit(1);
+      await rejectDraft({ gate: 'requirements_document_check', stage: documentGate.stage, errors: documentGate.errors, instruction: requirementsDocumentFailureInstruction(documentGate) });
     }
     // Check component ownership at each stage and the whole design at context-boundary before committing anything.
     const { evaluateTacticalDesignGate, gateFailureInstruction } = await import('../../.harness/src/workflow/domain-model-gate.mjs');
-    const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw });
+    const gate = await evaluateTacticalDesignGate({ root, input, envelope: raw, draftExecutionId: id });
     if (gate && !gate.ok) {
-      await printGateError({ session, paths, gate: 'domain_model_check', executionId: id, stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate) });
-      process.exit(1);
+      await rejectDraft({ gate: 'domain_model_check', stage: gate.stage, errors: gate.errors, instruction: gateFailureInstruction(gate) });
     }
     // The last implementation-design stage (tactical-data) is accepted as completed only when the design freezes: nothing in api.md,
     // data.md or ui-handoff.md adds scope, and every requirement is covered. A rejection leaves the stage running; an error of an
     // earlier stage's document makes the stage return blocked / DEPENDENCY_INCOMPLETE naming that owner.
     const { evaluateDesignFreezeGate, freezeFailureInstruction } = await import('../../.harness/src/workflow/design-freeze-gate.mjs');
-    const freeze = await evaluateDesignFreezeGate({ root, input, envelope: raw });
+    const freeze = await evaluateDesignFreezeGate({ root, input, envelope: raw, draftExecutionId: id });
     if (freeze && !freeze.ok) {
-      await printGateError({ session, paths, gate: 'design_freeze_check', executionId: id, stage: freeze.stage, errors: freeze.errors, instruction: freezeFailureInstruction(freeze) });
-      process.exit(1);
+      await rejectDraft({ gate: 'design_freeze_check', stage: freeze.stage, errors: freeze.errors, instruction: freezeFailureInstruction(freeze) });
     }
-    if (binding.provider === 'claude-code' && input.context?.plan_set_id && ['to-ticket', 'sync-contracts'].includes(input.skill)) {
+    if (!writtenBatch && binding.provider === 'claude-code' && input.context?.plan_set_id && reviewedDocuments(input.skill)) {
       const { assertNoUnrecordedNativeReview } = await import('../../.harness/src/workflow/review-attempts.mjs');
       const prefix = input.skill === 'to-ticket' ? 'plan' : 'contracts';
       const scope = `${prefix}-${input.context.plan_set_id}`;
       await assertNoUnrecordedNativeReview({ root, scope });
     }
+    if (writtenBatch && raw.status === 'completed' && reviewedDocuments(input.skill)) {
+      const { assertNoRogueReviewer } = await import('../../.harness/src/workflow/stage-runtime.mjs');
+      let review;
+      try {
+        await assertNoRogueReviewer({ root, session, input });
+        if (binding.provider === 'claude-code') await (await import('../../.harness/src/workflow/review-attempts.mjs')).assertNoUnrecordedNativeReview({ root, scope: reviewScope(input.skill, planSetId) });
+        review = input.skill === 'to-ticket'
+          ? await (await import('../../.harness/src/workflow/plan-review.mjs')).inspectPlanSet({ root, planSetId, phase: 'planning', executionId: id })
+          : await (await import('../../.harness/src/workflow/contract-review.mjs')).inspectContractReview({ root, planSetId, executionId: id });
+      } catch (error) { review = { status: 'blocked', reason: 'REVIEW_REQUIRED', details: { problem: error.message } }; }
+      if (review.status !== 'pass') await rejectDraft({ gate: 'document_review_check', stage: input.skill, errors: [{ code: review.reason || 'REVIEW_REQUIRED', message: review.details?.problem || 'The authored document batch has no current passing native review' }], instruction: 'Return the review result to the owning stage. The submitted output was archived and the composed documents are preserved. Finish the independent review against the current draft before resubmitting.' });
+    }
+    const { applyDomainSync, assertStageDomainSync, prepareStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');
+    const domainPlan = raw.status === 'completed' && raw.code === 'OK'
+      ? await prepareStageDomainSync(root, input, writtenBatch ? id : null) : null;
+    if (writtenBatch) await writeStageDocumentBatch({ root, batch: writtenBatch, planSetId, skill: input.skill });
     await commitStageRequest({ root, rawPath: paths.files.raw });
     const resultCommand = [process.execPath, join(root, '.harness/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw];
     const resultCommandRun = runStageCommand(resultCommand, { cwd: root });
@@ -496,6 +674,7 @@ try {
     catch (error) { evidenceError = error.code || error.message; }
     const { exit_code: exitCode, signal, spawn_error: spawnError } = resultCommandMetadata;
     if (spawnError || exitCode !== 0) {
+      if (writtenBatch) await rollbackStageDocumentWrite(root, id, { includeWritten: true });
       const childJsonError = lastJson(resultCommandRun.stderr)?.error;
       const childDetail = childJsonError || String(resultCommandRun.stderr.subarray(-1024)).trim()
         || (spawnError ? `${spawnError.name}: ${spawnError.message}` : null)
@@ -509,8 +688,6 @@ try {
         result_command: { ...resultCommandMetadata, error: spawnError?.message || null, ...(evidenceError ? { evidence_error: evidenceError } : {}) },
       } });
     }
-    const { applyDomainSync, assertStageDomainSync, readStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');
-    const domainPlan = raw.status === 'completed' && raw.code === 'OK' ? await readStageDomainSync(root, input) : null;
     if (domainPlan) {
       await applyDomainSync(root, domainPlan, { commit: (domainPaths) => commitWorkflowDocuments({ root, input, rawPath: paths.files.raw, domainPaths }) });
     } else {
@@ -529,6 +706,7 @@ try {
     const updated = envelope.status === 'completed' ? await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' }).catch(() => null) : null;
     const staleOrder = updated ? staleStages(updated.state || updated) : null;
     const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
+    await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
     const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }

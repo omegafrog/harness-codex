@@ -9,6 +9,18 @@ primary checkout에서는 setup이 준비한 main 기준 commit에서 worktree�
 
 선택적으로 `HARNESS_WORKFLOW_BINDING='{"provider":"codex","model":"gpt-6-luna","reasoning_effort":"medium"}'`를 메인 orchestrator 실행 환경에 지정할 수 있다. compose는 이를 정본 `worktree.json`에 기록하고 모든 stage와 재개에 적용한다. 생략하면 프로젝트의 `.harness/harness.yaml` binding을 사용한다. binding의 provider는 현재 orchestrator provider와 같아야 하고 model도 그 provider의 모델이어야 한다. 각 실행은 현재 CLI의 provider를 사용한다.
 
+## 준비 명령
+
+현재 workspace를 cwd로 두고 아래 명령 하나를 실행한다. 인자를 찾기 위해 `.harness`를 검색하거나 CLI 소스를 읽지 않는다. 인자 확인이 필요하면 `node .harness/scripts/harness-compose-workspace.mjs --help`를 실행한다(부작용 없음). `<provider>`와 `<session-id>`는 `node .harness/scripts/harness-context.mjs --entry` 출력의 `provider`(`codex` 또는 `claude-code`)와 `session_id`이고, `<execution-id>`는 이번 호출용 새 ID(예: `compose-<UTC 시각>`), 요청은 호출어 뒤의 사용자 원문을 shell quoting한 값이다.
+
+```bash
+node .harness/scripts/harness-compose-workspace.mjs --root "$PWD" --execution-id <execution-id> --plan-set-id <feature-slug> --request '<사용자 요청 원문>' --orchestrator-provider <provider> --orchestrator-session-id <session-id>
+```
+
+출력은 stdout의 JSON 한 줄(`execution_id`, `worktree_ref` 등)이며 실패는 stderr의 JSON `error`와 종료 코드 1이다.
+
+다음에 읽을 파일은 출력의 `refs`가 기준과 절대 경로를 함께 준다. `refs.input_path`(기준 `workspace`)와 `refs.result_ref`·`refs.return_path`(기준 `session_directory`)의 `absolute`를 그대로 읽는다. `input_path`는 새 worktree 루트 기준이라 compose를 실행한 기존 checkout에서는 존재하지 않고, `result_ref`는 `.io`(session directory) 기준이라 worktree 루트에 붙이면 존재하지 않는다. 기존 필드 `input_path`·`result_ref`는 호환을 위해 그대로 상대 경로다. 정본 `worktree.json`에는 최상위 `execution_id`가 없다. 오너 대화를 전달했다면 `worktree_record.orchestrator`(`agent_sessions.orchestrator`)가 compose 직후의 `execution_id`를 보여 준다. 그 값은 다음 prompt가 갱신하므로 이후 검증에 쓰지 않는다. 검증은 `refs`의 입력·결과·return 기록의 `execution_id`와 `worktree_record`로 한다.
+
 `--plan-set-id`에는 사람이 읽을 feature slug를 전달한다. compose 실행기는 slug에 UUID를 붙여 고유한 `plan_set_id`를 만들고 정본 `worktree.json`에 저장한다. 이후 단계는 입력 slug를 재사용하지 않고 반환된 worktree 참조의 정본 ID만 사용한다.
 
 compose에는 현재 메인 대화의 실제 provider/session을 `--orchestrator-provider`와 `--orchestrator-session-id`로 전달한다. 실행기는 그 worktree의 기존 `agent_sessions.orchestrator`에 결과 수신 세션을 기록한다. ID를 추측하거나 별도 연결 파일을 만들지 않는다.

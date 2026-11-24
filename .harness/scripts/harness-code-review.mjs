@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const installed = new URL('../../.harness/src/wrapper/repair.mjs', import.meta.url);
 const { reserveImplementationRepair } = await import(installed.href);
 const { prepareBasisRecheck, recordBasisRecheck, verifiedBasisRecheckResults } = await import(new URL('../../.harness/src/wrapper/basis-recheck.mjs', import.meta.url).href);
-const { buildReviewInput, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, recordPassedReview, reviewedCommit, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
+const { buildReviewInput, readEvidence, readImplementerResult, assembleReviews, carryForwardReview, recordPendingQuestions, recordPassedReview, reviewedCommit, readHookRecordedReviewer, recordScopeDecision, writeReviewEvidence } = await import(new URL('review-input.mjs', installed).href);
 const { sessionOutputPath } = await import(new URL('../workflow/session-output.mjs', installed).href);
 const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 try {
@@ -37,8 +37,12 @@ try {
       : readHookRecordedReviewer({ root: options.root, role, agentId: options[`${role}-agent`] || null, after: implemented.recordedAt });
     const specText = await readFile(resolve(options.root, reviewInput.architecture_spec_path), 'utf8').catch(() => '');
     const specItems = (await import(new URL('../wrapper/spec-items.mjs', installed).href)).extractSpecContractItems(specText);
-    const evidence = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec'), specItems });
-    result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point };
+    const assembled = assembleReviews({ reviewInput, standards: await side('standards'), spec: await side('spec'), specItems });
+    // On a re-review, each finding is marked recurring or new against the previous round of this plan.
+    const { annotateImplementationReview } = await import(new URL('review-recurrence.mjs', installed).href);
+    const previous = await readEvidence(options.root, options.plan).catch(() => null);
+    const evidence = annotateImplementationReview(previous, assembled);
+    result = { status: 'pass', reviews: await writeReviewEvidence({ root: options.root, planId: options.plan, evidence }), implementation_commit_sha: reviewInput.implementation_commit_sha, fixed_point: reviewInput.fixed_point, recurrence: { compared: evidence.recurrence.compared, recurring: evidence.recurrence.recurring, new: evidence.recurrence.new } };
   } else if (action === 'record-decision') {
     const { SCOPE_OPTION_LABELS } = await import(installed.href);
     result = { status: 'pass', ...await recordScopeDecision({ root: options.root, planId: options.plan, findingId: options.finding, choice: options.choice, answer: options.answer, labels: SCOPE_OPTION_LABELS }) };

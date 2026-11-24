@@ -34,7 +34,7 @@ Select questions using the shared [grilling](../../../.harness/internal-skills/g
 While a decision necessary for the requested core behavior is materially `PARTIAL` or `UNRESOLVED` and cannot be resolved from existing evidence or a reasonable default:
 
 1. In batch mode, inspect every applicable coverage topic and gather all currently identifiable material decisions before returning any questions. Reuse settled answers and explicit delegation. Identify dependencies between decisions; put every independently answerable decision into one `questions` array, including relevant scope, behavior, failures and acceptance conditions. Do not stop gathering at the first gap. Ask dependent follow-ups only after their prerequisite answers make them meaningful. A single question is valid when it is the only currently answerable material decision. Outside batch mode, select the highest-impact unresolved decision and ask one focused question.
-2. Make each question focused and independently answerable; include a recommended answer and a concise reason for it.
+2. Make each question focused and independently answerable; include a recommended answer and a concise reason for it. Follow the [question format](../grilling/GUIDE.md#ask-questions-the-user-can-answer): settled rules and why it is asked now, and per option its effect and an example.
 3. Wait for the user's responses to the batch before proceeding. Classify each response separately and reassess the full coverage checklist before the next batch.
 5. Classify the response before updating coverage. A response is not automatically a decision.
    - `ACCEPTED`: the user explicitly chooses, confirms, or clearly authorizes one answer.

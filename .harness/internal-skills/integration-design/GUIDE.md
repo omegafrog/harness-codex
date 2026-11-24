@@ -5,6 +5,8 @@ model_tier: high_performance
 
 # integration-design
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 BC별 Application Service와 사용 포트가 요구된 통합을 구현할 수 있는지 검토한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 확정 요구사항, 승인 답변, Context Map, 관련 ADR과 [전술 설계](../domain-model/references/template.md)를 읽는다.
 
 - 요구된 동기 호출에 실제 메서드·포트·요청·응답·오류 처리가 있고 호출자가 필요한 시점에 결과를 받는지 확인한다.

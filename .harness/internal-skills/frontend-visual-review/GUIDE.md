@@ -18,12 +18,21 @@ source code를 수정하지 않는다.
 - acceptance scenarios
 - `.harness/agents/EXEC.md` and project execution instructions
 
+## Browser environment
+
+The Harness checks the browser environment when this stage starts, before you exist. The `start` result may carry `browser_environment_path`.
+
+- Preflight: the role's network access (`[sandbox_workspace_write] network_access = true`), a Chromium that launches headless with a short private `TMPDIR`, and, when the ticket, design brief or review feedback explicitly requires real browser zoom, a display plus a Chromium that launches headed on it. The explicit form is the structured signal `requires_real_zoom: true` (ticket frontmatter key, a line of the design brief, or a field of the feedback); `requires_real_zoom: false` declares that the text needs no headed zoom even if it quotes a zoom phrase. Without the signal only a scaled phrase counts (for example, `browser zoom at 200%`, `200% zoom`, `zoom to 200%`, `확대 200%`, or `브라우저를 200%로 확대`). A bare percentage, unscaled browser-zoom mention, generic `zoom`/`확대`, or image/chart magnification does not require headed Chromium. If the criterion needs real zoom but carries no signal or phrase, the start cannot know it: report that to the caller instead of treating a headless check as the zoom check. A failed check never reaches you: `start` returns `ENVIRONMENT_UNAVAILABLE` with the failing check and its fix, and no worker is spawned.
+- Short `TMPDIR`: a long session path (`.io/...`) breaks Chromium's `SingletonSocket`, so the Harness records a short directory (`/tmp/hb-*`) in the file at `browser_environment_path` (`tmpdir`, `executable`, `headed`, `env`). Commands you run through `node .harness/scripts/harness-native-command.mjs ... -- <command>` already carry it as `TMPDIR`, `TMP` and `TEMP`, and `DISPLAY` when the review is headed. Launch the browser and Playwright through that command. The stage contract's `<session directory>/tmp` rule does not apply to the browser process; do not override its `TMPDIR`. Screenshots, traces, reports and logs still go under the session directory, and the Harness removes the short directory when the stage ends.
+- Real zoom: when the acceptance criteria require 200% zoom, use the headed Chromium and apply the browser's own zoom (the keyboard shortcut through the X display), then confirm it took effect (`window.devicePixelRatio` and `innerWidth` change, for example 1 → 2 and 1440 → 720) and check overflow and focus there. A narrower CSS viewport, `deviceScaleFactor` or CDP page scale is not real zoom; report it as an equivalent check, never as the zoom criterion passing.
+- If the environment fails after a successful preflight, return `blocked/ENVIRONMENT_UNAVAILABLE` and name the failing check and a concrete fix. Do not request `danger-full-access`, skip the criterion, or substitute a headless approximation without saying so.
+
 ## Execution
 
 1. `workspace_root`와 `git rev-parse --show-toplevel` 일치를 확인한다.
 2. `.harness/agents/EXEC.md`와 대상 frontend의 실행 지침을 읽는다.
 3. 기존 project command로 필요한 app/server를 시작한다. 실행 방법을 추측해 repository 설정을 바꾸지 않는다.
-4. 실제 browser automation/screenshot capability를 사용한다. Playwright가 project 또는 environment에 준비되어 있으면 우선 사용한다.
+4. 실제 browser automation/screenshot capability를 사용한다. Playwright가 project 또는 environment에 준비되어 있으면 우선 사용한다. 위 Browser environment의 `TMPDIR`과 `DISPLAY`를 그대로 쓴다.
 5. design brief의 primary user flow를 실제로 수행한다.
 6. target viewport가 지정되어 있지 않으면 최소 다음 범주를 확인한다.
    - desktop: 약 1440px width

@@ -126,13 +126,15 @@ export async function planDependencies(root, planSetId, planIds) {
   return dependencies;
 }
 
+const activatedIssues = (items) => items.map((item) => ({ plan_id: item.plan_id, url: item.content.url })).sort((a, b) => a.plan_id.localeCompare(b.plan_id));
+
 export async function activatePublication({ root, planSetId, run = defaultCommand }) {
   const gh = (args, cwd) => run('gh', args, cwd);
   const ghJson = async (args) => JSON.parse(await gh(args, root));
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
   if (config.tracker?.mode === 'local-markdown') {
     const snapshot = await snapshotPlanSet({ root, planSetId });
-    return { status: 'activated', plan_set_id: planSetId, tickets: snapshot.plans.map((plan) => ({ plan_id: plan.id, ticket_ref: `docs/plans/${planSetId}/${plan.id}.md` })) };
+    return { status: 'activated', plan_set_id: planSetId, tickets: snapshot.plans.map((plan) => ({ plan_id: plan.id, ticket_ref: `docs/plans/${planSetId}/${plan.id}.md` })), published_issues: [] };
   }
   const repository = config.tracker?.github?.repository;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Configured GitHub repository is required to activate the plan set');
@@ -184,13 +186,14 @@ export async function activatePublication({ root, planSetId, run = defaultComman
   const temporary = `${path}.${randomUUID()}.tmp`;
   const tickets = children.map((item) => ({ plan_id: item.plan_id, ticket_ref: `${repository}#${item.content.number}` })).sort((a, b) => a.plan_id.localeCompare(b.plan_id));
   try {
-    await writeFile(temporary, JSON.stringify({ repository, tickets }), { flag: 'wx', mode: 0o600 });
+    // `issues` also keeps the parent and each Issue URL so the stage result's published_issues can be verified.
+    await writeFile(temporary, JSON.stringify({ repository, tickets, issues: activatedIssues(state.items) }), { flag: 'wx', mode: 0o600 });
     await rename(temporary, path);
   } finally { await rm(temporary, { force: true }); }
   const { inspectTrackerSync } = await import('./lifecycle.mjs');
   const check = await inspectTrackerSync({ workspace_root: root, ticket_refs: refs, run });
   if (check.status === 'fail') throw new Error(`Activated tracker does not verify: ${check.violations.join('; ')}`);
-  return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), tracker_check: check, warnings: [...warnings, ...(check.warnings || [])] };
+  return { status: 'activated', plan_set_id: planSetId, issues: state.items.map((item) => ({ plan_id: item.plan_id, number: item.content.number, url: item.content.url })), published_issues: activatedIssues(state.items), tracker_check: check, warnings: [...warnings, ...(check.warnings || [])] };
 }
 
 // Verify the plan-to-Issue mapping without consulting the Project.
@@ -204,4 +207,73 @@ export async function verifyActivatedPublication({ root, planSetId, run = defaul
   const missing = snapshot.plans.filter((plan) => !mapped.has(plan.id)).map((plan) => plan.id);
   if (missing.length) throw new Error(`Published Issues are missing for: ${missing.join(', ')}`);
   return tickets;
+}
+
+// A tracker-publish result reports the Issues it published in `published_issues` ({plan_id, url}); they are tracker
+// references, not files. Results written before that field existed listed the URLs as artifacts instead.
+export const PUBLISHED_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/([1-9][0-9]*)$/;
+
+// Reads the published Issues of a stored tracker-publish result of any version. A legacy URL artifact has no plan ID.
+export function publishedIssues(result) {
+  if (Array.isArray(result?.published_issues)) return result.published_issues.map(({ plan_id, url }) => ({ plan_id, url }));
+  return (Array.isArray(result?.artifacts) ? result.artifacts : [])
+    .filter((artifact) => typeof artifact?.path === 'string' && PUBLISHED_ISSUE_URL.test(artifact.path))
+    .map((artifact) => ({ plan_id: null, url: artifact.path }));
+}
+
+// The plan-to-Issue mapping activation saved: every published Issue (parent included) by plan ID.
+async function activatedIssueMap(root, planSetId) {
+  const saved = JSON.parse(await readFile(sessionOutputPath(root, `runtime/to-ticket/${planSetId}-issues.json`, { create: false }), 'utf8'));
+  const issues = Array.isArray(saved.issues) ? saved.issues
+    // An activation receipt of an earlier Harness kept only the child tickets.
+    : (saved.tickets || []).map((ticket) => ({ plan_id: ticket.plan_id, url: `https://github.com/${saved.repository}/issues/${String(ticket.ticket_ref).split('#')[1]}` }));
+  return { repository: saved.repository, complete: Array.isArray(saved.issues), byUrl: new Map(issues.map((issue) => [issue.url, issue])) };
+}
+
+// Moves Issue URLs a stage declared as artifacts into published_issues, naming each by the activated mapping, so the
+// runner neither looks for them as files nor drops them. Returns the URLs it moved.
+export async function normalizePublishedIssues({ root, planSetId, result }) {
+  const urls = [];
+  if (Array.isArray(result?.artifacts)) {
+    result.artifacts = result.artifacts.filter((artifact) => {
+      if (typeof artifact?.path !== 'string' || !PUBLISHED_ISSUE_URL.test(artifact.path)) return true;
+      urls.push(artifact.path);
+      return false;
+    });
+  }
+  if (!urls.length) return [];
+  const published = Array.isArray(result.published_issues) ? result.published_issues : [];
+  const known = new Set(published.map((issue) => issue?.url));
+  const mapping = await activatedIssueMap(root, planSetId).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+  for (const url of new Set(urls)) {
+    if (known.has(url)) continue;
+    const issue = mapping?.byUrl.get(url);
+    if (!issue) throw new Error(`Published Issue is not in the activated plan mapping: ${url}; report it in published_issues after activate`);
+    published.push({ plan_id: issue.plan_id, url });
+  }
+  result.published_issues = published;
+  return [...new Set(urls)];
+}
+
+// A completed tracker-publish result must report exactly the Issues activation recorded.
+export async function assertPublishedIssues({ root, planSetId, result }) {
+  if (!Object.hasOwn(result || {}, 'published_issues')) return;
+  const issues = result.published_issues;
+  if (!Array.isArray(issues)) throw new Error('published_issues must be a list');
+  const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8').catch(() => ''));
+  if (config.tracker?.mode !== 'github') {
+    if (issues.length) throw new Error('published_issues must be empty when no GitHub tracker is configured');
+    return;
+  }
+  const urls = issues.map((issue) => issue?.url);
+  if (new Set(urls).size !== urls.length || new Set(issues.map((issue) => issue?.plan_id)).size !== issues.length) throw new Error('published_issues lists an Issue or plan twice');
+  const mapping = await activatedIssueMap(root, planSetId);
+  if (mapping.repository !== config.tracker.github?.repository) throw new Error('Activated Issue mapping belongs to another repository');
+  for (const issue of issues) {
+    const match = PUBLISHED_ISSUE_URL.exec(issue?.url || '');
+    if (!match || match[1] !== mapping.repository) throw new Error(`Published Issue is not in the configured repository: ${issue?.url}`);
+    if (mapping.byUrl.get(issue.url)?.plan_id !== issue.plan_id) throw new Error(`Published Issue does not match the activated plan mapping: ${issue.plan_id} ${issue.url}`);
+  }
+  const missing = [...mapping.byUrl.values()].filter((issue) => !urls.includes(issue.url));
+  if (mapping.complete && missing.length) throw new Error(`published_issues omits activated Issues: ${missing.map((issue) => issue.plan_id).join(', ')}`);
 }

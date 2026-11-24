@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { parseWorkflowBinding } from '../.harness/src/workflow/providers/index.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
 
 const record = {
   schema_version: 1,
@@ -572,7 +573,7 @@ test('installed compose uses the setup baseline and preserves workflow transitio
     const canonicalSpecDir = `docs/specs/${tree.plan_set_id}`;
     await mkdir(join(tree.workspace, canonicalSpecDir, 'architecture-reviews'), { recursive: true });
     await writeFile(join(tree.workspace, canonicalSpecDir, 'architecture-reviews/review.yaml'), 'review');
-    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `${canonicalSpecDir}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: 'a'.repeat(64) }], questions: [{ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' }], review_request: null, owner_stage: null, dependency_gap: null };
+    const questionResult = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '파일 정본', artifacts: [{ base: 'workspace', path: `${canonicalSpecDir}/architecture-reviews/review.yaml`, kind: 'architecture-decision-review', sha256: 'a'.repeat(64) }], questions: [withDecisionContext({ question_id: 'scope', title: '범위는?', options: [{ id: 'basic', label: '기본', consequence: '기본 계산' }, { id: 'scientific', label: '공학', consequence: '추가 계산' }], recommended_option_id: 'basic', rationale: '작은 범위' })], review_request: null, owner_stage: null, dependency_gap: null };
     const { review_request: omittedReview, ...questionWithoutReview } = questionResult;
     await writeFile(join(resultDir, 'result.json'), JSON.stringify(questionWithoutReview));
     const answerEnvelope = { schema_version: 1, execution_id: next.input.execution_id, skill: 'requirements-fix', status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: resultRefForQuestion, result: { ...questionResult, summary: '다르게 표현된 응답' } };
@@ -1078,6 +1079,22 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeFile(join(root, '.harness/harness.yaml'), claudeConfig);
     tree = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator-web-app', '--request', '작은 계산기 웹 앱', '--execution-id', 'compose-1', '--orchestrator-provider', 'codex', '--orchestrator-session-id', record.worktree_id], { cwd: root, encoding: 'utf8', env: { ...process.env, HARNESS_WORKFLOW_BINDING: JSON.stringify(workflowBinding) } }));
     assert.deepEqual(tree.workflow_binding, workflowBinding);
+    // The relative refs keep their old shape. `refs` names each base and holds the absolute path, so the next read joins nothing.
+    assert.match(tree.input_path, /^\.io\/[^/]+\/workflow-compose\/compose-1\/input\.json$/);
+    assert.equal(tree.result_ref, 'runtime/executions/compose-1/result.json');
+    assert.deepEqual(tree.refs.input_path, { base: 'workspace', path: tree.input_path, absolute: join(tree.workspace, tree.input_path) });
+    assert.deepEqual(tree.refs.result_ref, { base: 'session_directory', path: tree.result_ref, absolute: join(tree.session_directory, tree.result_ref) });
+    assert.deepEqual(tree.refs.return_path, { base: 'session_directory', path: 'runtime/executions/compose-1/return.json', absolute: join(tree.session_directory, 'runtime/executions/compose-1/return.json') });
+    assert.deepEqual(tree.refs.worktree_ref, { base: 'absolute', path: tree.worktree_ref, absolute: tree.worktree_ref });
+    for (const name of ['input_path', 'result_ref', 'return_path']) assert.equal(JSON.parse(await readFile(tree.refs[name].absolute, 'utf8')).execution_id, 'compose-1', `${name} reads the compose record`);
+    // The lookups the orchestrator got wrong: the checkout that ran compose, and the worktree root for a session-relative ref.
+    await assert.rejects(readFile(join(root, tree.input_path)), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(tree.workspace, tree.result_ref)), { code: 'ENOENT' });
+    // worktree.json has no top-level execution_id; the compose execution is the owner entry's right after compose.
+    const canonical = JSON.parse(await readFile(tree.worktree_ref, 'utf8'));
+    assert.equal(canonical.execution_id, undefined);
+    assert.deepEqual(tree.worktree_record, { ref: tree.worktree_ref, plan_set_id: canonical.plan_set_id, branch: canonical.branch, state: 'active', orchestrator: { field: 'agent_sessions.orchestrator', provider: 'codex', session_id: record.worktree_id, execution_id: 'compose-1' } });
+    assert.equal(canonical.agent_sessions.orchestrator.execution_id, 'compose-1');
     const found = await findExecutionInput(tree.workspace, 'compose-1');
     assert.equal(found.workspace, tree.workspace);
     assert.equal(found.input.workspace_root, undefined);
@@ -1484,7 +1501,7 @@ test('installed compose starts in an existing linked worktree without replacing 
     assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(conflict));
     execFileSync(process.execPath, [prepare, '--verbose', '--stage-id', 'grilling', '--answer', answer], { cwd: workspace, encoding: 'utf8' });
     assert.deepEqual(JSON.parse(await readFile(deferredPath, 'utf8')), JSON.parse(answer));
-    const question = { question_id: 'temporary', title: '범위는?', decision_kind: null, options: [{ id: 'basic', label: '기본', consequence: '기본', evidence: [] }, { id: 'full', label: '전체', consequence: '전체', evidence: [] }], recommended_option_id: 'basic', rationale: '기본 범위' };
+    const question = withDecisionContext({ question_id: 'temporary', title: '범위는?', decision_kind: null, options: [{ id: 'basic', label: '기본', consequence: '기본', evidence: [] }, { id: 'full', label: '전체', consequence: '전체', evidence: [] }], recommended_option_id: 'basic', rationale: '기본 범위' });
     const questionResult = { schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', artifacts: [], questions: [question], review_request: null, owner_stage: null, dependency_gap: null };
     await writeFile(questionStart.output_path, JSON.stringify({ schema_version: 1, skill: 'grilling', status: 'action_required', code: 'USER_DECISION_REQUIRED', result: questionResult }));
     const asked = JSON.parse(execFileSync(process.execPath, [...native, 'finish', ...questionArgs], { cwd: workspace, encoding: 'utf8' }));

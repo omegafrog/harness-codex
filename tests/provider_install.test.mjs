@@ -12,9 +12,9 @@ import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-ex
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
-const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md'];
+const CLAUDE = ['.claude/harness/providers/claude-code.mjs', '.claude/harness/scripts/harness-claude-orchestrator.mjs', '.claude/harness/installer/claude-orchestrator-hook.mjs', '.claude/skills/orchestrator/SKILL.md', '.claude/agents/implementation_agent.md', '.claude/agents/stage_document_writer.md'];
 const CODEX = ['.codex/skills/orchestrator/SKILL.md', '.codex/harness/providers/codex.mjs'];
-const SHARED = ['.harness/internal-skills/implement/GUIDE.md', '.harness/scripts/harness-native-stage.mjs', '.codex/agents/implementation_agent.toml', '.codex/agents/pr_author.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs'];
+const SHARED = ['.harness/internal-skills/implement/GUIDE.md', '.harness/scripts/harness-native-stage.mjs', '.codex/agents/implementation_agent.toml', '.codex/agents/pr_author.toml', '.codex/agents/stage_document_writer.toml', '.github/PULL_REQUEST_TEMPLATE/plan-set.md', '.harness/src/workflow/providers/index.mjs', '.harness/src/workflow/stage-documents.mjs'];
 
 async function install(provider) {
   const root = await mkdtemp(join(tmpdir(), `harness-provider-${provider || 'default'}-`));

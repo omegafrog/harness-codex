@@ -9,7 +9,7 @@ model_tier: high_performance
 
 이 skill은 `implement`, `implement-wrapper`, `code-review`, `e2e-test`의 하위 단계가 아니다. 해당 workflow를 호출하거나 tracker 상태를 변경하지 않는다. 프런트엔드 작업은 이 skill의 자체 design → implementation → visual review → correction loop로 완료한다.
 
-`context.stage_id`가 `frontend-design-brief`이면 이 독립 workflow의 design 단계만 수행한다. Phase 1–3과 필요한 Phase 3.5를 마친 뒤 `artifact_contents`에 `{name: "frontend-design.md", kind: "frontend_design_brief", content: "<완성된 한국어 design brief>"}` 하나를 반환한다. 실행기가 session artifact로 저장한다. 이 단계에서는 Phase 4 이후를 수행하지 않는다. 전체 workflow의 구현과 visual review는 ticket 발행 뒤 별도 stage로 이어진다.
+`context.stage_id`가 `frontend-design-brief`이면 이 독립 workflow의 design 단계만 수행한다. 시각 방향이 정해지지 않았으면 Phase 2.5의 스타일 선택 질문을 `action_required/USER_DECISION_REQUIRED`로 반환하고 멈춘다. 방향이 정해졌으면 Phase 1–3과 필요한 Phase 3.5를 마친 뒤 `result.artifact_contents`에 `{name: "frontend-design.md", kind: "frontend_design_brief", content: "<디자인 결정·근거와 Phase 3의 필수 목차>"}` 하나를 넣는다. 작성 에이전트가 한국어 brief를 완성하면 실행기가 session artifact를 저장하고 경로를 기록한다. 이 단계에서는 Phase 4 이후를 수행하지 않는다. 전체 workflow의 구현과 visual review는 ticket 발행 뒤 별도 stage로 이어진다.
 
 ## Scope
 
@@ -80,9 +80,20 @@ model_tier: high_performance
 - responsive behavior
 - source URL와 이번 화면에 적용할 구체 원칙, 기존 design system에 맞춘 변형
 
-사용자와 합의한 화면·사용자 흐름 및 이미 합의된 시각 방향을 따른다. 핵심 화면·흐름이 미정이면 브리프를 작성하기 전에 사용자 결정을 요청한다. 합의된 범위에서 대표 시각 참고 사례 한 개와 보조 사례를 제안한다. 서로 다른 제품의 표면 스타일을 무작위로 섞지 않는다.
+사용자와 합의한 화면·사용자 흐름 및 이미 합의된 시각 방향을 따른다. 핵심 화면·흐름이 미정이면 브리프를 작성하기 전에 사용자 결정을 요청한다. reference는 Phase 2.5의 스타일 후보 근거로 쓴다. 디자이너가 시각 방향을 혼자 고르지 않는다. 서로 다른 제품의 표면 스타일을 무작위로 섞지 않는다.
 
 외부 reference 검색 도구가 없으면 reference를 꾸며내지 않는다. 사용자 제공 reference와 기존 제품 UI를 사용하고, external reference evidence가 없다는 점을 design brief에 명시한다.
+
+## Phase 2.5 — 시각 스타일 선택 질문
+
+사용자가 제공한 Figma frame·screenshot·`docs/design/DESIGN.md` 또는 이전 답변이 시각 방향을 이미 정했으면 이 단계를 건너뛰고 그 근거를 brief의 Visual character에 적는다. 그 밖에는 brief를 쓰기 전에 사용자에게 스타일을 고르게 한다. 모든 선택지에는 실제 렌더링한 이미지 시안이 있어야 한다.
+
+1. Phase 2 reference에 근거해 서로 뚜렷이 다른 스타일 후보 2~4개를 정한다. 후보마다 id(`^[a-z0-9][a-z0-9-]*$`), 짧은 이름, 대표 reference, 밀도·타이포그래피·surface·강조색의 차이를 정한다.
+2. 이번 기능의 같은 핵심 화면 하나를 후보별 정적 mock으로 만든다. 콘텐츠와 구조는 같게 두고 스타일만 바꾼다. mock은 CSS와 이미지(data URI)를 inline으로 포함하고 외부 네트워크 자원을 쓰지 않으며 `<meta name="viewport" content="width=device-width, initial-scale=1">`를 넣는다. 파일은 product source가 아니라 session에만 쓴다. `harness-session-output.mjs --path`로 `runtime/executions/<execution_id>/style-options/options.json`(`{"screen": "<핵심 화면>", "options": [{"id", "label", "summary"}]}`)과 `runtime/executions/<execution_id>/style-options/<option_id>/mock.html`의 경로를 받는다.
+3. `node .harness/internal-skills/frontend-design/scripts/capture-style-options.mjs --root <workspace_root> --execution-id <execution_id>`로 후보별 desktop(1440×900)·mobile(390×844) screenshot과 후보를 나란히 보여 주는 `style-options/index.html` 비교 페이지를 만든다. 스크립트는 프로젝트 또는 전역 Playwright를 사용하고, Chromium SingletonSocket 경로 제한을 피하도록 Chromium의 임시 디렉터리만 짧은 경로로 옮긴 뒤 삭제한다. 실행 전 `frontend-visual-review` GUIDE의 브라우저 환경 점검이 있으면 같은 방식으로 확인한다. Playwright가 없거나(exit 2) 브라우저를 띄우지 못하면 의존성을 설치하거나 스타일을 혼자 고르지 말고 실패 출력과 함께 `blocked/ENVIRONMENT_UNAVAILABLE`을 반환한다.
+4. 생성한 이미지를 직접 열어 빈 화면·깨진 글꼴·잘림·가로 overflow가 없는지 확인한다. 문제가 있으면 mock을 고쳐 다시 캡처한다.
+5. `action_required/USER_DECISION_REQUIRED`로 질문 하나를 반환한다. `decision_kind: "visual_direction"`, 선택지마다 스크립트가 출력한 `previews`를 그대로 넣고(desktop·mobile 필수) `evidence: []`, 추천 선택지와 근거를 준다. `context`에는 확정된 화면 요구와 지금 정해야 하는 이유를, 선택지마다 `effect`(화면에서 달라지는 점)와 `example`(같은 화면 상황을 그 스타일로 보여 준 문장; 이미지를 볼 수 없는 질문 UI를 위한 설명)을 적는다([질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)). `title`에는 한국어 질문 문장과 비교 페이지의 절대 경로, 후보별 이미지 절대 경로를 함께 적는다. 예: `어떤 시각 스타일로 진행할까요? 비교 페이지: <절대 경로>/style-options/index.html — calm: <desktop.png 절대 경로>, <mobile.png 절대 경로> …`. 이 결과에는 brief artifact를 넣지 않는다. 실행기는 preview가 없거나, 파일이 없거나, session 밖이거나, 이미지가 아니거나, `title`이 존재하는 비교 페이지를 가리키지 않는 질문을 거부한다.
+6. 답변 뒤 다시 실행되면 답변의 선택지로 Phase 3을 진행한다. 사용자가 후보 수정이나 설명을 요청하면 후보·mock을 고쳐 다시 캡처하고 같은 형식으로 다시 묻는다.
 
 ## Phase 3 — Frontend design brief
 
@@ -92,7 +103,7 @@ model_tier: high_performance
 - Screen/flow scope
 - Dominant reference and supporting influences
 - Existing design-system assets to reuse
-- Visual character
+- Visual character: 선택한 스타일 option id·이름, 질문 ID와 사용자 답변 원문, 대표 preview 경로(또는 시각 방향을 정한 사용자 자료)
 - Information hierarchy
 - Layout model and responsive behavior
 - Typography roles
@@ -101,7 +112,7 @@ model_tier: high_performance
 - Primary / secondary / destructive action hierarchy
 - 적용 가능한 loading / empty / error / disabled / pending / success / retry states
 - Field validation, duplicate submission 방지, unsaved change, 오류 복구 시 focus 동작
-- WCAG 2.2 AA를 목표로 한 semantic control/name, keyboard/focus, contrast, non-color status, zoom/reflow, reduced-motion 기대사항과 예외
+- WCAG 2.2 AA를 목표로 한 semantic control/name, keyboard/focus, contrast, non-color status, zoom/reflow, reduced-motion 기대사항과 예외. 실제 브라우저 확대 검증이 필요하면 brief에 `requires_real_zoom: true`를 단독 한 줄로 쓴다. 이 줄이 headed display를 요구하는 명시적 신호이며 visual review 시작 점검이 읽는다. 신호 없이 문구로 쓸 때는 `브라우저를 200%로 확대`처럼 대상과 배율을 함께 명시하고, 일반 화면 확대나 이미지 확대와 구분한다. `200%`나 `확대`라는 단어만으로는 신호가 아니다. 확대 문구를 인용하지만 headed 확인이 필요 없으면 `requires_real_zoom: false`를 쓴다.
 - 대표 콘텐츠와 좁은 화면에서 확인할 stress case (긴 한국어 label/value, dense content 등 대상 화면에 해당하는 항목)
 - Explicit anti-patterns
 - Acceptance scenarios
@@ -242,7 +253,7 @@ visual reviewer가 BLOCKER 또는 MAJOR finding을 보고하면 fresh `frontend_
 
 다음을 모두 만족해야 완료다.
 
-- reference 또는 기존 design evidence에 근거한 일관된 visual direction이 존재한다.
+- reference 또는 기존 design evidence에 근거하고, 사용자가 이미지 시안으로 선택했거나 사용자 자료가 정한 일관된 visual direction이 존재한다.
 - Figma-first 요청이면 Figwright로 작성·검증된 authoritative Figma root node와 handoff가 존재한다.
 - agreed user flow가 실제 브라우저에서 동작한다.
 - target desktop과 narrow viewport에서 overflow, clipping, broken wrapping이 없다.
@@ -258,7 +269,7 @@ visual reviewer가 BLOCKER 또는 MAJOR finding을 보고하면 fresh `frontend_
 
 - workspace root
 - implemented routes/screens
-- dominant reference direction
+- dominant reference direction과 사용자가 선택한 스타일 option
 - Figwright/Figma status, claimed file, authoritative root node id when used
 - reused design-system assets
 - validation commands
@@ -283,6 +294,6 @@ tracker, 기존 implementation plan status, PR은 변경하지 않는다.
 
 ## `frontend_designer` 역할
 
-- 이 GUIDE의 Current UI inventory, Reference-first design, Frontend design brief와 해당할 때 Figwright/Figma authoring 단계만 수행하고 `frontend-design`을 재귀 호출하지 않는다.
+- 이 GUIDE의 Current UI inventory, Reference-first design, 시각 스타일 선택 질문, Frontend design brief와 해당할 때 Figwright/Figma authoring 단계만 수행하고 `frontend-design`을 재귀 호출하지 않는다.
 - 실제로 열람하지 않은 reference, Figma 파일, 웹페이지, screenshot을 확인했다고 쓰거나 지어내지 않는다.
-- application source·tests·Spec·plan·tracker·설정을 수정하지 않는다. Figma canvas 쓰기는 workflow가 Figma 경로를 선택했을 때만 허용한다. 완성된 design brief와 미해결 blocker를 반환한다.
+- application source·tests·Spec·plan·tracker·설정을 수정하지 않는다. workspace-write 권한은 session의 스타일 mock·screenshot·비교 페이지·brief와 브라우저 실행에만 쓴다. Figma canvas 쓰기는 workflow가 Figma 경로를 선택했을 때만 허용한다. 완성된 design brief와 미해결 blocker를 반환한다.

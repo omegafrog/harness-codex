@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 const installed = new URL('../../.harness/src/workflow/plan-review.mjs', import.meta.url);
-const { snapshotPlanSet, inspectPlanSet, inspectPlanSetImpact, updatePlanReview } = await import(installed.href);
-const { reviewDelta } = await import(new URL('./review-delta.mjs', installed).href);
-const { resolveCommandContext, latestReviewResult, reviewFixedPoint } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
+const { snapshotPlanSet, inspectPlanSet, inspectPlanSetImpact, updatePlanReview, planReviewExecutionId } = await import(installed.href);
+const { resolveCommandContext } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
 // The stage only names the admitted attempt. Verdict, findings and reviewer identity come from the
 // native reviewer that the subagent hook bound to this attempt, so a stage cannot vouch for itself.
 function validateReviewRecord(review, options) {
@@ -23,6 +21,7 @@ try {
     options[flag === '--plan-set' ? 'planSetId' : flag === '--plan' ? 'planId' : flag.slice(2)] = value;
   }
   { const ctx = resolveCommandContext({ root: options.root, planSetId: options.planSetId }); options.root = ctx.root; options.planSetId = ctx.plan_set_id ?? undefined; }
+  if (['snapshot', 'impact'].includes(action) || (action === 'check' && options.phase === 'planning')) options.executionId = await planReviewExecutionId(options.root);
   let result;
   if (['begin', 'record', 'abort', 'resolve'].includes(action)) {
     if (action === 'record') {
@@ -31,7 +30,6 @@ try {
       result = await updatePlanReview({ ...options, action, attemptId: options.attempt, review: { schema_version: 1, attempt_id: options.attempt, plan_set_id: options.planSetId }, requireNative: true });
     } else {
       result = await updatePlanReview({ ...options, action, attemptId: options.attempt });
-      if (action === 'begin') result.review_delta = await reviewDelta({ root: options.root, inputs: result.inputs, previousInputs: result.previous_inputs });
     }
   } else if (action === 'snapshot') result = await snapshotPlanSet(options);
   else if (action === 'impact') result = await inspectPlanSetImpact(options);

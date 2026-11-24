@@ -10,6 +10,8 @@ import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
 import { explainError, extractVerbose } from '../.harness/src/workflow/stage-cli.mjs';
 import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
+import { withDecisionContext } from './support/decision-question.mjs';
+import { childRollout, parentRollout, rolloutPath, writeRollout } from './support/codex-subagent-rollout.mjs';
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
 const NATIVE = 'harness-native-stage.mjs';
@@ -38,7 +40,7 @@ const runPrinted = (workspace, command, agentId = 'agent-1') => {
 };
 const SKIP = (analysis) => `생략: stakeholder-analysis 판정 생략 (${analysis})`;
 const SKIPPED = (analysis) => ({ files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
-const question = { question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null };
+const question = withDecisionContext({ question_id: 'q-1', title: '삭제한 글을 복구할 수 있나요?', options: [{ id: 'no', label: '복구할 수 없다', consequence: '삭제는 되돌릴 수 없다', evidence: [] }, { id: 'yes', label: '복구할 수 있다', consequence: '삭제 상태를 보관한다', evidence: [] }], recommended_option_id: 'no', rationale: '요구사항이 그렇게 말한다', decision_kind: null });
 
 test('an installed stage honors an explicit model and effort and refuses a mismatched Codex worker', async (t) => {
   const { workspace, tree, treeGit, specPath, submitStage } = await consumerWorkflow(t, REQUEST);
@@ -136,12 +138,15 @@ test('the stage commands print only what the next step needs, and --verbose prin
   // start: what spawn_agent needs and the bind command, without the workspace, the sandbox or the binding's skill.
   const startOutput = exec(workspace, NATIVE, ['start', '--execution-id', prepared.execution_id]);
   const started = ok(startOutput);
-  assert.deepEqual(Object.keys(started).sort(), ['agent_profile', 'binding', 'guide', 'input_path', 'next', 'output_path', 'schema_path']);
+  assert.deepEqual(Object.keys(started).sort(), ['agent_profile', 'binding', 'document_draft_root', 'guide', 'input_path', 'next', 'output_path', 'schema_path']);
   assert.equal(started.agent_profile, 'workflow_stage');
   assert.deepEqual(Object.keys(started.binding).sort(), ['model', 'model_tier', 'provider', 'reasoning_effort']);
-  for (const path of [started.guide, started.input_path, started.schema_path]) assert.ok(existsSync(path), path);
+  assert.equal(started.document_draft_root, join(workspace, '.io/runtime/executions', prepared.execution_id, 'document-drafts/workspace'));
+  for (const path of [started.guide, started.input_path, started.schema_path, started.document_draft_root]) assert.ok(existsSync(path), path);
   assert.match(started.next, new RegExp(`bind --execution-id ${prepared.execution_id} --agent-id <agent_id>$`));
-  assert.ok(bytes(startOutput.stdout) <= 1500, `start is ${bytes(startOutput.stdout)} bytes`);
+  // Absolute dispatch paths repeat the fixture checkout prefix, which depends on the session's TMPDIR.
+  const startContractBytes = bytes(startOutput.stdout.replaceAll(workspace, '<workspace>'));
+  assert.ok(startContractBytes <= 1500, `start is ${startContractBytes} bytes with the workspace prefix normalized`);
 
   // bind and finish.
   const bound = ok(exec(workspace, NATIVE, ['bind', '--execution-id', prepared.execution_id, '--agent-id', 'agent-1']));
@@ -204,7 +209,9 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   for (const path of [launched.guide, launched.input_path, launched.schema_path]) assert.ok(existsSync(path), path);
   assert.equal(launched.next.bind, `node .harness/scripts/${NATIVE} bind --execution-id ${launched.execution_id} --agent-id <agent_id>`);
   assert.equal(launched.next.finish, `node .harness/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
-  assert.ok(bytes(output.stdout) <= 1700, `launch is ${bytes(output.stdout)} bytes`);
+  // The spawn instruction names fork_turns "none": a Codex start without it is denied by the fresh-agent hook.
+  assert.match(launched.next.spawn, /spawn_agent \{agent_type: "workflow_stage", fork_turns: "none"\}/);
+  assert.ok(bytes(output.stdout) <= 1900, `launch is ${bytes(output.stdout)} bytes`);
   assert.deepEqual(await readdir(join(workspace, '.io/runtime/launch-attempts')), [], 'successful launch removes its temporary receipt');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.stages['stakeholder-analysis'].status, 'running');
@@ -309,7 +316,9 @@ test('every error the orchestrator can hit in the stage flow says what happened,
   const notStarted = refusal(exec(workspace, NATIVE, ['finish', '--execution-id', prepared.execution_id]), 'NOT_RUNNING');
   assert.match(ids(notStarted), /harness-context\.mjs/);
   const unbound = refusal(exec(workspace, NATIVE, ['finish', '--execution-id', id]), 'NOT_BOUND');
-  assert.equal(unbound.next[0], `node .harness/scripts/${NATIVE} bind --execution-id ${id} --agent-id <agent_id>`);
+  // finish before any worker exists tells the orchestrator to start the fresh worker (fork_turns "none"), then bind it.
+  assert.match(unbound.next[0], /Spawn the fresh worker .*fork_turns: "none"/);
+  assert.equal(unbound.next[1], `node .harness/scripts/${NATIVE} bind --execution-id ${id} --agent-id <agent_id>`);
   // The stage is running now: it is not prepared or started twice.
   const pending = refusal(exec(workspace, PREPARE, ['--stage-id', 'stakeholder-analysis']), 'STAGE_RUNNING');
   assert.ok(pending.next.some((step) => step.includes(`inspect --execution-id ${id}`)));
@@ -402,6 +411,9 @@ test('the explanation catalogue covers the errors the stage commands throw and e
     ['User revision cannot start while another stage is running', 'USER_REVISION_REFUSED'],
     ['User revision requires a completed stage or one waiting on its question', 'USER_REVISION_REFUSED'],
     ['Native stage must be bound to the actual subagent ID', 'NOT_BOUND'],
+    ['The active independent review belongs to a different stage execution', 'REVIEW_EXECUTION_MISMATCH'],
+    ['Only the bound plan or contract stage worker can request a writer before submitting its result', 'DRAFT_HANDOFF_REFUSED'],
+    ['Native stage must have a bound worker before assigning a writer', 'NOT_BOUND'],
     ['Native subagent binding mismatch', 'BIND_MISMATCH'],
     ['Stage already running; check the native subagent before retrying', 'STAGE_RUNNING'],
     ['aggregate-design cannot start before domain-model: the flow runs a in order, and domain-model is failed/EXECUTION_ERROR, not completed/OK. Complete domain-model next.', 'STAGE_ORDER'],
@@ -538,4 +550,119 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   assert.match(dispatch, /`why`/);
   const enforcement = await readFile(join(sourceRoot, 'docs/architecture/enforcement.md'), 'utf8');
   assert.match(enforcement, /stage-cli\.mjs/);
+});
+
+// The orchestrator of a real Codex run ran `receive` with nothing on standard input twice (tactical-data worker, final message
+// present and valid) and got "Native subagent output is empty"; a bound worker's missing output was a FORMAT_ERROR.
+test('installed consumer: a missing worker or output is explained, and a bare receive reads a completed Codex worker\'s final JSON from its transcript', async (t) => {
+  const { workspace, tree, treeGit, specPath, submitStage } = await consumerWorkflow(t, REQUEST);
+  const analysis = specPath('stakeholder-analysis.md');
+  const parentId = JSON.parse(await readFile(tree.worktree_ref, 'utf8')).agent_sessions.orchestrator.session_id;
+  const launched = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'stakeholder-analysis']));
+  const id = launched.execution_id;
+  assert.match(launched.next.spawn, /spawn_agent \{agent_type: "workflow_stage", fork_turns: "none"\}/);
+
+  // finish with no worker at all: the answer says to start the fresh worker (with fork_turns "none") and then bind it.
+  const unbound = refusal(runPrinted(workspace, launched.next.finish), 'NOT_BOUND');
+  assert.match(unbound.next[0], /Spawn the fresh worker .*fork_turns: "none"/);
+  const agent = '/root/analysis_worker';
+  ok(runPrinted(workspace, launched.next.bind, agent));
+
+  // finish before the worker submitted anything is not a schema error.
+  const early = runPrinted(workspace, launched.next.finish);
+  assert.equal(early.status, 1);
+  const missing = JSON.parse(early.stdout);
+  assert.equal(missing.status, 'output_missing');
+  assert.equal(missing.code, 'WORKER_OUTPUT_MISSING');
+  assert.equal(missing.errors[0].missing, true);
+  assert.equal(missing.receive_command, `node .harness/scripts/${NATIVE} receive --execution-id ${id} --agent-id '${agent}'`);
+  assertActionable(missing);
+  assert.doesNotMatch(JSON.stringify(missing), /FORMAT_ERROR|format_error/);
+
+  // The stage result exactly as a worker returns it as its final message; the worker never submitted it.
+  await submitStage({ stage: 'stakeholder-analysis', started: launched }, SKIPPED(analysis));
+  const final = JSON.stringify(JSON.parse(await readFile(launched.output_path, 'utf8')));
+  await unlink(launched.output_path);
+
+  const sessions = join(process.env.CODEX_HOME, 'sessions');
+  const childId = randomUUID();
+  const childFile = rolloutPath(sessions, childId);
+  const child = childRollout({ parentId, childId, cwd: workspace, agentPath: agent });
+  await writeRollout(rolloutPath(sessions, parentId), parentRollout({ parentId, cwd: workspace, childId, agentPath: agent }));
+  const receive = (env = {}) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), 'receive', '--execution-id', id, '--agent-id', agent], { cwd: workspace, encoding: 'utf8', input: '', env: { ...process.env, ...env } });
+  const other = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const attestationFile = join(workspace, '.io/runtime/executions', id, 'native-attestation.jsonl');
+  const attestations = async () => (await readFile(attestationFile, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((row) => JSON.parse(row));
+
+  // No transcript to read, or not the orchestrator conversation: the empty command says where the JSON belongs.
+  await writeRollout(childFile, child.stoppedRows);
+  const noPipe = refusal(receive({ CODEX_THREAD_ID: other }), 'RECEIVE_INPUT_EMPTY');
+  assert.match(noPipe.next.join('\n'), /printf %s '<final JSON>' \| node \.harness\/scripts\/harness-native-stage\.mjs receive/);
+  assert.equal(existsSync(launched.output_path), false, 'nothing was recorded');
+
+  // The worker's turn is still running; the SubagentStop hook fires before task_complete exists and cannot capture the turn.
+  refusal(receive({ CODEX_THREAD_ID: parentId }), 'WORKER_NOT_FINISHED');
+  await writeRollout(childFile, [...child.stoppedRows, ...child.finalRows(final)]);
+  const stop = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-agent-event.mjs')], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' },
+    input: JSON.stringify({ hook_event_name: 'SubagentStop', cwd: workspace, session_id: parentId, agent_id: childId, agent_type: 'workflow_stage', agent_transcript_path: childFile }) });
+  assert.equal(stop.status, 0, stop.stderr);
+  const hookTime = await attestations();
+  assert.equal(hookTime.length, 1);
+  assert.deepEqual([hookTime[0].status, hookTime[0].reason, hookTime[0].source], ['unavailable', 'completed_turn_metadata_missing', 'codex-subagent-stop-hook']);
+  refusal(receive({ CODEX_THREAD_ID: parentId }), 'WORKER_NOT_FINISHED');
+
+  // A turn that completed without any JSON, with a failure or with an interruption each has its own recovery.
+  const recovery = (body) => body.next.join('\n');
+  await writeRollout(childFile, [...child.stoppedRows, child.completeRow(null)]);
+  const empty = refusal(receive({ CODEX_THREAD_ID: parentId }), 'NATIVE_OUTPUT_EMPTY');
+  assert.match(recovery(empty), new RegExp(`${NATIVE} fail --execution-id ${id} --reason`));
+  assert.match(recovery(empty), /launch --stage-id stakeholder-analysis --feedback/);
+  await writeRollout(childFile, [...child.stoppedRows, child.completeRow('The analysis is done and saved.')]);
+  assert.match(refusal(receive({ CODEX_THREAD_ID: parentId }), 'NATIVE_OUTPUT_EMPTY').why, /final message holds no JSON object/);
+  await writeRollout(childFile, [...child.stoppedRows, child.failedRow('model overloaded')]);
+  assert.match(recovery(refusal(receive({ CODEX_THREAD_ID: parentId }), 'WORKER_FAILED')), /--reason 'model overloaded'/);
+  await writeRollout(childFile, [...child.stoppedRows, child.abortedRow()]);
+  assert.match(recovery(refusal(receive({ CODEX_THREAD_ID: parentId }), 'WORKER_INTERRUPTED')), /recover-interrupted/);
+  assert.equal(existsSync(launched.output_path), false, 'no refusal recorded anything');
+
+  // The completed worker's final JSON is recorded from its own transcript; finish then records the stage and its completed turn.
+  await writeRollout(childFile, [...child.stoppedRows, ...child.finalRows(final), child.completeRow(final)]);
+  const received = JSON.parse(receive({ CODEX_THREAD_ID: parentId }).stdout);
+  assert.deepEqual(received, { status: 'received', execution_id: id, source: 'native_transcript', thread_id: childId });
+  assert.equal(await readFile(launched.output_path, 'utf8'), final);
+  const again = JSON.parse(receive({ CODEX_THREAD_ID: parentId }).stdout);
+  assert.equal(again.status, 'received', 'a bare receive repeats safely while the worker output is the same');
+  const finished = ok(runPrinted(workspace, launched.next.finish));
+  assert.equal(finished.code, 'OK');
+  const rows = await attestations();
+  assert.equal(rows.at(-1).status, 'captured', 'finish captured the completed turn the hook could not');
+  assert.equal(rows.at(-1).source, 'codex-finish-transcript-refresh');
+  assert.deepEqual(rows.at(-1).turns, [{ turn_id: 'turn-child-1', status: 'completed', model: 'gpt-6-luna', reasoning_effort: 'medium' }]);
+  assert.deepEqual(treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n'), [analysis]);
+  assert.equal(treeGit('status', '--short', '--untracked-files=all'), '');
+});
+
+test('installed consumer: a worker that completed without a result is recorded as failed and the same stage is relaunched with the printed commands', async (t) => {
+  const { workspace, tree } = await consumerWorkflow(t, REQUEST);
+  const parentId = JSON.parse(await readFile(tree.worktree_ref, 'utf8')).agent_sessions.orchestrator.session_id;
+  const launched = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'stakeholder-analysis']));
+  const id = launched.execution_id;
+  const agent = '/root/analysis_worker';
+  ok(runPrinted(workspace, launched.next.bind, agent));
+  const sessions = join(process.env.CODEX_HOME, 'sessions');
+  const childId = randomUUID();
+  const child = childRollout({ parentId, childId, cwd: workspace, agentPath: agent });
+  await writeRollout(rolloutPath(sessions, parentId), parentRollout({ parentId, cwd: workspace, childId, agentPath: agent }));
+  await writeRollout(rolloutPath(sessions, childId), [...child.stoppedRows, child.completeRow(null)]);
+  const receive = spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), 'receive', '--execution-id', id, '--agent-id', agent], { cwd: workspace, encoding: 'utf8', input: '', env: { ...process.env, CODEX_THREAD_ID: parentId } });
+  const body = refusal(receive, 'NATIVE_OUTPUT_EMPTY');
+  const sh = (command) => spawnSync('sh', ['-c', command.replace('<actual reason or user instruction>', 'The previous worker ended with an empty final message')], { cwd: workspace, encoding: 'utf8' });
+  const fail = body.next.find((step) => step.includes(`${NATIVE} fail --execution-id ${id}`)).replace(/^.*?(node \.harness)/, '$1');
+  const failed = ok(sh(fail));
+  assert.equal(failed.status, 'failed');
+  const relaunch = body.next.find((step) => step.includes('launch --stage-id stakeholder-analysis --feedback')).replace(/^.*?(node \.harness)/, '$1');
+  const relaunched = ok(sh(relaunch));
+  assert.equal(relaunched.status, 'launched');
+  assert.notEqual(relaunched.execution_id, id);
+  assert.equal(JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8')).stages['stakeholder-analysis'].execution_id, relaunched.execution_id);
 });

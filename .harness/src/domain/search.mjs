@@ -20,9 +20,12 @@ const brief = (entry) => ({
   related: linksOf(entry.metadata), source_refs: entry.metadata.source_refs, version: entry.version,
 });
 
-export async function loadDomainSnapshot(root) {
+export async function loadDomainSnapshot(root, { draftExecutionId } = {}) {
   const documents = await readDomainRepository(root);
-  const [glossary, contextMap] = await Promise.all(['CONTEXT.md', 'CONTEXT-MAP.md'].map((path) => optional(readDomainFile(root, path))));
+  const readContext = draftExecutionId
+    ? async (path) => (await (await import('../workflow/stage-documents.mjs')).readStageDocument(root, path, draftExecutionId))?.toString('utf8') ?? ''
+    : (path) => optional(readDomainFile(root, path));
+  const [glossary, contextMap] = await Promise.all(['CONTEXT.md', 'CONTEXT-MAP.md'].map(readContext));
   const contexts = parseDomainContexts(contextMap);
   const contextIds = new Set(contexts.keys());
   const { cards, problems } = await readRegistry(root);

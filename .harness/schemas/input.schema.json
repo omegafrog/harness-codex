@@ -104,6 +104,21 @@
         "approved_spec_overwrites": { "description": "Retired: only the retired spec-me stage received it. Kept optional because execution inputs already stored in consumer worktrees carry it and are re-validated on resume. Remove once no such worktree can be resumed.", "type": "object", "additionalProperties": false, "properties": { "product": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "architecture": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
         "agent_profile": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
         "role": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+        "upstream": {
+          "description": "Runner-written refs to every current earlier requirements/tactical design stage: its canonical result and the confirmed decision answers of the executions that asked questions. Paths are relative to session_directory. Workers read these instead of searching the session.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["stage_id", "execution_id", "result_ref"],
+            "additionalProperties": false,
+            "properties": {
+              "stage_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+              "execution_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+              "result_ref": { "type": "string", "minLength": 1 },
+              "answers_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^runtime/executions/[A-Za-z0-9][A-Za-z0-9_-]*/decision-answers\\.json$" } }
+            }
+          }
+        },
         "transition": {
           "type": "object",
           "required": ["from_stage", "code", "result_ref", "summary"],

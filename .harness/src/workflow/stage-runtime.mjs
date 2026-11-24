@@ -372,8 +372,10 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   if (envelope.status === 'completed' && ['to-ticket', 'sync-contracts'].includes(input.skill)) await assertNoRogueReviewer({ root, session, input });
   if (envelope.status === 'completed') {
     if (input.skill === 'tracker-publish') {
-      const { verifyActivatedPublication } = await import('../tracker/publication.mjs');
+      const { assertPublishedIssues, verifyActivatedPublication } = await import('../tracker/publication.mjs');
       await verifyActivatedPublication({ root, planSetId: input.context?.plan_set_id });
+      // A result written before published_issues existed has no such field and stays valid.
+      await assertPublishedIssues({ root, planSetId: input.context?.plan_set_id, result });
     }
     // The sync-contracts stage seals the contract and has it independently reviewed; it cannot finish on a revision that no
     // hook-recorded fresh reviewer passed. A stage being reopened is replaced by the new run, which needs its own review.
@@ -419,6 +421,11 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
       requireValue(new Set(question.options.map((option) => option.id)).size === question.options.length && question.options.some((option) => option.id === question.recommended_option_id), 'Invalid question options/recommendation');
       // A technology question shows, per option, why it meets each criterion, citing a stored Claim from an authoritative source.
       if (question.decision_kind === 'technology') await assertTechnologyQuestionEvidence(root, question);
+      // A visual style question shows real screenshots of each option; any preview must be an image inside the session.
+      if (question.decision_kind === 'visual_direction' || question.options.some((option) => option.previews?.length)) {
+        const { assertQuestionPreviews } = await import('./questions.mjs');
+        await assertQuestionPreviews({ session, question });
+      }
     }
   }
   if (['implement', 'implement-wrapper'].includes(input.skill) && (envelope.code === 'USER_DECISION_REQUIRED' || questions.length)) throw new Error('Implementation does not ask the user; return SPEC_REVISION_REQUIRED for a decision the approved Spec does not settle');

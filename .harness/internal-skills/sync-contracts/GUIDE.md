@@ -5,6 +5,8 @@ model_tier: implementation
 
 # sync-contracts
 
+실행 배정에 `document_draft_root`가 있으면 계약별 변경 규칙·근거·반영 위치와 필요한 양식을 그 아래의 같은 상대 경로에 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 작성된 문서를 seal하고 독립 리뷰를 통과하면 실행기가 그 문서를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
+
 설치된 **대상 프로젝트**의 현행 계약은 `docs/contracts/product.md` 한 장과 `architecture.md` 한 장이다. ticket Spec은 변경 제안·승인 근거다. 다음 요구사항·전술 설계 흐름은 통합 계약·`CONTEXT.md`·`CONTEXT-MAP.md`와 실제 코드를 먼저 읽는다. manifest는 기능·구성요소·소유 관계·diagram·source_roots를 읽고, 대량 hash 비교는 CLI에 맡긴다. 하네스 자체의 모델을 대상 프로젝트에 복사하지 않는다.
 
 ## 갱신
@@ -28,11 +30,11 @@ model_tier: implementation
 
 최종 E2E가 통과하면 orchestrator가 이 skill을 독립 stage로 시작한다. 이 stage만 `docs/contracts/`를 쓴다. orchestrator 메인 세션은 `docs/contracts/`를 포함한 제품 파일에 쓰지 않으며(PreToolUse hook이 거부한다), 계약이 어긋나면 이 stage를 시작하거나 `--feedback`으로 재개한다.
 
-1. Product·Architecture Spec, 계획, 실제 source와 테스트·E2E 증거를 읽고 위 갱신 절차대로 `product.md`, `architecture.md`, `manifest.json`, `diagrams/`를 작성한다.
-2. `node .harness/scripts/harness-contracts.mjs check --root <workspace_root>`를 실행한다. 결과의 `content_violations`를 **한 번에 모두** 고친다. 메시지에 적힌 manifest 항목 형식을 그대로 쓴다. revision·날짜·요약·snapshot·`architecture.html`은 seal이 쓰므로 손으로 고치지 않는다.
-3. `content_violations`가 비면 `node .harness/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<바뀐 내용>'`을 실행하고 `check`가 `pass`인지 확인한다.
+1. Product·Architecture Spec, 계획, 실제 source와 테스트·E2E 증거를 읽고 위 갱신 절차대로 `product.md`, `architecture.md`, `manifest.json`, `diagrams/`에 반영할 결정과 근거를 해당 실행의 변경안에 모은다.
+2. stage 작업자가 `node .harness/scripts/harness-native-stage.mjs draft-ready --execution-id <execution_id> --agent-id <agent_id>`를 실행한다. `writer_required`이면 반환된 `agent_profile`과 `binding`으로 fresh 작성 에이전트를 한 명 시작한다(Codex `fork_turns: "none"`). `next.bind`에 실제 writer ID를 넣고 `writer_brief_path`와 `write_command`만 전달한다. writer가 끝나면 `next.finish`의 `review_ready`를 확인하고 같은 stage 작업자가 이어서 진행한다.
+3. stage 계약에 명시된 `harness-native-command.mjs`를 통해 `node .harness/scripts/harness-contracts.mjs check --root <workspace_root>`를 실행한다. writer가 작성한 문서와 workspace source를 함께 검사한다. `content_violations` 또는 `contracts_invalid`가 보고한 형식 오류를 변경안에 한 번에 반영하고 `draft-ready`부터 반복한다. 문서 검사가 끝나면 같은 실행 환경에서 `node .harness/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<바뀐 내용>'`을 실행하고 `check`의 `pass`를 확인한다. `seal`은 revision·날짜·요약·snapshot을 포함한 최종 manifest와 `architecture.html`을 생성한다. 독립 리뷰의 `begin`·`record`·`check`도 같은 실행 환경에서 호출한다.
 4. **독립 의미 검토.** seal된 revision을 [contract-review](../contract-review/GUIDE.md)의 루프로 fresh `contract_reviewer`에게 맡긴다(`harness-contract-review.mjs begin`·`record`). 형식 검사는 규칙의 정확성을 증명하지 않으므로 이 검토가 규칙 소유·호출 경로·낡은 경로·증거를 source·테스트·E2E receipt와 대조한다. reviewer ID와 판정은 subagent hook이 기록하며, 이 stage는 기록을 쓰지 않는다.
-5. `revise`이면 지적을 한 번에 고쳐 다시 `check`·`seal`한 뒤 새 reviewer로 재검토한다. 같은 blocker·major 지적이 두 회차 연속 남거나 5회차에도 통과하지 못하면 더 반복하지 않고 `USER_DECISION_REQUIRED`로 남은 지적과 시도한 수정을 묻는다.
+5. `revise`이면 계약 초안에 지적을 한 번에 반영하고 `draft-ready`부터 다시 진행한다. 새로 작성된 문서가 `check`·`seal`을 통과한 뒤 새 reviewer로 재검토한다. 같은 blocker·major 지적이 두 회차 연속 남거나 5회차에도 통과하지 못하면 더 반복하지 않고 `USER_DECISION_REQUIRED`로 남은 지적과 시도한 수정을 묻는다. 질문은 [질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)을 따른다: 확정된 계약 범위와 지금 정해야 하는 이유, 선택지마다 `effect`와 `example`.
 6. 제품 코드·테스트·Spec·계획은 바꾸지 않는다. 계약을 source와 맞출 수 없는 코드 결함을 찾으면 `IMPLEMENTATION_REVISION_REQUIRED`로 근거와 함께 반환한다.
 7. 같은 `check` 위반이 두 번 고친 뒤에도 남으면 더 반복하지 않고 남은 위반과 시도한 수정을 `blocked/INPUT_MISSING`으로 반환한다.
 8. 현재 sealed revision의 리뷰가 통과하고 `node .harness/scripts/harness-contract-review.mjs check --root <workspace_root> --plan-set <plan-set-id>`가 pass이면 바뀐 계약 파일을 artifacts로 `completed/OK`를 반환한다. 통과한 리뷰가 없거나 이후 계약·source가 바뀌어 낡았거나, 그런 reviewer가 마지막 정식 리뷰 뒤에 있으면 실행기가 완료를 거부한다. orchestrator가 이어서 완료 gate를 실행하며, gate도 같은 기록에서 sealed revision의 통과한 리뷰를 다시 요구한다.

@@ -9,7 +9,7 @@ model_tier: high_performance
 
 ## 기준
 
-reviewer는 `begin`이 알려 준 sealed revision의 `docs/contracts/product.md`, `architecture.md`, `manifest.json`, `diagrams/`를 읽고 실제 source·테스트·E2E 증거와 직접 대조한다. brief의 경로는 출발점일 뿐이며 근거는 reviewer가 직접 연 파일에서 가져온다.
+reviewer는 `begin`이 알려 준 sealed revision의 `brief.contract_files`를 읽고 실제 source·테스트·E2E 증거와 직접 대조한다. `brief.contract_file_sources`에 항목이 있으면 값에 지정된 실행 초안을 열고, 나머지는 `brief.contract_files`의 경로에서 연다. finding에는 `brief.contract_files`에 있는 정본 경로를 인용한다. 근거는 reviewer가 직접 연 파일에서 가져온다.
 
 - **규칙 소유**: 계약이 어떤 객체/함수의 규칙이라고 쓴 항목을 실제 코드의 소유자와 비교한다. Aggregate 밖으로 새는 규칙, 공개 setter·직접 저장소 호출로 우회되는 불변식, 계약에 없는 소유자가 실제 규칙을 쥔 경우를 지적한다.
 - **호출 경로**: 기능별 sequence와 통신 설명을 실제 진입점(controller·handler·CLI)부터 저장소·외부 호출까지의 코드 호출과 비교한다. 존재하지 않는 호출, 빠진 단계, 순서가 다른 단계를 지적한다.
@@ -28,11 +28,11 @@ Reviewer는 `verdict`(`pass` 또는 `revise`)와 `findings`(각각 `severity`, `
 
 ## Stage의 리뷰 루프
 
-1. 계약이 `check` pass이고 seal된 상태에서 `node .harness/scripts/harness-contract-review.mjs begin --root <workspace_root> --plan-set <plan-set-id>`를 실행한다. 결과(`attempt_id`, `inputs`, `contract_revision`, `brief`, `previous_findings`)를 reviewer 프롬프트에 그대로 전달한다. 리뷰 대상은 sealed revision이며, begin 뒤 계약이나 source를 바꾸면 그 회차는 stale이 된다.
+1. `review_ready` 뒤 writer가 작성한 문서를 seal하고 `check`가 통과하면 `node .harness/scripts/harness-contract-review.mjs begin --root <workspace_root> --plan-set <plan-set-id>`를 실행한다. 결과(`attempt_id`, `inputs`, `contract_revision`, `brief`, `previous_findings`)를 reviewer 프롬프트에 그대로 전달한다. 리뷰 대상은 sealed revision이며, begin 뒤 계약이나 source를 바꾸면 그 회차는 stale이 된다.
 2. reviewer가 끝나면 `record --root <workspace_root> --plan-set <plan-set-id> --attempt <attempt_id>`로 기록한다. 판정 파일을 직접 만들어 넘기지 않는다.
-3. `revise`이면 모든 `blocker`·`major` finding을 한 번에 고친다. 계약 문서만 고치고(코드는 건드리지 않는다), `check`로 `content_violations`를 비운 뒤 `seal`한다. seal이 revision을 올리므로 같은 입력은 다시 리뷰되지 않는다. 그다음 새 `begin`과 **새** reviewer로 재검토한다.
+3. `revise`이면 모든 `blocker`·`major` finding을 계약 초안에 한 번에 반영한다. `draft-ready`부터 다시 진행하고 writer가 작성한 문서의 `check`·`seal`을 마친다. 그다음 새 `begin`과 **새** reviewer로 재검토한다.
 4. 코드를 고쳐야 하는 finding은 계약을 억지로 맞추지 않고 `IMPLEMENTATION_REVISION_REQUIRED`로 근거와 함께 반환한다. 열린 attempt가 있으면 `abort --reason`으로 닫는다.
-5. 다음 중 하나이면 더 반복하지 않고 `USER_DECISION_REQUIRED`로 남은 finding과 시도한 수정을 사용자에게 묻는다. `begin`이 거부하며 CLI 오류 메시지가 이유를 말한다.
+5. 다음 중 하나이면 더 반복하지 않고 `USER_DECISION_REQUIRED`로 남은 finding과 시도한 수정을 사용자에게 묻는다. 질문은 [질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)을 따른다: 확정된 계약 범위와 지금 정해야 하는 이유, 선택지마다 `effect`와 `example`. `begin`이 거부하며 CLI 오류 메시지가 이유를 말한다.
    - 같은 blocker·major finding이 두 회차 연속 남았다(고쳐도 같은 지적이면 고치는 방향이 문제가 아니다).
    - 5회차(`CONTRACT_REVIEW_ROUNDS`)에도 `pass`가 아니다.
 

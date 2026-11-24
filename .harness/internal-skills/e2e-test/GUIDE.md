@@ -18,7 +18,7 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 ## 실행 절차
 
 1. 현재 디렉터리와 `git rev-parse --show-toplevel`을 확인해 활성 워크트리 경로를 확정한다. 호출 세션에서 전달된 워크트리와 다르면 실행하지 않고 불일치를 보고한다. 이후 모든 명령의 working directory는 이 경로로 고정한다. 인프라를 시작하기 전에 `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <worktree> --for-e2e --json`을 실행하고 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. E2E는 tracker lifecycle에 의존하지 않는다. 실패하면 서버나 테스트를 시작하지 않는다.
-2. 활성 worktree의 `.harness/agents/testing-guidance.md`, `.harness/agents/EXEC.md`, E2E 대상의 실행 지침을 읽는다. 서버·인프라 준비, 환경 변수, 실행·대기·종료 명령은 활성 worktree의 프로젝트 계약을 따른다. 필요한 명령이나 전제가 없으면 추측해 환경을 변경하지 말고 blocker로 보고한다.
+2. 활성 consumer/worktree의 `.harness/agents/testing-guidance.md`, `.harness/agents/EXEC.md`, E2E 대상의 실행 지침을 읽는다. 서버·인프라 준비, 환경 변수, 실행·대기·종료 명령은 이 consumer의 프로젝트 계약을 따른다. Harness black-box Codex workflow E2E는 별도로 parent/invocation에서 받은 정확한 Harness source checkout root를 사용해 `<harness_source_root>/.harness/agents/EXEC.md`의 `## Headless Codex E2E 실행 체크리스트`를 **모든 host `codex exec` launch argv 구성 직전과 각 `codex exec resume` argv 구성 직전** 다시 읽는다. 다른 source checkout을 탐색하지 않는다. 전달된 경로나 절이 없거나 읽히지 않으면 launch/resume하지 않고 blocker를 보고한다. Consumer EXEC는 앱·테스트 runtime 지침의 정본이며 source checklist는 이 승인 시나리오의 host launch 설정에만 적용한다. 그 밖에 필요한 계약이 없으면 추측해 환경을 바꾸지 말고 blocker로 보고한다.
 
    실제 E2E에 필요한 DB·메시지 브로커 등 인프라는 Docker 컨테이너로 실행한다. 프로젝트의 `EXEC.md`와 `purpose: "e2e"` execution profile에는 사용할 이미지와 버전, 컨테이너별 설정·네트워크·포트, readiness, 로그와 소유 자원의 종료·삭제 절차를 명시한다. 기존 서비스나 컨테이너를 추정해 재사용하거나 다른 실행의 자원을 삭제하지 않는다. Docker daemon, 이미지 또는 계약이 준비되지 않으면 환경 차단을 보고하며 host 서비스로 우회하지 않는다. 앱과 브라우저를 반드시 컨테이너화한다는 뜻은 아니며, 승인된 프로젝트 실행 계약을 따른다. Docker 설치나 이미지 변경이 필요하면 caller에게 구체적 결손을 반환한다.
 3. `ARTIFACT_GUARD=.harness/internal-skills/e2e-test/scripts/artifact-guard.mjs`로 지정하고 `node "$ARTIFACT_GUARD" snapshot --root <worktree> --manifest <session_directory>/runtime/e2e/<run_id>/artifacts.json`을 실행해 기존 untracked/ignored 경로를 기록한다. manifest는 공통 resolver로 구한 세션 디렉터리의 runtime/e2e/<run_id>/ 아래에 둔다.
@@ -39,6 +39,15 @@ Caller와 runner는 [실패 재발 방지](references/failure-learning.md)를 �
 적용 lesson ID, 실패별 evidence/원인 가설/예방 조치 필요 여부와 `tests.e2e_failures` 입력, 활성 워크트리 경로, 정확한 실행 명령, 시작한 서비스와 endpoint, polling 간격 및 timeout, 결과 증거, 프로세스 종료 여부, artifact cleanup 결과를 보고한다. 환경이 준비되지 않았거나 cleanup을 입증할 수 없으면 통과로 처리하지 않는다.
 
 실행별 사용량 분석은 기본적으로 꺼진다. 사용자가 분석을 켜도록 요청했거나 `HARNESS_E2E_TELEMETRY=1`이면 [E2E 사용량 분석](../e2e-telemetry/GUIDE.md)을 적용한다. 사용자가 끄도록 요청하면 환경보다 우선한다. 승인 대기나 실패에서도 현 지점까지 측정할 수 있다. 보고서 수집 실패는 별도로 보고하고 E2E 결과와 재개 조건을 유지한다.
+
+## 관찰자 점검과 use-case 보고
+
+아래 명령은 활성 worktree에서 실행하는 읽기 전용 점검이다. 상태와 산출물을 쓰지 않고 workflow를 막지 않으며, 표시한 `flags`는 근거를 사람이 판단하는 입력이지 통과·실패 판정이 아니다. 관찰자는 stage 실패나 모델 복구에 개입하지 않고 이 출력과 원본 rollout으로 사실만 기록한다.
+
+- `node .harness/scripts/harness-execution-audit.mjs executions [--flagged] [--verbose]`는 재시도를 포함한 모든 stage 실행을 나열한다. 각 행은 native thread ID, spawn 때의 `fork_turns`와 agent 종류, 실제 완료 turn의 model·reasoning effort, runtime attestation 상태(`captured`·`unavailable`·`not_recorded`)를 담는다. `retry`는 같은 stage가 같은 ticket에서 앞 실행을 대체했다는 뜻이다. flag는 `not_fresh`·`forked_transcript`(앞 대화를 물려받은 시작), `thread_reused`(두 실행이 한 thread를 씀), `model_mismatch`·`spawn_binding_mismatch`(요청과 다른 model·effort), `attestation_not_captured`·`attestation_thread_mismatch`, `thread_unresolved`·`rollout_unavailable`(확인 불가)이다. rollout을 찾지 못하면 `status`를 `partial`로 남기며 확인 불가를 통과로 읽지 않는다. Codex rollout만 읽고 Claude Code 실행은 `unavailable`로 표시한다.
+- `node .harness/scripts/harness-execution-audit.mjs read-scope [--plan <ticket-id>] [--verbose]`는 구현 작업자의 rollout이 읽거나 검색한 파일을 그 ticket이 선언한 파일·디렉터리·바운디드 컨텍스트와 비교해 `out_of_scope`를 보여 준다. 선행 단계 문서, 계획 세트 문서와 Harness·프로젝트 기본 문서는 범위 안으로 본다. 관찰 보고이며 차단하지 않는다. 범위 밖 읽기는 원본 줄로 선행 결과 누락이나 ticket의 모듈 목록 누락 같은 원인을 확인한 뒤 보고한다.
+- E2E 명령 안의 테스트는 승인된 시나리오·use case(`E2E-01`, `UC-01`)의 검증을 끝낼 때마다 `HARNESS_E2E_USE_CASES_FILE`이 가리키는 파일에 ID를 한 줄씩(또는 `{"use_case":"UC-01"}`) 덧붙인다. `harness-exec.mjs`가 경로를 주입하고 receipt의 `use_cases`에 기록한다. 완료 gate는 요청의 `use_cases`(없으면 `scenarios`)와 대조한다. 보고한 run에서 승인된 ID가 빠졌으면 `approved_e2e_use_cases_uncovered`로 완료를 차단하고, 아무것도 보고하지 않은 run은 `unverified`로 통과시키며 gate 결과에 경고를 남긴다. 보고 파일이 없거나 읽히지 않는다고 통과한 run을 실패로 바꾸지 않는다.
+- `HARNESS_HOOK_TIMING=1`을 세션 환경에 두면 Harness `PreToolUse` hook 스크립트(`fresh-agent`·`write-guard`·`agent-admission`)가 호출 시각, 스크립트 실행 시간, node 기동 포함 시간, stage 실행 ID를 `runtime/hooks/pretooluse-timing.jsonl`에 한 줄씩 남긴다. 기본은 꺼져 있으며 hook 명령과 판정은 바뀌지 않는다. 설치된 shell 필터가 node 실행 전에 걸러 낸 호출은 기록되지 않는다. [사용량 분석](../e2e-telemetry/GUIDE.md)이 호출 수와 시간을 집계한다.
 
 ## 소유 worktree
 

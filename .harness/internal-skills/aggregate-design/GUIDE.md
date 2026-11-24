@@ -5,6 +5,8 @@ model_tier: high_performance
 
 # aggregate-design
 
+실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+
 `domain-model`이 선언한 모델을 불변식으로 묶는다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 문서 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Aggregate와 규칙 책임을 채운다.
 
 1. 확정된 BIZ·INV·EX·AC·이벤트와 승인 답변, 각 BC의 선언·기존 모델 근거·Context Map을 대조한다. 기존 모델로 표현할 수 없는 책임은 `domain-model`로 반환한다.

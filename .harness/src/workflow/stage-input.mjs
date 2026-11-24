@@ -20,7 +20,7 @@ import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, 
 import { markRequirementsRevision, resolveReopen, staleFeedback } from './stage-reopen.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 import { assertTicketStartable } from './tactical-tickets.mjs';
-import { assertRequirementsApproval, userSaidAfter } from './user-inputs.mjs';
+import { approvalRefusal, assertRequirementsApproval, describeReplySearch, inspectUserReply, userSaidAfter } from './user-inputs.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set([...REQUIREMENTS_REVISION_STAGES, ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
@@ -88,9 +88,55 @@ async function visualReviewCoversImplementation({ root, reviewInput, planId, imp
   return false;
 }
 const REVISION_TARGETS = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' };
+
+async function recordedTacticalUiFlowDecision({ root, session, entry }) {
+  const attempts = [...(Array.isArray(entry?.attempts) ? entry.attempts : []), entry].filter((attempt, index, all) =>
+    attempt && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(attempt.execution_id || '')
+    && all.findIndex((item) => item?.execution_id === attempt.execution_id) === index);
+  const decisions = [];
+  for (const attempt of attempts) {
+    const attemptSession = attempt.result_session_directory ? await resolveSkillSession(root, attempt.result_session_directory) : session;
+    if (attemptSession !== session || typeof attempt.result_ref !== 'string') continue;
+    const result = await readSkillSessionJson({ root, session_directory: attemptSession, path: attempt.result_ref }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!Array.isArray(result?.questions) || !result.questions.length) continue;
+    const answerPath = `runtime/executions/${attempt.execution_id}/decision-answers.json`;
+    const answers = await readSkillSessionJson({ root, session_directory: attemptSession, path: answerPath }).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!Array.isArray(answers)) continue;
+    for (const question of result.questions) {
+      if (typeof question?.question_id !== 'string' || !question.question_id.trim()) continue;
+      const matches = answers.filter((item) => item?.question_id === question.question_id && typeof item.answer === 'string' && item.answer.trim());
+      if (matches.length === 1) decisions.push({ execution_id: attempt.execution_id, question_id: question.question_id, answer: matches[0].answer });
+    }
+  }
+  return decisions.length === 1 ? decisions[0] : null;
+}
 // A stage relaunched after a block or a stop reads the previous result as the record of that attempt. The gate errors and
 // blockers in it were true when it ended, and Harness, the documents or the gate may have changed since, so it is no verdict.
 export const PREVIOUS_RESULT_NOTE = 'The previous result is evidence of an earlier attempt: its blockers, gate errors and check verdicts were true when that attempt ended, and Harness, the documents or the gate may have changed since. Re-run the check on the current files before relying on any of them or blocking on them again.';
+
+// The requirements and tactical design stages run in a fixed order and each reads the decisions of the stages before it.
+// The runner hands every current (completed/OK, not stale) earlier stage's canonical result and confirmed answer records to
+// the worker, so it does not have to search the session for them. Answers live in the execution that asked the questions.
+export async function upstreamStageRefs({ root, session, state, stageId }) {
+  const index = PRE_SPEC_STAGES.indexOf(stageId);
+  if (index <= 0) return [];
+  const upstream = [];
+  for (const id of PRE_SPEC_STAGES.slice(0, index)) {
+    const entry = state.stages?.[id];
+    if (!isCurrentStage(entry) || !entry.result_ref || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(entry.execution_id || '')) continue;
+    const entrySession = entry.result_session_directory ? await resolveSkillSession(root, entry.result_session_directory) : session;
+    if (entrySession !== session) continue;
+    const answers_refs = [];
+    for (const attempt of [...(entry.attempts || []), entry]) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(attempt?.execution_id || '')) continue;
+      const path = `runtime/executions/${attempt.execution_id}/decision-answers.json`;
+      const info = await lstat(join(session, path)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+      if (info?.isFile() && !info.isSymbolicLink() && !answers_refs.includes(path)) answers_refs.push(path);
+    }
+    upstream.push({ stage_id: id, execution_id: entry.execution_id, result_ref: entry.result_ref, ...(answers_refs.length ? { answers_refs } : {}) });
+  }
+  return upstream;
+}
 
 async function hasPassingImplementationGate(root) {
   const directory = join(root, '.io/runtime/workflow-completion');
@@ -365,7 +411,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (stageId === 'tactical-code' && planId === null && feedback === null && answer === null) throw new Error('tactical-code needs --plan <ticket-id>: the orchestrator assigns the next ready ticket (ready_tickets in harness-context.mjs)');
   if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
   // The provider transcript must contain the user's reply after the reviewed plan set finished.
-  if (stageId === 'tracker-publish' && !(typeof approvalAnswer === 'string' && approvalAnswer.trim() && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z', allowExplicitPublicationReply: true }))) throw new Error('Publication approval answer was not recorded: no user message after the reviewed plan set contains it');
+  if (stageId === 'tracker-publish') {
+    const publication = await inspectUserReply({ root, text: typeof approvalAnswer === 'string' ? approvalAnswer : '', since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z', allowExplicitPublicationReply: true });
+    if (!publication.matched) throw approvalRefusal('Publication approval answer was not recorded', describeReplySearch(publication.search, { gate: 'the reviewed plan set finished' }), publication.search);
+  }
   await assertPrStageReadiness({ root, state, stageId });
   if (publicationApproved && stageId !== 'tracker-publish') throw new Error('Publication approval is only valid for tracker-publish');
   // The shared contract describes the integrated result, so it is written only after every plan is implemented.
@@ -405,7 +454,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // A tactical design stage blocked on missing or invalidated earlier work lets the user revise the earlier, completed stage.
   const blockedByEarlierFlowStage = last?.status === 'blocked' && TACTICAL_DESIGN_STAGES.includes(lastStage) && PRE_SPEC_STAGES.indexOf(stageId) >= 0 && PRE_SPEC_STAGES.indexOf(stageId) < PRE_SPEC_STAGES.indexOf(lastStage);
   const frontendDesignHandoff = stageId === 'frontend-design-brief' && lastStage === 'tactical-ui' && last?.status === 'blocked' && last.code === 'DEPENDENCY_INCOMPLETE' && last.result_ref;
-  if (frontendDesignHandoff && !await userSaidAfter({ root, text: approvalAnswer, since: state.stages['workflow-compose'].started_at || state.stages['workflow-compose'].finished_at })) {
+  const tacticalUiFlowDecision = frontendDesignHandoff ? await recordedTacticalUiFlowDecision({ root, session, entry: last }) : null;
+  const transcriptDirectionRecorded = frontendDesignHandoff && await userSaidAfter({ root, text: approvalAnswer, since: state.stages['workflow-compose'].started_at || state.stages['workflow-compose'].finished_at });
+  const tacticalUiDirectionRecorded = tacticalUiFlowDecision && approvalAnswer === tacticalUiFlowDecision.answer;
+  if (frontendDesignHandoff && !transcriptDirectionRecorded && !tacticalUiDirectionRecorded) {
     const error = 'Frontend direction answer was not recorded';
     throw Object.assign(new Error(error), { explained: { error, code: 'USER_DECISION_REQUIRED', why: 'A UI handoff needs the user’s recorded decision on the screens and flow.', user_decision: 'Agree on the screens and flow with the user, then pass the actual reply via --approval-answer. If UI is deferred, resume tactical-ui with the user’s reply via --feedback.' } });
   }
@@ -790,11 +842,14 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   }
   const domainPack = await prepareDomainContextPack({ root, stage: stageId, request: prepared.scope, feedback, answers: Array.isArray(answer) ? answer : [] });
   if (domainPack) input_refs.push(domainPack);
-  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
+  const upstream = await upstreamStageRefs({ root, session: taskSession, state, stageId });
+  const input = { schema_version: 1, execution_id, skill: stage.skill, workspace_root: root, session_directory: taskSession, scope: stage.scope, input_refs, context: { ...(codexSessionId ? { codex_session_id: codexSessionId } : {}), ...(orchestratorSession ? { orchestrator_session_id: orchestratorSession.session_id, orchestrator_provider: orchestratorSession.provider } : {}), provider, ...(executionWorkspace ? { execution_workspace: executionWorkspace } : {}), ...(publicationDrafts ? { publication_drafts: publicationDrafts } : {}), ...(workflowBinding ? { workflow_binding: workflowBinding } : {}), ...(requestedStageBinding ? { requested_stage_binding: requestedStageBinding } : {}), stage_id: stage.id, control_session_directory: session, workflow_ref: workflowRef, ...conversation, ...(transition ? { transition } : {}), ...(upstream.length ? { upstream } : {}), ...(Object.keys(producer_result_refs).length ? { producer_result_refs } : {}), ...(worktree_ref ? { worktree_ref } : {}), ...(planId ? { plan_id: planId } : {}), ...(plan_set_id ? { plan_set_id } : {}), ...(checkpointPath ? { checkpoint_path: checkpointPath } : {}), ...(publicationApproved ? { publication_approved: true } : {}), ...(review_admission ? { review_admission } : {}), ...(plan_review_admission ? { plan_review_admission } : {}), conditions: stage.conditions, gates: stage.gates, outputs: stage.outputs } };
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
-  if (frontendDesignHandoff) input.context.frontend_direction_approval = { answer: approvalAnswer };
+  if (frontendDesignHandoff) input.context.frontend_direction_approval = tacticalUiDirectionRecorded
+    ? { answer: approvalAnswer, source: { stage_id: 'tactical-ui', execution_id: tacticalUiFlowDecision.execution_id, question_id: tacticalUiFlowDecision.question_id } }
+    : { answer: approvalAnswer, source: { stage_id: 'orchestrator_transcript' } };
   if (requirementsRevision) input.context.requirements_revision_from = previous.execution_id;
   if (staleMark) {
     input.context.revalidation_mark = staleMark.reopened_for;

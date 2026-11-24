@@ -73,7 +73,7 @@ gh-open-pr → 사용자 Merge
 
 ### 2. 요구사항 흐름
 
-새 기능이면 아래 요구사항 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `bounded-context`가 확정한다. 확정 뒤 orchestrator가 확정된 요구사항을 보여 주고, 사용자가 승인해야 전술 설계(`domain-model`)로 넘어간다(실행기가 사용자 입력 기록으로 확인). 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다. 요청자도 stakeholder(`REQUESTER`)이므로 요청에 적은 기능은 포함 여부를 묻지 않는 확정 요구사항이고, 내용이 정해지지 않은 기능만 내용을 묻는다. 질문 제목은 어느 stakeholder에서 왔는지(`[제안: 도메인 전문가(LENS-DOMAIN)]`) 보여 준다.
+새 기능이면 아래 요구사항 stage를 순서대로 실행한다. 모든 stage가 `docs/specs/<plan-set-id>/requirements.md`(living spec)를 이어서 채우고, 마지막 `bounded-context`가 확정한다. 확정 뒤 orchestrator가 확정된 요구사항을 보여 주고, 사용자가 승인해야 전술 설계(`domain-model`)로 넘어간다(실행기가 사용자 입력 기록으로 확인). 먼저 `stakeholder-analysis`가 요청 범위의 후보 요구사항을 모은다. 요청자도 stakeholder(`REQUESTER`)이므로 요청에 적은 기능은 포함 여부를 묻지 않는 확정 요구사항이고, 내용이 정해지지 않은 기능만 내용을 묻는다. 질문 제목은 어느 stakeholder에서 왔는지(`[제안: 도메인 전문가(LENS-DOMAIN)]`) 보여 준다. 사용자 결정 질문은 이미 정해진 규칙과 지금 정해야 하는 이유, 선택지마다 화면·동작이 달라지는 점과 같은 상황에 적용한 예시(설명용이며 요구사항이 아님)를 함께 보여 준다.
 
 ```text
 사용자 요청

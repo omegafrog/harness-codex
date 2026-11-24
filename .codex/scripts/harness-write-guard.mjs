@@ -1,4 +1,7 @@
 #!/usr/bin/env node
-import { runWriteGuardHook } from '../../.harness/scripts/harness-write-guard.mjs';
+// HARNESS_HOOK_TIMING=1 records this hook's duration; the hook itself is loaded after the timer starts. A measurement
+// that cannot start (module missing or failing) never affects the hook.
+await import('../../.harness/src/observability/hook-timing.mjs').then((module) => module.startHookTiming('write-guard'), () => null);
+const { runWriteGuardHook } = await import('../../.harness/scripts/harness-write-guard.mjs');
 
 await runWriteGuardHook();
