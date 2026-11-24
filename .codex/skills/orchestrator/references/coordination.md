@@ -2,7 +2,7 @@
 
 stage 작업자의 반환 계약(status·code 조합, 질문 반환, 출력 파일 작성, 실행 산출물 위치, 작업 경계)은 설치기가 각 stage agent profile(`.codex/agents/<role>.toml`과 Claude agent 사본)의 지시문에 넣어 두므로 서브에이전트가 시작될 때 함께 적용된다. orchestrator는 그 내용을 다시 전달하거나 다른 공통 문서를 읽으라고 지시하지 않는다. `finish`가 반환하는 status·code와 `next`로 다음 단계를 정한다.
 
-사용자에게 질문을 제시할 때 결과 객체를 그대로 전달하지 않는다. 대신 [사용자 답변으로 재개](input.md#사용자-답변으로-재개)에 따라 `title`·`context`와 선택지별 `label`·`consequence`·`effect`·`example`을 모두 질문 도구에 담는다.
+사용자에게 질문을 제시할 때 결과 객체를 그대로 전달하지 않는다. 대신 [사용자 답변으로 재개](input.md#사용자-답변으로-재개)에 따라 반환된 compact 질문의 `title`·`context`와 선택지별 `label`·`effect`·`recommended`를 모두 질문 도구에 담는다.
 
 실행할 스킬과 다음 단계는 orchestrator가 요청과 결과를 기준으로 결정한다. 작업 위치는 정본 `worktree.json`에서 읽는다. stage의 모델·effort는 [실행 배정](dispatch.md#실행-배정)에서 지정한 사용자 값, worktree binding, setup tier 순으로 정한다. setup의 네 tier 중 어느 값을 쓸지는 skill 문서 frontmatter의 `model_tier`가 정하고 workflow stage의 선택적 `model_tier`가 덮어쓴다. stage 밖에서 배정하는 보조 작업자는 `node .harness/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill <skill>`로 기본값을 확인하고, 사용자 지정 범위에 포함되면 지정값을 우선한다. skill은 사용자 결정과 workflow 단계 전환을 caller에 반환한다.
 
@@ -24,6 +24,6 @@ Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<rol
 
 ## 계획 발행 승인
 
-`to-ticket` 완료 후 orchestrator는 리뷰를 통과한 전체 계획(ticket 목록·의존 순서·각 ticket의 규칙과 검증)과 발행 대상을 한국어로 사용자에게 보여 준다. 발행 여부를 물으면서 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 답한 뒤에만 `harness-native-stage.mjs launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`으로 publisher 입력을 준비한다. 준비기는 `to-ticket` 완료 뒤의 provider 대화 기록에서 실제 사용자 메시지나 질문 도구 답변과 대조한다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다.
+`to-ticket` 완료 후 orchestrator는 결과의 승인 요약(`result.summary`: 리뷰를 통과한 전체 계획의 ticket 목록·의존 순서·검증)과 plan 경로를 한국어로 사용자에게 보여 주고 plan 문서는 열지 않는다. 발행 여부를 물으면서 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 답한 뒤에만 그 답 원문을 `answer`로 넘기며, 실행기가 `harness-native-stage.mjs launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`으로 publisher 입력을 준비한다. 준비기는 `to-ticket` 완료 뒤의 provider 대화 기록에서 실제 사용자 메시지나 질문 도구 답변과 대조한다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다.
 
 GitHub tracker를 쓰고 사용자가 계획 PR을 요청하면 발행 뒤 `plan-pr` stage를 `pr_author`로 실행한다. 이미 발행·활성화된 plan set이 변경되면 종전 발행 승인과 Issue 연결을 유지한다. 해당 Issue에 변경 내용 업데이트를 사용자 요청 범위에 따라 `harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 기록한다.

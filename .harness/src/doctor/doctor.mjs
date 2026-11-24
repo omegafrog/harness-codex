@@ -138,7 +138,7 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/review-attempts.mjs', '.harness/src/workflow/review-liveness.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/workflow/stage-documents.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (await marker('.codex/skills/orchestrator/SKILL.md')) paths.push('.codex/harness/providers/codex.mjs', ...['agent-event', 'fresh-agent', 'write-guard'].map((name) => `.codex/scripts/harness-${name}.mjs`));
-  if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs');
+  if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs', '.claude/harness/scripts/harness-agent-result.mjs', '.harness/src/workflow/claude-stage-dispatch.mjs', '.harness/src/workflow/answer-text.mjs');
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
@@ -417,7 +417,7 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
     const lockEntries = entries.filter((entry) => entry.path !== ".harness/harness.yaml");
     const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) {
-      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/stage-runtime.mjs', '.harness/src/workflow/providers/index.mjs', '.codex/harness/providers/codex.mjs', '.claude/harness/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.harness/scripts/harness-context.mjs', '.harness/scripts/harness-native-stage.mjs', '.harness/scripts/harness-output-format.mjs', '.claude/harness/scripts/harness-agent-admission.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
+      const critical = ['.harness/src/workflow/project-readiness.mjs', '.harness/src/workflow/stage-runtime.mjs', '.harness/src/workflow/providers/index.mjs', '.codex/harness/providers/codex.mjs', '.claude/harness/providers/claude-code.mjs', '.harness/src/workflow/stage-cli.mjs', '.harness/scripts/harness-context.mjs', '.harness/scripts/harness-native-stage.mjs', '.harness/scripts/harness-output-format.mjs', '.claude/harness/scripts/harness-agent-admission.mjs', '.claude/harness/scripts/harness-agent-result.mjs'].includes(path) || path.startsWith('.claude/agents/') || path.startsWith('.claude/skills/');
       diagnostics.push(diagnostic("installer_unlocked_file", critical ? "error" : "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     }
     for (const entry of lockEntries) {

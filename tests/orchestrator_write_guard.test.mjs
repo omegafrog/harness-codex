@@ -207,7 +207,9 @@ test('installed Claude consumer registers the guard, Doctor sees a missing or st
   try {
     const settingsPath = join(root, '.claude/settings.local.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.harness/scripts/harness-write-guard.mjs"', timeout: 10 }] }, { matcher: 'Agent', hooks: [{ type: 'command', command: 'HARNESS_NATIVE_ADMISSION=1 node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-agent-admission.mjs"', timeout: 10 }] }]);
+    assert.deepEqual(settings.hooks.PreToolUse, [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.harness/scripts/harness-write-guard.mjs"', timeout: 10 }] }, { matcher: 'Agent', hooks: [{ type: 'command', command: 'HARNESS_NATIVE_ADMISSION=1 node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-agent-admission.mjs"', timeout: 600 }] }]);
+    assert.deepEqual(settings.hooks.PostToolUse, [{ matcher: 'Agent', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-agent-result.mjs"', timeout: 30 }] }], 'the stage result hook registers beside the guard');
+    for (const event of ['SubagentStart', 'SubagentStop']) assert.equal(settings.hooks[event][0].hooks[0].timeout, 600, `${event} waits for finish`);
     assert.equal((await inspectClaudeOrchestratorHook(root)).valid, true);
     const codes = async () => (await runDoctor({ root, sourceRoot })).diagnostics.map((item) => item.code);
     assert.equal((await codes()).includes('claude_orchestrator_hook_missing'), false);

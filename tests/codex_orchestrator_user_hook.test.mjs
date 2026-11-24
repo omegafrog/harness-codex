@@ -60,7 +60,10 @@ test('installed consumers retire the old startup scripts and registrations while
   assert.equal(existsSync(codexSettings), false);
   for (const path of retired) assert.equal(existsSync(join(root, path)), false);
   const originalClaude = await json(claudeSettings);
-  for (const event of startupEvents) assert.equal(originalClaude.hooks[event], undefined);
+  // PostToolUse is no longer only retired: the Agent result hook (the stage envelope) is registered there and is Harness-owned.
+  const resultHook = [{ matcher: 'Agent', hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-agent-result.mjs"', timeout: 30 }] }];
+  assert.deepEqual(originalClaude.hooks.PostToolUse, resultHook);
+  for (const event of startupEvents.filter((name) => name !== 'PostToolUse')) assert.equal(originalClaude.hooks[event], undefined);
 
   const script = '// Previous managed script\n';
   const hash = createHash('sha256').update(script).digest('hex');
@@ -87,7 +90,7 @@ test('installed consumers retire the old startup scripts and registrations while
   const migratedCodex = await json(codexSettings), migratedClaude = await json(claudeSettings);
   for (const event of startupEvents) {
     assert.deepEqual(migratedCodex.hooks[event], groups(unrelated));
-    assert.deepEqual(migratedClaude.hooks[event], groups(unrelated));
+    assert.deepEqual(migratedClaude.hooks[event], event === 'PostToolUse' ? [...groups(unrelated), ...resultHook] : groups(unrelated));
   }
   for (const event of ['SubagentStart', 'SubagentStop', 'PreToolUse']) {
     assert.deepEqual(migratedClaude.hooks[event], originalClaude.hooks[event]);

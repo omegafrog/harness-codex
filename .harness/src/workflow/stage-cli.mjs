@@ -96,6 +96,45 @@ const sizeOf = (value) => Buffer.byteLength(JSON.stringify(value) ?? '');
 
 // ---- compact outputs -------------------------------------------------------------------------------------------
 
+const oneLine = (value, length = 160) => clip(String(value ?? '').replace(/\s+/g, ' ').trim(), length);
+
+// What the user needs to decide, small enough that the orchestrator never opens a file to show it: the title, at most two
+// context lines, and per option its label, one-line effect and whether it is the recommended one. A technology option keeps
+// up to three evidence lines and a visual_direction option its preview paths, because the user cannot decide without them.
+export function compactQuestions(questions, { session = null } = {}) {
+  return (Array.isArray(questions) ? questions : []).map((question) => {
+    const context = question.context ? [question.context.why_now, ...(question.context.settled_rules || []).slice(0, 1)].filter(Boolean).map((line) => oneLine(line)).slice(0, 2) : [];
+    return {
+      question_id: question.question_id,
+      title: question.title,
+      ...(context.length ? { context } : {}),
+      ...(question.decision_kind ? { kind: question.decision_kind } : {}),
+      options: (question.options || []).map((option) => ({
+        id: option.id,
+        label: option.label,
+        effect: oneLine(option.effect ?? option.consequence),
+        ...(option.id === question.recommended_option_id ? { recommended: true } : {}),
+        ...(Array.isArray(option.evidence) && option.evidence.length ? { evidence: option.evidence.slice(0, 3).map((item) => oneLine(`${item.criterion}: ${item.result} (${item.source_title}, ${item.url})`)) } : {}),
+        ...(Array.isArray(option.previews) && option.previews.length ? { previews: option.previews.map(({ path, viewport }) => `${viewport}: ${session && !isAbsolute(path) ? join(session, path) : path}`) } : {}),
+      })),
+    };
+  });
+}
+
+// Commands below are written as Codex `launch` commands. A Claude Code orchestrator runs each as one Agent call instead.
+export const CLAUDE_DISPATCH_HINT = 'On Claude Code do not run a launch command: dispatch it as one Agent call (subagent_type "workflow_stage") whose prompt first line is "harness-stage: <stage> <the launch options>"; a long --feedback or the user\'s reply goes on the lines below with @body (answer: "harness-stage: answer").';
+export const withDispatchHint = (payload, provider = runtimeAgentProvider()) => provider === 'claude-code' && /launch --stage-id|prepare-input\.mjs --stage-id/.test(JSON.stringify(payload)) ? { ...payload, dispatch: CLAUDE_DISPATCH_HINT } : payload;
+
+// The orchestrator's next dispatch, in the form its provider uses: a Claude Code Agent call whose prompt the admission
+// hook turns into the stage worker, or the Codex launch command.
+export const stageCall = (provider, stage, extra = '') => provider === 'claude-code'
+  ? `Agent(subagent_type: "workflow_stage", prompt: "harness-stage: ${stage}${extra ? ` ${extra}` : ''}")`
+  : launchCommand(stage, extra);
+export const answerCall = (provider) => provider === 'claude-code'
+  ? 'Agent(subagent_type: "workflow_stage", prompt: "harness-stage: answer\n<the user\'s reply verbatim>")'
+  : `${NATIVE} answer --text '<the user\'s reply verbatim>'`;
+
+
 // prepare: the execution to start, not the stored input (that is the stage's to read, and `--verbose` prints it).
 export function compactPrepared(prepared) {
   const input = prepared.input;
@@ -103,13 +142,13 @@ export function compactPrepared(prepared) {
     // waiting_for_answers / waiting_for_running_stage / restart / discard results: already small, keep them and add the step.
     const { questions, answers, ...rest } = prepared;
     const waitingInstruction = prepared.clarifications?.length
-      ? 'Address the user’s clarifications in chat and wait for their decisions on the outstanding questions (ids above).'
-      : 'Ask the user the remaining questions (ids above) and wait for their decisions.';
+      ? 'Address the user’s clarifications in chat and wait for their decisions on the outstanding questions (above).'
+      : 'Ask the user the remaining questions (above) and wait for their decisions.';
     return {
       ...rest,
-      ...(questions ? { questions: questions.map(({ question_id, title }) => ({ question_id, title })) } : {}),
+      ...(questions ? { questions: compactQuestions(questions) } : {}),
       ...(answers ? { answered: Array.isArray(answers) ? answers.length : Object.keys(answers).length } : {}),
-      ...(prepared.waiting_for_answers ? { next: `${waitingInstruction} Use ${PREPARE} --stage-id <stage> ${ANSWER_ARG} to pass the confirmed answers.` } : {}),
+      ...(prepared.waiting_for_answers ? { next: `${waitingInstruction} Then pass the user's reply verbatim: ${answerCall(runtimeAgentProvider())}.` } : {}),
       ...(prepared.waiting_for_running_stage ? { next: `The answer is saved. Wait for the running native subagent to end, then ${nativeCommand('finish', prepared.execution_id)}; if the stage asks again, prepare it again (no new answer needed).` } : {}),
     };
   }
@@ -165,16 +204,14 @@ export function launchResult({ prepared, started }) {
 
 // The result of a finished stage, without what the orchestrator never uses: the fields already at the top level, file
 // hashes, the commit request the runner consumed and empty arrays.
-// Questions are long (context and, per option, consequence/effect/example), so the default output names them (id and title) and
-// points at the canonical result file the orchestrator reads once to present them.
-export function compactResult(result = {}, { resultPath = null } = {}) {
+// Questions are shown from the output itself (compactQuestions), so the orchestrator never opens the result file.
+export function compactResult(result = {}, { session = null } = {}) {
   const { schema_version, execution_id, skill, status, code, summary, artifacts, questions, review_request, unplanned_additions, commit_request, commit_sha, owner_stage, dependency_gap, ...extra } = result;
   const out = {};
   if (summary !== undefined) out.summary = clip(summary, 4000);
   out.artifacts = (Array.isArray(artifacts) ? artifacts : []).map(({ base, path, kind }) => ({ kind, path, ...(base && base !== 'workspace' ? { base } : {}) }));
   if (Array.isArray(questions) && questions.length) {
-    out.questions = resultPath ? questions.map(({ question_id, title }) => ({ question_id, title })) : questions;
-    if (resultPath) out.questions_path = resultPath;
+    out.questions = compactQuestions(questions, { session });
   }
   if (review_request) out.review_request = review_request;
   if (Array.isArray(unplanned_additions) && unplanned_additions.length) out.unplanned_additions = unplanned_additions;
@@ -227,33 +264,67 @@ const approvalRefusalAction = (search) => {
   if (search?.outcome === 'no_matching_message') return `Ask the user for the approval in the owner conversation${search.session_id ? ` (${search.provider} session ${search.session_id})` : ''}; none of their messages after the gate matches the reply passed.`;
   return '';
 };
-export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true }) {
-  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && stageId === 'frontend-visual-review' && (!ownerStage || ownerStage === 'frontend-implementation')) return `The visual review found implementation defects. Run the frontend correction for the same ticket: ${launchCommand('frontend-implementation', "--plan <ticket-id> --feedback '<visual review findings>'")}. The correction receives the persisted review result; after it completes, rerun frontend-visual-review. Do not ask the user or use --reopen-for.`;
-  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${launchCommand(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
-  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the fixed requirements.md to the user (every BIZ with its rules, exceptions and completion conditions, the subdomains and the bounded contexts) and ask whether to approve them before tactical design. ${APPROVAL_REPLY_INSTRUCTION} Only after the user's own approval: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}. For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage.`;
-  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${launchCommand(staleOrder[0])}. Do not ask the user for approval of this stage.`;
-  if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user's own approval: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
-  if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
-  if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
-  if (code === 'USER_DECISION_REQUIRED') return `Read result.questions_path once and show its questions to the user (title, context, every option's label, consequence, effect, example) without rewriting them; wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
-  if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${launchCommand(stageId, "--feedback '<review result>'")}`;
+export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true, provider = 'codex' }) {
+  const call = (stage, extra = '') => stageCall(provider, stage, extra);
+  const approvalReply = provider === 'claude-code'
+    ? 'Only after the user\'s own approval, pass their reply verbatim in the Agent prompt as "harness-stage: answer" and the reply below it'
+    : `Only after the user's own approval, pass their reply verbatim: ${NATIVE} answer --text '<reply>'`;
+  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && stageId === 'frontend-visual-review' && (!ownerStage || ownerStage === 'frontend-implementation')) return `The visual review found implementation defects. Run the frontend correction for the same ticket: ${call('frontend-implementation', "--plan <ticket-id> --feedback '<visual review findings>'")}. The correction receives the persisted review result; after it completes, rerun frontend-visual-review. Do not ask the user or use --reopen-for.`;
+  if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${call(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
+  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the user result.summary (the approval summary) and the requirements.md path from artifacts, in Korean; do not open the document yourself. Ask whether to approve before tactical design. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts domain-model with --requirements-approved true --approval-answer). For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage.`;
+  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${call(staleOrder[0])}. Do not ask the user for approval of this stage.`;
+  if (status === 'completed' && stageId === 'to-ticket') return `Show the user result.summary (the plan set summary) and the plan paths from artifacts, in Korean, and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts tracker-publish with --publication-approved true --approval-answer).`;
+  if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${call('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
+  if (status === 'completed') {
+    const after = stageAfter(stageId);
+    return after ? `Next stage: ${call(after)}` : 'Continue with the next stage (orchestrator skill).';
+  }
+  if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user in Korean (title, context lines, every option's label and effect, mark the recommended one) without opening any file; wait for the reply, then pass it verbatim: ${answerCall(provider)}`;
+  if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${call(stageId, "--feedback '<review result>'")}`;
   const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
-  if (revision) return `Return to its owner: ${launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
+  if (revision) return `Return to its owner: ${call(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
   if (status === 'blocked' && ENVIRONMENT_BLOCK_CODES.has(code)) return `${environmentRetry(stageId, { status, code }).steps[0]} (the stage re-runs its preflight; report to the user only if it is blocked again by the same cause)`;
-  if (status === 'blocked') return `Report the unblock condition in result.summary to the user; once resolved: ${launchCommand(stageId, "--feedback '<how it was resolved>'")}`;
-  if (status === 'failed' || status === 'cancelled') return `Report the cause; do not rerun automatically. If the user wants to continue: ${launchCommand(stageId, FEEDBACK_ARG)}`;
+  if (status === 'blocked') return `Report the unblock condition in result.summary to the user; once resolved: ${call(stageId, "--feedback '<how it was resolved>'")}`;
+  if (status === 'failed' || status === 'cancelled') return `Report the cause; do not rerun automatically. If the user wants to continue: ${call(stageId, FEEDBACK_ARG)}`;
   return `Resolve ${executionId} per the orchestrator skill.`;
 }
 
-export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true, resultPath = null }) {
+export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true, resultPath = null, session = null, provider = 'codex' }) {
   return {
     status: envelope.status,
     code: envelope.code,
     execution_id: executionId,
     stage_id: stageId,
     result_ref: envelope.result_ref,
-    result: compactResult(envelope.result, { resultPath }),
-    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent }),
+    result: compactResult(envelope.result, { session }),
+    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent, provider }),
+  };
+}
+
+// The approval gates keep a longer summary: it is what the user approves, so the orchestrator never opens the document.
+const APPROVAL_GATES = new Set(['bounded-context', 'to-ticket']);
+const lines = (text, count, width) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, count).map((line) => clip(line, width));
+
+// What the Claude Code orchestrator receives in place of the worker's final message (PostToolUse updatedToolOutput): the
+// status and code, a short summary, artifact paths, compact questions and one `next` step. Nothing else is needed to go on.
+export function stageEnvelope(finished) {
+  const { result = {} } = finished;
+  const approval = finished.status === 'completed' && APPROVAL_GATES.has(finished.stage_id);
+  const summary = lines(result.summary, approval ? 12 : 3, approval ? 400 : 240);
+  return {
+    status: finished.status,
+    code: finished.code,
+    stage_id: finished.stage_id,
+    execution_id: finished.execution_id,
+    ...(summary.length ? { summary } : {}),
+    ...(result.artifacts?.length ? { artifacts: result.artifacts.map(({ path }) => path) } : {}),
+    ...(result.questions?.length ? { questions: result.questions } : {}),
+    ...(result.review_request ? { review_request: result.review_request } : {}),
+    ...(result.commit_sha ? { commit_sha: result.commit_sha } : {}),
+    ...(result.owner_stage ? { owner_stage: result.owner_stage } : {}),
+    ...(result.dependency_gap ? { dependency_gap: clip(result.dependency_gap, 400) } : {}),
+    ...(finished.stale_stages?.length ? { stale_stages: finished.stale_stages } : {}),
+    next: finished.next,
   };
 }
 
@@ -681,7 +752,8 @@ const RULES = [
   { re: /needs --plan|needs the assigned \S+ from its previous input|needs the assigned ticket or plan|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan and tactical-code exactly one ticket that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, ready_tickets, plan_tickets and implementation_reviews; pick the next ready one from there`, launchCommand('tactical-code', '--plan <ticket-id>')] }) },
   { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
   { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the fixed requirements.md to the user and ask whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
-  { re: /^Fixed requirements with domain IDs require a domain sync plan/, explain: ({ stage }) => ({ code: 'DOMAIN_SYNC_MISSING', why: 'bounded-context fixed requirements.md, which holds shared domain IDs, without writing the shared definition sync plan. The stage is still running and nothing was recorded.', next: ['Send this to the same subagent: create the proposal for the fixed requirements and run node .harness/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace-relative proposal path>, save its output as domain-sync.json in the execution directory (runtime/executions/<execution_id>/domain-sync.json), as its GUIDE step 9 says', `Then run the same finish again: ${nativeCommand('finish', '<execution_id>')}`], decision: 'If the subagent cannot write the plan after a repeat, report the error to the user and stop; do not write it yourself.' }) },
+  { re: /^The reply for --answer-text must not be empty|^Usage: harness-native-stage\.mjs answer --text/, explain: () => ({ code: 'ANSWER_REFUSED', why: 'The answer command takes the user\'s reply verbatim; there is nothing to match to the waiting questions.', next: ["Pass the reply: node .harness/scripts/harness-native-stage.mjs answer --text '<the user\'s reply verbatim>' (Claude Code: Agent prompt \"harness-stage: answer\" with the reply on the lines below)"] }) },
+  { re: /^Fixed requirements with domain IDs require a domain sync plan/, explain: ({ stage, context }) => ({ code: 'DOMAIN_SYNC_MISSING', why: 'bounded-context fixed requirements.md, which holds shared domain IDs, without the shared definition proposal. The stage is still running and nothing was recorded. The stage worker writes the proposal itself; the caller never runs it for the worker.', next: [`Write runtime/executions/${context.executionId || '<execution_id>'}/domain-sync-proposal.json ({"schema_version":1,"links":{},"changes":[]} when no shared definition changes; otherwise the links and changes of GUIDE step 9). Optionally preview the plan with HARNESS_STAGE_EXECUTION_ID=${context.executionId || '<execution_id>'} node .harness/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace-relative proposal path>; finish computes and stores the plan from the proposal.`, 'Then submit the same result JSON again.'], decision: 'If the worker cannot write the proposal after a repeat, report the error to the user and stop; do not write it yourself.' }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },
   { re: /^Spec review|^Plan review requires|^Review admission/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. A review is tied to an admitted snapshot.`, next: [CONTEXT], decision: 'Follow the existing Spec or plan review admission for the admission step; do not invent it.' }) },
@@ -716,7 +788,7 @@ export function explainError(error, context = {}) {
   const next = (explained.next || []).filter(Boolean);
   const decision = explained.decision;
   // A refusal always leaves the orchestrator a step: if no command applies it is the user's decision or a report.
-  return {
+  return withDispatchHint({
     error: message,
     code: explained.code,
     why: explained.why,
@@ -724,7 +796,7 @@ export function explainError(error, context = {}) {
     ...(decision || !next.length ? { user_decision: decision || `Report this to the user and wait for their direction. ${NO_SOURCE}` } : {}),
     ...(explained.approval_search ? { approval_search: explained.approval_search } : {}),
     ...(context.preparedExecutionId ? { prepared_execution_id: context.preparedExecutionId } : {}),
-  };
+  }, state?.orchestrator_provider || undefined);
 }
 
 export function writeError(stream, error, context = {}) {

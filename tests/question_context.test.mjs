@@ -142,13 +142,18 @@ test('the installed stage output schema requires the context, effect and example
   await flow.submitStage(begun, { ...waiting, questions: [{ question_id: 'q', ...owned }] });
   const finished = flow.finishStage(begun);
   assert.equal(finished.status, 0, finished.stderr || finished.stdout);
-  // The default output names the questions and points at the canonical result, which holds the whole question.
+  // The default output carries the question the user decides on (title, context lines, option label and one-line effect,
+  // recommended flag), so the orchestrator opens no file; the canonical result still holds the whole question.
   const compact = JSON.parse(finished.stdout);
-  assert.deepEqual(compact.result.questions.map(({ question_id, title }) => ({ question_id, title })), [{ question_id: compact.result.questions[0].question_id, title: owned.title }]);
-  assert.deepEqual(Object.keys(compact.result.questions[0]).sort(), ['question_id', 'title']);
-  assert.equal(compact.result.questions_path, join(flow.workspace, '.io', compact.result_ref));
-  assert.match(compact.next, /Read result\.questions_path once/);
-  const stored = JSON.parse(await readFile(compact.result.questions_path, 'utf8'));
+  const [shown] = compact.result.questions;
+  assert.equal(shown.title, owned.title);
+  assert.deepEqual(Object.keys(shown).sort(), ['context', 'options', 'question_id', 'title']);
+  assert.ok(shown.context.length <= 2 && shown.context.every((line) => line.length <= 160));
+  assert.deepEqual(shown.options.map(({ id, label, effect }) => ({ id, label, effect })), owned.options.map(({ id, label, effect }) => ({ id, label, effect })));
+  assert.deepEqual(shown.options.filter(({ recommended }) => recommended).map(({ id }) => id), [owned.recommended_option_id]);
+  assert.equal(compact.result.questions_path, undefined, 'the orchestrator is not sent to a result file');
+  assert.match(compact.next, /without opening any file/);
+  const stored = JSON.parse(await readFile(join(flow.workspace, '.io', compact.result_ref), 'utf8'));
   assert.deepEqual(stored.questions[0].context, owned.context);
   assert.deepEqual(stored.questions[0].options.map(({ example }) => example), owned.options.map(({ example }) => example));
   assert.deepEqual(stored.questions[0].options.map(({ effect }) => effect), owned.options.map(({ effect }) => effect));
@@ -182,7 +187,7 @@ test('an execution started before the rule keeps its schema, accepts its old que
   assert.equal(finished.status, 0, finished.stderr || finished.stdout);
   const [recorded] = JSON.parse(finished.stdout).result.questions;
   assert.equal(recorded.context, undefined);
-  assert.equal(recorded.options, undefined, 'the default output carries the id and title only');
+  assert.deepEqual(recorded.options.map(({ id, label }) => ({ id, label })), legacy(owned).options.map(({ id, label }) => ({ id, label })), 'a stored question without effect shows its option labels');
   const stored = JSON.parse(await readFile(join(flow.workspace, '.io', JSON.parse(finished.stdout).result_ref), 'utf8'));
   assert.equal(stored.questions[0].options[0].example, undefined);
 
@@ -228,13 +233,13 @@ test('installed stage profiles state the question rule and the read-through-refs
   // The orchestrator relays the context and the per-option examples and waits for a real answer, for both providers.
   for (const provider of ['.codex', '.claude']) {
     const input = await readFile(join(flow.primary, provider, 'skills/orchestrator/references/input.md'), 'utf8');
-    assert.match(input, /`context`\(`settled_rules`·`why_now`\)와 선택지마다 `consequence`·`effect`·`example`을 빠짐없이 함께 보여 준다/, provider);
-    assert.match(input, /예시는 이해를 돕는 가정일 뿐 요구사항이 아니라고 밝힌다/, provider);
+    assert.match(input, /선택지별 `label`·한 줄 `effect`·`recommended`/, provider);
+    assert.match(input, /파일을 열지 않고 `title`과 `label`은 원문 그대로/, provider);
     assert.match(input, /설명 요청은 답변이 아니므로 설명한 뒤 같은 맥락과 선택지별 예시를 유지해 다시 묻고, 실제 답을 받기 전에는 stage를 재개하지 않는다/, provider);
     const coordination = await readFile(join(flow.primary, provider, 'skills/orchestrator/references/coordination.md'), 'utf8');
-    assert.match(coordination, /`title`·`context`와 선택지별 `label`·`consequence`·`effect`·`example`을 모두 질문 도구에 담는다/, provider);
+    assert.match(coordination, /`title`·`context`와 선택지별 `label`·`effect`·`recommended`를 모두 질문 도구에 담는다/, provider);
     assert.doesNotMatch(coordination, /`title`과 문자열 options만 전달/, provider);
-    assert.match(await readFile(join(flow.primary, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /맥락\(`context`\)과 선택지별 `effect`·`example`까지 그대로 보여 주고 답을 기다린다/, provider);
+    assert.match(await readFile(join(flow.primary, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /선택지별 label·effect·추천 표시\)를 파일 없이 한국어로 보여 주고 기다린다/, provider);
   }
   assert.ok(withDecisionContext({ options: [{ id: 'a', label: 'A', consequence: 'a' }, { id: 'b', label: 'B', consequence: 'b' }] }).options.every(({ effect, example }) => effect && example), 'the shared fixture helper completes a bare question');
 });

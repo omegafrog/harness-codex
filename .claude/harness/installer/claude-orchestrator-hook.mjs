@@ -10,26 +10,35 @@ import { assertWorkspaceTarget } from '../../../.harness/src/eval/case-workspace
 const RETIRED_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Stop'];
 const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
 const GUARD_EVENTS = ['PreToolUse'];
-const EVENTS = [...SUBAGENT_EVENTS, ...GUARD_EVENTS];
+// PostToolUse(Agent) hands a dispatched stage worker's recorded result to the orchestrator as a compact envelope.
+const RESULT_EVENTS = ['PostToolUse'];
+const EVENTS = [...SUBAGENT_EVENTS, ...GUARD_EVENTS, ...RESULT_EVENTS];
 const retiredStartup = (hook) => hook?.type === 'command'
   && hook.command === 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-claude-orchestrator-hook.mjs"';
 const SUBAGENT_SCRIPT = 'harness-agent-event.mjs';
 const GUARD_SCRIPT = 'harness-write-guard.mjs';
 const ADMISSION_SCRIPT = 'harness-agent-admission.mjs';
+const RESULT_SCRIPT = 'harness-agent-result.mjs';
 export const WRITE_GUARD_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash';
-const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && [SUBAGENT_SCRIPT, GUARD_SCRIPT, ADMISSION_SCRIPT].some((script) => hook.command.includes(script));
-const admissionHook = () => ({ type: 'command', command: `HARNESS_NATIVE_ADMISSION=1 node "\${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/${ADMISSION_SCRIPT}"`, timeout: 10 });
+const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && [SUBAGENT_SCRIPT, GUARD_SCRIPT, ADMISSION_SCRIPT, RESULT_SCRIPT].some((script) => hook.command.includes(script));
+// The admission hook launches a dispatched stage (prepare + start), the subagent hook records its result (receive + finish: gates,
+// documents, commit), so both wait far longer than a guard.
+const STAGE_HOOK_TIMEOUT = 600;
+const admissionHook = () => ({ type: 'command', command: `HARNESS_NATIVE_ADMISSION=1 node "\${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/${ADMISSION_SCRIPT}"`, timeout: STAGE_HOOK_TIMEOUT });
+const resultHook = () => ({ type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/${RESULT_SCRIPT}"`, timeout: 30 });
 
 export function claudeSubagentHook() {
-  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${SUBAGENT_SCRIPT}"`, timeout: 10 };
+  return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${SUBAGENT_SCRIPT}"`, timeout: STAGE_HOOK_TIMEOUT };
 }
 
 export function claudeWriteGuardHook() {
   return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${GUARD_SCRIPT}"`, timeout: 10 };
 }
 
-const expectedHook = (event) => SUBAGENT_EVENTS.includes(event) ? claudeSubagentHook() : claudeWriteGuardHook();
-const expectedMatcher = (event) => GUARD_EVENTS.includes(event) ? WRITE_GUARD_MATCHER : undefined;
+// The handlers Harness owns under each event: [matcher, hook] pairs.
+const expectedHandlers = (event) => SUBAGENT_EVENTS.includes(event) ? [{ matcher: undefined, hook: claudeSubagentHook() }]
+  : RESULT_EVENTS.includes(event) ? [{ matcher: 'Agent', hook: resultHook() }]
+  : [{ matcher: WRITE_GUARD_MATCHER, hook: claudeWriteGuardHook() }, { matcher: 'Agent', hook: admissionHook() }];
 
 async function readSettings(root) {
   const path = join(root, '.claude/settings.local.json');
@@ -50,7 +59,7 @@ export async function inspectClaudeOrchestratorHook(root) {
   const valid = EVENTS.every((event) => {
     const groups = (config.hooks[event] || []).filter((group) => group.hooks.some(owned));
     const handlers = groups.flatMap((group) => group.hooks).filter(owned);
-    const expected = [{ matcher: expectedMatcher(event), hook: expectedHook(event) }, ...(event === 'PreToolUse' ? [{ matcher: 'Agent', hook: admissionHook() }] : [])];
+    const expected = expectedHandlers(event);
     return handlers.length === expected.length && expected.every(({ matcher, hook }) => groups.some((group) => group.matcher === matcher && group.hooks.some((candidate) => Object.entries(hook).every(([key, value]) => candidate[key] === value))));
   });
   return { valid, retired_startup, path, reason: valid ? 'claude_workflow_hooks_registered' : 'claude_workflow_hooks_missing_or_stale' };
@@ -78,8 +87,7 @@ export async function syncClaudeOrchestratorHook(root, { noBackup = false } = {}
       const hooks = group.hooks.filter((hook) => !owned(hook));
       return hooks.length || !group.hooks.some(owned) ? [{ ...group, hooks }] : [];
     });
-    config.hooks[event] = [...groups, { ...(expectedMatcher(event) ? { matcher: expectedMatcher(event) } : {}), hooks: [expectedHook(event)] }];
-    if (event === 'PreToolUse') config.hooks[event].push({ matcher: 'Agent', hooks: [admissionHook()] });
+    config.hooks[event] = [...groups, ...expectedHandlers(event).map(({ matcher, hook }) => ({ ...(matcher ? { matcher } : {}), hooks: [hook] }))];
   }
   if (text !== null && (!noBackup || retired_startup)) {
     const backup = `.claude/installer-backups/${randomUUID()}/settings.local.json`;

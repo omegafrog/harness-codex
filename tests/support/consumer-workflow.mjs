@@ -42,7 +42,10 @@ export const MODELS = { implementation: 'codex-implementation', high_performance
 export const stakeholderAnalysisDocument = (request, feature = request) => `# Stakeholder 분석\n\n> ${request}\n\n## 3. 참여자\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 기능은 요청자가 정한 요구사항이다 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n\n### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| ${feature} | "${feature}" | REQUESTER | 확정 | 요청 원문 | - |\n`;
 export const gitIn = (root) => (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 
-export async function consumerWorkflow(t, request) {
+// The same consumer with Claude Code as the agent provider and orchestrator (models opus/sonnet), for the hook-driven stage path.
+export const CLAUDE_SETUP = SETUP.replace(/codex/g, 'claude-code').replace(/claude-code-(high|implementation|execution|light)/g, (_, tier) => ({ high: 'opus', implementation: 'sonnet', execution: 'sonnet', light: 'haiku' })[tier]).replace('reasoning_effort: minimal', 'reasoning_effort: low');
+
+export async function consumerWorkflow(t, request, { provider = 'codex' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'requirements-stage-'));
   const primary = join(directory, 'main');
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -52,7 +55,7 @@ export async function consumerWorkflow(t, request) {
   git('config', 'user.name', 'Stage test'); git('config', 'user.email', 'test@example.test');
   await protectLocalInstallArtifacts(primary, sourceRoot);
   await updateProject({ sourceRoot, targetRoot: primary, initialize: true });
-  await writeFile(join(primary, '.harness/harness.yaml'), SETUP);
+  await writeFile(join(primary, '.harness/harness.yaml'), provider === 'claude-code' ? CLAUDE_SETUP : SETUP);
   await writeFile(join(primary, '.harness/context-budget.json'), '{"schema_version":1,"context_window_tokens":10000,"max_plan_tokens":6000,"handoff_reserve_tokens":2000}\n');
   for (const path of ['.harness/agents/EXEC.md', '.harness/agents/execution.json', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs/contracts/product.md', 'docs/contracts/architecture.md', 'docs/contracts/manifest.json', 'docs/contracts/architecture.html']) {
     await mkdir(join(primary, path, '..'), { recursive: true }); await writeFile(join(primary, path), '');
@@ -65,7 +68,7 @@ export async function consumerWorkflow(t, request) {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     return JSON.parse(result.stdout);
   };
-  const tree = invoke(primary, 'harness-compose-workspace.mjs', ['--root', primary, '--execution-id', 'compose-requirements', '--plan-set-id', 'community', '--request', request, '--orchestrator-provider', 'codex', '--orchestrator-session-id', randomUUID()]);
+  const tree = invoke(primary, 'harness-compose-workspace.mjs', ['--root', primary, '--execution-id', 'compose-requirements', '--plan-set-id', 'community', '--request', request, '--orchestrator-provider', provider, '--orchestrator-session-id', randomUUID()]);
   const workspace = tree.workspace;
   const treeGit = gitIn(workspace);
   const planSetId = tree.plan_set_id;

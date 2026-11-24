@@ -74,7 +74,7 @@ Context 소유권과 정의 사이의 참조를 검사한다. `source_refs`와 `
 
 `sync plan <plan-set-id> <proposal-path>`는 변경 예정 경로, 기존 값과 정본 버전을 반환한다. 제안 JSON에는 `schema_version: 1`, 로컬 ID를 공통 ID로 연결하는 전체 `links`, `changes` 배열을 적는다. 변경에는 `operation`, `id`, `reason`, `document: {metadata, body}`를 적는다. 기존 정의를 재사용할 때는 `reuse`와 ID만 적을 수 있다. 새 정의는 `accepted-target`으로 시작한다. 소유권 이전은 `relocate`로 이전 ID를 폐기하고 다른 Context에 대체 ID를 생성한다.
 
-확정 Stage에서는 생성한 계획을 실행 폴더의 `domain-sync.json`에 저장한다. 기존 Stage 완료 CLI가 변경과 인덱스를 검증하고 Stage 커밋에 반영한다. 마이그레이션과 수동 구현 상태 반영은 검토한 계획을 `sync apply <plan-path>`로 적용한다. 구현 상태를 올릴 때는 `implement` 작업에 해당 업무 ID, 완료된 ticket, 검증에 사용한 테스트 경로를 `evidence: {local_id, ticket, tests}`로 적는다. 실행기는 완료된 ticket 커밋, 테스트 경로와 정의의 버전을 대조한다.
+확정 Stage에서는 작업자가 실행 폴더의 `domain-sync-proposal.json`을 직접 쓰고(변경이 없으면 빈 `changes`), 필요하면 `HARNESS_STAGE_EXECUTION_ID=<execution_id>`로 `sync plan`을 직접 실행해 미리 확인한다. 호출자에게 실행을 부탁하지 않으며 `finish`가 계획을 계산해 실행 폴더의 `domain-sync.json`에 저장한다. 기존 Stage 완료 CLI가 변경과 인덱스를 검증하고 Stage 커밋에 반영한다. 마이그레이션과 수동 구현 상태 반영은 검토한 계획을 `sync apply <plan-path>`로 적용한다. 구현 상태를 올릴 때는 `implement` 작업에 해당 업무 ID, 완료된 ticket, 검증에 사용한 테스트 경로를 `evidence: {local_id, ticket, tests}`로 적는다. 실행기는 완료된 ticket 커밋, 테스트 경로와 정의의 버전을 대조한다.
 
 ### PR 검사
 

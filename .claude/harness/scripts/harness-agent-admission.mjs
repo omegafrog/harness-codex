@@ -22,6 +22,14 @@ try {
   const event = JSON.parse(text);
   if (event.hook_event_name !== 'PreToolUse' || event.tool_name !== 'Agent') throw new Error('Invalid Agent admission event');
   const tool = event.tool_input || {};
+  // A stage dispatch is one Agent call whose prompt starts with `harness-stage:`: launch it here and rewrite the call into its worker.
+  if (typeof tool.prompt === 'string' && /^\s*harness-stage:/.test(tool.prompt)) {
+    const { admitStageDispatch } = await import('../../../.harness/src/workflow/claude-stage-dispatch.mjs');
+    const stage = await admitStageDispatch(event);
+    if (stage?.deny) deny(stage.deny);
+    else process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Harness stage launched', updatedInput: stage.updatedInput } })}\n`);
+    process.exit(0);
+  }
   const type = tool.subagent_type;
   const isSpecReviewer = type === 'spec_adversarial_reviewer';
   const isPlanReviewer = type === 'plan_reviewer';

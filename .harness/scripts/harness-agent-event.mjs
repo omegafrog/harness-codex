@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { appendFile, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
 import { inspectActiveReviewAttempt, updateReviewAttempt } from '../../.harness/src/workflow/review-attempts.mjs';
+import { STAGE_DISPATCH_DIRECTORY } from '../../.harness/src/workflow/claude-stage-dispatch.mjs';
 
 async function forkedTranscript(path) {
   if (typeof path !== 'string' || !path) return false;
@@ -26,6 +28,23 @@ try {
   const event = JSON.parse(text);
   if (!['SubagentStart', 'SubagentStop'].includes(event.hook_event_name) || typeof event.session_id !== 'string' || typeof event.agent_id !== 'string' || !event.agent_id || typeof event.agent_type !== 'string') throw new Error('Invalid Claude subagent event');
   const { nativeHookContext, recordNativeStageObservation } = await import('../../.harness/src/workflow/native-context.mjs');
+  // A stage worker dispatched through `harness-stage:` is bound when it starts and its final message is recorded when it
+  // stops (see claude-stage-dispatch.mjs); a format or gate error continues the same worker instead of ending it.
+  if (!process.env.HARNESS_STAGE_EXECUTION_ID && typeof event.cwd === 'string' && existsSync(join(event.cwd, '.io', STAGE_DISPATCH_DIRECTORY))) {
+    const stage = await import('../../.harness/src/workflow/claude-stage-dispatch.mjs');
+    if (await claimEvent(join(event.cwd, '.io', STAGE_DISPATCH_DIRECTORY), { hook_event_name: stage.claimKey(event), agent_id: 'stage' })) {
+      const handled = event.hook_event_name === 'SubagentStart' ? await stage.bindStageWorker(event) : await stage.finishStageWorker(event);
+      if (handled) {
+        await recordNativeStageObservation(event.cwd, event).catch(() => false);
+        const output = handled.additionalContext ? { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: handled.additionalContext } } : handled.block ? { decision: 'block', reason: handled.block } : null;
+        await new Promise((resolve) => output ? process.stdout.write(`${JSON.stringify(output)}\n`, resolve) : resolve());
+        process.exit(0);
+      }
+      // Not a stage worker: release the claim so the reviewer and writer handling below claims the event itself.
+      await rm(claimedMarker, { force: true });
+      claimedMarker = null;
+    } else process.exit(0);
+  }
   if (!process.env.HARNESS_STAGE_EXECUTION_ID) await recordNativeStageObservation(typeof event.cwd === 'string' ? event.cwd : process.cwd(), event);
   const native = process.env.HARNESS_STAGE_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'stage_document_writer'].includes(event.agent_type) });
   const session = process.env.HARNESS_SESSION_DIR || native?.session, executionId = process.env.HARNESS_STAGE_EXECUTION_ID || native?.executionId;

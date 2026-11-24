@@ -13,7 +13,7 @@ import { codexTranscript, codexUserPrompt } from './support/codex-user-prompt.mj
 const REQUEST = '게시글 삭제 기능';
 const at = (minute) => `2026-11-21T09:${String(minute).padStart(2, '0')}:00.000Z`;
 const done = (executionId, minute, extra = {}) => ({ status: 'completed', code: 'OK', execution_id: executionId, started_at: at(minute - 1), finished_at: at(minute), ...extra });
-const ASK = /Show the fixed requirements\.md to the user/;
+const ASK = /Show the user result\.summary \(the approval summary\) and the requirements\.md path/;
 const REFUSED = /Requirements approval answer was not recorded/;
 
 // A headless `codex exec resume` is one more user turn in the same rollout: its first message is the resume request and
@@ -66,9 +66,9 @@ test('only the completion of bounded-context asks for requirements approval', ()
   for (const stage of REQUIREMENTS_STAGES.filter((id) => id !== 'bounded-context')) {
     assert.doesNotMatch(next(stage), ASK, `${stage} leaves the requirements as a draft`);
     assert.doesNotMatch(next(stage), /--requirements-approved/);
-    assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: stage, executionId: `${stage}-1` }), /Read result\.questions_path once and show its questions to the user/);
+    assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: stage, executionId: `${stage}-1` }), /Show result\.questions to the user in Korean/);
   }
-  assert.match(next('requirements-fix'), /Continue with the next stage/, 'after the last fill the next step is bounded-context, not an approval');
+  assert.match(next('requirements-fix'), /Next stage: .*--stage-id bounded-context/, 'after the last fill the next step is bounded-context, not an approval');
   const ask = next('bounded-context');
   assert.match(ask, ASK);
   assert.match(ask, /--requirements-approved true --approval-answer/);

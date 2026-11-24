@@ -16,7 +16,7 @@ import { archiveWriterComposition, authorsOwnDocuments, persistAuthoredBatch, as
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
-import { TAKEOVER_FEEDBACK, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchAttemptDirectory, launchChildError, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, outputMissingResult, receiveRecoveryError, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
+import { TAKEOVER_FEEDBACK, contextCommand, compactFinished, compactStarted, extractVerbose, foreignRunningStage, formatErrorResult, gateErrorResult, launchAttemptDirectory, launchChildError, launchResult, compactPrepared, nativeCommand, nativeReceiveCommand, outputMissingResult, receiveRecoveryError, takeoverStep, writeError } from '../../.harness/src/workflow/stage-cli.mjs';
 
 // What the error output needs to know about this call.
 const errorContext = { script: 'native-stage', action: undefined, executionId: undefined, stageId: undefined, root: undefined };
@@ -246,15 +246,42 @@ async function launchStage(requestedArgs, verbose) {
   return verbose ? { ...launched, ...takenOver, input: prepared.input } : { ...launched, ...takenOver };
 }
 
-const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
+// `answer --text '<reply>'` is `launch --answer-text '<reply>'` without a stage: the waiting stage is the one whose questions
+// (or approval gate) the reply is for.
+function answerArguments(args) {
+  const textIndex = args.indexOf('--text');
+  if (textIndex < 0 || args.length - 2 > 2 || args.filter((argument, index) => index % 2 === 0 && argument.startsWith('--')).some((argument) => !['--text', '--stage-binding'].includes(argument))) throw new Error("Usage: harness-native-stage.mjs answer --text '<the user's reply verbatim>'");
+  return args.map((argument) => argument === '--text' ? '--answer-text' : argument);
+}
+
+// Turns --answer-text into the existing --answer / approval options (or a clarification request), see answer-text.mjs.
+async function withAnswerText(args) {
+  const index = args.findIndex((argument, position) => position % 2 === 0 && argument === '--answer-text');
+  if (index < 0) return { args };
+  const text = args[index + 1];
+  if (typeof text !== 'string' || !text.trim()) throw new Error('The reply for --answer-text must not be empty');
+  const rest = args.filter((_, position) => position !== index && position !== index + 1);
+  const stageIndex = rest.findIndex((argument, position) => position % 2 === 0 && argument === '--stage-id');
+  const named = stageIndex < 0 ? null : rest[stageIndex + 1];
+  const { resolveReplyTarget } = await import('../../.harness/src/workflow/answer-text.mjs');
+  const target = resolveReplyTarget(resolveCommandContext().root, text);
+  const refuse = (message, next) => Object.assign(new Error(message), { explained: { error: message, code: 'ANSWER_REFUSED', why: message, next } });
+  if (target.error) throw refuse(target.error, [contextCommand()]);
+  if (named && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/harness-native-stage.mjs answer --text '<the user's reply verbatim>'`]);
+  if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, next: 'Ask the user in Korean to clarify, then pass their new reply verbatim with the same answer command. Nothing was recorded.' } };
+  return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))] };
+}
+
+const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | answer --text \'<reply>\' | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
 if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write(`${NATIVE_STAGE_USAGE}\n`); process.exit(0); }
 try {
   const [requestedAction, ...rest] = process.argv.slice(2), opts = {};
   let action = requestedAction;
   errorContext.action = action;
   const { args, verbose } = extractVerbose(rest);
-  if (action === 'launch') {
-    const launched = await launchStage(args, verbose);
+  if (action === 'launch' || action === 'answer') {
+    const requested = await withAnswerText(action === 'answer' ? answerArguments(args) : args);
+    const launched = requested.result ?? await launchStage(requested.args, verbose);
     await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify(launched)}\n`, (error) => error ? reject(error) : resolve()));
     process.exit(0);
   }
@@ -717,7 +744,7 @@ try {
     const staleOrder = updated ? staleStages(updated.state || updated) : null;
     const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
     await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
-    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, resultPath: envelope.result_ref ? join(session, envelope.result_ref) : null });
+    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, session, provider: binding.provider });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

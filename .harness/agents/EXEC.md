@@ -286,7 +286,7 @@ Resume invocation evidence and stage identity are recorded as specified in the c
 
 메인 orchestrator는 [실행 조율 지침](../../.codex/skills/orchestrator/references/coordination.md)에 따라 입력 준비, model binding, 출력 스키마, 상태 기록, 반환 검증을 각각의 명령으로 수행한다. 각 실행은 새 execution ID를 사용한다. linked worktree의 shared guidance는 같은 Git common directory인지 입력 검증으로 확인한다. 오류 로그는 해당 execution의 session에 보존한다.
 
-stage 실행은 `.codex/skills/orchestrator/references/dispatch.md`에 따라 native 서브에이전트를 시작하고 종료를 기다린다. 서브에이전트의 작업 규칙은 agent profile의 `Harness stage contract`에 있어 공통 문서를 따로 읽지 않는다. 결과 JSON은 `bind`가 돌려준 `receive_command`의 표준 입력으로 제출한다. 실행기는 현재 실행과 실제 작업자 ID를 확인해 출력 파일을 정한다. `finish`는 출력 형식과 실행 상태를 검증하고 결과를 기록한다.
+stage 실행은 `.codex/skills/orchestrator/references/dispatch.md`에 따라 native 서브에이전트를 시작하고 종료를 기다린다. 서브에이전트의 작업 규칙은 agent profile의 `Harness stage contract`에 있어 공통 문서를 따로 읽지 않는다. 결과 JSON은 Codex에서 `bind`가 돌려준 `receive_command`의 표준 입력으로, Claude Code에서는 작업자의 최종 메시지로 제출하며 hook이 기록한다. 실행기는 현재 실행과 실제 작업자 ID를 확인해 출력 파일을 정한다. `finish`는 출력 형식과 실행 상태를 검증하고 결과를 기록한다.
 
 
 결과는 `harness-native-stage.mjs finish`의 반환값과 정본 실행 상태에서 확인한다. 실패나 중단이 확인되기 전에는 같은 stage를 다시 시작하지 않는다.

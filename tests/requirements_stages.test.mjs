@@ -490,7 +490,7 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.match(premature.stderr, /spec-me has been removed/);
   // The user approves the fixed requirements before tactical design: bounded-context's finish tells the orchestrator to show them
   // and ask, and the runner refuses domain-model without the user's own logged reply.
-  assert.match(JSON.parse(fixed.stdout).next, /Show the fixed requirements\.md to the user[\s\S]*--requirements-approved true --approval-answer/);
+  assert.match(JSON.parse(fixed.stdout).next, /Show the user result\.summary[\s\S]*answer --text/);
   assert.match(JSON.parse(fixed.stdout).next, /standalone `\$orchestrator <approval>`/);
   const unapproved = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--stage-id', 'domain-model'], { cwd: workspace, encoding: 'utf8' });
   assert.notEqual(unapproved.status, 0);
@@ -604,8 +604,8 @@ test('the requirements stages run in order as workflow stages and the tactical d
   assert.equal(rerunResult.status, 0, rerunResult.stderr);
   assert.match(JSON.parse(rerunResult.stdout).next, /--stage-id bounded-context/);
   const fixedAgain = await runStage('bounded-context', { files: { [requirements]: fixedDocument(revisedRule) }, artifacts: [artifact(requirements, 'requirements')] });
-  assert.match(fixedAgain.finished.next, /Show the fixed requirements\.md to the user/);
-  assert.match(invoke(workspace, 'harness-context.mjs', []).next, /Show the fixed requirements\.md to the user/);
+  assert.match(fixedAgain.finished.next, /Show the user result\.summary/);
+  assert.match(invoke(workspace, 'harness-context.mjs', []).next, /Show the user result\.summary/);
   const command = (file, args) => spawnSync(process.execPath, [join(workspace, '.harness/scripts', file), ...args], { cwd: workspace, encoding: 'utf8' });
   for (const args of [[], firstApprovalArgs]) {
     const refused = command('harness-native-stage.mjs', ['launch', '--stage-id', 'domain-model', ...args]);

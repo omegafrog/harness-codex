@@ -15,13 +15,13 @@ compose 명령에는 `harness-context.mjs --entry`가 확인한 `--orchestrator-
 
 ## 사용자 답변으로 재개
 
-질문 본문은 `finish`가 준 `result.questions_path` 파일을 한 번 읽어 가져온다(출력에는 ID와 `title`뿐이다). 질문의 `title`과 선택지 `label`은 원문 그대로 보여 주고, 사용자가 stage의 작업을 보지 못했다고 가정해 `context`(`settled_rules`·`why_now`)와 선택지마다 `consequence`·`effect`·`example`을 빠짐없이 함께 보여 준다. 요약·생략하거나 직접 지은 예시로 바꾸지 않고, 예시는 이해를 돕는 가정일 뿐 요구사항이 아니라고 밝힌다. 질문 도구가 선택지 설명을 받으면 거기에, 받지 못하면 질문 본문에 선택지별로 이어 쓴다. 저장된 이전 질문처럼 이 필드가 없으면 있는 필드만 그대로 보여 준다. `decision_kind: "technology"`이면 각 선택지의 `evidence`에 있는 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. `decision_kind: "visual_direction"`이면 질문 UI가 이미지를 표시하지 못하므로 질문 전에 `title`의 비교 페이지 절대 경로와 선택지별 `previews`(viewport·caption·session 기준 경로를 `<workspace>/.io/` 아래 절대 경로로 바꾼 값)를 열 수 있는 링크로 먼저 보여 준다. 이미지를 표시할 수 있는 provider는 각 선택지 옆에 이미지를 함께 보여 준다. 시안을 보여 주지 않고 스타일 선택을 묻거나 대신 고르지 않는다. 오케스트레이터 자신의 보충 설명은 질문과 분리한다.
+질문은 `finish`·envelope의 `questions`에 compact 형태로 들어 있다(`title`, 최대 2줄 `context`, 선택지별 `label`·한 줄 `effect`·`recommended`; technology는 `evidence` 줄, visual_direction은 `previews` 경로). 파일을 열지 않고 `title`과 `label`은 원문 그대로, 나머지는 한국어로 옮겨 보여 주며 추천안을 표시한다. 요약·생략하거나 직접 지은 예시로 바꾸지 않는다. `kind: visual_direction`이면 질문 UI가 이미지를 표시하지 못하므로 `previews`의 절대 경로를 먼저 열 수 있는 링크로 보여 준다. 시안 없이 스타일을 묻거나 대신 고르지 않는다. 오케스트레이터 자신의 보충 설명은 질문과 분리한다.
 
-`USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 `question_id`를 읽는다. 사용자 메시지가 여러 항목에 답하면, 각 항목에 해당하는 확정된 선택이나 답변 구절을 연결한다. 사용자가 조건을 붙이거나 직접 정한 동작은 뜻을 바꾸지 않고 해당 답변 구절을 `answer`에 전달한다.
+사용자의 답은 해석하지 않고 원문 그대로 한 번에 넘긴다. Claude Code는 `Agent` prompt를 `harness-stage: answer`와 그 아래 줄의 원문으로, Codex는 `node .harness/scripts/harness-native-stage.mjs answer --text '<원문>'`으로 호출한다. 실행기가 기다리는 stage와 그 질문 ID를 찾아 "추천대로"·"모두 추천" 같은 일괄 답은 질문 묶음 전체의 추천안으로, "1번 A, 2번 B"처럼 번호별 선택은 각 질문의 선택지(번호·알파벳·id·label)로, 조건이 붙은 답은 사용자의 문구를 그대로 `answer`로 맞춘다. 어느 질문에 대한 답인지 알 수 없으면 아무것도 기록하지 않고 `clarification_needed`(어떤 질문에 어떻게 답하면 되는지)를 반환하므로, 사용자에게 한국어로 다시 묻고 새 답 원문을 같은 방식으로 넘긴다. 답이 일부 질문에만 해당하면 나머지는 대기 상태로 남고 남은 질문(compact)이 반환된다. 이미 정해진 `--answer` JSON 계약(`launch --stage-id <stage> --answer '[{"question_id":"…","answer":"…"}]'`)은 그대로 유지되며 질문 ID를 직접 지정해야 할 때만 쓴다.
 
 답변과 확인 질문을 한 메시지로 받으면 확인 질문에 먼저 대화로 답한다. 요청과 정본 결과를 근거로 설명하며, 추가 결정이 필요한 항목은 확인을 기다린다. 항목의 결정을 내리기 전에 사용자가 설명을 요청했다면 해당 `question_id`에 `clarification`으로 연결하고 응답이 확정된 다른 항목은 `answer`로 전달한다. 설명 요청은 답변이 아니므로 설명한 뒤 같은 맥락과 선택지별 예시를 유지해 다시 묻고, 실제 답을 받기 전에는 stage를 재개하지 않는다. 답변이 확정된 항목에 사용자가 별도 질문을 덧붙인 경우에는 확정 구절만 `answer`에 넣는다. 하나의 ID에는 한 형태만 전달한다. 아래 ID는 예시이므로 실제 호출에는 현재 결과의 ID를 사용한다.
 
-확정 답변을 전달하는 예시
+명시적 질문 ID로 전달하는 예시
 
 ```bash
 node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage-id> --answer '[{"question_id":"<현재-질문-ID>","answer":"<사용자가-선택하거나-위임한-답>"}]'
@@ -43,7 +43,7 @@ node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage-id> --an
 
 ## 사용자 승인 답변 전달
 
-텍스트로 승인을 받을 때는 승인 질문을 보여 주는 시점에 사용자의 답변 형식도 안내한다. 같은 worktree의 소유 대화에서 Codex는 `$orchestrator <승인 답변>`, Claude Code는 `/orchestrator <승인 답변>`을 독립 메시지로 보내도록 안내한다. 예를 들어 사용자가 `$orchestrator 승인하고 진행`이라고 답하면 `--approval-answer '승인하고 진행'`을 전달한다. 지원되는 질문 도구로 승인받은 경우 도구의 사용자 답변 원문을 전달한다. 실행기는 승인 대상 stage 완료 뒤의 provider 대화 기록과 답을 대조한다.
+텍스트로 승인을 받을 때는 승인 질문을 보여 주는 시점에 사용자의 답변 형식도 안내한다. 같은 worktree의 소유 대화에서 Codex는 `$orchestrator <승인 답변>`, Claude Code는 `/orchestrator <승인 답변>`을 독립 메시지로 보내도록 안내한다. 예를 들어 사용자가 `$orchestrator 승인하고 진행`이라고 답하면 호출어 뒤의 `승인하고 진행`을 원문 그대로 `answer`(Claude Code는 `harness-stage: answer`와 아래 줄의 원문)로 넘긴다. 실행기가 이 답이 요구사항 승인(bounded-context 완료 뒤)인지 발행 승인(to-ticket 완료 뒤)인지 정해 `--requirements-approved true --approval-answer`·`--publication-approved true --approval-answer`로 전달하며, 아래 승인 문구 검증은 그대로 적용한다. 개별 stage에는 `--approval-answer '승인하고 진행'`을 직접 전달할 수도 있다. 지원되는 질문 도구로 승인받은 경우 도구의 사용자 답변 원문을 전달한다. 실행기는 승인 대상 stage 완료 뒤의 provider 대화 기록과 답을 대조한다.
 
 인정되는 답은 worktree 소유 대화의 provider 기록에 있는 사용자 메시지뿐이다. 그 대화가 승인 gate 이후 새로 받은 `$orchestrator <승인 답변>`(Codex; headless 재개는 `codex exec resume <session-id> '$orchestrator <승인 답변>'`)이나 `/orchestrator <승인 답변>`(Claude Code), 또는 그 대화가 직접 연 질문 도구의 답이다. 호출어 없는 일반 메시지, 외부 제어 대화·wrapper·UI form이 따로 받은 답, orchestrator의 말, 값 없는 flag는 기록되지 않는다. 외부에서 이미 받은 승인은 같은 문구에 호출어를 붙여 소유 대화로 다시 보내고, 호출어 뒤 원문을 `--approval-answer`로 전달한다. 같은 답으로 거부된 명령을 반복하지 않는다.
 

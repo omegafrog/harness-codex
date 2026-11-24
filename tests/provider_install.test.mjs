@@ -74,7 +74,8 @@ test('install --provider claude-code carries no Codex skill root and registers t
     const settings = JSON.parse(await readFile(join(root, '.claude/settings.local.json'), 'utf8'));
     for (const event of ['SubagentStart', 'SubagentStop']) assert.equal(settings.hooks[event].length, 1, event);
     assert.match(settings.hooks.SubagentStart[0].hooks[0].command, /harness-agent-event\.mjs/);
-    for (const event of ['UserPromptSubmit', 'PostToolUse', 'Stop']) assert.equal(settings.hooks[event], undefined);
+    for (const event of ['UserPromptSubmit', 'Stop']) assert.equal(settings.hooks[event], undefined);
+    assert.match(settings.hooks.PostToolUse.find((entry) => entry.matcher === 'Agent').hooks[0].command, /harness-agent-result\.mjs/, 'a dispatched stage returns its recorded envelope');
     const admission = settings.hooks.PreToolUse.find((entry) => entry.matcher === 'Agent').hooks[0].command;
     const agent = (tool_input) => spawnSync('sh', ['-c', admission], {
       cwd: root, env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: 'utf8',

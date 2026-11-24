@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
-const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep, withDispatchHint } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
 const { staleStages } = await import(new URL('../../.harness/src/workflow/stage-reopen.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write('Usage: node .harness/scripts/harness-context.mjs [--entry | --root DIR | --worktree-ref FILE] [--verbose]\n  --entry: main orchestrator entry routing (provider, session_id, decision_hint, next). Read-only.\n'); process.exit(0); }
@@ -93,7 +93,7 @@ try {
   const staleOrder = staleStages(state);
   const awaitingApproval = stageId === 'bounded-context' && ctx.plan_set_id && existsSync(join(ctx.root, 'docs/specs', ctx.plan_set_id, 'requirements.md'));
   const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval)
-    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval) })
+    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval), provider: state?.orchestrator_provider || 'codex' })
     : null;
   const foreign = foreignRunningStage(state);
   const next = recoveryNext || (foreign ? takeoverStep(foreign) : revalidationNext);
@@ -131,6 +131,6 @@ try {
       plans, implementation_reviews: reviews,
       ...worktrees,
     };
-    output(verbose ? context : compactContext(context));
+    output(withDispatchHint(verbose ? context : compactContext(context), state?.orchestrator_provider));
   }
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

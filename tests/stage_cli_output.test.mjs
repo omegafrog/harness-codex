@@ -158,7 +158,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
   assert.deepEqual(Object.keys(finished.result), ['summary', 'artifacts']);
   assert.equal(finished.result.summary, SKIP(analysis));
   assert.ok(bytes(finishOutput.stdout) <= 700, `finish is ${bytes(finishOutput.stdout)} bytes`);
-  assert.match(finished.next, /next stage/);
+  assert.match(finished.next, /^Next stage: .*launch --stage-id ubiquitous-language$/, 'the next stage is named, so the orchestrator reads no workflow map');
 
   // The legacy start output stays available: the workspace, the sandbox and the whole binding.
   const second = await beginStage('ubiquitous-language');
@@ -256,7 +256,8 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   const waiting = ok(runPrinted(workspace, asked.next.finish));
   assert.equal(waiting.code, 'USER_DECISION_REQUIRED');
   assert.equal(waiting.result.questions[0].title, question.title, 'the question is relayed whole');
-  assert.match(waiting.next, /launch --stage-id ubiquitous-language --answer /);
+  assert.match(waiting.next, /answer --text '<the user's reply verbatim>'/);
+  assert.match(waiting.next, /without opening any file/);
   const resumed = ok(exec(workspace, NATIVE, ['launch', '--stage-id', 'ubiquitous-language', '--answer', 'no']));
   assert.equal(resumed.status, 'launched');
   assert.equal(resumed.answered, true);
@@ -543,10 +544,11 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
   assert.match(skill, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(skill, /`next\.bind`/);
-  assert.match(skill, /`next\.after_agent`/);
-  assert.match(skill, /dispatch\.md를 열지 않는다/);
-  assert.match(skill, /`result\.questions_path`/);
-  assert.match(skill, /Harness 소스나 state 파일을 읽지 않고/);
+  assert.match(skill, /`harness-stage: <stage> \[launch 옵션\]`/);
+  assert.match(skill, /stage마다 `Agent` 한 번만 호출한다/);
+  assert.match(skill, /reference\(`dispatch\.md`·`input\.md`·`workflow-map\.md` 등\)와 result 파일을 열지 않고/);
+  assert.match(skill, /harness-native-stage\.mjs answer --text/);
+  assert.match(skill, /Harness 소스·state 파일은 읽지 않는다/);
   const dispatch = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(dispatch, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(dispatch, /`--verbose`/);
@@ -568,13 +570,18 @@ test('a Claude launch names the model and effort for Agent and one command that 
   assert.match(codex.next.spawn, /fork_turns: "none"/);
 });
 
-test('finish names the questions and points at the canonical result unless verbose', () => {
-  const questions = [{ question_id: 'e:1', title: '무엇을?', context: { settled_rules: ['r'], why_now: 'w' }, options: [{ id: 'a', label: 'A' }] }];
+test('finish carries the compact questions, so no result file is opened', () => {
+  const questions = [{ question_id: 'e:1', title: '무엇을?', recommended_option_id: 'b', context: { settled_rules: ['r1', 'r2'], why_now: 'w' }, options: [{ id: 'a', label: 'A', consequence: 'ca', effect: 'ea', example: 'xa' }, { id: 'b', label: 'B', consequence: 'cb', effect: 'eb'.padEnd(300, 'b'), example: 'xb' }] }];
   const envelope = { status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: 'runtime/executions/e/result.json', result: { summary: '질문', artifacts: [], questions } };
-  const finished = compactFinished({ envelope, stageId: 'event-storming', executionId: 'e', resultPath: '/w/.io/runtime/executions/e/result.json' });
-  assert.deepEqual(finished.result.questions, [{ question_id: 'e:1', title: '무엇을?' }]);
-  assert.equal(finished.result.questions_path, '/w/.io/runtime/executions/e/result.json');
-  assert.deepEqual(compactFinished({ envelope, stageId: 'event-storming', executionId: 'e' }).result.questions, questions, 'without a result path the questions stay whole');
+  const finished = compactFinished({ envelope, stageId: 'event-storming', executionId: 'e' });
+  const [shown] = finished.result.questions;
+  assert.deepEqual(shown.context, ['w', 'r1'], 'at most two context lines: why now and the first settled rule');
+  assert.deepEqual(shown.options.map(({ id, label, recommended }) => ({ id, label, recommended })), [{ id: 'a', label: 'A', recommended: undefined }, { id: 'b', label: 'B', recommended: true }]);
+  assert.ok(shown.options[1].effect.length <= 200 && shown.options[1].effect.startsWith('eb'), 'the effect is one clipped line');
+  assert.equal(finished.result.questions_path, undefined);
+  assert.equal(shown.options[0].consequence, undefined, 'consequence and example stay in the result file');
+  assert.match(finished.next, /answer --text/);
+  assert.match(compactFinished({ envelope, stageId: 'event-storming', executionId: 'e', provider: 'claude-code' }).next, /harness-stage: answer/);
 });
 
 // The orchestrator of a real Codex run ran `receive` with nothing on standard input twice (tactical-data worker, final message

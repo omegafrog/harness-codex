@@ -36,3 +36,4 @@ When the user explicitly asks to restart a waiting or failed `to-ticket` stage f
 The following publisher is a separate workflow stage, not a nested subagent or an action performed by the orchestrator main session. It owns tracker publication and returns the final receipt. `tactical-code` implements the published tickets one at a time afterwards.
 
 The orchestrator presents real user questions and preserves actual answers. A user answer resolves only the asked decision; it does not make a review pass. Standalone use follows the same split → internal independent review → revision when needed and completion gate.
+- `completed/OK`의 `result.summary`는 사용자 발행 승인 요약으로 쓴다(12줄 이하: ticket마다 한 줄에 제목·의존, 마지막 줄에 plan 문서 경로). 오케스트레이터는 plan 문서를 읽지 않고 이 요약을 그대로 보여 준다.
