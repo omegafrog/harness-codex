@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { constants, existsSync } from 'node:fs';
+import { constants, existsSync, statSync } from 'node:fs';
 import { open, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { assertWorkspaceTarget } from '../../.harness/src/eval/case-workspace.mjs';
@@ -146,8 +146,8 @@ function takeOverStage(args) {
 }
 
 // prepare + start in one call: the orchestrator gets exactly what it needs to spawn the subagent and then bind it.
-// With --take-over true the stage another (ended) Codex conversation left running is first recorded as interrupted and
-// this conversation becomes the orchestrator; the launch then resumes that stage with a fresh execution.
+// With --take-over true the stage an ended Codex conversation left running is first recorded as interrupted and
+// this conversation (Codex or Claude Code) becomes the orchestrator; the launch then resumes that stage with a fresh execution.
 async function launchStage(requestedArgs, verbose) {
   const scripts = fileURLToPath(new URL('.', import.meta.url));
   const attemptId = randomUUID();
@@ -405,7 +405,7 @@ try {
       const here = process.env.CODEX_THREAD_ID || null;
       const nativeOutcome = codexOutcome?.outcome?.status || null;
       const foreign = foreignRunningStage(workflowState, here);
-      const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw);
+      const finishable = foreign && nativeOutcome === 'completed' && existsSync(paths.files.raw) && statSync(paths.files.raw).size > 0;
       const next = finishable ? `Its agent completed and wrote its output; record it: ${nativeCommand('finish', id)}` : foreign ? takeoverStep(foreign) : null;
       process.stdout.write(`${JSON.stringify({ status: current.status, execution_id: id, agent_id: current.native_agent_id || null, thread_id: threadId, observation, ...(nativeOutcome ? { native_outcome: nativeOutcome } : {}), ...(input.context?.requested_stage_binding ? { requested_binding: input.context.requested_stage_binding, model_attestation: modelAttestation, ...(modelAttestation?.status === 'captured' ? { observed_bindings: modelAttestation.turns.map(({ model, reasoning_effort, turn_id }) => ({ model, reasoning_effort, turn_id })) } : {}) } : {}), ...(here && workflowState.orchestrator_session_id ? { session: workflowState.orchestrator_session_id === here ? 'this' : 'other' } : {}), output_path: paths.files.raw, schema_path: paths.files.schema, ...(current.native_agent_id ? { receive_command: nativeReceiveCommand(id, current.native_agent_id) } : {}), ...(next ? { next } : {}) })}\n`);
       process.exit(0);

@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { OWNER_REQUIRED_STAGES } from './stage-reopen.mjs';
 import { summarizeReplySearch } from './approval-search.mjs';
+import { runtimeAgentProvider } from './agent-config.mjs';
 
 const NATIVE = 'node .harness/scripts/harness-native-stage.mjs';
 const PREPARE = 'node .harness/scripts/harness-prepare-input.mjs';
@@ -55,20 +56,22 @@ export function launchChildError({ phase, missingResult, command, preparedExecut
 
 // The feedback a taken-over stage resumes with. It is internal agent input, so it is English, and it holds no quote
 // because the printed command wraps it in single quotes.
-export const TAKEOVER_FEEDBACK = 'The previous run of this stage was interrupted when the Codex conversation that started it ended, and it recorded no result. Continue from the committed documents and the previous input, and keep any answers already given.';
+export const TAKEOVER_FEEDBACK = 'The previous run of this stage was interrupted when the conversation that started it ended, and it recorded no result. Continue from the committed documents and the previous input, and keep any answers already given.';
 export const takeoverCommand = (stage) => launchCommand(stage, '--take-over true');
 
-// The current stage is a native run that another Codex conversation started and never finished. Only that case can be
-// taken over: this conversation cannot wait for, finish or reconcile an agent it did not spawn.
+// The current stage is a native run that a Codex conversation started and never finished, and this conversation (Codex
+// or Claude Code) did not spawn. Only that case can be taken over: this conversation cannot wait for, finish or
+// reconcile an agent it did not spawn. A Claude Code caller never owns a Codex-started stage.
 export function foreignRunningStage(state, sessionId = process.env.CODEX_THREAD_ID) {
   const stage = state?.current_stage;
   const entry = stage ? state.stages?.[stage] : null;
-  if (!sessionId || state?.orchestrator_provider !== 'codex' || !state.orchestrator_session_id || state.orchestrator_session_id === sessionId) return null;
+  const claudeCaller = !sessionId && runtimeAgentProvider() === 'claude-code';
+  if ((!sessionId && !claudeCaller) || state?.orchestrator_provider !== 'codex' || !state.orchestrator_session_id || state.orchestrator_session_id === sessionId) return null;
   if (!entry || entry.status !== 'running' || !entry.native_managed || entry.result_ref) return null;
   return { stage, entry, owner: state.orchestrator_session_id };
 }
 
-export const takeoverStep = ({ stage, owner }) => `${stage} is still recorded as running by another Codex conversation (${owner}). Do not send the user back to that conversation. If it and its agent have ended, take the stage over with ${takeoverCommand(stage)}; it checks that they ended and, if they may still be running, refuses with the next step.`;
+export const takeoverStep = ({ stage, owner }) => `${stage} is still recorded as running by another conversation (${owner}). Do not send the user back to that conversation. If it and its agent have ended, take the stage over with ${takeoverCommand(stage)}; it checks that they ended and, if they may still be running, refuses with the next step.`;
 
 // `--verbose` is a bare flag. A following `true` is accepted so `--verbose true` also works.
 export function extractVerbose(argv) {
@@ -426,6 +429,11 @@ const stageAfter = (previous) => {
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
 // user must decide); the fallback keeps that true for errors this table does not know.
 const RULES = [
+  { re: /^(\S+) is empty \(0 bytes\)|^(\S+) is not valid JSON/, explain: ({ message, executionId, state, stage }) => {
+    const file = /^(\S+) is /.exec(message)?.[1];
+    const id = executionId || entryOf(state, stage)?.execution_id;
+    return { code: 'EXECUTION_FILE_INVALID', why: `${file} cannot be read as JSON (${message.replace(/^\S+ /, '')}). A host that died mid-write leaves 0-byte execution files; they hold no result.`, next: [...(id ? [`If the stage is recorded as running by a closed conversation: ${takeoverCommand(stage || '<stage-id>')}`, `State: ${nativeCommand('inspect', id)}`] : [CONTEXT]), `Do not edit the file by hand; ${file} shows which file is affected.`] };
+  } },
   { re: /^Stage feedback must be a regular unshared file$/, explain: ({ stage }) => ({ code: 'INVALID_ARGUMENT', why: 'Feedback must be stored in a regular file inside the workspace; linked or shared files are refused.', next: [`Write the feedback JSON to a new regular file inside the worktree, then retry ${launchCommand(stage || '<stage-id>')} with --feedback <workspace-relative-path>.`] }) },
   { re: /^Stage feedback must contain a JSON object$/, explain: ({ stage }) => ({ code: 'INVALID_ARGUMENT', why: 'The feedback file is not a JSON object.', next: [`Write a JSON object to a new regular file inside the worktree, then retry ${launchCommand(stage || '<stage-id>')} with --feedback <workspace-relative-path>.`] }) },
   { re: /^Requested stage binding cannot be verified: native attestation (completed_turn_metadata_missing|attestation_not_recorded|transcript_unavailable)$/, explain: ({ message, context }) => ({
@@ -532,7 +540,7 @@ const RULES = [
     const reason = message.replace(/^Takeover refused: /, '');
     const target = stage || '<stage-id>';
     const retry = takeoverCommand(target);
-    const base = { code: 'TAKEOVER_REFUSED', why: `A stage that another Codex conversation started is taken over only when that conversation and its agent provably ended, the stage recorded no result and the project tree is clean (${reason}). Nothing was changed.` };
+    const base = { code: 'TAKEOVER_REFUSED', why: `A stage that a Codex conversation started is taken over by another conversation (Codex or Claude Code) only when that conversation and its agent provably ended, the stage recorded no result and the project tree is clean (${reason}). Nothing was changed.` };
     if (/must be requested alone/.test(message)) return { ...base, why: `${message}. Pass only --stage-id with --take-over true.`, next: [retry] };
     if (/uncommitted changes/.test(reason)) return { ...base, next: ['git status --short (read only) lists the changes'], decision: `The interrupted stage may have left these changes. Show them to the user and ask them to commit or stash what they want to keep (never discard them yourself); then repeat: ${retry}` };
     if (/wrote its output/.test(reason)) {
@@ -541,8 +549,9 @@ const RULES = [
     }
     if (/conversation started .+ itself/.test(reason)) return { ...base, next: [CONTEXT] };
     if (/must be the current native stage|is not recorded|another stage is running/.test(reason)) return { ...base, next: [CONTEXT], decision: 'The stage is not an interrupted run this conversation can take over; read its state and continue from it, or report the refusal to the user.' };
-    if (/CODEX_THREAD_ID/.test(reason)) return { ...base, decision: 'Run the command from the Codex conversation that orchestrates this workflow (Codex sets CODEX_THREAD_ID there). If this is not a Codex CLI session, ask the user to continue in the conversation that started the stage.' };
-    if (/only a stage that a Codex conversation/.test(reason)) return { ...base, decision: 'Ask the user to continue in the conversation that started this stage; another provider cannot verify that the run ended.' };
+    if (/CODEX_THREAD_ID/.test(reason)) return { ...base, decision: 'Run the command from the Codex or Claude Code conversation that orchestrates this workflow, inside this worktree (Codex sets CODEX_THREAD_ID there). If the session id cannot be found, ask the user to continue in the conversation that started the stage.' };
+    if (/Claude Code session/.test(reason)) return { ...base, decision: 'Run the command from the Claude Code session that orchestrates this workflow, inside this worktree. If its session id cannot be found, ask the user to continue in the conversation that started the stage.' };
+    if (/only a stage that a Codex conversation/.test(reason)) return { ...base, decision: 'Ask the user to continue in the conversation that started this stage; a stage that a Claude Code conversation started cannot be verified as ended.' };
     return { ...base, next: [CONTEXT], decision: 'Report this refusal to the user and wait for their direction; do not edit state files.' };
   } },
   { re: /^Running stage cannot be verified stopped/, explain: ({ message, stage, context }) => ({
@@ -581,7 +590,7 @@ const RULES = [
     if (foreign) {
       return {
         code: 'STAGE_RUNNING',
-        why: `${foreign.stage} is recorded as running by another Codex conversation (${foreign.owner}); this conversation did not spawn its agent, so it cannot wait for or finish it, and the runner will not start a second run of it.`,
+        why: `${foreign.stage} is recorded as running by another conversation (${foreign.owner}); this conversation did not spawn its agent, so it cannot wait for or finish it, and the runner will not start a second run of it.`,
         next: [takeoverStep(foreign), ...(foreign.entry.execution_id ? [`If you need its state first: ${nativeCommand('inspect', foreign.entry.execution_id)}`] : [])],
       };
     }

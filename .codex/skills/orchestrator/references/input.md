@@ -11,7 +11,7 @@ compose 명령에는 `harness-context.mjs --entry`가 확인한 `--orchestrator-
 
 요구사항·전술 설계 stage는 `PRE_SPEC_STAGES` 순서로만 시작하며, `spec-me`는 폐기되어 prepare와 native start에서 거부한다. 준비기와 `harness-native-stage.mjs start`는 앞 stage가 모두 `completed/OK`가 아니면 `<stage> cannot start before <앞 stage>`로 거부한다. 오류가 가리킨 앞 stage부터 진행하며 지침이 오래됐다는 이유로 건너뛰지 않는다. 같은 오류가 해당 stage 항목이 결과 없이 `running`·`failed`·`cancelled`로 남았다고 알리면 이전 Harness가 순서를 어기고 시작한 것이다. 그 native 실행이 끝났고 orchestrator Codex session을 닫았다면 해당 worktree에서 `node .harness/scripts/harness-prepare-input.mjs --stage-id <stage> --discard-out-of-order true`를 단독으로 실행한다. 실행기는 종료 증거(bind된 agent의 interrupted·failed 결과, bind되지 않았으면 그 뒤 시작된 subagent가 없고 session을 연 process가 없음, 또는 native runner가 기록한 failed·cancelled)와 깨끗한 project worktree, 그 stage의 commit 부재를 확인한다. 이전 state를 `runtime/restarts/out-of-order-*`에 보존하고 stage 항목을 지워 직전 완료 stage 대기 상태로 되돌린다. 반환된 `previous_stage` 다음 stage를 일반 절차로 준비한다. 종료를 확인할 수 없거나 결과가 있거나 순서를 따르는 stage는 거부하며 state를 직접 고치지 않는다.
 
-다른 Codex 대화가 시작했다가 종료된 native stage가 `running`으로 남은 경우의 인계(`--take-over-interrupted true`, 보통은 `launch --take-over true`)는 [실행과 결과](dispatch.md)가 소유한다. 이 옵션도 `--stage-id`와 단독으로만 쓰며 state를 직접 고치지 않는다.
+다른 Codex 대화가 시작했다가 종료된 native stage가 `running`으로 남은 경우의 (Codex 또는 Claude Code 대화로의) 인계(`--take-over-interrupted true`, 보통은 `launch --take-over true`)는 [실행과 결과](dispatch.md)가 소유한다. 이 옵션도 `--stage-id`와 단독으로만 쓰며 state를 직접 고치지 않는다.
 
 ## 사용자 답변으로 재개
 

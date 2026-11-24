@@ -120,7 +120,7 @@ try {
     const context = {
       workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, plan_set_id: ctx.plan_set_id, branch: ctx.record?.branch || null,
       current_stage: state?.current_stage || null, workflow_status: state?.status || null,
-      // A stage another Codex conversation left running cannot be waited for from this one: the exact way on is here.
+      // A stage another (Codex) conversation left running cannot be waited for from this one: the exact way on is here.
       next,
       // The orchestrator's last reply; when it is newer than every stage update it may be a question awaiting the user.
       orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,

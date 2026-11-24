@@ -150,7 +150,9 @@ test('installed consumer: a new conversation takes over a stage its closed prede
   assert.deepEqual(own0.next, ['node .harness/scripts/harness-context.mjs']);
   await untouched(entry);
   const unset = spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), ...takeover], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' } });
-  assert.match(refusal(unset).why, /CODEX_THREAD_ID/);
+  assert.match(refusal(unset).why, /could not identify the calling conversation: no Codex conversation \(CODEX_THREAD_ID is not set\)/);
+  const codexOnly = spawnSync(process.execPath, [join(workspace, '.harness/scripts', NATIVE), ...takeover], { cwd: workspace, encoding: 'utf8', env: { ...process.env, HARNESS_PROVIDER_ID: 'codex', CODEX_THREAD_ID: '' } });
+  assert.match(refusal(codexOnly).why, /id of the current Codex conversation \(CODEX_THREAD_ID\)/);
   assert.match(refusal(run(NATIVE, [...takeover, '--answer', 'no'])).error, /must be requested alone/);
   assert.match(refusal(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'yes'])).error, /must be requested alone/);
   await writeFile(join(workspace, 'app.txt'), 'application change in progress\n');
@@ -319,12 +321,16 @@ test('installed consumer: the two steps and a repeated command are safe, and an 
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '');
 });
 
-test('a takeover is offered only for a native stage that another Codex conversation left running, and every refusal explains itself', () => {
+test('a takeover is offered only for a native stage that a Codex conversation left running, and every refusal explains itself', () => {
   const stage = { status: 'running', native_managed: true, execution_id: 'x-1' };
   const state = (overrides = {}) => ({ current_stage: STAGE, orchestrator_provider: 'codex', orchestrator_session_id: 'old-session', stages: { [STAGE]: { ...stage, ...overrides } } });
   assert.equal(foreignRunningStage(state(), 'new-session').stage, STAGE);
   assert.equal(foreignRunningStage(state(), 'old-session'), null, 'the conversation that started it');
   assert.equal(foreignRunningStage(state(), null), null, 'no conversation id');
+  const before = process.env.HARNESS_PROVIDER_ID;
+  process.env.HARNESS_PROVIDER_ID = 'claude-code';
+  try { assert.equal(foreignRunningStage(state(), null)?.stage, STAGE, 'a Claude Code conversation never owns a Codex-started stage'); }
+  finally { if (before === undefined) delete process.env.HARNESS_PROVIDER_ID; else process.env.HARNESS_PROVIDER_ID = before; }
   assert.equal(foreignRunningStage({ ...state(), orchestrator_provider: 'claude-code' }, 'new-session'), null);
   assert.equal(foreignRunningStage(state({ status: 'waiting' }), 'new-session'), null);
   assert.equal(foreignRunningStage(state({ native_managed: false }), 'new-session'), null);
@@ -337,7 +343,8 @@ test('a takeover is offered only for a native stage that another Codex conversat
     'Takeover refused: this conversation started stakeholder-analysis itself, so its agent is waited for here, not taken over',
     'Takeover refused: stakeholder-analysis must be the current native stage and be running without a result (it is completed)',
     'Takeover refused: this command needs the id of the current Codex conversation (CODEX_THREAD_ID), which is not set',
-    'Takeover refused: only a stage that a Codex conversation started can be taken over by another Codex conversation',
+    'Takeover refused: only a stage that a Codex conversation started can be taken over by another conversation (Codex or Claude Code)',
+    'Takeover refused: this command needs the id of the current Claude Code session, which was not found for this worktree',
     'Takeover refused: another stage is running',
     'Taking over an interrupted stage must be requested alone',
   ]) {
@@ -424,4 +431,76 @@ test('installed consumer: the last tactical design stage is taken over, and spec
   assert.equal(implementation.input.context.stage_id, 'tactical-technology');
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'the takeover committed nothing');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'Harness-owned state stays out of Git');
+});
+
+test('a Claude Code conversation takes over a stage a closed Codex conversation left running, and only that', async (t) => {
+  const f = await interruptedWorkflow(t, { bind: false });
+  const { workspace, session, readState, old, refusal, launched, entry, writeParent, hold, parentFile, untouched } = f;
+  const claude = { provider: 'claude-code', sessionId: randomUUID() };
+  const call = (extra = {}) => spawnSync(process.execPath, ['--input-type=module', '-e', `import { takeOverInterruptedStage } from ${JSON.stringify(new URL(`../${MODULE}`, import.meta.url).href)};
+    const root = ${JSON.stringify(workspace)};
+    try { console.log(JSON.stringify(await takeOverInterruptedStage({ root, session: ${JSON.stringify(session)}, stageId: ${JSON.stringify(STAGE)}, ...JSON.parse(process.argv[1]) }))); } catch (error) { console.error(error.message); process.exit(1); }`, JSON.stringify({ ...claude, ...extra })], { cwd: workspace, encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: '' } });
+
+  // The previous Codex transcript is still open: refused, nothing changes.
+  await writeParent();
+  const release = await hold(parentFile);
+  const open = call();
+  assert.notEqual(open.status, 0);
+  assert.match(open.stderr, /still open/);
+  await untouched(entry);
+  await release();
+
+  // A session that is not a UUID is refused, naming the provider.
+  assert.match(call({ sessionId: 'not-a-session' }).stderr, /Claude Code session/);
+
+  // Closed transcript and no agent ever bound: the Claude Code conversation takes the stage over.
+  const taken = call();
+  assert.equal(taken.status, 0, taken.stderr);
+  assert.equal(JSON.parse(taken.stdout).previous_session_id, old);
+  const state = await readState();
+  assert.equal(state.orchestrator_provider, 'claude-code');
+  assert.equal(state.orchestrator_session_id, claude.sessionId);
+  const failed = state.stages[STAGE];
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.taken_over.provider, 'claude-code');
+  assert.match(failed.reason, /claude-code conversation/);
+  assert.deepEqual(JSON.parse(await readFile(join(session, 'worktree.json'), 'utf8')).agent_sessions.orchestrator, { ...JSON.parse(await readFile(join(session, 'worktree.json'), 'utf8')).agent_sessions.orchestrator, session_id: claude.sessionId, provider: 'claude-code' });
+  const [archive] = (await readdir(join(session, 'runtime/restarts'))).filter((name) => name.startsWith('takeover-'));
+  assert.equal(JSON.parse(await readFile(join(session, 'runtime/restarts', archive, 'takeover.json'), 'utf8')).provider, 'claude-code');
+  // Repeating from the same Claude Code session changes nothing; a Codex caller with that id is a different conversation.
+  assert.equal(JSON.parse(call().stdout).already_taken_over, true);
+  assert.notEqual(call({ provider: 'codex' }).status, 0);
+});
+
+test('a stage that a Claude Code conversation started is not taken over', async (t) => {
+  const f = await interruptedWorkflow(t, { bind: false });
+  const { workspace, session, stateFile, readState, old, writeParent, entry } = f;
+  const state = await readState();
+  state.orchestrator_provider = 'claude-code';
+  await writeFile(stateFile, `${JSON.stringify(state, null, 2)}\n`);
+  await writeParent();
+  const script = `import { takeOverInterruptedStage } from ${JSON.stringify(new URL(`../${MODULE}`, import.meta.url).href)};
+    try { await takeOverInterruptedStage({ root: ${JSON.stringify(workspace)}, session: ${JSON.stringify(session)}, stageId: ${JSON.stringify(STAGE)}, provider: 'claude-code', sessionId: ${JSON.stringify(randomUUID())} }); } catch (error) { console.error(error.message); process.exit(1); }`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: workspace, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /only a stage that a Codex conversation started can be taken over by another conversation \(Codex or Claude Code\)/);
+  assert.equal((await readState()).stages[STAGE].status, 'running');
+  assert.equal((await readState()).orchestrator_session_id, old);
+  assert.equal((await readState()).stages[STAGE].execution_id, entry.execution_id);
+});
+
+test('inspect treats 0-byte execution files as absent instead of failing on JSON', async (t) => {
+  const f = await interruptedWorkflow(t, { bind: false });
+  const { session, ok, run, launched, readState, old } = f;
+  const directory = join(session, 'runtime/executions', launched.execution_id);
+  const zeros = ['result.json', 'return.json', 'return.schema.json', 'output.json'];
+  for (const name of zeros) await writeFile(join(directory, name), '');
+  for (const other of await readdir(join(session, 'runtime/executions'))) for (const name of ['result.json', 'return.json', 'return.schema.json']) await writeFile(join(session, 'runtime/executions', other, name), '');
+  const inspected = ok(run(NATIVE, ['inspect', '--execution-id', launched.execution_id]));
+  assert.equal(inspected.status, 'running');
+  assert.equal(inspected.agent_id, null);
+  assert.match(inspected.next, /--take-over true/);
+  // The conversation that started it is not told to take over its own run.
+  assert.equal(ok(run(NATIVE, ['inspect', '--execution-id', launched.execution_id], old)).next, undefined);
+  assert.equal((await readState()).stages[STAGE].status, 'running');
 });

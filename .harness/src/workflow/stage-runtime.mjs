@@ -217,9 +217,18 @@ async function readReference(root, reference, sessionRoot, controlSessionRoot = 
   return content;
 }
 
+// A 0-byte file under runtime/executions is what a host killed mid-write leaves: it is absent (ENOENT), not malformed.
+// Malformed non-empty JSON still fails, naming the file.
+export function parseSessionJson(content, path) {
+  const text = String(content);
+  if (!text.trim() && /(^|\/)runtime\/executions\//.test(path)) throw Object.assign(new Error(`${path} is empty (0 bytes), so it holds no result; ENOENT`), { code: 'ENOENT' });
+  try { return JSON.parse(text); }
+  catch (error) { throw new SyntaxError(`${path} is not valid JSON (${error.message}); inspect that file and remove it only if it is an incomplete write`); }
+}
+
 export async function readSkillSessionJson({ root, session_directory = null, path }) {
   const session = await resolveSkillSession(root, session_directory);
-  return JSON.parse(await readReference(root, { base: 'session', path }, session));
+  return parseSessionJson(await readReference(root, { base: 'session', path }, session), path);
 }
 
 export async function readExecutionInput({ root, execution_id }) {
@@ -315,7 +324,7 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
   }
   const expected = stageExecutionPaths(root, input.execution_id, { create: false }).refs.result;
   requireValue(envelope.result_ref === expected, 'Result must belong to the requested execution');
-  const result = envelope.result || JSON.parse(await readReference(root, { base: 'session', path: expected }, session, controlSession));
+  const result = envelope.result || parseSessionJson(await readReference(root, { base: 'session', path: expected }, session, controlSession), expected);
   // A stage may hand the independent review to its caller, which dispatches the reviewer for the waiting stage.
   const callerDispatchesReviewer = true;
   requireValue(callerDispatchesReviewer || !(input.skill === 'to-ticket' && (result.review_request?.skill === 'plan-review' || envelope.code === 'REVIEW_REQUIRED')), 'to-ticket must complete its independent plan-review loop internally');

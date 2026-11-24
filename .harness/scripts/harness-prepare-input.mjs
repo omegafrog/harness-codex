@@ -49,9 +49,9 @@ try {
   const worktreeSession = await resolveSkillSession(root, record.session_directory);
   if (record.state !== 'active' || worktreeRef !== join(worktreeSession, 'worktree.json')) throw new Error('Worktree record is not active or canonical');
   // Codex stages need the trusted Harness subagent hook to record native reviewer identity.
-  const assertCodexHookTrusted = async () => {
+  const assertCodexHookTrusted = async (callerProvider = null) => {
     const { parseYaml } = await import(new URL('../eval/yaml.mjs', base));
-    const provider = record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).agents?.provider || 'codex';
+    const provider = callerProvider || record.agent_sessions?.orchestrator?.provider || record.workflow_binding?.provider || parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8')).agents?.provider || 'codex';
     if (provider === 'codex') {
       const { inspectCodexHookTrust } = await import('../../.codex/harness/providers/codex.mjs');
       const trust = await inspectCodexHookTrust();
@@ -83,9 +83,11 @@ try {
   }
   if (options['take-over-interrupted'] !== undefined) {
     if (options['take-over-interrupted'] !== 'true' || Object.keys(options).some((key) => !['worktree-ref', 'stage-id', 'take-over-interrupted', 'stage-binding'].includes(key))) throw new Error('Taking over an interrupted stage must be requested alone');
-    assertRequestedProvider(await assertCodexHookTrusted());
-    const { takeOverInterruptedStage } = await import(new URL('stage-takeover.mjs', base));
-    const taken = await takeOverInterruptedStage({ root, session: worktreeSession, stageId: options['stage-id'] });
+    const { takeOverInterruptedStage, callerIdentity } = await import(new URL('stage-takeover.mjs', base));
+    // The caller (Codex or Claude Code) becomes the orchestrator, so its provider decides the hook trust and the binding.
+    const caller = await callerIdentity(root);
+    assertRequestedProvider(await assertCodexHookTrusted(caller.provider || undefined));
+    const taken = await takeOverInterruptedStage({ root, session: worktreeSession, stageId: options['stage-id'], ...caller });
     const requestedArgs = requestedStageBinding ? ` --stage-binding '${JSON.stringify(requestedStageBinding)}'` : '';
     process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `--feedback '${TAKEOVER_FEEDBACK}'${requestedArgs}`)}` })}\n`);
     process.exit(0);

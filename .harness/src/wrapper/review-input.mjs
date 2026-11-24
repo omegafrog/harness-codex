@@ -66,7 +66,7 @@ export async function readImplementerResult({ root, resultRef, commit = null }) 
   for (const name of await readdir(executions).catch(() => [])) {
     if (!name.startsWith('implement-wrapper-')) continue;
     const file = join(executions, name, 'result.json');
-    const earlier = await readFile(file, 'utf8').then(JSON.parse, () => null);
+    const earlier = await readFile(file, 'utf8').then(JSON.parse).catch(() => null);
     if (/^[0-9a-f]{40}$/i.test(earlier?.commit_sha || '')) recorded.push({ sha: earlier.commit_sha.toLowerCase(), at: (await stat(file)).mtimeMs });
   }
   const shas = [...new Set(recorded.map((item) => item.sha))];

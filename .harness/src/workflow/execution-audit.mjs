@@ -32,7 +32,10 @@ const parseJson = (text) => { try { return JSON.parse(text); } catch { return nu
 const time = (value) => { const at = Date.parse(value || ''); return Number.isFinite(at) ? at : null; };
 
 async function readJsonFile(path) {
-  try { return JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  let text;
+  try { text = await readFile(path, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  if (!text.trim()) return null;
+  try { return JSON.parse(text); } catch (error) { throw new Error(`${path} is not valid JSON (${error.message})`); }
 }
 
 async function readJsonLines(path) {
