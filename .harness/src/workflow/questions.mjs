@@ -10,6 +10,9 @@ export function identifyQuestions(executionId, questions) {
 }
 
 const filled = (value) => typeof value === 'string' && value.trim().length > 0;
+// One line each: the user reads these next to every option, so a paragraph is rejected.
+export const QUESTION_LINE_LIMIT = 160;
+export const QUESTION_RULES_LIMIT = 3;
 const sameText = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
 
 // What a user needs to decide without having followed the agent's work: the business rules already settled that bear on the
@@ -24,11 +27,16 @@ export function questionContextProblems(question) {
   else {
     if (!Array.isArray(context.settled_rules) || !context.settled_rules.length || !context.settled_rules.every(filled)) problems.push('context.settled_rules must list the already-settled business rules that bear on this decision, at least one non-empty entry');
     if (!filled(context.why_now)) problems.push('context.why_now must say why this has to be decided now');
+    else if (context.why_now.length > QUESTION_LINE_LIMIT) problems.push(`context.why_now must be one line of at most ${QUESTION_LINE_LIMIT} characters`);
+    if (Array.isArray(context.settled_rules) && (context.settled_rules.length > QUESTION_RULES_LIMIT || context.settled_rules.some((rule) => filled(rule) && rule.length > QUESTION_LINE_LIMIT))) {
+      problems.push(`context.settled_rules must list at most ${QUESTION_RULES_LIMIT} rules of at most ${QUESTION_LINE_LIMIT} characters each`);
+    }
   }
   const first = { effect: new Map(), example: new Map() };
   for (const option of Array.isArray(question?.options) ? question.options : []) {
     for (const field of ['effect', 'example']) {
       if (!filled(option?.[field])) { problems.push(`option ${option?.id} needs ${field}`); continue; }
+      if (option[field].length > QUESTION_LINE_LIMIT) problems.push(`option ${option.id} ${field} must be one line of at most ${QUESTION_LINE_LIMIT} characters`);
       const key = sameText(option[field]);
       if (first[field].has(key)) problems.push(`option ${option.id} repeats the ${field} of option ${first[field].get(key)}; give each option its own`);
       else first[field].set(key, option.id);
@@ -45,7 +53,7 @@ export function assertQuestionContext(questions, { schema = null } = {}) {
   if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
   const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => questionContextProblems(question).map((problem) => `question ${index + 1}: ${problem}`));
   if (!problems.length) return;
-  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements.`);
+  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.`);
 }
 
 export function isQuestionResponse(entry) {

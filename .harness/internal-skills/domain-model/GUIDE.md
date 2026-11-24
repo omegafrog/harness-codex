@@ -5,7 +5,7 @@ model_tier: high_performance
 
 # domain-model
 
-실행 배정에 `document_draft_root`가 있으면 문서별 결정·근거·변경 위치와 필요한 양식을 그 아래의 같은 상대 경로에 간결하게 모은다. 완성 문장은 작성 에이전트가 한 묶음으로 작성한다. 아래의 작성·수정 지시는 작성 에이전트에게 넘길 내용 기준으로 사용하고, 결과에는 정본의 상대 경로를 적는다.
+실행 배정에 `document_draft_root`가 있으면 완성한 문서를 그 아래의 같은 상대 경로에 직접 쓴다. 실행기가 gate 통과 후 그 바이트를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
 
 `bounded-context`가 확정한 요구사항을 BC별 도메인 모델로 옮긴다. [공통 절차](references/deepening.md)에 따라 preflight와 문서 경로 확인을 마친 뒤 [전술 설계 템플릿](references/template.md)의 모델 표를 채운다.
 

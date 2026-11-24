@@ -130,7 +130,7 @@
               "settled_rules": {
                 "type": "array",
                 "minItems": 1,
-                "description": "Already-settled business rules that bear on this decision, quoted from settled documents or answers; never a new rule.",
+                "description": "Already-settled business rules that bear on this decision, quoted from settled documents or answers; never a new rule. At most 3, one short line each.",
                 "items": {
                   "type": "string",
                   "minLength": 1
@@ -139,7 +139,7 @@
               "why_now": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Why this must be decided now."
+                "description": "Why this must be decided now. One line, at most 160 characters."
               }
             }
           },
@@ -170,12 +170,12 @@
                 "effect": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "What this option changes on screen or in behavior. Required of every option of a new question."
+                  "description": "What this option changes on screen or in behavior. One line, at most 160 characters. Required of every option of a new question."
                 },
                 "example": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "The same concrete situation applied to this option, for example two pins of one owner on a map; illustrative, never a requirement; differs per option. Required of every option of a new question."
+                  "description": "The same concrete situation applied to this option, for example two pins of one owner on a map; illustrative, never a requirement; differs per option. One line, at most 160 characters. Required of every option of a new question."
                 },
                 "evidence": {
                   "type": "array",

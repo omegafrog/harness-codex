@@ -53,6 +53,17 @@ test('a question needs its settled rules, why now, and per option an effect and 
   assert.doesNotThrow(() => assertQuestionContext(undefined));
 });
 
+test('a question is short: one line for why now, each effect and each example, and at most three settled rules', () => {
+  const long = '가'.repeat(161);
+  const problems = (question) => questionContextProblems(question).join('\n');
+  assert.deepEqual(questionContextProblems(withOptions(owned, (option) => ({ effect: `${option.effect}`.padEnd(160, '다'), example: `${option.example}`.padEnd(160, '라') }))), []);
+  assert.match(problems({ ...owned, context: { ...owned.context, why_now: long } }), /why_now must be one line/);
+  assert.match(problems({ ...owned, context: { ...owned.context, settled_rules: ['a', 'b', 'c', 'd'] } }), /settled_rules must list at most 3/);
+  assert.match(problems({ ...owned, context: { ...owned.context, settled_rules: [long] } }), /settled_rules must list at most 3/);
+  assert.match(problems(withOptions(owned, (option, index) => (index ? {} : { effect: long }))), /option per_item effect must be one line/);
+  assert.match(problems(withOptions(owned, (option, index) => (index ? {} : { example: long }))), /option per_item example must be one line/);
+});
+
 test('no question kind is exempt from the context, the effect and the example', () => {
   const technology = { ...owned, decision_kind: 'technology', options: owned.options.map((option) => ({ ...option, evidence: [{ criterion: '운영', result: 'met', claim_id: 'claim-1', source_title: '문서', url: 'https://example.com/docs', checked_at: '2026-11-23' }] })) };
   assert.deepEqual(questionContextProblems(technology), []);
@@ -131,10 +142,15 @@ test('the installed stage output schema requires the context, effect and example
   await flow.submitStage(begun, { ...waiting, questions: [{ question_id: 'q', ...owned }] });
   const finished = flow.finishStage(begun);
   assert.equal(finished.status, 0, finished.stderr || finished.stdout);
-  const [recorded] = JSON.parse(finished.stdout).result.questions;
-  assert.deepEqual(recorded.context, owned.context);
-  assert.deepEqual(recorded.options.map(({ example }) => example), owned.options.map(({ example }) => example));
-  const stored = JSON.parse(await readFile(join(flow.workspace, '.io', JSON.parse(finished.stdout).result_ref), 'utf8'));
+  // The default output names the questions and points at the canonical result, which holds the whole question.
+  const compact = JSON.parse(finished.stdout);
+  assert.deepEqual(compact.result.questions.map(({ question_id, title }) => ({ question_id, title })), [{ question_id: compact.result.questions[0].question_id, title: owned.title }]);
+  assert.deepEqual(Object.keys(compact.result.questions[0]).sort(), ['question_id', 'title']);
+  assert.equal(compact.result.questions_path, join(flow.workspace, '.io', compact.result_ref));
+  assert.match(compact.next, /Read result\.questions_path once/);
+  const stored = JSON.parse(await readFile(compact.result.questions_path, 'utf8'));
+  assert.deepEqual(stored.questions[0].context, owned.context);
+  assert.deepEqual(stored.questions[0].options.map(({ example }) => example), owned.options.map(({ example }) => example));
   assert.deepEqual(stored.questions[0].options.map(({ effect }) => effect), owned.options.map(({ effect }) => effect));
 
   // The answer resumes the stage; the new input lists the prior input, which resolves from its base and not from a sibling path.
@@ -166,7 +182,9 @@ test('an execution started before the rule keeps its schema, accepts its old que
   assert.equal(finished.status, 0, finished.stderr || finished.stdout);
   const [recorded] = JSON.parse(finished.stdout).result.questions;
   assert.equal(recorded.context, undefined);
-  assert.equal(recorded.options[0].example, undefined);
+  assert.equal(recorded.options, undefined, 'the default output carries the id and title only');
+  const stored = JSON.parse(await readFile(join(flow.workspace, '.io', JSON.parse(finished.stdout).result_ref), 'utf8'));
+  assert.equal(stored.questions[0].options[0].example, undefined);
 
   // The stored result is read again when the answer resumes the stage.
   const answered = flow.invoke(flow.workspace, 'harness-native-stage.mjs', ['launch', '--stage-id', stage, '--verbose', '--answer', JSON.stringify([{ question_id: recorded.question_id, answer: 'per_owner' }])]);
@@ -180,11 +198,11 @@ test('installed stage profiles state the question rule and the read-through-refs
     const text = await readFile(join(flow.primary, profile), 'utf8');
     assert.ok(text.includes(STAGE_CONTRACT), profile);
     // Questions: settled rules and why now, then per option the effect and an example applied to the same situation.
-    assert.match(text, /`context\.settled_rules` lists the already-settled business rules/, profile);
-    assert.match(text, /`context\.why_now` says why it must be decided now/, profile);
+    assert.match(text, /`context\.settled_rules` lists at most 3 already-settled business rules/, profile);
+    assert.match(text, /`context\.why_now` is one line/, profile);
     assert.match(text, /`effect` \(what changes on screen or in behavior\)/, profile);
     assert.match(text, /`example` \(the same concrete situation applied to that option/, profile);
-    assert.match(text, /An example illustrates and is never recorded as a requirement/, profile);
+    assert.match(text, /An example illustrates and is never a requirement/, profile);
     // Prior inputs, results and answers come only from the refs the input lists.
     assert.match(text, /only through a ref the input gives, resolved by its `base`: an `input_refs` entry/, profile);
     assert.match(text, /`context\.upstream`/, profile);

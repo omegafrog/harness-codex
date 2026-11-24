@@ -230,10 +230,23 @@ async function generatedContractDocuments(root, executionId) {
   return entries;
 }
 
-export async function stageDocumentBatch({ root, input, envelope, planSetId, binding, allowInline = false, beforeReview = false }) {
+// A stage whose documents are not reviewed before it finishes (every stage except to-ticket and sync-contracts) needs no
+// separate writer: its worker authored the finished documents in the draft root, and the runner publishes those exact bytes
+// after the gates, so the batch is built in memory from the drafts and records the worker as its author.
+export const authorsOwnDocuments = (skill) => !reviewSkills.has(skill);
+
+export async function stageDocumentBatch({ root, input, envelope, planSetId, binding, workerId = null, allowInline = false, beforeReview = false }) {
   const id = input.execution_id;
   const proposed = await plannedDocuments({ root, input, envelope, planSetId, allowInline });
   const existing = await readJson(batchFile(root, id, 'batch.json', false));
+  if (!existing && !beforeReview && workerId && authorsOwnDocuments(input.skill)) {
+    const entries = await changedDocuments(root, proposed);
+    if (!entries.length) return null;
+    const proposalHash = digest(json(proposed));
+    const batchId = digest(`${id}:${proposalHash}`);
+    return { schema_version: 1, mode: 'author', phase: 'finish', execution_id: id, skill: input.skill, plan_set_id: planSetId, batch_id: batchId, proposal_sha256: proposalHash, entries,
+      composition: { execution_id: id, batch_id: batchId, agent_id: workerId, proposal_sha256: proposalHash } };
+  }
   const late = input.skill === 'sync-contracts' ? await generatedContractDocuments(root, id) : [];
   if (!proposed.length && !existing && !late.length) return null;
   const proposalHash = digest(json(proposed));
@@ -272,6 +285,20 @@ export async function readWriterBatch(root, id, { required = true } = {}) {
   const batch = await readJson(batchFile(root, id, 'batch.json', false));
   if (!batch && !required) return null;
   if (!batch || batch.execution_id !== id || batch.agent_profile !== stageWriterProfile) throw new Error('No pending stage document writer batch');
+  return batch;
+}
+
+// harness-result runs in its own process after the publication, so the authored batch is handed to it on disk.
+export async function persistAuthoredBatch(root, batch) {
+  const path = batchFile(root, batch.execution_id, 'authored.json');
+  const temporary = `${path}.${randomUUID()}`;
+  await writeFile(temporary, json(batch), { flag: 'wx', mode: 0o600 });
+  await rename(temporary, path);
+}
+
+export async function readAuthoredBatch(root, id) {
+  const batch = await readJson(batchFile(root, id, 'authored.json', false));
+  if (batch && (batch.mode !== 'author' || batch.execution_id !== id)) throw new Error('Invalid authored stage document batch');
   return batch;
 }
 
@@ -330,6 +357,7 @@ export async function authenticateWriterCommand({ root, id, agentId, env = proce
 }
 
 export async function assertStageDocumentWriterCompleted(root, batch) {
+  if (batch.mode === 'author') return;
   const assignment = batch.composition;
   if (batch.binding.provider === 'codex') {
     const { verifyCodexDocumentWriter } = await import('./native-context.mjs');
@@ -377,6 +405,7 @@ export async function receiveWriterComposition({ root, id, agentId, threadId }) 
 }
 
 export async function finishedWriterBatch(root, batch) {
+  if (batch.mode === 'author') return batch;
   const composition = await readWriterComposition(root, batch.execution_id);
   if (!composition) return null;
   const assignment = await readWriterAssignment(root, batch.execution_id);
@@ -455,7 +484,7 @@ export async function rollbackStageDocumentWrite(root, id, { includeWritten = fa
 export async function readDocumentWriterReceipt(root, batch) {
   const receipt = await readJson(batchFile(root, batch.execution_id, 'written.json', false));
   if (!receipt) return null;
-  const assignment = await readWriterAssignment(root, batch.execution_id);
+  const assignment = batch.mode === 'author' ? batch.composition : await readWriterAssignment(root, batch.execution_id);
   if (!assignment || receipt.batch_id !== batch.batch_id || receipt.agent_id !== assignment.agent_id
       || receipt.execution_id !== batch.execution_id || receipt.proposal_sha256 !== batch.proposal_sha256) throw new Error('Stage document writer receipt does not match the assigned batch');
   for (const { base, path, after_sha256 } of batch.entries) {

@@ -69,8 +69,8 @@ try {
   }
   if (Object.hasOwn(envelope.result, 'artifact_contents')) {
     const profile = input.context?.agent_profile || input.context?.role;
-    const { finishedWriterBatch, readDocumentWriterReceipt, readWriterBatch } = await import(new URL('stage-documents.mjs', installed));
-    const batch = await readWriterBatch(opts.root, input.execution_id, { required: false });
+    const { finishedWriterBatch, readAuthoredBatch, readDocumentWriterReceipt, readWriterBatch } = await import(new URL('stage-documents.mjs', installed));
+    const batch = await readWriterBatch(opts.root, input.execution_id, { required: false }) ?? await readAuthoredBatch(opts.root, input.execution_id);
     const items = envelope.result.artifact_contents;
     if (!Array.isArray(items) || items.length > 32) throw new Error('Invalid inline artifacts');
     if (items.length && !batch && (!profile || !/^sandbox_mode\s*=\s*"read-only"\s*$/m.test(await readFile(join(opts.root, '.codex/agents', `${profile}.toml`), 'utf8')))) throw new Error('Inline artifacts require a stage writer receipt');

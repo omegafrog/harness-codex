@@ -15,7 +15,7 @@ compose 명령에는 `harness-context.mjs --entry`가 확인한 `--orchestrator-
 
 ## 사용자 답변으로 재개
 
-질문의 `title`과 선택지 `label`은 원문 그대로 보여 주고, 사용자가 stage의 작업을 보지 못했다고 가정해 `context`(`settled_rules`·`why_now`)와 선택지마다 `consequence`·`effect`·`example`을 빠짐없이 함께 보여 준다. 요약·생략하거나 직접 지은 예시로 바꾸지 않고, 예시는 이해를 돕는 가정일 뿐 요구사항이 아니라고 밝힌다. 질문 도구가 선택지 설명을 받으면 거기에, 받지 못하면 질문 본문에 선택지별로 이어 쓴다. 저장된 이전 질문처럼 이 필드가 없으면 있는 필드만 그대로 보여 준다. `decision_kind: "technology"`이면 각 선택지의 `evidence`에 있는 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. `decision_kind: "visual_direction"`이면 질문 UI가 이미지를 표시하지 못하므로 질문 전에 `title`의 비교 페이지 절대 경로와 선택지별 `previews`(viewport·caption·session 기준 경로를 `<workspace>/.io/` 아래 절대 경로로 바꾼 값)를 열 수 있는 링크로 먼저 보여 준다. 이미지를 표시할 수 있는 provider는 각 선택지 옆에 이미지를 함께 보여 준다. 시안을 보여 주지 않고 스타일 선택을 묻거나 대신 고르지 않는다. 오케스트레이터 자신의 보충 설명은 질문과 분리한다.
+질문 본문은 `finish`가 준 `result.questions_path` 파일을 한 번 읽어 가져온다(출력에는 ID와 `title`뿐이다). 질문의 `title`과 선택지 `label`은 원문 그대로 보여 주고, 사용자가 stage의 작업을 보지 못했다고 가정해 `context`(`settled_rules`·`why_now`)와 선택지마다 `consequence`·`effect`·`example`을 빠짐없이 함께 보여 준다. 요약·생략하거나 직접 지은 예시로 바꾸지 않고, 예시는 이해를 돕는 가정일 뿐 요구사항이 아니라고 밝힌다. 질문 도구가 선택지 설명을 받으면 거기에, 받지 못하면 질문 본문에 선택지별로 이어 쓴다. 저장된 이전 질문처럼 이 필드가 없으면 있는 필드만 그대로 보여 준다. `decision_kind: "technology"`이면 각 선택지의 `evidence`에 있는 기준·판정·출처 제목·URL·확인일을 함께 보여 준다. `decision_kind: "visual_direction"`이면 질문 UI가 이미지를 표시하지 못하므로 질문 전에 `title`의 비교 페이지 절대 경로와 선택지별 `previews`(viewport·caption·session 기준 경로를 `<workspace>/.io/` 아래 절대 경로로 바꾼 값)를 열 수 있는 링크로 먼저 보여 준다. 이미지를 표시할 수 있는 provider는 각 선택지 옆에 이미지를 함께 보여 준다. 시안을 보여 주지 않고 스타일 선택을 묻거나 대신 고르지 않는다. 오케스트레이터 자신의 보충 설명은 질문과 분리한다.
 
 `USER_DECISION_REQUIRED`의 정본 `result.json`에서 현재 `questions`의 `question_id`를 읽는다. 사용자 메시지가 여러 항목에 답하면, 각 항목에 해당하는 확정된 선택이나 답변 구절을 연결한다. 사용자가 조건을 붙이거나 직접 정한 동작은 뜻을 바꾸지 않고 해당 답변 구절을 `answer`에 전달한다.
 

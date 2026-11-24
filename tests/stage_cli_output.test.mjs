@@ -8,7 +8,7 @@ import { appendFile, mkdir, readFile, readdir, symlink, unlink, writeFile } from
 import { dirname, join } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
-import { explainError, extractVerbose } from '../.harness/src/workflow/stage-cli.mjs';
+import { compactFinished, explainError, extractVerbose, launchResult, spawnInstruction } from '../.harness/src/workflow/stage-cli.mjs';
 import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 import { childRollout, parentRollout, rolloutPath, writeRollout } from './support/codex-subagent-rollout.mjs';
@@ -543,6 +543,9 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   const skill = await readFile(join(sourceRoot, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
   assert.match(skill, /harness-native-stage\.mjs launch --stage-id <stage>/);
   assert.match(skill, /`next\.bind`/);
+  assert.match(skill, /`next\.after_agent`/);
+  assert.match(skill, /dispatch\.md를 열지 않는다/);
+  assert.match(skill, /`result\.questions_path`/);
   assert.match(skill, /Harness 소스나 state 파일을 읽지 않고/);
   const dispatch = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');
   assert.match(dispatch, /harness-native-stage\.mjs launch --stage-id <stage>/);
@@ -550,6 +553,28 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   assert.match(dispatch, /`why`/);
   const enforcement = await readFile(join(sourceRoot, 'docs/architecture/enforcement.md'), 'utf8');
   assert.match(enforcement, /stage-cli\.mjs/);
+});
+
+test('a Claude launch names the model and effort for Agent and one command that binds and finishes; Codex keeps its own steps', () => {
+  const claude = { agent_profile: 'workflow_stage', binding: { provider: 'claude-code', model: 'sonnet', reasoning_effort: 'low' } };
+  assert.match(spawnInstruction(claude), /subagent_type "workflow_stage", model: "sonnet", effort: "low" and without the parent conversation, in the foreground/);
+  assert.doesNotMatch(spawnInstruction({ ...claude, binding: { ...claude.binding, reasoning_effort: 'minimal' } }), /effort/, 'an effort Agent does not accept is not passed');
+  const prepared = { input: { execution_id: 'e-1', skill: 'event-storming', context: {} } };
+  const launched = launchResult({ prepared, started: { ...claude, execution_id: 'e-1', guide: 'g', input_path: 'i', schema_path: 's' } });
+  assert.match(launched.next.spawn, /effort: "low"/);
+  assert.equal(launched.next.after_agent, `${launched.next.bind} && ${launched.next.finish}`);
+  const codex = launchResult({ prepared, started: { agent_profile: 'workflow_stage', binding: { provider: 'codex', model: 'm', reasoning_effort: 'low' }, execution_id: 'e-1' } });
+  assert.equal(codex.next.after_agent, undefined);
+  assert.match(codex.next.spawn, /fork_turns: "none"/);
+});
+
+test('finish names the questions and points at the canonical result unless verbose', () => {
+  const questions = [{ question_id: 'e:1', title: '무엇을?', context: { settled_rules: ['r'], why_now: 'w' }, options: [{ id: 'a', label: 'A' }] }];
+  const envelope = { status: 'action_required', code: 'USER_DECISION_REQUIRED', result_ref: 'runtime/executions/e/result.json', result: { summary: '질문', artifacts: [], questions } };
+  const finished = compactFinished({ envelope, stageId: 'event-storming', executionId: 'e', resultPath: '/w/.io/runtime/executions/e/result.json' });
+  assert.deepEqual(finished.result.questions, [{ question_id: 'e:1', title: '무엇을?' }]);
+  assert.equal(finished.result.questions_path, '/w/.io/runtime/executions/e/result.json');
+  assert.deepEqual(compactFinished({ envelope, stageId: 'event-storming', executionId: 'e' }).result.questions, questions, 'without a result path the questions stay whole');
 });
 
 // The orchestrator of a real Codex run ran `receive` with nothing on standard input twice (tactical-data worker, final message

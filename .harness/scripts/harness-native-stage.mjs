@@ -12,7 +12,7 @@ import { executionInputAbsolutePath } from '../../.harness/src/workflow/executio
 import { recordExecutionState } from '../../.harness/src/workflow/execution-state.mjs';
 import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
 import { sessionOutputPath, stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
-import { archiveWriterComposition, assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareStageDocumentDrafts, prepareWriterBrief, readWriterAssignment, readWriterBatch, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch, stageDocumentPolicy, writeStageDocumentBatch } from '../../.harness/src/workflow/stage-documents.mjs';
+import { archiveWriterComposition, authorsOwnDocuments, persistAuthoredBatch, assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareStageDocumentDrafts, prepareWriterBrief, readWriterAssignment, readWriterBatch, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch, stageDocumentPolicy, writeStageDocumentBatch } from '../../.harness/src/workflow/stage-documents.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
 import { writeImplementationCheckpoint } from '../../.harness/src/workflow/stage-checkpoint.mjs';
 import { preSpecOrderViolation, tacticalImplementationOrderViolation } from '../../.harness/src/workflow/worktree-stages.mjs';
@@ -606,7 +606,9 @@ try {
     if (ownerErrors) { process.stdout.write(`${JSON.stringify(formatErrorResult({ ...formatDetails, errors: ownerErrors }))}\n`); process.exit(1); }
     const { assertTacticalRequirementsReadOnly, commitStageRequest, commitWorkflowDocuments } = await import('../../.harness/src/workflow/stage-commit.mjs');
     await assertTacticalRequirementsReadOnly(root, input);
-    const batch = await stageDocumentBatch({ root, input, envelope: raw, planSetId, binding, allowInline: Boolean(schema.properties.result.properties.artifact_contents) });
+    // A worker that authored its own documents has no writer receipt: undo an interrupted publication before re-planning it.
+    if (authorsOwnDocuments(input.skill)) await rollbackStageDocumentWrite(root, id);
+    const batch = await stageDocumentBatch({ root, input, envelope: raw, planSetId, binding, workerId: current.native_agent_id, allowInline: Boolean(schema.properties.result.properties.artifact_contents) });
     const writtenBatch = batch ? await finishedWriterBatch(root, batch) : null;
     if (batch && !writtenBatch) {
       await printWriterPending(root, batch);
@@ -614,7 +616,7 @@ try {
     }
     if (writtenBatch) await assertStageDocumentWriterCompleted(root, writtenBatch);
     const rejectDraft = async (details) => {
-      if (writtenBatch) {
+      if (writtenBatch && writtenBatch.mode !== 'author') {
         // Reviewer staleness requires a new independent attempt against the same composed bytes.
         // Other failed document gates allow the worker to revise its brief.
         if (details.gate !== 'document_review_check') await archiveWriterComposition(root, writtenBatch);
@@ -671,6 +673,7 @@ try {
     const { applyDomainSync, assertStageDomainSync, prepareStageDomainSync } = await import('../../.harness/src/domain/sync.mjs');
     const domainPlan = raw.status === 'completed' && raw.code === 'OK'
       ? await prepareStageDomainSync(root, input, writtenBatch ? id : null) : null;
+    if (writtenBatch?.mode === 'author') await persistAuthoredBatch(root, writtenBatch);
     if (writtenBatch) await writeStageDocumentBatch({ root, batch: writtenBatch, planSetId, skill: input.skill });
     await commitStageRequest({ root, rawPath: paths.files.raw });
     const resultCommand = [process.execPath, join(root, '.harness/scripts/harness-result.mjs'), '--root', root, '--worktree-ref', opts['worktree-ref'], '--execution-id', id, '--source', paths.refs.raw];
@@ -714,7 +717,7 @@ try {
     const staleOrder = updated ? staleStages(updated.state || updated) : null;
     const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
     await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
-    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent });
+    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, resultPath: envelope.result_ref ? join(session, envelope.result_ref) : null });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

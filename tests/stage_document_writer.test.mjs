@@ -5,7 +5,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/pro
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
-import { assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareWriterBrief, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch } from '../.harness/src/workflow/stage-documents.mjs';
+import { authorsOwnDocuments, assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareWriterBrief, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch } from '../.harness/src/workflow/stage-documents.mjs';
 
 const json = (value) => JSON.stringify(value) + '\n';
 const write = async (path, value) => {
@@ -22,61 +22,38 @@ async function fixture(t) {
   return root;
 }
 
-test('installed finish waits for a fresh configured writer, validates its composed bytes, then commits the batch once', async (t) => {
+test('a document stage publishes its own drafts after the gates without a writer, and a rejected draft leaves the canonical document untouched', async (t) => {
   const flow = await consumerWorkflow(t, '지도를 확인합니다');
   const { started, base, prepared } = await flow.beginStage('stakeholder-analysis');
   const id = prepared.input.execution_id;
   const stage = flow.specDirectory + '/stakeholder-analysis.md';
   const draft = join(started.document_draft_root, stage);
-  const codexDirectory = join(flow.workspace, '.io/codex-fixture');
-  const parent = JSON.parse(await readFile(join(flow.workspace, '.io/worktree.json'), 'utf8')).agent_sessions.orchestrator.session_id;
-  const writer = '/root/document_writer_test';
-  const thread = randomUUID();
-  const run = (action, args = [], threadId = parent) => spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), action, ...base, ...args], {
-    cwd: flow.workspace, encoding: 'utf8', env: { ...process.env, CODEX_HOME: codexDirectory, CODEX_THREAD_ID: threadId },
-  });
-  const ok = (action, args, threadId) => {
-    const ran = run(action, args, threadId);
-    assert.equal(ran.status, 0, ran.stderr || ran.stdout);
-    return JSON.parse(ran.stdout);
-  };
-  await write(draft, 'REQUESTER가 지도 확인을 요청함. GUIDE의 확정 표로 기록.\n');
+  const run = (action, args = []) => spawnSync(process.execPath, [join(flow.workspace, '.harness/scripts/harness-native-stage.mjs'), action, ...base, ...args], { cwd: flow.workspace, encoding: 'utf8' });
+  await write(draft, '요청자가 지도 확인을 요청함.\n');
   await flow.submitStage({ stage: 'stakeholder-analysis', started }, {
     artifacts: [{ path: stage, kind: 'stakeholder_analysis' }],
-    resultExtra: { artifact_contents: [{ name: 'analysis-note.md', kind: 'analysis_note', content: '지도 확인이 목적' }] },
+    resultExtra: { artifact_contents: [{ name: 'analysis-note.md', kind: 'analysis_note', content: '# 분석\n\n지도 확인이 목적입니다.\n' }] },
   });
   const head = flow.treeGit('rev-parse', 'HEAD');
-  const pending = ok('finish');
-  assert.equal(pending.status, 'writer_required');
-  assert.equal(pending.agent_profile, 'stage_document_writer');
-  assert.deepEqual(pending.binding, { provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });
-  assert.equal(run('bind-writer', ['--agent-id', `${id}-agent`]).status, 2);
-  const bound = ok('bind-writer', ['--agent-id', writer]);
-  assert.ok(bound.writer_brief_path);
-  const brief = JSON.parse(await readFile(bound.writer_brief_path, 'utf8'));
-  assert.deepEqual(brief.files.map(({ base }) => base), ['workspace', 'session']);
-  await write(brief.files[0].output, stakeholderAnalysisDocument(flow.request));
-  await write(brief.files[1].output, '# 분석\n\n지도 확인이 목적입니다.\n');
+  const rejected = run('finish');
+  assert.equal(rejected.status, 1);
+  assert.equal(JSON.parse(rejected.stdout).status, 'gate_error', 'the gate reads the author draft');
+  await assert.rejects(readFile(join(flow.workspace, stage), 'utf8'), { code: 'ENOENT' });
   assert.equal(flow.treeGit('rev-parse', 'HEAD'), head);
-  await assert.rejects(readFile(join(flow.workspace, stage), 'utf8'), { code: 'ENOENT' });
-  assert.equal(run('write-documents', ['--agent-id', writer]).status, 2);
 
-  const rollout = join(codexDirectory, 'sessions', `rollout-writer-${thread}.jsonl`);
-  const turn = 'writer-turn';
-  await write(rollout, [
-    { type: 'session_meta', payload: { id: thread, timestamp: new Date().toISOString(), cwd: flow.workspace, parent_thread_id: parent, source: { subagent: { thread_spawn: { parent_thread_id: parent, agent_role: 'stage_document_writer', agent_path: writer, depth: 1 } } } } },
-    { type: 'event_msg', payload: { turn_id: turn, type: 'task_started' } },
-    { type: 'turn_context', payload: { turn_id: turn, model: 'codex-light', effort: 'minimal' } },
-  ].map(json).join(''));
-  assert.equal(ok('write-documents', ['--agent-id', writer], thread).status, 'documents_composed');
-  assert.equal(run('finish').status, 2, 'a real writer must actually finish the turn');
-  await assert.rejects(readFile(join(flow.workspace, stage), 'utf8'), { code: 'ENOENT' });
-  await appendFile(rollout, json({ type: 'event_msg', payload: { turn_id: turn, type: 'task_complete', last_agent_message: 'documents_composed' } }));
-  assert.equal(ok('finish').status, 'completed');
+  await rm(draft);
+  await write(draft, stakeholderAnalysisDocument(flow.request));
+  const finished = run('finish');
+  assert.equal(finished.status, 0, finished.stderr || finished.stdout);
+  const result = JSON.parse(finished.stdout);
+  assert.equal(result.status, 'completed');
   assert.equal(await readFile(join(flow.workspace, stage), 'utf8'), stakeholderAnalysisDocument(flow.request));
   assert.equal(await readFile(join(flow.workspace, '.io/runtime/executions', id, 'artifacts/analysis-note.md'), 'utf8'), '# 분석\n\n지도 확인이 목적입니다.\n');
   assert.equal(flow.treeGit('rev-list', '--count', `${head.trim()}..HEAD`).trim(), '1');
   assert.equal(flow.treeGit('status', '--short'), '');
+  const receipt = JSON.parse(await readFile(join(flow.workspace, '.io/runtime/executions', id, 'document-drafts/written.json'), 'utf8'));
+  assert.equal(receipt.agent_id, `${id}-agent`, 'the receipt names the worker that authored the documents');
+  assert.equal(run('bind-writer', ['--agent-id', '/root/anyone']).status, 2, 'there is no writer batch to bind');
 });
 
 test('Claude writer requires its own tool admission and native start and stop records', async (t) => {
@@ -132,4 +109,9 @@ test('an interrupted publication restores stage-owned edits without overwriting 
   assert.equal(await readFile(join(root, path), 'utf8'), before);
   await assert.rejects(readFile(join(batchDir, 'lock')), { code: 'ENOENT' });
   await assert.rejects(readFile(join(batchDir, 'rollback.json')), { code: 'ENOENT' });
+});
+
+test('only the stages whose documents are reviewed before they finish keep an independent writer', () => {
+  for (const skill of ['to-ticket', 'sync-contracts']) assert.equal(authorsOwnDocuments(skill), false, skill);
+  for (const skill of ['stakeholder-analysis', 'event-storming', 'domain-model', 'tactical-api', 'tactical-data']) assert.equal(authorsOwnDocuments(skill), true, skill);
 });

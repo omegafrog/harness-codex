@@ -26,9 +26,15 @@ export const contextCommand = () => CONTEXT;
 
 // How the orchestrator starts a stage's worker. A Codex start that omits `fork_turns: "none"` (or forks the parent history)
 // is denied by the Harness fresh-agent hook before anything starts, so the instruction states it in the launch result.
+const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export function spawnInstruction({ agent_profile: profile, binding } = {}) {
   const name = profile || 'workflow_stage';
-  if (binding?.provider === 'claude-code') return `Start a fresh Agent with subagent_type "${name}" and without the parent conversation, in the foreground (run_in_background: false); do not end your turn until it returns`;
+  if (binding?.provider === 'claude-code') {
+    // Claude Code's Agent tool takes the model and the effort of the binding; without them the worker inherits the session's.
+    const effort = CLAUDE_EFFORTS.has(binding.reasoning_effort) ? `, effort: "${binding.reasoning_effort}"` : '';
+    const model = binding.model ? `, model: "${binding.model}"` : '';
+    return `Start a fresh Agent with subagent_type "${name}"${model}${effort} and without the parent conversation, in the foreground (run_in_background: false); do not end your turn until it returns`;
+  }
   return `spawn_agent {agent_type: "${name}", fork_turns: "none"} with the binding's model and reasoning_effort; a start without fork_turns: "none" is denied and starts nothing, so repeat it`;
 }
 
@@ -151,18 +157,25 @@ export function launchResult({ prepared, started }) {
       spawn: spawnInstruction(started),
       bind: nativeCommand('bind', executionId, '--agent-id <agent_id>'),
       finish: nativeCommand('finish', executionId),
+      // A foreground Claude Agent has ended when the orchestrator learns its ID, so one command binds and finishes.
+      ...(started.binding?.provider === 'claude-code' ? { after_agent: `${nativeCommand('bind', executionId, '--agent-id <agent_id>')} && ${nativeCommand('finish', executionId)}` } : {}),
     },
   };
 }
 
 // The result of a finished stage, without what the orchestrator never uses: the fields already at the top level, file
 // hashes, the commit request the runner consumed and empty arrays.
-export function compactResult(result = {}) {
+// Questions are long (context and, per option, consequence/effect/example), so the default output names them (id and title) and
+// points at the canonical result file the orchestrator reads once to present them.
+export function compactResult(result = {}, { resultPath = null } = {}) {
   const { schema_version, execution_id, skill, status, code, summary, artifacts, questions, review_request, unplanned_additions, commit_request, commit_sha, owner_stage, dependency_gap, ...extra } = result;
   const out = {};
   if (summary !== undefined) out.summary = clip(summary, 4000);
   out.artifacts = (Array.isArray(artifacts) ? artifacts : []).map(({ base, path, kind }) => ({ kind, path, ...(base && base !== 'workspace' ? { base } : {}) }));
-  if (Array.isArray(questions) && questions.length) out.questions = questions;
+  if (Array.isArray(questions) && questions.length) {
+    out.questions = resultPath ? questions.map(({ question_id, title }) => ({ question_id, title })) : questions;
+    if (resultPath) out.questions_path = resultPath;
+  }
   if (review_request) out.review_request = review_request;
   if (Array.isArray(unplanned_additions) && unplanned_additions.length) out.unplanned_additions = unplanned_additions;
   if (commit_sha) out.commit_sha = commit_sha;
@@ -222,7 +235,7 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   if (status === 'completed' && stageId === 'to-ticket') return `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} Only after the user's own approval: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${launchCommand('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
   if (status === 'completed') return 'Continue with the next stage (orchestrator skill).';
-  if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user verbatim and wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
+  if (code === 'USER_DECISION_REQUIRED') return `Read result.questions_path once and show its questions to the user (title, context, every option's label, consequence, effect, example) without rewriting them; wait; then ${launchCommand(stageId, ANSWER_ARG)}`;
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${launchCommand(stageId, "--feedback '<review result>'")}`;
   const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
   if (revision) return `Return to its owner: ${launchCommand(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
@@ -232,14 +245,14 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   return `Resolve ${executionId} per the orchestrator skill.`;
 }
 
-export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true }) {
+export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true, resultPath = null }) {
   return {
     status: envelope.status,
     code: envelope.code,
     execution_id: executionId,
     stage_id: stageId,
     result_ref: envelope.result_ref,
-    result: compactResult(envelope.result),
+    result: compactResult(envelope.result, { resultPath }),
     next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent }),
   };
 }

@@ -66,7 +66,7 @@ test('only the completion of bounded-context asks for requirements approval', ()
   for (const stage of REQUIREMENTS_STAGES.filter((id) => id !== 'bounded-context')) {
     assert.doesNotMatch(next(stage), ASK, `${stage} leaves the requirements as a draft`);
     assert.doesNotMatch(next(stage), /--requirements-approved/);
-    assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: stage, executionId: `${stage}-1` }), /Show result\.questions to the user verbatim and wait/);
+    assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: stage, executionId: `${stage}-1` }), /Read result\.questions_path once and show its questions to the user/);
   }
   assert.match(next('requirements-fix'), /Continue with the next stage/, 'after the last fill the next step is bounded-context, not an approval');
   const ask = next('bounded-context');

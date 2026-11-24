@@ -27,12 +27,12 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 
 ## 실행과 확인
 
-1. 단계가 정해졌으면 `node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 사용자가 모델·reasoning effort를 지정하면 [실행 배정](references/dispatch.md#실행-배정)의 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 반환된 profile과 binding으로 fresh native 서브에이전트를 시작한다. `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로를 전달하고 `next.bind`를 실행한다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 결과 요약과 참조로 조율한다. 사용자 승인에 필요한 산출물은 해당 승인 절차에서 확인한다.
+1. 단계가 정해졌으면 `node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 사용자가 모델·reasoning effort를 지정하면 [실행 배정](references/dispatch.md#실행-배정)의 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 `next.spawn`대로 반환된 profile과 binding(Claude Code는 `model`·`effort` 포함)의 fresh native 서브에이전트를 시작한다. `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로를 전달하고 Codex는 `next.bind`를, Claude Code는 Agent가 끝난 뒤 `next.after_agent`를 실행한다. 정상 경로에서는 `launch`의 `next`만 쓰고 dispatch.md를 열지 않는다. 메인 세션은 stage의 GUIDE·schema·산출물 본문을 읽지 않고 결과 요약과 참조로 조율한다. 사용자 승인에 필요한 산출물은 해당 승인 절차에서 확인한다.
 2. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. 정상 결과의 `next`를 따르고, `format_error`나 `gate_error`는 같은 작업자에게 돌려준다. `gate_error`이면 결과의 `retry_input` 전체와 `feedback_path`를 수정 요청의 다음 입력에 포함하고, 작업자가 피드백 파일을 읽도록 한다. `owner_stage`가 앞 단계면 [상위 stage 되돌아가기](references/dispatch.md#상위-stage-되돌아가기)를 따른다. 상태가 불명확한 실행을 중복으로 시작하지 않는다. 진입 결과에 재개 근거가 더 필요한 경우 `harness-context.mjs`를 한 번 실행한다.
 3. 오류가 반환한 `why`·`next`·`user_decision`을 사용한다. Harness 소스나 state 파일을 읽지 않고 제공된 실행기 명령으로 확인한다. 다른 worktree의 결과와 이미 처리한 실행을 건너뛴다. 제품 코드·테스트·Spec·계획·통합 계약의 편집과 Git 작업은 소유 stage와 실행기에 맡긴다.
 
 ## 사용자 결정과 완료
 
-- 결과에 포함된 실제 질문을 맥락(`context`)과 선택지별 `effect`·`example`까지 그대로 보여 주고 답을 기다린다. 사용자의 확인 질문에는 대화에서 답하고, 확정한 선택과 조건만 [입력 절차](references/input.md#사용자-답변으로-재개)에 따라 제출한다. 일괄 답변은 그 질문 묶음에 적용한다.
+- `result.questions_path`의 정본 result 파일을 한 번 읽어 실제 질문을 맥락(`context`)과 선택지별 `effect`·`example`까지 그대로 보여 주고 답을 기다린다. 사용자의 확인 질문에는 대화에서 답하고, 확정한 선택과 조건만 [입력 절차](references/input.md#사용자-답변으로-재개)에 따라 제출한다. 일괄 답변은 그 질문 묶음에 적용한다.
 - 전술 설계 전에 [확정 요구사항 승인](references/workflow-map.md#요구사항과-승인)을, 발행 전에 [검토된 전체 계획의 발행 승인](references/coordination.md#계획-발행-승인)을 받는다. 실제 사용자 답과 독립 리뷰를 사용한다. E2E는 해당 [실행·실패 절차](references/implementation.md#최종-e2e-승인과-실패-처리)를 적용하고 실패 뒤 자동으로 재실행하지 않는다.
 - 요청 범위에 남은 단계만 순서대로 진행한다. 마지막 단계 뒤 [완료 gate](references/dispatch.md#workflow-완료)를 통과하면 전체 완료를 보고한다. 일시정지 중이거나 사용자 대기가 남았으면 그 상태를 보고한다.
