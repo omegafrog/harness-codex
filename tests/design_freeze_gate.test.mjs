@@ -253,6 +253,11 @@ test('tactical-api fails its own stage on placeholders and missing requirement t
   await assert.rejects(assertDesignFreezeGate({ root, input, envelope: completed }), (error) => error instanceof DesignFreezeError && /Design-freeze gate failed for tactical-api/.test(error.message));
   assert.match(freezeFailureInstruction(placeholders), /Repair your own document \(api\.md\)/);
 
+  await writeFile(api, `${API(GOOD_ROWS)}\n- 범위 밖: 요청 본문 크기 제한, CORS·CSRF 정책은 승인된 요구가 정하지 않아 미정\n- Non-goal: 운영 배포 방식 TBD\n`);
+  assert.deepEqual(await run(), { stage: 'tactical-api', ok: true, errors: [] });
+  await writeFile(api, `${API(GOOD_ROWS)}\n- 범위 밖: CORS 정책 미정\n- | region | unknown |\n- identity 공급자 미정\n`);
+  assert.deepEqual((await run()).errors.map((error) => error.code), ['PLACEHOLDER_REMAINS', 'PLACEHOLDER_REMAINS']);
+
   await writeFile(api, API([...GOOD_ROWS, '| `POST /auth/logout` | 인증 정보 | `204` | BIZ-02 |']));
   assert.deepEqual(found(await run()), [['UNTRACED_ITEM', 'POST /auth/logout', 'tactical-api']]);
   await writeFile(api, API(GOOD_ROWS.slice(0, 1)));

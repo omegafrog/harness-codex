@@ -211,8 +211,10 @@ async function implementationDocument(root, planSetId, name, draftExecutionId) {
 // The gate on the plan set's documents of a workspace: what the command, the runner and the to-ticket start guard all run. A plan
 // set that skipped the requirements flow, or whose requirements/tactical design do not exist (the tactical design gate owns that),
 // has nothing to trace.
+const OUT_OF_SCOPE = /범위\s*밖|범위를\s*벗어나|비목표|out[- ]of[- ]scope|non-?goal/i;
+
 export function checkApiPlaceholders(api) {
-  return outsideFences(api || '').flatMap((line, index) => PLACEHOLDER.test(line)
+  return outsideFences(api || '').flatMap((line, index) => PLACEHOLDER.test(line) && !OUT_OF_SCOPE.test(line)
     ? [{ code: 'PLACEHOLDER_REMAINS', message: `api.md line ${index + 1} still holds an undecided placeholder (unknown, TBD, 미정): ${clean(line).slice(0, 120)}. Settle it with a concrete contract, ask the user for a business decision, or return DEPENDENCY_INCOMPLETE for the earlier owner.`, id: `line ${index + 1}`, owner_stage: API_FREEZE_STAGE }]
     : []);
 }

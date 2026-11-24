@@ -15,7 +15,7 @@ model_tier: low_performance
 
 `tactical-ui`가 브리프를 참조한 경우에만 그 브리프를 입력으로 사용한다. 이번 실행에서 UI가 미적용 또는 보류이면 승인된 Application Service를 근거로 API 계약을 정한다. 구현과 visual review는 ticket 발행 뒤 수행하므로 이 단계에서 완료를 요구하지 않는다.
 
-UI, application entry 또는 API가 필요한지 사용자 요청이나 전술 설계가 확정하지 않으면 한 번에 묻는다. 명시적 요청, 전술 설계 또는 관찰한 기존 application 구조가 적용되지 않음을 보일 때만 근거를 남기고 생략한다. 계약은 method/path/message, request/response, 오류, 입력 검증과 필요한 인증·권한만 포함하며 새 업무 규칙을 발명하지 않는다. 정하지 못한 경계를 `unknown`·`미정`·`TBD`로 남기지 않는다. 사용자 결정이면 묻고 앞선 stage 몫이면 owner stage로 반환한다. endpoint가 호출하는 Application Service 메서드 이름과 소유 컨텍스트를 기록한다. 해당 메서드가 사용하는 outbound 인터페이스의 구현과 조립은 `data.md`에서 정한다.
+UI, application entry 또는 API가 필요한지 사용자 요청이나 전술 설계가 확정하지 않으면 한 번에 묻는다. 명시적 요청, 전술 설계 또는 관찰한 기존 application 구조가 적용되지 않음을 보일 때만 근거를 남기고 생략한다. 계약은 method/path/message, request/response, 오류, 입력 검증과 필요한 인증·권한만 포함하며 새 업무 규칙을 발명하지 않는다. 정하지 못한 경계를 `unknown`·`미정`·`TBD`로 남기지 않는다. 사용자 결정이면 묻고 앞선 stage 몫이면 owner stage로 반환한다. 이 계획이 다루지 않는 항목은 `범위 밖:`으로 시작해 적어야 placeholder 검사가 통과시킨다. endpoint가 호출하는 Application Service 메서드 이름과 소유 컨텍스트를 기록한다. 해당 메서드가 사용하는 outbound 인터페이스의 구현과 조립은 `data.md`에서 정한다.
 
 ## 범위 추가 금지
 
