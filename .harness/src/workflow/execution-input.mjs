@@ -42,7 +42,11 @@ export async function findExecutionInput(root, executionId) {
   }
   if (matches.length !== 1) throw Object.assign(new Error(matches.length ? 'Duplicate execution inputs' : 'Execution input not found'), { code: matches.length ? 'EEXIST' : 'ENOENT' });
   const match = matches[0];
-  const input = JSON.parse(await readFile(join(match.workspace, match.path), 'utf8'));
+  const text = await readFile(join(match.workspace, match.path), 'utf8');
+  // A 0-byte input.json is what a host killed mid-write leaves: the execution has no input (absent), not a malformed one.
+  if (!text.trim()) throw Object.assign(new Error(`${match.path} is empty (0 bytes), so execution ${executionId} has no input`), { code: 'ENOENT', empty: true });
+  let input;
+  try { input = JSON.parse(text); } catch (error) { throw new SyntaxError(`${match.path} is not valid JSON (${error.message}); inspect that file and remove it only if it is an incomplete write`); }
   if (input.execution_id !== executionId || match.path.split('/')[2] !== input.skill) throw new Error('Execution input identity mismatch');
   return { ...match, input };
 }

@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { readPlanSetTicketStatuses } from '../tracker/lifecycle.mjs';
 import { planDependencies as indexDependencies } from '../tracker/publication.mjs';
-import { readExecutionInput, readSkillSessionJson } from './stage-runtime.mjs';
+import { readExecutionInput, readSkillSessionJson, readStageResult } from './stage-runtime.mjs';
 
 const git = async (root, ...args) => (await promisify(execFile)('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
 
@@ -61,7 +61,7 @@ export async function implementedTickets({ root, session, planSetId }) {
   for (const attempt of [...(entry?.attempts || []), ...(entry ? [entry] : [])]) {
     if (attempt.status !== 'completed' || attempt.code !== 'OK' || !attempt.result_ref) continue;
     const input = await readExecutionInput({ root, execution_id: attempt.execution_id });
-    const result = await readSkillSessionJson({ root, session_directory: session, path: attempt.result_ref });
+    const result = await readStageResult({ root, session_directory: session, executionId: attempt.execution_id, resultRef: attempt.result_ref });
     if ((!planSetId || input.context?.plan_set_id === planSetId) && input.context?.plan_id && /^[0-9a-f]{40}$/.test(result.commit_sha || '')) {
       const reachable = await git(root, 'merge-base', '--is-ancestor', result.commit_sha, 'HEAD').then(() => true, () => false);
       if (reachable) done.set(input.context.plan_id, result.commit_sha);

@@ -89,7 +89,7 @@ try {
     assertRequestedProvider(await assertCodexHookTrusted(caller.provider || undefined));
     const taken = await takeOverInterruptedStage({ root, session: worktreeSession, stageId: options['stage-id'], ...caller });
     const requestedArgs = requestedStageBinding ? ` --stage-binding '${JSON.stringify(requestedStageBinding)}'` : '';
-    process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `--feedback '${TAKEOVER_FEEDBACK}'${requestedArgs}`)}` })}\n`);
+    process.stdout.write(`${JSON.stringify({ ...taken, next: `The interrupted run is recorded and this conversation is the orchestrator now. Start the stage again with a fresh execution: ${launchCommand(options['stage-id'], `${taken.plan_id ? `--plan ${taken.plan_id} ` : ''}--feedback '${TAKEOVER_FEEDBACK}'${requestedArgs}`)}` })}\n`);
     process.exit(0);
   }
   await resolveSkillSession(root, session);

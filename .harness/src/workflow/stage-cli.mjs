@@ -28,7 +28,7 @@ export const contextCommand = () => CONTEXT;
 // is denied by the Harness fresh-agent hook before anything starts, so the instruction states it in the launch result.
 export function spawnInstruction({ agent_profile: profile, binding } = {}) {
   const name = profile || 'workflow_stage';
-  if (binding?.provider === 'claude-code') return `Start a fresh Agent with subagent_type "${name}" and without the parent conversation`;
+  if (binding?.provider === 'claude-code') return `Start a fresh Agent with subagent_type "${name}" and without the parent conversation, in the foreground (run_in_background: false); do not end your turn until it returns`;
   return `spawn_agent {agent_type: "${name}", fork_turns: "none"} with the binding's model and reasoning_effort; a start without fork_turns: "none" is denied and starts nothing, so repeat it`;
 }
 
@@ -429,6 +429,7 @@ const stageAfter = (previous) => {
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
 // user must decide); the fallback keeps that true for errors this table does not know.
 const RULES = [
+  { re: /; pass --plan <ticket-id> to resume /, explain: ({ message, stage }) => ({ code: 'EXECUTION_FILE_INVALID', why: `${message.replace(/;.*$/, '')}. The interrupted run's input named the ticket, so the resumed run needs it again.`, next: [launchCommand(stage || '<stage-id>', "--plan <ticket-id> --feedback '<what to continue>'"), CONTEXT] }) },
   { re: /^(\S+) is empty \(0 bytes\)|^(\S+) is not valid JSON/, explain: ({ message, executionId, state, stage }) => {
     const file = /^(\S+) is /.exec(message)?.[1];
     const id = executionId || entryOf(state, stage)?.execution_id;

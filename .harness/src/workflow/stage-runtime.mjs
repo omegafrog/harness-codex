@@ -221,7 +221,7 @@ async function readReference(root, reference, sessionRoot, controlSessionRoot = 
 // Malformed non-empty JSON still fails, naming the file.
 export function parseSessionJson(content, path) {
   const text = String(content);
-  if (!text.trim() && /(^|\/)runtime\/executions\//.test(path)) throw Object.assign(new Error(`${path} is empty (0 bytes), so it holds no result; ENOENT`), { code: 'ENOENT' });
+  if (!text.trim() && /(^|\/)runtime\/executions\//.test(path)) throw Object.assign(new Error(`${path} is empty (0 bytes), so it holds no result; ENOENT`), { code: 'ENOENT', empty: true });
   try { return JSON.parse(text); }
   catch (error) { throw new SyntaxError(`${path} is not valid JSON (${error.message}); inspect that file and remove it only if it is an incomplete write`); }
 }
@@ -229,6 +229,19 @@ export function parseSessionJson(content, path) {
 export async function readSkillSessionJson({ root, session_directory = null, path }) {
   const session = await resolveSkillSession(root, session_directory);
   return parseSessionJson(await readReference(root, { base: 'session', path }, session), path);
+}
+
+// The result of a finished stage. A host killed mid-write can leave result.json at 0 bytes; the raw output.json envelope the
+// stage recorded still holds the same `.result`, so it stands in. With neither, the error names the empty file.
+export async function readStageResult({ root, session_directory = null, executionId, resultRef }) {
+  try { return await readSkillSessionJson({ root, session_directory, path: resultRef }); }
+  catch (error) {
+    if (!error.empty) throw error;
+    const raw = `runtime/executions/${executionId}/output.json`;
+    const envelope = await readSkillSessionJson({ root, session_directory, path: raw }).catch((inner) => { if (inner.code === 'ENOENT') return null; throw inner; });
+    if (envelope?.result && typeof envelope.result === 'object') return envelope.result;
+    throw new Error(`${resultRef} is empty (0 bytes) and ${raw} holds no result to fall back to; the stage must be run again`);
+  }
 }
 
 export async function readExecutionInput({ root, execution_id }) {

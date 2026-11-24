@@ -141,8 +141,12 @@ function takeOverStage(args) {
   const index = args.indexOf('--take-over');
   if (index < 0) return null;
   const rest = args.filter((_, i) => i !== index && i !== index + 1);
-  if (args[index + 1] !== 'true' || rest.length !== 2 || rest[0] !== '--stage-id' || !rest[1]) throw new Error('Taking over an interrupted stage must be requested alone');
-  return rest[1];
+  // --plan names the ticket the resumed run builds; it is only needed when the interrupted run's input was lost.
+  const planIndex = rest.indexOf('--plan');
+  const plan = planIndex < 0 ? null : rest[planIndex + 1];
+  const core = planIndex < 0 ? rest : rest.filter((_, i) => i !== planIndex && i !== planIndex + 1);
+  if (args[index + 1] !== 'true' || core.length !== 2 || core[0] !== '--stage-id' || !core[1] || (planIndex >= 0 && (!plan || plan.startsWith('--')))) throw new Error('Taking over an interrupted stage must be requested alone');
+  return { stage: core[1], plan };
 }
 
 // prepare + start in one call: the orchestrator gets exactly what it needs to spawn the subagent and then bind it.
@@ -206,14 +210,17 @@ async function launchStage(requestedArgs, verbose) {
   const bindingIndex = requestedArgs.indexOf('--stage-binding');
   const bindingArgs = bindingIndex < 0 ? [] : requestedArgs.slice(bindingIndex, bindingIndex + 2);
   if (bindingIndex >= 0 && (!bindingArgs[1] || bindingArgs[1].startsWith('--') || requestedArgs.lastIndexOf('--stage-binding') !== bindingIndex)) throw new Error('Invalid argument: --stage-binding requires one JSON value');
-  const takeOverId = takeOverStage(requestedArgs.filter((_, i) => bindingIndex < 0 || (i !== bindingIndex && i !== bindingIndex + 1)));
+  const takeOver = takeOverStage(requestedArgs.filter((_, i) => bindingIndex < 0 || (i !== bindingIndex && i !== bindingIndex + 1)));
+  const takeOverId = takeOver?.stage ?? null;
   let args = requestedArgs, taken = null;
   if (takeOverId) {
     errorContext.stageId = takeOverId;
     const takeover = run('harness-prepare-input.mjs', ['--stage-id', takeOverId, '--take-over-interrupted', 'true', ...bindingArgs], 'takeover');
     taken = lastJson(takeover.stdout);
     if (!succeeded(takeover) || taken?.status !== 'ready' || taken.stage_id !== takeOverId || !validExecutionId(taken.execution_id)) throw await launchFailure(takeover);
-    args = ['--stage-id', takeOverId, '--feedback', TAKEOVER_FEEDBACK, ...bindingArgs];
+    // The resumed run builds the same ticket: --plan from the caller, else the plan the interrupted run recorded.
+    const plan = takeOver.plan || taken.plan_id;
+    args = ['--stage-id', takeOverId, ...(plan ? ['--plan', plan] : []), '--feedback', TAKEOVER_FEEDBACK, ...bindingArgs];
   }
   const prepare = run('harness-prepare-input.mjs', [...args, '--verbose'], 'prepare');
   const prepared = lastJson(prepare.stdout);

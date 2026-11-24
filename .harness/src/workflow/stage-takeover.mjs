@@ -10,6 +10,7 @@ import { bindOrchestratorSession, currentClaudeSession, refreshWorkflowProgress 
 import { runtimeAgentProvider } from './agent-config.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { nativeCommand } from './stage-cli.mjs';
+import { readExecutionInput } from './stage-runtime.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const refuse = (reason) => new Error(`Takeover refused: ${reason}`);
@@ -60,6 +61,12 @@ export async function verifyPreviousRunEnded({ root, session, state, entry }) {
   return `no process holds the orchestrator${agentPath ? ' or agent' : ''} transcript`;
 }
 
+// The ticket the interrupted run was building, from its recorded input. A 0-byte input (killed host) records none.
+const planOf = async (root, executionId) => {
+  const plan = (await readExecutionInput({ root, execution_id: executionId }).catch(() => null))?.context?.plan_id;
+  return plan ? { plan_id: plan } : {};
+};
+
 // The calling conversation: the Codex thread (CODEX_THREAD_ID) or the Claude Code session the command runs in.
 export async function callerIdentity(root, env = process.env) {
   const provider = runtimeAgentProvider(env);
@@ -92,7 +99,7 @@ export async function takeOverInterruptedStage({ root, session, stageId, provide
     const entry = state.stages?.[stageId];
     if (!entry) throw refuse(`${stageId} is not recorded in the workflow state`);
     if (state.current_stage === stageId && entry.status === 'failed' && entry.taken_over?.session_id === sessionId && (entry.taken_over.provider || 'codex') === provider && entry.taken_over.execution_id === entry.execution_id && entry.native_finished === true) {
-      return { status: 'ready', already_taken_over: true, stage_id: stageId, execution_id: entry.execution_id, previous_session_id: entry.taken_over.from_session_id, verified: entry.taken_over.verified, backup: entry.taken_over.backup };
+      return { status: 'ready', already_taken_over: true, stage_id: stageId, execution_id: entry.execution_id, ...await planOf(root, entry.execution_id), previous_session_id: entry.taken_over.from_session_id, verified: entry.taken_over.verified, backup: entry.taken_over.backup };
     }
     if (state.orchestrator_provider !== 'codex') throw refuse('only a stage that a Codex conversation started can be taken over by another conversation (Codex or Claude Code)');
     if (state.current_stage !== stageId || entry.status !== 'running' || !entry.native_managed || entry.result_ref) throw refuse(`${stageId} must be the current native stage and be running without a result (it is ${entry.status})`);
@@ -124,7 +131,7 @@ export async function takeOverInterruptedStage({ root, session, stageId, provide
     await writeFile(temporary, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     await rename(temporary, statePath);
     await refreshWorkflowProgress({ matching_workflow_count: 1, matching_workflows: [{ session_directory: session }], issues: [] }, 'StageTakeover');
-    return { status: 'ready', stage_id: stageId, execution_id: entry.execution_id, previous_session_id: previousSession, verified, backup: archive };
+    return { status: 'ready', stage_id: stageId, execution_id: entry.execution_id, ...await planOf(root, entry.execution_id), previous_session_id: previousSession, verified, backup: archive };
   } catch (error) {
     if (archive) {
       await writeFile(statePath, original);

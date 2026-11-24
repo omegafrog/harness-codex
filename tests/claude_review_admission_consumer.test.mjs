@@ -72,6 +72,12 @@ test('installed Claude review admission guards native reviewer dispatch and keep
     assert.match(installedReviewer, /exactly one JSON object with only `verdict` and `findings` keys/);
 
     const input = { hook_event_name: 'PreToolUse', session_id: 'claude-session', tool_name: 'Agent', tool_use_id: 'dispatch-1', tool_input: { subagent_type: 'spec_adversarial_reviewer', prompt: 'Review the Specs.' } };
+    // A background stage worker dies when the headless orchestrator turn ends, so every fresh Harness profile must run in the foreground.
+    for (const subagent_type of ['tactical_implementation_agent', 'spec_adversarial_reviewer']) {
+      const denied = callAdmission(root, 'ticket-missing', { ...input, tool_input: { subagent_type, model: 'sonnet', run_in_background: true, prompt: 'Work.' } });
+      assert.equal(denied.hookSpecificOutput.permissionDecision, 'deny');
+      assert.match(denied.hookSpecificOutput.permissionDecisionReason, /run_in_background: false/);
+    }
     assert.equal(callAdmission(root, 'ticket-missing', input).hookSpecificOutput.permissionDecision, 'deny');
     let admitted = await updateReviewAttempt({ root, scope: 'spec-ticket-one-architecture', action: 'begin', inputs: await snapshotSpecReview({ root, ticketId: 'ticket-one' }) });
     assert.equal(callAdmission(root, 'ticket-other', input).hookSpecificOutput.permissionDecision, 'deny');

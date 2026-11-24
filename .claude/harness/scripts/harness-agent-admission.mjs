@@ -33,6 +33,11 @@ try {
     deny('This Harness assignment requires a new Agent with an explicit profile and only the assigned input references. Continue a bound execution by messaging its existing agent.');
     process.exit(0);
   }
+  // A headless `claude -p` exits when the orchestrator's turn ends, which kills a background worker mid-stage.
+  if (FRESH_AGENT_TYPES.includes(type) && tool.run_in_background) {
+    deny('Run Harness stage workers in the foreground: pass run_in_background: false and do not end your turn until the Agent returns. A background worker dies when the headless orchestrator turn ends and leaves the stage running.');
+    process.exit(0);
+  }
   if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_STAGE_EXECUTION_ID || !native)) process.exit(0);
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;

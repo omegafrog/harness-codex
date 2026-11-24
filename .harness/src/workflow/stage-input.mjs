@@ -3,7 +3,7 @@ import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeF
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync } from 'node:child_process';
-import { readSkillSessionJson, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
+import { readSkillSessionJson, readStageResult, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
 import { isQuestionResponse, mergeAnswers } from './questions.mjs';
@@ -590,9 +590,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       const producerSession = await resolveSkillSession(root, producer.result_session_directory || session);
       const producerInput = await readExecutionInput({ root, execution_id: producer.execution_id });
       if (producerInput.workspace_root !== root) throw new Error('Planning workspace differs from implementation workspace');
-      const envelope = await readSkillSessionJson({ root, session_directory: producerSession, path: `runtime/executions/${producer.execution_id}/return.json` });
-      await validateSkillReturn({ root, input: producerInput, envelope });
-      const result = envelope.result || await readSkillSessionJson({ root, session_directory: producerSession, path: producer.result_ref });
+      // A 0-byte return.json (killed host) leaves nothing to validate; the recorded result is then read from result.json or output.json.
+      const envelope = await readSkillSessionJson({ root, session_directory: producerSession, path: `runtime/executions/${producer.execution_id}/return.json` }).catch((error) => { if (error.empty) return null; throw error; });
+      if (envelope) await validateSkillReturn({ root, input: producerInput, envelope });
+      const result = envelope?.result || await readStageResult({ root, session_directory: producerSession, executionId: producer.execution_id, resultRef: producer.result_ref });
       if (producerSession !== taskSession && result.artifacts.some((artifact) => artifact.base === 'session')) throw new Error('Producer session artifact differs from the current worktree session');
       input_refs.push(...result.artifacts);
       producer_result_refs[producerStage] = { base: producerSession === taskSession ? 'session' : 'control_session', path: producer.result_ref };
@@ -662,7 +663,10 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   } else if (feedback !== null) {
     if (!previous) throw new Error('Feedback requires a review, matching revision or blocked stage, or a confirmed interrupted stage');
     const prefix = `runtime/executions/${previous.execution_id}`;
-    const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id });
+    // A host killed while it wrote the input leaves a 0-byte input.json. Only an interrupted run can resume without it: the
+    // plan comes from --plan and the earlier input references are not carried over.
+    let lostInput = null;
+    const previousInput = await readExecutionInput({ root, execution_id: previous.execution_id }).catch((error) => { if (error.code === 'ENOENT' && error.empty) { lostInput = error; return null; } throw error; });
     if (userRevision && stageId === 'implement-wrapper') {
       if (previous.status !== 'completed' || previous.code !== 'OK') throw new Error('E2E repair requires a completed implementation');
       if (previousInput.context?.plan_id !== planId) throw new Error('Implementation revision plan must match the completed stage');
@@ -696,7 +700,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         if (createHash('sha256').update(await readFile(join(root, path))).digest('hex') !== hash) throw new Error(`E2E failure receipt is stale: ${path}`);
       }
     }
-    if (PLAN_STAGES.has(stageId) && planId === null) planId = previousInput.context?.plan_id ?? null;
+    if (PLAN_STAGES.has(stageId) && planId === null) planId = previousInput?.context?.plan_id ?? null;
     // A stage the user cancelled (for example to update Harness) resumes like a failed one: same conversation,
     // after checking that its processes are gone.
     let interrupted = ['failed', 'cancelled'].includes(previous?.status);
@@ -708,7 +712,9 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     const reviewWaiting = previous?.status === 'waiting' && previous.code === 'REVIEW_REQUIRED' && previous.result_ref;
     const revisionWaiting = previous?.status === 'waiting' && previous.result_ref && REVISION_TARGETS[previous.code] === stageId;
     if (!interrupted && !(reviewWaiting || revisionWaiting || userRevisionWaiting || crossStageRevision || standaloneE2eRetry || frontendCorrection || (previous?.status === 'blocked' && previous.result_ref))) throw new Error('Feedback requires a failed, cancelled, review, matching revision, blocked, or confirmed interrupted stage');
-    if (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef) throw new Error('Feedback target does not match stage state');
+    if (lostInput && !interrupted) throw lostInput;
+    if (lostInput && PLAN_STAGES.has(stageId) && planId === null) throw new Error(`${lostInput.message}; pass --plan <ticket-id> to resume ${stageId}`);
+    if (previousInput && (previousInput.skill !== stage.skill || previousInput.context?.stage_id !== stageId || previousInput.workspace_root !== root || previousInput.session_directory !== taskSession || previousInput.context?.worktree_ref !== worktreeRef)) throw new Error('Feedback target does not match stage state');
     if (!interrupted) {
       const previousSession = await resolveSkillSession(root, previous.result_session_directory || session);
       if (previousSession !== taskSession) throw new Error('Feedback target belongs to a different worktree session');
@@ -725,12 +731,12 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
         input_refs.push({ base: 'session', path: deferredPath, kind: 'deferred_user_answers_unverified' });
       }
     }
-    const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput.context?.previous_result_ref : null);
-    {
+    const priorResult = crossStageRevision ? transition.result_ref : previous.result_ref || (interrupted ? previousInput?.context?.previous_result_ref : null);
+    if (previousInput) {
       const previousPath = (await findExecutionInput(root, previous.execution_id)).path;
       input_refs.push(...previousInput.input_refs, { base: 'session', path: previousPath.slice('.io/'.length), kind: 'previous_execution_input' });
-      if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     }
+    if (priorResult) input_refs.push({ base: 'session', path: priorResult, kind: 'previous_execution_result' });
     conversation = { ...(userRevision ? { user_revision: true } : {}), ...(outOfWorkflowStage ? { out_of_workflow_stage: outOfWorkflowStage } : {}), ...(priorResult && (interrupted || previous?.status === 'blocked') ? { previous_result_note: PREVIOUS_RESULT_NOTE } : {}), ...(repairReceipt ? { e2e_failure_receipt: repairReceipt, e2e_repair_approval: approvalAnswer } : {}), ...(testDefectFailure ? { e2e_test_defect_failure: testDefectFailure } : {}), ...(priorResult ? { previous_result_ref: priorResult } : {}) };
   }
   let deferredAnswers = null;

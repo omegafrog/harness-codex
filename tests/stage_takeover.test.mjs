@@ -504,3 +504,42 @@ test('inspect treats 0-byte execution files as absent instead of failing on JSON
   assert.equal(ok(run(NATIVE, ['inspect', '--execution-id', launched.execution_id], old)).next, undefined);
   assert.equal((await readState()).stages[STAGE].status, 'running');
 });
+
+test('takeover resumes after a killed host left 0-byte input, schema and result files, and names a malformed one', async (t) => {
+  const f = await interruptedWorkflow(t, { bind: false });
+  const { workspace, session, ok, run, launched, writeParent, fresh } = f;
+  await writeParent();
+  // The files the killed host left: the interrupted run's input and schema, and an upstream stage's result and return.
+  const { executionInputAbsolutePath } = await import('../.harness/src/workflow/execution-input.mjs');
+  const inputPath = await executionInputAbsolutePath(workspace, launched.execution_id);
+  await writeFile(inputPath, '');
+  const directory = join(session, 'runtime/executions', launched.execution_id);
+  await writeFile(join(directory, 'return.schema.json'), '');
+  const upstream = join(session, 'runtime/executions/upstream-0001');
+  await mkdir(upstream, { recursive: true });
+  await writeFile(join(upstream, 'result.json'), '');
+  await writeFile(join(upstream, 'return.json'), '');
+
+  // takeover plus the `--feedback` prepare phase used to fail with "Unexpected end of JSON input".
+  const taken = ok(run(NATIVE, ['launch', '--stage-id', STAGE, '--take-over', 'true']));
+  assert.equal(taken.status, 'launched');
+  assert.equal(taken.taken_over.previous_execution_id, launched.execution_id);
+  const resumed = ok(run(NATIVE, ['inspect', '--execution-id', taken.execution_id], fresh));
+  assert.equal(resumed.status, 'running');
+  const input = JSON.parse(await readFile(await executionInputAbsolutePath(workspace, taken.execution_id), 'utf8'));
+  assert.equal(input.input_refs.some((reference) => reference.kind === 'previous_execution_input'), false, 'the lost input is not carried over');
+  assert.equal(await readFile(join(session, 'runtime/executions', taken.execution_id, 'feedback.json'), 'utf8').then((text) => JSON.parse(text).feedback), TAKEOVER_FEEDBACK);
+
+  // A completed stage whose result.json is empty is read from its recorded output.json envelope; otherwise the error names the file.
+  const { readStageResult } = await import('../.harness/src/workflow/stage-runtime.mjs');
+  const read = (id) => readStageResult({ root: workspace, session_directory: session, executionId: id, resultRef: `runtime/executions/${id}/result.json` });
+  await writeFile(join(upstream, 'output.json'), JSON.stringify({ status: 'completed', code: 'OK', result: { summary: 'published' } }));
+  assert.deepEqual(await read('upstream-0001'), { summary: 'published' });
+  await writeFile(join(upstream, 'output.json'), '');
+  await assert.rejects(read('upstream-0001'), /runtime\/executions\/upstream-0001\/result\.json is empty \(0 bytes\).*output\.json/);
+  await writeFile(join(upstream, 'result.json'), '{"summary":');
+  await assert.rejects(read('upstream-0001'), /upstream-0001\/result\.json is not valid JSON/);
+  await writeFile(inputPath, '{"execution_id":');
+  const { readExecutionInput } = await import('../.harness/src/workflow/stage-runtime.mjs');
+  await assert.rejects(readExecutionInput({ root: workspace, execution_id: launched.execution_id }), /input\.json is not valid JSON/);
+});
