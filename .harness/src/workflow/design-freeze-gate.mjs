@@ -22,6 +22,10 @@ import { sessionOutputPath } from './session-output.mjs';
 import { TACTICAL_DESIGN_DOCUMENT, WORKTREE_STAGE } from './worktree-stages.mjs';
 
 export const FREEZE_STAGE = WORKTREE_STAGE.TACTICAL_DATA;
+// tactical-api runs the subset that judges only its own api.md (placeholders and requirement trace) when it completes.
+export const API_FREEZE_STAGE = WORKTREE_STAGE.TACTICAL_API;
+// `unknown` counts only in a type or value slot (`region: unknown`, a `| unknown |` cell), not as a literal enum value in quotes.
+const PLACEHOLDER = /(?<![\w-])(?:TBD|TODO)(?![\w-])|(?:[:|]\s*)unknown(?![\w"'-])|미정|미확정/i;
 const AS_ID = /\bAS-\d+\b/g;
 const REQUIREMENT_ID = /\b(?:BIZ|INV|EX|AC)-\d+\b/g;
 const USER_ACTOR = /사용자|이용자|회원|고객|방문자|작성자|관리자/;
@@ -207,7 +211,13 @@ async function implementationDocument(root, planSetId, name, draftExecutionId) {
 // The gate on the plan set's documents of a workspace: what the command, the runner and the to-ticket start guard all run. A plan
 // set that skipped the requirements flow, or whose requirements/tactical design do not exist (the tactical design gate owns that),
 // has nothing to trace.
-export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology = false, allowLegacyTechnology = false, draftExecutionId }) {
+export function checkApiPlaceholders(api) {
+  return outsideFences(api || '').flatMap((line, index) => PLACEHOLDER.test(line)
+    ? [{ code: 'PLACEHOLDER_REMAINS', message: `api.md line ${index + 1} still holds an undecided placeholder (unknown, TBD, 미정): ${clean(line).slice(0, 120)}. Settle it with a concrete contract, ask the user for a business decision, or return DEPENDENCY_INCOMPLETE for the earlier owner.`, id: `line ${index + 1}`, owner_stage: API_FREEZE_STAGE }]
+    : []);
+}
+
+export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology = false, allowLegacyTechnology = false, draftExecutionId, only = null }) {
   const document = (name) => planSetDocument(root, planSetId, name, draftExecutionId);
   const analysis = await document('stakeholder-analysis.md');
   if (analysis.text !== null && stakeholderAnalysisSkipped(analysis.text)) return { ok: true, skipped: true, errors: [] };
@@ -225,20 +235,27 @@ export async function checkWorkspaceDesignFreeze({ root, planSetId, requireTechn
   const ui = state?.stages?.[WORKTREE_STAGE.TACTICAL_UI];
   const handoff = ui?.status === 'completed' && ui.code === 'OK' && !ui.stale && ui.result_ref ? await readSession(ui.result_ref) : null;
   const frontendApproved = handoff?.artifacts?.some((item) => item.kind === 'frontend_design_brief') === true;
+  if (only) {
+    const { data, technology: ignored, ...rest } = documents;
+    const verdict = checkDesignFreeze({ requirements: requirements.text, tacticalDesign: tacticalDesign.text, documents: rest, frontendApproved });
+    const errors = [...verdict.errors.filter((error) => error.owner_stage === only), ...(only === API_FREEZE_STAGE ? checkApiPlaceholders(documents.api) : [])];
+    return { ok: errors.length === 0, errors };
+  }
   return checkDesignFreeze({ requirements: requirements.text, tacticalDesign: tacticalDesign.text, documents, frontendApproved });
 }
 
 export async function evaluateDesignFreezeGate({ root, input, envelope, draftExecutionId }) {
   const stage = input?.skill;
   const planSetId = input?.context?.plan_set_id;
-  if (stage !== FREEZE_STAGE || envelope?.status !== 'completed' || !planSetId) return null;
+  if (![FREEZE_STAGE, API_FREEZE_STAGE].includes(stage) || envelope?.status !== 'completed' || !planSetId) return null;
+  if (stage === API_FREEZE_STAGE) return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId, draftExecutionId, only: API_FREEZE_STAGE })) };
   return { stage, ...(await checkWorkspaceDesignFreeze({ root, planSetId, requireTechnology: true, draftExecutionId })) };
 }
 
 export function freezeFailureInstruction(verdict) {
   const earlier = unique(verdict.errors.map((error) => error.owner_stage)).filter((stage) => stage !== verdict.stage);
   const head = `The runner ran the design-freeze gate (harness-design-freeze-check.mjs) once for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. The design must add no scope: every item traces to a use case and requirement that already exist.`;
-  if (!earlier.length) return `${head} Repair your own document (data.md): cite the use case or requirement of each stored entity and settle the concrete binding of every declared outbound interface. Remove undeclared items. Never edit requirements.md or an earlier document to make the gate pass. Rewrite your output file if its summary or artifacts change, then run finish again.`;
+  if (!earlier.length) return `${head} Repair your own document (${verdict.stage === API_FREEZE_STAGE ? 'api.md): settle every placeholder with a concrete contract and cite the use case or requirement of each endpoint' : 'data.md): cite the use case or requirement of each stored entity and settle the concrete binding of every declared outbound interface'}. Remove undeclared items. Never edit requirements.md or an earlier document to make the gate pass. Rewrite your output file if its summary or artifacts change, then run finish again.`;
   return `${head} Errors whose owner_stage is ${earlier.join(', ')} are in documents of earlier stages, which are settled input and are not repaired by ${verdict.stage}. Return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage ${earlier[0]} (the earliest stage to reopen) and result.dependency_gap holding these errors as the evidence, without editing any earlier document, and rewrite your output file, then run finish again. The orchestrator reopens ${earlier[0]} itself with --reopen-for and re-runs the stale stages in order, without asking the user about reopening. Never ask the user whether to include the item in scope.`;
 }
 

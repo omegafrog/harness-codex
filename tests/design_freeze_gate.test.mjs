@@ -220,7 +220,7 @@ test('the gate is run only by the runner on the completed result of tactical-dat
   assert.match(freezeFailureInstruction({ stage: 'tactical-data', errors: [{ owner_stage: 'tactical-data' }] }), /Repair your own document/);
 
   // Other stages, other statuses and a missing plan set never reach the gate.
-  for (const stage of ['tactical-api', 'tactical-ui', 'context-boundary', 'to-ticket']) assert.equal(await evaluateDesignFreezeGate({ root, input: input(stage), envelope: completed }), null, stage);
+  for (const stage of ['tactical-ui', 'context-boundary', 'to-ticket']) assert.equal(await evaluateDesignFreezeGate({ root, input: input(stage), envelope: completed }), null, stage);
   for (const envelope of [{ status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }, { status: 'action_required', code: 'USER_DECISION_REQUIRED' }]) assert.equal(await evaluateDesignFreezeGate({ root, input: input('tactical-data'), envelope }), null);
   assert.equal(await evaluateDesignFreezeGate({ root, input: input('tactical-data', null), envelope: completed }), null);
 
@@ -232,6 +232,35 @@ test('the gate is run only by the runner on the completed result of tactical-dat
   await rm(join(root, 'docs/specs/set/tactical-design.md'));
   await writeFile(api, API(['| `POST /anything` | - | `200` | - |']));
   assert.deepEqual(await checkWorkspaceDesignFreeze({ root, planSetId: 'set' }), { ok: true, skipped: true, errors: [] });
+});
+
+test('tactical-api fails its own stage on placeholders and missing requirement trace, without needing data.md or technology.md', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'design-freeze-api-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'docs/specs/set'), { recursive: true });
+  await mkdir(join(root, 'docs/implementation/set'), { recursive: true });
+  await writeFile(join(root, 'docs/specs/set/requirements.md'), REQUIREMENTS);
+  await writeFile(join(root, 'docs/specs/set/tactical-design.md'), DESIGN);
+  const api = join(root, 'docs/implementation/set/api.md');
+  const input = { skill: 'tactical-api', context: { plan_set_id: 'set' } };
+  const completed = { status: 'completed', code: 'OK' };
+  const run = (envelope = completed) => evaluateDesignFreezeGate({ root, input, envelope });
+
+  await writeFile(api, `${API(GOOD_ROWS)}\n- region: unknown\n- identity 공급자 미정\n\`\`\`\nTBD in a fence is ignored\n\`\`\`\n`);
+  const placeholders = await run();
+  assert.deepEqual(placeholders.errors.map((error) => error.code), ['PLACEHOLDER_REMAINS', 'PLACEHOLDER_REMAINS']);
+  assert.equal(placeholders.errors.every((error) => error.owner_stage === 'tactical-api'), true);
+  await assert.rejects(assertDesignFreezeGate({ root, input, envelope: completed }), (error) => error instanceof DesignFreezeError && /Design-freeze gate failed for tactical-api/.test(error.message));
+  assert.match(freezeFailureInstruction(placeholders), /Repair your own document \(api\.md\)/);
+
+  await writeFile(api, API([...GOOD_ROWS, '| `POST /auth/logout` | 인증 정보 | `204` | BIZ-02 |']));
+  assert.deepEqual(found(await run()), [['UNTRACED_ITEM', 'POST /auth/logout', 'tactical-api']]);
+  await writeFile(api, API(GOOD_ROWS.slice(0, 1)));
+  assert.deepEqual(found(await run()), [['REQUIREMENT_UNCOVERED', 'BIZ-02', 'tactical-api']]);
+
+  await writeFile(api, API(GOOD_ROWS));
+  assert.deepEqual(await run(), { stage: 'tactical-api', ok: true, errors: [] });
+  assert.equal(await run({ status: 'blocked', code: 'DEPENDENCY_INCOMPLETE' }), null);
 });
 
 test('the command prints the verdict and fails the process on a failing design', async (t) => {
@@ -341,27 +370,21 @@ test('installed consumer: tactical-data must complete a binding, and to-ticket o
   const technology = `${impl}/technology.md`;
   await runStage('tactical-technology', { files: { [technology]: TECHNOLOGY } });
   await runStage('tactical-ui', { expectCommit: false });
-  await runStage('tactical-api', { files: { [api]: invented }, summary: 'API 계약' });
+  // tactical-api is rejected on its own stage for an untraced endpoint, and nothing is recorded.
+  const apiStage = await beginStage('tactical-api');
+  await submitStage(apiStage, { files: { [api]: invented }, summary: 'API 계약' });
+  const apiRejected = finishStage(apiStage);
+  assert.equal(apiRejected.status, 1, apiRejected.stdout);
+  const apiVerdict = JSON.parse(apiRejected.stdout);
+  assert.equal(apiVerdict.gate, 'design_freeze_check');
+  assert.equal(apiVerdict.stage, 'tactical-api');
+  assert.deepEqual(found(apiVerdict), [['UNTRACED_ITEM', 'POST /auth/logout', 'tactical-api']]);
+  assert.equal((await state()).stages['tactical-api'].status, 'running', 'nothing was recorded');
+  await submitStage(apiStage, { files: { [api]: `${API(GOOD_ROWS)}\n- 지역: 미정\n` }, summary: 'API 계약' });
+  assert.deepEqual(found(JSON.parse(finishStage(apiStage).stdout)).map((item) => item[0]), ['PLACEHOLDER_REMAINS']);
+  await submitStage(apiStage, { files: { [api]: API(GOOD_ROWS) }, summary: 'API 계약' });
+  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...apiStage.base]).code, 'OK');
 
-  const data = await beginStage('tactical-data');
-  await submitStage(data, { files: { [`${impl}/data.md`]: DATA_WITH_BINDING }, summary: '데이터' });
-  const rejected = finishStage(data);
-  assert.equal(rejected.status, 1, rejected.stdout);
-  const verdict = JSON.parse(rejected.stdout);
-  assert.equal(verdict.status, 'gate_error');
-  assert.equal(verdict.gate, 'design_freeze_check');
-  assert.deepEqual(verdict.errors.map((error) => [error.code, error.id, error.owner_stage]), [['UNTRACED_ITEM', 'POST /auth/logout', 'tactical-api']]);
-  assert.match(verdict.instruction, /result\.owner_stage tactical-api/);
-  assert.equal((await state()).stages['tactical-data'].status, 'running', 'nothing was recorded');
-
-  // The stage blocks on its owner; the existing forward rewind takes the orchestrator back, with no scope question.
-  await submitStage(data, { status: 'blocked', code: 'DEPENDENCY_INCOMPLETE', summary: '요구에 없는 endpoint', resultExtra: { owner_stage: 'tactical-api', dependency_gap: 'POST /auth/logout 은 어떤 AS-xx에도 추적되지 않는다. 제거한다' } });
-  const blocked = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...data.base]);
-  assert.equal(blocked.code, 'DEPENDENCY_INCOMPLETE');
-  assert.match(blocked.next, new RegExp(`launch --stage-id tactical-api --reopen-for ${data.prepared.input.execution_id}`));
-  const reopened = await beginStage('tactical-api', { extraArgs: ['--reopen-for', data.prepared.input.execution_id] });
-  await submitStage(reopened, { files: { [api]: API(GOOD_ROWS) }, summary: 'API 계약에서 로그아웃 제거' });
-  assert.equal(invoke(workspace, 'harness-native-stage.mjs', ['finish', ...reopened.base]).code, 'OK');
   const binding = await beginStage('tactical-data');
   await submitStage(binding, { files: { [`${impl}/data.md`]: DATA }, summary: '데이터' });
   const missingBinding = finishStage(binding);
