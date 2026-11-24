@@ -40,19 +40,23 @@ export function shellSplit(text) {
 }
 
 // `harness-stage: <stage-id|answer> [launch options]` on the first line; the lines below are the body, which an option
-// takes with the value `@body` (feedback or a user reply with any quotes or line breaks). `answer` is `--answer-text @body`.
+// takes with the value `@body` (feedback or a user reply with any quotes or line breaks). `answer` is `--answer-text @body`; `revise` is `--revise-text @body`: Harness picks the earliest owner stage and reopens it with --user-revision.
 export function parseStageCall(prompt) {
   if (typeof prompt !== 'string') return null;
   const match = /^harness-stage:[ \t]*([^\n]*)(?:\n([\s\S]*))?$/.exec(prompt.replace(/^\s+/, ''));
   if (!match) return null;
   const body = (match[2] ?? '').trim();
   const [head, ...options] = shellSplit(match[1]);
-  if (!head || !(head === 'answer' || /^[a-z][a-z0-9-]*$/.test(head))) throw new Error('The first line must be "harness-stage: <stage-id>" or "harness-stage: answer"');
+  if (!head || !(head === 'answer' || head === 'revise' || /^[a-z][a-z0-9-]*$/.test(head))) throw new Error('The first line must be "harness-stage: <stage-id>" or "harness-stage: answer"');
   const values = options.map((option) => option === '@body' ? body : option);
   if (values.some((value) => value === '')) throw new Error('A harness-stage option value is empty; put long text below the first line and pass @body');
   if (head === 'answer') {
     if (!body) throw new Error('"harness-stage: answer" needs the user\'s reply verbatim on the lines below it');
     return { stage: null, args: ['--answer-text', body, ...values] };
+  }
+  if (head === 'revise') {
+    if (!body) throw new Error('"harness-stage: revise" needs the user\'s change request verbatim on the lines below it');
+    return { stage: null, args: ['--revise-text', body, ...values] };
   }
   return { stage: head, args: ['--stage-id', head, ...values] };
 }

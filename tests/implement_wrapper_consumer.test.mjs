@@ -21,7 +21,7 @@ test('existing implement-wrapper distributes sequential review and E2E approval 
   const checkGuidance = async () => {
     for (const provider of ['.codex', '.claude']) {
       const entry = await read(`${provider}/skills/orchestrator/SKILL.md`);
-      assert.match(entry, /references\/implementation\.md/);
+      assert.doesNotMatch(entry, /\]\(references\//);
       const path = `${provider}/skills/orchestrator/references/implementation.md`;
       const guide = await read(path);
       assert.match(guide, /한 번에 split plan 하나만 배정/);

@@ -380,7 +380,7 @@ test('update installs the takeover module in a consumer, Doctor requires it, Git
 
   const read = (path) => readFile(join(sourceRoot, path), 'utf8');
   const skill = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(skill, /실행 배정·결과 확인·중단된 실행 복구.*references\/dispatch\.md/);
+  assert.doesNotMatch(skill, /\]\(references\//);
   const dispatch = await read('.codex/skills/orchestrator/references/dispatch.md');
   assert.match(dispatch, /launch --stage-id <stage> --take-over true/);
   assert.match(dispatch, /다른 Codex 대화[^\n]*그 대화로 돌아가지 않고 아래 인계를 쓴다/);

@@ -256,19 +256,20 @@ function answerArguments(args) {
 
 // Turns --answer-text into the existing --answer / approval options (or a clarification request), see answer-text.mjs.
 async function withAnswerText(args) {
-  const index = args.findIndex((argument, position) => position % 2 === 0 && argument === '--answer-text');
+  const revisionIndex = args.findIndex((argument, position) => position % 2 === 0 && argument === '--revise-text');
+  const index = revisionIndex >= 0 ? revisionIndex : args.findIndex((argument, position) => position % 2 === 0 && argument === '--answer-text');
   if (index < 0) return { args };
   const text = args[index + 1];
   if (typeof text !== 'string' || !text.trim()) throw new Error('The reply for --answer-text must not be empty');
   const rest = args.filter((_, position) => position !== index && position !== index + 1);
   const stageIndex = rest.findIndex((argument, position) => position % 2 === 0 && argument === '--stage-id');
   const named = stageIndex < 0 ? null : rest[stageIndex + 1];
-  const { resolveReplyTarget } = await import('../../.harness/src/workflow/answer-text.mjs');
-  const target = resolveReplyTarget(resolveCommandContext().root, text);
+  const { resolveReplyTarget, resolveRevision } = await import('../../.harness/src/workflow/answer-text.mjs');
+  const target = (revisionIndex >= 0 ? resolveRevision : resolveReplyTarget)(resolveCommandContext().root, text);
   const refuse = (message, next) => Object.assign(new Error(message), { explained: { error: message, code: 'ANSWER_REFUSED', why: message, next } });
   if (target.error) throw refuse(target.error, [contextCommand()]);
-  if (named && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/harness-native-stage.mjs answer --text '<the user's reply verbatim>'`]);
-  if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, next: 'Ask the user in Korean to clarify, then pass their new reply verbatim with the same answer command. Nothing was recorded.' } };
+  if (named && !target.revision && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/harness-native-stage.mjs answer --text '<the user's reply verbatim>'`]);
+  if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, next: target.revision ? 'Ask the user in Korean which part to change, then pass their new text verbatim as a revise request. Nothing was started.' : 'Ask the user in Korean to clarify, then pass their new reply verbatim with the same answer command. Nothing was recorded.' } };
   return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))] };
 }
 

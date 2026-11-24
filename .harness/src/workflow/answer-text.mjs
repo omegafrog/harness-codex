@@ -99,8 +99,37 @@ export function waitingQuestions(root, state, stageId = null) {
   return { stageId: id, entry, questions, answered };
 }
 
-// What a raw reply is for: a waiting question batch, the requirements approval after bounded-context, or the plan
-// publication approval after to-ticket. Returns the launch arguments the existing commands already accept.
+// A short yes: "승인합니다", "네 진행해 주세요", "approved, go ahead". Anything that also asks for a change is not one.
+const APPROVAL = /^(?:요구사항|전체계획|계획|발행)?(?:네|넵|예|응|그래|좋아요?|좋습니다|ok(?:ay)?|yes|yeah|yep|lgtm|approved?|승인|동의|확인|진행|맞(?:아요|습니다)|go(?:ahead)?|proceed|looksgood)(?:합니다|했습니다|해요|해줘|해주세요|해주시면됩니다|할게요|하세요|하겠습니다|하고|해도(?:돼요|됩니다|좋아요)?|됩니다|돼요|진행|승인|동의|네|예|좋아요?|그대로|이대로|다음|단계|계속|넘어가(?:요|자|주세요)?|가자|요|ok|okay|go(?:ahead)?|proceed|확인|완료|입니다|요구사항|계획|발행|으로|로|도|를|을|이|가|은|는|해서|dosubmit)*$/;
+const CHANGE_WORDS = /바꿔|바꾸|수정|변경|고쳐|추가|삭제|빼|제외|대신|말고|하지만|그런데|다만|단,|change|edit|fix|add|remove|instead|but\b|however/i;
+export const isApprovalReply = (text) => { const reply = String(text ?? '').trim(); return reply.length <= 60 && !CHANGE_WORDS.test(reply) && APPROVAL.test(squash(reply).replace(/[()"'`]/g, '')); };
+
+const REVISION_STAGE_ORDER = ['subdomain-candidates', 'subdomain-classification', 'requirements-fix', 'bounded-context'];
+// The earliest stage that owns a user's change request, from the words alone (the user's text is never interpreted by an agent):
+// an explicit stage id, then Context ownership, business-scope additions, rule/wording edits, then a bare addition.
+const REVISION_OWNERS = [
+  [/서브\s*도메인\s*(?:분류|등급)|subdomain\s*classification|\b(?:core|supporting|generic)\b|코어\s*도메인|지원\s*도메인|일반\s*도메인/i, 'subdomain-classification'],
+  [/바운디드|bounded|컨텍스트|\bcontext\b/i, 'bounded-context'],
+  [/범위|누락|빠졌|빠진|새\s*(?:기능|업무)|업무\s*(?:추가|발굴)|\bscope\b|missing|new\s+(?:feature|capability)/i, 'subdomain-candidates'],
+  [/규칙|예외|완료\s*조건|조건|문구|표현|문장|용어|오타|수정|바꿔|바꾸|고쳐|변경|\brules?\b|wording|exception|acceptance|rename|reword|typo|change|fix/i, 'requirements-fix'],
+  [/추가|기능|지원|포함|\badd\b|feature|support|include/i, 'subdomain-candidates'],
+];
+
+// -> { stage } | { clarification }. `ownable` stages are those the workflow has already run.
+export function pickRevisionOwner(state, text) {
+  const stages = state?.stages || {};
+  const started = (id) => Boolean(stages[id]?.execution_id);
+  const reply = String(text ?? '');
+  const named = [...REVISION_STAGE_ORDER, 'event-storming', 'domain-model', 'aggregate-design', 'domain-service', 'application-service', 'context-boundary', 'to-ticket'].find((id) => new RegExp(`(?:^|[^a-z-])${id}(?:[^a-z-]|$)`).test(reply));
+  const owner = named || REVISION_OWNERS.find(([pattern]) => pattern.test(reply))?.[1];
+  if (!owner) return { clarification: 'The change request does not say which part to change. Ask the user in Korean which requirement, rule, wording or scope item they want changed (one sentence each), then pass their answer verbatim as a new revise request. Nothing was started.' };
+  if (!started(owner)) return { clarification: `The change belongs to ${owner}, which has not run yet, so there is nothing to revise there. Ask the user in Korean what exactly they want changed, or continue the workflow normally. Nothing was started.` };
+  return { stage: owner };
+}
+
+// What a raw reply is for: a waiting question batch, the requirements approval after bounded-context, the plan
+// publication approval after to-ticket, or (any other text) a change request for the revise route.
+// Returns the launch arguments the existing commands already accept.
 export function resolveReplyTarget(root, text) {
   const state = readWorkflowState(root);
   if (!state?.stages) return { error: 'No workflow state was found in this worktree.' };
@@ -110,10 +139,30 @@ export function resolveReplyTarget(root, text) {
     if (mapped.clarification) return { stageId: waiting.stageId, clarification: mapped.clarification };
     return { stageId: waiting.stageId, args: ['--stage-id', waiting.stageId, '--answer', JSON.stringify(mapped.answers)] };
   }
+  return resolveApprovalOrRevision(state, text);
+}
+
+export function resolveApprovalOrRevision(state, text) {
   const stages = state.stages;
   const done = (id) => stages[id]?.status === 'completed' && stages[id].code === 'OK' && !stages[id].stale;
   const started = (id) => Boolean(stages[id]?.execution_id) && !(stages[id].status === 'failed' || stages[id].status === 'cancelled');
-  if (done('bounded-context') && !started('domain-model')) return { stageId: 'domain-model', args: ['--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', String(text).trim()], approval: 'requirements' };
-  if (done('to-ticket') && !started('tracker-publish')) return { stageId: 'tracker-publish', args: ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', String(text).trim()], approval: 'publication' };
+  const approval = isApprovalReply(text);
+  if (approval && done('bounded-context') && !started('domain-model')) return { stageId: 'domain-model', args: ['--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', String(text).trim()], approval: 'requirements' };
+  if (approval && done('to-ticket') && !started('tracker-publish')) return { stageId: 'tracker-publish', args: ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', String(text).trim()], approval: 'publication' };
+  if (isRecommendedReply(text)) return { error: 'No stage is waiting for a user answer or approval. Run harness-context.mjs for the current state.' };
+  if (!approval) {
+    const picked = pickRevisionOwner(state, text);
+    if (picked.stage) return { stageId: picked.stage, args: ['--stage-id', picked.stage, '--user-revision', 'true', '--feedback', String(text).trim()], revision: true };
+    return { clarification: picked.clarification, revision: true };
+  }
   return { error: 'No stage is waiting for a user answer or approval. Run harness-context.mjs for the current state.' };
+}
+
+// `harness-stage: revise`: the text is a change request whatever it looks like, so it never approves anything.
+export function resolveRevision(root, text) {
+  const state = readWorkflowState(root);
+  if (!state?.stages) return { error: 'No workflow state was found in this worktree.' };
+  const picked = pickRevisionOwner(state, text);
+  if (!picked.stage) return { clarification: picked.clarification, revision: true };
+  return { stageId: picked.stage, args: ['--stage-id', picked.stage, '--user-revision', 'true', '--feedback', String(text).trim()], revision: true };
 }

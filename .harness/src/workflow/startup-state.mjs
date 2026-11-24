@@ -194,7 +194,7 @@ export function orchestratorInputTarget(observed) {
   return (observed.session_worktrees || []).find((record) => record.workspace_root === observed.workspace_root) || null;
 }
 
-export function startupProcedure({ observed, progress, orchestrator, composer }) {
+export function startupProcedure({ observed, progress, orchestrator, composer, provider = 'codex' }) {
   switch (observed.decision_hint) {
     case 'maintenance_candidate':
       return 'Follow .harness/internal-skills/harness-maintenance/GUIDE.md in the current checkout.';
@@ -212,6 +212,11 @@ export function startupProcedure({ observed, progress, orchestrator, composer })
         && !progress.workflow_id && progress.current_stage === WORKTREE_STAGE.WORKFLOW_COMPOSE
         && progress.stages.length === 1 && progress.stages[0].id === WORKTREE_STAGE.WORKFLOW_COMPOSE
         && progress.stages[0].status === 'completed';
+      if (provider === 'claude-code') {
+        return firstStage
+          ? `For a plain continuation of the composed workflow, dispatch Agent(subagent_type: "workflow_stage", prompt: "harness-stage: ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS}") in the current worktree. Do not open references. A different user request follows the orchestrator skill.`
+          : "For workflow resumption, run the current worktree's harness-context.mjs and dispatch the stage its next names as one Agent call (\"harness-stage: <stage>\"). Do not open references.";
+      }
       if (firstStage) {
         return `For a plain continuation of the composed workflow, read ${dispatch}, then run node .harness/scripts/harness-native-stage.mjs launch --stage-id ${WORKTREE_STAGE.STAKEHOLDER_ANALYSIS} in the current worktree. Use the returned guide, input and schema paths only to brief the stage worker. A different user request follows the relevant route in the orchestrator skill.`;
       }

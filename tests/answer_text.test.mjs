@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isRecommendedReply, mapReplyToAnswers } from '../.harness/src/workflow/answer-text.mjs';
+import { isApprovalReply, isRecommendedReply, mapReplyToAnswers, pickRevisionOwner, resolveApprovalOrRevision } from '../.harness/src/workflow/answer-text.mjs';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 
@@ -139,4 +139,30 @@ test('answer --text routes an approval reply to the requirements approval and ke
   state.stages['domain-model'] = { status: 'completed', code: 'OK', execution_id: 'domain-model-1', result_ref: 'x', result_session_directory: join(workspace, '.io') };
   await writeFile(statePath, JSON.stringify(state));
   assert.deepEqual(resolveReplyTarget(workspace, '발행 승인').args.slice(0, 5), ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer']);
+});
+
+test('an approval is a short yes; a reply that also asks for a change is a revision of the earliest owning stage', () => {
+  for (const reply of ['승인합니다', '네 진행해 주세요', '요구사항 승인합니다', '발행 승인', 'approved, go ahead', 'LGTM', '승인하고 진행']) assert.equal(isApprovalReply(reply), true, reply);
+  for (const reply of ['신고 규칙 문구를 바꿔 주세요', '승인하지만 예외 규칙을 추가해 줘', '댓글 기능도 범위에 추가해 줘', 'change the wording of the rule', '그건 좀 다른데']) assert.equal(isApprovalReply(reply), false, reply);
+  const run = (id) => ({ status: 'completed', code: 'OK', execution_id: `${id}-1` });
+  const state = { stages: Object.fromEntries(['subdomain-candidates', 'subdomain-classification', 'requirements-fix', 'bounded-context'].map((id) => [id, run(id)])) };
+  const owner = (text) => pickRevisionOwner(state, text).stage;
+  assert.equal(owner('신고 규칙의 문구를 바꿔 주세요'), 'requirements-fix');
+  assert.equal(owner('예외 규칙을 추가해 줘'), 'requirements-fix');
+  assert.equal(owner('댓글 업무가 범위에서 빠졌어요'), 'subdomain-candidates');
+  assert.equal(owner('알림 기능 추가해 줘'), 'subdomain-candidates');
+  assert.equal(owner('신고는 지원 도메인이 아니라 코어 도메인이야'), 'subdomain-classification');
+  assert.equal(owner('컨텍스트 책임을 나눠 줘'), 'bounded-context');
+  assert.equal(owner('requirements-fix에서 다시 봐 줘'), 'requirements-fix');
+  assert.match(pickRevisionOwner(state, '이상해요').clarification, /which part to change[\s\S]*Nothing was started/);
+  assert.match(pickRevisionOwner({ stages: {} }, '문구를 바꿔 줘').clarification, /has not run yet/);
+  // Approval gate open: a yes approves, anything else is a revision and never an approval.
+  const gated = { stages: { ...state.stages } };
+  assert.equal(resolveApprovalOrRevision(gated, '승인합니다').approval, 'requirements');
+  const revised = resolveApprovalOrRevision(gated, '신고 규칙 문구를 바꿔 주세요');
+  assert.deepEqual(revised.args, ['--stage-id', 'requirements-fix', '--user-revision', 'true', '--feedback', '신고 규칙 문구를 바꿔 주세요']);
+  assert.equal(revised.approval, undefined);
+  // No gate and not a change request: a clear refusal.
+  assert.match(resolveApprovalOrRevision({ stages: {} }, '승인합니다').error, /No stage is waiting/);
+  assert.match(resolveApprovalOrRevision({ stages: {} }, '문구를 바꿔 줘').clarification, /has not run yet/);
 });

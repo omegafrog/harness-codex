@@ -56,6 +56,8 @@ test('the stage call line is parsed: stage and options, @body for long text, ans
   assert.deepEqual(parseStageCall('harness-stage: tactical-code --plan T-1').args, ['--stage-id', 'tactical-code', '--plan', 'T-1']);
   assert.deepEqual(parseStageCall('harness-stage: requirements-fix --feedback @body\n수정: "경계"는 \'그대로\'\n둘째 줄').args, ['--stage-id', 'requirements-fix', '--feedback', '수정: "경계"는 \'그대로\'\n둘째 줄']);
   assert.deepEqual(parseStageCall('harness-stage: answer\n1번 A, 2번 B').args, ['--answer-text', '1번 A, 2번 B']);
+  assert.deepEqual(parseStageCall('harness-stage: revise\n신고 규칙 문구를 바꿔 주세요').args, ['--revise-text', '신고 규칙 문구를 바꿔 주세요']);
+  assert.throws(() => parseStageCall('harness-stage: revise'), /needs the user's change request/);
   assert.equal(parseStageCall('Run the stage please'), null);
   assert.equal(parseStageCall(undefined), null);
   assert.throws(() => parseStageCall('harness-stage: answer'), /needs the user's reply/);
@@ -237,6 +239,21 @@ test('questions come back compact in the envelope and a raw reply answers them i
   assert.match(answered.updated.prompt, /answers_path: \S+answers\.json/);
   const answers = JSON.parse(await readFile(/answers_path: (\S+)/.exec(answered.updated.prompt)[1], 'utf8'));
   assert.deepEqual(answers.map(({ answer }) => answer).sort(), ['소유자 묶음 (b)', '핀 하나씩 (a)']);
+});
+
+test('a change request goes through revise or a non-approval answer; with no owner to reopen it asks instead of starting anything', async (t) => {
+  const { hooks } = await claudeFlow(t);
+  for (const prompt of ['harness-stage: revise\n신고 규칙 문구를 바꿔 주세요', 'harness-stage: answer\n신고 규칙 문구를 바꿔 주세요']) {
+    const refused = hooks.admit(prompt);
+    assert.equal(refused.decision, 'deny', prompt);
+    assert.match(refused.reason, /Nothing was started/);
+    assert.match(refused.reason, /clarification_needed/);
+    assert.match(refused.reason, /has not run yet/);
+  }
+  // revise never approves: a bare "승인합니다" through it is only a change request without an owner.
+  for (const text of ['이상해요', '승인합니다']) assert.match(hooks.admit(`harness-stage: revise\n${text}`).reason, /which part to change/);
+  // An approval-looking reply with nothing to approve is refused, not turned into a revision.
+  assert.match(hooks.admit('harness-stage: answer\n승인합니다').reason, /ANSWER_REFUSED|No stage is waiting/);
 });
 
 test('the admission hook refuses what it cannot launch and leaves other Agent calls alone', async (t) => {

@@ -363,7 +363,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
     assert.match(answerGuide, /\{"question_id":"<현재-질문-ID>","answer":/);
     assert.match(answerGuide, /“모두 추천” 같은 일괄 답변은 사용자에게 제시된 질문 묶음에만 적용한다/);
     const installedOrchestrator = await readFile(join(root, '.codex/skills/orchestrator/SKILL.md'), 'utf8');
-    assert.match(installedOrchestrator, /references\/input\.md#사용자-답변으로-재개/);
+    assert.doesNotMatch(installedOrchestrator, /\]\(references\//);
     await writeFile(join(root, 'consumer-change.txt'), 'visible application change');
     const consumerStatus = execFileSync('git', ['status', '--short', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     assert.match(consumerStatus, /consumer-change\.txt/);

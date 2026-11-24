@@ -35,8 +35,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.deepEqual(Object.keys(STAGE_TIERS).sort(), [...PRE_SPEC_STAGES, 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data', 'to-ticket', 'tracker-publish', 'tactical-code'].sort(), 'every stage in the pre-spec and tactical implementation flows has a declared tier in the shared fixture');
 
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(orchestrator, /references\/workflow-map\.md/);
-  assert.match(orchestrator, /references\/dispatch\.md#상위-stage-되돌아가기/);
+  assert.doesNotMatch(orchestrator, /\]\(references\//, 'the normal path of the entry skill links no reference');
   const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
   assert.ok(map.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the tactical flow in order');
   assert.match(map, /전술 설계가 모두 `completed\/OK`인 뒤 별도 `tactical-to-code` workflow/);

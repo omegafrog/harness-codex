@@ -153,7 +153,7 @@ test('installed stage accepts changed documents while preserving review snapshot
     }
     for (const provider of ['.codex', '.claude']) {
       await assert.rejects(readFile(join(root, provider, 'skills/technology-selection/SKILL.md')), { code: 'ENOENT' });
-      assert.match(await readFile(join(root, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /workflow-map\.md/);
+      assert.doesNotMatch(await readFile(join(root, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /workflow-map\.md/);
       assert.ok((await readFile(join(root, provider, 'skills/orchestrator/references/workflow-map.md'), 'utf8')).length > 0);
       assert.ok((await readFile(join(root, provider, 'skills/orchestrator/references/../../../../.harness/internal-skills/technology-selection/GUIDE.md'), 'utf8')).length > 0);
     }

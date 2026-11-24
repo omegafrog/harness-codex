@@ -25,7 +25,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.deepEqual(REQUIREMENTS_STAGES, ['stakeholder-analysis', 'subdomain-candidates', 'ubiquitous-language', 'event-storming', 'subdomain-classification', 'requirements-fix', 'bounded-context']);
   for (const stage of REQUIREMENTS_STAGES) assert.ok(Object.values(WORKTREE_STAGE).includes(stage), `${stage} is a worktree stage`);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(orchestrator, /references\/workflow-map\.md#요구사항과-승인/);
+  assert.doesNotMatch(orchestrator, /\]\(references\//);
   assert.match(await read('.codex/skills/orchestrator/references/dispatch.md'), /업무 묶음·서브도메인 분류는 `subdomain-classification`/);
   assert.doesNotMatch(orchestrator, /먼저 `bounded-context`부터 `--restart-requirements true`/);
   const map = await read('.codex/skills/orchestrator/references/workflow-map.md');

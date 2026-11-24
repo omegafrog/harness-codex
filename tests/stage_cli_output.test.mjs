@@ -546,7 +546,9 @@ test('the orchestrator and the dispatch guide name launch, the compact output an
   assert.match(skill, /`next\.bind`/);
   assert.match(skill, /`harness-stage: <stage> \[launch 옵션\]`/);
   assert.match(skill, /stage마다 `Agent` 한 번만 호출한다/);
-  assert.match(skill, /reference\(`dispatch\.md`·`input\.md`·`workflow-map\.md` 등\)와 result 파일을 열지 않고/);
+  assert.match(skill, /reference와 result 파일은 열지 않고/);
+  assert.doesNotMatch(skill, /\]\(references\//);
+  assert.match(skill, /harness-stage: revise/);
   assert.match(skill, /harness-native-stage\.mjs answer --text/);
   assert.match(skill, /Harness 소스·state 파일은 읽지 않는다/);
   const dispatch = await readFile(join(sourceRoot, '.codex/skills/orchestrator/references/dispatch.md'), 'utf8');

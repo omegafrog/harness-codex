@@ -62,7 +62,7 @@ try {
       provider, session_id: sessionId, session_verified: Boolean(sessionId),
       workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, decision_hint: observed.decision_hint,
       current_stage: progress?.current_stage || null, workflow_status: progress?.status || null,
-      next: startup.startupProcedure({ observed, progress, orchestrator, composer }),
+      next: startup.startupProcedure({ observed, progress, orchestrator, composer, provider }),
       ...(observed.decision_hint === 'worktree_required' ? { candidates: observed.worktree_candidates, omitted_candidates: observed.omitted_worktree_candidate_count || undefined } : {}),
       ...(observed.issues?.length ? { issues: observed.issues } : {}),
       ...(observed.setup_configuration?.violations?.length ? { setup_violations: observed.setup_configuration.violations } : {}),

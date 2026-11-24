@@ -244,12 +244,12 @@ test('an out-of-order stage whose native run ended is discarded through the supp
   assert.equal((await readdir(join(session, 'runtime/restarts'))).filter((name) => name.startsWith('out-of-order-')).length, 3, 'each discard keeps its own archive');
 });
 
-test('the orchestrator links the input guide that owns the stage order guard and discard command', async () => {
+test('the input guide owns the stage order guard and discard command', async () => {
   const input = await read('.codex/skills/orchestrator/references/input.md');
   assert.match(input, /--discard-out-of-order true/);
   assert.match(input, /cannot start before/);
   const orchestrator = await read('.codex/skills/orchestrator/SKILL.md');
-  assert.match(orchestrator, /references\/input\.md/);
+  assert.doesNotMatch(orchestrator, /input\.md/, 'the entry skill sends no one to input.md; the order guard error names the guide itself');
   const enforcement = await read('docs/architecture/enforcement.md');
   assert.match(enforcement, /preSpecOrderViolation[\s\S]*discardOutOfOrderStage/);
   const prepare = await read('.harness/scripts/harness-prepare-input.mjs');

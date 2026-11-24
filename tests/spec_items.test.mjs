@@ -183,7 +183,7 @@ test('an unsealed contract is deferred in the final review and the orchestrator 
   const implementation = await read('.codex/skills/orchestrator/references/implementation.md');
   assert.match(implementation, /최종 E2E 통과 → `sync-contracts` stage → 완료 gate다/);
   assert.match(implementation, /orchestrator는 `docs\/contracts\/`를 직접 작성·수정·seal하지 않는다/);
-  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /계약 동기화[^\n]*references\/implementation\.md/);
+  assert.match(await read('.codex/skills/orchestrator/SKILL.md'), /legacy 구현[^\n]*capability-routing\.md/);
   assert.match(await read('.harness/internal-skills/sync-contracts/GUIDE.md'), /## Stage로 실행/);
   assert.match(await read('.harness/src/workflow/stage-input.mjs'), /stageId === 'sync-contracts' && \(state\.stages\?\.\['implement-wrapper'\]/);
 });
