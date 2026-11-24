@@ -226,7 +226,7 @@ Codex 테스트 전에 `/hooks`에서 서브에이전트 식별 훅의 신뢰 �
 5. 반환된 worktree에서 두 번째 `codex exec`를 시작해 아래 순서로 진행하는지 관찰한다. 구현을 정상적으로 마치면 관찰을 끝내고 산출물을 검증한다.
 
    - 요구사항 흐름은 `stakeholder-analysis` → `subdomain-candidates` → `ubiquitous-language` → `event-storming` → `subdomain-classification` → `requirements-fix` → `bounded-context` 순서다.
-   - 전술 설계 흐름은 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서다.
+   - 전술 설계 흐름은 `domain-model`→`aggregate-design`→`domain-service`→`application-service`→`integration-design`→`context-boundary` 순서다.
    - `tactical-to-code`는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → 사용자 발행 승인 후 `tracker-publish` → ticket별 `tactical-code` 순서다.
 
 6. Do not answer, delegate, edit, recover, or relaunch on a question, approval wait, failure, or interruption. Preserve raw response, time, stage, session, and evidence. Only actual user input may continue the workflow.
@@ -272,7 +272,7 @@ codex exec --json --model gpt-6-luna -c 'model_reasoning_effort="medium"' -c 'ap
   -C '<첫 응답으로 받은 생성 worktree 절대경로>' '$orchestrator 계속 진행해' </dev/null
 ```
 
-질문이 workflow 생성 전 발생해도 resume에 binding을 전달하고, 생성 후에는 canonical `worktree.json`과 대조한다. 전용 runner가 실제 Codex를 직접 실행하며 일반 app E2E/profile이나 내부 stage CLI로 대체하지 않는다.
+질문이 workflow 생성 전 발생해도 resume에 binding을 전달하고, 생성 후에는 canonical `worktree.json`과 대조한다. Prompt를 바꾸거나 승인 문구를 덧붙이지 않는다. 전용 runner가 실제 Codex를 직접 실행하며 일반 app E2E/profile이나 내부 stage CLI로 대체하지 않는다.
 
 Resume invocation evidence and stage identity are recorded as specified in the checklist above; do not build resume argv from a previous shell's environment.
 
