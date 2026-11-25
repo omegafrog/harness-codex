@@ -138,7 +138,7 @@ test('the stage commands print only what the next step needs, and --verbose prin
   // start: what spawn_agent needs and the bind command, without the workspace, the sandbox or the binding's skill.
   const startOutput = exec(workspace, NATIVE, ['start', '--execution-id', prepared.execution_id]);
   const started = ok(startOutput);
-  assert.deepEqual(Object.keys(started).sort(), ['agent_profile', 'binding', 'document_draft_root', 'guide', 'input_path', 'next', 'output_path', 'schema_path']);
+  assert.deepEqual(Object.keys(started).sort(), ['agent_profile', 'assignment_path', 'binding', 'document_draft_root', 'guide', 'input_path', 'next', 'output_path', 'schema_path']);
   assert.equal(started.agent_profile, 'workflow_stage');
   assert.deepEqual(Object.keys(started.binding).sort(), ['model', 'model_tier', 'provider', 'reasoning_effort']);
   assert.equal(started.document_draft_root, join(workspace, '.io/runtime/executions', prepared.execution_id, 'document-drafts/workspace'));
@@ -211,7 +211,7 @@ test('installed consumer: launch prepares and starts a stage in one call, the pr
   assert.equal(launched.next.finish, `node .harness/scripts/${NATIVE} finish --execution-id ${launched.execution_id}`);
   // The spawn instruction names fork_turns "none": a Codex start without it is denied by the fresh-agent hook.
   assert.match(launched.next.spawn, /spawn_agent \{agent_type: "workflow_stage", fork_turns: "none"\}/);
-  assert.ok(bytes(output.stdout) <= 1900, `launch is ${bytes(output.stdout)} bytes`);
+  assert.ok(bytes(output.stdout) <= 2200, `launch is ${bytes(output.stdout)} bytes`);
   assert.deepEqual(await readdir(join(workspace, '.io/runtime/launch-attempts')), [], 'successful launch removes its temporary receipt');
   const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
   assert.equal(state.stages['stakeholder-analysis'].status, 'running');

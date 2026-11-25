@@ -92,6 +92,7 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
     '.harness/internal-skills/e2e-telemetry/GUIDE.md',
     '.harness/internal-skills/e2e-telemetry/scripts/report.mjs',
     '.codex/agents/workflow_stage.toml',
+    '.codex/agents/workflow_stage_solo.toml',
     '.codex/agents/stage_document_writer.toml',
     '.codex/agents/tracker_publisher.toml',
     '.codex/agents/pr_author.toml',
@@ -134,11 +135,11 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
   }
   if (await lstat(join(root, '.harness/src')).catch((error) => { if (error.code === 'ENOENT') return null; throw error; })) {
     paths.push(...['schema', 'repository', 'validation', 'index', 'search', 'context-pack', 'sync', 'merge-check', 'bootstrap', 'benchmark'].map((name) => `.harness/src/domain/${name}.mjs`));
-    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'approval-search', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
+    paths.push(...['composer-workspace', 'native-context', 'output-schema', 'execution-state', 'stage-commit', 'stage-input', 'requirements-restart', 'stage-runtime', 'skill-declaration', 'cli-session', 'cli-context', 'user-inputs', 'approval-search', 'worktree-stages', 'startup-state', 'request-routing', 'stage-checkpoint', 'providers/index', 'contract-review', 'domain-model-gate', 'design-freeze-gate', 'stakeholder-analysis-gate', 'requirements-document-gate', 'stage-cli', 'stage-assignment', 'stage-references', 'stage-takeover', 'stage-reopen', 'tactical-tickets'].map((name) => `.harness/src/workflow/${name}.mjs`));
     paths.push('.harness/src/tracker/publication.mjs', '.harness/src/workflow/plan-review.mjs', '.harness/src/workflow/review-attempts.mjs', '.harness/src/workflow/review-liveness.mjs', '.harness/src/workflow/setup-answers.mjs', '.harness/src/workflow/stage-documents.mjs', '.harness/src/stakeholders/cards.mjs');
   }
   if (await marker('.codex/skills/orchestrator/SKILL.md')) paths.push('.codex/harness/providers/codex.mjs', ...['agent-event', 'fresh-agent', 'write-guard'].map((name) => `.codex/scripts/harness-${name}.mjs`));
-  if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs', '.claude/harness/scripts/harness-agent-result.mjs', '.harness/src/workflow/claude-stage-dispatch.mjs', '.harness/src/workflow/compaction-boundary.mjs', '.harness/src/workflow/stage-references.mjs', '.harness/scripts/harness-compaction.mjs', '.harness/src/workflow/answer-text.mjs');
+  if (await marker('.claude/skills/orchestrator/SKILL.md')) paths.push('.claude/harness/scripts/harness-agent-admission.mjs', '.claude/harness/scripts/harness-agent-result.mjs', '.harness/src/workflow/claude-stage-dispatch.mjs', '.harness/src/workflow/compaction-boundary.mjs', '.harness/scripts/harness-compaction.mjs', '.harness/src/workflow/answer-text.mjs');
   if (config.agents?.provider === 'claude-code') {
     paths.push('.claude/skills/orchestrator/SKILL.md', ...['providers/claude-code', 'installer/claude-orchestrator-hook', 'scripts/harness-claude-orchestrator'].map((name) => `.claude/harness/${name}.mjs`));
     for (const profile of await readdir(join(root, '.codex/agents'), { withFileTypes: true }).catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))) {

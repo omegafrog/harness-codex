@@ -10,7 +10,7 @@ import { cliSession } from '../../.harness/src/workflow/cli-session.mjs';
 import { resolveCommandContext } from '../../.harness/src/workflow/cli-context.mjs';
 import { executionInputAbsolutePath } from '../../.harness/src/workflow/execution-input.mjs';
 import { recordExecutionState } from '../../.harness/src/workflow/execution-state.mjs';
-import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
+import { readExecutionInput, readSkillSessionJson, resolveAgentSandbox, resolveSkillBinding, stageAgentProfile, resolveWorkflowStage, validateSkillInput } from '../../.harness/src/workflow/stage-runtime.mjs';
 import { sessionOutputPath, stageExecutionPaths } from '../../.harness/src/workflow/session-output.mjs';
 import { archiveWriterComposition, authorsOwnDocuments, persistAuthoredBatch, assertStageDocumentWriterCompleted, authenticateWriterCommand, bindStageDocumentWriter, finishedWriterBatch, prepareStageDocumentDrafts, prepareWriterBrief, readWriterAssignment, readWriterBatch, receiveWriterComposition, rollbackStageDocumentWrite, stageDocumentBatch, stageDocumentPolicy, writeStageDocumentBatch } from '../../.harness/src/workflow/stage-documents.mjs';
 import { validateOutputFormat, writeOutputSchema } from '../../.harness/src/workflow/output-schema.mjs';
@@ -335,15 +335,24 @@ try {
     // A browser stage checks its role's network, a Chromium launch and (for real zoom) a headed display before any worker
     // exists; a failure is ENVIRONMENT_UNAVAILABLE with each fix and leaves the prepared execution unstarted.
     const { prepareStageBrowserEnvironment, releaseStageBrowserEnvironment } = await import('../../.harness/src/workflow/browser-environment.mjs');
-    const browserEnvironment = await prepareStageBrowserEnvironment({ root, input, profile: profile || 'workflow_stage', provider: binding.provider, executionDirectory: paths.directory, startCommand: nativeCommand('start', id) });
+    const agentProfile = await stageAgentProfile({ root, profile, skill: input.skill, provider: binding.provider });
+    const browserEnvironment = await prepareStageBrowserEnvironment({ root, input, profile: agentProfile, provider: binding.provider, executionDirectory: paths.directory, startCommand: nativeCommand('start', id) });
     try { await recordExecutionState({ root, input, binding, status: 'running', nativeClaim: true }); }
     catch (error) { if (browserEnvironment) await releaseStageBrowserEnvironment(paths.directory); throw error; }
-    const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: profile || 'workflow_stage', sandbox, binding,
+    const started = { execution_id: id, workspace: root, input_path: await executionInputAbsolutePath(root, id), guide: join(root, guide), schema_path: paths.files.schema, output_path: paths.files.raw, agent_profile: agentProfile, sandbox, binding,
       ...(documentDraft ? { document_draft_root: documentDraft } : {}),
       ...(existsSync(paths.files.answers) ? { answers_path: paths.files.answers } : {}),
       ...(browserEnvironment ? { browser_environment_path: browserEnvironment.path } : {}),
       ...(existsSync(paths.files.feedback) ? { feedback_path: paths.files.feedback } : {}),
     };
+    // A Codex worker would read the GUIDE, input, schema and references one call at a time; one assignment file holds them.
+    if (binding.provider === 'codex') {
+      try {
+        const { buildAssignment, writeAssignmentFile } = await import('../../.harness/src/workflow/stage-assignment.mjs');
+        const text = buildAssignment(root, { ...started, stage_id: input.context?.stage_id || input.skill }, { provider: 'codex' });
+        started.assignment_path = await writeAssignmentFile({ session, executionId: id, directory: paths.directory, text });
+      } catch { /* the worker reads the files by their paths */ }
+    }
     process.stdout.write(`${JSON.stringify(verbose ? started : compactStarted(started, { executionId: id }))}\n`);
   } else {
     const state = await readSkillSessionJson({ root, session_directory: input.context?.control_session_directory || session, path: input.context?.workflow_ref ? 'runtime/orchestrator/workflow.json' : 'runtime/orchestrator/state.json' });

@@ -27,7 +27,7 @@ export const contextCommand = () => CONTEXT;
 // How the orchestrator starts a stage's worker. A Codex start that omits `fork_turns: "none"` (or forks the parent history)
 // is denied by the Harness fresh-agent hook before anything starts, so the instruction states it in the launch result.
 const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
-export function spawnInstruction({ agent_profile: profile, binding } = {}) {
+export function spawnInstruction({ agent_profile: profile, binding, assignment_path: assignment } = {}) {
   const name = profile || 'workflow_stage';
   if (binding?.provider === 'claude-code') {
     // Claude Code's Agent tool takes the model and the effort of the binding; without them the worker inherits the session's.
@@ -35,7 +35,8 @@ export function spawnInstruction({ agent_profile: profile, binding } = {}) {
     const model = binding.model ? `, model: "${binding.model}"` : '';
     return `Start a fresh Agent with subagent_type "${name}"${model}${effort} and without the parent conversation, in the foreground (run_in_background: false); do not end your turn until it returns`;
   }
-  return `spawn_agent {agent_type: "${name}", fork_turns: "none"} with the binding's model and reasoning_effort; a start without fork_turns: "none" is denied and starts nothing, so repeat it`;
+  const pass = assignment ? '; give the worker only assignment_path (it holds the guide, input, schema and references) with workspace_root, execution_id, agent_id and receive_command' : '';
+  return `spawn_agent {agent_type: "${name}", fork_turns: "none"} with the binding's model and reasoning_effort${pass}; a start without fork_turns: "none" is denied and starts nothing, so repeat it`;
 }
 
 export function launchAttemptDirectory(attemptId) {

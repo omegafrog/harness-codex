@@ -24,7 +24,7 @@ const FRESH_AGENT_TYPES = new Set([
   'implementation_agent', 'knowledge_claim_extractor', 'knowledge_principle_reviewer',
   'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author',
   'spec_adversarial_reviewer', 'spec_reviewer', 'stakeholder_persona', 'standards_reviewer',
-  'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage',
+  'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage', 'workflow_stage_solo',
 ]);
 
 const codexHome = () => resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));

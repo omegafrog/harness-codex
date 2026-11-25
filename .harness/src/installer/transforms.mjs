@@ -6,6 +6,8 @@ import { AUTO_COMPACT_WINDOW } from '../workflow/compaction-boundary.mjs';
 const DOCUMENT_TOOLS = 'Bash, Read, Edit, Write, Agent';
 const CLAUDE_TOOLS = {
   workflow_stage: DOCUMENT_TOOLS,
+  // A stage whose GUIDE never delegates: without Agent the worker skips the agent listing (about 8.9K characters).
+  workflow_stage_solo: 'Bash, Read, Edit, Write',
   to_ticket: DOCUMENT_TOOLS,
   tactical_designer: `${DOCUMENT_TOOLS}, WebSearch, WebFetch`,
 };

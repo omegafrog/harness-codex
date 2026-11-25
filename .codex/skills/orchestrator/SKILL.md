@@ -26,7 +26,7 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
    - 완료된 결과에 대한 사용자 수정 요청: `harness-stage: revise` + 아래 줄에 원문. 소유 stage는 실행기가 고르며 고를 수 없으면 되묻는 요청을 반환한다. 사용자가 고칠 문구를 파일에서 찾아 옵션으로 만들지 않는다.
 
    hook이 launch·bind·결과 기록을 하고 작업자가 `format_error`·`gate_error`를 같은 turn에서 고친 뒤 Agent는 compact envelope를 돌려준다. launch·bind·finish는 직접 실행하지 않고 envelope의 `next`를 따른다. hook 거부는 시작된 것이 없으며 사유의 `next`·되묻는 요청을 따른다.
-2. (Codex 전용) `node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 모델·effort 지정은 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 `next.spawn`대로 fresh native 서브에이전트를 시작한다. `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로를 전달하고 `next.bind`를 실행한다. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. `format_error`나 `gate_error`는 같은 작업자에게 돌려준다(`gate_error`는 `retry_input`·`feedback_path` 포함). 불명확한 실행을 중복 시작하지 않는다.
+2. (Codex 전용) `node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 모델·effort 지정은 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 `next.spawn`대로 fresh native 서브에이전트를 시작한다. `launch`가 `assignment_path`를 반환하면 그 경로 하나와 `receive_command`만 전달하고(없을 때만 `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로), `next.bind`를 실행한다. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. `format_error`나 `gate_error`는 같은 작업자에게 돌려준다(`gate_error`는 `retry_input`·`feedback_path` 포함). 불명확한 실행을 중복 시작하지 않는다.
 3. `owner_stage`가 앞 단계면 오류·envelope의 `next`(`--reopen-for`)를 따른다. 오류의 `why`·`next`·`user_decision`을 사용하고 Harness 소스·state 파일은 읽지 않는다. 제품 코드·테스트·Spec·계획·계약의 편집과 Git 작업은 소유 stage와 실행기에 맡긴다.
 
 ## 사용자 결정과 완료

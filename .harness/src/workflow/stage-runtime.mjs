@@ -187,6 +187,16 @@ export async function resolveAgentSandbox({ root, input, workflow = null, stage 
   return { profile, sandbox: mode };
 }
 
+// Claude Code stages whose GUIDE never delegates (no code_researcher, diagram_creator, persona or reviewer) run on the
+// profile without the Agent tool: every worker with Agent starts with the agent listing in its context. Codex keeps
+// `workflow_stage`, and a project without the solo profile file (an older install) keeps it too.
+export const SOLO_STAGE_SKILLS = Object.freeze(['subdomain-candidates', 'ubiquitous-language', 'subdomain-classification', 'requirements-fix', 'bounded-context', 'aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary']);
+export async function stageAgentProfile({ root, profile, skill, provider }) {
+  if (profile) return profile;
+  if (provider === 'claude-code' && SOLO_STAGE_SKILLS.includes(skill) && existsSync(join(root, '.codex/agents/workflow_stage_solo.toml'))) return 'workflow_stage_solo';
+  return 'workflow_stage';
+}
+
 export async function resolveSkillSession(root, provided = null) {
   const chosen = resolve(provided || sessionDirectory(resolve(root), { create: false }));
   requireValue(isAbsolute(chosen) && basename(chosen) === '.io', 'Invalid execution session directory');
