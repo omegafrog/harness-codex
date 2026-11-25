@@ -190,7 +190,8 @@ test('a BIZ field is written once: a second field of the same name is rejected, 
   assert.deepEqual(failed.errors.map(({ code, id, owner_stage }) => [code, id, owner_stage]), [['DUPLICATE_FIELD', 'BIZ-03', 'event-storming'], ['DUPLICATE_FIELD', 'BIZ-03', 'event-storming']]);
   assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
   assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
-  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}`;
+  const display = ['데이터 출처', '표시 항목', '누락·부분 데이터', '빈 상태', '불러오기 실패'].map((item) => `| BIZ-03 | ${item} | 해당 없음 | 로그인은 사용자에게 데이터 목록을 보이지 않는 업무다 |`).join('\n');
+  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}\n## 6. 공통\n\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${display}\n`;
   const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
   assert.equal(complete(fixed).ok, true);
   assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);

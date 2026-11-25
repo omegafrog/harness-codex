@@ -32,6 +32,9 @@ test('event-storming and domain-model prompts carry their always-needed referenc
   assert.match(events, /## 5\. hotspot/);
   assert.match(events, /<reference path="\.harness\/internal-skills\/event-storming\/references\/diagrams\.md">/);
   assert.doesNotMatch(events, /## 6\. 공통/, 'only the sections the stage fills');
+  const fix = referenceBlocks(repo, 'requirements-fix').join('\n');
+  assert.match(fix, /### 6\.5 조회·표시 점검/, 'requirements-fix carries the display coverage table without a read');
+  assert.match(fix, /조회·표시 점검 \| `### 6\.5`/, 'and its checklist row');
   const model = referenceBlocks(repo, 'domain-model').join('\n');
   assert.match(model, /deepening\.md">/);
   assert.match(model, /## 작성 기준/);

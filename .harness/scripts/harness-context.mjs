@@ -90,6 +90,12 @@ try {
       recoveryNext = launchCommand(stageId, "--feedback 'The previous native agent was interrupted. Continue with the saved input and user answers.'");
     }
   }
+  // A Claude Code worker that ended on an API error (usage limit, overload) left its stage running: dispatching the stage again is enough.
+  if (!recoveryNext && state?.orchestrator_provider !== 'codex' && stageId && entry?.status === 'running' && entry.native_managed && !entry.result_ref) {
+    const dispatch = await import(new URL('../../.harness/src/workflow/claude-stage-dispatch.mjs', import.meta.url).href);
+    const currentSession = routing?.session_id ?? await (await import(new URL('../../.harness/src/workflow/startup-state.mjs', import.meta.url))).currentClaudeSession(ctx.root).catch(() => null);
+    if (dispatch.deadWorkerOfStage({ root: ctx.root, state, stage: stageId, currentSessionId: currentSession })) recoveryNext = `${stageId}'s worker ended on an API error and recorded no result. Dispatch the stage again: Agent(subagent_type: "workflow_stage", prompt: "harness-stage: ${stageId}"). The runner records the failure and starts a fresh execution itself; do not inspect or fail anything first.`;
+  }
   const staleOrder = staleStages(state);
   const awaitingApproval = stageId === 'bounded-context' && ctx.plan_set_id && existsSync(join(ctx.root, 'docs/specs', ctx.plan_set_id, 'requirements.md'));
   const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval)

@@ -8,9 +8,9 @@
 // The orchestrator never authors, relays or reads a result; the worker never needs a receive command.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { recordUnitBoundary } from './compaction-boundary.mjs';
 import { buildAssignment, inlineSchema } from './stage-assignment.mjs';
@@ -21,6 +21,13 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // Errors a worker can fix by itself in the same turn. Anything else goes to the orchestrator with its `next`.
 const WORKER_REPAIRABLE = new Set(['DOMAIN_SYNC_MISSING', 'RESULT_REJECTED']);
 const NATIVE = 'node .harness/scripts/harness-native-stage.mjs';
+// A worker whose last transcript entry is an API error (usage limit, overload, 5xx) cannot answer anything. The runner fails its
+// execution itself once the transcript has been quiet this long and the dispatching Agent call is not the current session's live call.
+export const DEAD_WORKER_QUIET_MS = 60 * 1000;
+export const WORKER_API_ERROR = 'WORKER_API_ERROR';
+export const DEAD_WORKER_FEEDBACK = 'The previous worker of this stage ended on an API error (for example a usage limit) and recorded no result. Continue from the committed documents and the previous input, and keep any answers already given.';
+export const DISPATCH_AGAIN = 'Dispatch the same stage again after the limit resets';
+const API_ERROR_MESSAGE = /^\s*(?:You['\u2019]ve (?:hit|reached) your\b|API Error\b|Claude (?:AI )?usage limit\b|Overloaded\b|Request timed out\b)/i;
 
 export function shellSplit(text) {
   const tokens = [];
@@ -105,6 +112,92 @@ function readRecords(root) {
 
 const isHarnessWorktree = (root) => existsSync(join(root, '.harness/scripts/harness-native-stage.mjs')) && existsSync(join(sessionOf(root), 'worktree.json'));
 
+// ---- dead worker detection ---------------------------------------------------------------------------------------------------
+
+// Claude Code keeps a project's transcripts in <config dir>/projects/<path with every non-alphanumeric character as "-">/; a
+// subagent's own transcript is <session id>/subagents/agent-<agent id>.jsonl beside the session's transcript.
+export const claudeProjectSlug = (path) => String(path).replace(/[^A-Za-z0-9]/g, '-');
+const claudeProjectsDirectory = () => join(process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || '', '.claude'), 'projects');
+
+export function workerTranscriptPath({ root, sessionId, agentId, transcriptPath = null }) {
+  if (!SAFE_ID.test(sessionId || '') || !SAFE_ID.test(agentId || '')) return null;
+  const file = join(sessionId, 'subagents', `agent-${agentId}.jsonl`);
+  const projects = claudeProjectsDirectory();
+  const bases = [];
+  if (typeof transcriptPath === 'string' && transcriptPath) bases.push(dirname(transcriptPath));
+  for (const directory of [root, (() => { try { return realpathSync(root); } catch { return root; } })()]) bases.push(join(projects, claudeProjectSlug(directory)));
+  try { bases.push(...readdirSync(projects).map((name) => join(projects, name))); } catch { /* no projects directory */ }
+  return bases.map((base) => join(base, file)).find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function tailRows(path, bytes = 512 * 1024) {
+  const fd = openSync(path, 'r');
+  try {
+    const { size } = fstatSync(fd);
+    const length = Math.min(size, bytes);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, size - length);
+    const lines = buffer.toString('utf8').split('\n');
+    if (size > length) lines.shift();
+    return lines.filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+  } finally { closeSync(fd); }
+}
+
+const rowText = (row) => {
+  const content = row.message?.content;
+  return typeof content === 'string' ? content : Array.isArray(content) ? content.filter((block) => block?.type === 'text').map((block) => block.text).join('\n') : '';
+};
+
+// -> { message } when the last assistant entry of the transcript is an API error (rate limit, overload, 5xx), else null.
+export function transcriptApiError(path) {
+  if (typeof path !== 'string' || !path) return null;
+  try {
+    const rows = tailRows(path);
+    const last = rows.findLast((row) => row?.type === 'assistant' || row?.message?.role === 'assistant');
+    if (!last) return null;
+    const synthetic = last.message?.model === '<synthetic>' && typeof last.error === 'string';
+    return last.isApiErrorMessage === true || synthetic ? { message: rowText(last).trim() || String(last.error ?? 'API error'), error: last.error ?? null } : null;
+  } catch { return null; }
+}
+
+// Whether the bound worker of `record` is provably dead. Safe by construction: a live worker is never reported dead.
+// Dead needs all of: an API error as the worker's last assistant entry; a transcript quiet for DEAD_WORKER_QUIET_MS;
+// a dispatching session that is not the current one, or whose Agent call already returned.
+export function deadWorkerEvidence({ root, record, currentSessionId = null, transcriptPath = null, now = Date.now() }) {
+  if (record?.status !== 'bound' || !record.agent_id) return null;
+  if ((!currentSessionId || record.session_id === currentSessionId) && !record.agent_returned_at) return null;
+  const path = workerTranscriptPath({ root, sessionId: record.session_id, agentId: record.agent_id, transcriptPath });
+  const error = path && transcriptApiError(path);
+  if (!error) return null;
+  let quiet;
+  try { quiet = now - statSync(path).mtimeMs; } catch { return null; }
+  if (quiet <= DEAD_WORKER_QUIET_MS) return null;
+  return { reason: `Worker ended on an API error: ${clipText(error.message, 300)}`, message: error.message, transcript: path };
+}
+
+const readStateSync = (root) => { try { return JSON.parse(readFileSync(join(sessionOf(root), 'runtime/orchestrator/state.json'), 'utf8')); } catch { return null; } };
+
+// The dead worker (record and evidence) of the stage the workflow state records as running, or null.
+export function deadWorkerOfStage({ root, state = readStateSync(root), stage, currentSessionId = null, transcriptPath = null, now }) {
+  const entry = state?.stages?.[stage];
+  if (!entry || entry.status !== 'running' || !entry.native_managed || entry.result_ref || !SAFE_ID.test(entry.execution_id || '')) return null;
+  const record = readRecords(root).find((item) => item.execution_id === entry.execution_id && item.status === 'bound');
+  const evidence = record && deadWorkerEvidence({ root, record, currentSessionId, transcriptPath, now });
+  return evidence ? { record, ...evidence } : null;
+}
+
+export const workerApiErrorEnvelope = (record, message) => ({ status: 'error', code: WORKER_API_ERROR, stage_id: record.stage_id, execution_id: record.execution_id, error: clipText(message, 400), next: DISPATCH_AGAIN });
+
+// Fails the worker's execution through the existing fail path and records the dispatch as failed with the envelope.
+// `keepOnError` leaves the record bound when the fail path refused (admission then keeps today's refusal) and returns null.
+async function failWorkerOnApiError(root, record, message, { keepOnError = false } = {}) {
+  const failed = runNative(root, ['fail', '--execution-id', record.execution_id, '--reason', `Worker ended on an API error: ${clipText(message, 300).replace(/\s+/g, ' ')}`]);
+  if (failed.status !== 0 && keepOnError) return null;
+  const envelope = workerApiErrorEnvelope(record, message);
+  await writeRecord(root, { ...record, status: 'failed', envelope, ...(failed.status === 0 ? {} : { fail_error: explain(failed) }) });
+  return envelope;
+}
+
 // ---- compact refusal text -------------------------------------------------------------------------------------------------
 
 function explain(run) {
@@ -130,7 +223,13 @@ export async function admitStageDispatch(event) {
   if (event.agent_id) return { deny: 'Only the main orchestrator dispatches stages.' };
   const root = typeof event.cwd === 'string' ? event.cwd : process.cwd();
   if (!isHarnessWorktree(root)) return { deny: `Stage dispatch refused: ${root} is not a Harness workflow worktree with the installed stage runner. Change to the workflow worktree first.` };
-  const launch = runNative(root, ['launch', ...call.args]);
+  // A worker that ended on an API error left its stage `running`: the runner fails it and launches the stage again in this call.
+  let launchArgs = call.args;
+  const dead = call.stage ? deadWorkerOfStage({ root, stage: call.stage, currentSessionId: event.session_id, transcriptPath: event.transcript_path }) : null;
+  if (dead) {
+    if (await failWorkerOnApiError(root, dead.record, dead.message, { keepOnError: true }) && !launchArgs.includes('--feedback')) launchArgs = [...launchArgs, '--feedback', DEAD_WORKER_FEEDBACK];
+  }
+  const launch = runNative(root, ['launch', ...launchArgs]);
   if (launch.status !== 0 || !launch.out) return { deny: `Nothing was started. ${explain(launch)}` };
   const launched = launch.out;
   if (launched.status !== 'launched') return { deny: `Nothing was started. ${JSON.stringify(launched)}` };
@@ -242,6 +341,9 @@ export async function finishStageWorker(event) {
   };
   const message = event.last_assistant_message || lastAssistantText(event.agent_transcript_path);
   const submission = extractSubmission(message);
+  // An API error (usage limit, overload) ended the worker: it cannot answer a repair request, so the execution is failed here.
+  const ended = submission ? null : transcriptApiError(event.agent_transcript_path || workerTranscriptPath({ root, sessionId: record.session_id, agentId: event.agent_id, transcriptPath: event.transcript_path })) ?? (API_ERROR_MESSAGE.test(message) ? { message: message.trim() } : null);
+  if (ended) return { recorded: await failWorkerOnApiError(root, record, ended.message) };
   if (!submission) return repair('Your final message holds no JSON object. Reply with exactly one JSON object that matches your schema (schema_path) as your whole final message.');
   const received = runNative(root, ['receive', '--execution-id', record.execution_id, '--agent-id', event.agent_id], { input: submission });
   if (received.status !== 0) {
@@ -262,7 +364,15 @@ export async function finishStageWorker(event) {
 export async function stageResultOutput(event) {
   const root = typeof event.cwd === 'string' ? event.cwd : process.cwd();
   if (!SAFE_ID.test(event.tool_use_id || '') || !existsSync(join(sessionOf(root), recordRef(event.tool_use_id)))) return null;
-  const record = JSON.parse(await readFile(join(sessionOf(root), recordRef(event.tool_use_id)), 'utf8'));
+  let record = JSON.parse(await readFile(join(sessionOf(root), recordRef(event.tool_use_id)), 'utf8'));
+  if (!record.envelope && record.status === 'bound') {
+    // The Agent call returned without a recorded result: an API error as the worker's last entry fails it now; any other end is noted
+    // so that the next dispatch of the stage can tell that this call is over.
+    const path = workerTranscriptPath({ root, sessionId: record.session_id, agentId: record.agent_id, transcriptPath: event.transcript_path });
+    const ended = path && transcriptApiError(path);
+    if (ended) record = { ...record, envelope: await failWorkerOnApiError(root, record, ended.message), status: 'failed' };
+    else await writeRecord(root, record = { ...record, agent_returned_at: new Date().toISOString() });
+  }
   const envelope = record.envelope || { status: 'no_result', stage_id: record.stage_id, execution_id: record.execution_id, error: record.error || 'The worker ended without a recorded result.', next: `Check ${NATIVE} inspect --execution-id ${record.execution_id}. If the worker is gone and recorded nothing: ${NATIVE} fail --execution-id ${record.execution_id} --reason '<cause>', then dispatch the stage again with --feedback.` };
   return { ...(event.tool_response && typeof event.tool_response === 'object' ? event.tool_response : {}), content: [{ type: 'text', text: JSON.stringify(envelope) }] };
 }

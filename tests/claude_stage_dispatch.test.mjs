@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { explainError, finishNext, withDispatchHint } from '../.harness/src/workflow/stage-cli.mjs';
 import { extractSubmission, inlineSchema, parseStageCall, shellSplit } from '../.harness/src/workflow/claude-stage-dispatch.mjs';
@@ -33,8 +33,8 @@ async function claudeFlow(t) {
     },
     start: (agentId, agentType = 'workflow_stage') => run('.harness/scripts/harness-agent-event.mjs', { hook_event_name: 'SubagentStart', agent_id: agentId, agent_type: agentType }),
     stop: (agentId, message, extra = {}) => run('.harness/scripts/harness-agent-event.mjs', { hook_event_name: 'SubagentStop', agent_id: agentId, agent_type: 'workflow_stage', stop_hook_active: false, ...(message === undefined ? {} : { last_assistant_message: message }), ...extra }),
-    result: (toolUseId, text = 'the worker\'s whole final message') => {
-      const result = run('.claude/harness/scripts/harness-agent-result.mjs', { hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: toolUseId, tool_input: {}, tool_response: { status: 'completed', agentId: 'x', content: [{ type: 'text', text }], usage: { input_tokens: 1 } } });
+    result: (toolUseId, text = 'the worker\'s whole final message', extra = {}) => {
+      const result = run('.claude/harness/scripts/harness-agent-result.mjs', { hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: toolUseId, tool_input: {}, tool_response: { status: 'completed', agentId: 'x', content: [{ type: 'text', text }], usage: { input_tokens: 1 } }, ...extra });
       assert.equal(result.status, 0, result.stderr);
       return json(result)?.hookSpecificOutput?.updatedToolOutput ?? null;
     },
@@ -349,4 +349,138 @@ test('a Claude orchestrator is told once to dispatch launch commands as Agent ca
   assert.match(approval, /Show the user result\.summary \(the approval summary\) and the requirements\.md path from artifacts, in Korean; do not open the document yourself/);
   assert.match(approval, /Only after the user's own approval, pass their reply verbatim in the Agent prompt as "harness-stage: answer"/);
   assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: 'event-storming', executionId: 'e-1', provider: 'claude-code' }), /harness-stage: answer\n<the user's reply verbatim>/);
+});
+
+// ---- a worker that ended on an API error ------------------------------------------------------------------------------------
+
+const API_ERROR_ROW = { type: 'assistant', error: 'rate_limit', isApiErrorMessage: true, message: { model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: "You've hit your limit · resets 9pm (Asia/Seoul)" }] } };
+const NORMAL_ROW = { type: 'assistant', message: { model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text: '문서를 쓰는 중입니다.' }] } };
+
+// The worker transcript of a dispatch record, under a projects directory that the hook events point at with `transcript_path`.
+async function workerTranscript(flow, agentId, rows, { ageMs = 5 * 60 * 1000 } = {}) {
+  const projects = join(flow.workspace, '.io/runtime/claude-projects');
+  const file = join(projects, flow.session, 'subagents', `agent-${agentId}.jsonl`);
+  await mkdir(join(file, '..'), { recursive: true });
+  await writeFile(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+  const at = new Date(Date.now() - ageMs);
+  await utimes(file, at, at);
+  return { file, hook: { transcript_path: join(projects, 'other-session.jsonl'), session_id: 'other-session' } };
+}
+const dispatchRecord = async (flow, toolUseId) => JSON.parse(await readFile(join(flow.workspace, '.io/runtime/claude-dispatch', `${toolUseId}.json`), 'utf8'));
+
+test('a stage whose worker ended on an API error is failed and dispatched again by the next admission', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks } = flow;
+  const call = hooks.admit('harness-stage: stakeholder-analysis');
+  const id = executionOf(call.updated.prompt);
+  hooks.start('agent-limit');
+  const { hook } = await workerTranscript(flow, 'agent-limit', [{ type: 'user', message: { role: 'user', content: 'run' } }, NORMAL_ROW, API_ERROR_ROW, { type: 'attachment', attachment: { type: 'hook_success' } }]);
+  const again = hooks.admit('harness-stage: stakeholder-analysis', hook);
+  assert.equal(again.decision, 'allow', again.reason);
+  const next = executionOf(again.updated.prompt);
+  assert.notEqual(next, id, 'a fresh execution');
+  assert.match(JSON.parse(await readFile(join(flow.workspace, '.io/runtime/executions', next, 'feedback.json'), 'utf8')).feedback, /ended on an API error/, 'the standard feedback reached the worker');
+  const stage = (await flow.state()).stages['stakeholder-analysis'];
+  assert.equal(stage.status, 'running');
+  assert.equal(stage.execution_id, next);
+  assert.ok((stage.attempts || []).some((attempt) => attempt.execution_id === id && attempt.status === 'failed'), 'the dead execution is recorded as failed');
+  const record = await dispatchRecord(flow, call.toolUseId);
+  assert.equal(record.status, 'failed');
+  assert.equal(record.envelope.code, 'WORKER_API_ERROR');
+});
+
+test('a worker that may be alive keeps today\'s refusal: current session, normal end, missing or recent transcript', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks } = flow;
+  const call = hooks.admit('harness-stage: stakeholder-analysis');
+  const id = executionOf(call.updated.prompt);
+  hooks.start('agent-live');
+  const refused = (result, why) => {
+    assert.equal(result.decision, 'deny', why);
+    assert.match(result.reason, /Nothing was started/, why);
+    assert.match(result.reason, /STAGE_RUNNING|not confirmed|running/i, why);
+  };
+  // The dispatching session is the current one and its Agent call has not returned.
+  const same = await workerTranscript(flow, 'agent-live', [NORMAL_ROW, API_ERROR_ROW]);
+  refused(hooks.admit('harness-stage: stakeholder-analysis', { transcript_path: same.hook.transcript_path }), 'current session');
+  // Another session, but no API error at the end of the transcript.
+  const normal = await workerTranscript(flow, 'agent-live', [API_ERROR_ROW, NORMAL_ROW]);
+  refused(hooks.admit('harness-stage: stakeholder-analysis', normal.hook), 'normal last message');
+  // Another session and an API error, but the transcript changed within the last minute.
+  const recent = await workerTranscript(flow, 'agent-live', [NORMAL_ROW, API_ERROR_ROW], { ageMs: 10 * 1000 });
+  refused(hooks.admit('harness-stage: stakeholder-analysis', recent.hook), 'recent transcript');
+  // No transcript at all.
+  const { rm } = await import('node:fs/promises');
+  await rm(recent.file);
+  refused(hooks.admit('harness-stage: stakeholder-analysis', recent.hook), 'missing transcript');
+  const stage = (await flow.state()).stages['stakeholder-analysis'];
+  assert.equal(stage.status, 'running');
+  assert.equal(stage.execution_id, id);
+  assert.equal((await dispatchRecord(flow, call.toolUseId)).status, 'bound');
+});
+
+test('a worker that stopped on an API error is failed by the hook and is never sent a repair', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks } = flow;
+  const call = hooks.admit('harness-stage: stakeholder-analysis');
+  const id = executionOf(call.updated.prompt);
+  hooks.start('agent-quota');
+  const { file } = await workerTranscript(flow, 'agent-quota', [NORMAL_ROW, API_ERROR_ROW]);
+  const stopped = hooks.stop('agent-quota', "You've hit your 5-hour limit", { agent_transcript_path: file });
+  assert.equal(stopped.status, 0, stopped.stderr);
+  assert.equal(stopped.stdout, '', 'no repair request: the worker cannot answer');
+  const stage = (await flow.state()).stages['stakeholder-analysis'];
+  assert.equal(stage.status, 'failed');
+  assert.equal(stage.execution_id, id);
+  const record = await dispatchRecord(flow, call.toolUseId);
+  assert.equal(record.status, 'failed');
+  assert.equal(record.repairs, 0);
+  const envelope = JSON.parse(hooks.result(call.toolUseId).content[0].text);
+  assert.equal(envelope.status, 'error');
+  assert.equal(envelope.code, 'WORKER_API_ERROR');
+  assert.equal(envelope.next, 'Dispatch the same stage again after the limit resets');
+  // The failed stage is dispatched again like any failed one.
+  assert.equal(hooks.admit('harness-stage: stakeholder-analysis --feedback x').decision, 'allow');
+});
+
+test('a final message that is only an API error text, without a transcript, is not repaired either', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks } = flow;
+  const call = hooks.admit('harness-stage: stakeholder-analysis');
+  hooks.start('agent-text');
+  assert.equal(hooks.stop('agent-text', "You've hit your 5-hour limit").stdout, '');
+  assert.equal((await flow.state()).stages['stakeholder-analysis'].status, 'failed');
+  assert.equal(JSON.parse(hooks.result(call.toolUseId).content[0].text).code, 'WORKER_API_ERROR');
+  // Ordinary prose that is not an API error still gets the repair request.
+  const other = hooks.admit('harness-stage: stakeholder-analysis --feedback x');
+  assert.equal(other.decision, 'allow');
+  hooks.start('agent-prose');
+  assert.match(JSON.parse(hooks.stop('agent-prose', '작업을 마쳤습니다.').stdout).reason, /holds no JSON object/);
+});
+
+test('the Agent result of a bound worker without an envelope reports and records an API error at the transcript end', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks } = flow;
+  const call = hooks.admit('harness-stage: stakeholder-analysis');
+  hooks.start('agent-gone');
+  const { hook } = await workerTranscript(flow, 'agent-gone', [NORMAL_ROW, API_ERROR_ROW]);
+  const envelope = JSON.parse(hooks.result(call.toolUseId, undefined, { transcript_path: hook.transcript_path }).content[0].text);
+  assert.equal(envelope.code, 'WORKER_API_ERROR');
+  assert.equal((await dispatchRecord(flow, call.toolUseId)).status, 'failed');
+  assert.equal((await flow.state()).stages['stakeholder-analysis'].status, 'failed');
+});
+
+test('the context names plain re-dispatch for a stage whose worker ended on an API error', async (t) => {
+  const flow = await claudeFlow(t);
+  const { hooks, workspace } = flow;
+  hooks.admit('harness-stage: stakeholder-analysis');
+  hooks.start('agent-ctx');
+  await workerTranscript(flow, 'agent-ctx', [NORMAL_ROW, API_ERROR_ROW]);
+  const { deadWorkerOfStage } = await import('../.harness/src/workflow/claude-stage-dispatch.mjs');
+  const state = await flow.state();
+  const at = (id, extra = {}) => deadWorkerOfStage({ root: workspace, state, stage: 'stakeholder-analysis', currentSessionId: id, ...extra });
+  const projects = join(workspace, '.io/runtime/claude-projects');
+  assert.equal(at('other-session'), null, 'no projects directory is known without the hook event');
+  assert.equal(at('other-session', { transcriptPath: join(projects, 'x.jsonl') })?.record.agent_id, 'agent-ctx');
+  assert.equal(at(flow.session, { transcriptPath: join(projects, 'x.jsonl') }), null, 'the dispatching session keeps waiting for its Agent call');
 });

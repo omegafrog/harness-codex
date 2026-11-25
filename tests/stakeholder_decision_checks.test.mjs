@@ -22,7 +22,7 @@ test('a candidate that only defers the decision is rejected for a new analysis',
     assert.deepEqual(codes(head + cand('CAND-01', text)), ['CANDIDATE_DEFERS_DECISION'], text);
   }
   assert.deepEqual(codes(head + cand('CAND-01', '지도에는 공개로 표시한 핀만 이름과 함께 보인다') + cand('CAND-02', '핀 정보 범위: 이름만 보인다 / 이름과 설명이 보인다')), []);
-  assert.deepEqual(codes(head + cand('CAND-01', '완료 상태를 정한다', '보류(후속)') + cand('CAND-02', '범위를 정한다', 'CAND-01에 병합')), [], 'a candidate that is not asked now is exempt');
+  assert.deepEqual(codes(head + cand('CAND-01', '완료 상태를 정한다', '보류(후속): 1번 질문의 답에 달림') + cand('CAND-02', '범위를 정한다', 'CAND-01에 병합')), [], 'a candidate that is not asked now is exempt');
   assert.deepEqual(codes(head + cand('CAND-01', '완료 상태를 정한다'), { legacyCandidates: true }), [], 'an older analysis keeps its candidates');
 });
 
