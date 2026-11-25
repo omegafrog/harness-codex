@@ -86,6 +86,9 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   const id = executionOf(call.updated.prompt);
   for (const part of [`workspace_root: ${workspace}`, 'guide: ', 'input_path: ', 'schema_path: ', 'document_draft_root: ', 'There is no receive command']) assert.match(call.updated.prompt, new RegExp(part.replace(/[$()*+.?[\\\]^{|}]/g, '\\$&').replace('There is', 'there is')), part);
   assert.doesNotMatch(call.updated.prompt, /receive_command:/);
+  assert.match(call.updated.prompt, /<reference path="\.harness\/internal-skills\/stakeholder-analysis\/references\/output-template\.md">/, 'the stage template is inlined');
+  assert.match(call.updated.prompt, /references included below must not be read again/);
+  assert.match(call.updated.prompt.split('\n').at(-1), /^After your last document write, your next output is the final JSON text itself, with no tool call in between/, 'the no-op sentence is the last line');
   // What the launch fixes is in the prompt: the guide, the input with the workspace facts, and the schema without its rarely used shapes.
   const block = (name) => new RegExp(`\\n<${name}>\\n([\\s\\S]*)\\n</${name}>`).exec(call.updated.prompt)[1];
   assert.match(block('guide'), /context\.workspace\.preflight/);

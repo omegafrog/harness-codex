@@ -9,6 +9,8 @@
 // - the `미확정 사실` table (`ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거`) holds each fact that changes behavior and is not settled:
 //   it always has an `이용 조건` row, a `확정` row cites its source, a `해당 없음` row gives its reason, no row is `미정` when the stage
 //   completes, and an unknown that changes behavior is not filed as an out-of-scope observation.
+// - when the stage completes, the (draft) requirements.md cites the id of each `확정` `이용 조건` row (OPEN_FACT_NOT_REFLECTED), the
+//   same citation requirements-fix demands later; a resume of an analysis completed without it is exempt (`legacyReflection`).
 // - a candidate (`CAND` table, 내용 column) is a rule or an open choice, never a statement that only defers the decision
 //   (CANDIDATE_DEFERS_DECISION); a candidate recorded as 보류(후속) or merged into another is not asked now and is exempt.
 // Contextual judgement (which phrases are features, which candidates restate the request) belongs to the stage GUIDE.
@@ -33,6 +35,7 @@ export const DEFERRING_STATEMENT = /(?:정한다|정해야 한다|결정한다|�
 const isCandidateTable = (table) => ['CAND', '내용', '결정'].every((column) => table.header.includes(column));
 export const deferringCandidates = (analysis) => parseTables(analysis).filter(isCandidateTable).flatMap((table) => table.rows)
   .filter((row) => DEFERRING_STATEMENT.test(clean(row['내용'])) && !/^보류\(후속\)|병합/.test(clean(row['결정'])));
+const settledAccessRow = (row) => clean(row['처리']) === '확정' && clean(row['구분']) === ACCESS_KIND;
 const error = (code, message) => ({ code, message, owner_stage: STAGE });
 
 // `legacy` exempts a resumed analysis written before the `미확정 사실` table existed; `root` enables the document-path check.
@@ -41,7 +44,7 @@ export const SCENARIO_LINE = /^\s*[-*]\s*추천 조합 시나리오\s*:[ \t]*(\S
 export const hasRecommendedScenario = (analysis) => SCENARIO_LINE.test(String(analysis ?? ''));
 
 // `legacyScenario` exempts a resumed analysis written before the `추천 조합 시나리오` line existed.
-export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, legacyScenario = false, root = null }) {
+export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, legacyScenario = false, legacyReflection = false, requirements = null, root = null }) {
   if (stakeholderAnalysisSkipped(analysis)) return { ok: true, skipped: true, errors: [] };
   const text = String(request ?? '');
   const tables = parseTables(analysis);
@@ -84,6 +87,12 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     return { ok: errors.length === 0, errors };
   }
   if (!openRows.some((row) => clean(row['구분']) === ACCESS_KIND)) errors.push(error('OPEN_FACT_ACCESS_MISSING', 'The `미확정 사실` table has no 구분 `이용 조건` row. Always record who may use the feature and whether login is needed (처리 해당 없음 with a reason only when the feature has no user-facing surface).'));
+  if (status === 'completed' && !legacyReflection && requirements !== null) {
+    for (const row of openRows.filter(settledAccessRow)) {
+      const id = clean(row.ID);
+      if (!String(requirements).includes(id)) errors.push(error('OPEN_FACT_NOT_REFLECTED', `${id} (${clean(row['사실'])}) is 확정 but requirements.md never cites ${id}. Add ${id} to the source of the requirements.md draft line that states its outcome, for example \`출처: CAND-02 채택, ${id}, answers.json <question_id>\`, then return again.`));
+    }
+  }
   for (const row of openRows) {
     const id = clean(row.ID);
     const kind = clean(row['구분']);
@@ -135,7 +144,8 @@ export async function evaluateStakeholderAnalysisGate({ root, input, envelope, d
   // Discriminator: every resume (answer, feedback, reopen, revision) of an earlier execution carries `context.previous_result_ref`.
   // Such a resume is exempt only when the published (non-draft) analysis already exists without the table; a new analysis,
   // or a resume of one that was written with the table, must have it.
-  let legacy = false, legacyCandidates = false, legacyScenario = false;
+  const requirements = await planSetDocument(root, planSetId, 'requirements.md', draftExecutionId);
+  let legacy = false, legacyCandidates = false, legacyScenario = false, legacyReflection = false;
   if (input.context?.previous_result_ref) {
     const published = draftExecutionId ? await planSetDocument(root, planSetId, 'stakeholder-analysis.md') : analysis;
     const earlier = published.text !== null && !stakeholderAnalysisSkipped(published.text);
@@ -144,8 +154,11 @@ export async function evaluateStakeholderAnalysisGate({ root, input, envelope, d
     legacyCandidates = earlier && deferringCandidates(published.text).length > 0;
     // So is an analysis written before the recommended-combination scenario line.
     legacyScenario = earlier && !hasRecommendedScenario(published.text);
+    // And one completed before requirements.md cited its settled 이용 조건 ids: the published draft settles one it does not cite.
+    const publishedRequirements = draftExecutionId ? await planSetDocument(root, planSetId, 'requirements.md') : requirements;
+    legacyReflection = earlier && publishedRequirements.text !== null && (openFactRows(published.text) ?? []).some((row) => settledAccessRow(row) && !publishedRequirements.text.includes(clean(row.ID)));
   }
-  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, legacyScenario, root }) };
+  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, legacyScenario, legacyReflection, requirements: requirements.text, root }) };
 }
 
 export const stakeholderAnalysisFailureInstruction = (verdict) => `The runner checked stakeholder-analysis.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it repairs stakeholder-analysis.md (and its questions when a candidate moves back into the candidate table), rewrites its output file, then run finish again. Never ask the user whether a feature the request names is in scope. Ask each 미정 row of "미확정 사실" together with the candidate questions instead of recording it as an observation.`;

@@ -94,3 +94,27 @@ test('the approval request tells the orchestrator to confirm a conditional reply
   assert.match(next, /carries a condition or leaves a stated undecided item open, confirm it with the user before sending it as approval/);
   assert.match(next, /Ask whether to approve before tactical design\./);
 });
+
+test('stakeholder-analysis completes only when requirements.md cites each 확정 이용 조건 OPEN id', async (t) => {
+  assert.deepEqual(codes(doc(access), { status: 'completed', requirements: requirements() }), ['OPEN_FACT_NOT_REFLECTED']);
+  assert.deepEqual(codes(doc(access), { status: 'completed', requirements: requirements('— 출처: CAND-02 채택, OPEN-01, answers.json q1') }), []);
+  assert.deepEqual(codes(doc(access), { status: 'action_required', questions: 1, requirements: requirements() }), [], 'only a completed stage is checked');
+  assert.deepEqual(codes(doc(access, row('OPEN-02', '권한', '확정', 'answers.json')), { status: 'completed', requirements: requirements('OPEN-01') }), [], 'only the 이용 조건 row is required');
+  assert.deepEqual(codes(doc(access), { status: 'completed', requirements: requirements(), legacyReflection: true }), []);
+  const message = checkStakeholderAnalysis({ request, analysis: doc(access), status: 'completed', requirements: requirements() }).errors[0].message;
+  assert.match(message, /OPEN-01.*출처: CAND-02 채택, OPEN-01/);
+
+  const root = await mkdtemp(join(tmpdir(), 'open-reflect-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const planSetId = '20260101-community';
+  const dir = join(root, 'docs/specs', planSetId);
+  await mkdir(dir, { recursive: true });
+  const verdict = (context) => evaluateStakeholderAnalysisGate({ root, input: { skill: 'stakeholder-analysis', scope: request, context: { plan_set_id: planSetId, ...context } }, envelope: { status: 'completed', code: 'OK' } });
+  const resume = { previous_result_ref: 'runtime/executions/e1/result.json' };
+  await writeFile(join(dir, 'stakeholder-analysis.md'), doc(access));
+  await writeFile(join(dir, 'requirements.md'), requirements());
+  assert.deepEqual((await verdict({})).errors.map(({ code }) => code), ['OPEN_FACT_NOT_REFLECTED'], 'a new execution');
+  assert.equal((await verdict(resume)).ok, true, 'a resume of an analysis published without the citation');
+  await writeFile(join(dir, 'requirements.md'), requirements('OPEN-01'));
+  assert.equal((await verdict({})).ok, true);
+});

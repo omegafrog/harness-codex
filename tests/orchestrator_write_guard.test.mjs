@@ -285,3 +285,22 @@ test('installed Codex consumer: Doctor reports the user-level write guard as mis
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test('a Claude stage worker is refused a command that does nothing, and anything real passes', async (t) => {
+  const { isNoOpCommand } = await import('../.harness/scripts/harness-write-guard.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'noop-guard-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, '.io'), { recursive: true });
+  await writeFile(join(root, '.io/worktree.json'), JSON.stringify({ state: 'active' }));
+  const decide = (command, extra = {}) => writeGuardDecision({ hook_event_name: 'PreToolUse', session_id: 's', cwd: root, tool_name: 'Bash', agent_id: 'agent-1', agent_type: 'workflow_stage', tool_input: { command }, ...extra }, {});
+  for (const command of ['true', ':', 'echo', 'echo skip', ' echo "all done" ', "cat <<'EOF' >/dev/null\nnotes\nEOF\necho", 'cat >/dev/null <<EOF\nx\nEOF']) {
+    assert.match(decide(command) ?? '', /nothing was run.*reply with the final JSON now/, command);
+  }
+  for (const command of ['echo $HOME', 'echo x > f.txt', 'echo a | cmd', 'cmd && echo ok', 'echo a; ls', 'true && ls', 'cat <<EOF >/dev/null; rm f\nx\nEOF', 'cat <<EOF >/dev/null\nx\nEOF\nls', 'ls']) {
+    assert.equal(isNoOpCommand(command), false, command);
+    assert.equal(decide(command), null, command);
+  }
+  assert.equal(decide('echo skip', { agent_id: undefined }), null, 'the main session is not a stage worker');
+  assert.equal(decide('echo skip', { agent_type: 'general-purpose' }), null, 'other agents are not stage workers');
+  assert.equal(decide('echo skip', { cwd: tmpdir() }), null, 'outside a workflow worktree');
+});

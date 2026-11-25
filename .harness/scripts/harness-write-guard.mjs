@@ -33,10 +33,37 @@ import { pathToFileURL } from 'node:url';
 // Without the liveness module (a partial install) every claimed reviewer counts as live, which keeps the lock as it was.
 const liveness = await import('../src/workflow/review-liveness.mjs').catch(() => null);
 const documents = await import('../src/workflow/stage-documents.mjs').catch(() => null);
+// Without the fresh-agent list (a partial install) the no-op check does not apply.
+const FRESH_AGENT_TYPES = (await import('./harness-fresh-agent.mjs').catch(() => null))?.FRESH_AGENT_TYPES ?? [];
 
 export const FILE_TOOLS = ['apply_patch', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 const SHELL_TOOLS = ['Bash', 'exec_command', 'shell_command'];
 const DOCUMENT_WRITER = 'stage_document_writer';
+// A Claude stage worker that runs a command doing nothing (`true`, `:`, plain `echo`, a heredoc to /dev/null) spends a whole model
+// call between its last document write and its final JSON. Plain words only: no expansion, redirection, pipe or `;`/`&&`.
+const PLAIN_WORD = String.raw`(?:[^\s;&|<>$\`()\\'"]+|'[^'$\`]*'|"[^"$\`\\]*")`;
+const NOOP_ECHO = new RegExp(String.raw`echo(?:[ \t]+${PLAIN_WORD})*`);
+const NOOP_PLAIN = new RegExp(String.raw`^(?:true|:|${NOOP_ECHO.source})$`);
+const NOOP_HEREDOC = /^cat[ \t]*(?:<<-?[ \t]*(['"]?)(\w+)\1[ \t]*>[ \t]*\/dev\/null|>[ \t]*\/dev\/null[ \t]*<<-?[ \t]*(['"]?)(\w+)\3)[ \t]*\n/;
+export function isNoOpCommand(command) {
+  if (typeof command !== 'string') return false;
+  const text = command.trim();
+  if (NOOP_PLAIN.test(text)) return true;
+  const head = NOOP_HEREDOC.exec(text);
+  if (!head) return false;
+  const delimiter = head[2] ?? head[4];
+  const lines = text.slice(head[0].length).split('\n');
+  const end = lines.findIndex((line) => line.trim() === delimiter);
+  const rest = end < 0 ? null : lines.slice(end + 1).join('\n').trim();
+  return rest === '' || (rest !== null && NOOP_PLAIN.test(rest) && rest.startsWith('echo'));
+}
+const NOOP_REASON = 'Harness: nothing was run; this command does nothing. If the documents are written, reply with the final JSON now.';
+const workflowWorktreeOf = (cwd) => {
+  for (let root = canonical(cwd); ; root = dirname(root)) {
+    if (existsSync(join(root, '.io/worktree.json'))) return root;
+    if (dirname(root) === root) return null;
+  }
+};
 const WRITER_COMMAND = /^node \.harness\/scripts\/harness-native-stage\.mjs write-documents --execution-id ([A-Za-z0-9][A-Za-z0-9_-]*) --agent-id '([A-Za-z0-9_/-]+)'$/;
 const COMPOSITION_PATH = /^([A-Za-z0-9][A-Za-z0-9_-]*)\/document-drafts\/composition\/(workspace|session)\/(.+)$/;
 const WRITER_OWNED_PATH = /\/\.io\/runtime\/executions\/[A-Za-z0-9][A-Za-z0-9_-]*\/document-drafts\/(?:composition(?:\/|$)|(?:batch|writer|writer-brief|composed|tool-admission|written|rollback)\.json$)/;
@@ -458,6 +485,7 @@ export function writeGuardDecision(event, env = process.env, options = {}) {
   if (!isFileTool && !SHELL_TOOLS.includes(tool)) return null;
   if (event.agent_type === DOCUMENT_WRITER) return 'Harness: stage document writer calls require provider authorization';
   const { cwd, executionCwd, command, input } = toolContext(event);
+  if (tool === 'Bash' && event.agent_id && FRESH_AGENT_TYPES.includes(event.agent_type) && isNoOpCommand(command) && workflowWorktreeOf(cwd)) return NOOP_REASON;
   const writes = [];
   if (isFileTool) {
     for (const raw of directWritePaths(tool, input)) writes.push({ raw, cwd, how: tool });

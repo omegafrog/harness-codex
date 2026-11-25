@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
 import { recordUnitBoundary } from './compaction-boundary.mjs';
 import { stripSkillDeclaration } from './skill-declaration.mjs';
+import { referenceBlocks } from './stage-references.mjs';
 
 export const STAGE_DISPATCH_DIRECTORY = 'runtime/claude-dispatch';
 export const MAX_WORKER_REPAIRS = 3;
@@ -137,6 +138,7 @@ function workerPrompt(root, launched) {
   const guide = stripSkillDeclaration(readFileSync(launched.guide, 'utf8')).trim();
   const input = JSON.parse(readFileSync(launched.input_path, 'utf8'));
   const schema = inlineSchema(JSON.parse(readFileSync(launched.schema_path, 'utf8')));
+  const references = referenceBlocks(root, launched.stage_id);
   const lines = [
     `Run the Harness stage \`${launched.stage_id}\`.`,
     `- workspace_root: ${root}`,
@@ -149,11 +151,13 @@ function workerPrompt(root, launched) {
     ...(launched.document_draft_root ? [`- document_draft_root: ${launched.document_draft_root}`] : []),
     ...(launched.browser_environment_path ? [`- browser_environment_path: ${launched.browser_environment_path}`] : []),
     '',
-    'The guide, input and schema are included below in full except where the schema says otherwise: do not read those files again. Relative links in the guide resolve from its directory. `context.workspace` in the input already holds the workspace check, the document paths and the source overview. In your first turn read every document and guide reference you need in parallel, by these paths. Write completed documents under document_draft_root at their canonical relative paths.',
+    'The guide, input and schema are included below in full except where the schema says otherwise: do not read those files again.' + (references.length ? ' The `<reference>` blocks below hold the references this stage always needs (only the sections it uses where a file is long): references included below must not be read again.' : '') + ' Relative links in the guide resolve from its directory. `context.workspace` in the input already holds the workspace check, the document paths and the source overview. In your first turn read every document and guide reference you need in parallel, by these paths. Write completed documents under document_draft_root at their canonical relative paths.',
     'Submission: there is no receive command and you do not bind or finish anything. Your final message must be exactly one JSON object that matches the schema, with no prose around it. Harness records it when you stop and runs the gates itself. If it answers with format or gate errors you continue: fix only what they name (read the feedback file when one is given) and reply again with the whole corrected JSON object. Run any Harness command yourself; never ask the caller to run one.',
     '', '<guide>', guide, '</guide>',
     '', '<input>', JSON.stringify(input), '</input>',
     '', '<schema>', JSON.stringify(schema), '</schema>',
+    ...(references.length ? ['', ...references] : []),
+    '', 'After your last document write, your next output is the final JSON text itself, with no tool call in between (no `echo`, `true` or other no-op command); an empty Bash result means the write succeeded.',
   ];
   return lines.join('\n');
 }
