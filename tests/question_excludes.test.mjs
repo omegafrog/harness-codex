@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answerConflictMessage, assertQuestionContext, questionBatchProblems, stakeholderExclusionProblems } from '../.harness/src/workflow/questions.mjs';
+import { answerConflictMessage, assertQuestionContext, declaredExclusions, droppedExclusionProblems, questionBatchProblems, stakeholderExclusionProblems } from '../.harness/src/workflow/questions.mjs';
 import { mapReplyToAnswers } from '../.harness/src/workflow/answer-text.mjs';
 import { validateOutputFormat } from '../.harness/src/workflow/output-schema.mjs';
 import { checkStakeholderAnalysis } from '../.harness/src/workflow/stakeholder-analysis-gate.mjs';
@@ -80,12 +80,26 @@ test('the batch check rejects bad references, contradicting recommendations, dea
   const dead = [ask('A', [{ id: 'x', label: 'X', ex: [[2, 'y']] }, { id: 'y', label: 'Y', ex: [[2, 'y']] }]), ask('B', [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y2' }])];
   assert.match(questionBatchProblems(dead).join(), /question 2 option y \("Y2"\) is excluded by every option of question 1/);
 
-  // A question left with one option by another question's recommendation is dependent: ask it after the answer.
-  const dependent = [ask('A', [{ id: 'x', label: 'X', ex: [[2, 'y'], [2, 'z']] }, { id: 'y', label: 'Y' }]), ask('B', [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y2' }, { id: 'z', label: 'Z2' }])];
-  const found = questionBatchProblems(dependent).join();
-  assert.match(found, /question 2 is decided by the recommended answers of other questions \(only question 2 option x \("X2"\) remains\); ask it after the answer \(defer it\)/);
-  // Two of three remaining is still a real question.
-  assert.deepEqual(questionBatchProblems([ask('A', [{ id: 'x', label: 'X', ex: [[2, 'z']] }, { id: 'y', label: 'Y' }]), dependent[1]]), []);
+  // A question another recommendation narrows to one option is a legitimate content-first question: no rule rejects it.
+  assert.deepEqual(questionBatchProblems([ask('A', [{ id: 'x', label: 'X', ex: [[2, 'y'], [2, 'z']] }, { id: 'y', label: 'Y' }]), ask('B', [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y2' }, { id: 'z', label: 'Z2' }])]), []);
+});
+
+test('a resubmission keeps the excludes pairs an earlier rejected submission declared', () => {
+  const batch = (declared, bOptions = [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y2' }]) => [ask('A', [{ id: 'x', label: 'X', ex: declared ? [[2, 'y']] : [] }, { id: 'y', label: 'Y' }], 'y'), ask('B', bOptions, 'x')];
+  const earlier = declaredExclusions(batch(true));
+  assert.equal(earlier.length, 1);
+  assert.deepEqual(droppedExclusionProblems(batch(false), null), [], 'first submission is unaffected');
+  assert.match(droppedExclusionProblems(batch(false), earlier).join(), /question 1 option x \("X"\) and question 2 option y \("Y2"\) cannot hold together[\s\S]*restore that excludes declaration/);
+  assert.deepEqual(droppedExclusionProblems(batch(true), earlier), [], 'kept');
+  const other = batch(false);
+  other[1].options[1].excludes = [{ question: 1, option: 'x' }];
+  assert.deepEqual(droppedExclusionProblems(other, earlier), [], 'declared from the other side');
+  assert.deepEqual(droppedExclusionProblems(batch(false, [{ id: 'x', label: 'X2' }, { id: 'z', label: 'Z2' }]), earlier), [], 'the option was removed');
+  assert.deepEqual(droppedExclusionProblems(batch(false, [{ id: 'x', label: 'X2' }, { id: 'q', label: 'Y2' }]), earlier).length, 1, 'matched by label when the id changed, so it must still be declared');
+  assert.throws(() => assertQuestionContext(batch(false), { previousExclusions: earlier }), /restore that excludes declaration/);
+  // A pair whose option was dead is not kept: dropping it fixes that rejection.
+  const dead = [ask('A', [{ id: 'x', label: 'X', ex: [[2, 'y']] }, { id: 'y', label: 'Y', ex: [[2, 'y']] }]), ask('B', [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y2' }])];
+  assert.deepEqual(declaredExclusions(dead), []);
 });
 
 test('assertQuestionContext runs the batch check only for a schema that has excludes, and always when no schema is given', () => {
@@ -108,6 +122,9 @@ test('stakeholder-analysis: identity-limited options and no-login options must b
   assert.deepEqual(stakeholderExclusionProblems([own(), ask('B', [{ id: 'member', label: '로그인한 사용자만' }, { id: 'staff', label: '관리자만' }])]), []);
   assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'own', label: '본인 장소만' }, { id: 'open', label: '로그인 없이 누구나' }])]), []);
   assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: '일주일 내 장소' }, { id: 'b', label: '전체' }]), access()]), [], '"내" inside a word is not the viewer');
+  const access2 = access();
+  for (const text of ['사용자 현재 위치 한 점만 표시한다', '본인의 현재 위치', '자기 위치가 보인다']) assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: text, effect: text }, { id: 'b', label: '전체' }]), access2]), [], `${text}: the viewer's own position needs no login`);
+  for (const text of ['본인이 등록한 장소만', '자기 핀만', '본인이 등록한 위치만 본다']) assert.ok(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: text }, { id: 'b', label: '전체' }]), access2]).length, `${text}: registered data is identity-limited`);
   assert.ok(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: '내 장소만' }, { id: 'b', label: '전체' }]), access()]).length, '내 장소 limits by the viewer');
   // Only stakeholder-analysis runs it.
   assert.doesNotThrow(() => assertQuestionContext([own(), access()], { skill: 'event-storming' }));

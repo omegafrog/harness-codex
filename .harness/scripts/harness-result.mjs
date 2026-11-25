@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 const installed = new URL('../../.harness/src/workflow/', import.meta.url);
 const { resolveSkillSession, readSkillSessionJson, readExecutionInput, validateSkillInput, validateSkillReturn } = await import(new URL('stage-runtime.mjs', installed));
-const { assertQuestionContext, identifyQuestions } = await import(new URL('questions.mjs', installed));
+const { assertQuestionContext, declaredExclusions, identifyQuestions } = await import(new URL('questions.mjs', installed));
 const { cliSession } = await import(new URL('cli-session.mjs', installed));
 const { assertWorkspaceTarget } = await import(new URL('../eval/case-workspace.mjs', installed));
 const { parseWorktreeRecord, specArtifactPath } = await import(new URL('worktrees.mjs', installed));
@@ -103,7 +103,21 @@ try {
     if (questions.some((question, index) => questions.slice(0, index).some((prior) => isDeepStrictEqual(prior, question)))) throw new Error('Duplicate questions in batch');
     // A new batch carries the context and per-option examples a user needs; the schema the worker was given decides whether it could.
     const outputSchema = await readSkillSessionJson({ root: opts.root, session_directory: session, path: paths.refs.schema }).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
-    assertQuestionContext(questions, { schema: outputSchema, skill: envelope.skill, root: opts.root, request: typeof input.scope === 'string' ? input.scope : null, planSetId: input.context?.plan_set_id ?? null });
+    // Pairs declared by earlier rejected submissions of this execution stay declared (a small session file, regular file only).
+    const pairsPath = join(session, prefix, 'question-excludes-declared.json');
+    const earlier = await lstat(pairsPath).then(async (info) => (info.isFile() && !info.isSymbolicLink() ? JSON.parse(await readFile(pairsPath, 'utf8')) : []), (error) => error.code === 'ENOENT' ? [] : Promise.reject(error));
+    const hasExcludes = !outputSchema || outputSchema.properties?.result?.properties?.questions?.items?.properties?.options?.items?.properties?.excludes;
+    try { assertQuestionContext(questions, { schema: outputSchema, skill: envelope.skill, root: opts.root, request: typeof input.scope === 'string' ? input.scope : null, planSetId: input.context?.plan_set_id ?? null, previousExclusions: hasExcludes ? earlier : null }); }
+    catch (error) {
+      if (hasExcludes) {
+        const kept = [...(Array.isArray(earlier) ? earlier : []), ...declaredExclusions(questions)];
+        const unique = [...new Map(kept.map((pair) => [JSON.stringify(pair), pair])).values()];
+        await assertWorkspaceTarget(session, `${prefix}/question-excludes-declared.json`);
+        await mkdir(join(session, prefix), { recursive: true, mode: 0o700 });
+        await writeFile(pairsPath, JSON.stringify(unique) + '\n', { mode: 0o600 });
+      }
+      throw error;
+    }
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
   }
   if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');

@@ -64,13 +64,13 @@ export function questionContextProblems(question) {
 // The gate for a stage's new question batch (harness-result runs it; stored questions are never checked, so questions written
 // before this rule stay readable). `schema` is the output schema the worker was given: an execution started before the rule has
 // a schema without `context`, its worker could not have written one, so its batch is accepted as it is.
-export function assertQuestionContext(questions, { schema = null, skill = null, root = null, request = null, planSetId = null } = {}) {
+export function assertQuestionContext(questions, { schema = null, skill = null, root = null, request = null, planSetId = null, previousExclusions = null } = {}) {
   if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
   const list = Array.isArray(questions) ? questions : [];
   const problems = list.flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question, { root, request, planSetId }) : [])].map((problem) => `question ${index + 1}: ${problem}`));
   // `excludes` is checked only when the execution's schema could carry it; a schema without it is an execution started before the rule.
   const batch = !schema || schema.properties?.result?.properties?.questions?.items?.properties?.options?.items?.properties?.excludes
-    ? [...questionBatchProblems(list), ...(skill === 'stakeholder-analysis' ? stakeholderExclusionProblems(list) : [])] : [];
+    ? [...questionBatchProblems(list), ...droppedExclusionProblems(list, previousExclusions), ...(skill === 'stakeholder-analysis' ? stakeholderExclusionProblems(list) : [])] : [];
   if (!problems.length && !batch.length) return;
   const exclusion = batch.length ? ' `excludes` of an option lists the options of other questions of this batch (question = 1-based position, option = its id) that cannot hold together with it, so the user is never shown recommended answers that contradict each other. Ask a question that only makes sense under one answer of another question after that answer.' : '';
   throw new Error(`Questions must let the user decide without following your work. ${[...problems, ...batch].join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. An option names concrete values (never 직접 입력/기타) and the recommended option's reason goes in rationale. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.${exclusion}`);
@@ -78,7 +78,7 @@ export function assertQuestionContext(questions, { schema = null, skill = null, 
 
 // Two options of different questions of one batch that cannot both hold are declared with `excludes` ({question: 1-based position in
 // the batch, option: option id}); either side may declare the pair. The batch is rejected when it shows the user recommended answers
-// that contradict each other, an option no answer can leave open, or a question whose answer another recommendation already decides.
+// that contradict each other, or an option no answer can leave open. A resubmission keeps the pairs it declared before (declaredExclusions, droppedExclusionProblems).
 const optionList = (question) => (Array.isArray(question?.options) ? question.options : []);
 const refName = (questions, number, option) => `question ${number} option ${option}${optionList(questions[number - 1]).find((item) => item?.id === option)?.label ? ` ("${optionList(questions[number - 1]).find((item) => item.id === option).label}")` : ''}`;
 
@@ -102,6 +102,44 @@ export function exclusionMap(questions, problems = []) {
   return map;
 }
 
+const deadBy = (questions, map, number, id) => questions.findIndex((other, otherIndex) => otherIndex !== number - 1 && optionList(other).length && optionList(other).every((item) => map.get(`${otherIndex + 1}:${item.id}`)?.has(`${number}:${id}`)));
+const descriptor = (questions, number, id) => { const question = questions[number - 1], option = optionList(question).find((item) => item?.id === id); return { number, id, title: question?.title ?? null, label: option?.label ?? null }; };
+
+// The valid pairs of a batch as plain descriptors (question title + option label, with position and id as the fallback), so a
+// rejected submission's declarations can be kept for the resubmission. A pair whose option no answer can leave open (a dead
+// option) is not kept: dropping it is the way to correct that rejection.
+export function declaredExclusions(questions) {
+  const map = exclusionMap(questions);
+  const pairs = [];
+  for (const [left, rights] of map) for (const right of rights) {
+    if (left > right) continue;
+    const [a, b] = [left, right].map((key) => descriptor(questions, Number(key.split(':')[0]), key.slice(key.indexOf(':') + 1)));
+    if ([a, b].some((side) => deadBy(questions, map, side.number, side.id) >= 0)) continue;
+    pairs.push([a, b]);
+  }
+  return pairs;
+}
+
+// A resubmitted batch must still declare every earlier pair whose two options still exist (matched by question title + option
+// label, else by position + id): a declaration is restored, never deleted to pass the check.
+export function droppedExclusionProblems(questions, previous) {
+  if (!Array.isArray(previous) || !previous.length) return [];
+  const problems = [];
+  const map = exclusionMap(questions);
+  const find = (side) => {
+    const byText = [];
+    questions.forEach((question, index) => optionList(question).forEach((option) => { if (side.title != null && question?.title === side.title && side.label != null && option?.label === side.label) byText.push(`${index + 1}:${option.id}`); }));
+    if (byText.length === 1) return byText[0];
+    return optionList(questions[side.number - 1]).some((option) => option?.id === side.id) ? `${side.number}:${side.id}` : null;
+  };
+  for (const [a, b] of previous) {
+    const [left, right] = [find(a), find(b)];
+    if (!left || !right || left === right || map.get(left)?.has(right)) continue;
+    problems.push(`the earlier submission declared that ${refName(questions, Number(left.split(':')[0]), left.slice(left.indexOf(':') + 1))} and ${refName(questions, Number(right.split(':')[0]), right.slice(right.indexOf(':') + 1))} cannot hold together, and this one no longer does; restore that excludes declaration (or remove/rename the option if it really changed) instead of deleting the declaration to pass`);
+  }
+  return problems;
+}
+
 export function questionBatchProblems(questions) {
   const problems = [];
   const map = exclusionMap(questions, problems);
@@ -120,13 +158,9 @@ export function questionBatchProblems(questions) {
     const options = optionList(question);
     for (const option of options) {
       const key = `${number}:${option.id}`;
-      const dead = questions.findIndex((other, otherIndex) => otherIndex !== index && optionList(other).length && optionList(other).every((item) => map.get(`${otherIndex + 1}:${item.id}`)?.has(key)));
+      const dead = deadBy(questions, map, number, option.id);
       if (dead >= 0) problems.push(`${name(key)} is excluded by every option of question ${dead + 1}, so no answer can leave it open; remove the option or correct the excludes`);
     }
-    const blocked = new Set();
-    questions.forEach((_, otherIndex) => { if (otherIndex !== index) for (const key of map.get(`${otherIndex + 1}:${recommended[otherIndex]}`) ?? []) if (key.startsWith(`${number}:`)) blocked.add(key); });
-    const remaining = options.filter((option) => !blocked.has(`${number}:${option.id}`));
-    if (options.length >= 2 && remaining.length === 1 && blocked.size) problems.push(`question ${number} is decided by the recommended answers of other questions (only ${name(`${number}:${remaining[0].id}`)} remains); ask it after the answer (defer it) instead of in this batch`);
   });
   return problems;
 }
@@ -135,13 +169,15 @@ export function questionBatchProblems(questions) {
 // effect and consequence of an option (never in its example); a negated wording is not matched.
 // "내" counts only as the viewer's (내 장소), not inside a word or a period (일주일 내).
 const IDENTITY_LIMIT = /본인|자기|자신의|(?<![일주달년간분초이안]\s)(?<![가-힣])내 /;
+// The viewer's current/device position needs no login, so it is not identity-limited data (본인이 등록한 위치 is).
+const OWN_POSITION = /(?:본인|자기|자신|사용자|내)(?:의)?\s*(?:현재\s*)?위치|현재\s*위치/g;
 const NO_LOGIN_OPEN = /로그인 없이|비로그인.*(?:누구나|허용)|누구나/;
 const USER_EDITS = /(?:사용자|이용자|본인)(?:가|이|는|은|만|들이)?\s*(?:직접\s*)?[^.,;]{0,12}?(?:등록|추가|작성|수정|삭제)/;
 const NOT_EDITING = /(?:등록|추가|작성|수정|삭제)(?:을|를)?\s*(?:하지|할 수 없|못|불가)|(?:등록|추가|작성|수정|삭제)\s*없이/g;
 const VIEW_ONLY = /보기만|표시만|조회만/;
 const optionWords = (option) => `${option?.label ?? ''} ${option?.effect ?? ''} ${option?.consequence ?? ''}`.replace(/\s+/g, ' ');
 const HEURISTICS = [
-  { name: 'limits what the viewer sees to their own data (본인/자기/내) while another question allows use without login', first: (text) => IDENTITY_LIMIT.test(text) && !NO_LOGIN_OPEN.test(text), second: (text) => NO_LOGIN_OPEN.test(text) },
+  { name: 'limits what the viewer sees to their own data (본인/자기/내) while another question allows use without login', first: (text) => IDENTITY_LIMIT.test(text.replace(OWN_POSITION, ' ')) && !NO_LOGIN_OPEN.test(text), second: (text) => NO_LOGIN_OPEN.test(text) },
   { name: 'lets users register/edit content while another question makes the content view-only (보기만/표시만/조회만)', first: (text) => USER_EDITS.test(text.replace(NOT_EDITING, ' ')) && !VIEW_ONLY.test(text), second: (text) => VIEW_ONLY.test(text) },
 ];
 
