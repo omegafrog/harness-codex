@@ -110,6 +110,8 @@ async function inspectExecutionAssets(root, diagnostics, sourceCheckout) {
     '.harness/internal-skills/stakeholder-analysis/references/lenses/security.md',
     '.harness/internal-skills/stakeholder-persona/GUIDE.md',
     '.codex/agents/stakeholder_persona.toml',
+    '.harness/internal-skills/requirements-gap-review/GUIDE.md',
+    '.codex/agents/requirements_gap_reviewer.toml',
     ...['subdomain-candidates', 'event-storming', 'subdomain-classification', 'bounded-context', 'ubiquitous-language', 'requirements-fix'].map((name) => `.harness/internal-skills/${name}/GUIDE.md`),
     '.harness/internal-skills/requirements-fix/references/template.md',
     '.harness/internal-skills/requirements-fix/references/coverage.md',

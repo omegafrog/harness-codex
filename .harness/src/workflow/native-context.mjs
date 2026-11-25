@@ -410,7 +410,10 @@ export async function nativeHookContext(root, parentIds, { childId = null, agent
     }
     if (dispatchedByMain) {
       const current = state.stages?.[state.current_stage];
-      if (current && ['running', 'waiting'].includes(current.status) && current.execution_id) matches = [current];
+      // A Claude Code child of a stage worker carries the orchestrator's session and no parent_agent_id, so it resolves like the
+      // main session's reviewers. The gap reviewer belongs to the running requirements-fix stage and to no other stage.
+      const wrongStage = agentType === 'requirements_gap_reviewer' && (state.current_stage !== 'requirements-fix' || current?.status !== 'running');
+      if (current && !wrongStage && ['running', 'waiting'].includes(current.status) && current.execution_id) matches = [current];
     } else {
       const identities = new Set(parentIds);
       const stageEntries = Object.values(state.stages || {}).filter((stage) => stage.status === 'running' && stage.native_managed && stage.native_agent_id);

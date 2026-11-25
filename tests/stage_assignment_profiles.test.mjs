@@ -23,7 +23,7 @@ test('solo stages run on the profile without Agent, only for Claude Code, and on
   await writeFile(join(root, '.codex/agents/workflow_stage_solo.toml'), 'name = "workflow_stage_solo"\n');
   for (const skill of SOLO_STAGE_SKILLS) assert.equal(await stageAgentProfile({ root, profile: null, skill, provider: 'claude-code' }), 'workflow_stage_solo', skill);
   for (const skill of SOLO_STAGE_SKILLS) assert.equal(await stageAgentProfile({ root, profile: null, skill, provider: 'codex' }), 'workflow_stage', `${skill} on Codex`);
-  for (const skill of ['stakeholder-analysis', 'event-storming', 'domain-model', 'tactical-technology']) assert.equal(await stageAgentProfile({ root, profile: null, skill, provider: 'claude-code' }), 'workflow_stage', skill);
+  for (const skill of ['stakeholder-analysis', 'event-storming', 'requirements-fix', 'domain-model', 'tactical-technology']) assert.equal(await stageAgentProfile({ root, profile: null, skill, provider: 'claude-code' }), 'workflow_stage', skill);
   assert.equal(await stageAgentProfile({ root, profile: 'to_ticket', skill: 'bounded-context', provider: 'claude-code' }), 'to_ticket', 'a declared role is kept');
 });
 
@@ -32,6 +32,12 @@ test('no solo stage GUIDE delegates to a helper agent', async () => {
     const text = await read(`.harness/internal-skills/${skill}/GUIDE.md`);
     assert.doesNotMatch(text, /code_researcher|diagram_creator|stakeholder_persona|code-research/, `${skill} delegates`);
   }
+});
+
+test('requirements-fix starts the independent gap reviewer, so it keeps the profile with the Agent tool on both providers', async () => {
+  assert.ok(!SOLO_STAGE_SKILLS.includes('requirements-fix'));
+  assert.match(await read('.harness/internal-skills/requirements-fix/GUIDE.md'), /requirements_gap_reviewer/);
+  assert.match(await read('.codex/agents/workflow_stage.toml'), /^name = "workflow_stage"$/m);
 });
 
 test('the solo profile differs from workflow_stage only by name and by the Agent tool', async () => {
@@ -92,13 +98,14 @@ test('a helper agent of a workflow worktree must start with the configured low-t
   await mkdir(join(root, '.io'), { recursive: true });
   await writeFile(join(root, '.io/worktree.json'), '{}');
   await mkdir(join(root, '.harness/internal-skills/code-research'), { recursive: true });
+  await mkdir(join(root, '.harness/internal-skills/requirements-gap-review'), { recursive: true });
   await mkdir(join(root, '.harness/internal-skills/stakeholder-persona'), { recursive: true });
-  for (const skill of ['code-research', 'stakeholder-persona']) await writeFile(join(root, `.harness/internal-skills/${skill}/GUIDE.md`), '---\nmodel_tier: low_performance\n---\n# x\n');
+  for (const skill of ['code-research', 'stakeholder-persona', 'requirements-gap-review']) await writeFile(join(root, `.harness/internal-skills/${skill}/GUIDE.md`), '---\nmodel_tier: low_performance\n---\n# x\n');
   const yaml = (model) => `agents:\n  provider: codex\n  claude-code:\n    low_performance_model: other\n    low_performance_reasoning_effort: high\n  codex:\n    low_performance_model: ${model} # cheap\n    low_performance_reasoning_effort: "low"\n`;
   await writeFile(join(root, '.harness/harness.yaml'), yaml('gpt-6-luna'));
   const spawn = (agent_type, extra = {}, cwd = root) => freshAgentDecision({ hook_event_name: 'PreToolUse', tool_name: 'spawn_agent', cwd, tool_input: { agent_type, fork_turns: 'none', ...extra } });
   assert.deepEqual(helperBinding('code_researcher', root), { model: 'gpt-6-luna', reasoning_effort: 'low' });
-  for (const type of ['code_researcher', 'stakeholder_persona']) {
+  for (const type of ['code_researcher', 'stakeholder_persona', 'requirements_gap_reviewer']) {
     assert.match(spawn(type), /model "gpt-6-luna" and reasoning_effort "low"/);
     assert.match(spawn(type, { model: 'gpt-6.1-sol', reasoning_effort: 'low' }), /received model gpt-6.1-sol/);
     assert.equal(spawn(type, { model: 'gpt-6-luna', reasoning_effort: 'low' }), null);

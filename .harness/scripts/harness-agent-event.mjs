@@ -46,7 +46,7 @@ try {
     } else process.exit(0);
   }
   if (!process.env.HARNESS_STAGE_EXECUTION_ID) await recordNativeStageObservation(typeof event.cwd === 'string' ? event.cwd : process.cwd(), event);
-  const native = process.env.HARNESS_STAGE_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'stage_document_writer'].includes(event.agent_type) });
+  const native = process.env.HARNESS_STAGE_EXECUTION_ID ? null : await nativeHookContext(typeof event.cwd === 'string' ? event.cwd : process.cwd(), [event.parent_agent_id, event.session_id].filter(Boolean), { childId: event.agent_id, agentType: event.agent_type, mainSession: !event.parent_agent_id && ['spec_adversarial_reviewer', 'plan_reviewer', 'contract_reviewer', 'stage_document_writer', 'requirements_gap_reviewer'].includes(event.agent_type) });
   const session = process.env.HARNESS_SESSION_DIR || native?.session, executionId = process.env.HARNESS_STAGE_EXECUTION_ID || native?.executionId;
   if (native && !process.env.HARNESS_REVIEW_TICKET_ID && native.planSetId) process.env.HARNESS_REVIEW_TICKET_ID = native.planSetId;
   if (!executionId) {

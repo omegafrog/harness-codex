@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { answerConflictMessage } from './questions.mjs';
+import { recheckRequirementsBeforeApproval } from './requirements-document-gate.mjs';
 
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 
@@ -150,14 +151,17 @@ export function resolveReplyTarget(root, text) {
     if (mapped.clarification) return { stageId: waiting.stageId, clarification: mapped.clarification };
     return { stageId: waiting.stageId, args: ['--stage-id', waiting.stageId, '--answer', JSON.stringify(mapped.answers)] };
   }
-  return resolveApprovalOrRevision(state, text);
+  return resolveApprovalOrRevision(state, text, { root });
 }
 
-export function resolveApprovalOrRevision(state, text) {
+export function resolveApprovalOrRevision(state, text, { root = null } = {}) {
   const stages = state.stages;
   const done = (id) => stages[id]?.status === 'completed' && stages[id].code === 'OK' && !stages[id].stale;
   const started = (id) => Boolean(stages[id]?.execution_id) && !(stages[id].status === 'failed' || stages[id].status === 'cancelled');
   const approval = isApprovalReply(text);
+  // An approval of requirements that today's rules would refuse is never recorded: it reopens requirements-fix instead.
+  const recheck = approval && root && done('bounded-context') && !started('domain-model') ? recheckRequirementsBeforeApproval({ root, state }) : null;
+  if (recheck?.applies && !recheck.ok) return { stageId: recheck.owner_stage, args: recheck.reopen_args, reopen: 'requirements', notice: recheck.notice_ko, errors: recheck.errors };
   if (approval && done('bounded-context') && !started('domain-model')) return { stageId: 'domain-model', args: ['--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', String(text).trim()], approval: 'requirements' };
   if (approval && done('to-ticket') && !started('tracker-publish')) return { stageId: 'tracker-publish', args: ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', String(text).trim()], approval: 'publication' };
   if (isRecommendedReply(text)) return { error: 'No stage is waiting for a user answer or approval. Run harness-context.mjs for the current state.' };

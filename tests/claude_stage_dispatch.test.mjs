@@ -139,6 +139,11 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   assert.equal(overridden.run_in_background, false);
   assert.equal(research({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }).updated.model, lowTier.low_performance_model);
   assert.equal(persona({}, 'sonnet').updated, undefined, 'a main-session call is not rewritten');
+  const gapReview = (extra, model) => hooks.admit('Review the requirements', { tool_input: { subagent_type: 'requirements_gap_reviewer', description: 'gap review', prompt: 'Review the requirements', ...(model ? { model } : {}) }, ...extra });
+  const reviewed = gapReview({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }, 'opus').updated;
+  assert.equal(reviewed.model, lowTier.low_performance_model, 'the gap reviewer runs on the configured low tier whatever model is passed');
+  assert.equal(reviewed.run_in_background, false);
+  assert.equal(gapReview({}, 'opus').updated, undefined, 'a main-session call is not rewritten');
   // A second start of the same profile has no reserved execution left and binds nothing.
   assert.equal(hooks.start('agent-intruder').stdout, '');
   assert.equal((await flow.state()).stages['stakeholder-analysis'].native_agent_id, 'agent-real-1');

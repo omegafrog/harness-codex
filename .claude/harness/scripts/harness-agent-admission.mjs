@@ -46,8 +46,8 @@ try {
     deny('Run Harness stage workers in the foreground: pass run_in_background: false and do not end your turn until the Agent returns. A background worker dies when the headless orchestrator turn ends and leaves the stage running.');
     process.exit(0);
   }
-  // A stage worker's code research and persona run on their configured binding, not on the worker's inherited or passed model.
-  const BOUND_SKILLS = { code_researcher: 'code-research', stakeholder_persona: 'stakeholder-persona' };
+  // A stage worker's code research, persona and gap review run on their configured binding, not on the worker's inherited or passed model.
+  const BOUND_SKILLS = { code_researcher: 'code-research', stakeholder_persona: 'stakeholder-persona', requirements_gap_reviewer: 'requirements-gap-review' };
   if (Object.hasOwn(BOUND_SKILLS, type) && native && event.agent_id) {
     const { resolveSkillBinding } = await import('../../../.harness/src/workflow/stage-runtime.mjs');
     const { model, reasoning_effort: effort } = await resolveSkillBinding({ root: native.root, skill: BOUND_SKILLS[type], executionProvider: 'claude-code' });

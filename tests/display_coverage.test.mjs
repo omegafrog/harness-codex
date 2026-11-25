@@ -19,7 +19,8 @@ ${ex}
 `;
 const table = (...rows) => `\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
 const full = (id = 'BIZ-01', overrides = {}) => ITEMS.map((item) => [id, item, ...(overrides[item] ?? (item === '누락·부분 데이터' || item === '불러오기 실패' ? ['확정', 'EX-01'] : item === '빈 상태' ? ['해당 없음', '고정 데이터라 목록이 비는 경우가 없다 업무'] : ['확정', 'INV-01, AC-01']))]);
-const document = (bizText, rows) => `# 요구사항\n\n## 2. 업무\n\n${bizText}\n## 6. 공통\n\n### 6.1 범위·비목표\n\n- 포함: 지도\n${rows === null ? '' : table(...rows)}`;
+const GAP_NONE = '\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n';
+const document = (bizText, rows, gap = GAP_NONE) => `# 요구사항\n\n## 2. 업무\n\n${bizText}\n## 6. 공통\n\n### 6.1 범위·비목표\n\n- 포함: 지도\n${rows === null ? '' : table(...rows)}${gap}`;
 const check = (text, stage = 'requirements-fix', analysis = null) => checkRequirementsDocument({ requirements: text, stage, complete: true, analysis });
 const codes = (result) => result.errors.map(({ code }) => code);
 

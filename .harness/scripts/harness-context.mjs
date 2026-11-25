@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
+const { recheckRequirementsBeforeApproval } = await import(new URL('../../.harness/src/workflow/requirements-document-gate.mjs', import.meta.url).href);
 const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep, withDispatchHint } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
 const { staleStages } = await import(new URL('../../.harness/src/workflow/stage-reopen.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
@@ -98,8 +99,10 @@ try {
   }
   const staleOrder = staleStages(state);
   const awaitingApproval = stageId === 'bounded-context' && ctx.plan_set_id && existsSync(join(ctx.root, 'docs/specs', ctx.plan_set_id, 'requirements.md'));
+  // A fixed document that today's rules would refuse is reopened, not offered for approval.
+  const requirementsRecheck = awaitingApproval && entry?.status === 'completed' ? recheckRequirementsBeforeApproval({ root: ctx.root, state }) : null;
   const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval)
-    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval), provider: state?.orchestrator_provider || 'codex' })
+    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval), requirementsRecheck, provider: state?.orchestrator_provider || 'codex' })
     : null;
   const foreign = foreignRunningStage(state);
   const next = recoveryNext || (foreign ? takeoverStep(foreign) : revalidationNext);

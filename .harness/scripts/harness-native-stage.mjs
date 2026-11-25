@@ -270,7 +270,7 @@ async function withAnswerText(args) {
   if (target.error) throw refuse(target.error, [contextCommand()]);
   if (named && !target.revision && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/harness-native-stage.mjs answer --text '<the user's reply verbatim>'`]);
   if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, next: target.revision ? 'Ask the user in Korean which part to change, then pass their new text verbatim as a revise request. Nothing was started.' : 'Ask the user in Korean to clarify, then pass their new reply verbatim with the same answer command. Nothing was recorded.' } };
-  return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))] };
+  return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))], ...(target.notice ? { notice: target.notice } : {}) };
 }
 
 const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | answer --text \'<reply>\' | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
@@ -282,7 +282,9 @@ try {
   const { args, verbose } = extractVerbose(rest);
   if (action === 'launch' || action === 'answer') {
     const requested = await withAnswerText(action === 'answer' ? answerArguments(args) : args);
-    const launched = requested.result ?? await launchStage(requested.args, verbose);
+    const started = requested.result ?? await launchStage(requested.args, verbose);
+    // An approval that was turned into the requirements recheck: the one sentence the user hears (Korean).
+    const launched = requested.notice ? { ...started, user_notice_ko: requested.notice } : started;
     await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify(launched)}\n`, (error) => error ? reject(error) : resolve()));
     process.exit(0);
   }
@@ -754,7 +756,9 @@ try {
     const staleOrder = updated ? staleStages(updated.state || updated) : null;
     const requirementsPresent = input.skill !== 'bounded-context' || Boolean(input.context?.plan_set_id && (await (await import('../../.harness/src/workflow/domain-model-gate.mjs')).planSetDocument(root, input.context.plan_set_id, 'requirements.md')).text !== null);
     await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
-    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, session, provider: binding.provider });
+    const requirementsRecheck = requirementsPresent && updated && input.skill === 'bounded-context' && envelope.status === 'completed' && envelope.code === 'OK'
+      ? (await import('../../.harness/src/workflow/requirements-document-gate.mjs')).recheckRequirementsBeforeApproval({ root, state: updated.state || updated }) : null;
+    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, requirementsRecheck, session, provider: binding.provider });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

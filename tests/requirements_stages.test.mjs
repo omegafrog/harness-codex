@@ -191,7 +191,7 @@ test('a BIZ field is written once: a second field of the same name is rejected, 
   assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
   assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
   const display = ['데이터 출처', '표시 항목', '누락·부분 데이터', '빈 상태', '불러오기 실패'].map((item) => `| BIZ-03 | ${item} | 해당 없음 | 로그인은 사용자에게 데이터 목록을 보이지 않는 업무다 |`).join('\n');
-  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}\n## 6. 공통\n\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${display}\n`;
+  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}\n## 6. 공통\n\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${display}\n\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n`;
   const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
   assert.equal(complete(fixed).ok, true);
   assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);
@@ -234,6 +234,8 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
     '.harness/internal-skills/requirements-fix/references/coverage.md',
     '.harness/internal-skills/event-storming/references/diagrams.md',
     '.harness/internal-skills/stakeholder-persona/GUIDE.md',
+    '.harness/internal-skills/requirements-gap-review/GUIDE.md',
+    '.codex/agents/requirements_gap_reviewer.toml',
     '.harness/tools/plantuml-bootstrap.mjs',
     '.harness/tools/plantuml-render.mjs',
   ];
@@ -306,10 +308,15 @@ test('installed consumers get the requirements stages and diagram tooling, Git i
   await unlink(dispatchGuide);
   await unlink(inputGuide);
   await unlink(freshHook);
+  const gapGuide = join(root, '.harness/internal-skills/requirements-gap-review/GUIDE.md');
+  const gapProfile = join(root, '.codex/agents/requirements_gap_reviewer.toml');
+  await unlink(gapGuide);
+  await unlink(gapProfile);
   doctor = await runDoctor({ root, sourceRoot });
-  for (const path of [template, renderer, restartModule, dispatchGuide, inputGuide, freshHook, schemaModule]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
+  for (const path of [template, renderer, restartModule, dispatchGuide, inputGuide, freshHook, schemaModule, gapGuide, gapProfile]) assert.ok(doctor.diagnostics.some((item) => item.code === 'execution_asset_missing' && item.path === path), `missing: ${path}`);
   await updateProject({ sourceRoot, targetRoot: root });
   for (const path of [TEMPLATE, '.harness/tools/plantuml-render.mjs', '.harness/internal-skills/requirements-fix/references/coverage.md', '.harness/internal-skills/bounded-context/GUIDE.md', '.harness/scripts/harness-fresh-agent.mjs', '.harness/src/workflow/requirements-restart.mjs', '.harness/src/workflow/output-schema.mjs']) assert.equal(await readFile(join(root, path), 'utf8'), await read(path), `restored: ${path}`);
+  assert.ok(existsSync(gapGuide) && existsSync(gapProfile), 'update restores the gap reviewer GUIDE and profile without a harness.yaml edit');
   assert.match(await readFile(dispatchGuide, 'utf8'), /fork_turns: "none"/, 'update restores the orchestrator dispatch reference');
   assert.match(await readFile(inputGuide, 'utf8'), /"clarification"/, 'update restores the orchestrator answer protocol');
   for (const path of managed) assert.match(git('check-ignore', '-v', path), /info\/exclude/, `still ignored after update: ${path}`);

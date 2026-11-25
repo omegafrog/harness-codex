@@ -8,7 +8,7 @@
 
 `stakeholder-analysis`가 기존 승인 업무 안의 자명한 변경으로 `판정: 생략`이면 나머지 요구사항·전술 설계 stage는 문서 없이 생략 결과를 기록한다. 이해관계자 등록 요청은 `node .harness/scripts/harness-stakeholder.mjs add`로 사용자 소유 카드를 작성하도록 안내한다. worktree에서 사용할 카드는 커밋되어 있어야 한다.
 
-`bounded-context`가 완료되면 결과의 승인 요약(`result.summary`: 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트)과 `requirements.md` 경로를 보여 주고 문서는 열지 않으며 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 승인한 뒤에만 그 답 원문을 `answer`로 넘긴다(실행기가 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`으로 처리한다). 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
+`bounded-context`가 완료되면 결과의 승인 요약(`result.summary`: 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트)과 `requirements.md` 경로를 보여 주고 문서는 열지 않으며 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 승인한 뒤에만 그 답 원문을 `answer`로 넘긴다(실행기가 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`으로 처리한다). 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 그 전에 실행기가 `requirements.md`를 현재 `requirements-fix` 완료 규칙으로 다시 검사하며, 통과하지 못하면 `next`가 승인 대신 `launch --stage-id requirements-fix --reopen-for <bounded-context execution_id>`를 주므로 사용자에게 한국어 한 문장으로 이유를 알리고 그 명령을 따른다(승인 답을 보내도 같은 명령으로 바뀐다). 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
 
 ## 전술 설계
 

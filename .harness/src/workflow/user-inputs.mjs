@@ -5,6 +5,7 @@ import { planSetDocument } from './domain-model-gate.mjs';
 import { isHarnessUpdateRequest, orchestratorRequest } from './request-routing.mjs';
 import { isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 import { approvalRefusal, clip, describeReplySearch } from './approval-search.mjs';
+import { recheckRequirementsBeforeApproval } from './requirements-document-gate.mjs';
 
 export { approvalRefusal, describeReplySearch, summarizeReplySearch } from './approval-search.mjs';
 
@@ -168,6 +169,11 @@ export async function assertRequirementsApproval({ root, state, stage, planSetId
   const design = state.stages?.['domain-model'];
   const { text } = await planSetDocument(root, planSetId, 'requirements.md');
   if (text === null) return; // stakeholder-analysis skipped the requirements flow.
+  // A fixed document that today's requirements-fix rules would refuse is reopened before it is approved; the approval is not recorded.
+  if (stage === 'domain-model' && !design?.execution_id) {
+    const recheck = recheckRequirementsBeforeApproval({ root, state, planSetId });
+    if (recheck.applies && !recheck.ok) throw Object.assign(new Error(`Requirements recheck required before approval: bounded-context ${recheck.blocked_execution_id} fixed a requirements.md that no longer passes the current requirements-fix rules (${recheck.errors.length} error(s)), so the approval was not recorded and domain-model did not start. Reopen requirements-fix first: --stage-id requirements-fix --reopen-for ${recheck.blocked_execution_id}. ${recheck.reason}`), { requirements_recheck: recheck });
+  }
   const current = isCurrentStage(fixed) && fixed.execution_id && fixed.finished_at;
   if (current && !design?.stale && !approval) {
     if (design?.requirements_approval === fixed.execution_id) return;

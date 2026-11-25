@@ -147,6 +147,9 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
     '.harness/internal-skills/stakeholder-persona/GUIDE.md',
     '.codex/agents/stakeholder_persona.toml',
     '.claude/agents/stakeholder_persona.md',
+    '.harness/internal-skills/requirements-gap-review/GUIDE.md',
+    '.codex/agents/requirements_gap_reviewer.toml',
+    '.claude/agents/requirements_gap_reviewer.md',
   ];
   const lock = JSON.parse(await readFile(join(root, '.harness/harness-lock.json'), 'utf8'));
   for (const path of managed) {
@@ -163,10 +166,17 @@ test('installed consumers get the stakeholder tools and stage guides, and Git ke
   assert.match(await readFile(join(root, '.codex/agents/stakeholder_persona.toml'), 'utf8'), /^sandbox_mode = "read-only"$/m);
   const { FRESH_AGENT_TYPES } = await import(pathToFileURL(join(root, '.harness/scripts/harness-fresh-agent.mjs')));
   assert.ok(FRESH_AGENT_TYPES.includes('stakeholder_persona'));
+  assert.ok(FRESH_AGENT_TYPES.includes('requirements_gap_reviewer'));
+  const reviewer = await readFile(join(root, '.claude/agents/requirements_gap_reviewer.md'), 'utf8');
+  assert.match(reviewer, /^name: requirements_gap_reviewer$/m);
+  assert.match(reviewer, /^permissionMode: plan$/m);
+  assert.match(reviewer, /^tools: Read, Grep, Glob, WebSearch, WebFetch$/m);
+  assert.match(reviewer, /requirements-gap-review\/GUIDE\.md/);
 
   // The installed tools resolve their tiers from the installed GUIDEs.
   const binding = (skill) => JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-stage-runtime.mjs'), 'binding', '--root', root, '--skill', skill], { cwd: root, encoding: 'utf8' }));
   assert.deepEqual(binding('stakeholder-persona'), { skill: 'stakeholder-persona', provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' });
+  assert.deepEqual(binding('requirements-gap-review'), { skill: 'requirements-gap-review', provider: 'codex', model_tier: 'low_performance', model: 'codex-light', reasoning_effort: 'minimal' }, 'the gap reviewer needs no harness.yaml entry of its own');
   assert.equal(binding('stakeholder-analysis').model_tier, 'implementation');
 
   // The user registers a card with the installed CLI from the project root.

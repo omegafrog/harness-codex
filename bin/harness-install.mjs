@@ -134,6 +134,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".harness", "internal-skills", "contract-review", "GUIDE.md"));
     await stat(join(projectRoot, ".harness", "internal-skills", "stakeholder-analysis", "GUIDE.md"));
     await stat(join(projectRoot, ".harness", "internal-skills", "stakeholder-persona", "GUIDE.md"));
+    await stat(join(projectRoot, ".harness", "internal-skills", "requirements-gap-review", "GUIDE.md"));
     for (const name of ["subdomain-candidates", "event-storming", "subdomain-classification", "bounded-context", "ubiquitous-language", "requirements-fix"]) {
       await stat(join(projectRoot, ".harness", "internal-skills", name, "GUIDE.md"));
     }
@@ -161,6 +162,7 @@ async function verify(projectRoot, options) {
       "plan_reviewer.toml",
       "contract_reviewer.toml",
       "stakeholder_persona.toml",
+      "requirements_gap_reviewer.toml",
       "tactical_designer.toml",
       "tactical_implementation_agent.toml",
     ]) {

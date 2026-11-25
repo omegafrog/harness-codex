@@ -7,7 +7,7 @@ export const FRESH_AGENT_TYPES = [
   'code_researcher', 'contract_reviewer', 'diagram_creator', 'e2e_test_runner', 'execution_runner',
   'frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer', 'human_approver',
   'implementation_agent', 'knowledge_claim_extractor', 'knowledge_principle_reviewer',
-  'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author',
+  'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author', 'requirements_gap_reviewer',
   'spec_adversarial_reviewer', 'spec_reviewer', 'stage_document_writer', 'stakeholder_persona', 'standards_reviewer',
   'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage', 'workflow_stage_solo',
 ];
@@ -15,7 +15,7 @@ export const FRESH_AGENT_TYPES = [
 // Helper agents run on the configured low-performance model of the consumer, not on the parent's. An agent profile file
 // cannot carry that value without making every installed copy differ from its source (lock hashes, Doctor drift, setup
 // changes), so the start itself is checked here against agents.codex in .harness/harness.yaml.
-const HELPER_SKILLS = { code_researcher: 'code-research', stakeholder_persona: 'stakeholder-persona' };
+const HELPER_SKILLS = { code_researcher: 'code-research', stakeholder_persona: 'stakeholder-persona', requirements_gap_reviewer: 'requirements-gap-review' };
 
 function workflowWorktreeRoot(start) {
   let directory = typeof start === 'string' ? start : '';

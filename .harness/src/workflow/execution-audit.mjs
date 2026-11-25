@@ -22,7 +22,7 @@ const FRESH_AGENT_TYPES = new Set([
   'code_researcher', 'contract_reviewer', 'diagram_creator', 'e2e_test_runner', 'execution_runner',
   'frontend_designer', 'frontend_implementation_agent', 'frontend_visual_reviewer', 'human_approver',
   'implementation_agent', 'knowledge_claim_extractor', 'knowledge_principle_reviewer',
-  'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author',
+  'knowledge_principle_synthesizer', 'knowledge_source_researcher', 'plan_reviewer', 'pr_author', 'requirements_gap_reviewer',
   'spec_adversarial_reviewer', 'spec_reviewer', 'stakeholder_persona', 'standards_reviewer',
   'tactical_designer', 'tactical_implementation_agent', 'to_ticket', 'tracker_publisher', 'workflow_stage', 'workflow_stage_solo',
 ]);

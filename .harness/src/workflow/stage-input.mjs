@@ -878,6 +878,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       input.context.workspace.persona_binding = { skill: 'stakeholder-persona', provider, model, reasoning_effort };
     } catch { /* the GUIDE falls back to the binding command */ }
   }
+  // The binding of the independent gap reviewer that requirements-fix starts once; same fallback as the persona.
+  if (input.skill === 'requirements-fix') {
+    try {
+      const { model, reasoning_effort } = await resolveSkillBinding({ root, skill: 'requirements-gap-review', executionProvider: provider });
+      input.context.workspace.gap_reviewer_binding = { skill: 'requirements-gap-review', provider, model, reasoning_effort };
+    } catch { /* the GUIDE falls back to the binding command */ }
+  }
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });

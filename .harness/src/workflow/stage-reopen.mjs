@@ -1,6 +1,7 @@
 import { readSkillSessionJson, resolveSkillSession } from './stage-runtime.mjs';
 import { REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES, WORKTREE_STAGE, isCurrentStage } from './worktree-stages.mjs';
 import { launchCommand } from './stage-cli.mjs';
+import { recheckRequirementsBeforeApproval } from './requirements-document-gate.mjs';
 import { execFile } from 'node:child_process';
 import { isDeepStrictEqual, promisify } from 'node:util';
 
@@ -52,6 +53,15 @@ export const reopenFeedback = ({ ownerStage, blockedStage, blockedExecutionId, g
   `After you complete, the remaining stale stages from ${rerunOrder.slice(1).join(' → ')} are re-run in order.`,
 ].join(' ');
 
+// The note the requirements owner receives when the runner's recheck found the fixed requirements.md below the current rules.
+export const recheckFeedback = ({ reason, rerunOrder }) => [
+  'Requirements recheck: no user revision and no blocked stage. Before asking the user to approve, the runner checked the fixed requirements.md against the current requirements-fix completion rules and it fails.',
+  reason,
+  'Your earlier output and every committed document stay in place. Edit your own sections forward until the rules pass: keep every decision the errors do not touch and do not start from scratch.',
+  'A business decision that the requirements do not settle is not yours to make: return the question batch as your guide says (one batch, with the gap review included).',
+  `After you complete, the remaining stale stages from ${rerunOrder.slice(1).join(' → ')} are re-run in order.`,
+].join('\n');
+
 // The note a stale stage receives when it is re-run because an upstream stage changed.
 export const staleFeedback = (stage, stale) => `Upstream changed: ${stale.owner_stage} was reopened ${stale.reason === 'user_revision' ? 'for the user’s revision' : `for ${stale.blocked_stage}`} and has been completed again, so your previous result is stale. Read the current upstream documents and results, then update your existing output forward: keep every decision that still holds, change only what the upstream change requires, and do not start from scratch. Return completed/OK only when your output matches the current upstream; if it needs a decision the upstream does not settle, return the block or question your guide specifies.`;
 
@@ -101,7 +111,12 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   const [blockedStage, blocked] = found;
   const blockedIndex = REWIND_STAGES.indexOf(blockedStage);
   if (blockedIndex <= ownerIndex) throw refusal(`Reopen refused: ${blockedStage} does not come after ${ownerStage}`, `A stage is reopened only for a later stage that is blocked on it; ${blockedStage} is ${blockedIndex < 0 ? 'outside the rewindable flow' : 'not later in the flow'}.`, ['node .harness/scripts/harness-context.mjs']);
-  if (state.current_stage !== blockedStage || blocked.status !== 'blocked' || blocked.code !== 'DEPENDENCY_INCOMPLETE' || !blocked.result_ref) {
+  // The recheck route: the finished bounded-context awaits approval and its requirements.md fails today's requirements-fix rules.
+  const recheck = blocked.status === 'completed' && blockedStage === WORKTREE_STAGE.BOUNDED_CONTEXT && ownerStage === WORKTREE_STAGE.REQUIREMENTS_FIX ? recheckRequirementsBeforeApproval({ root, state }) : null;
+  if (recheck && (!recheck.applies || recheck.ok || recheck.blocked_execution_id !== blockedExecutionId)) {
+    throw refusal('Reopen refused: the fixed requirements pass the current rules', recheck.applies ? 'The runner rechecked requirements.md against the requirements-fix completion rules and it passes (or bounded-context ' + blockedExecutionId + ' is not the one awaiting approval), so there is nothing to reopen.' : 'Domain-model already started or the fixed requirements are not the current result, so the approval recheck does not apply.', ['node .harness/scripts/harness-context.mjs shows the current step']);
+  }
+  if (!recheck && (state.current_stage !== blockedStage || blocked.status !== 'blocked' || blocked.code !== 'DEPENDENCY_INCOMPLETE' || !blocked.result_ref)) {
     throw refusal(`Reopen refused: ${blockedStage} is ${describe(blocked)}, not its latest blocked / DEPENDENCY_INCOMPLETE result`, 'The order guard allows a reopen only while the latest result of a later stage is blocked / DEPENDENCY_INCOMPLETE naming this owner.', ['node .harness/scripts/harness-context.mjs']);
   }
   const running = Object.entries(stages).find(([, entry]) => entry?.status === 'running');
@@ -113,7 +128,7 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   if (started) throw refusal(`Reopen refused: ${started} has already started`, `Tickets were published or implemented from the plan set (${started} is ${describe(stages[started])}); a forward rewind cannot change what they were built from.`, [], 'Report the gap to the user: changing the design now needs their instruction (--user-revision) or a restart they request.');
   const resultSession = await resolveSkillSession(root, blocked.result_session_directory || session);
   const result = await readSkillSessionJson({ root, session_directory: resultSession, path: blocked.result_ref });
-  const named = result.owner_stage;
+  const named = recheck ? ownerStage : result.owner_stage;
   if (typeof named !== 'string' || !REWIND_STAGES.includes(named)) {
     throw refusal(`Reopen refused: the ${blockedStage} result names no owner_stage`, `A blocked / DEPENDENCY_INCOMPLETE result must name the earliest stage that owns the gap in result.owner_stage; ${blockedStage} (execution ${blockedExecutionId}) did not.`, [launchCommand(blockedStage, "--feedback 'Return blocked / DEPENDENCY_INCOMPLETE again, naming the earliest upstream stage that owns the gap in result.owner_stage and the gap in result.dependency_gap.'")], 'If the stage still names no owner, report the block to the user.');
   }
@@ -122,9 +137,9 @@ export async function resolveReopen({ root, session, state, ownerStage, blockedE
   const between = REWIND_STAGES.slice(ownerIndex + 1, blockedIndex);
   const mark = between.filter((id) => stages[id]?.status === 'completed' && stages[id].code === 'OK');
   const rerunOrder = [ownerStage, ...between.filter((id) => stages[id]), blockedStage];
-  const gap = (typeof result.dependency_gap === 'string' && result.dependency_gap.trim()) || result.summary;
+  const gap = recheck ? recheck.reason : (typeof result.dependency_gap === 'string' && result.dependency_gap.trim()) || result.summary;
   const stale = { owner_stage: ownerStage, blocked_stage: blockedStage, reopened_for: blockedExecutionId, rerun_order: rerunOrder, marked_at: new Date().toISOString() };
-  return { owner_stage: ownerStage, blocked_stage: blockedStage, blocked_execution_id: blockedExecutionId, blocked_result_ref: blocked.result_ref, blocked_result_base: resultSession === session ? 'session' : 'control_session', mark: [...mark, blockedStage], stale, feedback: reopenFeedback({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }) };
+  return { owner_stage: ownerStage, blocked_stage: blockedStage, blocked_execution_id: blockedExecutionId, blocked_result_ref: blocked.result_ref, blocked_result_base: resultSession === session ? 'session' : 'control_session', mark: [...mark, blockedStage], stale, feedback: recheck ? recheckFeedback({ reason: gap, rerunOrder }) : reopenFeedback({ ownerStage, blockedStage, blockedExecutionId, gap, rerunOrder }), ...(recheck ? { requirements_recheck: true } : {}) };
 }
 
 // The stale stages of a state, in flow order; empty when nothing is stale.
