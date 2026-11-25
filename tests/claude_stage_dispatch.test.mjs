@@ -129,6 +129,13 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   assert.equal(researcher.run_in_background, false);
   assert.equal(researcher.prompt, 'Find the owners of posts');
   assert.equal(research({}).updated, undefined);
+  const persona = (extra, model) => hooks.admit('Interview as persona', { tool_input: { subagent_type: 'stakeholder_persona', description: 'persona', prompt: 'Interview as persona', ...(model ? { model } : {}) }, ...extra });
+  assert.equal(persona({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }).updated.model, lowTier.low_performance_model);
+  const overridden = persona({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }, 'sonnet').updated;
+  assert.equal(overridden.model, lowTier.low_performance_model, 'the configured binding overrides a passed model');
+  assert.equal(overridden.run_in_background, false);
+  assert.equal(research({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }).updated.model, lowTier.low_performance_model);
+  assert.equal(persona({}, 'sonnet').updated, undefined, 'a main-session call is not rewritten');
   // A second start of the same profile has no reserved execution left and binds nothing.
   assert.equal(hooks.start('agent-intruder').stdout, '');
   assert.equal((await flow.state()).stages['stakeholder-analysis'].native_agent_id, 'agent-real-1');

@@ -53,6 +53,13 @@ test('a question needs its settled rules, why now, and per option an effect and 
   assert.doesNotThrow(() => assertQuestionContext(undefined));
 });
 
+test('an option is not an edit request or an answer-text outcome, and ordinary rules still pass', () => {
+  const change = (patch) => withOptions(owned, (option, index) => (index ? patch : {}));
+  assert.match(questionContextProblems(change({ label: '수정이 필요함', effect: '답변 문구로 초안을 바꿉니다' })).join(), /edit the draft[\s\S]*direct input/);
+  assert.deepEqual(questionContextProblems(change({ label: '수정 권한은 본인만 갖는다', effect: '변경 이력을 보여 준다' })), []);
+  assert.doesNotThrow(() => assertQuestionContext([legacy(owned)], { schema: { properties: { result: { properties: { questions: { items: { properties: {} } } } } } } }));
+});
+
 test('a question is short: one line for why now, each effect and each example, and at most three settled rules', () => {
   const long = '가'.repeat(161);
   const problems = (question) => questionContextProblems(question).join('\n');

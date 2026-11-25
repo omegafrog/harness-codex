@@ -1,3 +1,4 @@
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 
@@ -14,6 +15,9 @@ const filled = (value) => typeof value === 'string' && value.trim().length > 0;
 export const QUESTION_LINE_LIMIT = 160;
 export const QUESTION_RULES_LIMIT = 3;
 const OPEN_ENDED_LABEL = /^(?:직접\s*입력(?:한다|하기|\s*\(.*\))?|기타|other|others)$/i;
+// "수정이 필요함" and an effect that makes the user's answer text the outcome are direct input under another name.
+const EDIT_REQUEST_LABEL = /^(?:수정|변경|고쳐|고치|다르게|다른\s*(?:안|답|의견)|그\s*외|기타)(?:\s*(?:이\s*필요함|이\s*필요합니다|필요|한다|하기|(?:해?서)?\s*확정(?:\s*한다)?|\(?직접\s*입력\)?))*$/;
+const ANSWER_TEXT_OUTCOME = /답변\s*(?:문구|내용|대로)|적어\s*주신\s*대로|입력한?\s*대로|사용자가\s*(?:적은|입력한)/;
 const sameText = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
 
 // What a user needs to decide without having followed the agent's work: the business rules already settled that bear on the
@@ -36,6 +40,13 @@ export function questionContextProblems(question) {
   for (const option of Array.isArray(question?.options) ? question.options : []) {
     if (OPEN_ENDED_LABEL.test(String(option?.label ?? '').trim())) problems.push(`option ${option.id} is "${option.label}": an option names the concrete values it commits to (which things, which fields, which condition); the user may always answer in their own words`);
   }
+  for (const option of Array.isArray(question?.options) ? question.options : []) {
+    if (EDIT_REQUEST_LABEL.test(String(option?.label ?? '').trim())) problems.push(`option ${option?.id} is "${option.label}", a request to edit the draft; offer the concrete alternatives instead (the user may always answer in their own words)`);
+    for (const field of ['effect', 'consequence']) {
+      const match = ANSWER_TEXT_OUTCOME.exec(String(option?.[field] ?? ''));
+      if (match) problems.push(`option ${option?.id} ${field} says "${match[0]}": the outcome is the user's answer text, which is direct input; name the concrete result of the option`);
+    }
+  }
   const first = { effect: new Map(), example: new Map() };
   for (const option of Array.isArray(question?.options) ? question.options : []) {
     for (const field of ['effect', 'example']) {
@@ -53,9 +64,9 @@ export function questionContextProblems(question) {
 // The gate for a stage's new question batch (harness-result runs it; stored questions are never checked, so questions written
 // before this rule stay readable). `schema` is the output schema the worker was given: an execution started before the rule has
 // a schema without `context`, its worker could not have written one, so its batch is accepted as it is.
-export function assertQuestionContext(questions, { schema = null, skill = null } = {}) {
+export function assertQuestionContext(questions, { schema = null, skill = null, root = null, request = null, planSetId = null } = {}) {
   if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
-  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question) : [])].map((problem) => `question ${index + 1}: ${problem}`));
+  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question, { root, request, planSetId }) : [])].map((problem) => `question ${index + 1}: ${problem}`));
   if (!problems.length) return;
   throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. An option names concrete values (never 직접 입력/기타) and the recommended option's reason goes in rationale. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.`);
 }
@@ -64,8 +75,49 @@ export function assertQuestionContext(questions, { schema = null, skill = null }
 // to a later question (a 보류 option may say it is asked again), and a question that settles several candidates cannot be a bare adopt/reject.
 const DEFERRING_OPTION = /임의로|나중에 정|후속(?:\s*(?:질문|단계))?에서 (?:다시 )?(?:정|묻)/;
 const ADOPT_REJECT = /^(?:채택|기각|보류|채택한다|기각한다|보류한다)$/;
-export function stakeholderQuestionProblems(question) {
+// A recommendation that adds a login needs evidence the project has one: a request quote about login/members, or a project file about it.
+const LOGIN_REQUIRED = /로그인(?:한|된|이\s*필요|해야|을\s*해야|을\s*요구)|login(?:ged)?[\s-]*(?:required|in user)|requires?\s+login/i;
+const LOGIN_NEGATED = /비로그인|로그인\s*없이|로그인(?:을|이)?\s*(?:하지|요구하지)\s*않|로그인\s*불필요|no login|without (?:a )?login|login not required/gi;
+const LOGIN_TOPIC = /로그인|회원|인증|login|auth/i;
+const LOGIN_FILE_EVIDENCE = /로그인|인증|회원|login|auth(?:entication|orization)?\b|session|signin|sign-in/i;
+const HARNESS_OWNED = /^(?:\.harness|\.claude|\.codex|\.io|\.git|node_modules)(?:\/|$)/;
+function loginFileEvidence(rationale, { root, planSetId }) {
+  if (!root) return false;
+  for (const token of rationale.match(/[^\s"'`()[\],;]+\.[A-Za-z0-9]{1,8}\b/g) ?? []) {
+    const path = token.replace(/^\.\//, '').replace(/[.:]+$/, '');
+    if (!path || isAbsolute(path) || path.split('/').includes('..') || HARNESS_OWNED.test(path) || (planSetId && path.startsWith(`docs/specs/${planSetId}/`))) continue;
+    try {
+      const target = resolve(root, path);
+      const real = relative(realpathSync(root), realpathSync(target));
+      if (real.startsWith('..') || isAbsolute(real) || HARNESS_OWNED.test(real.replaceAll('\\', '/'))) continue;
+      const info = lstatSync(target);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 1_000_000) continue;
+      if (LOGIN_FILE_EVIDENCE.test(readFileSync(target, 'utf8'))) return true;
+    } catch { /* not a usable evidence file */ }
+  }
+  return false;
+}
+function loginEvidenceProblem(question, { root, request, planSetId }) {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  const title = String(question?.title ?? '');
+  const optionText = options.map((option) => `${option?.label ?? ''} ${option?.effect ?? ''} ${option?.consequence ?? ''}`).join(' ');
+  const access = (/OPEN-\d+/.test(title) && /이용\s*조건/.test(title)) || /로그인|비로그인|login/i.test(`${title} ${optionText}`);
+  const recommended = options.find((option) => option?.id === question?.recommended_option_id);
+  if (!access || !recommended) return null;
+  const text = `${recommended.label ?? ''} ${recommended.effect ?? ''} ${recommended.consequence ?? ''}`.replace(LOGIN_NEGATED, ' ');
+  if (!LOGIN_REQUIRED.test(text)) return null;
+  const rationale = String(question.rationale ?? '');
+  for (const [, quote] of rationale.matchAll(/요청 원문\s*"([^"]+)"/g)) {
+    if (typeof request === 'string' && request.includes(quote) && LOGIN_TOPIC.test(quote)) return null;
+  }
+  if (loginFileEvidence(rationale, { root, planSetId })) return null;
+  return `the recommended option ${recommended.id} requires a login, but its rationale cites no evidence that the project has one; cite \`요청 원문 "<exact request text about 로그인/회원/인증>"\` or an existing project file about login/auth, otherwise recommend the option that adds no new login (the least new behavior) and say the project has no evidence of an existing login`;
+}
+
+export function stakeholderQuestionProblems(question, evidence = {}) {
   const problems = [];
+  const login = loginEvidenceProblem(question, evidence);
+  if (login) problems.push(login);
   for (const option of Array.isArray(question?.options) ? question.options : []) {
     const hold = /보류/.test(String(option?.label ?? ''));
     for (const field of ['label', 'effect', 'consequence', 'example']) {

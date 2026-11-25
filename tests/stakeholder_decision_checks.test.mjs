@@ -83,6 +83,48 @@ test('an option is never a direct-input or other choice', () => {
   assert.deepEqual(questionContextProblems(question), []);
 });
 
+test('an option that only asks to edit the draft or makes the answer text the outcome is direct input', () => {
+  const withOption = (change) => ({ ...question, options: question.options.map((option, index) => (index ? { ...option, ...change } : option)) });
+  for (const label of ['수정이 필요함', '수정 필요', '변경한다', '다르게 한다', '다른 의견', '그 외', '고쳐서 확정한다', '수정 (직접 입력)']) {
+    assert.match(questionContextProblems(withOption({ label })).join(), /request to edit the draft/, label);
+  }
+  for (const effect of ['답변 문구로 초안을 바꿉니다', '적어 주신 대로 확정합니다', '사용자가 입력한 대로 정한다']) {
+    assert.match(questionContextProblems(withOption({ effect })).join(), /direct input/, effect);
+  }
+  assert.deepEqual(questionContextProblems(withOption({ label: '수정 권한은 본인만 갖는다', effect: '변경 이력을 보여 준다' })), []);
+});
+
+test('a login recommendation needs a request quote or a project file as evidence', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'login-evidence-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'src'), { recursive: true });
+  await mkdir(join(root, '.harness'), { recursive: true });
+  await writeFile(join(root, 'src/auth.js'), 'export const login = () => session;\n');
+  await writeFile(join(root, 'src/map.js'), 'export const map = 1;\n');
+  await writeFile(join(root, '.harness/auth.md'), 'login\n');
+  const asked = (rationale, recommended = 'a') => ({
+    ...question, title: '[제안: 요청 해석(에이전트)] OPEN-01 이용 조건: 누가 쓰나요?', recommended_option_id: recommended, rationale,
+    options: [
+      { id: 'a', label: '로그인한 모든 사용자', consequence: '로그인한 사용자만 쓴다', effect: '로그인하지 않으면 지도가 보이지 않는다', example: '손님은 로그인 화면을 본다' },
+      { id: 'b', label: '누구나', consequence: '로그인 없이 쓴다', effect: '비로그인 사용자도 지도를 본다', example: '손님도 핀을 본다' },
+    ],
+  });
+  const problems = (rationale, recommended, req = '지도 기능을 만들어. 회원만 핀을 올려.') => stakeholderQuestionProblems(asked(rationale, recommended), { root, request: req, planSetId: '20260101-map' }).join();
+  assert.match(problems('기존 채팅이 참여자를 구분한다'), /requires a login/);
+  assert.match(problems('요청 원문 "지도 기능을 만들어"'), /requires a login/, 'a quote that never mentions login is no evidence');
+  assert.match(problems('요청 원문 "로그인한 사용자"'), /requires a login/, 'a quote that is not in the request');
+  assert.match(problems('src/map.js가 보여 준다'), /requires a login/);
+  assert.match(problems('.harness/auth.md가 보여 준다'), /requires a login/);
+  assert.match(problems('docs/none.md가 보여 준다'), /requires a login/);
+  assert.match(problems('../etc/auth.js'), /requires a login/);
+  assert.equal(problems('요청 원문 "회원만 핀을 올려"'), '');
+  assert.equal(problems('src/auth.js가 이미 로그인을 처리한다'), '');
+  assert.equal(problems('요청이 로그인을 말하지 않아 새 동작이 가장 적다', 'b'), '', 'the option that adds no login needs no evidence');
+  assert.equal(stakeholderQuestionProblems(asked('기존 채팅이 참여자를 구분한다')).length > 0, true);
+  assert.throws(() => assertQuestionContext([asked('기존 채팅이 참여자를 구분한다')], { skill: 'stakeholder-analysis', root, request: '지도' }), /requires a login/);
+  assert.doesNotThrow(() => assertQuestionContext([asked('기존 채팅이 참여자를 구분한다')], { skill: 'event-storming', root }));
+});
+
 test('the compact questions show each example and the reason for the recommendation', () => {
   const [shown] = compactQuestions([{ question_id: 'e:1', ...question }]);
   assert.equal(shown.reason, question.rationale);
