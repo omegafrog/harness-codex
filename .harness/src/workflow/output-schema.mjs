@@ -46,7 +46,8 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
   if (option?.properties?.evidence && !option.required.includes('evidence')) option.required = [...option.required, 'evidence'];
   // A new question gives the user its settled rules and why now, and each option its effect and example (questions.mjs assertQuestionContext).
   if (question?.properties?.context && !question.required.includes('context')) question.required = [...question.required, 'context'];
-  for (const key of ['effect', 'example']) if (option?.properties?.[key] && !option.required.includes(key)) option.required = [...option.required, key];
+  // excludes names the options of other questions of the batch that cannot hold with this one (questions.mjs questionBatchProblems).
+  for (const key of ['effect', 'example', 'excludes']) if (option?.properties?.[key] && !option.required.includes(key)) option.required = [...option.required, key];
   if (result.review_request) {
     // A review can run any sub-agent skill, that is, any skill whose document declares a setup tier.
     const skills = (await listDeclaredSkills(root)).filter((item) => !item.main_session).map((item) => item.skill);
@@ -115,7 +116,7 @@ export function validateOutputFormat(value, schema) {
     if ('const' in shape && item !== shape.const) add('const', shape.const);
     if (shape.enum && !shape.enum.includes(item)) add('enum', shape.enum);
     const type = item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item;
-    if (shape.type && ![shape.type].flat().includes(type)) { add('type', shape.type); return errors; }
+    if (shape.type && ![shape.type].flat().includes(type) && !([shape.type].flat().includes('integer') && Number.isInteger(item))) { add('type', shape.type); return errors; }
     if (type === 'string') {
       if (shape.minLength && item.length < shape.minLength) add('minLength', shape.minLength);
       if (shape.pattern && !new RegExp(shape.pattern).test(item)) add('pattern', shape.pattern);

@@ -36,7 +36,12 @@ export const deferringCandidates = (analysis) => parseTables(analysis).filter(is
 const error = (code, message) => ({ code, message, owner_stage: STAGE });
 
 // `legacy` exempts a resumed analysis written before the `미확정 사실` table existed; `root` enables the document-path check.
-export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, root = null }) {
+// One batch of two or more questions shows its recommended options as one situation (`- 추천 조합 시나리오: <한두 문장>`), so a contradiction between them is visible.
+export const SCENARIO_LINE = /^\s*[-*]\s*추천 조합 시나리오\s*:[ \t]*(\S.*)$/m;
+export const hasRecommendedScenario = (analysis) => SCENARIO_LINE.test(String(analysis ?? ''));
+
+// `legacyScenario` exempts a resumed analysis written before the `추천 조합 시나리오` line existed.
+export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, legacyScenario = false, root = null }) {
   if (stakeholderAnalysisSkipped(analysis)) return { ok: true, skipped: true, errors: [] };
   const text = String(request ?? '');
   const tables = parseTables(analysis);
@@ -56,6 +61,9 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     for (const row of deferringCandidates(analysis)) {
       errors.push(error('CANDIDATE_DEFERS_DECISION', `${clean(row.CAND)} states "${clean(row['내용'])}", which only says that something is to be decided, so adopting it settles nothing. Rewrite it as a complete rule with an observable outcome, or as 2-3 concrete options asked as the choice (record the persona wording as 원문 in 근거); when it depends on another answer record the decision as 보류(후속) and do not ask it now.`));
     }
+  }
+  if (!legacyScenario && status === 'action_required' && questions >= 2 && !hasRecommendedScenario(analysis)) {
+    errors.push(error('RECOMMENDED_SCENARIO_MISSING', 'The result asks two or more questions but stakeholder-analysis.md has no non-empty `- 추천 조합 시나리오:` line (in the open-facts / candidate section). Write one or two Korean sentences that apply ALL recommended options to the same concrete situation; when the sentences contradict each other, change a recommendation or defer the dependent question.'));
   }
   const observationTables = tables.filter((table) => table.header.includes('제안자') && table.header.includes('관찰'));
   for (const table of observationTables) {
@@ -127,15 +135,17 @@ export async function evaluateStakeholderAnalysisGate({ root, input, envelope, d
   // Discriminator: every resume (answer, feedback, reopen, revision) of an earlier execution carries `context.previous_result_ref`.
   // Such a resume is exempt only when the published (non-draft) analysis already exists without the table; a new analysis,
   // or a resume of one that was written with the table, must have it.
-  let legacy = false, legacyCandidates = false;
+  let legacy = false, legacyCandidates = false, legacyScenario = false;
   if (input.context?.previous_result_ref) {
     const published = draftExecutionId ? await planSetDocument(root, planSetId, 'stakeholder-analysis.md') : analysis;
     const earlier = published.text !== null && !stakeholderAnalysisSkipped(published.text);
     legacy = earlier && openFactRows(published.text) === null;
     // An analysis written before the deferring-statement rule keeps the candidates it already has.
     legacyCandidates = earlier && deferringCandidates(published.text).length > 0;
+    // So is an analysis written before the recommended-combination scenario line.
+    legacyScenario = earlier && !hasRecommendedScenario(published.text);
   }
-  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, root }) };
+  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, legacyScenario, root }) };
 }
 
 export const stakeholderAnalysisFailureInstruction = (verdict) => `The runner checked stakeholder-analysis.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it repairs stakeholder-analysis.md (and its questions when a candidate moves back into the candidate table), rewrites its output file, then run finish again. Never ask the user whether a feature the request names is in scope. Ask each 미정 row of "미확정 사실" together with the candidate questions instead of recording it as an observation.`;

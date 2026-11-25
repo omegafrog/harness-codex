@@ -177,6 +177,29 @@
                   "minLength": 1,
                   "description": "The same concrete situation applied to this option, for example two pins of one owner on a map; illustrative, never a requirement; differs per option. One line, at most 160 characters. Required of every option of a new question."
                 },
+                "excludes": {
+                  "type": "array",
+                  "description": "Options of OTHER questions of this same batch that cannot hold together with this option (question = 1-based position in the batch, option = its id). [] when none. The relation is symmetric. Required of every option of a new question.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "question",
+                      "option"
+                    ],
+                    "properties": {
+                      "question": {
+                        "type": "integer",
+                        "description": "1-based position of the other question in this batch"
+                      },
+                      "option": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "id of the option of that question"
+                      }
+                    }
+                  }
+                },
                 "evidence": {
                   "type": "array",
                   "description": "Why this option meets or misses each criterion, citing a stored knowledge Claim from an authoritative source. Empty for a non-technology question.",

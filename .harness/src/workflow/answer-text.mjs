@@ -3,6 +3,7 @@
 // short clarification request instead of a guess.
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { answerConflictMessage } from './questions.mjs';
 
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 
@@ -52,8 +53,18 @@ function markedSegments(text, count) {
 
 const brief = (questions) => questions.map((question, index) => `${index + 1}. ${question.title}`).join(' | ');
 
-// questions: the stage's questions in the order they were shown; answered: question ids that already have an answer.
-export function mapReplyToAnswers(questions, text, { answered = [] } = {}) {
+// questions: the stage's questions in the order they were shown; answered: question ids that already have an answer;
+// stored: those answers ({question_id, answer}). A reply that, with the stored answers, picks two options that cannot both hold
+// (`excludes`) records nothing and asks the user to change one.
+export function mapReplyToAnswers(questions, text, { answered = [], stored = [] } = {}) {
+  const mapped = mapReply(questions, text, { answered });
+  if (!mapped.answers) return mapped;
+  const incoming = new Set(mapped.answers.map((item) => item.question_id));
+  const conflict = answerConflictMessage(questions, [...stored.filter((item) => !incoming.has(item.question_id)), ...mapped.answers]);
+  return conflict ? { clarification: conflict } : mapped;
+}
+
+function mapReply(questions, text, { answered = [] } = {}) {
   const reply = String(text ?? '').trim();
   if (!reply) return { clarification: 'The reply is empty. Ask the user for their answer.' };
   const open = questions.filter((question) => !answered.includes(question.question_id));
@@ -95,8 +106,8 @@ export function waitingQuestions(root, state, stageId = null) {
   if (!Array.isArray(questions) || !questions.length) return null;
   const pending = join(entry.result_session_directory || join(root, '.io'), `runtime/executions/${entry.execution_id}/pending-answers.json`);
   const stored = existsSync(pending) ? readJson(pending) : [];
-  const answered = (Array.isArray(stored) ? stored : []).filter((item) => typeof item?.answer === 'string').map((item) => item.question_id);
-  return { stageId: id, entry, questions, answered };
+  const storedAnswers = (Array.isArray(stored) ? stored : []).filter((item) => typeof item?.answer === 'string');
+  return { stageId: id, entry, questions, answered: storedAnswers.map((item) => item.question_id), storedAnswers };
 }
 
 // A short yes: "승인합니다", "네 진행해 주세요", "approved, go ahead". Anything that also asks for a change is not one.
@@ -135,7 +146,7 @@ export function resolveReplyTarget(root, text) {
   if (!state?.stages) return { error: 'No workflow state was found in this worktree.' };
   const waiting = waitingQuestions(root, state) || Object.keys(state.stages).map((id) => waitingQuestions(root, state, id)).find(Boolean);
   if (waiting) {
-    const mapped = mapReplyToAnswers(waiting.questions, text, { answered: waiting.answered });
+    const mapped = mapReplyToAnswers(waiting.questions, text, { answered: waiting.answered, stored: waiting.storedAnswers });
     if (mapped.clarification) return { stageId: waiting.stageId, clarification: mapped.clarification };
     return { stageId: waiting.stageId, args: ['--stage-id', waiting.stageId, '--answer', JSON.stringify(mapped.answers)] };
   }

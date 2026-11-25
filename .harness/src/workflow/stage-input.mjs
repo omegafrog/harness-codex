@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readSkillSessionJson, readStageResult, resolveSkillBinding, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
-import { isQuestionResponse, mergeAnswers } from './questions.mjs';
+import { answerConflictMessage, isQuestionResponse, mergeAnswers } from './questions.mjs';
 import { findExecutionInput, writeExecutionInput } from './execution-input.mjs';
 import { assertExecutionStopped, processIdentity, recordExecutionState } from './execution-state.mjs';
 import { parseYaml } from '../eval/yaml.mjs';
@@ -308,6 +308,10 @@ export async function collectAnswers(session, prefix, questions, answer, deferre
     }
     if (previous.length) incoming = incoming.filter((entry) => !previous.some((item) => item?.question_id === entry.question_id && item.answer === entry.answer));
   }
+  // Two chosen options that cannot both hold (`excludes`): record nothing, the caller asks the user to change one.
+  const replaced = new Set(incoming.map((entry) => entry.question_id));
+  const conflict = answerConflictMessage(questions, [...previous.filter((entry) => Object.hasOwn(entry ?? {}, 'answer') && !(revisePending && replaced.has(entry.question_id))), ...incoming.filter((entry) => Object.hasOwn(entry, 'answer'))]);
+  if (conflict) return { conflict };
   const merged = mergeAnswers(questions, previous, incoming, { revisePending });
   if (merged.complete) {
     const contents = JSON.stringify(merged.answers, null, 2) + '\n';
@@ -769,6 +773,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
       if (deferred.length !== deferredAnswers.length) input_refs.push({ base: 'session', path: `${prefix}/deferred-answers.json`, kind: 'deferred_user_answers_unverified' });
     }
     const batchAnswers = await collectAnswers(taskSession, prefix, result.questions, answer, deferred);
+    if (batchAnswers.conflict) return { status: 'clarification_needed', stage_id: stageId, message: batchAnswers.conflict, next: 'Ask the user in Korean to change one of the two choices, then pass their new reply verbatim with the same answer command. Nothing was recorded.' };
     if (!batchAnswers.complete) {
       const answered = new Set(batchAnswers.answers.map(({ question_id }) => question_id));
       const questions = result.questions.filter(({ question_id }) => !answered.has(question_id));

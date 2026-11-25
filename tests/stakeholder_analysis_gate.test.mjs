@@ -38,7 +38,9 @@ test('처리 and 근거 are validated', () => {
 test('미정 rows block completion but are allowed with a question on action_required', () => {
   const open = doc(access, row('OPEN-02', '권한', '미정'));
   assert.deepEqual(codes(open, { status: 'completed' }), ['OPEN_FACT_UNRESOLVED']);
-  assert.deepEqual(codes(open, { status: 'action_required', questions: 2 }), []);
+  assert.deepEqual(codes(open, { status: 'action_required', questions: 2 }), ['RECOMMENDED_SCENARIO_MISSING']);
+  assert.deepEqual(codes(`${open}\n- 추천 조합 시나리오: 추천 선택지를 모두 같은 상황에 적용해도 모순이 없다.\n`, { status: 'action_required', questions: 2 }), []);
+  assert.deepEqual(codes(open, { status: 'action_required', questions: 1 }), []);
   assert.deepEqual(codes(open, { status: 'action_required', questions: 0 }), ['OPEN_FACT_UNRESOLVED']);
 });
 

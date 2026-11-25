@@ -66,9 +66,126 @@ export function questionContextProblems(question) {
 // a schema without `context`, its worker could not have written one, so its batch is accepted as it is.
 export function assertQuestionContext(questions, { schema = null, skill = null, root = null, request = null, planSetId = null } = {}) {
   if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
-  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question, { root, request, planSetId }) : [])].map((problem) => `question ${index + 1}: ${problem}`));
-  if (!problems.length) return;
-  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. An option names concrete values (never 직접 입력/기타) and the recommended option's reason goes in rationale. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.`);
+  const list = Array.isArray(questions) ? questions : [];
+  const problems = list.flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question, { root, request, planSetId }) : [])].map((problem) => `question ${index + 1}: ${problem}`));
+  // `excludes` is checked only when the execution's schema could carry it; a schema without it is an execution started before the rule.
+  const batch = !schema || schema.properties?.result?.properties?.questions?.items?.properties?.options?.items?.properties?.excludes
+    ? [...questionBatchProblems(list), ...(skill === 'stakeholder-analysis' ? stakeholderExclusionProblems(list) : [])] : [];
+  if (!problems.length && !batch.length) return;
+  const exclusion = batch.length ? ' `excludes` of an option lists the options of other questions of this batch (question = 1-based position, option = its id) that cannot hold together with it, so the user is never shown recommended answers that contradict each other. Ask a question that only makes sense under one answer of another question after that answer.' : '';
+  throw new Error(`Questions must let the user decide without following your work. ${[...problems, ...batch].join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. An option names concrete values (never 직접 입력/기타) and the recommended option's reason goes in rationale. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.${exclusion}`);
+}
+
+// Two options of different questions of one batch that cannot both hold are declared with `excludes` ({question: 1-based position in
+// the batch, option: option id}); either side may declare the pair. The batch is rejected when it shows the user recommended answers
+// that contradict each other, an option no answer can leave open, or a question whose answer another recommendation already decides.
+const optionList = (question) => (Array.isArray(question?.options) ? question.options : []);
+const refName = (questions, number, option) => `question ${number} option ${option}${optionList(questions[number - 1]).find((item) => item?.id === option)?.label ? ` ("${optionList(questions[number - 1]).find((item) => item.id === option).label}")` : ''}`;
+
+// Map "i:optionId" -> Set of "j:optionId" it cannot hold with (symmetric). `problems` collects invalid references.
+export function exclusionMap(questions, problems = []) {
+  const map = new Map();
+  const link = (a, b) => { if (!map.has(a)) map.set(a, new Set()); map.get(a).add(b); };
+  questions.forEach((question, index) => {
+    const number = index + 1;
+    for (const option of optionList(question)) {
+      if (!Array.isArray(option?.excludes)) { problems.push(`question ${number} option ${option?.id} needs excludes (an array, [] when it conflicts with no option of another question)`); continue; }
+      for (const ref of option.excludes) {
+        const target = Number.isInteger(ref?.question) ? questions[ref.question - 1] : undefined;
+        if (!target) problems.push(`question ${number} option ${option.id} excludes question ${ref?.question}, which is not a question position of this batch (1-${questions.length})`);
+        else if (ref.question === number) problems.push(`question ${number} option ${option.id} excludes an option of its own question; excludes names options of other questions`);
+        else if (!optionList(target).some((item) => item?.id === ref.option)) problems.push(`question ${number} option ${option.id} excludes question ${ref.question} option ${ref.option}, which does not exist`);
+        else { link(`${number}:${option.id}`, `${ref.question}:${ref.option}`); link(`${ref.question}:${ref.option}`, `${number}:${option.id}`); }
+      }
+    }
+  });
+  return map;
+}
+
+export function questionBatchProblems(questions) {
+  const problems = [];
+  const map = exclusionMap(questions, problems);
+  if (problems.length) return problems;
+  const recommended = questions.map((question) => question?.recommended_option_id);
+  const name = (key) => { const [number, option] = [Number(key.split(':')[0]), key.slice(key.indexOf(':') + 1)]; return refName(questions, number, option); };
+  questions.forEach((_, index) => {
+    const key = `${index + 1}:${recommended[index]}`;
+    for (const other of map.get(key) ?? []) {
+      const number = Number(other.split(':')[0]);
+      if (number > index + 1 && other === `${number}:${recommended[number - 1]}`) problems.push(`the recommended ${name(key)} and the recommended ${name(other)} cannot both hold; change one recommendation, or ask the dependent question after the answer of the other (defer it)`);
+    }
+  });
+  questions.forEach((question, index) => {
+    const number = index + 1;
+    const options = optionList(question);
+    for (const option of options) {
+      const key = `${number}:${option.id}`;
+      const dead = questions.findIndex((other, otherIndex) => otherIndex !== index && optionList(other).length && optionList(other).every((item) => map.get(`${otherIndex + 1}:${item.id}`)?.has(key)));
+      if (dead >= 0) problems.push(`${name(key)} is excluded by every option of question ${dead + 1}, so no answer can leave it open; remove the option or correct the excludes`);
+    }
+    const blocked = new Set();
+    questions.forEach((_, otherIndex) => { if (otherIndex !== index) for (const key of map.get(`${otherIndex + 1}:${recommended[otherIndex]}`) ?? []) if (key.startsWith(`${number}:`)) blocked.add(key); });
+    const remaining = options.filter((option) => !blocked.has(`${number}:${option.id}`));
+    if (options.length >= 2 && remaining.length === 1 && blocked.size) problems.push(`question ${number} is decided by the recommended answers of other questions (only ${name(`${number}:${remaining[0].id}`)} remains); ask it after the answer (defer it) instead of in this batch`);
+  });
+  return problems;
+}
+
+// stakeholder-analysis only: two wordings that every access/content batch contradicted before. The words are checked in the label,
+// effect and consequence of an option (never in its example); a negated wording is not matched.
+// "내" counts only as the viewer's (내 장소), not inside a word or a period (일주일 내).
+const IDENTITY_LIMIT = /본인|자기|자신의|(?<![일주달년간분초이안]\s)(?<![가-힣])내 /;
+const NO_LOGIN_OPEN = /로그인 없이|비로그인.*(?:누구나|허용)|누구나/;
+const USER_EDITS = /(?:사용자|이용자|본인)(?:가|이|는|은|만|들이)?\s*(?:직접\s*)?[^.,;]{0,12}?(?:등록|추가|작성|수정|삭제)/;
+const NOT_EDITING = /(?:등록|추가|작성|수정|삭제)(?:을|를)?\s*(?:하지|할 수 없|못|불가)|(?:등록|추가|작성|수정|삭제)\s*없이/g;
+const VIEW_ONLY = /보기만|표시만|조회만/;
+const optionWords = (option) => `${option?.label ?? ''} ${option?.effect ?? ''} ${option?.consequence ?? ''}`.replace(/\s+/g, ' ');
+const HEURISTICS = [
+  { name: 'limits what the viewer sees to their own data (본인/자기/내) while another question allows use without login', first: (text) => IDENTITY_LIMIT.test(text) && !NO_LOGIN_OPEN.test(text), second: (text) => NO_LOGIN_OPEN.test(text) },
+  { name: 'lets users register/edit content while another question makes the content view-only (보기만/표시만/조회만)', first: (text) => USER_EDITS.test(text.replace(NOT_EDITING, ' ')) && !VIEW_ONLY.test(text), second: (text) => VIEW_ONLY.test(text) },
+];
+
+export function stakeholderExclusionProblems(questions) {
+  const problems = [];
+  const map = exclusionMap(questions);
+  const reported = new Set();
+  for (const { name, first, second } of HEURISTICS) {
+    questions.forEach((question, i) => questions.forEach((other, j) => {
+      if (i === j) return;
+      for (const a of optionList(question)) for (const b of optionList(other)) {
+        const left = `${i + 1}:${a?.id}`, right = `${j + 1}:${b?.id}`;
+        if (!first(optionWords(a)) || !second(optionWords(b)) || map.get(left)?.has(right) || reported.has(`${left}|${right}`)) continue;
+        reported.add(`${left}|${right}`);
+        problems.push(`${refName(questions, i + 1, a.id)} ${name}, so it cannot hold with ${refName(questions, j + 1, b.id)}; declare it: excludes: [{question: ${j + 1}, option: "${b.id}"}] on question ${i + 1} option ${a.id}`);
+      }
+    }));
+  }
+  return problems;
+}
+
+// The option a stored answer chose: the answer text starts with "<label> (<id>)" or is the option id; any other text is the user's own words.
+export function selectedOption(question, answer) {
+  const text = String(answer ?? '').trim();
+  return optionList(question).find((option) => { const base = `${option.label} (${option.id})`; return text === base || text.startsWith(`${base}:`) || text.toLowerCase() === String(option.id).toLowerCase(); }) ?? null;
+}
+
+// The Korean message when answers (each {question_id, answer}) choose two options that cannot both hold; null when they do not.
+export function answerConflictMessage(questions, answers) {
+  if (!Array.isArray(questions) || !Array.isArray(answers)) return null;
+  const map = exclusionMap(questions);
+  if (!map.size) return null;
+  const chosen = [];
+  questions.forEach((question, index) => {
+    const entry = answers.find((item) => item?.question_id === question?.question_id);
+    const option = entry && selectedOption(question, entry.answer);
+    if (option) chosen.push({ number: index + 1, question, option });
+  });
+  for (const a of chosen) for (const b of chosen) {
+    if (b.number > a.number && map.get(`${a.number}:${a.option.id}`)?.has(`${b.number}:${b.option.id}`)) {
+      return `질문 ${a.number}("${a.question.title}")의 "${a.option.label}"과(와) 질문 ${b.number}("${b.question.title}")의 "${b.option.label}"은(는) 함께 성립할 수 없습니다. 둘 중 하나를 바꿔 다시 답해 주세요. 아무것도 기록하지 않았습니다.`;
+    }
+  }
+  return null;
 }
 
 // Extra rules for the questions of stakeholder-analysis: a decision settles an outcome, so no option may leave it to the implementer or

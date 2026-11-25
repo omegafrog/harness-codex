@@ -226,7 +226,7 @@ async function launchStage(requestedArgs, verbose) {
   const prepared = lastJson(prepare.stdout);
   const id = prepared?.input?.execution_id;
   const hasInput = validExecutionId(id) && prepared.input.context?.stage_id === stageId;
-  const noStart = !prepared?.input && (prepared?.waiting_for_answers === true || prepared?.waiting_for_running_stage === true || (prepared?.status === 'ready' && prepared.stage_id === stageId));
+  const noStart = !prepared?.input && (prepared?.waiting_for_answers === true || (prepared?.status === 'clarification_needed' && prepared.stage_id === stageId) || prepared?.waiting_for_running_stage === true || (prepared?.status === 'ready' && prepared.stage_id === stageId));
   if (!succeeded(prepare) || (!hasInput && !noStart)) throw await launchFailure(prepare, hasInput ? id : undefined);
   // A saved answer, a partial answer batch or a restart/discard does not start a stage: show what prepare reports.
   if (!hasInput) return verbose ? prepared : compactPrepared(prepared);

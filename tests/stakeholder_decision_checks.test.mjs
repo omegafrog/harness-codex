@@ -105,8 +105,8 @@ test('a login recommendation needs a request quote or a project file as evidence
   const asked = (rationale, recommended = 'a') => ({
     ...question, title: '[제안: 요청 해석(에이전트)] OPEN-01 이용 조건: 누가 쓰나요?', recommended_option_id: recommended, rationale,
     options: [
-      { id: 'a', label: '로그인한 모든 사용자', consequence: '로그인한 사용자만 쓴다', effect: '로그인하지 않으면 지도가 보이지 않는다', example: '손님은 로그인 화면을 본다' },
-      { id: 'b', label: '누구나', consequence: '로그인 없이 쓴다', effect: '비로그인 사용자도 지도를 본다', example: '손님도 핀을 본다' },
+      { id: 'a', label: '로그인한 모든 사용자', consequence: '로그인한 사용자만 쓴다', effect: '로그인하지 않으면 지도가 보이지 않는다', excludes: [], example: '손님은 로그인 화면을 본다' },
+      { id: 'b', label: '누구나', consequence: '로그인 없이 쓴다', effect: '비로그인 사용자도 지도를 본다', example: '손님도 핀을 본다', excludes: [] },
     ],
   });
   const problems = (rationale, recommended, req = '지도 기능을 만들어. 회원만 핀을 올려.') => stakeholderQuestionProblems(asked(rationale, recommended), { root, request: req, planSetId: '20260101-map' }).join();

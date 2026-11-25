@@ -20,12 +20,12 @@ const owned = {
   title: '[BIZ-02] 본인 데이터의 공개 범위는 어떤 단위로 정하나요?',
   context: { settled_rules: ['지도에는 소유자가 올린 핀이 표시된다', '공개 범위는 소유자가 정한다'], why_now: '공개 범위의 단위가 있어야 소유자 데이터 모델을 확정할 수 있다' },
   options: [
-    { id: 'per_item', label: '핀 하나씩', consequence: '핀마다 공개 범위가 있다', effect: '소유자는 핀마다 공개 범위를 따로 바꾼다', example: '같은 소유자의 핀 두 개 중 하나만 공개할 수 있다', evidence: [] },
-    { id: 'per_owner', label: '소유자 묶음', consequence: '소유자 전체에 하나의 공개 범위가 있다', effect: '소유자가 공개 범위를 한 번 바꾸면 모든 핀에 적용된다', example: '같은 소유자의 핀 두 개는 항상 같은 공개 범위를 갖는다', evidence: [] },
+    { id: 'per_item', label: '핀 하나씩', consequence: '핀마다 공개 범위가 있다', effect: '소유자는 핀마다 공개 범위를 따로 바꾼다', example: '같은 소유자의 핀 두 개 중 하나만 공개할 수 있다', evidence: [], excludes: [] },
+    { id: 'per_owner', label: '소유자 묶음', consequence: '소유자 전체에 하나의 공개 범위가 있다', effect: '소유자가 공개 범위를 한 번 바꾸면 모든 핀에 적용된다', example: '같은 소유자의 핀 두 개는 항상 같은 공개 범위를 갖는다', evidence: [], excludes: [] },
   ],
   recommended_option_id: 'per_item', rationale: '요구사항은 핀 단위 등록만 말한다', decision_kind: null,
 };
-const legacy = (question) => { const { context, ...rest } = question; return { ...rest, options: question.options.map(({ effect, example, ...option }) => option) }; };
+const legacy = (question) => { const { context, ...rest } = question; return { ...rest, options: question.options.map(({ effect, example, excludes, ...option }) => option) }; };
 const withOptions = (question, change) => ({ ...question, options: question.options.map((option, index) => ({ ...option, ...change(option, index) })) });
 
 test('a question needs its settled rules, why now, and per option an effect and a different example', () => {
@@ -186,7 +186,7 @@ test('an execution started before the rule keeps its schema, accepts its old que
   const question = schema.properties.result.properties.questions.items;
   delete question.properties.context;
   question.required = question.required.filter((key) => key !== 'context');
-  for (const key of ['effect', 'example']) { delete question.properties.options.items.properties[key]; question.properties.options.items.required = question.properties.options.items.required.filter((name) => name !== key); }
+  for (const key of ['effect', 'example', 'excludes']) { delete question.properties.options.items.properties[key]; question.properties.options.items.required = question.properties.options.items.required.filter((name) => name !== key); }
   await writeFile(begun.started.schema_path, JSON.stringify(schema, null, 2) + '\n');
 
   await flow.submitStage(begun, { status: 'action_required', code: 'USER_DECISION_REQUIRED', summary: '질문', files: { [analysis]: stakeholderAnalysisDocument(REQUEST) }, questions: [{ question_id: 'q', ...legacy(owned) }] });

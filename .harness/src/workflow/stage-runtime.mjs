@@ -61,7 +61,7 @@ function validate(value, schema, path = '$') {
   if ('const' in schema) requireValue(value === schema.const, `${path}: invalid constant`);
   if (schema.enum) requireValue(schema.enum.includes(value), `${path}: unknown value`);
   const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
-  if (schema.type) requireValue([schema.type].flat().includes(type), `${path}: invalid type`);
+  if (schema.type) requireValue([schema.type].flat().includes(type) || ([schema.type].flat().includes('integer') && Number.isInteger(value)), `${path}: invalid type`);
   if (type === 'string') {
     if (schema.minLength) requireValue(value.trim().length >= schema.minLength, `${path}: empty string`);
     if (schema.pattern) requireValue(new RegExp(schema.pattern).test(value), `${path}: invalid format`);
