@@ -862,6 +862,8 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     if (staleMark.reason === 'user_revision') input_refs.push({ base: 'session', path: `runtime/executions/${staleMark.reopened_for}/feedback.json`, kind: 'upstream_user_revision' });
   }
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
+  const { stageWorkspace } = await import('./stage-workspace.mjs');
+  input.context.workspace = await stageWorkspace(root, plan_set_id);
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });

@@ -15,8 +15,8 @@ Step of the requirements flow after `subdomain-candidates` and before `event-sto
 
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
-- `docs/specs/<plan-set-id>/requirements.md` resolved with `harness-spec-path.mjs`. Its draft `BIZ` text and SD term candidates are the sources; event tables, classifications and new bounded contexts do not exist yet.
-- `stakeholder-analysis.md` (resolved with `harness-spec-path.mjs`) for adopted candidates.
+- `docs/specs/<plan-set-id>/requirements.md`. Its draft `BIZ` text and SD term candidates are the sources; event tables, classifications and new bounded contexts do not exist yet.
+- `stakeholder-analysis.md` for adopted candidates.
 - The existing repository-root `<workspace_root>/CONTEXT.md` and `<workspace_root>/CONTEXT-MAP.md` (not under `docs/specs/`) for canonical and retired terms and any already established context names.
 - [Language lifecycle](../domain-modeling/references/language-lifecycle.md) and the [requirements.md template](../requirements-fix/references/template.md).
 
@@ -29,7 +29,7 @@ Step of the requirements flow after `subdomain-candidates` and before `event-sto
 
 ## Process
 
-1. Work in the active workspace. Begin with `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and return `blocked` with the output when it fails. Look up each document with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`.
 2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, put the skip and its evidence path in the result summary and return `completed/OK`.
 3. 재개할 때 이전 결과, `requirements.md`, `CONTEXT.md`와 실제 답변을 읽는다. 앞 단계 변경을 검토하는 실행이면 추가·수정된 BIZ의 용어만 4단계부터 검토하고 나머지 용어와 유효한 답변을 보존한다. 대기한 질문을 이어가는 실행에서 답변을 받았으면 6단계로 간다.
 4. Collect the words the document uses for business concepts, actors, states, rules and events. Group the variants. Keep only the words that are used in more than one form for the same thing, or that one word uses for different things, or that are easily confused with a neighboring term. Plain words that nobody can misread get no row.

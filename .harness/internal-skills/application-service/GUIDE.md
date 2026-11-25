@@ -7,7 +7,7 @@ model_tier: implementation
 
 실행 배정에 `document_draft_root`가 있으면 완성한 문서를 그 아래의 같은 상대 경로에 직접 쓴다. 실행기가 gate 통과 후 그 바이트를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
 
-확정된 업무의 Use Case를 실제 모델과 포트 호출로 조합한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Application Service·사용 인터페이스를 채운다.
+확정된 업무의 Use Case를 실제 모델과 포트 호출로 조합한다. [공통 절차](../domain-model/references/deepening.md)에 따라 입력의 준비 상태를 확인한 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Application Service·사용 인터페이스를 채운다.
 
 1. 요구사항의 업무별 시나리오·규칙·예외·결과·이벤트 흐름, 적용된 사용자 답변, 모델의 메서드·책임·Aggregate, 관련 ADR과 Context Map의 방향·판단 소유자를 읽는다. 외부 시스템이 업무 전체를 소유하는 BIZ는 외부 시스템의 공개 메서드와 업무 연결로 표현한다.
 2. 각 로컬 Use Case 메서드는 이름·입력 타입·결과 타입과 BIZ ID를 갖는다. 번호가 있는 호출 순서로 도메인 메서드와 포트를 실제 이름으로 호출하고, 규칙 거절, 예외, 외부·저장 실패 때의 반환·후속 행동을 명시한다. 해당 판단은 규칙 책임 표의 모델에게 유지한다. 필요한 모델이나 규칙이 없으면 가장 앞선 소유 stage로 돌아간다.

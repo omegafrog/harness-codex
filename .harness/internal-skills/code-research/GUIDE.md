@@ -32,6 +32,8 @@ Report evidence when current glossary meaning diverges from observed model respo
 
 ## Agent execution
 
+Delegation is the default for any question about existing code that does not fit in three or fewer already known files: raw source read by the caller stays in its context and is paid for again on every later call. Ask one bounded question per independent area, start independent areas in parallel, and give the `context.workspace` areas and head commit. In Claude Code the caller makes one foreground `Agent` call with `subagent_type: "code_researcher"`; the admission hook sets the configured low-tier model. It has no shell: pass the inspected commit in the request.
+
 The caller delegates this bounded task to `code_researcher` using the configured execution mechanism for the active workflow. In Codex, start it with `spawn_agent` and `fork_turns: "none"`: the fresh-agent hook denies an omitted or forked start before anything runs, and after that denial the caller repeats the same call with `fork_turns: "none"` (it is not a stage failure). Supply the research request and referenced inputs; do not require a separate Codex session or an independent execution command. The researcher inspects only relevant source and tests, does not edit files, make design decisions, invoke `code-research` recursively or spawn another agent, and returns only the Output sections plus blockers, with a file path for every concrete claim and the inspected commit. The caller reads the result and decides what to pass to the next skill.
 
 ## What it leaves out

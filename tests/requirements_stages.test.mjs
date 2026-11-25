@@ -70,8 +70,9 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
     assert.match(guide, /^---\nmodel_tier: (implementation|high_performance)\n---/, stage);
     assert.match(guide, /requirements-fix\/references\/template\.md|\(references\/template\.md\)/, `${stage} links the template`);
     assert.match(guide, /`판정: 생략`/, `${stage} records a skip`);
-    assert.match(guide, /harness-spec-path\.mjs/, `${stage} resolves paths with the helper`);
-    assert.match(guide, /harness-workspace-preflight\.mjs/, `${stage} runs the preflight`);
+    assert.match(guide, /context\.workspace\.preflight/, `${stage} uses the runner's workspace check`);
+    assert.match(guide, /context\.workspace\.documents/, `${stage} uses the paths the runner gives`);
+    assert.doesNotMatch(guide, /harness-spec-path|harness-workspace-preflight/, `${stage} does not look them up again`);
     assert.match(guide, /The runner commits `docs\/specs\/<plan-set-id>\/`/, `${stage} says what the runner commits`);
   }
   assert.match(await read('.harness/internal-skills/ubiquitous-language/GUIDE.md'), /`docs\/specs\/<plan-set-id>\/` and `CONTEXT\.md`/);
@@ -157,7 +158,8 @@ test('the requester is a stakeholder: requested features are settled, and a pers
   const participants = '| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청 기능 |\n| LENS-DOMAIN | 전문가 관점 | 도메인 전문가 | 실행 | 기본 관점 |\n';
   const features = (decision = '확정', phrase = '커뮤니티 기능') => `| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 커뮤니티 | "${phrase}" | REQUESTER | ${decision} | 요청 원문 | q:4 |\n`;
   const observation = (anchor) => `| 제안자 | 관찰 | 요청 앵커 | 근거 |\n|---|---|---|---|\n| LENS-DOMAIN | 게시물 작성자만 수정한다 | "${anchor}" | 근거 |\n`;
-  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis }).errors.map(({ code }) => code);
+  const openFacts = '\n### 미확정 사실\n\n| ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거 |\n|---|---|---|---|---|---|\n| OPEN-01 | 이용 조건 | 이용 주체 | 권한 | 확정 | 요청 원문 "유저 인증" |\n';
+  const codes = (analysis) => checkStakeholderAnalysis({ request, analysis: analysis + openFacts }).errors.map(({ code }) => code);
   assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('결제 기능')}`), [], 'an observation anchored outside the request is kept out of scope');
   assert.deepEqual(codes(`# 분석\n\n${participants}\n${features()}\n${observation('유저 인증과 커뮤니티 기능')}`), ['ANCHORED_CANDIDATE_EXCLUDED'], 'the E2E defect: an anchored community candidate was moved out of scope');
   assert.deepEqual(codes(`# 분석\n\n${features()}`), ['REQUESTER_MISSING']);

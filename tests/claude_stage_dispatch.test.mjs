@@ -6,7 +6,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { explainError, finishNext, withDispatchHint } from '../.harness/src/workflow/stage-cli.mjs';
-import { extractSubmission, parseStageCall, shellSplit } from '../.harness/src/workflow/claude-stage-dispatch.mjs';
+import { extractSubmission, inlineSchema, parseStageCall, shellSplit } from '../.harness/src/workflow/claude-stage-dispatch.mjs';
+import { parseYaml } from '../.harness/src/eval/yaml.mjs';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 
@@ -85,6 +86,20 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   const id = executionOf(call.updated.prompt);
   for (const part of [`workspace_root: ${workspace}`, 'guide: ', 'input_path: ', 'schema_path: ', 'document_draft_root: ', 'There is no receive command']) assert.match(call.updated.prompt, new RegExp(part.replace(/[$()*+.?[\\\]^{|}]/g, '\\$&').replace('There is', 'there is')), part);
   assert.doesNotMatch(call.updated.prompt, /receive_command:/);
+  // What the launch fixes is in the prompt: the guide, the input with the workspace facts, and the schema without its rarely used shapes.
+  const block = (name) => new RegExp(`\\n<${name}>\\n([\\s\\S]*)\\n</${name}>`).exec(call.updated.prompt)[1];
+  assert.match(block('guide'), /context\.workspace\.preflight/);
+  assert.doesNotMatch(block('guide'), /model_tier/);
+  const { workspace: facts } = JSON.parse(block('input')).context;
+  assert.equal(facts.preflight.valid, true);
+  assert.equal(facts.head, head);
+  assert.ok([...facts.documents.existing, ...facts.documents.absent].includes(analysis));
+  const schemaPath = /schema_path: (\S+)/.exec(call.updated.prompt)[1];
+  const full = await readFile(schemaPath, 'utf8'), inlined = block('schema');
+  assert.equal(full.trim(), JSON.stringify(JSON.parse(full)), 'the stored schema is compact');
+  assert.ok(inlined.length < full.length * 0.65, `${inlined.length} of ${full.length}`);
+  assert.ok(JSON.parse(full).properties.result.properties.questions.items, 'the stored schema keeps the question shape');
+  assert.deepEqual(JSON.parse(inlined), inlineSchema(JSON.parse(full)));
   let stage = (await flow.state()).stages['stakeholder-analysis'];
   assert.equal(stage.status, 'running');
   assert.equal(stage.native_managed, true);
@@ -100,6 +115,14 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   stage = (await flow.state()).stages['stakeholder-analysis'];
   assert.equal(stage.native_agent_id, 'agent-real-1');
   assert.equal(stage.execution_id, id);
+  // The worker's code research runs on the configured low tier in the foreground; the same call from the main session is not rewritten.
+  const research = (extra) => hooks.admit('Find the owners of posts', { tool_input: { subagent_type: 'code_researcher', description: 'research', prompt: 'Find the owners of posts' }, ...extra });
+  const { updated: researcher } = research({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' });
+  const lowTier = parseYaml(await readFile(join(workspace, '.harness/harness.yaml'), 'utf8')).agents['claude-code'];
+  assert.equal(researcher.model, lowTier.low_performance_model);
+  assert.equal(researcher.run_in_background, false);
+  assert.equal(researcher.prompt, 'Find the owners of posts');
+  assert.equal(research({}).updated, undefined);
   // A second start of the same profile has no reserved execution left and binds nothing.
   assert.equal(hooks.start('agent-intruder').stdout, '');
   assert.equal((await flow.state()).stages['stakeholder-analysis'].native_agent_id, 'agent-real-1');

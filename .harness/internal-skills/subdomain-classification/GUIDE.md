@@ -15,7 +15,7 @@ Step of the requirements flow after `event-storming` and before `requirements-fi
 
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
-- `docs/specs/<plan-set-id>/requirements.md` with its SD table, `BIZ` sections, event flow tables, `## 4` cross-subdomain events and hotspot decisions, and `stakeholder-analysis.md`, resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/requirements.md` with its SD table, `BIZ` sections, event flow tables, `## 4` cross-subdomain events and hotspot decisions, and `stakeholder-analysis.md`.
 - `CONTEXT-MAP.md` and `docs/architecture/domain-model.md`, read-only and only when present, for a classification an existing area already carries.
 - The [requirements.md template](../requirements-fix/references/template.md), which owns the SD table columns, and the [event diagram reference](../event-storming/references/diagrams.md) for the diagrams a changed set needs.
 
@@ -29,7 +29,7 @@ Step of the requirements flow after `event-storming` and before `requirements-fi
 
 ## Process
 
-1. Work in the active workspace. Run `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` first and return `blocked` with its output when it fails. Resolve every document with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`.
 2. If `stakeholder-analysis.md` says `판정: 생략`, there is nothing to classify: write no file, record the skip and the evidence path in the summary and return `completed/OK`.
 3. 재개할 때 이전 결과와 `requirements.md`, 실제 답변, 수정 지시를 읽는다. 그대로 유효한 분류와 경계 결정을 보존한다. 수정 지시로 영향을 받은 묶음은 근거를 다시 비교한다. 독립적으로 완료할 업무가 다른 `BIZ`의 규칙이나 정책에 묻혀 있다면 분류로 덮지 않고 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환한다. `result.owner_stage`에 `subdomain-candidates`, `result.dependency_gap`에 원래 근거와 빠진 업무를 적는다.
 4. 업무 목적, 행위자, 용어의 의미, 규칙의 책임, 이벤트의 발생과 반응을 기준으로 현재 묶음과 실질적으로 가능한 합치기·나누기·이동 대안을 같은 기준에서 비교한다. 각 대안에 포함될 `SD`·`BIZ`, 바뀌는 업무 책임, 유리하거나 불리한 근거를 기록한다. 현재 묶음을 유지하는 안도 근거를 비교한다. 대안이 성립하지 않는 경우 그 근거를 적는다. 범위와 BIZ ID를 보존하고, 분리로 생긴 새 SD에는 새 번호를 배정한다.

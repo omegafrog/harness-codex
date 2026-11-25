@@ -1,4 +1,14 @@
 import { injectStageContract } from './stage-contract.mjs';
+import { AUTO_COMPACT_WINDOW } from '../workflow/compaction-boundary.mjs';
+
+// A document stage needs these tools and nothing else. Without an allowlist every worker starts with the skill listing and the
+// deferred and MCP tool listings (about 10K tokens). Other writable profiles may need a project's MCP tools, so they only lose Skill.
+const DOCUMENT_TOOLS = 'Bash, Read, Edit, Write, Agent';
+const CLAUDE_TOOLS = {
+  workflow_stage: DOCUMENT_TOOLS,
+  to_ticket: DOCUMENT_TOOLS,
+  tactical_designer: `${DOCUMENT_TOOLS}, WebSearch, WebFetch`,
+};
 
 export function transformSourceContent(content, transform) {
   // Agent profiles carry the stage contract marker; both provider copies receive the contract text in its place.
@@ -19,12 +29,14 @@ export function transformSourceContent(content, transform) {
     if (!prompt) throw new Error('Claude agent conversion requires developer_instructions');
     const permissionMode = { 'read-only': 'plan', 'workspace-write': 'acceptEdits', 'danger-full-access': 'bypassPermissions' }[fields.sandbox_mode];
     if (!permissionMode) throw new Error(`Unsupported agent sandbox_mode: ${fields.sandbox_mode}`);
-    const readOnlyTools = fields.sandbox_mode === 'read-only' ? '\ntools: Read, Grep, Glob, WebSearch, WebFetch' : '';
+    const tools = fields.sandbox_mode === 'read-only' ? 'tools: Read, Grep, Glob, WebSearch, WebFetch' : CLAUDE_TOOLS[fields.name] ? `tools: ${CLAUDE_TOOLS[fields.name]}` : 'disallowedTools: Skill';
     return `---
 name: ${fields.name}
 description: ${JSON.stringify(fields.description)}
 model: inherit
-permissionMode: ${permissionMode}${readOnlyTools}
+permissionMode: ${permissionMode}
+${tools}
+autoCompactWindow: ${AUTO_COMPACT_WINDOW}
 ---
 ${prompt.replaceAll('.codex/skills/', '.claude/skills/')}
 `;

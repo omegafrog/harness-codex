@@ -46,6 +46,13 @@ try {
     deny('Run Harness stage workers in the foreground: pass run_in_background: false and do not end your turn until the Agent returns. A background worker dies when the headless orchestrator turn ends and leaves the stage running.');
     process.exit(0);
   }
+  // A stage worker's code research runs on the configured low tier, not on the worker's inherited model.
+  if (type === 'code_researcher' && native && event.agent_id) {
+    const { resolveSkillBinding } = await import('../../../.harness/src/workflow/stage-runtime.mjs');
+    const { model, reasoning_effort: effort } = await resolveSkillBinding({ root: native.root, skill: 'code-research', executionProvider: 'claude-code' });
+    process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Harness code research', updatedInput: { ...tool, model, ...(['low', 'medium', 'high', 'xhigh', 'max'].includes(effort) ? { effort } : {}), run_in_background: false } } })}\n`);
+    process.exit(0);
+  }
   if (process.env.HARNESS_NATIVE_ADMISSION && (process.env.HARNESS_STAGE_EXECUTION_ID || !native)) process.exit(0);
   const root = process.env.HARNESS_WORKSPACE_ROOT || native?.root;
   const executionId = process.env.HARNESS_REVIEW_EXECUTION_ID || native?.executionId;

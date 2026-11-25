@@ -15,7 +15,7 @@ Last step of the requirements flow, after `requirements-fix`. Decide the bounded
 
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
-- `docs/specs/<plan-set-id>/requirements.md` with its confirmed SD table and classes, the `BIZ` sections that `requirements-fix` completed (scenarios, `INV`, `EX`, `AC`) and the common sections, event flows, `## 4` cross-subdomain events and resolved hotspots, and `stakeholder-analysis.md`, resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/requirements.md` with its confirmed SD table and classes, the `BIZ` sections that `requirements-fix` completed (scenarios, `INV`, `EX`, `AC`) and the common sections, event flows, `## 4` cross-subdomain events and resolved hotspots, and `stakeholder-analysis.md`.
 - The repository-root `CONTEXT-MAP.md`, `docs/architecture/domain-model.md`, the ADRs they link and the repository-root `<workspace_root>/CONTEXT.md` (not under `docs/specs/`), when present: the existing contexts and the current vocabulary.
 - The boundary rule in [ddd-design](../ddd-design/GUIDE.md) and the model lifecycle in [model-continuity](../ddd-design/references/model-continuity.md). They own the criteria, the fair comparison of combined and separate options, the existing-owner-first rule and the `implemented` versus `accepted-target` distinction; apply them as written and do not restate them in the document.
 - The [requirements.md template](../requirements-fix/references/template.md), which owns the BC table, and the [coverage checklist](../requirements-fix/references/coverage.md), whose `확정 조건` this stage runs before fixing.
@@ -30,7 +30,7 @@ Last step of the requirements flow, after `requirements-fix`. Decide the bounded
 
 ## Process
 
-1. Work in the active workspace. Start with `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and return `blocked` with its output when it fails. Find the documents with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`.
 2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, put the skip and its evidence path in the result summary and return `completed/OK`.
 3. 재개할 때 이전 결과, `requirements.md`, `CONTEXT-MAP.md`, 실제 답변과 수정 지시를 읽는다. 영향받는 소유권과 관계만 다시 검토하고 유효한 컨텍스트 ID, 승인된 경계와 기존 구현 상태를 보존한다.
 4. Map to existing contexts first. For each confirmed subdomain and its `BIZ`, decide whether an existing context already owns the language, rules and data; extension of that context is the first option to test.

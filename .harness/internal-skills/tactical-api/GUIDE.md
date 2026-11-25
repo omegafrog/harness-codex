@@ -11,7 +11,7 @@ model_tier: low_performance
 
 ## 입력과 진행
 
-사용자 요청, 완료된 tactical design, 앞선 `tactical-technology`와 `tactical-ui` 결과, 현재 저장소의 entry point/API를 확인한다. preflight를 실행해 workspace와 project readiness를 확인하고 실패하면 편집하지 않는다. 기존 공개 경로와 호출 규약을 재사용한다.
+사용자 요청, 완료된 tactical design, 앞선 `tactical-technology`와 `tactical-ui` 결과, 현재 저장소의 entry point/API를 확인한다. `context.workspace.preflight.valid`가 `false`이면 편집하지 않고 차단한다. entry point와 API 조사는 [code-research](../code-research/GUIDE.md)로 `code_researcher`에게 맡긴다. 기존 공개 경로와 호출 규약을 재사용한다.
 
 `tactical-ui`가 브리프를 참조한 경우에만 그 브리프를 입력으로 사용한다. 이번 실행에서 UI가 미적용 또는 보류이면 승인된 Application Service를 근거로 API 계약을 정한다. 구현과 visual review는 ticket 발행 뒤 수행하므로 이 단계에서 완료를 요구하지 않는다.
 

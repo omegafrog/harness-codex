@@ -12,6 +12,18 @@ export { checkTacticalDesign, parseRequirements, parseTables } from '../../.harn
 
 const USAGE = 'Usage: harness-domain-model-check.mjs --workspace-root <absolute-workspace-root> | --requirements <path> --tactical-design <path>';
 
+// Without the stage environment the check still reads the drafts of the stage that is running, not only published files.
+async function runningExecution(root) {
+  for (const name of ['workflow.json', 'state.json']) {
+    try {
+      const document = JSON.parse(await readFile(join(root, '.io/runtime/orchestrator', name), 'utf8'));
+      const state = document.state || document, stage = state.stages?.[state.current_stage];
+      return stage?.status === 'running' ? stage.execution_id : undefined;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  return undefined;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const options = {};
@@ -28,7 +40,7 @@ async function main() {
     const { parseWorktreeRecord } = await import('../../.harness/src/workflow/worktrees.mjs');
     const record = parseWorktreeRecord(await readFile(join(root, '.io/worktree.json'), 'utf8'));
     if (await realpath(root) !== await realpath(record.workspace)) throw new Error('Workspace does not match worktree.json');
-    verdict = await checkWorkspaceTacticalDesign({ root, planSetId: record.plan_set_id, draftExecutionId: process.env.HARNESS_STAGE_EXECUTION_ID });
+    verdict = await checkWorkspaceTacticalDesign({ root, planSetId: record.plan_set_id, draftExecutionId: process.env.HARNESS_STAGE_EXECUTION_ID || await runningExecution(root) });
   }
   process.stdout.write(`${JSON.stringify(verdict, null, 2)}\n`);
   if (!verdict.ok) process.exitCode = 1;

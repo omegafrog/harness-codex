@@ -1,12 +1,13 @@
 // Check BIZ field uniqueness before result acceptance and require defined INV, EX and AC entries at coverage completion.
-import { outsideFences, planSetDocument } from './domain-model-gate.mjs';
+import { clean, outsideFences, planSetDocument, stakeholderAnalysisSkipped } from './domain-model-gate.mjs';
+import { ACCESS_KIND, openFactRows } from './stakeholder-analysis-gate.mjs';
 import { REQUIREMENTS_STAGES, WORKTREE_STAGE } from './worktree-stages.mjs';
 
 const BIZ_HEADING = /^###[ \t]+(BIZ-\d+)\b/;
 const FIELD = /^- ([^:：\n]+?)\s*[:：]/;
 const SECTION_END = /^#{1,3}[ \t]/;
 
-export function checkRequirementsDocument({ requirements, stage, complete = false }) {
+export function checkRequirementsDocument({ requirements, stage, complete = false, analysis = null }) {
   const errors = [];
   const lines = outsideFences(requirements);
   const coverage = complete && [WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT].includes(stage)
@@ -58,6 +59,16 @@ export function checkRequirementsDocument({ requirements, stage, complete = fals
   });
   if (biz) close();
   if (coverage && !hasBusiness) report('BIZ_REQUIREMENT_INCOMPLETE', 'requirements.md needs a BIZ section for each confirmed business use case.');
+  // An open fact of stakeholder-analysis must be settled and reflected before the requirements are fixed (no table: no check).
+  const facts = complete && analysis !== null && !stakeholderAnalysisSkipped(analysis) ? openFactRows(analysis) : null;
+  for (const row of facts ?? []) {
+    const id = clean(row.ID);
+    if (clean(row['처리']) === '미정') {
+      errors.push({ code: 'OPEN_FACT_UNRESOLVED', id, message: `stakeholder-analysis.md ${id} (${clean(row['사실'])}) is still 미정. In requirements-fix return action_required / USER_DECISION_REQUIRED asking it (recommended option and reason), then record the answer in the 미확정 사실 table and as a rule of the affected BIZ in requirements.md. Any other stage returns blocked / DEPENDENCY_INCOMPLETE with owner_stage requirements-fix.`, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX });
+    } else if (clean(row['처리']) === '확정' && clean(row['구분']) === ACCESS_KIND && !lines.join('\n').includes(id)) {
+      errors.push({ code: 'OPEN_FACT_NOT_REFLECTED', id, message: `${id} (${clean(row['사실'])}) is 확정 but requirements.md never cites ${id}. Reflect it as an INV, EX, AC or 업무 주체 entry of the affected BIZ that cites ${id}.`, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX });
+    }
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -68,7 +79,9 @@ export async function evaluateRequirementsDocumentGate({ root, input, envelope, 
   if (!REQUIREMENTS_STAGES.includes(stage) || !planSetId || !['completed', 'action_required'].includes(envelope?.status)) return null;
   const requirements = await planSetDocument(root, planSetId, 'requirements.md', draftExecutionId);
   if (requirements.text === null) return null;
-  return { stage, ...checkRequirementsDocument({ requirements: requirements.text, stage, complete: envelope.status === 'completed' && envelope.code === 'OK' }) };
+  const complete = envelope.status === 'completed' && envelope.code === 'OK';
+  const analysis = complete && [WORKTREE_STAGE.REQUIREMENTS_FIX, WORKTREE_STAGE.BOUNDED_CONTEXT].includes(stage) ? await planSetDocument(root, planSetId, 'stakeholder-analysis.md', draftExecutionId) : { text: null };
+  return { stage, ...checkRequirementsDocument({ requirements: requirements.text, stage, complete, analysis: analysis.text }) };
 }
 
 export const requirementsDocumentFailureInstruction = (verdict) => `The runner checked requirements.md for ${verdict.stage}. Nothing was committed or recorded, and the stage is still running. Return the errors to the same subagent. Merge duplicate fields into the first occurrence in place and anchor each patch on the named BIZ heading. Correct owned fields, ask the user for any open business decision in scope, or return blocked / DEPENDENCY_INCOMPLETE for an earlier owner named in the errors. Resubmit using the same execution and run finish again.`;

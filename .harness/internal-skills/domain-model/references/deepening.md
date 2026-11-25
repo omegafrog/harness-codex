@@ -4,7 +4,7 @@
 
 ## 진입과 재개
 
-- workspace preflight를 `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json`으로 실행하고 실패하면 해당 출력으로 차단한다. `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`로 요구사항, 이해관계자 분석 및 전술 설계 경로를 찾는다.
+- 입력의 `context.workspace.preflight.valid`가 `false`이면 그 `reason`으로 차단한다. 요구사항·이해관계자 분석·전술 설계·프로젝트 문서의 경로와 존재 여부는 `context.workspace.documents`를 그대로 쓴다.
 - `stakeholder-analysis.md`가 `판정: 생략`이면 근거 경로와 함께 `completed / OK`를 반환한다. `requirements.md`가 없거나 `상태: fixed`가 아니면 `blocked / INPUT_MISSING`을 반환한다.
 - 재개 시 이전 결과, 이미 작성된 설계와 실제 승인 답변을 읽고 빠진 작업부터 이어간다. `context.user_revision`은 지정된 요소만 수정한다. 형식 이동은 [구형 문서 절차](template.md#구형-문서)를 따른다. 예전 문서명 `domain-model.md`의 경로 이전은 실행기가 담당한다.
 - 운영 중 사용자 요구의 범위를 추가하지 않는다. 모든 요소는 기존 `BIZ`, `INV`, `EX` 또는 `AC`에 추적돼야 한다. 범위 추가는 사용자가 요구사항 단계에서 결정한다.

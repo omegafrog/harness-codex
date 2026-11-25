@@ -12,6 +12,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertWorkspaceTarget } from '../eval/case-workspace.mjs';
+import { recordUnitBoundary } from './compaction-boundary.mjs';
+import { stripSkillDeclaration } from './skill-declaration.mjs';
 
 export const STAGE_DISPATCH_DIRECTORY = 'runtime/claude-dispatch';
 export const MAX_WORKER_REPAIRS = 3;
@@ -114,7 +116,22 @@ function explain(run) {
 
 // ---- PreToolUse(Agent) --------------------------------------------------------------------------------------------------
 
+// The result schema a worker needs while it asks nothing: the two large shapes it rarely uses are named and left in the file.
+export function inlineSchema(schema) {
+  const copy = structuredClone(schema), result = copy.properties?.result?.properties;
+  for (const key of ['questions', 'review_request']) {
+    if (!result?.[key] || JSON.stringify(result[key]).length < 600) continue;
+    result[key] = { description: key === 'questions' ? 'Use [] when you ask nothing. To ask, first read properties.result.properties.questions in schema_path for the item shape.' : 'Use null when you request no review. To request one, first read properties.result.properties.review_request in schema_path.' };
+  }
+  return copy;
+}
+
+// The worker starts with its GUIDE, input and schema in the prompt: they are fixed by the launch, so reading them would cost a
+// turn and the file tool's line numbers. The paths stay for links and for the parts left out.
 function workerPrompt(root, launched) {
+  const guide = stripSkillDeclaration(readFileSync(launched.guide, 'utf8')).trim();
+  const input = JSON.parse(readFileSync(launched.input_path, 'utf8'));
+  const schema = inlineSchema(JSON.parse(readFileSync(launched.schema_path, 'utf8')));
   const lines = [
     `Run the Harness stage \`${launched.stage_id}\`.`,
     `- workspace_root: ${root}`,
@@ -127,8 +144,11 @@ function workerPrompt(root, launched) {
     ...(launched.document_draft_root ? [`- document_draft_root: ${launched.document_draft_root}`] : []),
     ...(launched.browser_environment_path ? [`- browser_environment_path: ${launched.browser_environment_path}`] : []),
     '',
-    'Read the guide, input and schema (and the answers or feedback) from these paths and follow the guide. Write completed documents under document_draft_root at their canonical relative paths.',
-    'Submission: there is no receive command and you do not bind or finish anything. Your final message must be exactly one JSON object that matches the schema, with no prose around it. Harness records it when you stop. If it answers with format or gate errors you continue: fix only what they name (read the feedback file when one is given) and reply again with the whole corrected JSON object. Run any Harness command yourself; never ask the caller to run one.',
+    'The guide, input and schema are included below in full except where the schema says otherwise: do not read those files again. Relative links in the guide resolve from its directory. `context.workspace` in the input already holds the workspace check, the document paths and the source overview. In your first turn read every document and guide reference you need in parallel, by these paths. Write completed documents under document_draft_root at their canonical relative paths.',
+    'Submission: there is no receive command and you do not bind or finish anything. Your final message must be exactly one JSON object that matches the schema, with no prose around it. Harness records it when you stop and runs the gates itself. If it answers with format or gate errors you continue: fix only what they name (read the feedback file when one is given) and reply again with the whole corrected JSON object. Run any Harness command yourself; never ask the caller to run one.',
+    '', '<guide>', guide, '</guide>',
+    '', '<input>', JSON.stringify(input), '</input>',
+    '', '<schema>', JSON.stringify(schema), '</schema>',
   ];
   return lines.join('\n');
 }
@@ -153,7 +173,9 @@ export async function admitStageDispatch(event) {
   } catch (error) { return failLaunch(`The stage dispatch could not be recorded: ${error.message}`); }
   const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(launched.binding.reasoning_effort) ? { effort: launched.binding.reasoning_effort } : {};
   const { resume, fork, fork_context, ...kept } = tool;
-  return { updatedInput: { ...kept, description: kept.description || launched.stage_id, subagent_type: launched.agent_profile, ...(launched.binding.model ? { model: launched.binding.model } : {}), ...effort, run_in_background: false, prompt: workerPrompt(root, launched) } };
+  let prompt;
+  try { prompt = workerPrompt(root, launched); } catch (error) { return failLaunch(`The worker assignment could not be read: ${error.message}`); }
+  return { updatedInput: { ...kept, description: kept.description || launched.stage_id, subagent_type: launched.agent_profile, ...(launched.binding.model ? { model: launched.binding.model } : {}), ...effort, run_in_background: false, prompt } };
 }
 
 // ---- SubagentStart ------------------------------------------------------------------------------------------------------
@@ -247,6 +269,7 @@ export async function finishStageWorker(event) {
       return { recorded: envelope };
     }
     await writeRecord(root, { ...record, repairs: record.repairs + 1 });
+    recordUnitBoundary(root, event.agent_id);
     return { block: reason };
   };
   const message = event.last_assistant_message || lastAssistantText(event.agent_transcript_path);

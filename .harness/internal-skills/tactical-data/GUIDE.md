@@ -11,7 +11,7 @@ model_tier: low_performance
 
 ## 입력
 
-요청, 완료된 tactical design, `tactical-technology`와 `tactical-api` 결과, 현재 모델·저장소·database migration 관례를 읽는다. preflight를 실행해 workspace와 project readiness를 확인한다. 기존 domain owner, table/schema, repository와 transaction convention을 먼저 재사용한다.
+요청, 완료된 tactical design, `tactical-technology`와 `tactical-api` 결과, 현재 모델·저장소·database migration 관례를 읽는다. `context.workspace.preflight.valid`가 `false`이면 차단한다. 현행 모델·저장소·migration 조사는 [code-research](../code-research/GUIDE.md)로 `code_researcher`에게 맡긴다. 기존 domain owner, table/schema, repository와 transaction convention을 먼저 재사용한다.
 
 디자인 freeze 전에 `technology.md`가 tactical-technology 체크리스트의 모든 적용 항목을 정했는지 확인한다. 특히 구현에 필요한 runtime·언어·framework, 저장소 client/driver, 테스트 도구·실행 CLI가 비었거나 `미정`이면 `blocked/DEPENDENCY_INCOMPLETE`로 `result.owner_stage: tactical-technology`와 구체적인 `result.dependency_gap`을 반환해 발행 전에 소유 stage를 다시 열게 한다. 해당 없는 영역은 근거를 확인하며 여기서 임의로 기술을 고르지 않는다.
 

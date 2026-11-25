@@ -17,8 +17,8 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
-- `docs/specs/<plan-set-id>/requirements.md` and `stakeholder-analysis.md`, resolved with `harness-spec-path.mjs`.
-- The repository-root `<workspace_root>/CONTEXT.md` (not under `docs/specs/`; do not resolve it with `harness-spec-path.mjs`) for the settled terms.
+- `docs/specs/<plan-set-id>/requirements.md` and `stakeholder-analysis.md`.
+- The repository-root `<workspace_root>/CONTEXT.md` (not under `docs/specs/`) for the settled terms.
 - The [requirements.md template](references/template.md), which owns the final shape, and the [coverage checklist](references/coverage.md), including its exact writer-facing validation rules for `INV`, `EX`, and `AC` entries.
 - 현행 동작이나 기존 결정과의 충돌을 확인해야 할 때 관련 `docs/contracts/` 계약과 연결 다이어그램을 읽는다.
 
@@ -32,11 +32,12 @@ Step of the requirements flow after `subdomain-classification` and before `bound
 
 ## Process
 
-1. Work in the active workspace. Run `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` before anything else and return `blocked` with its output when it fails. Locate only the plan-set documents under `docs/specs/<plan-set-id>/` with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`. Read the repository-root `CONTEXT.md` directly; never pass it to `harness-spec-path.mjs`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`. Read the repository-root `CONTEXT.md` directly.
 2. A `판정: 생략` in `stakeholder-analysis.md` ends this stage at once: write nothing, put the skip and its evidence path in the result summary, and return `completed/OK`.
 3. `context.user_revision`, `context.reopen` 또는 `context.revalidation_mark`가 있으면 이전 산출물과 지금의 근거를 대조한다. 사용자 수정은 영향받는 `BIZ`의 `출처·변경 이력`에 원문을 `사용자 수정 지시`로 남긴다. 나머지 유효한 결정·ID를 보존하고 영향받는 행만 수정한다. 문서를 `draft`로 두고 컨텍스트의 업무·규칙 소유권이 바뀌는지 요약에 적는다.
 4. On resume, read the previous result, `requirements.md` and the actual answers. Continue at step 7 when answers exist.
 5. [coverage 체크리스트](references/coverage.md)의 각 행을 확인한다. 요청·채택 후보·답변·해결된 hotspot의 결정을 근거와 함께 유지한다. 새로 발견한 독립 업무나 누락된 확정 범위는 `subdomain-candidates`, 경계의 근거 또는 승인이 빠진 경우는 `subdomain-classification`을 가장 앞선 소유자로 지정해 `blocked` / `DEPENDENCY_INCOMPLETE`와 `result.dependency_gap`을 반환한다.
+6. `stakeholder-analysis.md`에 `미확정 사실` 표가 있으면 `미정` 행을 이 질문 묶음에 함께 넣고(없으면 이 항목은 건너뛴다), 답을 받으면 그 표의 처리·근거를 `확정`과 `<execution-id>:<n>`으로 고쳐 쓴다. `확정` 행은 영향받는 BIZ의 INV·EX·AC 또는 업무 주체 항목 하나가 OPEN ID를 인용하도록 `requirements.md`에 반영한다. 실행기는 `미정` 행과 `이용 조건` `확정` 행의 미반영을 완료 때 거절한다.
 6. `PARTIAL` 또는 `UNRESOLVED`인 BIZ 행은 하나도 빠뜨리지 말고, 그중 결과를 바꾸고 기존 근거나 합리적인 기본값으로 정할 수 없는 결정을 한 번에 묻는다. 한국어로 대안마다 달라지는 결과와 범위를 적고 권장안과 근거를 붙인다. [질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)에 따라 이미 확정된 규칙과 지금 정해야 하는 이유는 `context`에, 대안마다 화면·동작이 달라지는 점은 `effect`에, 같은 상황을 대안마다 적용한 구체적 예시는 `example`에 적는다. 예시는 설명용이며 요구사항으로 기록하지 않는다. 특정 대안에서만 필요한 질문은 제목에 조건을 밝히고 `해당 없음`을 선택지에 넣는다. 선행 답변을 받아야 선택지를 구체화할 수 있는 질문만 미룬다. 질문이 있으면 `action_required` / `USER_DECISION_REQUIRED`로 반환하고, 없으면 8단계로 간다.
 7. 답변마다 `ACCEPTED`(명확한 선택·동의·위임), `REJECTED`(대안 미확정 상태에서 거절), `QUESTION_OR_CHALLENGE`(질문·이의), `ALTERNATIVE_PROPOSAL`(확정 전 대안 제안)로 분류한다. 질문·이의·대안의 영향에 답한 뒤 coverage를 다시 확인하고, 필요한 결정이 남은 경우에만 묶어서 묻는다. 확정 답변은 `BIZ` 필드나 공통 섹션에 `answers.json`과 `question_id`를 출처로 적고, 위임받아 정한 내용과 기본값에는 결정 주체와 근거를 적는다.
 8. Write what remains: an `AC` for every normal scenario, `INV` and `EX`, and the common sections `6.1`–`6.4`, each item with its source. Items that only the agent proposes carry `요청 해석(에이전트 제안)` and pass the scope admission rule. Use only terms of the `## 3` table; a new confusable word gets a row there. Every exception-field entry, including a `NOT_APPLICABLE` determination, must have a stable `EX-xx` ID, applicable scenario reference where known, and the actual rule, outcome, or observable condition. Use the checklist's exact writer-facing validation format and do not leave `NOT_APPLICABLE` as an unstructured sentence.

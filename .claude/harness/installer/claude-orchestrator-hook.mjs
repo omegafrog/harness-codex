@@ -12,15 +12,18 @@ const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'];
 const GUARD_EVENTS = ['PreToolUse'];
 // PostToolUse(Agent) hands a dispatched stage worker's recorded result to the orchestrator as a compact envelope.
 const RESULT_EVENTS = ['PostToolUse'];
-const EVENTS = [...SUBAGENT_EVENTS, ...GUARD_EVENTS, ...RESULT_EVENTS];
+// PreCompact postpones a Harness sub-agent's auto-compaction to the end of its current unit of work.
+const COMPACT_EVENTS = ['PreCompact'];
+const EVENTS = [...SUBAGENT_EVENTS, ...GUARD_EVENTS, ...RESULT_EVENTS, ...COMPACT_EVENTS];
 const retiredStartup = (hook) => hook?.type === 'command'
   && hook.command === 'node "${CLAUDE_PROJECT_DIR}/.claude/harness/scripts/harness-claude-orchestrator-hook.mjs"';
 const SUBAGENT_SCRIPT = 'harness-agent-event.mjs';
 const GUARD_SCRIPT = 'harness-write-guard.mjs';
 const ADMISSION_SCRIPT = 'harness-agent-admission.mjs';
 const RESULT_SCRIPT = 'harness-agent-result.mjs';
+const COMPACT_SCRIPT = 'harness-compaction.mjs';
 export const WRITE_GUARD_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash';
-const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && [SUBAGENT_SCRIPT, GUARD_SCRIPT, ADMISSION_SCRIPT, RESULT_SCRIPT].some((script) => hook.command.includes(script));
+const owned = (hook) => hook?.type === 'command' && typeof hook.command === 'string' && [SUBAGENT_SCRIPT, GUARD_SCRIPT, ADMISSION_SCRIPT, RESULT_SCRIPT, COMPACT_SCRIPT].some((script) => hook.command.includes(script));
 // The admission hook launches a dispatched stage (prepare + start), the subagent hook records its result (receive + finish: gates,
 // documents, commit), so both wait far longer than a guard.
 const STAGE_HOOK_TIMEOUT = 600;
@@ -35,8 +38,12 @@ export function claudeWriteGuardHook() {
   return { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${GUARD_SCRIPT}"`, timeout: 10 };
 }
 
+// Opus and Sonnet have no long-context price step; every call re-reads the whole context, and between stages nothing is lost.
+export const ORCHESTRATOR_COMPACT_WINDOW = 150000;
+
 // The handlers Harness owns under each event: [matcher, hook] pairs.
 const expectedHandlers = (event) => SUBAGENT_EVENTS.includes(event) ? [{ matcher: undefined, hook: claudeSubagentHook() }]
+  : COMPACT_EVENTS.includes(event) ? [{ matcher: 'auto', hook: { type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/.harness/scripts/${COMPACT_SCRIPT}" hook`, timeout: 10 } }]
   : RESULT_EVENTS.includes(event) ? [{ matcher: 'Agent', hook: resultHook() }]
   : [{ matcher: WRITE_GUARD_MATCHER, hook: claudeWriteGuardHook() }, { matcher: 'Agent', hook: admissionHook() }];
 
@@ -71,7 +78,10 @@ export async function syncClaudeOrchestratorHook(root, { noBackup = false } = {}
   if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Claude settings directory must be a real directory');
   const { path, text, config } = await readSettings(root);
   const { valid, retired_startup } = await inspectClaudeOrchestratorHook(root);
-  if (valid && !retired_startup) return;
+  // A workflow worktree's main session is the orchestrator. A window the user chose is kept; other checkouts are not changed.
+  const orchestratorWindow = config.autoCompactWindow === undefined && await lstat(join(root, '.io/worktree.json')).then(() => true, () => false);
+  if (valid && !retired_startup && !orchestratorWindow) return;
+  if (orchestratorWindow) config.autoCompactWindow = ORCHESTRATOR_COMPACT_WINDOW;
   for (const event of RETIRED_EVENTS) {
     const groups = config.hooks[event];
     if (!groups?.some((group) => group.hooks.some(retiredStartup))) continue;

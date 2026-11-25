@@ -7,7 +7,7 @@ model_tier: high_performance
 
 실행 배정에 `document_draft_root`가 있으면 완성한 문서를 그 아래의 같은 상대 경로에 직접 쓴다. 실행기가 gate 통과 후 그 바이트를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
 
-BC별 Application Service와 사용 포트가 요구된 통합을 구현할 수 있는지 검토한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 확정 요구사항, 승인 답변, Context Map, 관련 ADR과 [전술 설계](../domain-model/references/template.md)를 읽는다.
+BC별 Application Service와 사용 포트가 요구된 통합을 구현할 수 있는지 검토한다. [공통 절차](../domain-model/references/deepening.md)에 따라 입력의 준비 상태를 확인한 뒤 확정 요구사항, 승인 답변, Context Map, 관련 ADR과 [전술 설계](../domain-model/references/template.md)를 읽는다.
 
 - 요구된 동기 호출에 실제 메서드·포트·요청·응답·오류 처리가 있고 호출자가 필요한 시점에 결과를 받는지 확인한다.
 - 비동기 흐름의 발행·수신 메서드가 같은 메시지 계약을 따르는지, transaction과 발행 순서 및 실패 결과가 요구와 일치하는지 확인한다.

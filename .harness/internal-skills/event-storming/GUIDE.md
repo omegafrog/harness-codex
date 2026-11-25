@@ -16,8 +16,8 @@ Step of the requirements flow after `ubiquitous-language` and before `subdomain-
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
 - On a resume, read the current input's `context.previous_result_ref` and saved answer refs; read the prior execution's input only when it matters and `input_refs` lists it.
-- `docs/specs/<plan-set-id>/requirements.md` (SD table and `BIZ` sections) and `stakeholder-analysis.md` (adopted `CAND`s), resolved with `harness-spec-path.mjs`, and the `## 3` term table there for settled vocabulary.
-- The repository-root `<workspace_root>/CONTEXT.md` (not under `docs/specs/`; do not resolve it with `harness-spec-path.mjs`) for settled vocabulary.
+- `docs/specs/<plan-set-id>/requirements.md` (SD table and `BIZ` sections) and `stakeholder-analysis.md` (adopted `CAND`s), and the `## 3` term table there for settled vocabulary.
+- The repository-root `<workspace_root>/CONTEXT.md` (not under `docs/specs/`) for settled vocabulary.
 - The [domain lens card](../stakeholder-analysis/references/lenses/domain.md) and the events mode of the [persona contract](../stakeholder-persona/GUIDE.md).
 - The [event diagram reference](references/diagrams.md) and the [requirements.md template](../requirements-fix/references/template.md).
 
@@ -30,7 +30,7 @@ Step of the requirements flow after `ubiquitous-language` and before `subdomain-
 
 ## Process
 
-1. Work in the active workspace. Start with `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and return `blocked` with its output if it fails. Find the documents with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`.
 2. When `stakeholder-analysis.md` has `판정: 생략`, write nothing, record the skip with its evidence path in the result summary and return `completed/OK`.
 3. 재개할 때 현재 입력의 `context.previous_result_ref`, 답변 refs, `requirements.md`, `stakeholder-analysis.md`를 읽는다. 이전 입력은 맥락에 필요하고 현재 입력 `input_refs`가 가리킬 때만 연다. 앞 단계 변경을 검토하는 실행이면 바뀐 업무와 연결된 이벤트·정책·hotspot부터 점검하고 해당 표와 다이어그램만 갱신한다. 유효한 ID와 답변, 이미 기록된 persona 결과는 보존한다. `--feedback`·복구·인계로 재개한 실행(입력에 `context.previous_result_ref`나 `kind: previous_execution_result`인 `input_refs`가 있음)은 `requirements.md`의 BIZ마다 `이벤트 흐름` 표나 `이벤트 없음 — 이유`가 있고 `## 5` hotspot 목록이 있으면 그 표가 persona 결과다. 이때 4·5단계를 건너뛰고 기록된 표와 이전 결과의 refs를 재사용하며 persona를 시작하지 않는다. 표가 없는 BIZ가 남았을 때만 그 BIZ의 skeleton만 보내 4단계를 실행한다. 질문에 답변을 받았으면 7단계로, 다이어그램만 남았으면 8단계로, 그 외에는 아직 기록되지 않은 단계로 간다.
 4. Run `node .harness/scripts/harness-stage-runtime.mjs binding --root <workspace_root> --skill stakeholder-persona` and use the returned model and reasoning effort; if it fails, return `blocked` / `MODEL_BINDING_UNAVAILABLE`. Start one fresh native `stakeholder_persona` subagent (Codex: `spawn_agent` with `fork_turns: "none"`; Claude Code: `Agent` with `subagent_type: stakeholder_persona`) with `mode: events`. Send it only the domain lens card text, the request verbatim, the adopted candidates with their statements, the SD table, the `BIZ` skeletons and the settled `## 3` term table. Wait for its JSON.

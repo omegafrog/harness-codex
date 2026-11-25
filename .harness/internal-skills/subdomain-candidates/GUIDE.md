@@ -15,7 +15,7 @@ Second step of the requirements flow, after `stakeholder-analysis` and before `u
 
 - The user request (`scope` of the execution input), read verbatim.
 - Earlier stages' results and answers: the `context.upstream` refs of the input. Read them; never search `.io` for them.
-- `docs/specs/<plan-set-id>/requirements.md` with its `### 요구사항 초안`, and `stakeholder-analysis.md` with its candidate table and decisions. Both are resolved with `harness-spec-path.mjs`.
+- `docs/specs/<plan-set-id>/requirements.md` with its `### 요구사항 초안`, and `stakeholder-analysis.md` with its candidate table and decisions.
 - Existing areas, read-only and only when present, at the repository root (not under `docs/specs/`): `CONTEXT-MAP.md`, `docs/architecture/domain-model.md` and `CONTEXT.md`.
 - The [requirements.md template](../requirements-fix/references/template.md), which owns the shape of the SD table and the `BIZ` sections.
 
@@ -29,7 +29,7 @@ Second step of the requirements flow, after `stakeholder-analysis` and before `u
 
 ## Process
 
-1. Work in the active workspace. Start with `node .harness/scripts/harness-workspace-preflight.mjs --workspace-root <workspace_root> --json` and, if it fails, return `blocked` with its output. Find each document with `node .harness/scripts/harness-spec-path.mjs <workspace_root> <file>`.
+1. Work in the active workspace. Return `blocked` when `context.workspace.preflight.valid` is false; take document paths from `context.workspace.documents`.
 2. Read `stakeholder-analysis.md`. When it says `판정: 생략`, write nothing, record the skip and its evidence path in the result summary and return `completed/OK`.
 3. 재개할 때 이전 결과와 `requirements.md`, 실제 답변, 수정 지시를 읽는다. 표가 있어도 누락 지적과 수정 지시를 현행 근거와 대조한다. 영향을 받는 행만 보완하고 유효한 결정과 ID를 보존한다. 이미 확정된 문서를 보완하는 실행이면 문서 상태를 `draft`로 바꾸고 수정 근거를 남긴다.
 4. 행위자·시작 조건·독립적으로 관찰할 수 있는 완료 결과가 있는 활동을 각각 `BIZ`로 적는다. 요청 원문, 채택 후보, 사용자 답변, 시나리오뿐 아니라 다른 활동의 규칙·예외·정책·상태 전이에 묻힌 동작도 확인한다. 예를 들어 로그인 뒤 사용자가 별도로 세션을 조회하거나 종료할 수 있다면 근거가 있는 두 활동을 각각 드러낸다. 한 번의 완료에 포함되는 단계나 내부 처리는 그 활동 안에 둔다. 명시적으로 수정한 항목을 제외한 기존 요청과 채택 범위를 보존하고 각 활동에 근거를 붙인다. 확인된 요청 기능에 활동을 만들 콘텐츠가 없으면 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하고 `result.owner_stage: stakeholder-analysis`와 빠진 기능을 `result.dependency_gap`에 적는다.

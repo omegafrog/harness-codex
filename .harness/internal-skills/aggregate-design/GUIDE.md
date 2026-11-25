@@ -7,7 +7,7 @@ model_tier: high_performance
 
 실행 배정에 `document_draft_root`가 있으면 완성한 문서를 그 아래의 같은 상대 경로에 직접 쓴다. 실행기가 gate 통과 후 그 바이트를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
 
-`domain-model`이 선언한 모델을 불변식으로 묶는다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 문서 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Aggregate와 규칙 책임을 채운다.
+`domain-model`이 선언한 모델을 불변식으로 묶는다. [공통 절차](../domain-model/references/deepening.md)에 따라 입력의 준비 상태를 확인한 뒤 [템플릿](../domain-model/references/template.md)의 BC별 Aggregate와 규칙 책임을 채운다.
 
 1. 확정된 BIZ·INV·EX·AC·이벤트와 승인 답변, 각 BC의 선언·기존 모델 근거·Context Map을 대조한다. 기존 모델로 표현할 수 없는 책임은 `domain-model`로 반환한다.
 2. 같은 시점에 함께 지켜야 할 불변식으로 Root와 멤버를 정하고, ID로 다른 Aggregate를 참조한다. Root는 외부 변경을 받는 Entity며 Entity는 Aggregate 하나에 속한다. 상태와 생애주기가 없는 BC는 Aggregate 부재 근거를 남긴다. 업무와 Aggregate의 크기는 실제 일관성 범위로 정한다.

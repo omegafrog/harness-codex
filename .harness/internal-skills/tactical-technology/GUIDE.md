@@ -11,7 +11,7 @@ model_tier: low_performance
 
 ## 입력과 진행
 
-사용자 요청, `CONTEXT.md`, 완료된 tactical design 산출물을 확인한다. 먼저 현행 저장소의 runtime, framework, dependency, 테스트 명령, 배포·운영 안내를 조사한다. 사용 중인 stack은 유효한 후보로 포함한다. 이미 요구를 충족하는 기술 결정은 재사용하고 불필요한 선택은 만들지 않는다.
+사용자 요청, `CONTEXT.md`, 완료된 tactical design 산출물을 확인한다. 먼저 현행 저장소의 runtime, framework, dependency, 테스트 명령, 배포·운영 안내를 [code-research](../code-research/GUIDE.md)로 `code_researcher`에게 맡겨 조사한다. 사용 중인 stack은 유효한 후보로 포함한다. 이미 요구를 충족하는 기술 결정은 재사용하고 불필요한 선택은 만들지 않는다.
 
 `.harness/internal-skills/technology-selection/GUIDE.md`의 기준 도출·후보 비교·공신력 있는 근거·불확실성 구분 원칙을 적용한다. 실행 환경이 달라지거나 운영 책임·비용·보안·데이터 제어·성능이 달라지는 중요 선택만 다룬다. 기존 stack을 유지하면 근거와 예외를 기록한다. 자료로 판정할 수 없는 중요한 선택만 한국어 한 묶음의 질문으로 반환한다. 답변을 요구하지 않은 기본값으로 기록하지 않는다.
 

@@ -7,7 +7,7 @@ model_tier: implementation
 
 실행 배정에 `document_draft_root`가 있으면 완성한 문서를 그 아래의 같은 상대 경로에 직접 쓴다. 실행기가 gate 통과 후 그 바이트를 정본에 반영한다. 결과에는 정본의 상대 경로를 적는다.
 
-`aggregate-design`이 자연스러운 Entity·Value Object 소유자를 찾지 못한 도메인 판단을 구현 가능한 메서드로 정의한다. [공통 절차](../domain-model/references/deepening.md)에 따라 preflight와 경로 확인을 마친 뒤 [템플릿](../domain-model/references/template.md)의 BC별 모델 표와 규칙 책임 표를 채운다.
+`aggregate-design`이 자연스러운 Entity·Value Object 소유자를 찾지 못한 도메인 판단을 구현 가능한 메서드로 정의한다. [공통 절차](../domain-model/references/deepening.md)에 따라 입력의 준비 상태를 확인한 뒤 [템플릿](../domain-model/references/template.md)의 BC별 모델 표와 규칙 책임 표를 채운다.
 
 1. 확정 요구사항, 적용된 사용자 답변과 앞 단계의 소유 모델을 대조한다. 다른 Entity나 Value Object가 자연스럽게 소유할 수 있는 규칙은 `domain-model`이나 `aggregate-design`으로 반환한다.
 2. 필요한 Domain Service만 모델 표에 추가한다. 판단에 필요한 정보는 값 또는 모델 타입의 입력으로 받고 도메인 결과와 거절 조건을 메서드에 표시한다. 저장, 이벤트 전달, transaction, 외부 호출과 업무 순서 조율은 `application-service`의 책임이다.

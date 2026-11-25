@@ -77,7 +77,7 @@ export async function writeOutputSchema({ root, input, prefix, path, provider = 
     description: 'Provide base, path and kind. Omit sha256; the runner fingerprints artifacts when it saves the result.',
   };
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  try { await writeFile(path, JSON.stringify(providerSchema, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
+  try { await writeFile(path, JSON.stringify(providerSchema) + '\n', { flag: 'wx', mode: 0o600 }); }
   catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const info = await lstat(path);

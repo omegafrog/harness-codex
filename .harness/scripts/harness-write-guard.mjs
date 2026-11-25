@@ -518,6 +518,10 @@ export async function runWriteGuardHook() {
       ? await writerToolDecision(event, process.env, { interrupted })
       : { reason: writeGuardDecision(event, process.env, { interrupted }) };
     if (reason || updatedInput) process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...(reason ? { permissionDecision: 'deny', permissionDecisionReason: reason } : { updatedInput }) } })}\n`);
+    if (!reason && !updatedInput && event?.agent_id) {
+      const notice = await import('../../.harness/src/workflow/compaction-boundary.mjs').then((module) => module.pendingCompactionNotice(event), () => null);
+      if (notice) process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: notice } })}\n`);
+    }
     await markInterruptedReviews(interrupted);
   } catch (error) { process.stderr.write(`${error.message}\n`); }
 }
