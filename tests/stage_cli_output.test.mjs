@@ -8,7 +8,7 @@ import { appendFile, mkdir, readFile, readdir, symlink, unlink, writeFile } from
 import { dirname, join } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
-import { compactFinished, explainError, extractVerbose, launchResult, spawnInstruction } from '../.harness/src/workflow/stage-cli.mjs';
+import { compactFinished, compactQuestions, explainError, extractVerbose, launchResult, spawnInstruction } from '../.harness/src/workflow/stage-cli.mjs';
 import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 import { childRollout, parentRollout, rolloutPath, writeRollout } from './support/codex-subagent-rollout.mjs';
@@ -581,7 +581,10 @@ test('finish carries the compact questions, so no result file is opened', () => 
   assert.deepEqual(shown.options.map(({ id, label, recommended }) => ({ id, label, recommended })), [{ id: 'a', label: 'A', recommended: undefined }, { id: 'b', label: 'B', recommended: true }]);
   assert.ok(shown.options[1].effect.length <= 200 && shown.options[1].effect.startsWith('eb'), 'the effect is one clipped line');
   assert.equal(finished.result.questions_path, undefined);
-  assert.equal(shown.options[0].consequence, undefined, 'consequence and example stay in the result file');
+  assert.equal(shown.options[0].consequence, undefined, 'consequence stays in the result file');
+  assert.deepEqual(shown.options.map((option) => option.example), ['xa', 'xb'], 'each option shows its one-line example');
+  assert.equal(shown.reason, undefined, 'no rationale, no reason');
+  assert.equal(compactQuestions([{ ...questions[0], rationale: '이유 한 줄' }])[0].reason, '이유 한 줄');
   assert.match(finished.next, /answer --text/);
   assert.match(compactFinished({ envelope, stageId: 'event-storming', executionId: 'e', provider: 'claude-code' }).next, /harness-stage: answer/);
 });

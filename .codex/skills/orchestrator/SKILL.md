@@ -31,6 +31,6 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 
 ## 사용자 결정과 완료
 
-- 반환된 `questions`(제목·맥락·선택지별 label·effect·추천 표시)를 파일 없이 한국어로 보여 주고 기다린다. 확인 질문은 대화로 답한다. 답은 해석하지 않고 원문 그대로 넘긴다(Claude Code: `harness-stage: answer`, Codex: `harness-native-stage.mjs answer --text '<원문>'`). "추천대로"·번호별 선택은 실행기가 질문에 맞추고 모호하면 되묻는 요청을 반환한다.
+- 반환된 `questions`(제목·맥락·선택지별 label·effect·example, 추천 표시와 `reason`)를 파일 없이 한국어로 보여 주고 기다린다. 확인 질문은 대화로 답한다. 답은 해석하지 않고 원문 그대로 넘긴다(Claude Code: `harness-stage: answer`, Codex: `harness-native-stage.mjs answer --text '<원문>'`). "추천대로"·번호별 선택은 실행기가 질문에 맞추고 모호하면 되묻는 요청을 반환한다.
 - 전술 설계 전에 확정 요구사항의, 발행 전에 검토된 전체 계획의 실제 사용자 승인을 받는다. 승인 요약은 `result.summary`와 문서 경로로 보여 주고 문서는 열지 않으며, 승인 답도 같은 `answer`로 원문을 넘긴다. 승인이 아닌 수정 요청은 `answer`가 소유 stage 재개로 돌리거나 되묻는다. E2E 실패 뒤에는 자동으로 재실행하지 않는다.
 - 요청 범위에 남은 단계만 순서대로 진행한다. 마지막 단계의 `next`가 안내하는 완료 gate를 통과하면 전체 완료를, 일시정지나 사용자 대기가 남았으면 그 상태를 보고한다.

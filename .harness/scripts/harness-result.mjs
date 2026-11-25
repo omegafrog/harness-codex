@@ -103,7 +103,7 @@ try {
     if (questions.some((question, index) => questions.slice(0, index).some((prior) => isDeepStrictEqual(prior, question)))) throw new Error('Duplicate questions in batch');
     // A new batch carries the context and per-option examples a user needs; the schema the worker was given decides whether it could.
     const outputSchema = await readSkillSessionJson({ root: opts.root, session_directory: session, path: paths.refs.schema }).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
-    assertQuestionContext(questions, { schema: outputSchema });
+    assertQuestionContext(questions, { schema: outputSchema, skill: envelope.skill });
     envelope.result.questions = identifyQuestions(input.execution_id, questions);
   }
   if (envelope.result.review_request && (!Object.hasOwn(envelope.result.review_request, 'agent_profile') || Object.hasOwn(envelope.result.review_request, 'role'))) throw new Error('Review requests require agent_profile');

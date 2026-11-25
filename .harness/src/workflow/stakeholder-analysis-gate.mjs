@@ -9,6 +9,8 @@
 // - the `미확정 사실` table (`ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거`) holds each fact that changes behavior and is not settled:
 //   it always has an `이용 조건` row, a `확정` row cites its source, a `해당 없음` row gives its reason, no row is `미정` when the stage
 //   completes, and an unknown that changes behavior is not filed as an out-of-scope observation.
+// - a candidate (`CAND` table, 내용 column) is a rule or an open choice, never a statement that only defers the decision
+//   (CANDIDATE_DEFERS_DECISION); a candidate recorded as 보류(후속) or merged into another is not asked now and is exempt.
 // Contextual judgement (which phrases are features, which candidates restate the request) belongs to the stage GUIDE.
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
@@ -27,10 +29,14 @@ export const openFactRows = (analysis) => {
   const tables = parseTables(analysis).filter(isOpenFactTable);
   return tables.length ? tables.flatMap((table) => table.rows) : null;
 };
+export const DEFERRING_STATEMENT = /(?:정한다|정해야 한다|결정한다|결정해야 한다|명확히 한다|명확히 해야 한다|구체화한다|구체화해야 한다|확인한다|확인해야 한다)(?:고|도록)?[\s.!?。…"'”’」』)\]]*$/;
+const isCandidateTable = (table) => ['CAND', '내용', '결정'].every((column) => table.header.includes(column));
+export const deferringCandidates = (analysis) => parseTables(analysis).filter(isCandidateTable).flatMap((table) => table.rows)
+  .filter((row) => DEFERRING_STATEMENT.test(clean(row['내용'])) && !/^보류\(후속\)|병합/.test(clean(row['결정'])));
 const error = (code, message) => ({ code, message, owner_stage: STAGE });
 
 // `legacy` exempts a resumed analysis written before the `미확정 사실` table existed; `root` enables the document-path check.
-export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, root = null }) {
+export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, root = null }) {
   if (stakeholderAnalysisSkipped(analysis)) return { ok: true, skipped: true, errors: [] };
   const text = String(request ?? '');
   const tables = parseTables(analysis);
@@ -45,6 +51,11 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     const phrase = unquote(row['요청 문구']);
     if (!phrase || !text.includes(phrase)) errors.push(error('REQUESTED_FEATURE_NOT_QUOTED', `Requested feature "${clean(row['요청 기능'])}" quotes "${phrase}", which is not an exact substring of the request.`));
     if (row['결정'] !== undefined && clean(row['결정']) !== '확정') errors.push(error('REQUESTED_FEATURE_ASKED', `Requested feature "${clean(row['요청 기능'])}" is recorded as "${clean(row['결정'])}". A feature the request names is settled by the requester (결정: 확정) and is never asked for adoption or scope.`));
+  }
+  if (!legacyCandidates) {
+    for (const row of deferringCandidates(analysis)) {
+      errors.push(error('CANDIDATE_DEFERS_DECISION', `${clean(row.CAND)} states "${clean(row['내용'])}", which only says that something is to be decided, so adopting it settles nothing. Rewrite it as a complete rule with an observable outcome, or as 2-3 concrete options asked as the choice (record the persona wording as 원문 in 근거); when it depends on another answer record the decision as 보류(후속) and do not ask it now.`));
+    }
   }
   const observationTables = tables.filter((table) => table.header.includes('제안자') && table.header.includes('관찰'));
   for (const table of observationTables) {
@@ -116,12 +127,15 @@ export async function evaluateStakeholderAnalysisGate({ root, input, envelope, d
   // Discriminator: every resume (answer, feedback, reopen, revision) of an earlier execution carries `context.previous_result_ref`.
   // Such a resume is exempt only when the published (non-draft) analysis already exists without the table; a new analysis,
   // or a resume of one that was written with the table, must have it.
-  let legacy = false;
+  let legacy = false, legacyCandidates = false;
   if (input.context?.previous_result_ref) {
     const published = draftExecutionId ? await planSetDocument(root, planSetId, 'stakeholder-analysis.md') : analysis;
-    legacy = published.text !== null && !stakeholderAnalysisSkipped(published.text) && openFactRows(published.text) === null;
+    const earlier = published.text !== null && !stakeholderAnalysisSkipped(published.text);
+    legacy = earlier && openFactRows(published.text) === null;
+    // An analysis written before the deferring-statement rule keeps the candidates it already has.
+    legacyCandidates = earlier && deferringCandidates(published.text).length > 0;
   }
-  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, root }) };
+  return { stage: STAGE, ...checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, root }) };
 }
 
 export const stakeholderAnalysisFailureInstruction = (verdict) => `The runner checked stakeholder-analysis.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it repairs stakeholder-analysis.md (and its questions when a candidate moves back into the candidate table), rewrites its output file, then run finish again. Never ask the user whether a feature the request names is in scope. Ask each 미정 row of "미확정 사실" together with the candidate questions instead of recording it as an observation.`;

@@ -25,7 +25,7 @@ Read this GUIDE and nothing else. Do not read, search or run anything in the rep
 - Discuss only the request. Every substantive candidate quotes the request phrase it comes from. Something you notice that no phrase supports is an observation with `request_anchor: null`.
 - Do not assume other personas exist or what they say. Do not add features, policies or future extensions the request does not need.
 - The request's explicit scope is a given. A candidate that only repeats what the request says is not a candidate.
-- Instead state a decision the anchored phrase needs in order to work and the request does not settle: per-actor create, read, update and delete permission, states and what deletion or ending propagates to, failure and exception outcomes, completion conditions, business rules. Phrase it as a concrete proposed rule the user can adopt or reject.
+- Instead state a decision the anchored phrase needs in order to work and the request does not settle: per-actor create, read, update and delete permission, states and what deletion or ending propagates to, failure and exception outcomes, completion conditions, business rules. Phrase it as in Round 1 output: a complete rule or an open choice with concrete options.
 - Only a decision the phrase cannot work without gets an anchor. An optional feature, convenience, policy or extension is an observation with `request_anchor: null`.
 - Stay inside `knowledge_boundary`. For anything outside it, say it is unknown instead of guessing; a candidate whose truth depends on an unknown goes in `rationale` as "unknown".
 - Do not choose code, frameworks, storage or module structure, and do not mention them.
@@ -43,11 +43,16 @@ Your final message is exactly one JSON object, no markdown fence and no prose:
       "statement": "<one requirement>",
       "kind": "goal|rule|exception|completion|actor",
       "request_anchor": "<exact substring of the request>|null",
-      "rationale": "<why, from your goals, pain points or knowledge>"
+      "rationale": "<why, from your goals, pain points or knowledge>",
+      "options": ["<rule>", "<rule>"],
+      "preferred": 0
     }
   ]
 }
 ```
+
+- Each anchored candidate is one of two shapes. A complete rule: `statement` already holds the observable outcome, the user can adopt it as it is, and `options` is `[]` with `preferred: null`. An open choice: `options` lists 2 or 3 concrete rules that exclude each other, each one stating one observable outcome; `statement` names the choice in a short noun phrase; `preferred` is the index of the option you recommend, or `null` when your card gives no ground to prefer one. An unanchored observation uses `options: []`, `preferred: null`.
+- Never write a statement that only says something is to be decided: one that ends in 정한다, 결정한다, 명확히 한다, 확인한다, 구체화한다 or the like, such as `완료 상태를 정한다`. Naming a topic settles nothing, and the user cannot adopt it. Bad: `지도 기능이 보여 주는 대상과 정보를 정한다`. Good (example only; the same shape fits any domain): complete rule `지도에는 공개로 표시한 핀만 이름과 위치와 함께 보인다`, or open choice `지도에서 핀을 누르면 보이는 정보` with options `핀 이름과 설명을 보여 준다` and `핀 이름과 설명과 등록자를 보여 준다`.
 
 - `kind`: `goal` what the business wants, `rule` a condition that must always hold, `exception` what happens when the flow cannot proceed normally, `completion` an observable state that means done, `actor` who may do something.
 - `request_anchor` is copied character for character from the request. A paraphrase or a trimmed word is not an anchor; use `null` instead.

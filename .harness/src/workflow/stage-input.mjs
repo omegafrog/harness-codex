@@ -3,7 +3,7 @@ import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, readdir, writeF
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { execFileSync } from 'node:child_process';
-import { readSkillSessionJson, readStageResult, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
+import { readSkillSessionJson, readStageResult, resolveSkillBinding, readExecutionInput, resolveSkillSession, validateSkillInput, validateSkillReturn } from './stage-runtime.mjs';
 import { parseWorktreeRecord, resolveExecutionWorkspace } from './worktrees.mjs';
 import { preparePublicationDrafts } from '../tracker/publication.mjs';
 import { isQuestionResponse, mergeAnswers } from './questions.mjs';
@@ -255,6 +255,8 @@ async function existingRestartInput({ root, session, planSetId, previousExecutio
   if (paths.session !== session) throw new Error('Restart input session does not match active worktree');
   return { input, path: found.path, session_directory: session, execution_directory: paths.directory };
 }
+
+const PERSONA_STAGES = ['stakeholder-analysis', 'event-storming'];
 
 function storedStageInput(input) {
   if (!input.context?.worktree_ref || ![...PRE_SPEC_STAGES, 'to-ticket', 'tracker-publish'].includes(input.skill)) return input;
@@ -864,6 +866,13 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   input.input_refs = input.input_refs.filter((item, index, refs) => refs.findIndex((other) => item.base === other.base && item.path === other.path && item.kind === other.kind && item.sha256 === other.sha256) === index);
   const { stageWorkspace } = await import('./stage-workspace.mjs');
   input.context.workspace = await stageWorkspace(root, plan_set_id);
+  // The persona binding the GUIDE would otherwise look up with one command; left out when it cannot be resolved.
+  if (PERSONA_STAGES.includes(input.skill)) {
+    try {
+      const { model, reasoning_effort } = await resolveSkillBinding({ root, skill: 'stakeholder-persona', executionProvider: provider });
+      input.context.workspace.persona_binding = { skill: 'stakeholder-persona', provider, model, reasoning_effort };
+    } catch { /* the GUIDE falls back to the binding command */ }
+  }
   await validateSkillInput({ root, input });
   const path = await writeExecutionInput(root, storedStageInput(input), plan_set_id);
   if (restart) await archiveToTicket({ root, session: taskSession, planSetId: plan_set_id, previousExecutionId: state.stages['to-ticket'].execution_id, restartExecutionId: execution_id });

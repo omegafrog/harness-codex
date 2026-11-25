@@ -117,9 +117,14 @@ function explain(run) {
 // ---- PreToolUse(Agent) --------------------------------------------------------------------------------------------------
 
 // The result schema a worker needs while it asks nothing: the two large shapes it rarely uses are named and left in the file.
+// Stages that ask by design keep the question shape inline: the worker would otherwise spend a call reading it.
+const ASKING_STAGES = new Set(['stakeholder-analysis', 'event-storming', 'subdomain-classification', 'requirements-fix', 'tactical-technology', 'tactical-ui']);
+
 export function inlineSchema(schema) {
   const copy = structuredClone(schema), result = copy.properties?.result?.properties;
+  const skill = copy.properties?.skill?.const;
   for (const key of ['questions', 'review_request']) {
+    if (key === 'questions' && ASKING_STAGES.has(skill)) continue;
     if (!result?.[key] || JSON.stringify(result[key]).length < 600) continue;
     result[key] = { description: key === 'questions' ? 'Use [] when you ask nothing. To ask, first read properties.result.properties.questions in schema_path for the item shape.' : 'Use null when you request no review. To request one, first read properties.result.properties.review_request in schema_path.' };
   }

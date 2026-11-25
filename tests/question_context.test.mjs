@@ -147,7 +147,7 @@ test('the installed stage output schema requires the context, effect and example
   const compact = JSON.parse(finished.stdout);
   const [shown] = compact.result.questions;
   assert.equal(shown.title, owned.title);
-  assert.deepEqual(Object.keys(shown).sort(), ['context', 'options', 'question_id', 'title']);
+  assert.deepEqual(Object.keys(shown).sort(), ['context', 'options', 'question_id', 'reason', 'title']);
   assert.ok(shown.context.length <= 2 && shown.context.every((line) => line.length <= 160));
   assert.deepEqual(shown.options.map(({ id, label, effect }) => ({ id, label, effect })), owned.options.map(({ id, label, effect }) => ({ id, label, effect })));
   assert.deepEqual(shown.options.filter(({ recommended }) => recommended).map(({ id }) => id), [owned.recommended_option_id]);
@@ -239,7 +239,7 @@ test('installed stage profiles state the question rule and the read-through-refs
     const coordination = await readFile(join(flow.primary, provider, 'skills/orchestrator/references/coordination.md'), 'utf8');
     assert.match(coordination, /`title`·`context`와 선택지별 `label`·`effect`·`recommended`를 모두 질문 도구에 담는다/, provider);
     assert.doesNotMatch(coordination, /`title`과 문자열 options만 전달/, provider);
-    assert.match(await readFile(join(flow.primary, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /선택지별 label·effect·추천 표시\)를 파일 없이 한국어로 보여 주고 기다린다/, provider);
+    assert.match(await readFile(join(flow.primary, provider, 'skills/orchestrator/SKILL.md'), 'utf8'), /선택지별 label·effect·example, 추천 표시와 `reason`\)를 파일 없이 한국어로 보여 주고 기다린다/, provider);
   }
   assert.ok(withDecisionContext({ options: [{ id: 'a', label: 'A', consequence: 'a' }, { id: 'b', label: 'B', consequence: 'b' }] }).options.every(({ effect, example }) => effect && example), 'the shared fixture helper completes a bare question');
 });

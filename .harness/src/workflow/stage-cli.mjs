@@ -99,7 +99,7 @@ const sizeOf = (value) => Buffer.byteLength(JSON.stringify(value) ?? '');
 const oneLine = (value, length = 160) => clip(String(value ?? '').replace(/\s+/g, ' ').trim(), length);
 
 // What the user needs to decide, small enough that the orchestrator never opens a file to show it: the title, at most two
-// context lines, and per option its label, one-line effect and whether it is the recommended one. A technology option keeps
+// context lines, the reason for the recommended option, and per option its label, one-line effect and example and whether it is the recommended one. A technology option keeps
 // up to three evidence lines and a visual_direction option its preview paths, because the user cannot decide without them.
 export function compactQuestions(questions, { session = null } = {}) {
   return (Array.isArray(questions) ? questions : []).map((question) => {
@@ -109,10 +109,12 @@ export function compactQuestions(questions, { session = null } = {}) {
       title: question.title,
       ...(context.length ? { context } : {}),
       ...(question.decision_kind ? { kind: question.decision_kind } : {}),
+      ...(question.recommended_option_id && question.rationale ? { reason: oneLine(question.rationale) } : {}),
       options: (question.options || []).map((option) => ({
         id: option.id,
         label: option.label,
         effect: oneLine(option.effect ?? option.consequence),
+        ...(option.example ? { example: oneLine(option.example) } : {}),
         ...(option.id === question.recommended_option_id ? { recommended: true } : {}),
         ...(Array.isArray(option.evidence) && option.evidence.length ? { evidence: option.evidence.slice(0, 3).map((item) => oneLine(`${item.criterion}: ${item.result} (${item.source_title}, ${item.url})`)) } : {}),
         ...(Array.isArray(option.previews) && option.previews.length ? { previews: option.previews.map(({ path, viewport }) => `${viewport}: ${session && !isAbsolute(path) ? join(session, path) : path}`) } : {}),

@@ -13,6 +13,7 @@ const filled = (value) => typeof value === 'string' && value.trim().length > 0;
 // One line each: the user reads these next to every option, so a paragraph is rejected.
 export const QUESTION_LINE_LIMIT = 160;
 export const QUESTION_RULES_LIMIT = 3;
+const OPEN_ENDED_LABEL = /^(?:직접\s*입력(?:한다|하기|\s*\(.*\))?|기타|other|others)$/i;
 const sameText = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
 
 // What a user needs to decide without having followed the agent's work: the business rules already settled that bear on the
@@ -32,6 +33,9 @@ export function questionContextProblems(question) {
       problems.push(`context.settled_rules must list at most ${QUESTION_RULES_LIMIT} rules of at most ${QUESTION_LINE_LIMIT} characters each`);
     }
   }
+  for (const option of Array.isArray(question?.options) ? question.options : []) {
+    if (OPEN_ENDED_LABEL.test(String(option?.label ?? '').trim())) problems.push(`option ${option.id} is "${option.label}": an option names the concrete values it commits to (which things, which fields, which condition); the user may always answer in their own words`);
+  }
   const first = { effect: new Map(), example: new Map() };
   for (const option of Array.isArray(question?.options) ? question.options : []) {
     for (const field of ['effect', 'example']) {
@@ -49,11 +53,36 @@ export function questionContextProblems(question) {
 // The gate for a stage's new question batch (harness-result runs it; stored questions are never checked, so questions written
 // before this rule stay readable). `schema` is the output schema the worker was given: an execution started before the rule has
 // a schema without `context`, its worker could not have written one, so its batch is accepted as it is.
-export function assertQuestionContext(questions, { schema = null } = {}) {
+export function assertQuestionContext(questions, { schema = null, skill = null } = {}) {
   if (schema && !schema.properties?.result?.properties?.questions?.items?.properties?.context) return;
-  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => questionContextProblems(question).map((problem) => `question ${index + 1}: ${problem}`));
+  const problems = (Array.isArray(questions) ? questions : []).flatMap((question, index) => [...questionContextProblems(question), ...(skill === 'stakeholder-analysis' ? stakeholderQuestionProblems(question) : [])].map((problem) => `question ${index + 1}: ${problem}`));
   if (!problems.length) return;
-  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.`);
+  throw new Error(`Questions must let the user decide without following your work. ${problems.join('; ')}. Write context.settled_rules (settled rules that apply, quoted from settled documents or answers; none invented), context.why_now, and for each option its effect (what changes on screen or in behavior) and its example (the same concrete situation applied to this option, for example two pins of one owner on a map). Examples illustrate and are never new requirements. An option names concrete values (never 직접 입력/기타) and the recommended option's reason goes in rationale. Keep each effect, example and why_now to one line and context.settled_rules to at most ${QUESTION_RULES_LIMIT} short rules.`);
+}
+
+// Extra rules for the questions of stakeholder-analysis: a decision settles an outcome, so no option may leave it to the implementer or
+// to a later question (a 보류 option may say it is asked again), and a question that settles several candidates cannot be a bare adopt/reject.
+const DEFERRING_OPTION = /임의로|나중에 정|후속(?:\s*(?:질문|단계))?에서 (?:다시 )?(?:정|묻)/;
+const ADOPT_REJECT = /^(?:채택|기각|보류|채택한다|기각한다|보류한다)$/;
+export function stakeholderQuestionProblems(question) {
+  const problems = [];
+  for (const option of Array.isArray(question?.options) ? question.options : []) {
+    const hold = /보류/.test(String(option?.label ?? ''));
+    for (const field of ['label', 'effect', 'consequence', 'example']) {
+      const text = String(option?.[field] ?? '');
+      const match = DEFERRING_OPTION.exec(text);
+      if (match && !(hold && /^후속/.test(match[0]))) problems.push(`option ${option.id} ${field} says "${match[0]}": every option settles the outcome; only a 보류 option may say it is asked again later`);
+    }
+  }
+  const text = `${question?.title ?? ''} ${question?.context?.settled_rules?.join(' ') ?? ''} ${question?.context?.why_now ?? ''}`;
+  const options = Array.isArray(question?.options) ? question.options : [];
+  if (new Set(text.match(/CAND-\d+/g) ?? []).size > 1 && options.length && options.every((option) => ADOPT_REJECT.test(String(option?.label ?? '').trim()))) {
+    problems.push('the question settles several CAND IDs with only adopt/reject/hold options; offer the concrete options that settle all of them (adopt/reject is for one complete rule)');
+  }
+  if (question?.recommended_option_id && (!filled(question.rationale) || /[\r\n]/.test(question.rationale.trim()) || question.rationale.length > QUESTION_LINE_LIMIT)) {
+    problems.push(`rationale is the reason for the recommended option: one line of at most ${QUESTION_LINE_LIMIT} characters`);
+  }
+  return problems;
 }
 
 export function isQuestionResponse(entry) {

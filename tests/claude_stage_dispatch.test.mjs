@@ -93,11 +93,17 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   const { workspace: facts } = JSON.parse(block('input')).context;
   assert.equal(facts.preflight.valid, true);
   assert.equal(facts.head, head);
+  assert.equal(facts.persona_binding.skill, 'stakeholder-persona', 'the persona binding is in the input, so the GUIDE runs no binding command');
+  assert.ok(facts.persona_binding.model && facts.persona_binding.reasoning_effort);
   assert.ok([...facts.documents.existing, ...facts.documents.absent].includes(analysis));
   const schemaPath = /schema_path: (\S+)/.exec(call.updated.prompt)[1];
   const full = await readFile(schemaPath, 'utf8'), inlined = block('schema');
   assert.equal(full.trim(), JSON.stringify(JSON.parse(full)), 'the stored schema is compact');
-  assert.ok(inlined.length < full.length * 0.65, `${inlined.length} of ${full.length}`);
+  // stakeholder-analysis asks by design: its question items stay inline so the worker needs no extra read; review_request is stripped.
+  const inlinedSchema = JSON.parse(inlined);
+  assert.ok(inlinedSchema.properties.result.properties.questions.items.properties.options, 'question items are inline');
+  assert.equal(inlinedSchema.properties.result.properties.review_request.properties, undefined, 'review_request is stripped');
+  assert.ok(inlined.length < full.length, `${inlined.length} of ${full.length}`);
   assert.ok(JSON.parse(full).properties.result.properties.questions.items, 'the stored schema keeps the question shape');
   assert.deepEqual(JSON.parse(inlined), inlineSchema(JSON.parse(full)));
   let stage = (await flow.state()).stages['stakeholder-analysis'];
@@ -237,10 +243,11 @@ test('questions come back compact in the envelope and a raw reply answers them i
   const envelope = JSON.parse(hooks.result(call.toolUseId).content[0].text);
   assert.equal(envelope.code, 'USER_DECISION_REQUIRED');
   assert.equal(envelope.questions.length, 2);
-  assert.deepEqual(Object.keys(envelope.questions[0]), ['question_id', 'title', 'context', 'options']);
+  assert.deepEqual(Object.keys(envelope.questions[0]), ['question_id', 'title', 'context', 'reason', 'options']);
   assert.deepEqual(envelope.questions[0].options.map(({ id, label, recommended }) => [id, label, recommended]), [['a', '핀 하나씩', true], ['b', '소유자 묶음', undefined]]);
   assert.equal(JSON.stringify(envelope).includes('questions_path'), false);
-  assert.equal(JSON.stringify(envelope).includes('example'), false, 'consequence and example stay in the result file');
+  assert.ok(envelope.questions[0].options.every((option) => option.example && option.effect), 'each option shows its effect and example');
+  assert.equal(JSON.stringify(envelope).includes('consequence'), false, 'consequence stays in the result file');
   assert.match(envelope.next, /harness-stage: answer/);
   assert.match(envelope.next, /without opening any file/);
 
