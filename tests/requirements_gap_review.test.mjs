@@ -27,12 +27,17 @@ const BIZ = (id = 'BIZ-01') => `### ${id} 장소 보기 (SD-01)
 - 완료 조건:
   - AC-01 [SC-01] 준비된 장소가 핀으로 보인다
 `;
-const DISPLAY = `\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item} | 확정 | ${item === '누락·부분 데이터' || item === '불러오기 실패' ? 'EX-01' : 'INV-01'} |`).join('\n')}\n`;
+const DISPLAY = `\n### 6.5 조회·표시 점검\n\n| BIZ | 자료 | 항목 | 판정 | 근거 |\n|---|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item === '데이터 출처' || item === '불러오기 실패' ? '장소 목록' : '전체'} | ${item} | 확정 | ${item === '누락·부분 데이터' || item === '불러오기 실패' ? 'EX-01' : 'INV-01'} |`).join('\n')}\n`;
 const gapTable = (...rows) => `\n### 6.6 빈틈 검토\n\n| GAP | BIZ | 추측해야 하는 것 | 처리 | 근거 |\n|---|---|---|---|---|\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
 const NONE = '\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n';
 const doc = (gaps, display = DISPLAY) => `# 요구사항 명세\n\n## 2. 업무\n\n${BIZ()}\n## 6. 공통\n\n### 6.1 범위·비목표\n\n- 포함: 지도\n${display}${gaps}`;
 const check = (text, stage = 'requirements-fix', analysis = null) => checkRequirementsDocument({ requirements: text, stage, complete: true, analysis });
 const codes = (verdict) => verdict.errors.map(({ code }) => code);
+
+const resourceOf = (item) => item === '데이터 출처' || item === '불러오기 실패' ? '장소 목록' : '전체';
+const REVIEWED = ITEMS.filter((item) => item !== '빈 상태').map((item) => ({ biz: 'BIZ-01', resource: resourceOf(item), item, answered: true, why: '문장이 답한다' }))
+  .concat([{ biz: 'BIZ-01', resource: '전체', item: '빈 상태', answered: true, why: '업무 이유' }]);
+const output = (extra = {}) => ({ rows: REVIEWED, gaps: [], missing_resources: [], ...extra });
 
 test('6.6 is required at requirements-fix completion: a table of judged rows or the one `없음 — reason` line', () => {
   assert.deepEqual(codes(check(doc(NONE))), []);
@@ -75,30 +80,85 @@ test('runner evidence: the hook record shows the reviewer ran and every gap it r
   };
   const withGap = doc(gapTable(['GAP-01', 'BIZ-01', '삭제 뒤 댓글이 보이는지', '확정', 'INV-01']));
 
-  // No hook log at all (nothing recorded this execution): the document check alone applies.
+  // No hook log at all (nothing recorded this execution, provider unknown): the document check alone applies.
   assert.equal((await gate(doc(NONE))).ok, true);
   await record({ event: 'SubagentStart', agent_id: 'w1', agent_type: 'workflow_stage' });
   const never = await gate(doc(NONE));
   assert.equal(never.ok, false);
   assert.match(never.errors[0].message, /recorded no finished requirements_gap_reviewer/);
-  await record(...reviewer({ gaps: [] }));
+  await record(...reviewer(output()));
   assert.equal((await gate(doc(NONE))).ok, true, 'it ran and found nothing');
-  await record(...reviewer({ gaps: [gap()] }));
+  await record(...reviewer(output({ gaps: [gap()] })));
   const missing = await gate(doc(NONE));
   assert.equal(missing.ok, false);
   assert.match(missing.errors[0].message, /returned 1 gap\(s\) for BIZ-01 but 6\.6 has 0 row/);
   assert.equal((await gate(withGap)).ok, true, 'every returned gap has a row');
-  await record(...reviewer({ gaps: [gap(), gap()] }));
+  await record(...reviewer(output({ gaps: [gap(), gap()] })));
   assert.equal((await gate(withGap)).ok, false, 'two gaps, one row');
   await record(...reviewer('not json'));
   assert.match((await gate(withGap)).errors[0].message, /not the JSON object/);
-  await record(...reviewer('```json\n{"gaps":[]}\n```'));
+  await record(...reviewer('```json\n' + JSON.stringify(output()) + '\n```'));
   assert.equal((await gate(doc(NONE))).ok, true, 'a fenced answer is read');
+  await record(...reviewer({ gaps: [] }));
+  assert.match((await gate(doc(NONE))).errors[0].message, /no "rows" and "missing_resources"[\s\S]*Run the review again/, 'output of the older GUIDE is refused');
+
+  // Regression of the live miss (a): the live INV-01 names no source but already cites an answer, of event-storming. Unchanged, it must not pass.
+  const LIVE = '  - INV-01 지도를 열 때마다 최신 준비된 장소를 핀으로 표시한다 — 출처: answers.json `event-storming-d6a6f1a6-4749-4d3e-9fa3-6f3174c76ecc:1`';
+  const live = (text) => text.replace(/  - INV-01 .*/, LIVE);
+  const unanswered = output({ rows: REVIEWED.map((row) => row.item === '데이터 출처' ? { ...row, answered: false } : row) });
+  await record(...reviewer(unanswered));
+  const same = await gate(live(doc(NONE)));
+  assert.equal(same.ok, false);
+  assert.match(same.errors[0].message, /"데이터 출처".*does not itself answer the item and the row is unchanged/);
+  // For a BIZ that shows data 해당 없음 is refused by the display rules, so the way out is a 확정 by an id of this chain's own recorded answer.
+  const settleWith = (cite) => live(doc(NONE)).replace('| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |', '| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-02 |')
+    .replace(LIVE, `  - INV-02 장소 목록은 운영자가 미리 정해 둔 고정 장소다 — 출처: answers.json \`${cite}\`\n${LIVE}`);
+  assert.equal((await gate(settleWith('event-storming-d6a6f1a6-4749-4d3e-9fa3-6f3174c76ecc:1'))).ok, false, 'an earlier stage\'s answer does not settle it');
+  assert.equal((await gate(settleWith('rf-1:4'))).ok, false, 'a made-up id of this chain has no recorded answer');
+  assert.equal((await gate(settleWith('요청 해석(에이전트 제안)'))).ok, false, 'the author\'s own sentence does not settle it');
+  await write('.io/runtime/executions/rf-1/decision-answers.json', JSON.stringify([{ question_id: 'rf-1:4', answer: '운영자가 미리 정해 둔 고정 장소 (A)' }]));
+  assert.equal((await gate(settleWith('rf-1:4'))).ok, true, 'a recorded answer of this chain settles it');
+  assert.equal((await gate(settleWith('rf-1:5'))).ok, false, 'only the recorded question id counts');
+  // An answer recorded before the review does not settle a row the review judged afterwards.
+  await record(...reviewer(unanswered).map((event) => ({ ...event, recorded_at: '2999-01-01T00:00:00.000Z' })));
+  assert.equal((await gate(settleWith('rf-1:4'))).ok, false, 'the answer is older than the review');
+  await record(...reviewer(unanswered));
+  await rm(join(root, '.io/runtime/executions/rf-1/decision-answers.json'));
+
+  // Regression of the live miss (b): the map screen itself has no rows; the reviewer names it.
+  await record(...reviewer(output({ missing_resources: [{ biz: 'BIZ-01', resource: '지도 화면', why: '화면 자체의 불러오기' }] })));
+  const noResource = await gate(doc(NONE));
+  assert.equal(noResource.ok, false);
+  assert.match(noResource.errors.map((error) => error.message).join('\n'), /resource "지도 화면" of BIZ-01 as missing, but 6\.5 has no "데이터 출처" row/);
+  const withMap = doc(NONE, DISPLAY.replace('| BIZ-01 | 장소 목록 | 불러오기 실패 | 확정 | EX-01 |', '| BIZ-01 | 장소 목록 | 불러오기 실패 | 확정 | EX-01 |\n| BIZ-01 | 지도 화면 | 불러오기 실패 | 확정 | EX-01 |').replace('| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |', '| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |\n| BIZ-01 | 지도 화면 | 데이터 출처 | 확정 | INV-01 |'));
+  const added = await gate(withMap);
+  assert.equal(added.ok, true, 'the named resource now has both rows (the unseen-row check is per BIZ and item, not per resource)');
   // Questions are returned before the review's rows exist: only completion needs the evidence.
   await write(`docs/specs/${plan}/requirements.md`, doc(''));
   await record({ event: 'SubagentStart', agent_id: 'w1', agent_type: 'workflow_stage' });
   const asking = await evaluateRequirementsDocumentGate({ root, input: { skill: 'requirements-fix', execution_id: 'rf-1', context: { plan_set_id: plan } }, envelope: { status: 'action_required' } });
   assert.equal(asking.ok, true);
+});
+
+test('a review older than the latest reopen of requirements-fix does not count', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'gap-review-since-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const plan = 'community';
+  const write = async (path, text) => { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); };
+  const input = (id, context) => ({ schema_version: 1, execution_id: id, skill: 'requirements-fix', context: { stage_id: 'requirements-fix', plan_set_id: plan, ...context } });
+  await write(`.io/${plan}/requirements-fix/rf-old/input.json`, JSON.stringify(input('rf-old', {})));
+  await write(`.io/${plan}/requirements-fix/rf-new/input.json`, JSON.stringify(input('rf-new', { reopen: { reason: 'dependency_gap' } })));
+  await write('.io/runtime/orchestrator/state.json', JSON.stringify({ orchestrator_provider: 'codex', stages: { 'requirements-fix': { execution_id: 'rf-new', started_at: '2026-02-01T00:00:00.000Z', attempts: [{ execution_id: 'rf-old', started_at: '2026-01-01T00:00:00.000Z' }] } } }));
+  await write(`docs/specs/${plan}/requirements.md`, doc(NONE));
+  const stop = (recorded_at) => `${JSON.stringify({ event: 'SubagentStop', agent_id: 'r', agent_type: 'requirements_gap_reviewer', result: JSON.stringify(output()), recorded_at })}\n`;
+  const gate = () => evaluateRequirementsDocumentGate({ root, input: { skill: 'requirements-fix', execution_id: 'rf-new', context: { plan_set_id: plan } }, envelope: { status: 'completed', code: 'OK' } });
+  await write('.io/runtime/executions/rf-old/subagents.jsonl', stop('2026-01-15T00:00:00.000Z'));
+  await write('.io/runtime/executions/rf-new/subagents.jsonl', '{"event":"SubagentStart","agent_id":"w","agent_type":"workflow_stage"}\n');
+  const stale = await gate();
+  assert.equal(stale.ok, false);
+  assert.match(stale.errors[0].message, /older than the latest reopen/);
+  await write('.io/runtime/executions/rf-new/subagents.jsonl', stop('2026-02-02T00:00:00.000Z'));
+  assert.equal((await gate()).ok, true, 'a review after the reopen counts');
 });
 
 test('the reviewer profile, GUIDE and stage lists', async () => {
@@ -202,7 +262,7 @@ test('Claude Code: the gap reviewer child of the running requirements-fix worker
   hook('SubagentStart', 'child-x', 'code_researcher');
   await assert.rejects(readFile(log, 'utf8'), { code: 'ENOENT' }, 'only the gap reviewer is resolved from the session');
   hook('SubagentStart', 'child-1', 'requirements_gap_reviewer');
-  hook('SubagentStop', 'child-1', 'requirements_gap_reviewer', { last_assistant_message: JSON.stringify({ gaps: [{ biz: 'BIZ-01', gap: '삭제 뒤 댓글', why_it_changes_the_result: '남거나 사라진다', quote: '게시글 삭제' }] }) });
+  hook('SubagentStop', 'child-1', 'requirements_gap_reviewer', { last_assistant_message: JSON.stringify(output({ gaps: [{ biz: 'BIZ-01', gap: '삭제 뒤 댓글', why_it_changes_the_result: '남거나 사라진다', quote: '게시글 삭제' }] })) });
   const lines = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.deepEqual(lines.map(({ event, agent_id, agent_type }) => [event, agent_id, agent_type]), [['SubagentStart', 'child-1', 'requirements_gap_reviewer'], ['SubagentStop', 'child-1', 'requirements_gap_reviewer']]);
   assert.match(lines[1].result, /삭제 뒤 댓글/);
@@ -210,6 +270,6 @@ test('Claude Code: the gap reviewer child of the running requirements-fix worker
   assert.equal(missing.ok, false);
   assert.match(missing.errors[0].message, /returned 1 gap\(s\) for BIZ-01 but 6\.6 has 0 row/);
   hook('SubagentStart', 'child-2', 'requirements_gap_reviewer');
-  hook('SubagentStop', 'child-2', 'requirements_gap_reviewer', { last_assistant_message: '{"gaps":[]}' });
+  hook('SubagentStop', 'child-2', 'requirements_gap_reviewer', { last_assistant_message: JSON.stringify(output()) });
   assert.equal((await gate()).ok, true, 'the later review found nothing and 6.6 says so');
 });

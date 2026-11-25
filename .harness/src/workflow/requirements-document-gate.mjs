@@ -1,7 +1,8 @@
 // Check BIZ field uniqueness before result acceptance and require defined INV, EX and AC entries at coverage completion.
 import { readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { sessionOutputPath } from './session-output.mjs';
+import { findExecutionInput } from './execution-input.mjs';
 import { join } from 'node:path';
 import { clean, outsideFences, parseTables, planSetDocument, stakeholderAnalysisSkipped } from './domain-model-gate.mjs';
 import { ACCESS_KIND, openFactRows } from './stakeholder-analysis-gate.mjs';
@@ -33,13 +34,13 @@ function bizBlocks(lines) {
   for (const line of lines) {
     const heading = BIZ_HEADING.exec(line);
     if (heading || (current && SECTION_END.test(line))) {
-      current = heading ? { id: heading[1], fields: new Map(), defined: new Set(), field: null } : null;
+      current = heading ? { id: heading[1], fields: new Map(), defined: new Set(), definitions: new Map(), field: null } : null;
       if (current) blocks.push(current);
       continue;
     }
     if (!current) continue;
     const defined = DEFINED_ID.exec(line);
-    if (defined) current.defined.add(defined[1]);
+    if (defined) { current.defined.add(defined[1]); current.definitions.set(defined[1], line); }
     const field = FIELD.exec(line);
     if (field) current.field = field[1].trim();
     if (current.field) current.fields.set(current.field, `${current.fields.get(current.field) ?? ''}\n${field ? line.replace(FIELD, '') : line}`);
@@ -64,12 +65,22 @@ function judgmentProblem(block, judgment, basis, prefix) {
   return `${prefix}판정 "${judgment}" must be 확정 or 해당 없음.`;
 }
 
+// Resources: 데이터 출처 and 불러오기 실패 have one row per resource the BIZ's screens need (자료) and both items cover the same set; the other three
+// items have one row per BIZ with 자료 `전체`. The gate cannot know the true resource list; the independent reviewer checks it (missing_resources).
+const PER_RESOURCE = new Set(['데이터 출처', '불러오기 실패']);
+export const WHOLE = '전체';
+export const normalizeResource = (value) => clean(value).toLowerCase().replace(/[\s·,，、()（）]+/g, '');
+export const displayRows = (requirements) => parseTables(requirements).filter(isDisplayTable).flatMap((table) => table.rows);
+const OLD_SHAPE = 'The `### 6.5 조회·표시 점검` table has no 자료 column (the old shape BIZ | 항목 | 판정 | 근거). Use BIZ | 자료 | 항목 | 판정 | 근거: 데이터 출처 and 불러오기 실패 get one row per resource the BIZ\'s screens need (for example the reservation calendar screen itself and the reservation list), both items covering the same resources; 표시 항목, 누락·부분 데이터 and 빈 상태 stay one row per BIZ with 자료 `전체`.';
+
 export function displayCoverageErrors({ requirements, lines = outsideFences(requirements), required = true }) {
   const tables = parseTables(requirements).filter(isDisplayTable);
-  if (!tables.length) return required ? [{ code: 'DISPLAY_COVERAGE_INCOMPLETE', message: 'requirements.md has no `### 6.5 조회·표시 점검` table (BIZ | 항목 | 판정 | 근거). Add one row per BIZ for each of: ' + DISPLAY_ITEMS.join(', ') + '. Ask every unresolved row as a concrete question in one USER_DECISION_REQUIRED batch, with a smallest option (fixed data, a notice text) among the choices.', owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX }] : [];
-  const rows = tables.flatMap((table) => table.rows);
+  if (!tables.length) return required ? [{ code: 'DISPLAY_COVERAGE_INCOMPLETE', message: 'requirements.md has no `### 6.5 조회·표시 점검` table (BIZ | 자료 | 항목 | 판정 | 근거). Add one row per BIZ for each of: ' + DISPLAY_ITEMS.join(', ') + ' (데이터 출처 and 불러오기 실패 once per resource the BIZ needs). Ask every unresolved row as a concrete question in one USER_DECISION_REQUIRED batch, with a smallest option (fixed data, a notice text) among the choices.', owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX }] : [];
   const errors = [];
   const report = (id, message) => errors.push({ code: 'DISPLAY_COVERAGE_INCOMPLETE', id, message, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX });
+  // A table of the old shape is refused at requirements-fix completion and exempt at bounded-context completion like the other 6.5 rules.
+  if (tables.some((table) => !table.header.includes('자료'))) return required ? [{ code: 'DISPLAY_COVERAGE_INCOMPLETE', message: OLD_SHAPE, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX }] : [];
+  const rows = tables.flatMap((table) => table.rows);
   const blocks = bizBlocks(lines);
   for (const row of rows) {
     if (!blocks.some((block) => block.id === clean(row.BIZ))) report(clean(row.BIZ), `6.5 has a row for ${clean(row.BIZ) || '(no BIZ)'}, which is not a BIZ of this document.`);
@@ -77,17 +88,32 @@ export function displayCoverageErrors({ requirements, lines = outsideFences(requ
   }
   for (const block of blocks) {
     const shows = SHOWS_DATA.test(['정상 시나리오', '업무 규칙', '완료 조건'].map((label) => block.fields.get(label) ?? '').join('\n'));
+    const resources = new Map();
     for (const item of DISPLAY_ITEMS) {
       const found = rows.filter((row) => clean(row.BIZ) === block.id && clean(row['항목']) === item);
-      const fail = (message) => report(block.id, `${block.id} 6.5 "${item}": ${message}`);
-      if (found.length !== 1) { fail(found.length ? 'the item appears more than once; keep one row.' : 'there is no row. Add it (판정 확정 or 해당 없음) or, when the decision is open, ask it as a question.'); continue; }
-      const problem = judgmentProblem(block, clean(found[0]['판정']), clean(found[0]['근거']), `${block.id} 6.5 "${item}": `);
-      if (problem) { report(block.id, problem); continue; }
-      const judgment = clean(found[0]['판정']);
-      const basis = clean(found[0]['근거']);
-      if (judgment === '확정' && DISPLAY_NEEDS_EX.has(item) && !(basis.match(/\b(?:SC|INV|EX|AC)-\d+\b/g) ?? []).some((id) => id.startsWith('EX-'))) fail('판정 확정 needs at least one EX of this BIZ in 근거 (the exception that says what happens).');
-      else if (judgment === '해당 없음' && shows && DISPLAY_NEVER_SKIPPED.has(item)) fail('this BIZ shows or looks up data, so the item cannot be 해당 없음; settle it with INV/EX/AC ids, asking the user when it is open.');
+      const whole = (message) => report(block.id, `${block.id} 6.5 "${item}": ${message}`);
+      if (!found.length) { whole('there is no row. Add it (판정 확정 or 해당 없음) or, when the decision is open, ask it as a question.'); continue; }
+      if (!PER_RESOURCE.has(item) && (found.length > 1 || normalizeResource(found[0]['자료']) !== normalizeResource(WHOLE))) { whole(`keep exactly one row for the BIZ with 자료 \`${WHOLE}\`; only 데이터 출처 and 불러오기 실패 have one row per resource.`); continue; }
+      const seen = new Set();
+      for (const row of found) {
+        const resource = clean(row['자료']);
+        const label = PER_RESOURCE.has(item) ? ` (자료 ${resource || '(none)'})` : '';
+        const fail = (message) => report(block.id, `${block.id} 6.5 "${item}"${label}: ${message}`);
+        if (!resource) { fail('the 자료 cell is empty; name the resource this row judges.'); continue; }
+        if (seen.has(normalizeResource(resource))) { fail('the resource appears more than once for this item; keep one row.'); continue; }
+        seen.add(normalizeResource(resource));
+        const judgment = clean(row['판정']);
+        if (judgment === '미정') { fail('판정 미정 is provisional and is not accepted at completion; settle it (확정 or 해당 없음) or ask it as a question.'); continue; }
+        const basis = clean(row['근거']);
+        const problem = judgmentProblem(block, judgment, basis, `${block.id} 6.5 "${item}"${label}: `);
+        if (problem) { report(block.id, problem); continue; }
+        if (judgment === '확정' && DISPLAY_NEEDS_EX.has(item) && !(basis.match(/\b(?:SC|INV|EX|AC)-\d+\b/g) ?? []).some((id) => id.startsWith('EX-'))) fail('판정 확정 needs at least one EX of this BIZ in 근거 (the exception that says what happens).');
+        else if (judgment === '해당 없음' && shows && DISPLAY_NEVER_SKIPPED.has(item)) fail('this BIZ shows or looks up data, so the item cannot be 해당 없음; settle it with INV/EX/AC ids, asking the user when it is open.');
+      }
+      if (PER_RESOURCE.has(item)) resources.set(item, new Set(found.map((row) => normalizeResource(row['자료'])).filter(Boolean)));
     }
+    const [source, failure] = [resources.get('데이터 출처'), resources.get('불러오기 실패')];
+    if (source && failure && ([...source].some((name) => !failure.has(name)) || [...failure].some((name) => !source.has(name)))) report(block.id, `${block.id} 6.5: 데이터 출처 and 불러오기 실패 must cover the same 자료 (resources); one of them lacks a resource the other judges.`);
   }
   return errors;
 }
@@ -240,24 +266,57 @@ const gapReviewExempt = (requirements, analysis) => !outsideFences(requirements)
 const GAP_REVIEWER = 'requirements_gap_reviewer';
 const readJsonLines = async (path) => { try { return (await readFile(path, 'utf8')).split('\n').filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } }); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
 async function stageExecutionIds(root, executionId) {
-  const ids = new Set([executionId]);
+  const started = new Map([[executionId, null]]);
   let provider = null;
   for (const name of ['workflow.json', 'state.json']) {
     try {
       const parsed = JSON.parse(await readFile(sessionOutputPath(root, `runtime/orchestrator/${name}`, { create: false }), 'utf8'));
       provider = (parsed.state || parsed).orchestrator_provider ?? null;
       const entry = (parsed.state || parsed).stages?.[WORKTREE_STAGE.REQUIREMENTS_FIX];
-      for (const id of [entry?.execution_id, ...(entry?.attempts || []).map((attempt) => attempt.execution_id)]) if (typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) ids.add(id);
+      for (const item of [...(entry?.attempts || []), entry]) if (typeof item?.execution_id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(item.execution_id)) started.set(item.execution_id, item.started_at ?? started.get(item.execution_id) ?? null);
       break;
     } catch { /* try the next file; the current execution alone still counts */ }
   }
-  return { ids: [...ids], provider };
+  // The latest reopen or user revision of requirements-fix starts a new review chain; a resume with answers belongs to the chain it resumes.
+  let since = null, revision = false;
+  for (const [id, at] of started) {
+    try {
+      const { input } = await findExecutionInput(root, id);
+      if ((input.context?.reopen || input.context?.user_revision || input.context?.revalidation_mark) && Number.isFinite(Date.parse(at ?? '')) && (since === null || Date.parse(at) > since)) { since = Date.parse(at); revision = Boolean(input.context?.user_revision); }
+    } catch { /* no readable input: it cannot move the chain start */ }
+  }
+  return { ids: [...started.keys()], provider, since, revision };
 }
+const NO_ID = /\b(?:SC|INV|EX|AC)-\d+\b/g;
+// An id counts as the user's own decision of THIS review chain only when its definition cites a question id `<execution-id>:<n>` of a
+// requirements-fix execution of the chain whose recorded answer exists (decision-answers.json of the asking execution or the
+// answers.json of the resumed one) and was written no earlier than the review, or `사용자 수정 지시` while the latest reopen is a user revision.
+// An earlier stage's citation (answers.json of event-storming, a made-up id) never settles an unanswered row.
+const QUESTION_ID = /[A-Za-z0-9][A-Za-z0-9_-]*:\d+/g;
+async function chainAnswers(root, ids) {
+  const found = new Map();
+  for (const id of ids) {
+    for (const name of ['decision-answers.json', 'answers.json']) {
+      let path, text, info;
+      try { path = sessionOutputPath(root, `runtime/executions/${id}/${name}`, { create: false }); info = await stat(path); text = await readFile(path, 'utf8'); } catch { continue; }
+      let list; try { list = JSON.parse(text); } catch { continue; }
+      for (const item of Array.isArray(list) ? list : []) {
+        if (typeof item?.question_id === 'string' && typeof item.answer === 'string' && item.answer.trim() && ids.includes(item.question_id.slice(0, item.question_id.lastIndexOf(':')))) found.set(item.question_id, Math.max(found.get(item.question_id) ?? 0, info.mtimeMs));
+      }
+    }
+  }
+  return found;
+}
+const userSourced = (block, id, { answers, reviewedAt, revision }) => {
+  const line = block?.definitions.get(id) ?? '';
+  if (revision && /사용자 수정 지시/.test(line)) return true;
+  return (line.match(QUESTION_ID) ?? []).some((question) => answers.has(question) && !(answers.get(question) < reviewedAt));
+};
 export async function gapReviewEvidenceErrors({ root, executionId, requirements }) {
   const error = (message) => [{ code: 'GAP_REVIEW_INCOMPLETE', message, owner_stage: WORKTREE_STAGE.REQUIREMENTS_FIX }];
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(executionId || '')) return [];
   let records = null;
-  const { ids, provider } = await stageExecutionIds(root, executionId);
+  const { ids, provider, since, revision } = await stageExecutionIds(root, executionId);
   for (const id of ids) {
     const found = await readJsonLines(sessionOutputPath(root, `runtime/executions/${id}/subagents.jsonl`, { create: false }));
     if (found) records = [...(records ?? []), ...found];
@@ -266,20 +325,50 @@ export async function gapReviewEvidenceErrors({ root, executionId, requirements 
   // cannot have been seen: refuse. Codex stays lenient only when no log exists (its hook may be untrusted or absent, which the
   // runner reports elsewhere), and so does a run whose provider is unknown.
   if (!records) return provider === 'claude-code' ? error(`No subagent hook log exists for this requirements-fix (provider ${provider}), so the independent ${GAP_REVIEWER} run cannot be confirmed. Run the gap review (GUIDE step 7) with Agent subagent_type ${GAP_REVIEWER}; the hook records it.`) : [];
-  const stops = records.filter((item) => item.event === 'SubagentStop' && item.agent_type === GAP_REVIEWER && typeof item.result === 'string');
-  if (!stops.length) return error(`The subagent hook recorded no finished ${GAP_REVIEWER} for this stage. Run the independent gap review (GUIDE step 7) once, with the user request and the BIZ and common sections as its only input, before completing.`);
-  let gaps;
-  try { gaps = JSON.parse(stops.at(-1).result.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')).gaps; } catch { gaps = null; }
-  if (!Array.isArray(gaps)) return error(`The last ${GAP_REVIEWER} answer is not the JSON object {"gaps":[...]} its GUIDE defines, so its gaps cannot be matched to 6.6 rows. Run the review again.`);
+  const allStops = records.filter((item) => item.event === 'SubagentStop' && item.agent_type === GAP_REVIEWER && typeof item.result === 'string');
+  // A review older than the latest reopen or user revision of requirements-fix does not count (when the state gives its start).
+  const stops = since === null ? allStops : allStops.filter((item) => !(Date.parse(item.recorded_at ?? '') < since));
+  if (!stops.length) return error(allStops.length ? `The only recorded ${GAP_REVIEWER} run is older than the latest reopen or revision of requirements-fix. Run the independent gap review again (GUIDE step 7).` : `The subagent hook recorded no finished ${GAP_REVIEWER} for this stage. Run the independent gap review (GUIDE step 7) once, with the user request and the BIZ and common sections as its only input, before completing.`);
+  let review;
+  try { review = JSON.parse(stops.at(-1).result.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { review = null; }
+  const answers = await chainAnswers(root, ids);
+  const reviewedAt = Number.isFinite(Date.parse(stops.at(-1).recorded_at ?? '')) ? Date.parse(stops.at(-1).recorded_at) : 0;
+  const gaps = review?.gaps;
+  if (!Array.isArray(gaps)) return error(`The last ${GAP_REVIEWER} answer is not the JSON object {"rows":[...],"gaps":[...],"missing_resources":[...]} its GUIDE defines, so its findings cannot be matched to the document. Run the review again.`);
+  if (!Array.isArray(review.rows) || !Array.isArray(review.missing_resources)) return error(`The last ${GAP_REVIEWER} answer has no "rows" and "missing_resources" (output of an older GUIDE), so the 6.5 rows were never judged. Run the review again.`);
   const lines = outsideFences(requirements);
-  const start = lines.findIndex((line) => GAP_HEADING.test(line));
-  const end = lines.findIndex((line, index) => index > start && SECTION_END.test(line));
-  const rows = start < 0 ? [] : parseTables(lines.slice(start + 1, end < 0 ? lines.length : end).join('\n')).filter(isGapTable).flatMap((table) => table.rows);
+  const blocks = bizBlocks(lines);
+  const section = (pattern) => { const start = lines.findIndex((line) => pattern.test(line)); const end = lines.findIndex((line, index) => index > start && SECTION_END.test(line)); return start < 0 ? '' : lines.slice(start + 1, end < 0 ? lines.length : end).join('\n'); };
+  const gapRows = parseTables(section(GAP_HEADING)).filter(isGapTable).flatMap((table) => table.rows);
+  const shown = displayRows(requirements);
   const errors = [];
   for (const biz of new Set(gaps.map((gap) => clean(gap?.biz)))) {
     const returned = gaps.filter((gap) => clean(gap?.biz) === biz).length;
-    const written = rows.filter((row) => clean(row.BIZ) === biz).length;
+    const written = gapRows.filter((row) => clean(row.BIZ) === biz).length;
     if (written < returned) errors.push(...error(`${GAP_REVIEWER} returned ${returned} gap(s) for ${biz || '(no BIZ)'} but 6.6 has ${written} row(s) for it. Give every returned gap a GAP row: 확정 citing the INV, EX or AC that settles it (ask the user when it is open) or 해당 없음 with a business reason.`));
+  }
+  const reviewed = review.rows.map((row) => ({ biz: clean(row?.biz), item: clean(row?.item), resource: normalizeResource(row?.resource), answered: row?.answered }));
+  // A row the reviewer judged unanswered must now be settled by the user's own text or by 해당 없음; a row the reviewer never saw must be user-settled.
+  const settled = (row) => {
+    const block = blocks.find((item) => item.id === clean(row.BIZ));
+    if (clean(row['판정']) === '해당 없음') return true;
+    return clean(row['판정']) === '확정' && (clean(row['근거']).match(NO_ID) ?? []).some((id) => userSourced(block, id, { answers, reviewedAt, revision }));
+  };
+  for (const row of shown) {
+    const biz = clean(row.BIZ), item = clean(row['항목']), resource = normalizeResource(row['자료']);
+    const sameItem = reviewed.filter((entry) => entry.biz === biz && entry.item === item);
+    if (!sameItem.length) { if (!settled(row)) errors.push(...error(`6.5 ${biz} "${item}" (자료 ${clean(row['자료'])}) was not among the rows the ${GAP_REVIEWER} judged and is not settled by the user's own text (an id whose definition cites a recorded answer of this requirements-fix chain given after the review, or a 사용자 수정 지시 of this reopen) or 해당 없음. Run the review again after the provisional 6.5 is complete.`)); continue; }
+    const unanswered = sameItem.filter((entry) => entry.answered === false && (entry.resource === resource || !sameItem.some((other) => other.resource === resource)));
+    if (unanswered.length && !settled(row)) errors.push(...error(`6.5 ${biz} "${item}" (자료 ${clean(row['자료'])}): the ${GAP_REVIEWER} judged that the cited sentence does not itself answer the item and the row is unchanged. Ask the user (one question batch), then settle the row with an id whose definition cites the recorded question id (<execution-id>:<n> of this requirements-fix chain) of that answer or a 사용자 수정 지시 of this reopen, or 해당 없음 with a business reason.`));
+  }
+  for (const missing of review.missing_resources) {
+    const biz = clean(missing?.biz), name = normalizeResource(missing?.resource);
+    if (!name) continue;
+    const covers = (item) => shown.filter((row) => clean(row.BIZ) === biz && clean(row['항목']) === item).map((row) => normalizeResource(row['자료']));
+    const has = (item) => covers(item).some((own) => own === name || own.includes(name) || name.includes(own));
+    // Wording that is too free to match still counts when the BIZ now has more resources than the reviewed rows plus the missing ones named.
+    const counted = (item) => new Set(covers(item)).size >= new Set(reviewed.filter((entry) => entry.biz === biz && entry.item === item).map((entry) => entry.resource)).size + review.missing_resources.filter((entry) => clean(entry?.biz) === biz).length;
+    for (const item of PER_RESOURCE) if (!has(item) && !counted(item)) errors.push(...error(`${GAP_REVIEWER} named the resource "${clean(missing?.resource)}" of ${biz} as missing, but 6.5 has no "${item}" row for it. Add the row (ask the user when it is open) for the resource.`));
   }
   return errors;
 }

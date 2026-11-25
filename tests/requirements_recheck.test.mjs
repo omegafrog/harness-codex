@@ -25,7 +25,7 @@ const BIZ = `### BIZ-01 장소 보기 (SD-01)
 - 완료 조건:
   - AC-01 [SC-01] 준비된 장소가 핀으로 보인다
 `;
-const TABLE_65 = `\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item} | 확정 | ${item === '누락·부분 데이터' || item === '불러오기 실패' ? 'EX-01' : 'INV-01'} |`).join('\n')}\n`;
+const TABLE_65 = `\n### 6.5 조회·표시 점검\n\n| BIZ | 자료 | 항목 | 판정 | 근거 |\n|---|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item === '데이터 출처' || item === '불러오기 실패' ? '장소 목록' : '전체'} | ${item} | 확정 | ${item === '누락·부분 데이터' || item === '불러오기 실패' ? 'EX-01' : 'INV-01'} |`).join('\n')}\n`;
 const NONE_66 = '\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n';
 // bounded-context legitimately adds the fixed status and the `### 1.1` context table; neither may fail the requirements-fix rules.
 const CONTEXTS = '\n### 1.1 바운디드 컨텍스트\n\n| BC | 이름 | 책임 | 소유 규칙·데이터 | BIZ |\n|---|---|---|---|---|\n| BC-01 | 지도 | 장소 보기 | INV-01 | BIZ-01 |\n';

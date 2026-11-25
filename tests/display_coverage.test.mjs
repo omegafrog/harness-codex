@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { checkRequirementsDocument } from '../.harness/src/workflow/requirements-document-gate.mjs';
 
 const ITEMS = ['데이터 출처', '표시 항목', '누락·부분 데이터', '빈 상태', '불러오기 실패'];
+const PER = ['데이터 출처', '불러오기 실패'];
 const REASON = '이 업무는 사용자에게 아무 데이터도 보이지 않는 내부 처리다';
 // One BIZ whose scenario shows data (핀 목록), with exceptions and acceptance entries.
 const biz = (id, { shows = true, ex = '  - EX-01 위치 정보가 없는 항목은 목록에 표시하지 않는다 — 출처: answers.json `e:1`' } = {}) => `### ${id} 장소 보기 (SD-01)
@@ -17,8 +18,8 @@ ${ex}
 - 완료 조건:
   - AC-01 [SC-01] 준비된 장소가 핀으로 보인다
 `;
-const table = (...rows) => `\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
-const full = (id = 'BIZ-01', overrides = {}) => ITEMS.map((item) => [id, item, ...(overrides[item] ?? (item === '누락·부분 데이터' || item === '불러오기 실패' ? ['확정', 'EX-01'] : item === '빈 상태' ? ['해당 없음', '고정 데이터라 목록이 비는 경우가 없다 업무'] : ['확정', 'INV-01, AC-01']))]);
+const table = (...rows) => `\n### 6.5 조회·표시 점검\n\n| BIZ | 자료 | 항목 | 판정 | 근거 |\n|---|---|---|---|---|\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
+const full = (id = 'BIZ-01', overrides = {}) => ITEMS.map((item) => [id, PER.includes(item) ? '장소 목록' : '전체', item, ...(overrides[item] ?? (item === '누락·부분 데이터' || item === '불러오기 실패' ? ['확정', 'EX-01'] : item === '빈 상태' ? ['해당 없음', '고정 데이터라 목록이 비는 경우가 없다 업무'] : ['확정', 'INV-01, AC-01']))]);
 const GAP_NONE = '\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n';
 const document = (bizText, rows, gap = GAP_NONE) => `# 요구사항\n\n## 2. 업무\n\n${bizText}\n## 6. 공통\n\n### 6.1 범위·비목표\n\n- 포함: 지도\n${rows === null ? '' : table(...rows)}${gap}`;
 const check = (text, stage = 'requirements-fix', analysis = null) => checkRequirementsDocument({ requirements: text, stage, complete: true, analysis });
@@ -27,7 +28,7 @@ const codes = (result) => result.errors.map(({ code }) => code);
 test('requirements-fix completes with a 6.5 table that settles the five items of every BIZ', () => {
   assert.deepEqual(codes(check(document(biz('BIZ-01'), full()))), []);
   assert.deepEqual(codes(check(document(biz('BIZ-01'), null))), ['DISPLAY_COVERAGE_INCOMPLETE'], 'the table is required');
-  const missingRow = check(document(biz('BIZ-01'), full().filter((row) => row[1] !== '빈 상태')));
+  const missingRow = check(document(biz('BIZ-01'), full().filter((row) => row[2] !== '빈 상태')));
   assert.deepEqual(codes(missingRow), ['DISPLAY_COVERAGE_INCOMPLETE']);
   assert.equal(missingRow.errors[0].owner_stage, 'requirements-fix');
   assert.equal(codes(check(document(biz('BIZ-01') + '\n' + biz('BIZ-02').replace('INV-01', 'INV-02').replace('EX-01', 'EX-02').replace('AC-01', 'AC-02').replace('SC-01', 'SC-02'), full()))).length, 5, 'every BIZ needs its five rows');
@@ -74,4 +75,23 @@ test('an exception that is NOT_APPLICABLE or only says the action is not offered
   const noException = biz('BIZ-01').replace(/- 예외 시나리오:\n.*\n/, '- 예외 시나리오: 없음 — 고정 데이터만 보여 주므로 실패 경로가 없다\n');
   assert.ok(!codes(check(document(noException, full()))).includes('EXCEPTION_NOT_FAILURE'), 'the explicit 없음 form stays accepted');
   assert.deepEqual(withEx('  - EX-01 그런 동작은 제공되지 않는다', 'bounded-context'), [], 'enforced at requirements-fix only');
+});
+
+test('regression: 데이터 출처 and 불러오기 실패 are judged per resource, and an old-shape table is refused at requirements-fix only', () => {
+  const rows = (...extra) => full().concat(extra);
+  // The live miss: the map screen itself was never asked, only the place list's load failure.
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), rows(['BIZ-01', '지도 화면', '데이터 출처', '확정', 'INV-01'])))), ['DISPLAY_COVERAGE_INCOMPLETE'], 'a resource judged for one item only');
+  const both = rows(['BIZ-01', '지도 화면', '데이터 출처', '확정', 'INV-01'], ['BIZ-01', '지도 화면', '불러오기 실패', '확정', 'EX-01']);
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), both))), [], 'the same ids may serve two resources');
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), rows(['BIZ-01', '장소 목록', '데이터 출처', '확정', 'INV-01'])))), ['DISPLAY_COVERAGE_INCOMPLETE'], 'a resource appears once per item');
+  const twice = both.map((row) => row[2] === '표시 항목' ? row : row).concat([['BIZ-01', '전체', '표시 항목', '확정', 'AC-01']]);
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), twice))), ['DISPLAY_COVERAGE_INCOMPLETE'], 'the other items keep one row per BIZ');
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), full().map((row) => row[2] === '표시 항목' ? ['BIZ-01', '장소 목록', ...row.slice(2)] : row)))), ['DISPLAY_COVERAGE_INCOMPLETE'], '자료 is 전체 for the BIZ-level items');
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), full().map((row) => row[2] === '빈 상태' ? ['BIZ-01', '전체', '빈 상태', '미정', ''] : row)))), ['DISPLAY_COVERAGE_INCOMPLETE'], '판정 미정 is not accepted at completion');
+  assert.deepEqual(codes(check(document(biz('BIZ-01'), full().map((row) => row[1] === '장소 목록' ? ['BIZ-01', '', ...row.slice(2)] : row)))).length > 0, true, 'an empty 자료 cell');
+  // The old shape (no 자료 column).
+  const old = (stage) => check(document(biz('BIZ-01'), null, GAP_NONE).replace('## 6. 공통', '## 6. 공통').concat(`\n### 6.5 조회·표시 점검\n\n| BIZ | 항목 | 판정 | 근거 |\n|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item} | 해당 없음 | 이 업무는 사용자에게 보이는 데이터가 없다 |`).join('\n')}\n`), stage);
+  assert.deepEqual(codes(old('requirements-fix')), ['DISPLAY_COVERAGE_INCOMPLETE']);
+  assert.match(old('requirements-fix').errors[0].message, /no 자료 column/);
+  assert.deepEqual(codes(old('bounded-context')), [], 'exempt at bounded-context completion');
 });
