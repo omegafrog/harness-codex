@@ -1,11 +1,12 @@
+import { tmpdir } from 'node:os';
 import './support/trusted-codex-home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isApprovalReply, isRecommendedReply, mapReplyToAnswers, pickRevisionOwner, resolveApprovalOrRevision } from '../.harness/src/workflow/answer-text.mjs';
+import { declaredAnswers, resolveApproval, resolveRevision } from '../.harness/src/workflow/answer-text.mjs';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 
@@ -15,54 +16,27 @@ const ask = (id, title, recommended = 'a') => withDecisionContext({
   options: [{ id: 'a', label: '핀 하나씩', consequence: '핀마다' }, { id: 'b', label: '소유자 묶음', consequence: '소유자마다' }, { id: 'c', label: '지도 전체', consequence: '전체' }].map((option) => ({ ...option, evidence: [] })),
 });
 const questions = [ask('q:1', '공개 단위는?', 'a'), ask('q:2', '삭제 권한은?', 'b'), ask('q:3', '복구는?', 'c')];
-const answerOf = (mapped, id) => mapped.answers.find(({ question_id }) => question_id === id).answer;
+const pick = (question_id, option_id) => ({ question_id, option_id });
 
-test('an all-recommended reply answers every open question with its recommended option', () => {
-  for (const reply of ['추천대로', '추천대로 해줘', '모두 추천', '전부 추천안으로', 'all recommended', 'Recommended.', '다 추천']) assert.equal(isRecommendedReply(reply), true, reply);
-  for (const reply of ['추천은 별로야', '1번 추천', '네', 'B']) assert.equal(isRecommendedReply(reply), false, reply);
-  const mapped = mapReplyToAnswers(questions, '추천대로');
-  assert.deepEqual(mapped.answers, [
+test('recommended is a declared intent that answers every open question with its recommended option', () => {
+  assert.deepEqual(declaredAnswers(questions, { recommended: true }).answers, [
     { question_id: 'q:1', answer: '핀 하나씩 (a)' }, { question_id: 'q:2', answer: '소유자 묶음 (b)' }, { question_id: 'q:3', answer: '지도 전체 (c)' },
   ]);
   // Only the questions still open are answered, so a partial batch is completed without repeating an answer.
-  assert.deepEqual(mapReplyToAnswers(questions, '추천대로', { answered: ['q:1', 'q:3'] }).answers, [{ question_id: 'q:2', answer: '소유자 묶음 (b)' }]);
-  assert.match(mapReplyToAnswers([{ ...questions[0], recommended_option_id: 'zzz' }], '추천대로').clarification, /No recommended option is marked/);
+  assert.deepEqual(declaredAnswers(questions, { recommended: true, answered: ['q:1', 'q:3'] }).answers, [{ question_id: 'q:2', answer: '소유자 묶음 (b)' }]);
+  assert.match(declaredAnswers([{ ...questions[0], recommended_option_id: 'zzz' }], { recommended: true }).clarification, /recommended option/);
 });
 
-test('a numbered reply picks the option of each question by number, letter, id or label and keeps the user\'s conditions', () => {
-  assert.equal(answerOf(mapReplyToAnswers(questions, '1번 B, 2번 3, 3번 a'), 'q:1'), '소유자 묶음 (b)');
-  const mapped = mapReplyToAnswers(questions, '1번 B, 2번 3, 3번 a');
-  assert.equal(answerOf(mapped, 'q:2'), '지도 전체 (c)');
-  assert.equal(answerOf(mapped, 'q:3'), '핀 하나씩 (a)');
-  assert.equal(answerOf(mapReplyToAnswers(questions, '1: per_owner\n2: 추천\n3: c, 단 관리자만'), 'q:2'), '소유자 묶음 (b)');
-  assert.equal(answerOf(mapReplyToAnswers(questions, '1: per_owner\n2: 추천\n3: c, 단 관리자만'), 'q:3'), '지도 전체 (c): 단 관리자만');
-  // The reply may answer a subset; the rest stays waiting.
-  assert.deepEqual(mapReplyToAnswers(questions, '2번 B').answers, [{ question_id: 'q:2', answer: '소유자 묶음 (b)' }]);
-  // Out-of-order numbering and the user's own wording both survive.
-  const free = mapReplyToAnswers(questions, '3번 복구는 7일 안에만 허용, 1번 A');
-  assert.equal(answerOf(free, 'q:3'), '복구는 7일 안에만 허용');
-  assert.equal(answerOf(free, 'q:1'), '핀 하나씩 (a)');
-  // Answers that are already stored are not overwritten.
-  assert.deepEqual(mapReplyToAnswers(questions, '1번 B, 2번 B', { answered: ['q:1'] }).answers, [{ question_id: 'q:2', answer: '소유자 묶음 (b)' }]);
-});
-
-test('a single open question takes the reply as its choice or as the user\'s own words', () => {
-  assert.deepEqual(mapReplyToAnswers([questions[0]], 'B').answers, [{ question_id: 'q:1', answer: '소유자 묶음 (b)' }]);
-  assert.deepEqual(mapReplyToAnswers([questions[0]], '2').answers, [{ question_id: 'q:1', answer: '소유자 묶음 (b)' }]);
-  assert.deepEqual(mapReplyToAnswers([questions[0]], '핀 하나씩').answers, [{ question_id: 'q:1', answer: '핀 하나씩 (a)' }]);
-  assert.deepEqual(mapReplyToAnswers([questions[0]], '핀은 하나씩 하되 비공개가 기본').answers, [{ question_id: 'q:1', answer: '핀은 하나씩 하되 비공개가 기본' }]);
-});
-
-test('an ambiguous reply is not guessed: it asks which question each choice answers', () => {
-  for (const reply of ['B', '그걸로 해줘', '네 좋아요']) {
-    const mapped = mapReplyToAnswers(questions, reply);
-    assert.equal(mapped.answers, undefined, reply);
-    assert.match(mapped.clarification, /does not say which question/);
-    assert.match(mapped.clarification, /1\. 공개 단위는\? \| 2\. 삭제 권한은\? \| 3\. 복구는\?/);
+test('declared choices are checked against the open questions and option ids, never against wording', () => {
+  assert.deepEqual(declaredAnswers(questions, { choices: JSON.stringify([pick('q:1', 'b'), { question_id: 'q:2', option_id: 'a', text: '관리자만' }, { question_id: 'q:3', text: '아직 모르겠어' }]) }).answers, [
+    { question_id: 'q:1', answer: '소유자 묶음 (b)' }, { question_id: 'q:2', answer: '핀 하나씩 (a): 관리자만' }, { question_id: 'q:3', answer: '아직 모르겠어' },
+  ]);
+  for (const choices of [null, 'not json', '[]', [pick('q:9', 'a')], [pick('q:1', 'z')], [{ question_id: 'q:1' }], [pick('q:1', 'a'), pick('q:1', 'b')]]) {
+    const refused = declaredAnswers(questions, { choices });
+    assert.equal(refused.answers, undefined, JSON.stringify(choices));
+    assert.match(refused.clarification, /q:1 "공개 단위는\?" \(options: a, b, c\)/);
   }
-  assert.match(mapReplyToAnswers(questions, '   ').clarification, /empty/);
-  assert.match(mapReplyToAnswers(questions, '추천대로', { answered: ['q:1', 'q:2', 'q:3'] }).clarification, /already has an answer/);
-  assert.match(mapReplyToAnswers(questions, '4번 B').clarification, /does not say which question/, 'a number beyond the batch is not an answer');
+  assert.match(declaredAnswers(questions, { choices: [pick('q:1', 'a')], answered: ['q:1'] }).clarification, /not an open question/);
 });
 
 test('answer --text finds the waiting stage, records the mapped answers and launches; ambiguity and partial replies record nothing or only the part', async (t) => {
@@ -83,17 +57,17 @@ test('answer --text finds the waiting stage, records the mapped answers and laun
   ]);
   const pending = join(workspace, '.io/runtime/executions', waiting.execution_id, 'pending-answers.json');
 
-  // Ambiguous: nothing is recorded and the reply is not guessed.
-  const unclear = native('answer', '--text', '그걸로 해줘');
+  // Undeclared: nothing is recorded and the reply is not interpreted.
+  const unclear = native('answer', '--text', '2번 c');
   assert.equal(unclear.status, 0, unclear.stderr);
   const clarification = JSON.parse(unclear.stdout);
   assert.equal(clarification.status, 'clarification_needed');
   assert.equal(clarification.stage_id, stage);
-  assert.match(clarification.message, /1\. .*\| 2\. /);
+  assert.ok(clarification.message.includes(first.question_id) && clarification.message.includes(second.question_id), clarification.message);
   assert.equal(existsSync(pending), false, 'no answer was recorded');
 
   // Partial: the answered question is stored, the other keeps waiting and is shown compactly.
-  const partial = native('answer', '--text', `2번 c`);
+  const partial = native('answer', '--text', '두 번째는 지도로', '--choices', JSON.stringify([pick(second.question_id, 'c')]));
   assert.equal(partial.status, 0, partial.stderr);
   const remaining = JSON.parse(partial.stdout);
   assert.equal(remaining.waiting_for_answers, true);
@@ -103,7 +77,7 @@ test('answer --text finds the waiting stage, records the mapped answers and laun
   assert.deepEqual(JSON.parse(await readFile(pending, 'utf8')), [{ question_id: second.question_id, answer: '지도 전체 (c)' }]);
 
   // The rest as recommended: the stage launches again with both answers.
-  const rest = native('answer', '--text', '추천대로');
+  const rest = native('answer', '--text', '나머지는 알아서', '--intent', 'recommended');
   assert.equal(rest.status, 0, rest.stderr);
   const launched = JSON.parse(rest.stdout);
   assert.equal(launched.status, 'launched');
@@ -112,17 +86,17 @@ test('answer --text finds the waiting stage, records the mapped answers and laun
   assert.deepEqual(stored.sort((x, y) => x.question_id.localeCompare(y.question_id)), [{ question_id: first.question_id, answer: '핀 하나씩 (a)' }, { question_id: second.question_id, answer: '지도 전체 (c)' }]);
 
   // Nothing is waiting any more.
-  const none = native('answer', '--text', '추천대로');
+  const none = native('answer', '--text', '추천대로', '--intent', 'recommended');
   assert.notEqual(none.status, 0);
   assert.equal(JSON.parse(none.stderr).code, 'ANSWER_REFUSED');
   assert.match(none.stderr, /No stage is waiting|waiting for/);
   assert.notEqual(native('answer').status, 0, 'a reply is required');
 });
 
-test('answer --text routes an approval reply to the requirements approval and keeps the approval-term check', async (t) => {
+test('a declared approve routes to the waiting gate whatever the wording; without a declaration nothing starts', async (t) => {
   const flow = await consumerWorkflow(t, REQUEST);
   const { workspace } = flow;
-  const answer = (text) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-native-stage.mjs'), 'answer', '--text', text], { cwd: workspace, encoding: 'utf8' });
+  const answer = (text) => spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-native-stage.mjs'), 'answer', '--text', text, '--intent', 'approve'], { cwd: workspace, encoding: 'utf8' });
   // Nothing has completed, so no gate waits for an approval.
   assert.equal(JSON.parse(answer('승인합니다').stderr).code, 'ANSWER_REFUSED');
   // With bounded-context completed the reply is the approval: the existing check still refuses an unrecorded reply.
@@ -132,37 +106,36 @@ test('answer --text routes an approval reply to the requirements approval and ke
   const state = JSON.parse(await read(statePath, 'utf8'));
   state.stages['bounded-context'] = { status: 'completed', code: 'OK', execution_id: 'bounded-context-1', result_ref: 'runtime/executions/bounded-context-1/result.json', result_session_directory: join(workspace, '.io') };
   await writeFile(statePath, JSON.stringify(state));
-  const target = resolveReplyTarget(workspace, '요구사항 승인합니다');
+  const undeclared = resolveReplyTarget(workspace, '승인합니다');
+  assert.equal(undeclared.args, undefined);
+  assert.match(undeclared.clarification, /no intent was declared/);
+  const target = resolveReplyTarget(workspace, '요구사항 승인합니다', { intent: 'approve' });
   assert.deepEqual(target.args, ['--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '요구사항 승인합니다']);
   assert.equal(target.approval, 'requirements');
+  const paced = resolveReplyTarget(workspace, '승인하고 한단계만 진행해봐', { intent: 'approve' });
+  assert.deepEqual(paced.args, ['--stage-id', 'domain-model', '--requirements-approved', 'true', '--approval-answer', '승인하고 한단계만 진행해봐']);
   state.stages['to-ticket'] = { status: 'completed', code: 'OK', execution_id: 'to-ticket-1', result_ref: 'x', result_session_directory: join(workspace, '.io') };
   state.stages['domain-model'] = { status: 'completed', code: 'OK', execution_id: 'domain-model-1', result_ref: 'x', result_session_directory: join(workspace, '.io') };
   await writeFile(statePath, JSON.stringify(state));
-  assert.deepEqual(resolveReplyTarget(workspace, '발행 승인').args.slice(0, 5), ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer']);
+  assert.deepEqual(resolveReplyTarget(workspace, '발행 승인', { intent: 'approve' }).args.slice(0, 5), ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer']);
 });
 
-test('an approval is a short yes; a reply that also asks for a change is a revision of the earliest owning stage', () => {
-  for (const reply of ['승인합니다', '네 진행해 주세요', '요구사항 승인합니다', '발행 승인', 'approved, go ahead', 'LGTM', '승인하고 진행']) assert.equal(isApprovalReply(reply), true, reply);
-  for (const reply of ['신고 규칙 문구를 바꿔 주세요', '승인하지만 예외 규칙을 추가해 줘', '댓글 기능도 범위에 추가해 줘', 'change the wording of the rule', '그건 좀 다른데']) assert.equal(isApprovalReply(reply), false, reply);
+test('a revision reopens only the stage the orchestrator names; otherwise the revisable stages are returned', async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'harness-revise-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await mkdir(join(workspace, '.io/runtime/orchestrator'), { recursive: true });
   const run = (id) => ({ status: 'completed', code: 'OK', execution_id: `${id}-1` });
-  const state = { stages: Object.fromEntries(['subdomain-candidates', 'subdomain-classification', 'requirements-fix', 'bounded-context'].map((id) => [id, run(id)])) };
-  const owner = (text) => pickRevisionOwner(state, text).stage;
-  assert.equal(owner('신고 규칙의 문구를 바꿔 주세요'), 'requirements-fix');
-  assert.equal(owner('예외 규칙을 추가해 줘'), 'requirements-fix');
-  assert.equal(owner('댓글 업무가 범위에서 빠졌어요'), 'subdomain-candidates');
-  assert.equal(owner('알림 기능 추가해 줘'), 'subdomain-candidates');
-  assert.equal(owner('신고는 지원 도메인이 아니라 코어 도메인이야'), 'subdomain-classification');
-  assert.equal(owner('컨텍스트 책임을 나눠 줘'), 'bounded-context');
-  assert.equal(owner('requirements-fix에서 다시 봐 줘'), 'requirements-fix');
-  assert.match(pickRevisionOwner(state, '이상해요').clarification, /which part to change[\s\S]*Nothing was started/);
-  assert.match(pickRevisionOwner({ stages: {} }, '문구를 바꿔 줘').clarification, /has not run yet/);
-  // Approval gate open: a yes approves, anything else is a revision and never an approval.
-  const gated = { stages: { ...state.stages } };
-  assert.equal(resolveApprovalOrRevision(gated, '승인합니다').approval, 'requirements');
-  const revised = resolveApprovalOrRevision(gated, '신고 규칙 문구를 바꿔 주세요');
-  assert.deepEqual(revised.args, ['--stage-id', 'requirements-fix', '--user-revision', 'true', '--feedback', '신고 규칙 문구를 바꿔 주세요']);
-  assert.equal(revised.approval, undefined);
-  // No gate and not a change request: a clear refusal.
-  assert.match(resolveApprovalOrRevision({ stages: {} }, '승인합니다').error, /No stage is waiting/);
-  assert.match(resolveApprovalOrRevision({ stages: {} }, '문구를 바꿔 줘').clarification, /has not run yet/);
+  const stages = Object.fromEntries(['subdomain-candidates', 'requirements-fix', 'bounded-context'].map((id) => [id, run(id)]));
+  await writeFile(join(workspace, '.io/runtime/orchestrator/state.json'), JSON.stringify({ stages }));
+  const target = resolveRevision(workspace, ' 승인합니다 ', 'requirements-fix');
+  assert.deepEqual(target.args, ['--stage-id', 'requirements-fix', '--user-revision', 'true', '--feedback', '승인합니다']);
+  assert.equal(target.approval, undefined);
+  for (const stage of [null, 'domain-model', 'nope']) {
+    const refused = resolveRevision(workspace, '문구를 바꿔 줘', stage);
+    assert.equal(refused.args, undefined, String(stage));
+    assert.deepEqual(refused.revisable_stages, ['subdomain-candidates', 'requirements-fix', 'bounded-context']);
+    assert.match(refused.clarification, /requirements-fix/);
+  }
+  assert.equal(resolveApproval({ stages }, '네').approval, 'requirements');
+  assert.match(resolveApproval({ stages: {} }, '승인합니다').error, /No stage is waiting/);
 });

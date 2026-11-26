@@ -119,7 +119,7 @@ node .harness/scripts/harness-stakeholder.mjs remove SH-01
 
 #### 전술 설계 흐름
 
-`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. `domain-model`은 stage 이름이며 `docs/architecture/domain-model.md`는 프로젝트 모델 색인이다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.harness/internal-skills/domain-model/references/template.md`에 있다.
+`bounded-context`에서 확정한 요구사항을 사용자가 승인하면, 아래 여섯 stage가 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 구성요소를 설계하고 검토한다. 각 stage 결과는 사용자가 승인해야 다음 stage(마지막은 `tactical-technology`)가 시작된다. `domain-model`은 stage 이름이며 `docs/architecture/domain-model.md`는 프로젝트 모델 색인이다. 진행 중인 구형 문서는 설치나 업데이트 때 그대로 보존한다. 템플릿은 `.harness/internal-skills/domain-model/references/template.md`에 있다.
 
 | stage | 하는 일 |
 |---|---|
@@ -132,7 +132,7 @@ node .harness/scripts/harness-stakeholder.mjs remove SH-01
 
 - 장기 보관할 결정은 프로젝트의 `docs/adr/`를 사용한다. 관련 모델·메서드에서 ADR의 근거로 이동할 수 있다. 클래스 다이어그램과 ADR, 프로젝트 모델 문서는 Git으로 추적한다.
 - 마지막 `context-boundary`가 `completed/OK`를 반환하면 실행기가 `harness-domain-model-check.mjs`로 설계 전체를 검사한다. 검사에 실패하면 작성한 stage를 `owner_stage`로 알려 주는 `gate_error`를 반환한다. 업무 규칙의 의미와 모델 선택 근거는 각 stage와 리뷰에서 확인한다.
-- 요구사항 변경은 가장 이른 소유 stage에서 재개한다. 기존 파일과 유효한 결정은 보존하고 영향받는 산출물을 갱신한다. 사용자가 변경된 확정 요구사항을 승인한 뒤 전술 설계를 재개한다.
+- 요구사항 변경은 가장 이른 소유 stage에서 재개한다. 기존 파일과 유효한 결정은 보존하고 영향받는 산출물을 갱신한다. 사용자가 변경된 확정 요구사항을 승인한 뒤 전술 설계를 재개하며, 다시 실행한 설계 stage의 결과도 새로 승인한다.
 - `tactical-to-code`의 구현 설계는 포트별 인터페이스·구현체 경로, 기술과 조립 지점을 정한다. 마지막 `tactical-data`의 `harness-design-freeze-check.mjs`가 업무 연결과 인프라 구현 연결을 확인하면 `to-ticket`이 시작할 수 있다. 설계 결함은 `DESIGN_NOT_FROZEN`으로 보고한다.
 
 ### 3. `to-ticket`

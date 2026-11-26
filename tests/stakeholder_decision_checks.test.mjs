@@ -142,7 +142,7 @@ test('the stage contract and GUIDEs state the new rules', async () => {
   assert.match(persona, /"preferred": 0/);
   assert.match(persona, /Never write a statement that only says something is to be decided/);
   const analysis = await read('.harness/internal-skills/stakeholder-analysis/GUIDE.md');
-  for (const part of ['persona_binding', '채택: <option label>', '보류(후속)', 'ONE question', 'least new behavior']) assert.ok(analysis.includes(part), part);
+  for (const part of ['persona_binding', '채택: <option label>', '보류(후속)', 'ONE question']) assert.ok(analysis.includes(part), part);
   const storming = await read('.harness/internal-skills/event-storming/GUIDE.md');
   for (const part of ['persona_binding', 'do not read that file yourself', '직접 입력']) assert.ok(storming.includes(part), part);
   assert.match(await read('docs/architecture/enforcement.md'), /CANDIDATE_DEFERS_DECISION/);

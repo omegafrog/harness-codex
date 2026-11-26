@@ -1,5 +1,6 @@
 // A consumer project with a prepared workflow worktree, driven the way the orchestrator drives each stage:
 // prepare, start, bind, the stage writes its documents, finish. Shared by the tests of the pre-spec flow.
+import { designApprovalCovers, designApprovalSource, isCurrentStage } from '../../.harness/src/workflow/worktree-stages.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -82,12 +83,22 @@ export async function consumerWorkflow(t, request, { provider = 'codex' } = {}) 
     return ['--requirements-approved', 'true', '--approval-answer', text];
   }
 
+  async function approveDesign(text = '이 설계 결과를 승인합니다') {
+    await codexUserPrompt(workspace, text);
+    return ['--design-approved', 'true', '--approval-answer', text];
+  }
+
   // The orchestrator's steps before the stage does its own work: prepare, start and bind. The first domain-model start of
   // these flows carries the user's approval of the fixed requirements (requirements_stages tests the refusal without it).
   async function beginStage(stage, { extraArgs = [], approve = true } = {}) {
     if (stage === 'domain-model' && approve && !extraArgs.includes('--requirements-approved') && !extraArgs.includes('--feedback') && !extraArgs.includes('--answer')) {
       const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
       if (!state.stages?.['domain-model']) extraArgs = [...extraArgs, ...await approveRequirements()];
+    }
+    // Likewise the first launch after a new design result carries the user's approval of it (design_approval_gate tests the refusal).
+    if (designApprovalSource(stage) && approve && !['--design-approved', '--feedback', '--answer'].some((flag) => extraArgs.includes(flag))) {
+      const state = JSON.parse(await readFile(join(workspace, '.io/runtime/orchestrator/state.json'), 'utf8'));
+      if (isCurrentStage(state.stages?.[designApprovalSource(stage)]) && !designApprovalCovers(state.stages, stage)) extraArgs = [...extraArgs, ...await approveDesign()];
     }
     const prepared = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', stage, ...extraArgs]);
     assert.equal(prepared.input.skill, stage);
@@ -96,10 +107,11 @@ export async function consumerWorkflow(t, request, { provider = 'codex' } = {}) 
     assert.equal(prepared.input.context.plan_set_id, stage.startsWith('tactical-') ? planSetId : undefined, 'only tactical implementation stages receive their canonical plan-set identity');
     const base = ['--root', workspace, '--worktree-ref', tree.worktree_ref, '--execution-id', prepared.input.execution_id];
     const started = invoke(workspace, 'harness-native-stage.mjs', ['start', ...base]);
-    assert.equal(started.agent_profile, STAGE_PROFILES[stage] || (stage.startsWith('tactical-') ? 'tactical_designer' : 'workflow_stage'));
+    if (provider === 'codex') assert.equal(started.agent_profile, STAGE_PROFILES[stage] || (stage.startsWith('tactical-') ? 'tactical_designer' : 'workflow_stage'));
     assert.equal(started.guide, join(workspace, `.harness/internal-skills/${stage}/GUIDE.md`));
     assert.equal(started.binding.model_tier, STAGE_TIERS[stage]);
-    assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
+    // STAGE_PROFILES and MODELS name the Codex bindings; the Claude bindings are asserted by claude_stage_dispatch.
+    if (provider === 'codex') assert.equal(started.binding.model, MODELS[STAGE_TIERS[stage]]);
     const schema = JSON.parse(await readFile(started.schema_path, 'utf8'));
     assert.ok(schema.properties.result.properties.questions, 'the stage can return its user questions');
     invoke(workspace, 'harness-native-stage.mjs', ['bind', ...base, '--agent-id', `${prepared.input.execution_id}-agent`]);
@@ -135,5 +147,5 @@ export async function consumerWorkflow(t, request, { provider = 'codex' } = {}) 
     } else assert.equal(head, before, `${stage} committed nothing`);
     return { prepared, started, finished, files: expectCommit ? treeGit('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort() : [] };
   }
-  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, approveRequirements, planSetId, specDirectory, specPath, request };
+  return { primary, workspace, tree, treeGit, invoke, runStage, beginStage, submitStage, finishStage, approveRequirements, approveDesign, planSetId, specDirectory, specPath, request };
 }

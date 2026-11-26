@@ -8,15 +8,17 @@
 
 `stakeholder-analysis`가 기존 승인 업무 안의 자명한 변경으로 `판정: 생략`이면 나머지 요구사항·전술 설계 stage는 문서 없이 생략 결과를 기록한다. 이해관계자 등록 요청은 `node .harness/scripts/harness-stakeholder.mjs add`로 사용자 소유 카드를 작성하도록 안내한다. worktree에서 사용할 카드는 커밋되어 있어야 한다.
 
-`bounded-context`가 완료되면 결과의 승인 요약(`result.summary`: 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트)과 `requirements.md` 경로를 보여 주고 문서는 열지 않으며 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 승인한 뒤에만 그 답 원문을 `answer`로 넘긴다(실행기가 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`으로 처리한다). 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 그 전에 실행기가 `requirements.md`를 현재 `requirements-fix` 완료 규칙으로 다시 검사하며, 통과하지 못하면 `next`가 승인 대신 `launch --stage-id requirements-fix --reopen-for <bounded-context execution_id>`를 주므로 사용자에게 한국어 한 문장으로 이유를 알리고 그 명령을 따른다(승인 답을 보내도 같은 명령으로 바뀐다). 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
+`bounded-context`가 완료되면 결과의 승인 요약(`result.summary`: 업무별 규칙·예외·완료 조건과 서브도메인·바운디드 컨텍스트)과 `requirements.md` 경로를 보여 주고 문서는 열지 않으며 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 승인한 뒤에만 그 답 원문을 `approve` 의도로 넘긴다(실행기가 `launch --stage-id domain-model --requirements-approved true --approval-answer '<사용자 답 원문>'`으로 처리한다). 실행기는 `bounded-context` 완료 뒤 실제 답이 기록됐는지 확인한다. 그 전에 실행기가 `requirements.md`를 현재 `requirements-fix` 완료 규칙으로 다시 검사하며, 통과하지 못하면 `next`가 승인 대신 `launch --stage-id requirements-fix --reopen-for <bounded-context execution_id>`를 주므로 사용자에게 한국어 한 문장으로 이유를 알리고 그 명령을 따른다(승인 답을 보내도 같은 명령으로 바뀐다). 부분 수정 뒤에는 현재 요구사항을 다시 승인받는다. 수정은 [상위 stage 되돌아가기](dispatch.md#상위-stage-되돌아가기)와 사용자 수정 절차의 적용 조건을 따른다.
 
 ## 전술 설계
 
 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서로 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 모델·Aggregate·업무 규칙·Application Service 메서드·트랜잭션·인터페이스를 채운다. 중요한 결정은 해당 구성요소에서 `docs/adr/`로 연결한다. stage 이름은 문서 이름이 아니다. 현재 양식은 각 stage가 소유한 부분을 완료 전에 검사하고 마지막 `context-boundary` 완료 때 `harness-domain-model-check.mjs`가 문서 전체를 검사한다. `gate_error`의 `owner_stage`는 문제 섹션을 소유한 단계다. [결과 처리](dispatch.md#결과-처리)를 적용한다. 신규 기능 흐름은 Product·Architecture Spec을 거치지 않는다.
 
+각 전술 설계 stage가 완료되면 자동으로 이어가지 않는다. `next`가 안내하는 대로 `result.summary`·artifact 경로와 그 stage 섹션의 확인할 결정·해석을 보여 주고, 사용자의 승인 답 원문을 `approve` 의도로 넘긴다(실행기가 다음 stage를 `--design-approved true --approval-answer '<사용자 답 원문>'`으로 시작한다). `context-boundary` 결과를 승인받아야 `tactical-technology`가 시작되고, 앞 stage를 다시 실행하면 새 승인이 필요하다.
+
 ## 전술 설계에서 구현까지
 
-전술 설계가 모두 `completed/OK`인 뒤 별도 `tactical-to-code` workflow를 시작한다. 순서는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → `tracker-publish` → `tactical-code`다. 실행기는 전술 설계와 앞 단계 완료를 확인한다. 이 흐름은 요구사항 롤백에 포함되지 않으므로 그 롤백은 애플리케이션 코드를 복원하거나 삭제하지 않는다.
+전술 설계가 모두 `completed/OK`이고 마지막 설계 승인을 받은 뒤 별도 `tactical-to-code` workflow를 시작한다. 순서는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → `tracker-publish` → `tactical-code`다. 실행기는 전술 설계와 앞 단계 완료를 확인한다. 이 흐름은 요구사항 롤백에 포함되지 않으므로 그 롤백은 애플리케이션 코드를 복원하거나 삭제하지 않는다.
 
 - `tactical-technology`는 기존 기술을 먼저 평가하고 필요한 선택에 근거를 붙인다. `tactical-ui`에서 화면 설계가 필요하면 독립 `frontend-design` workflow의 `frontend-design-brief` stage로 [인계](dispatch.md#ui-적용과-보류)한다. 계획에 UI 변경이 없거나 사용자가 보류하면 UI 스킬 없이 API·데이터 설계를 진행한다. `tactical-api`는 application entry와 API, `tactical-data`는 저장·데이터 소유·인프라 바인딩을 정한다.
 - 전술 설계와 구현 결정은 기존 BIZ·INV·EX·AC를 근거로 한다. `tactical-data` 완료 때 `harness-design-freeze-check.mjs`가 API·데이터·UI 설계의 추적과 요구 적용 범위를 검증한다. `UNTRACED_ITEM`·`REQUIREMENT_UNCOVERED`가 나면 실행기가 소유 stage를 알려 준다. 통과한 뒤 `to-ticket`은 확정된 설계를 컨텍스트와 업무별 vertical ticket으로 나누고 fresh `plan_reviewer`의 독립 리뷰를 받는다.

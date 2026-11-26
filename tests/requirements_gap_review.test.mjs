@@ -14,47 +14,33 @@ import { FRESH_AGENT_TYPES, freshAgentDecision } from '../.harness/scripts/harne
 import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
 
 const read = (path) => readFile(join(sourceRoot, path), 'utf8');
-const ITEMS = ['데이터 출처', '표시 항목', '누락·부분 데이터', '빈 상태', '불러오기 실패'];
-const BIZ = (id = 'BIZ-01') => `### ${id} 장소 보기 (SD-01)
+import { biz, doc as kindDoc, gapTable, reviewed, rows, table65, NONE_66 as NONE } from './support/decision-fixtures.mjs';
 
-- 상태: draft
-- 정상 시나리오:
-  1. SC-01 방문자가 지도에서 핀 목록을 본다
-- 업무 규칙:
-  - INV-01 장소는 준비된 고정 데이터에서 온다 — 출처: answers.json \`e:2\`
-- 예외 시나리오:
-  - EX-01 위치 정보가 없는 항목은 목록에 표시하지 않는다 — 출처: answers.json \`e:1\`
-- 완료 조건:
-  - AC-01 [SC-01] 준비된 장소가 핀으로 보인다
-`;
-const DISPLAY = `\n### 6.5 조회·표시 점검\n\n| BIZ | 자료 | 항목 | 판정 | 근거 |\n|---|---|---|---|---|\n${ITEMS.map((item) => `| BIZ-01 | ${item === '데이터 출처' || item === '불러오기 실패' ? '장소 목록' : '전체'} | ${item} | 확정 | ${item === '누락·부분 데이터' || item === '불러오기 실패' ? 'EX-01' : 'INV-01'} |`).join('\n')}\n`;
-const gapTable = (...rows) => `\n### 6.6 빈틈 검토\n\n| GAP | BIZ | 추측해야 하는 것 | 처리 | 근거 |\n|---|---|---|---|---|\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
-const NONE = '\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n';
-const doc = (gaps, display = DISPLAY) => `# 요구사항 명세\n\n## 2. 업무\n\n${BIZ()}\n## 6. 공통\n\n### 6.1 범위·비목표\n\n- 포함: 지도\n${display}${gaps}`;
+const doc = (gaps, display) => kindDoc('lookup', { gaps, ...(display ? { display } : {}) });
 const check = (text, stage = 'requirements-fix', analysis = null) => checkRequirementsDocument({ requirements: text, stage, complete: true, analysis });
 const codes = (verdict) => verdict.errors.map(({ code }) => code);
+const output = (extra = {}) => ({ ...reviewed('lookup'), ...extra });
 
-const resourceOf = (item) => item === '데이터 출처' || item === '불러오기 실패' ? '장소 목록' : '전체';
-const REVIEWED = ITEMS.filter((item) => item !== '빈 상태').map((item) => ({ biz: 'BIZ-01', resource: resourceOf(item), item, answered: true, why: '문장이 답한다' }))
-  .concat([{ biz: 'BIZ-01', resource: '전체', item: '빈 상태', answered: true, why: '업무 이유' }]);
-const output = (extra = {}) => ({ rows: REVIEWED, gaps: [], missing_resources: [], ...extra });
 
 test('6.6 is required at requirements-fix completion: a table of judged rows or the one `없음 — reason` line', () => {
   assert.deepEqual(codes(check(doc(NONE))), []);
-  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', '글을 지우면 달린 댓글이 보이는지', '확정', 'INV-01'])))), []);
-  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', '핀을 누르면 무엇이 보이는지', '해당 없음', '이 업무는 지도에 핀을 그리기만 하고 누르는 동작을 다루지 않는다'])))), []);
+  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', 'high', '회원이 아닌 사람의 조회가 보이는지', '확정', 'INV-01'])))), []);
+  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', 'low', '목록 정렬이 어떤지', '기본값', 'INV-03'])))), []);
+  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', 'high', '주문을 누르면 무엇이 보이는지', '해당 없음', '이 업무는 목록만 보이고 주문을 누르는 동작을 다루지 않는다'])))), []);
   assert.deepEqual(codes(check(doc(''))), ['GAP_REVIEW_INCOMPLETE'], 'the section is required');
   assert.equal(check(doc('')).errors[0].owner_stage, 'requirements-fix');
   const bad = (...row) => check(doc(gapTable(row)));
-  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', '추측', '확정', '요청 원문')), ['GAP_REVIEW_INCOMPLETE'], 'no id cited');
-  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', '추측', '확정', 'INV-09')), ['GAP_REVIEW_INCOMPLETE'], 'an id of nowhere');
-  assert.deepEqual(codes(bad('GAP-01', 'BIZ-09', '추측', '확정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'not a BIZ of the document');
-  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', '추측', '해당 없음', '요청에 없음')), ['GAP_REVIEW_INCOMPLETE'], 'the 6.5 reason rules apply');
-  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', '추측', '미정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'only 확정 or 해당 없음');
-  assert.deepEqual(codes(bad('1', 'BIZ-01', '추측', '확정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'GAP id shape');
-  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', '추측', '확정', 'INV-01'], ['GAP-01', 'BIZ-01', '또 추측', '확정', 'INV-01'])))), ['GAP_REVIEW_INCOMPLETE'], 'a GAP id is used once');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'low', '추측', '확정', '요청 원문')), ['GAP_REVIEW_INCOMPLETE'], 'no id cited');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'low', '추측', '확정', 'INV-09')), ['GAP_REVIEW_INCOMPLETE'], 'an id of nowhere');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-09', 'low', '추측', '확정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'not a BIZ of the document');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'low', '추측', '해당 없음', '요청에 없음')), ['GAP_REVIEW_INCOMPLETE'], 'the 6.5 reason rules apply');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'low', '추측', '미정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'only 확정, 기본값 or 해당 없음');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'high', '추측', '기본값', 'INV-03')), ['GAP_REVIEW_INCOMPLETE'], '기본값 only for low');
+  assert.deepEqual(codes(bad('GAP-01', 'BIZ-01', 'medium', '추측', '확정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], '영향 is high or low');
+  assert.deepEqual(codes(bad('1', 'BIZ-01', 'low', '추측', '확정', 'INV-01')), ['GAP_REVIEW_INCOMPLETE'], 'GAP id shape');
+  assert.deepEqual(codes(check(doc(gapTable(['GAP-01', 'BIZ-01', 'low', '추측', '확정', 'INV-01'], ['GAP-01', 'BIZ-01', 'low', '또 추측', '확정', 'INV-01'])))), ['GAP_REVIEW_INCOMPLETE'], 'a GAP id is used once');
   assert.deepEqual(codes(check(doc('\n### 6.6 빈틈 검토\n\n없음\n'))), ['GAP_REVIEW_INCOMPLETE'], 'a bare 없음 has no reason');
-  assert.match(bad('GAP-01', 'BIZ-01', '추측', '확정', 'INV-09').errors[0].message, /6\.6 GAP-01 \(BIZ-01\)/);
+  assert.match(bad('GAP-01', 'BIZ-01', 'low', '추측', '확정', 'INV-09').errors[0].message, /6\.6 GAP-01 \(BIZ-01\)/);
 });
 
 test('6.6 has the exemptions of 6.5 and bounded-context checks it only when present', () => {
@@ -73,12 +59,12 @@ test('runner evidence: the hook record shows the reviewer ran and every gap it r
   const write = async (path, text) => { await mkdir(join(root, path, '..'), { recursive: true }); await writeFile(join(root, path), text); };
   const record = (...events) => write('.io/runtime/executions/rf-1/subagents.jsonl', `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
   const reviewer = (result) => [{ event: 'SubagentStart', agent_id: 'r1', agent_type: 'requirements_gap_reviewer' }, { event: 'SubagentStop', agent_id: 'r1', agent_type: 'requirements_gap_reviewer', result: typeof result === 'string' ? result : JSON.stringify(result) }];
-  const gap = (biz = 'BIZ-01') => ({ biz, gap: '삭제 뒤 댓글', why_it_changes_the_result: '댓글이 남거나 사라진다', quote: '게시글 삭제' });
+  const gap = (biz = 'BIZ-01') => ({ biz, impact: 'low', gap: '삭제 뒤 댓글', why_it_changes_the_result: '댓글이 남거나 사라진다', quote: '게시글 삭제' });
   const gate = async (requirements) => {
     await write(`docs/specs/${plan}/requirements.md`, requirements);
     return evaluateRequirementsDocumentGate({ root, input: { skill: 'requirements-fix', execution_id: 'rf-1', context: { plan_set_id: plan } }, envelope: { status: 'completed', code: 'OK' } });
   };
-  const withGap = doc(gapTable(['GAP-01', 'BIZ-01', '삭제 뒤 댓글이 보이는지', '확정', 'INV-01']));
+  const withGap = doc(gapTable(['GAP-01', 'BIZ-01', 'low', '삭제 뒤 댓글이 보이는지', '확정', 'INV-01']));
 
   // No hook log at all (nothing recorded this execution, provider unknown): the document check alone applies.
   assert.equal((await gate(doc(NONE))).ok, true);
@@ -100,39 +86,35 @@ test('runner evidence: the hook record shows the reviewer ran and every gap it r
   await record(...reviewer('```json\n' + JSON.stringify(output()) + '\n```'));
   assert.equal((await gate(doc(NONE))).ok, true, 'a fenced answer is read');
   await record(...reviewer({ gaps: [] }));
-  assert.match((await gate(doc(NONE))).errors[0].message, /no "rows" and "missing_resources"[\s\S]*Run the review again/, 'output of the older GUIDE is refused');
+  assert.match((await gate(doc(NONE))).errors[0].message, /no "rows" and "missing_inputs"[\s\S]*Run the review again/, 'output of the older GUIDE is refused');
 
-  // Regression of the live miss (a): the live INV-01 names no source but already cites an answer, of event-storming. Unchanged, it must not pass.
-  const LIVE = '  - INV-01 지도를 열 때마다 최신 준비된 장소를 핀으로 표시한다 — 출처: answers.json `event-storming-d6a6f1a6-4749-4d3e-9fa3-6f3174c76ecc:1`';
-  const live = (text) => text.replace(/  - INV-01 .*/, LIVE);
-  const unanswered = output({ rows: REVIEWED.map((row) => row.item === '데이터 출처' ? { ...row, answered: false } : row) });
+  // Live miss (a): an input row whose cited sentence does not itself answer the axis, judged high, must be settled by a real answer of this chain.
+  const unanswered = output({ rows: reviewed('lookup', { over: { '입력·출처': { answered: false, impact: 'high' } } }).rows });
   await record(...reviewer(unanswered));
-  const same = await gate(live(doc(NONE)));
+  const same = await gate(doc(NONE));
   assert.equal(same.ok, false);
-  assert.match(same.errors[0].message, /"데이터 출처".*does not itself answer the item and the row is unchanged/);
-  // For a BIZ that shows data 해당 없음 is refused by the display rules, so the way out is a 확정 by an id of this chain's own recorded answer.
-  const settleWith = (cite) => live(doc(NONE)).replace('| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |', '| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-02 |')
-    .replace(LIVE, `  - INV-02 장소 목록은 운영자가 미리 정해 둔 고정 장소다 — 출처: answers.json \`${cite}\`\n${LIVE}`);
-  assert.equal((await gate(settleWith('event-storming-d6a6f1a6-4749-4d3e-9fa3-6f3174c76ecc:1'))).ok, false, 'an earlier stage\'s answer does not settle it');
+  assert.match(same.errors[0].message, /"입력·출처".*does not itself answer the axis and the row is unchanged/);
+  const settleWith = (cite) => kindDoc('lookup', { bizText: biz('lookup', 'BIZ-01', { extra: `\n  - INV-05 주문 내역은 주문 시스템이 정한 기록이다 — 출처: answers.json \`${cite}\`` }), list: rows('lookup', { over: { '입력·출처': [['BIZ-01', '입력·출처', '주문 기록', '확정', 'INV-05']] } }) });
+  assert.equal((await gate(settleWith('이전-단계:1'))).ok, false, 'an earlier stage\'s answer does not settle it');
   assert.equal((await gate(settleWith('rf-1:4'))).ok, false, 'a made-up id of this chain has no recorded answer');
   assert.equal((await gate(settleWith('요청 해석(에이전트 제안)'))).ok, false, 'the author\'s own sentence does not settle it');
-  await write('.io/runtime/executions/rf-1/decision-answers.json', JSON.stringify([{ question_id: 'rf-1:4', answer: '운영자가 미리 정해 둔 고정 장소 (A)' }]));
+  await write('.io/runtime/executions/rf-1/decision-answers.json', JSON.stringify([{ question_id: 'rf-1:4', answer: '주문 시스템 기록 (A)' }]));
+  // With answers in the chain the verify run is required too (recorded after the answer).
+  const verifyRun = () => [{ event: 'SubagentStart', agent_id: 'v1', agent_type: 'requirements_gap_reviewer' }, { event: 'SubagentStop', agent_id: 'v1', agent_type: 'requirements_gap_reviewer', result: JSON.stringify({ unsupported: [], conflicts: [] }), recorded_at: '2999-01-01T00:00:00.000Z' }];
+  assert.equal((await gate(settleWith('rf-1:4'))).ok, false, 'answers exist but no verify run is recorded');
+  await record(...reviewer(unanswered), ...verifyRun());
   assert.equal((await gate(settleWith('rf-1:4'))).ok, true, 'a recorded answer of this chain settles it');
   assert.equal((await gate(settleWith('rf-1:5'))).ok, false, 'only the recorded question id counts');
-  // An answer recorded before the review does not settle a row the review judged afterwards.
-  await record(...reviewer(unanswered).map((event) => ({ ...event, recorded_at: '2999-01-01T00:00:00.000Z' })));
-  assert.equal((await gate(settleWith('rf-1:4'))).ok, false, 'the answer is older than the review');
   await record(...reviewer(unanswered));
   await rm(join(root, '.io/runtime/executions/rf-1/decision-answers.json'));
 
-  // Regression of the live miss (b): the map screen itself has no rows; the reviewer names it.
-  await record(...reviewer(output({ missing_resources: [{ biz: 'BIZ-01', resource: '지도 화면', why: '화면 자체의 불러오기' }] })));
-  const noResource = await gate(doc(NONE));
-  assert.equal(noResource.ok, false);
-  assert.match(noResource.errors.map((error) => error.message).join('\n'), /resource "지도 화면" of BIZ-01 as missing, but 6\.5 has no "데이터 출처" row/);
-  const withMap = doc(NONE, DISPLAY.replace('| BIZ-01 | 장소 목록 | 불러오기 실패 | 확정 | EX-01 |', '| BIZ-01 | 장소 목록 | 불러오기 실패 | 확정 | EX-01 |\n| BIZ-01 | 지도 화면 | 불러오기 실패 | 확정 | EX-01 |').replace('| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |', '| BIZ-01 | 장소 목록 | 데이터 출처 | 확정 | INV-01 |\n| BIZ-01 | 지도 화면 | 데이터 출처 | 확정 | INV-01 |'));
-  const added = await gate(withMap);
-  assert.equal(added.ok, true, 'the named resource now has both rows (the unseen-row check is per BIZ and item, not per resource)');
+  // Live miss (b): an input the document has no rows for; the reviewer names it.
+  await record(...reviewer(output({ missing_inputs: [{ biz: 'BIZ-01', target: '회원 등급', why: '등급별로 다르게 보인다' }] })));
+  const noInput = await gate(doc(NONE));
+  assert.equal(noInput.ok, false);
+  assert.match(noInput.errors.map((error) => error.message).join('\n'), /input "회원 등급" of BIZ-01 as missing, but 6\.5 has no "입력·출처" row/);
+  const withInput = doc(NONE, table65(rows('lookup', { extra: [['BIZ-01', '입력·출처', '회원 등급', '확정', 'INV-01'], ['BIZ-01', '실패', '회원 등급', '확정', 'EX-01']] })));
+  assert.equal((await gate(withInput)).ok, true, 'the named input now has both rows');
   // Questions are returned before the review's rows exist: only completion needs the evidence.
   await write(`docs/specs/${plan}/requirements.md`, doc(''));
   await record({ event: 'SubagentStart', agent_id: 'w1', agent_type: 'workflow_stage' });
@@ -169,7 +151,7 @@ test('the reviewer profile, GUIDE and stage lists', async () => {
   assert.match(claude, /^permissionMode: plan$/m);
   assert.match(claude, /^tools: Read, Grep, Glob, WebSearch, WebFetch$/m, 'read-only: no Bash, Edit, Write or Agent');
   const guide = await read('.harness/internal-skills/requirements-gap-review/GUIDE.md');
-  assert.match(guide, /^---\nmodel_tier: low_performance\n---/);
+  assert.match(guide, /^---\nmodel_tier: low_performance\nclaude_code_model_tier: implementation\n---/);
   for (const needle of ['at most 8', 'two reasonable builders', 'why_it_changes_the_result', 'quote', 'empty list is a good answer|An empty list is a good answer', 'technology choice']) assert.match(guide, new RegExp(needle, 'i'), needle);
   assert.ok(FRESH_AGENT_TYPES.includes('requirements_gap_reviewer'));
   assert.match(await read('.harness/src/workflow/execution-audit.mjs'), /'requirements_gap_reviewer'/);
@@ -189,18 +171,18 @@ test('requirements-fix GUIDE: steps are numbered once and in order, cross refere
   assert.match(step(7), /once per execution attempt chain/);
   assert.match(step(7), /verbatim/);
   assert.match(step(7), /gap_reviewer_binding/);
-  assert.match(step(8), /빈틈/, 'the gaps join the one question batch');
-  assert.match(step(8), /가장 작은 선택지/);
+  assert.match(step(8), /every `high` finding of step 7/, 'the gaps join the one question batch');
+  assert.match(step(8), /`기본값`, never a question/);
   assert.match(step(4), /Continue at step 9/);
-  assert.match(step(9), /^9\. 답변마다/);
-  assert.match(step(8), /10단계로 간다/);
+  assert.match(step(9), /^9\. Classify each answer/);
+  assert.match(step(8), /go to step 10/);
   assert.match(step(10), /^10\. Write what remains/);
   assert.match(step(10), /6\.1`–`6\.6/);
-  assert.match(step(11), /go back to step 8 for the failing rows/);
+  assert.match(step(12), /go back to step 8 for the failing rows/);
   assert.doesNotMatch(guide, /step 6\b|8단계|9단계로|step 7 for/);
   const template = await read('.harness/internal-skills/requirements-fix/references/template.md');
   assert.match(template, /^### 6\.6 빈틈 검토$/m);
-  assert.match(template, /\| GAP \| BIZ \| 추측해야 하는 것 \| 처리 \| 근거 \|/);
+  assert.match(template, /\| GAP \| BIZ \| 영향 \| 추측해야 하는 것 \| 처리 \| 근거 \|/);
   assert.match(await read('.harness/internal-skills/requirements-fix/references/coverage.md'), /### 6\.6|`### 6\.6`/);
 });
 

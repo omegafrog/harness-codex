@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const { resolveCommandContext, orchestratorState, lastOrchestratorTurn } = await import(new URL('../../.harness/src/workflow/cli-context.mjs', import.meta.url).href);
-const { recheckRequirementsBeforeApproval } = await import(new URL('../../.harness/src/workflow/requirements-document-gate.mjs', import.meta.url).href);
+const { recheckRequirementsBeforeApproval, requirementsDefaults: requirementsDefaultsOf } = await import(new URL('../../.harness/src/workflow/requirements-document-gate.mjs', import.meta.url).href);
 const { compactContext, extractVerbose, finishNext, foreignRunningStage, launchCommand, takeoverStep, withDispatchHint } = await import(new URL('../../.harness/src/workflow/stage-cli.mjs', import.meta.url).href);
+const { designApprovalTarget } = await import(new URL('../../.harness/src/workflow/worktree-stages.mjs', import.meta.url).href);
 const { staleStages } = await import(new URL('../../.harness/src/workflow/stage-reopen.mjs', import.meta.url).href);
 const read = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write('Usage: node .harness/scripts/harness-context.mjs [--entry | --root DIR | --worktree-ref FILE] [--verbose]\n  --entry: main orchestrator entry routing (provider, session_id, decision_hint, next). Read-only.\n'); process.exit(0); }
@@ -99,16 +100,18 @@ try {
   }
   const staleOrder = staleStages(state);
   const awaitingApproval = stageId === 'bounded-context' && ctx.plan_set_id && existsSync(join(ctx.root, 'docs/specs', ctx.plan_set_id, 'requirements.md'));
+  const awaitingDesign = Boolean(ctx.plan_set_id && designApprovalTarget(state?.stages, stageId));
   // A fixed document that today's rules would refuse is reopened, not offered for approval.
   const requirementsRecheck = awaitingApproval && entry?.status === 'completed' ? recheckRequirementsBeforeApproval({ root: ctx.root, state }) : null;
-  const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval)
-    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval), requirementsRecheck, provider: state?.orchestrator_provider || 'codex' })
+  const requirementsDefaults = awaitingApproval && entry?.status === 'completed' ? requirementsDefaultsOf({ root: ctx.root, planSetId: ctx.plan_set_id }) : [];
+  const revalidationNext = entry?.status === 'completed' && entry.code === 'OK' && (staleOrder.length || awaitingApproval || awaitingDesign)
+    ? finishNext({ status: entry.status, code: entry.code, stageId, executionId: entry.execution_id, staleOrder, requirementsPresent: Boolean(awaitingApproval), requirementsRecheck, requirementsDefaults, designApprovalNeeded: awaitingDesign, provider: state?.orchestrator_provider || 'codex' })
     : null;
   const foreign = foreignRunningStage(state);
   const next = recoveryNext || (foreign ? takeoverStep(foreign) : revalidationNext);
   if (entryMode) {
     const resuming = routing.decision_hint === 'resume_candidate' && routing.session_verified;
-    output({ ...routing, next: (resuming && next) || routing.next });
+    output({ ...routing, next: (resuming && next) || routing.next, ...(resuming && next && requirementsDefaults.length ? { defaults_ko: requirementsDefaults } : {}) });
   } else {
     const stages = Object.fromEntries(Object.entries(state?.stages || {}).map(([id, stage]) => {
       const result = stage.result_ref ? read(join(ctx.root, '.io', stage.result_ref)) : null;
@@ -135,6 +138,7 @@ try {
       orchestrator_last_turn: lastTurn ? { at: lastTurn.at, after_latest_stage: Date.parse(lastTurn.at) > latestStage, message: lastTurn.message.slice(0, 4000) } : null,
       stages,
       // Take a plan's ticket from here: Issue numbers do not follow the plan order.
+      ...(requirementsDefaults.length ? { defaults_ko: requirementsDefaults } : {}),
       plan_tickets: planTickets,
       ready_tickets: readyTickets,
       plans, implementation_reviews: reviews,

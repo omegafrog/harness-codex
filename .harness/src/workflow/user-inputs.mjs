@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { planSetDocument } from './domain-model-gate.mjs';
 import { isHarnessUpdateRequest, orchestratorRequest } from './request-routing.mjs';
-import { isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
+import { designApprovalCovers, designApprovalSource, isCurrentStage, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
 import { approvalRefusal, clip, describeReplySearch } from './approval-search.mjs';
 import { recheckRequirementsBeforeApproval } from './requirements-document-gate.mjs';
 
@@ -11,10 +11,11 @@ export { approvalRefusal, describeReplySearch, summarizeReplySearch } from './ap
 
 // Approval evidence is read from the provider's own transcript, never from an assistant-written argument. Only a message
 // the user sent as an orchestrator request (`$orchestrator <reply>`, `/orchestrator <reply>`) or as a reply to a form this
-// conversation asked counts. The result also says what was searched and why the closest candidates failed.
+// conversation asked counts; with allowPlainReply (publication on Codex) any user message counts. The words are never judged:
+// the orchestrator decides what they mean. The result also says what was searched and why the closest candidates failed.
 export async function userSaidAfter(options) { return (await inspectUserReply(options)).matched; }
 
-export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowExplicitPublicationReply = false }) {
+export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowPlainReply = false }) {
   const wanted = String(text || '').trim();
   const search = { wanted: clip(wanted), since, ...(until ? { until } : {}), provider: provider || null, session_id: sessionId || null, transcript: null, workspace: null, counts: { orchestrator_requests: 0, plain_user_messages: 0, form_replies: 0 }, candidates: [], outcome: 'no_matching_message' };
   const refuse = (outcome, extra = {}) => ({ matched: false, search: { ...search, ...extra, outcome } });
@@ -84,7 +85,7 @@ export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:0
             if (!item.text.trim().startsWith('<send_user_message_question_reply>')) {
               const request = orchestratorRequest(item.text);
               if (request && !isHarnessUpdateRequest(request)) texts.push(request);
-              else if (allowExplicitPublicationReply && /^(?:승인합니다|승인해요|승인한다고 (?:그냥|걍) (?:진행해|하라고)|발행 승인|발행하세요|발행해 주세요|발행해줘|ㅇ|ㅇㅇ)[.!]*$/u.test(item.text.trim())) texts.push(item.text);
+              else if (allowPlainReply && !request) texts.push(item.text);
               continue;
             }
             try {
@@ -109,12 +110,12 @@ export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:0
     }
     if (texts.some((value) => typeof value === 'string' && value.trim() === wanted)) return { matched: true, search: { ...search, outcome: 'matched' } };
   }
-  return refuse('no_matching_message', surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until }));
+  return refuse('no_matching_message', surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until, allowPlainReply }));
 }
 
 // Read-only survey of a transcript that held no qualifying reply: what the user did send, and why the messages equal to
 // the answer do not count. It never decides acceptance; the loop above does.
-function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until }) {
+function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since, until, allowPlainReply = false }) {
   const counts = { orchestrator_requests: 0, plain_user_messages: 0, form_replies: 0 };
   const candidates = [];
   const from = Date.parse(since), to = until ? Date.parse(until) : Infinity;
@@ -124,7 +125,7 @@ function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since,
     if (here && inWindow) counts[form === 'orchestrator_request' ? 'orchestrator_requests' : form === 'form_reply' ? 'form_replies' : 'plain_user_messages'] += 1;
     if (text.trim() !== wanted) return;
     const problems = [
-      form === 'plain_user_message' && 'missing_orchestrator_prefix',
+      form === 'plain_user_message' && !(allowPlainReply && provider === 'codex') && 'missing_orchestrator_prefix',
       Number.isFinite(at) && at < from && 'sent_before_gate',
       Number.isFinite(at) && at > to && 'sent_after_window',
       !here && 'other_workspace',
@@ -163,6 +164,28 @@ function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since,
 
 const REQUIREMENTS_REFUSAL = 'Requirements approval answer was not recorded';
 
+const DESIGN_REFUSAL = 'Design approval answer was not recorded';
+
+export async function assertDesignApproval({ root, state, stage, planSetId, approval = null }) {
+  const sourceId = designApprovalSource(stage);
+  if (!planSetId || !sourceId) return;
+  const source = state.stages?.[sourceId];
+  const entry = state.stages?.[stage];
+  const current = isCurrentStage(source) && source.execution_id && source.finished_at;
+  // A retry, resume or takeover of the same stage for the same predecessor execution reuses the recorded approval.
+  if (current && designApprovalCovers(state.stages, stage) && (!approval || approval.answer === entry.design_approval?.answer)) return;
+  const refuse = (reason, search) => Object.assign(approvalRefusal(DESIGN_REFUSAL, reason, search), { design_stage: stage });
+  if (!current) {
+    const sourceState = source ? `${source.status}${source.code ? `/${source.code}` : ''}${source.stale ? ', stale' : ''}` : 'never run';
+    throw refuse(`${sourceId} has no current completed/OK result (${sourceState}), so there is nothing to approve yet`);
+  }
+  if (!approval) throw refuse(`no --approval-answer was passed; ${stage} starts only after the user approved ${sourceId} ${source.execution_id}. Ask the user`);
+  if (approval.stage_id !== sourceId || approval.execution_id !== source.execution_id) throw refuse(`the approval names ${approval.stage_id} ${approval.execution_id ?? 'none'} but the current result comes from ${sourceId} ${source.execution_id}; ask the user to approve the current result`);
+  if (typeof approval.answer !== 'string') throw refuse('the passed --approval-answer is empty or not text');
+  const { matched, search } = await inspectUserReply({ root, text: approval.answer, since: source.finished_at });
+  if (!matched) throw refuse(describeReplySearch(search, { gate: `${sourceId} ${source.execution_id} finished` }), search);
+}
+
 export async function assertRequirementsApproval({ root, state, stage, planSetId, approval = null }) {
   if (!planSetId || !TACTICAL_DESIGN_STAGES.includes(stage)) return;
   const fixed = state.stages?.['bounded-context'];
@@ -170,7 +193,7 @@ export async function assertRequirementsApproval({ root, state, stage, planSetId
   const { text } = await planSetDocument(root, planSetId, 'requirements.md');
   if (text === null) return; // stakeholder-analysis skipped the requirements flow.
   // A fixed document that today's requirements-fix rules would refuse is reopened before it is approved; the approval is not recorded.
-  if (stage === 'domain-model' && !design?.execution_id) {
+  if (stage === 'domain-model' && (!design?.execution_id || design.stale)) {
     const recheck = recheckRequirementsBeforeApproval({ root, state, planSetId });
     if (recheck.applies && !recheck.ok) throw Object.assign(new Error(`Requirements recheck required before approval: bounded-context ${recheck.blocked_execution_id} fixed a requirements.md that no longer passes the current requirements-fix rules (${recheck.errors.length} error(s)), so the approval was not recorded and domain-model did not start. Reopen requirements-fix first: --stage-id requirements-fix --reopen-for ${recheck.blocked_execution_id}. ${recheck.reason}`), { requirements_recheck: recheck });
   }

@@ -96,7 +96,9 @@ test('a resumed session is told to ask for approval only while bounded-context i
   const settled = await resume('bounded-context', { 'requirements-fix': done('requirements-fix-1', 5), 'bounded-context': done('bounded-context-1', 8) });
   assert.match(settled, ASK, 'a new `codex exec resume` after bounded-context asks for the approval before anything else');
   assert.match(settled, /standalone `\$orchestrator <approval>`/);
-  assert.equal(await resume('domain-model', { 'bounded-context': done('bounded-context-1', 8), 'domain-model': done('domain-model-1', 14, { requirements_approval: 'bounded-context-1' }) }), null, 'once tactical design has started the approval is not asked again');
+  const designing = await resume('domain-model', { 'bounded-context': done('bounded-context-1', 8), 'domain-model': done('domain-model-1', 14, { requirements_approval: 'bounded-context-1' }) });
+  assert.doesNotMatch(designing, ASK, 'once tactical design has started the requirements approval is not asked again');
+  assert.match(designing, /Do not start aggregate-design yet/, 'the resumed session asks for the approval of the design result instead');
 });
 
 // Attempt 025: the approval form was answered in an outer session and the headless resume sent the same text as a plain
@@ -183,14 +185,14 @@ test('a refused approval names the transcript it searched and why the matching m
   assert.equal(foreign.matched, false);
   assert.equal(foreign.search.outcome, 'not_owner_session');
   assert.match(explainError(Object.assign(new Error('Requirements approval answer was not recorded: x'), { approval_search: foreign.search }), { root: workspace, stageId: 'domain-model' }).user_decision, /Continue in the owner conversation \(codex session /);
-  // The publication gate keeps its own whole-message allowlist of plain approvals; any other plain text is still refused.
+  // The publication gate accepts any real unprefixed user message as the quoted approval; the wording is not judged.
   await codexUserPrompt(workspace, '승인합니다', { at: at(30), prefix: '' });
   await codexUserPrompt(workspace, '발행해도 좋습니다 그런데 먼저 확인', { at: at(31), prefix: '' });
-  assert.equal((await inspectUserReply({ root: workspace, text: '승인합니다', since: at(25), allowExplicitPublicationReply: true })).matched, true);
+  assert.equal((await inspectUserReply({ root: workspace, text: '승인합니다', since: at(25), allowPlainReply: true })).matched, true);
   assert.equal((await inspectUserReply({ root: workspace, text: '승인합니다', since: at(25) })).matched, false);
-  const publication = await inspectUserReply({ root: workspace, text: '발행해도 좋습니다 그런데 먼저 확인', since: at(25), allowExplicitPublicationReply: true });
-  assert.equal(publication.matched, false);
-  assert.equal(publication.search.candidates[0].problems[0], 'missing_orchestrator_prefix');
+  assert.equal((await inspectUserReply({ root: workspace, text: '보낸 적 없는 승인', since: at(25), allowPlainReply: true })).matched, false);
+  const publication = await inspectUserReply({ root: workspace, text: '발행해도 좋습니다 그런데 먼저 확인', since: at(25), allowPlainReply: true });
+  assert.equal(publication.matched, true);
 });
 
 test('the installed consumer carries the approval search module and Doctor names it when it is missing', async (t) => {

@@ -3,7 +3,7 @@
 // sends it reading Harness source. So the default output holds only what the next step needs (ids, paths, status, the
 // next command, and the payloads that must be relayed), `--verbose` prints the full detail, and every error names what
 // happened, why, and the exact next command or the decision the user must make.
-import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
+import { DESIGN_APPROVAL_CHAIN, PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
 import { cliContext, orchestratorState } from './cli-context.mjs';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -125,7 +125,7 @@ export function compactQuestions(questions, { session = null } = {}) {
 }
 
 // Commands below are written as Codex `launch` commands. A Claude Code orchestrator runs each as one Agent call instead.
-export const CLAUDE_DISPATCH_HINT = 'On Claude Code do not run a launch command: dispatch it as one Agent call (subagent_type "workflow_stage") whose prompt first line is "harness-stage: <stage> <the launch options>"; a long --feedback or the user\'s reply goes on the lines below with @body (answer: "harness-stage: answer"; a change request to finished work: "harness-stage: revise", Harness picks the owner stage).';
+export const CLAUDE_DISPATCH_HINT = 'On Claude Code do not run a launch command: dispatch it as one Agent call (subagent_type "workflow_stage") whose prompt first line is "harness-stage: <stage> <the launch options>"; a long --feedback or the user\'s reply goes on the lines below with @body (judge the reply yourself and declare it: "harness-stage: approve" only when the user meant approval, "harness-stage: recommended" when they take the recommended option for every open question, "harness-stage: answer" with the JSON choices [{question_id, option_id or text}] on the first line below, "harness-stage: revise <owning stage-id>" for a change to finished work; if unsure ask).';
 export const withDispatchHint = (payload, provider = runtimeAgentProvider()) => provider === 'claude-code' && /launch --stage-id|prepare-input\.mjs --stage-id/.test(JSON.stringify(payload)) ? { ...payload, dispatch: CLAUDE_DISPATCH_HINT } : payload;
 
 // The orchestrator's next dispatch, in the form its provider uses: a Claude Code Agent call whose prompt the admission
@@ -133,9 +133,14 @@ export const withDispatchHint = (payload, provider = runtimeAgentProvider()) => 
 export const stageCall = (provider, stage, extra = '') => provider === 'claude-code'
   ? `Agent(subagent_type: "workflow_stage", prompt: "harness-stage: ${stage}${extra ? ` ${extra}` : ''}")`
   : launchCommand(stage, extra);
-export const answerCall = (provider) => provider === 'claude-code'
-  ? 'Agent(subagent_type: "workflow_stage", prompt: "harness-stage: answer\n<the user\'s reply verbatim>")'
-  : `${NATIVE} answer --text '<the user\'s reply verbatim>'`;
+export const answerCall = (provider, intent = null) => {
+  const choices = '[{"question_id":"<id>","option_id":"<id>"}]';
+  return provider === 'claude-code'
+    ? `Agent(subagent_type: "workflow_stage", prompt: "harness-stage: ${intent || `answer\n${choices}`}\n<the user\'s reply verbatim>")`
+    : `${NATIVE} answer --text '<the user\'s reply verbatim>'${intent ? ` --intent ${intent}` : ` --choices '${choices}'`}`;
+};
+// The orchestrator judges what a reply means; the runner never interprets the words.
+const REPLY_INTENT_NOTE = 'Judge the meaning yourself, declare an approval only when the user meant it, always pass their words verbatim, tell the user in Korean what you processed them as, and ask when unsure.';
 
 
 // prepare: the execution to start, not the stored input (that is the stage's to read, and `--verbose` prints it).
@@ -151,7 +156,7 @@ export function compactPrepared(prepared) {
       ...rest,
       ...(questions ? { questions: compactQuestions(questions) } : {}),
       ...(answers ? { answered: Array.isArray(answers) ? answers.length : Object.keys(answers).length } : {}),
-      ...(prepared.waiting_for_answers ? { next: `${waitingInstruction} Then pass the user's reply verbatim: ${answerCall(runtimeAgentProvider())}.` } : {}),
+      ...(prepared.waiting_for_answers ? { next: `${waitingInstruction} Then pass the user's reply verbatim: ${answerCall(runtimeAgentProvider())} (declare each choice: option_id, or text) or ${answerCall(runtimeAgentProvider(), 'recommended')} (recommended option for every open question).` } : {}),
       ...(prepared.waiting_for_running_stage ? { next: `The answer is saved. Wait for the running native subagent to end, then ${nativeCommand('finish', prepared.execution_id)}; if the stage asks again, prepare it again (no new answer needed).` } : {}),
     };
   }
@@ -250,11 +255,12 @@ export function compactContext(context) {
 
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 const REQUIREMENTS_APPROVAL_ARGS = "--requirements-approved true --approval-answer '<the user's reply verbatim>'";
+const DESIGN_APPROVAL_ARGS = "--design-approved true --approval-answer '<the user's reply verbatim>'";
 const APPROVAL_REPLY_INSTRUCTION = 'When asking in chat, tell the user to send a standalone `$orchestrator <approval>` (Codex) or `/orchestrator <approval>` (Claude Code) in this worktree’s owner conversation. Pass the exact reply after the command prefix. A reply collected elsewhere (an outer controller or UI form) counts only when it is sent to that conversation the same way.';
 // The guard reads only the owner conversation's transcript, so an answer collected anywhere else has to be sent there.
 const APPROVAL_ACCEPTED_FORMS = 'Accepted: a new message in the owner conversation, sent after the gate, as `$orchestrator <reply>` (Codex; headless: `codex exec resume <session-id> \'$orchestrator <reply>\'`) or `/orchestrator <reply>` (Claude Code), or the answer to an approval form that the owner conversation itself asked. Not accepted: a plain message without the prefix, a reply collected in another conversation (an outer controller, wrapper or UI form), the orchestrator\'s own words or a bare flag. Pass the reply after the prefix verbatim.';
 const approvalRefusalWhy = (message, base, search) => {
-  const tail = search ? summarizeReplySearch(search) : message.replace(/^(?:Requirements|Publication) approval answer was not recorded:?\s*/, '');
+  const tail = search ? summarizeReplySearch(search) : message.replace(/^(?:Requirements|Publication|Design) approval answer was not recorded:?\s*/, '');
   return tail ? `${base} Refused because ${tail.charAt(0).toLowerCase()}${tail.slice(1)}${/[.!?]$/.test(tail) ? '' : '.'} The full search is in \`error\`.` : base;
 };
 // The nearest candidate decides what the user has to do next; the refusal never asks for a different decision.
@@ -267,15 +273,18 @@ const approvalRefusalAction = (search) => {
   if (search?.outcome === 'no_matching_message') return `Ask the user for the approval in the owner conversation${search.session_id ? ` (${search.provider} session ${search.session_id})` : ''}; none of their messages after the gate matches the reply passed.`;
   return '';
 };
-export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true, requirementsRecheck = null, provider = 'codex' }) {
+export function finishNext({ status, code, stageId, executionId, ownerStage = null, staleOrder = null, requirementsPresent = true, requirementsRecheck = null, requirementsDefaults = [], designApprovalNeeded = true, provider = 'codex' }) {
   const call = (stage, extra = '') => stageCall(provider, stage, extra);
-  const approvalReply = provider === 'claude-code'
-    ? 'Only after the user\'s own approval, pass their reply verbatim in the Agent prompt as "harness-stage: answer" and the reply below it'
-    : `Only after the user's own approval, pass their reply verbatim: ${NATIVE} answer --text '<reply>'`;
+  const approvalReply = `Only after the user's own approval, in any wording, pass their reply verbatim as an approval: ${answerCall(provider, 'approve')}. ${REPLY_INTENT_NOTE}`;
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && stageId === 'frontend-visual-review' && (!ownerStage || ownerStage === 'frontend-implementation')) return `The visual review found implementation defects. Run the frontend correction for the same ticket: ${call('frontend-implementation', "--plan <ticket-id> --feedback '<visual review findings>'")}. The correction receives the persisted review result; after it completes, rerun frontend-visual-review. Do not ask the user or use --reopen-for.`;
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${call(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
   if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent && requirementsRecheck?.applies && !requirementsRecheck.ok) return `Do not ask for the requirements approval yet: the runner rechecked requirements.md and it no longer passes the current requirements-fix rules (${requirementsRecheck.errors.length} error(s)). Tell the user in Korean, in one sentence: "${requirementsRecheck.notice_ko}" Then go back to the owner automatically: ${call('requirements-fix', `--reopen-for ${executionId}`)}. The runner hands the errors to the worker as the reason; this is not a user revision, so do not use --user-revision. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
-  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the user result.summary (the approval summary) and the requirements.md path from artifacts, in Korean; do not open the document yourself. Ask whether to approve before tactical design. If the user's reply carries a condition or leaves a stated undecided item open, confirm it with the user before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts domain-model with --requirements-approved true --approval-answer). ${provider === 'claude-code' ? 'For a requested change, pass the user\'s exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise\\n<the user\'s change request verbatim>"); Harness picks the owning stage itself.' : "For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage."}`;
+  if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the user result.summary (the approval summary) and the requirements.md path from artifacts, in Korean. Open requirements.md once and list its business rules (INV-*) and exceptions (EX-*) in the approval request under the heading "승인할 규칙", one line each, so the user can read what they approve; do not summarise them into counts.${requirementsDefaults.length ? ` The runner found ${requirementsDefaults.length} decision(s) made without asking the user (defaults_ko): show every line verbatim in the approval request under the heading "묻지 않고 정한 것", and say the user may change any of them.` : ''} Ask whether to approve before tactical design. If the user's reply carries a condition or leaves a stated undecided item open, confirm it with the user before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts domain-model with --requirements-approved true --approval-answer). ${provider === 'claude-code' ? 'For a requested change, pass the user\'s exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise <owning requirements stage-id>\\n<the user\'s change request verbatim>").' : "For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage."}`;
+  if (status === 'completed' && code === 'OK' && TACTICAL_DESIGN_STAGES.includes(stageId) && designApprovalNeeded) {
+    const target = DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(stageId) + 1];
+    const change = provider === 'claude-code' ? 'pass their exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise <owning stage-id>\\n<verbatim>")' : call(stageId, "--user-revision true --feedback '<the user\'s exact words>'");
+    return `${stageId} is complete. Do not start ${target} yet: it needs the user's approval of this result. Show the user result.summary and the artifact paths from artifacts, in Korean. Open this stage's section of the design document once and list every decision and interpretation it asks the user to check under the heading "확인할 결정·해석", one line each (say so if there is none). Ask whether to approve. If the user's reply carries a condition or leaves a stated undecided item open, confirm it before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts ${target} with --design-approved true --approval-answer). A change request is not approval: ${change}.`;
+  }
   if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${call(staleOrder[0])}. Do not ask the user for approval of this stage.`;
   if (status === 'completed' && stageId === 'to-ticket') return `Show the user result.summary (the plan set summary) and the plan paths from artifacts, in Korean, and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts tracker-publish with --publication-approved true --approval-answer).`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${call('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
@@ -283,7 +292,7 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
     const after = stageAfter(stageId);
     return after ? `Next stage: ${call(after)}` : 'Continue with the next stage (orchestrator skill).';
   }
-  if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user in Korean (title, context lines, every option's label and effect, mark the recommended one) without opening any file; wait for the reply, then pass it verbatim: ${answerCall(provider)}`;
+  if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user in Korean (title, context lines, every option's label and effect, mark the recommended one) without opening any file; wait for the reply, then pass it: ${answerCall(provider)} with one declared choice per answered question (option_id, or text for their own words), ${answerCall(provider, 'recommended')} when the user takes the recommended option for every open question. ${REPLY_INTENT_NOTE}`;
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${call(stageId, "--feedback '<review result>'")}`;
   const revision = { SPEC_REVISION_REQUIRED: 'requirements-fix', PLAN_REVISION_REQUIRED: 'to-ticket', IMPLEMENTATION_REVISION_REQUIRED: 'implement-wrapper' }[code];
   if (revision) return `Return to its owner: ${call(revision, revision === 'implement-wrapper' ? '--plan <plan-id>' : '')}`.trim();
@@ -293,7 +302,7 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   return `Resolve ${executionId} per the orchestrator skill.`;
 }
 
-export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true, requirementsRecheck = null, resultPath = null, session = null, provider = 'codex' }) {
+export function compactFinished({ envelope, stageId, executionId, staleOrder = null, requirementsPresent = true, requirementsRecheck = null, requirementsDefaults = [], designApprovalNeeded = true, resultPath = null, session = null, provider = 'codex' }) {
   return {
     status: envelope.status,
     code: envelope.code,
@@ -301,12 +310,16 @@ export function compactFinished({ envelope, stageId, executionId, staleOrder = n
     stage_id: stageId,
     result_ref: envelope.result_ref,
     result: compactResult(envelope.result, { session }),
-    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent, requirementsRecheck, provider }),
+    next: finishNext({ status: envelope.status, code: envelope.code, stageId, executionId, ownerStage: envelope.result?.owner_stage || null, staleOrder, requirementsPresent, requirementsRecheck, requirementsDefaults, designApprovalNeeded, provider }),
+    ...(requirementsDefaults.length && !(requirementsRecheck?.applies && !requirementsRecheck.ok) ? { defaults_ko: requirementsDefaults } : {}),
   };
 }
 
 // The approval gates keep a longer summary: it is what the user approves, so the orchestrator never opens the document.
-const APPROVAL_GATES = new Set(['bounded-context', 'to-ticket']);
+const APPROVAL_GATES = new Set(['bounded-context', 'to-ticket', ...TACTICAL_DESIGN_STAGES]);
+// Other stages' worker summaries are one line of 500-600 characters; the orchestrator must see what the stage decided.
+const SUMMARY_LINES = 6;
+const SUMMARY_WIDTH = 1200;
 const lines = (text, count, width) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, count).map((line) => clip(line, width));
 
 // What the Claude Code orchestrator receives in place of the worker's final message (PostToolUse updatedToolOutput): the
@@ -314,7 +327,8 @@ const lines = (text, count, width) => String(text ?? '').split('\n').map((line) 
 export function stageEnvelope(finished) {
   const { result = {} } = finished;
   const approval = finished.status === 'completed' && APPROVAL_GATES.has(finished.stage_id);
-  const summary = lines(result.summary, approval ? 12 : 3, approval ? 400 : 240);
+  // A design stage's worker writes one long summary line and the user approves from it, so it keeps the wide clip.
+  const summary = lines(result.summary, approval ? 12 : SUMMARY_LINES, approval && !TACTICAL_DESIGN_STAGES.includes(finished.stage_id) ? 400 : SUMMARY_WIDTH);
   return {
     status: finished.status,
     code: finished.code,
@@ -756,8 +770,9 @@ const RULES = [
   { re: /needs --plan|needs the assigned \S+ from its previous input|needs the assigned ticket or plan|--plan applies only|--plan needs|^Invalid plan ID|is not part of plan set/, explain: ({ message }) => ({ code: 'PLAN_ARGUMENT', why: `implement-wrapper builds exactly one plan and tactical-code exactly one ticket that you assign, and --plan must name a plan file of this plan set (${message}).`, next: [`${CONTEXT} lists plans, ready_tickets, plan_tickets and implementation_reviews; pick the next ready one from there`, launchCommand('tactical-code', '--plan <ticket-id>')] }) },
   { re: /^Completed to-ticket and user publication approval|^Publication approval is only valid|^publication-approved must be|^Publication approval answer was not recorded/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'tracker-publish needs a completed to-ticket and the user\'s own approval of the reviewed plan set: the reply must match a user message or form answer in the provider transcript after to-ticket finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the whole reviewed plan set to the user and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('tracker-publish', PUBLISH_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
   { re: /^Requirements recheck required before approval: bounded-context (\S+)/, explain: ({ m, error }) => ({ code: 'REQUIREMENTS_RECHECK', why: 'The fixed requirements.md no longer passes the current requirements-fix rules, so the approval was not recorded and domain-model did not start. The errors are in `error`.', next: [launchCommand('requirements-fix', `--reopen-for ${m[1]}`)], decision: `Tell the user in Korean, in one sentence: "${error?.requirements_recheck?.notice_ko ?? '요구사항 문서가 현재 검증 기준을 충족하지 못해, 승인을 묻기 전에 요구사항 작성 단계를 먼저 다시 엽니다.'}" Then run the next command; do not ask for the approval again until requirements-fix and bounded-context finish.` }) },
+  { re: /^Design approval answer was not recorded|^Design approval is only valid|^design-approved must be/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'A tactical design stage and tactical-technology start only after the user approved the previous design stage\'s current result: the reply must match a user message or form answer in the provider transcript after that stage finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the previous design stage's summary, document path and the decisions it asks the user to check, in Korean, and ask the user whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand(error?.design_stage || '<next-stage-id>', DESIGN_APPROVAL_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
   { re: /^Requirements approval answer was not recorded|^Requirements approval is only valid|^requirements-approved must be/, explain: ({ message, error }) => ({ code: 'PRECONDITION', why: approvalRefusalWhy(message, 'Tactical design starts only after the user approved the fixed requirements: the reply must match a user message or form answer in the provider transcript after bounded-context finished. The orchestrator\'s words or a bare flag are not approval.', error?.approval_search), next: [], decision: `Show the fixed requirements.md to the user and ask whether to approve it. ${APPROVAL_REPLY_INSTRUCTION} ${APPROVAL_ACCEPTED_FORMS} ${approvalRefusalAction(error?.approval_search)} Only after the user replies, pass that reply verbatim: ${launchCommand('domain-model', REQUIREMENTS_APPROVAL_ARGS)}`.replace(/\s{2,}/g, ' '), approval_search: error?.approval_search }) },
-  { re: /^The reply for --answer-text must not be empty|^Usage: harness-native-stage\.mjs answer --text/, explain: () => ({ code: 'ANSWER_REFUSED', why: 'The answer command takes the user\'s reply verbatim; there is nothing to match to the waiting questions.', next: ["Pass the reply: node .harness/scripts/harness-native-stage.mjs answer --text '<the user\'s reply verbatim>' (Claude Code: Agent prompt \"harness-stage: answer\" with the reply on the lines below)"] }) },
+  { re: /^The reply for --answer-text must not be empty|^Usage: harness-native-stage\.mjs answer --text|^--intent must be |^--choices needs|^--revise-stage goes/, explain: () => ({ code: 'ANSWER_REFUSED', why: 'The answer command takes the user\'s reply verbatim plus the declared choices or intent.', next: ["Pass the reply: node .harness/scripts/harness-native-stage.mjs answer --text '<the user\'s reply verbatim>' (Claude Code: Agent prompt \"harness-stage: answer\" with the JSON choices on the first line below and the reply under it)"] }) },
   { re: /^Fixed requirements with domain IDs require a domain sync plan/, explain: ({ stage, context }) => ({ code: 'DOMAIN_SYNC_MISSING', why: 'bounded-context fixed requirements.md, which holds shared domain IDs, without the shared definition proposal. The stage is still running and nothing was recorded. The stage worker writes the proposal itself; the caller never runs it for the worker.', next: [`Write runtime/executions/${context.executionId || '<execution_id>'}/domain-sync-proposal.json ({"schema_version":1,"links":{},"changes":[]} when no shared definition changes; otherwise the links and changes of GUIDE step 9). Optionally preview the plan with HARNESS_STAGE_EXECUTION_ID=${context.executionId || '<execution_id>'} node .harness/scripts/harness-domain.mjs sync plan <plan-set-id> <workspace-relative proposal path>; finish computes and stores the plan from the proposal.`, 'Then submit the same result JSON again.'], decision: 'If the worker cannot write the proposal after a repeat, report the error to the user and stop; do not write it yourself.' }) },
   { re: /^Completed (\S+) result is required for implementation/, explain: ({ m }) => ({ code: 'PRECONDITION', why: `Implementation builds on the recorded result of ${m[1]}, which is not completed.`, next: [launchCommand(m[1])] }) },
   { re: /^sync-contracts starts only|^Plan PR requires|^Integration PR requires|^Pull request authoring requires/, explain: ({ message }) => ({ code: 'PRECONDITION', why: `${message}. These stages only start after the stages they summarize are done.`, next: [CONTEXT], decision: 'Finish the missing earlier stage first (state shows which); if the tracker mode is not GitHub, skip the PR stages.' }) },

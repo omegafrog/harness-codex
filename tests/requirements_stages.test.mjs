@@ -79,8 +79,7 @@ test('the requirements.md template, the stage guides and the orchestrator agree 
   assert.match(await read('.harness/internal-skills/ubiquitous-language/GUIDE.md'), /provisional BIZ scope/);
   const classification = await read('.harness/internal-skills/subdomain-classification/GUIDE.md');
   assert.match(classification, /`core`[\s\S]*`generic`[\s\S]*`supporting`/);
-  assert.match(classification, /한 묶음의 한국어 질문/);
-  assert.match(classification, /현재 후보를 유지하도록 권장해도 사용자의 경계 승인을 받는다/);
+  assert.match(classification, /\[서브도메인 경계\]/);
   assert.match(classification, /A render failure blocks completion/);
   const context = await read('.harness/internal-skills/bounded-context/GUIDE.md');
   assert.match(context, /\[ddd-design\]\(\.\.\/ddd-design\/GUIDE\.md\)/, 'the boundary rule is linked, not copied');
@@ -190,11 +189,12 @@ test('a BIZ field is written once: a second field of the same name is rejected, 
   assert.deepEqual(failed.errors.map(({ code, id, owner_stage }) => [code, id, owner_stage]), [['DUPLICATE_FIELD', 'BIZ-03', 'event-storming'], ['DUPLICATE_FIELD', 'BIZ-03', 'event-storming']]);
   assert.match(failed.errors[0].message, /업무 규칙" 2 times/);
   assert.match(failed.errors[0].message, /@@ ### BIZ-03/);
-  const display = ['데이터 출처', '표시 항목', '누락·부분 데이터', '빈 상태', '불러오기 실패'].map((item) => `| BIZ-03 | 전체 | ${item} | 해당 없음 | 로그인은 사용자에게 데이터 목록을 보이지 않는 업무다 |`).join('\n');
-  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}\n## 6. 공통\n\n### 6.5 조회·표시 점검\n\n| BIZ | 자료 | 항목 | 판정 | 근거 |\n|---|---|---|---|---|\n${display}\n\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n`;
+  const na = (axis) => `| BIZ-03 | ${axis} | 전체 | 해당 없음 | 로그인은 이 항목을 따로 정하지 않는 업무다 |`;
+  const display = ['| BIZ-03 | 입력·출처 | 계정 정보 | 확정 | INV-03 |', '| BIZ-03 | 결과 | 전체 | 확정 | AC-01 |', na('대상 판정'), na('대상 없음'), '| BIZ-03 | 실패 | 계정 정보 | 확정 | EX-02 |', na('중복·재실행'), na('권한·공개'), na('보존·되돌림')].join('\n');
+  const fixed = `## 2. 업무\n\n${biz('- 완료 조건:\n  - AC-01 세션이 생성된다\n').replace('없음 — 후속 stage가 채운다', 'INV-03 이메일은 계정당 하나다')}\n## 6. 공통\n\n### 6.5 업무 결정 점검\n\n| BIZ | 축 | 대상 | 판정 | 근거 |\n|---|---|---|---|---|\n${display}\n\n### 6.6 빈틈 검토\n\n없음 — 검토자가 실행됐고 남은 추측이 없다\n`;
   const complete = (requirements) => checkRequirementsDocument({ requirements, stage: 'requirements-fix', complete: true });
   assert.equal(complete(fixed).ok, true);
-  assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE']);
+  assert.deepEqual(complete(fixed.replace('INV-03 이메일은 계정당 하나다', '없음 — 후속 stage가 채운다')).errors.map(({ code }) => code), ['BIZ_REQUIREMENT_INCOMPLETE', 'DECISION_COVERAGE_INCOMPLETE']);
   assert.equal(complete(fixed.replace('AC-01 세션이 생성된다', 'AC-01 TODO')).ok, false);
   assert.match(await read(TEMPLATE), /같은 이름의 필드를 BIZ 끝에 새로 덧붙이지 않는다/);
 });
@@ -654,7 +654,7 @@ test('a skipped stakeholder-analysis makes later stages record the skip, then ta
   assert.notEqual(premature.status, 0);
   assert.match(premature.stderr, /spec-me has been removed/);
   for (const stage of TACTICAL_DESIGN_STAGES) await runStage(stage, { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false });
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology', ...await flow.approveDesign()]);
   assert.equal(next.input.context.stage_id, 'tactical-technology');
 });
 

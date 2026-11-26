@@ -246,11 +246,13 @@ async function launchStage(requestedArgs, verbose) {
   return verbose ? { ...launched, ...takenOver, input: prepared.input } : { ...launched, ...takenOver };
 }
 
+const ANSWER_USAGE = `harness-native-stage.mjs answer --text '<the user's reply verbatim>' [--choices '[{"question_id":"<id>","option_id":"<id>"}]' | --intent approve|recommended]`;
+
 // `answer --text '<reply>'` is `launch --answer-text '<reply>'` without a stage: the waiting stage is the one whose questions
 // (or approval gate) the reply is for.
 function answerArguments(args) {
   const textIndex = args.indexOf('--text');
-  if (textIndex < 0 || args.length - 2 > 2 || args.filter((argument, index) => index % 2 === 0 && argument.startsWith('--')).some((argument) => !['--text', '--stage-binding'].includes(argument))) throw new Error("Usage: harness-native-stage.mjs answer --text '<the user's reply verbatim>'");
+  if (textIndex < 0 || args.filter((argument, index) => index % 2 === 0 && argument.startsWith('--')).some((argument) => !['--text', '--choices', '--intent', '--stage-binding'].includes(argument)) || args.length > 6) throw new Error(`Usage: ${ANSWER_USAGE}`);
   return args.map((argument) => argument === '--text' ? '--answer-text' : argument);
 }
 
@@ -261,19 +263,26 @@ async function withAnswerText(args) {
   if (index < 0) return { args };
   const text = args[index + 1];
   if (typeof text !== 'string' || !text.trim()) throw new Error('The reply for --answer-text must not be empty');
-  const rest = args.filter((_, position) => position !== index && position !== index + 1);
+  const option = (name) => { const at = args.findIndex((argument, position) => position % 2 === 0 && argument === name); return { at, value: at < 0 ? null : args[at + 1] ?? null }; };
+  const intent = option('--intent'), choices = option('--choices'), owner = option('--revise-stage');
+  const used = [index, ...[intent, choices, owner].map(({ at }) => at).filter((at) => at >= 0)];
+  const rest = args.filter((_, position) => !used.some((at) => position === at || position === at + 1));
   const stageIndex = rest.findIndex((argument, position) => position % 2 === 0 && argument === '--stage-id');
   const named = stageIndex < 0 ? null : rest[stageIndex + 1];
-  const { resolveReplyTarget, resolveRevision } = await import('../../.harness/src/workflow/answer-text.mjs');
-  const target = (revisionIndex >= 0 ? resolveRevision : resolveReplyTarget)(resolveCommandContext().root, text);
+  const { REPLY_INTENTS, resolveReplyTarget, resolveRevision } = await import('../../.harness/src/workflow/answer-text.mjs');
+  if (intent.at >= 0 && (revisionIndex >= 0 || !REPLY_INTENTS.includes(intent.value))) throw new Error(`--intent must be ${REPLY_INTENTS.join(' or ')} and goes only with a reply`);
+  if (choices.at >= 0 && (revisionIndex >= 0 || intent.at >= 0 || !choices.value)) throw new Error('--choices needs a JSON value and goes only with a reply without --intent');
+  if (owner.at >= 0 && revisionIndex < 0) throw new Error('--revise-stage goes only with --revise-text');
+  const { root } = resolveCommandContext();
+  const target = revisionIndex >= 0 ? resolveRevision(root, text, owner.value) : resolveReplyTarget(root, text, { intent: intent.value, choices: choices.value });
   const refuse = (message, next) => Object.assign(new Error(message), { explained: { error: message, code: 'ANSWER_REFUSED', why: message, next } });
   if (target.error) throw refuse(target.error, [contextCommand()]);
-  if (named && !target.revision && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/harness-native-stage.mjs answer --text '<the user's reply verbatim>'`]);
-  if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, next: target.revision ? 'Ask the user in Korean which part to change, then pass their new text verbatim as a revise request. Nothing was started.' : 'Ask the user in Korean to clarify, then pass their new reply verbatim with the same answer command. Nothing was recorded.' } };
+  if (named && target.stageId && !target.revision && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/${ANSWER_USAGE}`]);
+  if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, ...(target.revisable_stages ? { revisable_stages: target.revisable_stages } : {}), next: 'Judge the user\'s meaning yourself and declare it (choices, approve, recommended or revise <stage-id>) with their words verbatim; if unsure ask the user in Korean. Nothing was recorded or started.' } };
   return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))], ...(target.notice ? { notice: target.notice } : {}) };
 }
 
-const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | answer --text \'<reply>\' | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
+const NATIVE_STAGE_USAGE = 'Usage: harness-native-stage.mjs launch --stage-id STAGE [prepare options] | answer --text \'<reply>\' [--choices JSON | --intent approve|recommended] | start|inspect|reconcile|recover-interrupted|bind|receive|finish|fail|cancel --execution-id ID [--agent-id ID] [--reason TEXT] (run inside the workflow worktree; --root and --worktree-ref are found automatically). Prepare options: see harness-prepare-input.mjs --help';
 if (['--help', '-h'].includes(process.argv[2])) { process.stdout.write(`${NATIVE_STAGE_USAGE}\n`); process.exit(0); }
 try {
   const [requestedAction, ...rest] = process.argv.slice(2), opts = {};
@@ -758,7 +767,10 @@ try {
     await (await import('../../.harness/src/workflow/browser-environment.mjs')).releaseStageBrowserEnvironment(paths.directory);
     const requirementsRecheck = requirementsPresent && updated && input.skill === 'bounded-context' && envelope.status === 'completed' && envelope.code === 'OK'
       ? (await import('../../.harness/src/workflow/requirements-document-gate.mjs')).recheckRequirementsBeforeApproval({ root, state: updated.state || updated }) : null;
-    const finished = compactFinished({ envelope, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, requirementsRecheck, session, provider: binding.provider });
+    const requirementsDefaults = requirementsPresent && input.skill === 'bounded-context' && envelope.status === 'completed' && envelope.code === 'OK'
+      ? (await import('../../.harness/src/workflow/requirements-document-gate.mjs')).requirementsDefaults({ root, planSetId: input.context?.plan_set_id }) : [];
+    const designApprovalNeeded = updated ? Boolean((await import('../../.harness/src/workflow/worktree-stages.mjs')).designApprovalTarget((updated.state || updated).stages, errorContext.stageId)) : true;
+    const finished = compactFinished({ envelope, designApprovalNeeded, stageId: errorContext.stageId, executionId: id, staleOrder, requirementsPresent, requirementsRecheck, requirementsDefaults, session, provider: binding.provider });
     process.stdout.write(`${JSON.stringify(verbose ? { status: envelope.status, code: envelope.code, result_ref: envelope.result_ref, result: envelope.result, ...(staleOrder?.length ? { stale_stages: staleOrder } : {}) } : finished)}\n`);
   }
 } catch (error) { writeError(process.stderr, error, errorContext); process.exitCode = 2; }

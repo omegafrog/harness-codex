@@ -133,6 +133,28 @@ test('active skills declare their tier in their own document, and the orchestrat
   await assert.rejects(readdir(join(sourceRoot, legacyTierDirectory)), { code: 'ENOENT' }, 'the obsolete registry directory is absent');
 });
 
+test('claude_code_model_tier selects another tier for Claude Code only, and the user setup still decides the model', async () => {
+  const declared = '---\nmodel_tier: low_performance\nclaude_code_model_tier: implementation\n---\nbody\n';
+  assert.deepEqual(parseSkillDeclaration(declared), { model_tier: 'low_performance', claude_code_model_tier: 'implementation' });
+  assert.doesNotMatch(stripSkillDeclaration(declared), /model_tier/);
+  assert.throws(() => parseSkillDeclaration('---\nclaude_code_model_tier: implementation\n---\n'), /requires model_tier/);
+  assert.throws(() => parseSkillDeclaration(declared.replace(': implementation', ': sonnet')), /claude_code_model_tier must be one of/);
+  const root = await fixture({ reviewer: declared });
+  try {
+    const bind = async (executionProvider) => (await resolveSkillBinding({ root, skill: 'reviewer', executionProvider }));
+    assert.deepEqual([(await bind('codex')).model_tier, (await bind('codex')).model], ['low_performance', 'codex-light']);
+    const claude = await bind('claude-code');
+    const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
+    assert.equal(claude.model_tier, 'implementation');
+    assert.ok(config.includes(`implementation_model: ${claude.model}`), claude.model);
+    await writeFile(join(root, '.harness/harness.yaml'), config.replace(`implementation_model: ${claude.model}`, 'implementation_model: opus'));
+    assert.equal((await bind('claude-code')).model, 'opus');
+  } finally { await rm(root, { recursive: true, force: true }); }
+  const source = await readSkillDeclaration({ root: sourceRoot, skill: 'requirements-gap-review' });
+  assert.deepEqual([source.model_tier, source.claude_code_model_tier], ['low_performance', 'implementation']);
+  assert.equal((await readSkillDeclaration({ root: sourceRoot, skill: 'stakeholder-persona' })).claude_code_model_tier, undefined);
+});
+
 test("a skill's tier comes from its own declaration and maps to agents.<provider>.<tier>_model", async () => {
   const root = await fixture({ high: guide('high_performance'), impl: guide('implementation'), exec: guide('execution'), light: guide('low_performance') });
   try {

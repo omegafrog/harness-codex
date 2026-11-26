@@ -22,8 +22,8 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 
 1. Claude Code는 stage마다 `Agent` 한 번만 호출한다(`subagent_type: "workflow_stage"`). 사용자 답·수정도 같은 호출이다. 긴 원문은 아래 줄에 쓰고 옵션 값에 `@body`를 둔다.
    - stage 실행: `harness-stage: <stage> [launch 옵션]`(`--plan`·`--feedback` 등)
-   - 질문·승인에 대한 사용자 답: `harness-stage: answer` + 아래 줄에 원문
-   - 완료된 결과에 대한 사용자 수정 요청: `harness-stage: revise` + 아래 줄에 원문. 소유 stage는 실행기가 고르며 고를 수 없으면 되묻는 요청을 반환한다. 사용자가 고칠 문구를 파일에서 찾아 옵션으로 만들지 않는다.
+   - 질문·승인에 대한 사용자 답: 뜻은 orchestrator가 판단한다. 승인하려는 뜻일 때만 `harness-stage: approve`, 열린 질문 전부 추천안이면 `recommended`, 그 밖의 질문 답은 `answer` + 다음 줄에 선택 JSON(`[{"question_id":"…","option_id":"…"}]`, 자유 답은 `option_id` 대신·함께 `text`) + 그 아래 줄에 원문
+   - 완료된 결과에 대한 사용자 수정 요청: `harness-stage: revise <소유 stage-id>` + 아래 줄에 원문. 소유 stage가 없거나 맞지 않으면 실행기가 수정 가능한 stage 목록을 돌려준다. 사용자가 고칠 문구를 파일에서 찾아 옵션으로 만들지 않는다.
 
    hook이 launch·bind·결과 기록을 하고 작업자가 `format_error`·`gate_error`를 같은 turn에서 고친 뒤 Agent는 compact envelope를 돌려준다. launch·bind·finish는 직접 실행하지 않고 envelope의 `next`를 따른다. hook 거부는 시작된 것이 없으며 사유의 `next`·되묻는 요청을 따른다.
 2. (Codex 전용) `node .harness/scripts/harness-native-stage.mjs launch --stage-id <stage>`에 필요한 준비 옵션만 전달한다. 모델·effort 지정은 `--stage-binding`을 먼저 적용한다. 새 `execution_id`마다 `next.spawn`대로 fresh native 서브에이전트를 시작한다. `launch`가 `assignment_path`를 반환하면 그 경로 하나와 `receive_command`만 전달하고(없을 때만 `guide`·`input_path`·`schema_path`와 제공된 답변·피드백 경로), `next.bind`를 실행한다. 실제 에이전트 결과를 기다리고 `next.finish`로 검증한다. `format_error`나 `gate_error`는 같은 작업자에게 돌려준다(`gate_error`는 `retry_input`·`feedback_path` 포함). 불명확한 실행을 중복 시작하지 않는다.
@@ -31,6 +31,6 @@ workflow 명령은 현재 working directory가 소유 worktree일 때만 실행�
 
 ## 사용자 결정과 완료
 
-- 반환된 `questions`(제목·맥락·선택지별 label·effect·example, 추천 표시와 `reason`)를 파일 없이 한국어로 보여 주고 기다린다. 확인 질문은 대화로 답한다. 답은 해석하지 않고 원문 그대로 넘긴다(Claude Code: `harness-stage: answer`, Codex: `harness-native-stage.mjs answer --text '<원문>'`). "추천대로"·번호별 선택은 실행기가 질문에 맞추고 모호하면 되묻는 요청을 반환한다.
-- 전술 설계 전에 확정 요구사항의, 발행 전에 검토된 전체 계획의 실제 사용자 승인을 받는다. 승인 요약은 `result.summary`와 문서 경로로 보여 주고 문서는 열지 않으며, 승인 답도 같은 `answer`로 원문을 넘긴다. 승인이 아닌 수정 요청은 `answer`가 소유 stage 재개로 돌리거나 되묻는다. E2E 실패 뒤에는 자동으로 재실행하지 않는다.
+- 반환된 `questions`(제목·맥락·선택지별 label·effect·example, 추천 표시와 `reason`)를 파일 없이 한국어로 보여 주고 기다린다. 확인 질문은 대화로 답한다. 답의 뜻은 orchestrator만 판단하고 선언(선택 JSON·`recommended`·`approve`·`revise <stage-id>`)과 원문을 넘긴다(Claude Code: `harness-stage: …`, Codex: `harness-native-stage.mjs answer --text '<원문>' [--choices '<JSON>' | --intent recommended|approve]`). 무엇으로 처리했는지 사용자에게 알리고, 확실하지 않으면 묻는다. 고정 문구를 요구하지 않는다. 실행기는 문구를 해석하지 않고 gate·열린 질문의 존재, 선택지·stage id, 승인의 실제 사용자 발화만 확인한다.
+- 전술 설계 전에 확정 요구사항의, 발행 전에 검토된 전체 계획의 실제 사용자 승인을 받는다. 승인 요약은 `result.summary`와 문서 경로로 보여 주고 문서는 열지 않으며, 승인 답은 어떤 표현이든 `approve`(`--intent approve`)로 원문을 넘긴다. 전술 설계 stage가 완료될 때마다 `next`가 안내하는 대로 결과와 확인할 결정·해석을 보여 주고, 사용자의 승인 답을 받은 뒤에만 다음 전술 설계 stage와 `tactical-technology`를 시작한다. 승인이 아닌 수정 요청은 소유 stage를 골라 `revise`로 넘긴다(Codex: `launch --stage-id <stage> --user-revision true --feedback '<원문>'`). E2E 실패 뒤에는 자동으로 재실행하지 않는다.
 - 요청 범위에 남은 단계만 순서대로 진행한다. 마지막 단계의 `next`가 안내하는 완료 gate를 통과하면 전체 완료를, 일시정지나 사용자 대기가 남았으면 그 상태를 보고한다.

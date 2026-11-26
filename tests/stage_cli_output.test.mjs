@@ -8,7 +8,7 @@ import { appendFile, mkdir, readFile, readdir, symlink, unlink, writeFile } from
 import { dirname, join } from 'node:path';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
-import { compactFinished, compactQuestions, explainError, extractVerbose, launchResult, spawnInstruction } from '../.harness/src/workflow/stage-cli.mjs';
+import { compactFinished, compactQuestions, explainError, extractVerbose, launchResult, spawnInstruction, stageEnvelope } from '../.harness/src/workflow/stage-cli.mjs';
 import { consumerWorkflow, sourceRoot } from './support/consumer-workflow.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 import { childRollout, parentRollout, rolloutPath, writeRollout } from './support/codex-subagent-rollout.mjs';
@@ -570,6 +570,13 @@ test('a Claude launch names the model and effort for Agent and one command that 
   const codex = launchResult({ prepared, started: { agent_profile: 'workflow_stage', binding: { provider: 'codex', model: 'm', reasoning_effort: 'low' }, execution_id: 'e-1' } });
   assert.equal(codex.next.after_agent, undefined);
   assert.match(codex.next.spawn, /fork_turns: "none"/);
+});
+
+test('a completed non-approval stage keeps a 900-character summary whole and clips a 1500-character one at 1200', () => {
+  const summaryOf = (text) => stageEnvelope({ status: 'completed', code: 'OK', stage_id: 'requirements-fix', execution_id: 'e', result: { summary: text, artifacts: [] } }).summary;
+  assert.ok(JSON.stringify(summaryOf('가'.repeat(900))).includes('가'.repeat(900)), 'a 900-character line arrives whole');
+  const clipped = JSON.stringify(summaryOf('가'.repeat(1500)));
+  assert.ok(!clipped.includes('가'.repeat(1201)) && clipped.includes('가'.repeat(1100)) && /more characters/.test(clipped));
 });
 
 test('finish carries the compact questions, so no result file is opened', () => {

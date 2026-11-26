@@ -20,7 +20,7 @@ Codex의 Harness 작업자 프로필은 `skills.include_instructions = false`로
 
 ## Claude Code stage 경로
 
-orchestrator는 stage마다 `Agent`를 한 번만 호출한다. `subagent_type: "workflow_stage"`, `prompt` 첫 줄은 `harness-stage: <stage-id> [launch 옵션]`이다(`--plan`·`--feedback`·`--user-revision`·`--take-over true`·`--reopen-for`·`--stage-binding` 등 `launch` 옵션 그대로). 긴 원문은 첫 줄 아래에 쓰고 옵션 값에 `@body`를 둔다. 사용자 답·승인은 `harness-stage: answer`와 그 아래 줄의 원문이다. orchestrator는 `launch`·`bind`·`finish`와 reference·result 파일을 직접 다루지 않는다.
+orchestrator는 stage마다 `Agent`를 한 번만 호출한다. `subagent_type: "workflow_stage"`, `prompt` 첫 줄은 `harness-stage: <stage-id> [launch 옵션]`이다(`--plan`·`--feedback`·`--user-revision`·`--take-over true`·`--reopen-for`·`--stage-binding` 등 `launch` 옵션 그대로). 긴 원문은 첫 줄 아래에 쓰고 옵션 값에 `@body`를 둔다. 사용자 답은 orchestrator가 뜻을 정해 `harness-stage: approve|recommended|answer|revise <stage-id>`로 넘기며, `answer`는 다음 줄의 선택 JSON과 그 아래 원문, 나머지는 아래 줄의 원문이다. orchestrator는 `launch`·`bind`·`finish`와 reference·result 파일을 직접 다루지 않는다.
 
 - PreToolUse(Agent) `harness-agent-admission.mjs`가 `launch`(prepare+start)를 실행하고 호출을 해당 profile·모델·effort·foreground의 stage 작업자와 경로(guide·input·schema·answers·feedback·`document_draft_root`)가 담긴 prompt로 바꾼다. 순서·실행 중 stage·미완 답변 같은 거부는 아무것도 시작하지 않은 채 사유(`next`·compact 질문)로 반환된다.
 - SubagentStart `harness-agent-event.mjs`가 예약된 실행을 실제 agent id로 `bind`하고, 작업자에게 agent id와 `harness-native-command.mjs` 사용법을 알려 준다(도메인 sync 계획처럼 Harness 명령은 작업자가 직접 실행한다).

@@ -38,7 +38,7 @@ test('the tactical stages follow the requirements flow in one ordered list, and 
   assert.doesNotMatch(orchestrator, /\]\(references\//, 'the normal path of the entry skill links no reference');
   const map = await read('.codex/skills/orchestrator/references/workflow-map.md');
   assert.ok(map.includes(TACTICAL_DESIGN_STAGES.map((stage) => `\`${stage}\``).join(' → ')), 'the workflow map names the tactical flow in order');
-  assert.match(map, /전술 설계가 모두 `completed\/OK`인 뒤 별도 `tactical-to-code` workflow/);
+  assert.match(map, /전술 설계가 모두 `completed\/OK`이고 마지막 설계 승인을 받은 뒤 별도 `tactical-to-code` workflow/);
   assert.match(map, /`blocked\/DEPENDENCY_INCOMPLETE`/);
   const positions = PRE_SPEC_STAGES.map((stage) => map.indexOf(`\`${stage}\``));
   assert.ok(positions.every((position) => position >= 0) && positions.every((position, index) => index === 0 || position > positions[index - 1]), 'the workflow map names every stage in order');
@@ -332,7 +332,7 @@ test('the tactical stages run after the requirements flow and are accepted secti
   const last = await rerun('context-boundary', 6);
   assert.equal(invoke(workspace, 'harness-domain-model-check.mjs', ['--workspace-root', workspace]).ok, true, 'the installed command agrees with the runner on the finished document');
   assert.deepEqual(treeGit('log', '--format=%s', '-4').trim().split('\n'), ['context-boundary', 'integration-design', 'application-service', 'domain-service'].map((stage) => `${stage}: ${planSetId}`));
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology', ...await flow.approveDesign()]);
   assert.equal(next.input.context.transition.from_stage, 'context-boundary');
   assert.ok(next.input.input_refs.some((reference) => reference.path === tacticalDesign && reference.kind === 'tactical_design'), 'tactical-technology receives the tactical document as an input reference');
   assert.equal(last.finished.status, 'completed');
@@ -357,7 +357,7 @@ test('a skipped stakeholder-analysis makes the tactical stages record the skip w
   }
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head);
   assert.equal(existsSync(join(workspace, specPath('tactical-design.md'))), false, 'a skipped analysis leaves no tactical-design.md');
-  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology']);
+  const next = invoke(workspace, 'harness-prepare-input.mjs', ['--verbose', '--stage-id', 'tactical-technology', ...await flow.approveDesign()]);
   assert.equal(next.input.context.transition.from_stage, 'context-boundary');
 });
 

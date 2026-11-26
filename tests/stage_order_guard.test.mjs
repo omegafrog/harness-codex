@@ -84,7 +84,7 @@ test('an installed consumer retires spec-me and requires tactical design before 
   // The tactical stages complete, then tactical-to-code becomes eligible.
   for (const stage of TACTICAL_DESIGN_STAGES) await skipped(stage);
   retired();
-  const ready = prepare('--stage-id', 'tactical-technology');
+  const ready = prepare('--stage-id', 'tactical-technology', ...await flow.approveDesign());
   assert.equal(ready.status, 0, ready.stderr);
   const prepared = JSON.parse(ready.stdout);
   assert.equal(prepared.input.context.stage_id, 'tactical-technology');

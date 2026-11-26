@@ -49,7 +49,9 @@ export function shellSplit(text) {
 }
 
 // `harness-stage: <stage-id|answer> [launch options]` on the first line; the lines below are the body, which an option
-// takes with the value `@body` (feedback or a user reply with any quotes or line breaks). `answer` is `--answer-text @body`; `revise` is `--revise-text @body`: Harness picks the earliest owner stage and reopens it with --user-revision.
+// takes with the value `@body` (feedback or a user reply with any quotes or line breaks). The orchestrator declares what
+// a reply means: `answer` takes the JSON choices on the first body line and the verbatim reply below it, `approve` and
+// `recommended` add the declared `--intent`, and `revise <stage-id>` names the stage to reopen with the verbatim request.
 export function parseStageCall(prompt) {
   if (typeof prompt !== 'string') return null;
   const match = /^harness-stage:[ \t]*([^\n]*)(?:\n([\s\S]*))?$/.exec(prompt.replace(/^\s+/, ''));
@@ -59,13 +61,19 @@ export function parseStageCall(prompt) {
   if (!head || !(head === 'answer' || head === 'revise' || /^[a-z][a-z0-9-]*$/.test(head))) throw new Error('The first line must be "harness-stage: <stage-id>" or "harness-stage: answer"');
   const values = options.map((option) => option === '@body' ? body : option);
   if (values.some((value) => value === '')) throw new Error('A harness-stage option value is empty; put long text below the first line and pass @body');
-  if (head === 'answer') {
-    if (!body) throw new Error('"harness-stage: answer" needs the user\'s reply verbatim on the lines below it');
-    return { stage: null, args: ['--answer-text', body, ...values] };
+  if (['answer', 'approve', 'recommended'].includes(head)) {
+    if (!body) throw new Error(`"harness-stage: ${head}" needs the user's reply verbatim on the lines below it`);
+    if (head !== 'answer') return { stage: null, args: ['--answer-text', body, '--intent', head, ...values] };
+    const [first, ...below] = body.split('\n');
+    if (!first.startsWith('[')) return { stage: null, args: ['--answer-text', body, ...values] };
+    const reply = below.join('\n').trim();
+    if (!reply) throw new Error('"harness-stage: answer" needs the user\'s reply verbatim below the choices line');
+    return { stage: null, args: ['--answer-text', reply, '--choices', first.trim(), ...values] };
   }
   if (head === 'revise') {
     if (!body) throw new Error('"harness-stage: revise" needs the user\'s change request verbatim on the lines below it');
-    return { stage: null, args: ['--revise-text', body, ...values] };
+    const owner = values.length && !values[0].startsWith('--') ? values.shift() : null;
+    return { stage: null, args: ['--revise-text', body, ...(owner ? ['--revise-stage', owner] : []), ...values] };
   }
   return { stage: head, args: ['--stage-id', head, ...values] };
 }

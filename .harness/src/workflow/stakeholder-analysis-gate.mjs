@@ -169,7 +169,7 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     if (!legacy) errors.push(error('OPEN_FACTS_MISSING', 'The `미확정 사실` table (ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거) is missing. List every fact that changes permission, data, screen behavior or external integration and is not settled, as OPEN-01…, even when there is only the 이용 조건 row.'));
     return { ok: errors.length === 0, errors };
   }
-  if (!openRows.some((row) => clean(row['구분']) === ACCESS_KIND)) errors.push(error('OPEN_FACT_ACCESS_MISSING', 'The `미확정 사실` table has no 구분 `이용 조건` row. Always record who may use the feature and whether login is needed (처리 해당 없음 with a reason only when the feature has no user-facing surface).'));
+  if (!openRows.some((row) => clean(row['구분']) === ACCESS_KIND)) errors.push(error('OPEN_FACT_ACCESS_MISSING', 'The `미확정 사실` table has no 구분 `이용 조건` row. Record who may use or see the feature (처리 해당 없음 with a reason only when the feature has no user-facing surface).'));
   if (status === 'completed' && !legacyReflection && requirements !== null) {
     for (const row of openRows.filter(settledAccessRow)) {
       const id = clean(row.ID);

@@ -6,8 +6,8 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answerConflictMessage, assertQuestionContext, declaredExclusions, droppedExclusionProblems, questionBatchProblems, stakeholderExclusionProblems } from '../.harness/src/workflow/questions.mjs';
-import { mapReplyToAnswers } from '../.harness/src/workflow/answer-text.mjs';
+import { answerConflictMessage, assertQuestionContext, declaredExclusions, droppedExclusionProblems, questionBatchProblems } from '../.harness/src/workflow/questions.mjs';
+import { declaredAnswers } from '../.harness/src/workflow/answer-text.mjs';
 import { validateOutputFormat } from '../.harness/src/workflow/output-schema.mjs';
 import { checkStakeholderAnalysis } from '../.harness/src/workflow/stakeholder-analysis-gate.mjs';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
@@ -111,40 +111,6 @@ test('assertQuestionContext runs the batch check only for a schema that has excl
   assert.doesNotThrow(() => assertQuestionContext([clash[1], clash[1]]));
 });
 
-test('stakeholder-analysis: identity-limited options and no-login options must be declared as excluding each other', () => {
-  const own = (ex = []) => ask('[BIZ-01] 어떤 장소를 보여 주나요?', [{ id: 'own', label: '본인이 등록한 장소만', ex }, { id: 'all', label: '모든 장소' }], 'all');
-  const access = (ex = []) => ask('[OPEN-01] 누가 쓰나요?', [{ id: 'open', label: '로그인 없이 누구나', ex }, { id: 'member', label: '로그인한 사용자' }]);
-  assert.match(stakeholderExclusionProblems([own(), access()]).join(), /question 1 option own[\s\S]*cannot hold with question 2 option open[\s\S]*excludes: \[\{question: 2, option: "open"\}\]/);
-  assert.deepEqual(stakeholderExclusionProblems([own([[2, 'open']]), access()]), [], 'declared on either side');
-  assert.deepEqual(stakeholderExclusionProblems([own(), access([[1, 'own']])]), []);
-  // Not matched: no identity limit, a login-required access answer, or both wordings in one question.
-  assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: '모든 장소' }, { id: 'b', label: '최근 장소' }]), access()]), []);
-  assert.deepEqual(stakeholderExclusionProblems([own(), ask('B', [{ id: 'member', label: '로그인한 사용자만' }, { id: 'staff', label: '관리자만' }])]), []);
-  assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'own', label: '본인 장소만' }, { id: 'open', label: '로그인 없이 누구나' }])]), []);
-  assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: '일주일 내 장소' }, { id: 'b', label: '전체' }]), access()]), [], '"내" inside a word is not the viewer');
-  const access2 = access();
-  for (const text of ['사용자 현재 위치 한 점만 표시한다', '본인의 현재 위치', '자기 위치가 보인다']) assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: text, effect: text }, { id: 'b', label: '전체' }]), access2]), [], `${text}: the viewer's own position needs no login`);
-  for (const text of ['본인이 등록한 장소만', '자기 핀만', '본인이 등록한 위치만 본다']) assert.ok(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: text }, { id: 'b', label: '전체' }]), access2]).length, `${text}: registered data is identity-limited`);
-  assert.ok(stakeholderExclusionProblems([ask('A', [{ id: 'a', label: '내 장소만' }, { id: 'b', label: '전체' }]), access()]).length, '내 장소 limits by the viewer');
-  // Only stakeholder-analysis runs it.
-  assert.doesNotThrow(() => assertQuestionContext([own(), access()], { skill: 'event-storming' }));
-  assert.throws(() => assertQuestionContext([own(), access()], { skill: 'stakeholder-analysis' }), /cannot hold with question 2 option open/);
-});
-
-test('stakeholder-analysis: user registration options and view-only options must be declared as excluding each other', () => {
-  const register = (ex = []) => ask('[CAND-01] 장소는 누가 만드나요?', [{ id: 'user', label: '사용자가 등록', ex }, { id: 'staff', label: '운영자가 등록' }]);
-  const done = (ex = []) => ask('[BIZ-02] 완료 조건은?', [{ id: 'view', label: '표시만 보기', ex }, { id: 'edit', label: '지도에서 확인한다' }]);
-  assert.match(stakeholderExclusionProblems([register(), done()]).join(), /question 1 option user[\s\S]*register\/edit content[\s\S]*question 2 option view/);
-  assert.deepEqual(stakeholderExclusionProblems([register([[2, 'view']]), done()]), []);
-  assert.deepEqual(stakeholderExclusionProblems([register(), done([[1, 'user']])]), []);
-  assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'staff', label: '운영자가 등록' }, { id: 'x', label: '준비된 항목' }]), done()]), [], 'only users registering is matched');
-  assert.deepEqual(stakeholderExclusionProblems([ask('A', [{ id: 'no', label: '사용자는 등록하지 않는다' }, { id: 'x', label: '준비된 항목' }]), done()]), [], 'a negated registration is not matched');
-  assert.deepEqual(stakeholderExclusionProblems([register(), ask('B', [{ id: 'a', label: '목록으로 보여 준다' }, { id: 'b', label: '지도로 보여 준다' }])]), []);
-  // The E2E batch: own places + anyone + users register + view only.
-  const batch = [ask('Q1', [{ id: 'own', label: '본인이 등록한 장소만' }, { id: 'all', label: '모든 장소' }]), ask('Q2', [{ id: 'open', label: '로그인 없이 누구나' }, { id: 'member', label: '로그인한 사용자' }]), register(), done()];
-  assert.ok(stakeholderExclusionProblems(batch).length >= 3);
-});
-
 test('the gate asks for a recommended-combination scenario with two or more questions, except for a resume of an older analysis', () => {
   const head = '# 분석\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 기능 |\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 지도 | "지도" | REQUESTER | 확정 | 요청 원문 | - |\n\n| ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거 |\n|---|---|---|---|---|---|\n| OPEN-01 | 이용 조건 | 누가 쓰나 | 접근 | 해당 없음 | 화면이 없다 |\n';
   const codes = (analysis, options = {}) => checkStakeholderAnalysis({ request: '지도 만들어', analysis, status: 'action_required', questions: 2, ...options }).errors.map(({ code }) => code);
@@ -156,27 +122,26 @@ test('the gate asks for a recommended-combination scenario with two or more ques
   assert.deepEqual(codes(head, { legacyScenario: true }), [], 'a resume of an analysis written before the line');
 });
 
-test('a reply that picks two options which cannot both hold records nothing, by letter, by number and as "추천대로"', () => {
+test('declared options which cannot both hold record nothing, as choices and as recommended', () => {
   const two = batchOf(
     ask('어떤 장소를 보여 주나요?', [{ id: 'a', label: '본인 장소', ex: [[2, 'a']] }, { id: 'b', label: '모든 장소' }], 'b'),
     ask('누가 쓰나요?', [{ id: 'a', label: '누구나' }, { id: 'b', label: '로그인한 사용자' }], 'b'),
   );
-  const refused = mapReplyToAnswers(two, '1번 A, 2번 A');
+  const picks = (...ids) => ids.map(([n, option_id]) => ({ question_id: `q:${n}`, option_id }));
+  const refused = declaredAnswers(two, { choices: picks([1, 'a'], [2, 'a']) });
   assert.equal(refused.answers, undefined);
   assert.match(refused.clarification, /질문 1\("어떤 장소를 보여 주나요\?"\)의 "본인 장소"과\(와\) 질문 2\("누가 쓰나요\?"\)의 "누구나"은\(는\) 함께 성립할 수 없습니다/);
   assert.match(refused.clarification, /아무것도 기록하지 않았습니다/);
-  assert.match(mapReplyToAnswers(two, '1: a, 2: a').clarification, /함께 성립할 수 없습니다/);
-  assert.match(mapReplyToAnswers(two, '1번 본인 장소\n2번 누구나').clarification, /함께 성립할 수 없습니다/);
-  assert.deepEqual(mapReplyToAnswers(two, '1번 B, 2번 A').answers.map(({ answer }) => answer), ['모든 장소 (b)', '누구나 (a)']);
-  assert.deepEqual(mapReplyToAnswers(two, '추천대로').answers.length, 2);
-  // A partial reply counts the answers already stored; "추천대로" fills the rest with recommended options.
+  assert.deepEqual(declaredAnswers(two, { choices: picks([1, 'b'], [2, 'a']) }).answers.map(({ answer }) => answer), ['모든 장소 (b)', '누구나 (a)']);
+  assert.equal(declaredAnswers(two, { recommended: true }).answers.length, 2);
+  // A partial reply counts the answers already stored; "recommended" fills the rest with recommended options.
   const stored = [{ question_id: 'q:1', answer: '본인 장소 (a)' }];
-  const rest = mapReplyToAnswers([{ ...two[0] }, { ...two[1], recommended_option_id: 'a' }], '추천대로', { answered: ['q:1'], stored });
+  const rest = declaredAnswers([{ ...two[0] }, { ...two[1], recommended_option_id: 'a' }], { recommended: true, answered: ['q:1'], stored });
   assert.match(rest.clarification, /함께 성립할 수 없습니다/);
-  assert.deepEqual(mapReplyToAnswers(two, '2번 B', { answered: ['q:1'], stored }).answers, [{ question_id: 'q:2', answer: '로그인한 사용자 (b)' }]);
-  assert.match(mapReplyToAnswers(two, '2번 A', { answered: ['q:1'], stored }).clarification, /함께 성립할 수 없습니다/);
+  assert.deepEqual(declaredAnswers(two, { choices: picks([2, 'b']), answered: ['q:1'], stored }).answers, [{ question_id: 'q:2', answer: '로그인한 사용자 (b)' }]);
+  assert.match(declaredAnswers(two, { choices: picks([2, 'a']), answered: ['q:1'], stored }).clarification, /함께 성립할 수 없습니다/);
   // The user's own words are not an option and are not checked; neither is a batch without excludes.
-  assert.deepEqual(mapReplyToAnswers(two, '1번 A, 2번 가입은 필요').answers.length, 2);
+  assert.equal(declaredAnswers(two, { choices: [{ question_id: 'q:1', option_id: 'a' }, { question_id: 'q:2', text: '가입은 필요' }] }).answers.length, 2);
   assert.equal(answerConflictMessage(two, [{ question_id: 'q:1', answer: '본인이든 누구든' }, { question_id: 'q:2', answer: '누구나 (a)' }]), null);
   assert.equal(answerConflictMessage(two.map((question) => ({ ...question, options: question.options.map(({ excludes, ...rest }) => rest) })), [{ question_id: 'q:1', answer: '본인 장소 (a)' }, { question_id: 'q:2', answer: '누구나 (a)' }]), null);
 });
@@ -197,7 +162,9 @@ test('answer --text and launch --answer refuse a conflicting choice and record n
   const [first, second] = waiting.result.questions;
   const pending = join(workspace, '.io/runtime/executions', waiting.execution_id, 'pending-answers.json');
 
-  const text = native('answer', '--text', '1번 B, 2번 B');
+  const pick = (question, option_id) => ({ question_id: question.question_id, option_id });
+  const reply = (words, ...choices) => native('answer', '--text', words, '--choices', JSON.stringify(choices));
+  const text = reply('1번 B, 2번 B', pick(first, 'b'), pick(second, 'b'));
   assert.equal(text.status, 0, text.stderr);
   const clarification = JSON.parse(text.stdout);
   assert.equal(clarification.status, 'clarification_needed');
@@ -209,12 +176,12 @@ test('answer --text and launch --answer refuse a conflicting choice and record n
   assert.equal(JSON.parse(direct.stdout).status, 'clarification_needed');
   assert.equal(existsSync(pending), false, 'launch --answer recorded nothing either');
 
-  const partial = native('answer', '--text', '2번 B');
+  const partial = reply('2번 B', pick(second, 'b'));
   assert.equal(partial.status, 0, partial.stderr);
   assert.equal(JSON.parse(partial.stdout).waiting_for_answers, true);
   const stored = JSON.parse(await readFile(pending, 'utf8'));
   // The stored answer now conflicts with the choice a later reply makes.
-  const later = native('answer', '--text', '1번 B');
+  const later = reply('1번 B', pick(first, 'b'));
   assert.equal(JSON.parse(later.stdout).status, 'clarification_needed');
   assert.deepEqual(JSON.parse(await readFile(pending, 'utf8')), stored, 'the stored answers are unchanged');
   const viaJson = native('launch', '--stage-id', 'stakeholder-analysis', '--answer', JSON.stringify([{ question_id: first.question_id, answer: '소유자 묶음 (b)' }]));

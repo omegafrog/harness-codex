@@ -111,7 +111,7 @@ async function prepareWorkflow(t) {
   await writeFile(join(workspace, '.harness/harness.yaml'), `${SETUP}`);
   const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
   const state = JSON.parse(await readFile(statePath, 'utf8'));
-  for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', execution_id: `seeded-${stage}`, finished_at: new Date(0).toISOString(), result_ref: `runtime/executions/${stage}/result.json` };
   state.current_stage = 'workflow-compose';
   await writeFile(statePath, JSON.stringify(state, null, 2) + '\n');
   const documents = { [`docs/specs/${planSetId}/requirements.md`]: REQUIREMENTS, [`docs/specs/${planSetId}/tactical-design.md`]: TACTICAL_DESIGN };

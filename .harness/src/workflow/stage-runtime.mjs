@@ -86,16 +86,16 @@ function validate(value, schema, path = '$') {
 export async function resolveSkillBinding({ root, skill, workflow = null, stage = null, workflowBinding = null, executionProvider = null, requestedStageBinding = null }) {
   const declaration = await readSkillDeclaration({ root, skill });
   requireValue(!declaration.main_session, `${skill} runs in the main session and cannot be bound as a subagent`);
-  let tier = declaration.model_tier;
+  let tier = declaration.model_tier, stageTier = null;
   requireValue(Boolean(workflow) === Boolean(stage), 'workflow and stage must be supplied together');
   if (workflow) {
     const manifest = await loadNamedWorkflow(workflow, { root });
     const selected = manifest.stages.find((item) => item.id === stage);
     requireValue(selected?.skill === skill, 'Workflow stage does not match the requested skill');
-    tier = selected.model_tier || tier;
+    stageTier = selected.model_tier || null;
+    tier = stageTier || tier;
   }
   const config = parseYaml(await readFile(join(root, '.harness/harness.yaml'), 'utf8'));
-  const keys = tierSettingKeys(tier);
   // Model settings live under agents.<provider>; only the active provider's section is read.
   let recordedBinding = null, orchestratorProvider = null;
   let session;
@@ -117,6 +117,9 @@ export async function resolveSkillBinding({ root, skill, workflow = null, stage 
   const supplied = workflowBinding ? parseWorkflowBinding(workflowBinding) : null;
   const provider = executionProvider || supplied?.provider || (process.env.HARNESS_STAGE_EXECUTION_ID ? process.env.HARNESS_PROVIDER_ID : null) || orchestratorProvider || recordedBinding?.provider || configuredProvider(config);
   requireValue(['codex', 'claude-code'].includes(provider), 'Invalid execution provider');
+  // A skill may name another tier for Claude Code; a tier set by the workflow stage still wins.
+  if (provider === 'claude-code' && !stageTier) tier = declaration.claude_code_model_tier || tier;
+  const keys = tierSettingKeys(tier);
   const settings = providerAgents(config, provider);
   const model = settings[keys.model], effort = settings[keys.reasoning_effort];
   const override = requestedStageBinding ? parseWorkflowBinding(requestedStageBinding) : supplied || (recordedBinding?.provider === provider ? parseWorkflowBinding(recordedBinding) : null);

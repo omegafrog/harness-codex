@@ -24,6 +24,6 @@ Workflow stage execution maps the manifest's stage `role` to `.codex/agents/<rol
 
 ## 계획 발행 승인
 
-`to-ticket` 완료 후 orchestrator는 결과의 승인 요약(`result.summary`: 리뷰를 통과한 전체 계획의 ticket 목록·의존 순서·검증)과 plan 경로를 한국어로 사용자에게 보여 주고 plan 문서는 열지 않는다. 발행 여부를 물으면서 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 답한 뒤에만 그 답 원문을 `answer`로 넘기며, 실행기가 `harness-native-stage.mjs launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`으로 publisher 입력을 준비한다. 준비기는 `to-ticket` 완료 뒤의 provider 대화 기록에서 실제 사용자 메시지나 질문 도구 답변과 대조한다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다.
+`to-ticket` 완료 후 orchestrator는 결과의 승인 요약(`result.summary`: 리뷰를 통과한 전체 계획의 ticket 목록·의존 순서·검증)과 plan 경로를 한국어로 사용자에게 보여 주고 plan 문서는 열지 않는다. 발행 여부를 물으면서 [승인 답변 형식](input.md#사용자-승인-답변-전달)을 안내한다. 사용자가 직접 답한 뒤에만 그 답 원문을 `approve` 의도로 넘기며, 실행기가 `harness-native-stage.mjs launch --stage-id tracker-publish --publication-approved true --approval-answer '<사용자 답 원문>'`으로 publisher 입력을 준비한다. 준비기는 `to-ticket` 완료 뒤의 provider 대화 기록에서 실제 사용자 메시지나 질문 도구 답변과 대조한다. 사용자가 계획 수정을 요청하면 `to-ticket`으로 돌아가 다시 리뷰하고 다시 승인받는다.
 
 GitHub tracker를 쓰고 사용자가 계획 PR을 요청하면 발행 뒤 `plan-pr` stage를 `pr_author`로 실행한다. 이미 발행·활성화된 plan set이 변경되면 종전 발행 승인과 Issue 연결을 유지한다. 해당 Issue에 변경 내용 업데이트를 사용자 요청 범위에 따라 `harness-tracker.mjs comment --ticket <issue> --body <변경 요약>`으로 기록한다.

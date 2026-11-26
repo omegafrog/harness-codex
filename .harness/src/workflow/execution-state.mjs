@@ -7,7 +7,7 @@ import { refreshWorkflowProgress } from './startup-state.mjs';
 import { parseWorktreeRecord, recordWorktreeStage } from './worktrees.mjs';
 import { REQUIREMENTS_REVISION_STAGES, WORKTREE_STAGE, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
 import { markRequirementsRevision, resolveReopen, retainUnchangedStages, revalidationTree } from './stage-reopen.mjs';
-import { assertRequirementsApproval } from './user-inputs.mjs';
+import { assertDesignApproval, assertRequirementsApproval } from './user-inputs.mjs';
 import { assertTacticalDesignGate } from './domain-model-gate.mjs';
 import { assertStageDomainSync } from '../domain/sync.mjs';
 import { assertDesignFreezeGate } from './design-freeze-gate.mjs';
@@ -135,6 +135,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
       const orderViolation = preSpecOrderViolation(state.stages, stage) || tacticalImplementationOrderViolation(state.stages, stage);
       if (orderViolation) throw new Error(orderViolation);
       await assertRequirementsApproval({ root, state, stage, planSetId: input.context?.plan_set_id, approval: input.context?.requirements_approval });
+      await assertDesignApproval({ root, state, stage, planSetId: input.context?.plan_set_id, approval: input.context?.design_approval });
       const revision = input.context?.user_revision && REQUIREMENTS_REVISION_STAGES.includes(stage);
       if (revision) markRequirementsRevision(state, stage, input.context.requirements_revision_from, input.execution_id, now);
       if (!revision && previous?.stale && input.context?.revalidation_mark !== previous.stale.reopened_for) throw new Error('Stale execution input: prepare the stage again to revalidate the current upstream result');
@@ -155,6 +156,7 @@ export async function recordExecutionState({ root, input, binding, status, code 
       if (nativeClaim) entry.native_managed = true;
       if (rewindTree) entry.revalidation_tree = rewindTree;
       if (nativeClaim && stage === WORKTREE_STAGE.DOMAIN_MODEL && input.context?.requirements_approval?.execution_id) entry.requirements_approval = input.context.requirements_approval.execution_id;
+      if (nativeClaim && input.context?.design_approval?.execution_id) entry.design_approval = input.context.design_approval;
       if (nativeAgentId !== null) {
         entry.native_agent_id = nativeAgentId;
         entry.native_agent_session_id = orchestratorSessionId || previousParent;

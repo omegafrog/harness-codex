@@ -117,6 +117,30 @@ export const TACTICAL_IMPLEMENTATION_STAGES = Object.freeze([
 // A stage result counts only while it is completed/OK and no upstream rewind marked it stale (`entry.stale`, see stage-reopen.mjs).
 export const isCurrentStage = (entry) => entry?.status === 'completed' && entry.code === 'OK' && !entry.stale;
 
+// Starting the stage after a tactical design stage needs the user's approval of that stage's current result.
+export const DESIGN_APPROVAL_CHAIN = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY]);
+
+export const designApprovalSource = (stageId) => DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(stageId) - 1] ?? null;
+
+// True when the stage already holds approval of its predecessor's current execution. A start recorded before approvals
+// existed has no receipt and counts when it began after the predecessor finished.
+export function designApprovalCovers(stages, stageId) {
+  const entry = stages?.[stageId];
+  const source = stages?.[designApprovalSource(stageId)];
+  if (!entry?.execution_id || !source?.execution_id) return false;
+  if (entry.design_approval) return entry.design_approval.execution_id === source.execution_id;
+  return !entry.stale && Date.parse(entry.started_at || entry.finished_at) >= Date.parse(source.finished_at);
+}
+
+// The stage that waits for the user's approval of `sourceId`, or null.
+export function designApprovalTarget(stages, sourceId) {
+  if (!TACTICAL_DESIGN_STAGES.includes(sourceId) || !isCurrentStage(stages?.[sourceId])) return null;
+  const target = DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(sourceId) + 1];
+  return isCurrentStage(stages?.[target]) || designApprovalCovers(stages, target) ? null : target;
+}
+
+export const pendingDesignApproval = (stages) => TACTICAL_DESIGN_STAGES.map((id) => designApprovalTarget(stages, id)).find(Boolean) ?? null;
+
 export function tacticalImplementationOrderViolation(stages, stageId) {
   const index = TACTICAL_IMPLEMENTATION_STAGES.indexOf(stageId);
   if (index < 0) return null;

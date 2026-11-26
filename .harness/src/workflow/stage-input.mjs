@@ -16,11 +16,11 @@ import { planRuntimePaths } from '../eval/plan-journal.mjs';
 import { stageExecutionPaths } from './session-output.mjs';
 import { loadNamedWorkflow } from './loader.mjs';
 import { replayJsonlStream } from '../eval/journal.mjs';
-import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation } from './worktree-stages.mjs';
+import { PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, currentTacticalDesignPath, isCurrentStage, preSpecOrderViolation, tacticalImplementationOrderViolation, DESIGN_APPROVAL_CHAIN, designApprovalSource } from './worktree-stages.mjs';
 import { markRequirementsRevision, resolveReopen, staleFeedback } from './stage-reopen.mjs';
 import { migrateLegacyTacticalDesign } from './stage-commit.mjs';
 import { assertTicketStartable } from './tactical-tickets.mjs';
-import { approvalRefusal, assertRequirementsApproval, describeReplySearch, inspectUserReply, userSaidAfter } from './user-inputs.mjs';
+import { approvalRefusal, assertDesignApproval, assertRequirementsApproval, describeReplySearch, inspectUserReply, userSaidAfter } from './user-inputs.mjs';
 
 // 완료된 계획 산출물을 사용자가 고치라고 지시한 경우에만 같은 session으로 다시 연다.
 const USER_REVISION_STAGES = new Set([...REQUIREMENTS_REVISION_STAGES, ...TACTICAL_DESIGN_STAGES, 'to-ticket', 'implement-wrapper']);
@@ -377,13 +377,14 @@ async function queueRunningAnswers(session, executionId, answer) {
   } finally { await rm(lock, { recursive: true }); }
 }
 
-export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, requirementsApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null, requestedStageBinding = null }) {
+export async function prepareStageInput({ root, session, worktreeRef = null, workflowRef, stageId, codexSessionId, orchestratorSession = null, answer = null, feedback = null, reviewAdmissionRef = null, publicationApproved = false, requirementsApproved = false, designApproved = false, restart = false, userRevision = false, planId = null, repairReceipt = null, approvalAnswer = null, e2eRequest = null, testDefectFailure = null, reopenFor = null, requestedStageBinding = null }) {
   if (stageId === 'e2e-test' && !e2eRequest) throw new Error('E2E stage requires an approved request');
   if (stageId !== 'e2e-test' && e2eRequest) throw new Error('E2E request applies only to e2e-test');
   if (userRevision && (feedback === null || !USER_REVISION_STAGES.has(stageId))) throw new Error('User revision requires feedback for a requirements revision stage, a tactical design stage, to-ticket or implement-wrapper');
   if (userRevision && stageId === 'implement-wrapper' && (!planId || !repairReceipt || !approvalAnswer)) throw new Error('Implementation revision requires a plan, failure receipt and approval answer');
   if (requirementsApproved && stageId !== TACTICAL_DESIGN_STAGES[0]) throw new Error(`Requirements approval is only valid for ${TACTICAL_DESIGN_STAGES[0]}`);
-  if ((repairReceipt || (approvalAnswer && !['tracker-publish', 'frontend-design-brief'].includes(stageId) && !requirementsApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
+  if (designApproved && !designApprovalSource(stageId)) throw Object.assign(new Error(`Design approval is only valid for ${DESIGN_APPROVAL_CHAIN.slice(1).join(', ')}`), { design_stage: stageId });
+  if ((repairReceipt || (approvalAnswer && !['tracker-publish', 'frontend-design-brief'].includes(stageId) && !requirementsApproved && !designApproved)) && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Repair receipt and approval answer require an implementation user revision');
   if (testDefectFailure && !(userRevision && stageId === 'implement-wrapper' && repairReceipt && approvalAnswer)) throw new Error('Test defect evidence requires an implementation revision');
   // implement-wrapper builds one plan and tactical-code one ticket, which the orchestrator assigns; neither chooses it itself.
   if (planId !== null && !PLAN_STAGES.has(stageId)) throw new Error('--plan applies only to implementation and frontend ticket stages');
@@ -401,7 +402,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   // feedback. The state claim marks downstream results stale in the same transaction that starts the owner.
   let reopenPlan = null;
   if (reopenFor !== null) {
-    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .harness/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
+    if (feedback !== null || answer !== null || restart || userRevision || planId !== null || reviewAdmissionRef || publicationApproved || requirementsApproved || designApproved) throw Object.assign(new Error('Reopen refused: --reopen-for must be requested with --stage-id only'), { explained: { error: 'Reopen refused: --reopen-for must be requested with --stage-id only', code: 'REOPEN_REFUSED', why: 'The gap text comes from the blocked result, so no feedback, answer, restart or user revision can be combined with it.', next: [`node .harness/scripts/harness-native-stage.mjs launch --stage-id ${stageId} --reopen-for ${reopenFor}`] } });
     reopenPlan = await resolveReopen({ root, session, state, ownerStage: stageId, blockedExecutionId: reopenFor });
     feedback = reopenPlan.feedback;
   }
@@ -418,7 +419,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (stageId === 'tracker-publish' && (!publicationApproved || !isCurrentStage(state.stages?.['to-ticket']))) throw new Error('Completed to-ticket and user publication approval are required');
   // The provider transcript must contain the user's reply after the reviewed plan set finished.
   if (stageId === 'tracker-publish') {
-    const publication = await inspectUserReply({ root, text: typeof approvalAnswer === 'string' ? approvalAnswer : '', since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z', allowExplicitPublicationReply: true });
+    const publication = await inspectUserReply({ root, text: typeof approvalAnswer === 'string' ? approvalAnswer : '', since: state.stages['to-ticket'].finished_at ?? '1970-01-01T00:00:00.000Z', allowPlainReply: true });
     if (!publication.matched) throw approvalRefusal('Publication approval answer was not recorded', describeReplySearch(publication.search, { gate: 'the reviewed plan set finished' }), publication.search);
   }
   await assertPrStageReadiness({ root, state, stageId });
@@ -539,6 +540,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   let publicationDrafts;
   let plan_set_id;
   const requirementsApproval = requirementsApproved ? { execution_id: state.stages?.['bounded-context']?.execution_id, answer: approvalAnswer } : null;
+  const designApproval = designApproved ? { stage_id: designApprovalSource(stageId), execution_id: state.stages?.[designApprovalSource(stageId)]?.execution_id, answer: approvalAnswer } : null;
   if (worktree_ref) {
     if (!worktree_ref.endsWith('/worktree.json')) throw new Error('Invalid canonical worktree reference');
     const directory = worktree_ref.slice(0, -'/worktree.json'.length);
@@ -551,6 +553,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
     historicalBinding = record.workflow_binding || null;
     if (['to-ticket', 'plan-review', 'implement', 'implement-wrapper', 'sync-contracts'].includes(stage.skill) && !plan_set_id) throw new Error(`${stage.skill} requires plan_set_id in worktree.json`);
     await assertRequirementsApproval({ root, state, stage: stageId, planSetId: plan_set_id, approval: requirementsApproval });
+    await assertDesignApproval({ root, state, stage: stageId, planSetId: plan_set_id, approval: designApproval });
     if (stageId === 'sync-contracts') {
       // implement-wrapper reads completed/OK after every single plan, so the plan set's own tracker decides when it is done.
       const { snapshotPlanSet } = await import('./plan-review.mjs');
@@ -860,6 +863,7 @@ export async function prepareStageInput({ root, session, worktreeRef = null, wor
   if (e2eRequest) input.context.agent_profile = 'e2e_test_runner';
   else if (['frontend-design-brief', 'frontend-implementation', 'frontend-visual-review'].includes(stageId)) input.context.agent_profile = stage.role;
   if (requirementsApproval?.execution_id && requirementsApproval.answer) input.context.requirements_approval = requirementsApproval;
+  if (designApproval?.execution_id && designApproval.answer) input.context.design_approval = designApproval;
   if (frontendDesignHandoff) input.context.frontend_direction_approval = tacticalUiDirectionRecorded
     ? { answer: approvalAnswer, source: { stage_id: 'tactical-ui', execution_id: tacticalUiFlowDecision.execution_id, question_id: tacticalUiFlowDecision.question_id } }
     : { answer: approvalAnswer, source: { stage_id: 'orchestrator_transcript' } };

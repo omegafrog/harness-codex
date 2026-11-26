@@ -9,6 +9,7 @@ import { explainError, finishNext, withDispatchHint } from '../.harness/src/work
 import { extractSubmission, inlineSchema, parseStageCall, shellSplit } from '../.harness/src/workflow/claude-stage-dispatch.mjs';
 import { parseYaml } from '../.harness/src/eval/yaml.mjs';
 import { consumerWorkflow, stakeholderAnalysisDocument } from './support/consumer-workflow.mjs';
+import { PRE_SPEC_STAGES } from '../.harness/src/workflow/worktree-stages.mjs';
 import { withDecisionContext } from './support/decision-question.mjs';
 
 const REQUEST = '게시글 삭제 기능을 추가해줘';
@@ -57,7 +58,13 @@ test('the stage call line is parsed: stage and options, @body for long text, ans
   assert.deepEqual(parseStageCall('harness-stage: tactical-code --plan T-1').args, ['--stage-id', 'tactical-code', '--plan', 'T-1']);
   assert.deepEqual(parseStageCall('harness-stage: requirements-fix --feedback @body\n수정: "경계"는 \'그대로\'\n둘째 줄').args, ['--stage-id', 'requirements-fix', '--feedback', '수정: "경계"는 \'그대로\'\n둘째 줄']);
   assert.deepEqual(parseStageCall('harness-stage: answer\n1번 A, 2번 B').args, ['--answer-text', '1번 A, 2번 B']);
+  assert.deepEqual(parseStageCall('harness-stage: revise requirements-fix\n신고 규칙 문구를 바꿔 주세요').args, ['--revise-text', '신고 규칙 문구를 바꿔 주세요', '--revise-stage', 'requirements-fix']);
   assert.deepEqual(parseStageCall('harness-stage: revise\n신고 규칙 문구를 바꿔 주세요').args, ['--revise-text', '신고 규칙 문구를 바꿔 주세요']);
+  assert.deepEqual(parseStageCall('harness-stage: answer\n[{"question_id":"q","option_id":"a"}]\n첫째').args, ['--answer-text', '첫째', '--choices', '[{"question_id":"q","option_id":"a"}]']);
+  assert.throws(() => parseStageCall('harness-stage: answer\n[{"question_id":"q","option_id":"a"}]'), /reply/);
+  assert.deepEqual(parseStageCall('harness-stage: approve\n좋아 가자').args, ['--answer-text', '좋아 가자', '--intent', 'approve']);
+  assert.deepEqual(parseStageCall('harness-stage: recommended\n다 추천대로 해').args, ['--answer-text', '다 추천대로 해', '--intent', 'recommended']);
+  assert.throws(() => parseStageCall('harness-stage: approve'), /needs the user's reply/);
   assert.throws(() => parseStageCall('harness-stage: revise'), /needs the user's change request/);
   assert.equal(parseStageCall('Run the stage please'), null);
   assert.equal(parseStageCall(undefined), null);
@@ -141,7 +148,7 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   assert.equal(persona({}, 'sonnet').updated, undefined, 'a main-session call is not rewritten');
   const gapReview = (extra, model) => hooks.admit('Review the requirements', { tool_input: { subagent_type: 'requirements_gap_reviewer', description: 'gap review', prompt: 'Review the requirements', ...(model ? { model } : {}) }, ...extra });
   const reviewed = gapReview({ agent_id: 'agent-real-1', agent_type: 'workflow_stage' }, 'opus').updated;
-  assert.equal(reviewed.model, lowTier.low_performance_model, 'the gap reviewer runs on the configured low tier whatever model is passed');
+  assert.equal(reviewed.model, lowTier.implementation_model, 'the gap reviewer runs on the configured Claude Code tier whatever model is passed');
   assert.equal(reviewed.run_in_background, false);
   assert.equal(gapReview({}, 'opus').updated, undefined, 'a main-session call is not rewritten');
   // A second start of the same profile has no reserved execution left and binds nothing.
@@ -168,7 +175,7 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   assert.equal(envelope.code, 'OK');
   assert.equal(envelope.stage_id, 'stakeholder-analysis');
   assert.equal(envelope.execution_id, id);
-  assert.equal(envelope.summary.length, 3, 'the summary is at most three lines');
+  assert.ok(envelope.summary.length <= 6, 'the summary is at most six lines');
   assert.deepEqual(envelope.artifacts, [analysis]);
   assert.match(envelope.next, /^Next stage: Agent\(subagent_type: "workflow_stage", prompt: "harness-stage: subdomain-candidates"\)$/);
   for (const key of Object.keys(envelope)) assert.ok(['status', 'code', 'stage_id', 'execution_id', 'summary', 'artifacts', 'next'].includes(key), key);
@@ -266,19 +273,22 @@ test('questions come back compact in the envelope and a raw reply answers them i
   assert.match(envelope.next, /harness-stage: answer/);
   assert.match(envelope.next, /without opening any file/);
 
-  // An ambiguous reply starts nothing and says what to ask.
-  const unclear = hooks.admit('harness-stage: answer\n그걸로 해줘');
+  // An undeclared reply starts nothing and lists what can be declared.
+  const unclear = hooks.admit('harness-stage: answer\n2번 B');
   assert.equal(unclear.decision, 'deny');
   assert.match(unclear.reason, /Nothing was started/);
   assert.match(unclear.reason, /clarification_needed/);
-  assert.match(unclear.reason, /does not say which question/);
-  // A reply for one question is stored, the other is shown again compactly.
-  const partial = hooks.admit('harness-stage: answer\n2번 B');
+  assert.match(unclear.reason, /Declare which question/);
+  // A choice for one question is stored, the other is shown again compactly.
+  const second = envelope.questions[1].question_id;
+  const partial = hooks.admit(`harness-stage: answer\n${JSON.stringify([{ question_id: second, option_id: 'b' }])}\n두 번째는 b`);
   assert.equal(partial.decision, 'deny');
   assert.match(partial.reason, /waiting_for_answers/);
   assert.match(partial.reason, /공개 단위는\?/);
-  // "추천대로" answers the rest and the stage is dispatched again with its answers.
-  const answered = hooks.admit('harness-stage: answer\n추천대로');
+  // An approval does not answer a question.
+  assert.match(hooks.admit('harness-stage: approve\n좋아 가자').reason, /waiting for answers/);
+  // The declared intent answers the rest in any wording and the stage is dispatched again with its answers.
+  const answered = hooks.admit('harness-stage: recommended\n다 추천대로 해');
   assert.equal(answered.decision, 'allow', answered.reason);
   assert.equal(answered.updated.subagent_type, 'workflow_stage');
   assert.match(answered.updated.prompt, /answers_path: \S+answers\.json/);
@@ -286,19 +296,17 @@ test('questions come back compact in the envelope and a raw reply answers them i
   assert.deepEqual(answers.map(({ answer }) => answer).sort(), ['소유자 묶음 (b)', '핀 하나씩 (a)']);
 });
 
-test('a change request goes through revise or a non-approval answer; with no owner to reopen it asks instead of starting anything', async (t) => {
+test('revise needs an owning stage that has run, and an undeclared reply starts nothing', async (t) => {
   const { hooks } = await claudeFlow(t);
-  for (const prompt of ['harness-stage: revise\n신고 규칙 문구를 바꿔 주세요', 'harness-stage: answer\n신고 규칙 문구를 바꿔 주세요']) {
+  for (const prompt of ['harness-stage: revise\n승인합니다', 'harness-stage: revise requirements-fix\n신고 규칙 문구를 바꿔 주세요', 'harness-stage: answer\n승인합니다']) {
     const refused = hooks.admit(prompt);
     assert.equal(refused.decision, 'deny', prompt);
     assert.match(refused.reason, /Nothing was started/);
     assert.match(refused.reason, /clarification_needed/);
-    assert.match(refused.reason, /has not run yet/);
+    assert.match(refused.reason, /none yet/);
   }
-  // revise never approves: a bare "승인합니다" through it is only a change request without an owner.
-  for (const text of ['이상해요', '승인합니다']) assert.match(hooks.admit(`harness-stage: revise\n${text}`).reason, /which part to change/);
-  // An approval-looking reply with nothing to approve is refused, not turned into a revision.
-  assert.match(hooks.admit('harness-stage: answer\n승인합니다').reason, /ANSWER_REFUSED|No stage is waiting/);
+  assert.match(hooks.admit('harness-stage: approve\n좋아 가자').reason, /ANSWER_REFUSED|No stage is waiting/);
+  assert.match(hooks.admit('harness-stage: recommended\n좋아 가자').reason, /ANSWER_REFUSED|No stage is waiting/);
 });
 
 test('the admission hook refuses what it cannot launch and leaves other Agent calls alone', async (t) => {
@@ -351,9 +359,9 @@ test('a Claude orchestrator is told once to dispatch launch commands as Agent ca
   assert.equal(next('claude-code'), 'Next stage: Agent(subagent_type: "workflow_stage", prompt: "harness-stage: bounded-context")');
   assert.equal(next('codex'), 'Next stage: node .harness/scripts/harness-native-stage.mjs launch --stage-id bounded-context');
   const approval = finishNext({ status: 'completed', code: 'OK', stageId: 'bounded-context', executionId: 'e-1', provider: 'claude-code' });
-  assert.match(approval, /Show the user result\.summary \(the approval summary\) and the requirements\.md path from artifacts, in Korean; do not open the document yourself/);
-  assert.match(approval, /Only after the user's own approval, pass their reply verbatim in the Agent prompt as "harness-stage: answer"/);
-  assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: 'event-storming', executionId: 'e-1', provider: 'claude-code' }), /harness-stage: answer\n<the user's reply verbatim>/);
+  assert.match(approval, /Show the user result\.summary \(the approval summary\) and the requirements\.md path from artifacts, in Korean\. Open requirements\.md once and list its business rules \(INV-\*\) and exceptions \(EX-\*\) in the approval request under the heading "승인할 규칙"/);
+  assert.match(approval, /Only after the user's own approval, in any wording, pass their reply verbatim as an approval: Agent\(subagent_type: "workflow_stage", prompt: "harness-stage: approve\n/);
+  assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: 'event-storming', executionId: 'e-1', provider: 'claude-code' }), /harness-stage: answer\n[\s\S]*"question_id"[\s\S]*<the user's reply verbatim>/);
 });
 
 // ---- a worker that ended on an API error ------------------------------------------------------------------------------------
@@ -488,4 +496,22 @@ test('the context names plain re-dispatch for a stage whose worker ended on an A
   assert.equal(at('other-session'), null, 'no projects directory is known without the hook event');
   assert.equal(at('other-session', { transcriptPath: join(projects, 'x.jsonl') })?.record.agent_id, 'agent-ctx');
   assert.equal(at(flow.session, { transcriptPath: join(projects, 'x.jsonl') }), null, 'the dispatching session keeps waiting for its Agent call');
+});
+
+test('while a design approval waits, resume asks for it and the dispatch hook refuses the unapproved next stage', async (t) => {
+  const flow = await claudeFlow(t);
+  const { workspace, hooks, invoke, runStage, specPath } = flow;
+  const analysis = specPath('stakeholder-analysis.md');
+  await runStage('stakeholder-analysis', SKIPPED(analysis));
+  const skipped = { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false };
+  for (const stage of PRE_SPEC_STAGES.slice(1, PRE_SPEC_STAGES.indexOf('domain-model') + 1)) await runStage(stage, skipped);
+
+  const { next } = invoke(workspace, 'harness-context.mjs', []);
+  assert.match(next, /Do not start aggregate-design yet/);
+  assert.match(next, /harness-stage: approve/);
+
+  const call = hooks.admit('harness-stage: aggregate-design');
+  assert.equal(call.decision, 'deny', JSON.stringify(call.out));
+  assert.match(call.reason, /Design approval answer was not recorded/);
+  assert.equal((await flow.state()).stages['aggregate-design'], undefined, 'nothing was started');
 });

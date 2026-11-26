@@ -4,11 +4,12 @@ import { AGENT_TIERS } from './agent-config.mjs';
 
 // A skill declares how it runs in the frontmatter of its own document, which is the only place that says so:
 //   model_tier: <high_performance|implementation|execution|low_performance>   a sub-agent skill and the setup tier it uses
+//   claude_code_model_tier: <tier>                                              optional, with model_tier: the Claude Code tier instead
 //   main_session: true                                                          a skill that only runs in the user's session
 // The model and effort come from the setup tier (agents.<provider>.<tier>_*); a skill never names a model itself.
 export const SKILL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
-const DECLARATION_LINE = /^(model_tier|main_session):[ \t]*(.*?)[ \t]*$/;
+const DECLARATION_LINE = /^(model_tier|claude_code_model_tier|main_session):[ \t]*(.*?)[ \t]*$/;
 
 const INTERNAL_ROOT = '.harness/internal-skills';
 const PUBLIC_ROOTS = ['.agents/skills', '.codex/skills', '.claude/skills'];
@@ -27,12 +28,15 @@ export function parseSkillDeclaration(text) {
     if (Object.hasOwn(found, match[1])) throw new Error(`${match[1]} is declared twice`);
     found[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2');
   }
-  const tier = found.model_tier, mainSession = found.main_session;
+  const tier = found.model_tier, claudeTier = found.claude_code_model_tier, mainSession = found.main_session;
+  if (claudeTier !== undefined && tier === undefined) throw new Error('claude_code_model_tier requires model_tier');
   if (tier === undefined && mainSession === undefined) return null;
   if (tier !== undefined && mainSession !== undefined) throw new Error('model_tier and main_session cannot both be declared');
   if (tier !== undefined) {
     if (!AGENT_TIERS.includes(tier)) throw new Error(`model_tier must be one of ${AGENT_TIERS.join(', ')}, not "${tier}"`);
-    return { model_tier: tier };
+    if (claudeTier === undefined) return { model_tier: tier };
+    if (!AGENT_TIERS.includes(claudeTier)) throw new Error(`claude_code_model_tier must be one of ${AGENT_TIERS.join(', ')}, not "${claudeTier}"`);
+    return { model_tier: tier, claude_code_model_tier: claudeTier };
   }
   if (mainSession !== 'true') throw new Error(`main_session must be true, not "${mainSession}"`);
   return { main_session: true };

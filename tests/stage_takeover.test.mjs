@@ -52,7 +52,9 @@ async function interruptedWorkflow(t, { stage = STAGE, before = null, bind = tru
   };
   const analysis = flow.specPath('stakeholder-analysis.md');
 
-  let launched = ok(run(NATIVE, ['launch', '--stage-id', stage], old));
+  // The last design stage starts only with the user's approval of its predecessor.
+  const approval = stage === 'context-boundary' ? await flow.approveDesign() : [];
+  let launched = ok(run(NATIVE, ['launch', '--stage-id', stage, ...approval], old));
   let answers;
   if (asked) {
     ok(printed(workspace, launched.next.bind.replace('<agent_id>', 'analysis-agent-1'), old));
@@ -427,7 +429,7 @@ test('installed consumer: the last tactical design stage is taken over, and spec
   const ready = run(PREPARE, ['--verbose', '--stage-id', 'spec-me']);
   assert.equal(ready.status, 1);
   assert.match(ready.stderr, /spec-me has been removed/);
-  const implementation = ok(run(PREPARE, ['--verbose', '--stage-id', 'tactical-technology']));
+  const implementation = ok(run(PREPARE, ['--verbose', '--stage-id', 'tactical-technology', ...await f.approveDesign()]));
   assert.equal(implementation.input.context.stage_id, 'tactical-technology');
   assert.equal(treeGit('rev-parse', 'HEAD').trim(), head, 'the takeover committed nothing');
   assert.equal(treeGit('status', '--porcelain', '--untracked-files=all').trim(), '', 'Harness-owned state stays out of Git');
