@@ -164,8 +164,9 @@ test('installed consumer: a blocked design decision stage reopens its owner forw
   await submitStage(reopened, { files: { [api]: `${apiBefore}\`DELETE /session\` 로그아웃 (application-service: LogoutUseCase)\n` }, summary: '로그아웃·세션 조회 계약 보강' });
   const ownerDone = invoke(workspace, 'harness-native-stage.mjs', ['finish', ...reopened.base]);
   assert.equal(ownerDone.status, 'completed');
-  assert.match(ownerDone.next, /Stale stages remain: re-run them in order, next .*--stage-id tactical-data/);
-  assert.match(ownerDone.next, /Do not ask the user/);
+  assert.match(ownerDone.next, /ask for approval and wait/);
+  assert.match(ownerDone.next, /earliest stale stage first/);
+  assert.match(ownerDone.next, /wait/);
   assert.match(treeGit('show', '--', api), /DELETE \/session/, 'the owner commit holds the forward edit');
   // The old block can no longer be used to reopen again, and the downstream stages stay in order.
   refused(prepare('--stage-id', 'tactical-api', '--reopen-for', blockedId), /not its latest blocked/);

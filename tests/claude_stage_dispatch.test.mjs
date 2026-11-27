@@ -177,7 +177,9 @@ test('one Agent call runs a stage: the hooks launch, bind, record the final mess
   assert.equal(envelope.execution_id, id);
   assert.ok(envelope.summary.length <= 6, 'the summary is at most six lines');
   assert.deepEqual(envelope.artifacts, [analysis]);
-  assert.match(envelope.next, /^Next stage: Agent\(subagent_type: "workflow_stage", prompt: "harness-stage: subdomain-candidates"\)$/);
+  assert.match(envelope.next, /Show result\.summary and all artifact paths in Korean/);
+  assert.match(envelope.next, /ask for approval and wait/);
+  assert.match(envelope.next, /harness-stage: approve/);
   for (const key of Object.keys(envelope)) assert.ok(['status', 'code', 'stage_id', 'execution_id', 'summary', 'artifacts', 'next'].includes(key), key);
   assert.equal(output.status, 'completed', 'the rest of the Agent response is kept');
   assert.equal(output.usage.input_tokens, 1);
@@ -356,8 +358,10 @@ test('a Claude orchestrator is told once to dispatch launch commands as Agent ca
   assert.deepEqual(withDispatchHint(refusal, 'codex'), refusal, 'Codex keeps its launch commands');
   assert.equal(withDispatchHint({ error: 'x', next: ['wait'] }, 'claude-code').dispatch, undefined, 'only an output that names a launch gets the hint');
   const next = (provider) => finishNext({ status: 'completed', code: 'OK', stageId: 'requirements-fix', executionId: 'e-1', provider });
-  assert.equal(next('claude-code'), 'Next stage: Agent(subagent_type: "workflow_stage", prompt: "harness-stage: bounded-context")');
-  assert.equal(next('codex'), 'Next stage: node .harness/scripts/harness-native-stage.mjs launch --stage-id bounded-context');
+  assert.match(next('claude-code'), /ask for approval and wait/);
+  assert.match(next('claude-code'), /harness-stage: approve/);
+  assert.match(next('codex'), /ask for approval and wait/);
+  assert.match(next('codex'), /harness-native-stage\.mjs answer --text .*--intent approve/);
   const approval = finishNext({ status: 'completed', code: 'OK', stageId: 'bounded-context', executionId: 'e-1', provider: 'claude-code' });
   assert.match(approval, /Show the user result\.summary \(the approval summary\) and the requirements\.md path from artifacts, in Korean\. Open requirements\.md once and list its business rules \(INV-\*\) and exceptions \(EX-\*\) in the approval request under the heading "승인할 규칙"/);
   assert.match(approval, /Only after the user's own approval, in any wording, pass their reply verbatim as an approval: Agent\(subagent_type: "workflow_stage", prompt: "harness-stage: approve\n/);

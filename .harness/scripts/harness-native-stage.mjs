@@ -279,6 +279,7 @@ async function withAnswerText(args) {
   if (target.error) throw refuse(target.error, [contextCommand()]);
   if (named && target.stageId && !target.revision && named !== target.stageId) throw refuse(`${target.stageId} is the stage waiting for this reply, not ${named}.`, [`Pass the reply without naming a stage: node .harness/scripts/${ANSWER_USAGE}`]);
   if (target.clarification) return { result: { status: 'clarification_needed', stage_id: target.stageId, message: target.clarification, ...(target.revisable_stages ? { revisable_stages: target.revisable_stages } : {}), next: 'Judge the user\'s meaning yourself and declare it (choices, approve, recommended or revise <stage-id>) with their words verbatim; if unsure ask the user in Korean. Nothing was recorded or started.' } };
+  if (target.acknowledged) return { result: { status: 'approved', stage_id: target.stageId, next: target.next } };
   return { args: [...target.args, ...(stageIndex < 0 ? rest : rest.filter((_, position) => position !== stageIndex && position !== stageIndex + 1))], ...(target.notice ? { notice: target.notice } : {}) };
 }
 

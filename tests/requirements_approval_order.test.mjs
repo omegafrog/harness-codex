@@ -68,7 +68,8 @@ test('only the completion of bounded-context asks for requirements approval', ()
     assert.doesNotMatch(next(stage), /--requirements-approved/);
     assert.match(finishNext({ status: 'action_required', code: 'USER_DECISION_REQUIRED', stageId: stage, executionId: `${stage}-1` }), /Show result\.questions to the user in Korean/);
   }
-  assert.match(next('requirements-fix'), /Next stage: .*--stage-id bounded-context/, 'after the last fill the next step is bounded-context, not an approval');
+  assert.match(next('requirements-fix'), /ask for approval and wait/);
+  assert.match(next('requirements-fix'), /harness-native-stage\.mjs answer --text .*--intent approve/);
   const ask = next('bounded-context');
   assert.match(ask, ASK);
   assert.match(ask, /--requirements-approved true --approval-answer/);

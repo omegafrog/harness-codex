@@ -73,11 +73,37 @@ test('a completed design stage asks for approval and a refusal explains how to g
       assert.match(next, /result\.summary and the artifact paths/);
       assert.match(next, /확인할 결정·해석/);
       assert.match(next, provider === 'codex' ? /--user-revision true/ : /harness-stage: revise/);
-      assert.doesNotMatch(finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1`, provider, designApprovalNeeded: false }), /Do not start/);
+      const genericGate = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1`, provider, designApprovalNeeded: false });
+      assert.doesNotMatch(genericGate, new RegExp(`Do not start ${target} yet`));
+      assert.match(genericGate, /ask for approval and wait/);
     }
   }
   const explained = explainError(Object.assign(new Error('Design approval answer was not recorded: no reply'), { design_stage: 'domain-service' }), { stage: 'domain-service' });
   assert.match(JSON.stringify(explained), /--stage-id domain-service[^"]*--design-approved true/);
+});
+
+test('every ordinary completed stage presents its artifacts and waits for approval before routing onward', () => {
+  for (const [stageId, nextStage] of [['stakeholder-analysis', 'subdomain-candidates'], ['tactical-api', 'tactical-data']]) {
+    const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1` });
+    assert.match(next, /result\.summary and all artifact paths/);
+    assert.match(next, /ask for approval and wait/);
+    assert.match(next, /do not start another stage before approval/);
+    assert.match(next, /answer --text .*--intent approve/);
+    assert.ok(nextStage);
+  }
+  for (const stageId of ['tracker-publish', 'tactical-code']) {
+    const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1` });
+    assert.match(next, /result\.summary and all artifact paths/);
+    assert.match(next, /do not take another ticket or run completion before approval/);
+  }
+});
+
+test('a generic stage approval routes to its next stage', () => {
+  const stages = { 'stakeholder-analysis': done('stakeholder-analysis-1', 10) };
+  const routed = resolveApproval({ current_stage: 'stakeholder-analysis', stages }, '그 결과로 진행해');
+  assert.deepEqual(routed, { stageId: 'subdomain-candidates', args: ['--stage-id', 'subdomain-candidates'], approval: 'stage' });
+  const stale = { ...stages, 'ubiquitous-language': done('ubiquitous-language-1', 11, { stale: { owner_stage: 'stakeholder-analysis', blocked_stage: 'bounded-context' } }) };
+  assert.equal(resolveApproval({ current_stage: 'stakeholder-analysis', stages: stale }, '승인').stageId, 'ubiquitous-language');
 });
 
 test('after a requirements reopen the stale design stages are approved again one by one through application-service', async (t) => {

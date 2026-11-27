@@ -2,7 +2,8 @@
 // revise) into launch arguments. `answer --text` and `launch --answer-text` call this. The runner never interprets the
 // words: it checks only that a matching gate or open question exists and the declared ids are valid; approval quotes are
 // checked downstream against the user's real messages.
-import { pendingDesignApproval, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES } from './worktree-stages.mjs';
+import { pendingDesignApproval, PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, REWIND_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { answerConflictMessage } from './questions.mjs';
@@ -100,6 +101,31 @@ export function resolveApproval(state, text, { root = null } = {}) {
   if (done('to-ticket') && !started('tracker-publish')) return { stageId: 'tracker-publish', args: ['--stage-id', 'tracker-publish', '--publication-approved', 'true', '--approval-answer', quoted], approval: 'publication' };
   const design = pendingDesignApproval(stages);
   if (design) return { stageId: design, args: ['--stage-id', design, '--design-approved', 'true', '--approval-answer', quoted], approval: 'design' };
+  const current = state.current_stage;
+  if (done(current)) {
+    const staleNext = REWIND_STAGES.find((id) => stages[id]?.stale);
+    if (staleNext) return { stageId: staleNext, args: ['--stage-id', staleNext], approval: 'stage' };
+    const requirementIndex = PRE_SPEC_STAGES.indexOf(current);
+    if (requirementIndex >= 0) {
+      const next = PRE_SPEC_STAGES[requirementIndex + 1] || TACTICAL_IMPLEMENTATION_STAGES[0];
+      if (next) return { stageId: next, args: ['--stage-id', next], approval: 'stage' };
+    }
+    const implementationIndex = TACTICAL_IMPLEMENTATION_STAGES.indexOf(current);
+    if (implementationIndex >= 0) {
+      if (['tracker-publish', 'tactical-code'].includes(current)) {
+        if (!root) return { error: 'The current workspace is required to find the next ready ticket.' };
+        try {
+          const context = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-context.mjs'), '--verbose'], { cwd: root, encoding: 'utf8' }));
+          const ticket = context.ready_tickets?.[0]?.plan_id;
+          if (ticket) return { stageId: 'tactical-code', args: ['--stage-id', 'tactical-code', '--plan', ticket], approval: 'stage' };
+          return { acknowledged: true, stageId: current, next: 'Approval received. No ready ticket remains; inspect the current workflow context and run its completion gate when every ticket is complete.' };
+        } catch (error) { return { error: `Could not determine the next workflow step after approval: ${error.message}` }; }
+      }
+      const next = TACTICAL_IMPLEMENTATION_STAGES[implementationIndex + 1];
+      if (next) return { stageId: next, args: ['--stage-id', next], approval: 'stage' };
+      return { acknowledged: true, stageId: current, next: 'Approval received. Inspect the current workflow context and run its completion gate.' };
+    }
+  }
   return { error: 'No stage is waiting for a user answer or approval. Run harness-context.mjs for the current state.' };
 }
 

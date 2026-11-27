@@ -158,7 +158,9 @@ test('the stage commands print only what the next step needs, and --verbose prin
   assert.deepEqual(Object.keys(finished.result), ['summary', 'artifacts']);
   assert.equal(finished.result.summary, SKIP(analysis));
   assert.ok(bytes(finishOutput.stdout) <= 700, `finish is ${bytes(finishOutput.stdout)} bytes`);
-  assert.match(finished.next, /^Next stage: .*launch --stage-id ubiquitous-language$/, 'the next stage is named, so the orchestrator reads no workflow map');
+  assert.match(finished.next, /Show result\.summary and all artifact paths in Korean/);
+  assert.match(finished.next, /ask for approval and wait/);
+  assert.match(finished.next, /harness-native-stage\.mjs answer --text .*--intent approve/);
 
   // The legacy start output stays available: the workspace, the sandbox and the whole binding.
   const second = await beginStage('ubiquitous-language');

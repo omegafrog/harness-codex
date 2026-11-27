@@ -285,12 +285,10 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
     const change = provider === 'claude-code' ? 'pass their exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise <owning stage-id>\\n<verbatim>")' : call(stageId, "--user-revision true --feedback '<the user\'s exact words>'");
     return `${stageId} is complete. Do not start ${target} yet: it needs the user's approval of this result. Show the user result.summary and the artifact paths from artifacts, in Korean. Open this stage's section of the design document once and list every decision and interpretation it asks the user to check under the heading "확인할 결정·해석", one line each (say so if there is none). Ask whether to approve. If the user's reply carries a condition or leaves a stated undecided item open, confirm it before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts ${target} with --design-approved true --approval-answer). A change request is not approval: ${change}.`;
   }
-  if (status === 'completed' && staleOrder?.length) return `${stageId} is complete. Stale stages remain: re-run them in order, next ${call(staleOrder[0])}. Do not ask the user for approval of this stage.`;
   if (status === 'completed' && stageId === 'to-ticket') return `Show the user result.summary (the plan set summary) and the plan paths from artifacts, in Korean, and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts tracker-publish with --publication-approved true --approval-answer).`;
-  if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Take the next ready ticket from ready_tickets in ${CONTEXT} and run ${call('tactical-code', '--plan <ticket-id>')}; when no ticket is left, run the workflow completion gate.`;
+  if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Show result.summary and all artifact paths in Korean, including the ticket outcome when available. Ask for approval and wait; do not take another ticket or run completion before approval. Route approval with ${answerCall(provider, 'approve')}, which selects the next ticket or completion step.`;
   if (status === 'completed') {
-    const after = stageAfter(stageId);
-    return after ? `Next stage: ${call(after)}` : 'Continue with the next stage (orchestrator skill).';
+    return `Show result.summary and all artifact paths in Korean. Ask for approval and wait; do not start another stage before approval. Route approval with ${answerCall(provider, 'approve')}.${staleOrder?.length ? ' It routes to the earliest stale stage first.' : ''} A change request is not approval; route it to the owning stage with the user's exact words.`;
   }
   if (code === 'USER_DECISION_REQUIRED') return `Show result.questions to the user in Korean (title, context lines, every option's label and effect, mark the recommended one) without opening any file; wait for the reply, then pass it: ${answerCall(provider)} with one declared choice per answered question (option_id, or text for their own words), ${answerCall(provider, 'recommended')} when the user takes the recommended option for every open question. ${REPLY_INTENT_NOTE}`;
   if (code === 'REVIEW_REQUIRED') return `Run the independent review named in result.review_request, then ${call(stageId, "--feedback '<review result>'")}`;
@@ -527,7 +525,6 @@ const stageAfter = (previous) => {
   const flow = TACTICAL_IMPLEMENTATION_STAGES.indexOf(previous);
   return flow >= 0 ? TACTICAL_IMPLEMENTATION_STAGES[flow + 1] ?? null : null;
 };
-
 // First match wins. Every explanation returns `why` and either `next` (exact commands or steps) or `decision` (what the
 // user must decide); the fallback keeps that true for errors this table does not know.
 const RULES = [
