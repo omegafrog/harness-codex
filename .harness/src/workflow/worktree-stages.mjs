@@ -75,7 +75,7 @@ export const REQUIREMENTS_STAGES = Object.freeze([
   WORKTREE_STAGE.REQUIREMENTS_FIX,
   WORKTREE_STAGE.BOUNDED_CONTEXT,
 ]);
-export const REQUIREMENTS_REVISION_STAGES = Object.freeze(REQUIREMENTS_STAGES.slice(1).filter((id) => ![WORKTREE_STAGE.UBIQUITOUS_LANGUAGE, WORKTREE_STAGE.EVENT_STORMING].includes(id)));
+export const REQUIREMENTS_REVISION_STAGES = Object.freeze(REQUIREMENTS_STAGES.filter((id) => ![WORKTREE_STAGE.UBIQUITOUS_LANGUAGE, WORKTREE_STAGE.EVENT_STORMING].includes(id)));
 
 // The plan set document that the tactical design stages fill, one section each. It is named for the flow, not for the first
 // stage: a user instruction about the `domain-model` stage then cannot read as an instruction about a file.
