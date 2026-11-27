@@ -3,7 +3,7 @@
 // candidate the user is asked to adopt. The check holds only what can be read mechanically:
 // - the participant table lists the requester (`REQUESTER`);
 // - the requested-feature table (`요청 기능` / `요청 문구` columns) has a row for at least one feature, each quoting the
-//   request verbatim and recorded as `확정`;
+//   request or an explicitly attached text source and recorded as `확정`; source quotes cite their path and line;
 // - an observation moved out of scope quotes its request anchor (`요청 앵커`), and that anchor is NOT in the request.
 //   A persona candidate whose anchor is in the request is asked as a candidate; no other reason excludes it.
 // - the `미확정 사실` table (`ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거`) holds each fact that changes behavior and is not settled:
@@ -17,10 +17,11 @@
 //   when the stage completes (DEFERRED_QUESTION_PENDING). A row that was 보류(후속) in the published document of the previous execution may
 //   not vanish or be settled without asking: it is `채택…`/`기각`/`보류` whose 결정 출처 cites an answer recorded for a question about it, or
 //   `불필요 — <question id>: <chosen option> 때문에 …` citing the recorded answer that makes it moot (DEFERRED_QUESTION_DROPPED).
-// Contextual judgement (which phrases are features, which candidates restate the request) belongs to the stage GUIDE.
+// Contextual judgement (which phrases are features, which candidates restate the request, and what to decompose from a
+// cited source) belongs to the stage GUIDE.
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, join, normalize } from 'node:path';
+import { lstat, readFile } from 'node:fs/promises';
+import { isAbsolute, join, normalize, resolve } from 'node:path';
 import { clean, parseTables, planSetDocument, stakeholderAnalysisSkipped } from './domain-model-gate.mjs';
 import { WORKTREE_STAGE } from './worktree-stages.mjs';
 
@@ -42,6 +43,39 @@ export const deferringCandidates = (analysis) => parseTables(analysis).filter(is
   .filter((row) => DEFERRING_STATEMENT.test(clean(row['내용'])) && !/^보류\(후속\)|병합/.test(clean(row['결정'])));
 const settledAccessRow = (row) => clean(row['처리']) === '확정' && clean(row['구분']) === ACCESS_KIND;
 const error = (code, message) => ({ code, message, owner_stage: STAGE });
+
+const ATTACHED_TEXT_PATH = /(?:첨부 파일|첨부 자료|참고 파일|참고 자료|참조 파일|기준 파일)\s*[:：]\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`|([^\s<>]+))/g;
+export function requestSourcePaths(request) {
+  const paths = new Set();
+  for (const match of String(request ?? '').matchAll(ATTACHED_TEXT_PATH)) {
+    const path = match.slice(1).find(Boolean)?.trim();
+    if (path && isAbsolute(path) && /\.(?:md|markdown|txt|rst)$/i.test(path)) paths.add(resolve(path));
+  }
+  return [...paths];
+}
+
+export async function readRequestSourceMaterials(request) {
+  const materials = [], unavailable = [];
+  for (const path of requestSourcePaths(request)) {
+    try {
+      const info = await lstat(path);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 10 * 1024 * 1024) throw new Error('not a regular text file under 10 MiB');
+      materials.push({ path, text: await readFile(path, 'utf8') });
+    } catch (error) { unavailable.push({ path, reason: error.message }); }
+  }
+  return { materials, unavailable };
+}
+
+function sourceMaterialAnchor(phrase, materials) {
+  for (const material of materials) {
+    const lines = material.text.split(/\r?\n/);
+    const index = lines.findIndex((line) => line.includes(phrase));
+    if (index >= 0) return { path: material.path, line: index + 1 };
+  }
+  return null;
+}
+
+const broadGoal = (feature) => /(?:개선|고도화|최적화|강화|개편|혁신|구축|개발|업그레이드)$/.test(clean(feature));
 
 // ---- deferred rows -----------------------------------------------------------------------------------------------------------
 export const DEFERRED = /^보류\(후속\)/;
@@ -123,7 +157,7 @@ export const SCENARIO_LINE = /^\s*[-*]\s*추천 조합 시나리오\s*:[ \t]*(\S
 export const hasRecommendedScenario = (analysis) => SCENARIO_LINE.test(String(analysis ?? ''));
 
 // `legacyScenario` exempts a resumed analysis written before the `추천 조합 시나리오` line existed.
-export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, legacyScenario = false, legacyReflection = false, legacyDeferred = false, requirements = null, root = null }) {
+export function checkStakeholderAnalysis({ request, analysis, status, questions = 0, legacy = false, legacyCandidates = false, legacyScenario = false, legacyReflection = false, legacyDeferred = false, requirements = null, root = null, sourceMaterials = [] }) {
   if (stakeholderAnalysisSkipped(analysis)) return { ok: true, skipped: true, errors: [] };
   const text = String(request ?? '');
   const tables = parseTables(analysis);
@@ -133,11 +167,23 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     errors.push(error('REQUESTER_MISSING', `The participant table has no ${REQUESTER_ID} row. The requester is always a participant: the features the request names are the requester's settled requirements.`));
   }
   const features = tables.filter((table) => table.header.includes('요청 기능') && table.header.includes('요청 문구')).flatMap((table) => table.rows);
-  if (!features.length) errors.push(error('REQUESTED_FEATURES_MISSING', 'The requested-feature table (요청 기능 | 요청 문구 | 제안자 | 결정 | 출처) is missing or empty. List every feature the request names, quoted verbatim, as a settled requirement of REQUESTER.'));
+  if (!features.length) errors.push(error('REQUESTED_FEATURES_MISSING', 'The requested-feature table (요청 기능 | 요청 문구 | 제안자 | 결정 | 출처) is missing or empty. Extract each concrete capability the requester asks for, using exact request or attached-source quotes as anchors.'));
+  const materialAnchors = [];
   for (const row of features) {
     const phrase = unquote(row['요청 문구']);
-    if (!phrase || !text.includes(phrase)) errors.push(error('REQUESTED_FEATURE_NOT_QUOTED', `Requested feature "${clean(row['요청 기능'])}" quotes "${phrase}", which is not an exact substring of the request.`));
+    const material = phrase && !text.includes(phrase) ? sourceMaterialAnchor(phrase, sourceMaterials) : null;
+    if (!phrase || (!text.includes(phrase) && !material)) errors.push(error('REQUESTED_FEATURE_NOT_QUOTED', `Requested feature "${clean(row['요청 기능'])}" quotes "${phrase}", which is not an exact substring of the request or an attached text source.`));
+    if (material) {
+      materialAnchors.push({ row, ...material });
+      const citation = clean(row['출처']);
+      if (!citation.includes(material.path) || !citation.includes(`:${material.line}`)) errors.push(error('REQUESTED_FEATURE_SOURCE_MISSING', `Requested feature "${clean(row['요청 기능'])}" is anchored in attached material at ${material.path}:${material.line}; cite that exact path and line in 출처.`));
+    }
     if (row['결정'] !== undefined && clean(row['결정']) !== '확정') errors.push(error('REQUESTED_FEATURE_ASKED', `Requested feature "${clean(row['요청 기능'])}" is recorded as "${clean(row['결정'])}". A feature the request names is settled by the requester (결정: 확정) and is never asked for adoption or scope.`));
+  }
+  if (sourceMaterials.length) {
+    const structuredSource = sourceMaterials.some(({ text: content }) => [...content.matchAll(/^\s*#{1,6}\s+.+$/gm)].length >= 2 || content.split(/\r?\n/).filter((line) => /^\s*[-*+]\s+\S/.test(line)).length >= 2);
+    if (structuredSource && features.length === 1 && broadGoal(features[0]['요청 기능'])) errors.push(error('REQUESTED_FEATURES_UNDECOMPOSED', `"${clean(features[0]['요청 기능'])}" is only a broad goal, while the attached source has multiple sections or items. Keep the goal in the request context, split its concrete capabilities into separate REQUESTER / 확정 rows, and anchor each row to an exact quote with the attached path and line.`));
+    if (structuredSource && !materialAnchors.length) errors.push(error('REQUESTED_FEATURES_NOT_EXTRACTED', 'The request names attached source material with multiple sections or items, but no requested feature is anchored in it. Extract concrete capabilities from that source before asking about unresolved content.'));
   }
   if (!legacyCandidates) {
     for (const row of deferringCandidates(analysis)) {
@@ -223,6 +269,7 @@ function openFactBasisProblem({ basis, request, root }) {
 export async function evaluateStakeholderAnalysisGate({ root, input, envelope, draftExecutionId }) {
   const planSetId = input?.context?.plan_set_id;
   if (input?.skill !== STAGE || !planSetId || !['completed', 'action_required'].includes(envelope?.status)) return null;
+  const { materials: sourceMaterials } = await readRequestSourceMaterials(input.scope);
   const analysis = await planSetDocument(root, planSetId, 'stakeholder-analysis.md', draftExecutionId);
   if (analysis.text === null) return { stage: STAGE, ok: false, errors: [error('DOCUMENT_MISSING', `${analysis.path} does not exist; write it at this exact path (resolve it with harness-spec-path.mjs) before the stage returns.`)] };
   // Discriminator: every resume (answer, feedback, reopen, revision) of an earlier execution carries `context.previous_result_ref`.
@@ -251,12 +298,12 @@ export async function evaluateStakeholderAnalysisGate({ root, input, envelope, d
     }
     legacyReflection = earlier && publishedRequirements.text !== null && (openFactRows(published.text) ?? []).some((row) => settledAccessRow(row) && !publishedRequirements.text.includes(clean(row.ID)));
   }
-  const checked = checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, legacyScenario, legacyReflection, legacyDeferred, requirements: requirements.text, root });
+  const checked = checkStakeholderAnalysis({ request: input.scope, analysis: analysis.text, status: envelope.status, questions: envelope.result?.questions?.length ?? 0, legacy, legacyCandidates, legacyScenario, legacyReflection, legacyDeferred, requirements: requirements.text, root, sourceMaterials });
   const errors = [...checked.errors, ...resolution];
   return { stage: STAGE, ...checked, ok: errors.length === 0, errors };
 }
 
-export const stakeholderAnalysisFailureInstruction = (verdict) => `The runner checked stakeholder-analysis.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it repairs stakeholder-analysis.md (and its questions when a candidate moves back into the candidate table), rewrites its output file, then run finish again. Never ask the user whether a feature the request names is in scope. Ask each 미정 row of "미확정 사실" together with the candidate questions instead of recording it as an observation.`;
+export const stakeholderAnalysisFailureInstruction = (verdict) => `The runner checked stakeholder-analysis.md for ${verdict.stage} and it failed. Nothing was committed or recorded, and the stage is still running. Return these errors to the same subagent so it repairs stakeholder-analysis.md (and its questions when a candidate moves back into the candidate table), rewrites its output file, then run finish again. Never ask the user whether a feature the request names is in scope. When the request cites attached reference material, extract concrete capabilities from it before drafting the requested-feature table; cite attached anchors as <absolute path>:<line>. A broad goal such as "RAG 개선" is not a substitute for the capabilities described by its source. Ask each 미정 row of "미확정 사실" together with the candidate questions instead of recording it as an observation.`;
 
 export class StakeholderAnalysisError extends Error {
   constructor(verdict) {

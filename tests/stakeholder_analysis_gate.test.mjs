@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkStakeholderAnalysis, evaluateStakeholderAnalysisGate } from '../.harness/src/workflow/stakeholder-analysis-gate.mjs';
+import { checkStakeholderAnalysis, evaluateStakeholderAnalysisGate, readRequestSourceMaterials } from '../.harness/src/workflow/stakeholder-analysis-gate.mjs';
 import { checkRequirementsDocument, evaluateRequirementsDocumentGate } from '../.harness/src/workflow/requirements-document-gate.mjs';
 import { finishNext } from '../.harness/src/workflow/stage-cli.mjs';
 
@@ -22,6 +22,22 @@ test('a new analysis needs the 미확정 사실 table with an 이용 조건 row'
   assert.deepEqual(codes(doc(row('OPEN-01', '이용 조건', '해당 없음', '화면이 없는 배치 작업이다')), { status: 'completed' }), []);
   assert.deepEqual(codes(doc(row('OPEN-01', '이용 조건', '해당 없음')), { status: 'completed' }), ['OPEN_FACT_INVALID']);
   assert.ok(checkStakeholderAnalysis({ request, analysis: '# 분석\n\n- 판정: 생략\n' }).ok, 'a skipped analysis is not checked');
+});
+
+test('attached reference capabilities are separate requester features with exact line citations', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'stakeholder-source-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'RAG_학습_전체_정리.md');
+  const source = '# 검색 흐름\n- 질문을 하위 질의로 나누고 관련 chunk를 검색한다.\n\n# 출처 표시\n- 검색 결과에 원본 문서명과 문단 위치를 보여 준다.\n';
+  await writeFile(path, source);
+  const request = `RAG를 개선할 거야\n첨부 파일: ${path}`;
+  const { materials } = await readRequestSourceMaterials(request);
+  const features = `### 요청 기능\n\n| 요청 기능 | 요청 문구 | 제안자 | 결정 | 출처 | 내용 질문 |\n|---|---|---|---|---|---|\n| 하위 질의 기반 chunk 검색 | "질문을 하위 질의로 나누고 관련 chunk를 검색한다." | REQUESTER | 확정 | 첨부 파일 ${path}:2 | - |\n| 원본 위치 표시 | "검색 결과에 원본 문서명과 문단 위치를 보여 준다." | REQUESTER | 확정 | 첨부 파일 ${path}:5 | - |\n`;
+  const analysis = `# 분석\n\n| ID | 구분 | 역할 | 실행 | 선택 근거 |\n|---|---|---|---|---|\n| REQUESTER | 요청자 | 요청자 | 요청 원문 | 요청에 적은 범위의 담당자 |\n\n${features}\n### 미확정 사실\n\n| ID | 구분 | 사실 | 바뀌는 동작 | 처리 | 근거 |\n|---|---|---|---|---|---|\n| OPEN-01 | 이용 조건 | 누가 검색 기능을 쓰는지 | 접근 | 확정 | answers.json q:1 |\n`;
+  assert.equal(materials.length, 1);
+  assert.deepEqual(checkStakeholderAnalysis({ request, analysis, status: 'completed', sourceMaterials: materials }).errors, []);
+  const umbrella = analysis.replace(/\| 하위 질의 기반 chunk 검색[^\n]+\n\| 원본 위치 표시[^\n]+/, `| RAG 개선 | "RAG를 개선할 거야" | REQUESTER | 확정 | 요청 원문 | - |`);
+  assert.ok(checkStakeholderAnalysis({ request, analysis: umbrella, status: 'completed', sourceMaterials: materials }).errors.some(({ code }) => code === 'REQUESTED_FEATURES_UNDECOMPOSED'));
 });
 
 test('처리 and 근거 are validated', () => {

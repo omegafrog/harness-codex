@@ -175,6 +175,8 @@ test('the requester is a stakeholder: requested features are settled, and a pers
   const analysisGuide = await read('.harness/internal-skills/stakeholder-analysis/GUIDE.md');
   assert.match(analysisGuide, /This is the only reason a candidate leaves the candidate table/);
   assert.match(analysisGuide, /`\[제안: 요청자\(REQUESTER\) · 요청 기능: <기능>\]`/);
+  assert.match(analysisGuide, /split it into distinct, observable capabilities or user outcomes/);
+  assert.match(analysisGuide, /do not use the umbrella goal as the only feature/);
 });
 
 test('a BIZ field is written once: a second field of the same name is rejected, placeholders filled in place pass', async () => {
