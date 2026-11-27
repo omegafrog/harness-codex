@@ -438,7 +438,7 @@ export function gateErrorResult({ gate, executionId, stage, errors, instruction,
     next: [
       'Use retry_input as the next input to the same subagent. It carries the persisted feedback_path and the exact gate rejection, including errors and instruction. Ask the subagent to read the feedback file and correct only the owned findings. If an error names an earlier owner_stage, the subagent must return blocked / DEPENDENCY_INCOMPLETE with result.owner_stage and result.dependency_gap pointing at that stage instead of editing its section. The orchestrator then reopens that stage itself (finish prints the command); it does not ask the user.',
       `Then run again: ${nativeCommand('finish', executionId)}`,
-      'If the subagent cannot fix it after a repeat, report the errors to the user and stop; do not edit documents or record completion yourself.',
+      'A repeated gate rejection is another correction cycle, not a reason by itself to stop or ask the user. Have the same subagent re-read the current artifact and gate findings, make every clear correction within its owned section, and resubmit; repeat until the gate passes or the subagent identifies a concrete ambiguity, missing upstream decision, or correction it cannot safely make. Only then return the appropriate USER_DECISION_REQUIRED or DEPENDENCY_INCOMPLETE result with the unresolved finding and evidence. The orchestrator must not edit the artifact or record completion on the subagent\'s behalf.',
     ],
   };
 }
