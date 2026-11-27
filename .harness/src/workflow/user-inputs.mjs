@@ -9,10 +9,9 @@ import { recheckRequirementsBeforeApproval } from './requirements-document-gate.
 
 export { approvalRefusal, describeReplySearch, summarizeReplySearch } from './approval-search.mjs';
 
-// Approval evidence is read from the provider's own transcript, never from an assistant-written argument. Only a message
-// the user sent as an orchestrator request (`$orchestrator <reply>`, `/orchestrator <reply>`) or as a reply to a form this
-// conversation asked counts; with allowPlainReply (publication on Codex) any user message counts. The words are never judged:
-// the orchestrator decides what they mean. The result also says what was searched and why the closest candidates failed.
+// Approval evidence is read from the provider's owner transcript, never from an assistant-written argument. Any actual user
+// message after the gate (or a reply to a form this conversation asked) can carry approval; the orchestrator classifies its
+// meaning and passes the exact user wording. The transcript check proves authorship, timing and workspace, not phrase shape.
 export async function userSaidAfter(options) { return (await inspectUserReply(options)).matched; }
 
 export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:00Z', until = null, sessionId = null, provider = null, allowHistoricalOwner = false, allowPlainReply = false }) {
@@ -85,7 +84,7 @@ export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:0
             if (!item.text.trim().startsWith('<send_user_message_question_reply>')) {
               const request = orchestratorRequest(item.text);
               if (request && !isHarnessUpdateRequest(request)) texts.push(request);
-              else if (allowPlainReply && !request) texts.push(item.text);
+              else if (!request) texts.push(item.text);
               continue;
             }
             try {
@@ -105,6 +104,7 @@ export async function inspectUserReply({ root, text, since = '1970-01-01T00:00:0
         const args = content.match(/<command-args>([\s\S]*?)<\/command-args>/);
         const request = command ? (command[1] === '/orchestrator' ? args?.[1] : null) : orchestratorRequest(content);
         if (request && !isHarnessUpdateRequest(request)) texts = [request];
+        else if (!command && !request && !isHarnessUpdateRequest(content)) texts = [content];
       }
       else if (Array.isArray(content) && content.some((item) => item.type === 'tool_result' && calls.has(item.tool_use_id) && !item.is_error)) texts = Object.values(row.toolUseResult?.answers || {}).filter((item) => typeof item === 'string');
     }
@@ -125,7 +125,6 @@ function surveyTranscript({ rows, provider, sessionId, workspace, wanted, since,
     if (here && inWindow) counts[form === 'orchestrator_request' ? 'orchestrator_requests' : form === 'form_reply' ? 'form_replies' : 'plain_user_messages'] += 1;
     if (text.trim() !== wanted) return;
     const problems = [
-      form === 'plain_user_message' && !(allowPlainReply && provider === 'codex') && 'missing_orchestrator_prefix',
       Number.isFinite(at) && at < from && 'sent_before_gate',
       Number.isFinite(at) && at > to && 'sent_after_window',
       !here && 'other_workspace',

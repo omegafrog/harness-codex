@@ -27,13 +27,23 @@ const VAGUE_REASON = /요청(?:에|문에|서)?\s*(?:도\s*)?(?:없|언급|명�
 const DEFINED_ID = /^[ \t]*(?:[-*][ \t]+|\d+[.)][ \t]+)?(?:(?:업무 규칙|예외 시나리오|완료 조건|정상 시나리오)[ \t]*[:：][ \t]*)?((?:SC|INV|EX|AC)-\d+)\b/;
 const isDisplayTable = (table) => ['BIZ', '항목', '판정', '근거'].every((column) => table.header.includes(column));
 
+function decisionSources(lines) {
+  const start = lines.findIndex((line) => /^##[ \t]+7\. 출처 기록\s*$/.test(line));
+  if (start < 0) return new Map();
+  const end = lines.findIndex((line, index) => index > start && /^##[ \t]+/.test(line));
+  const section = lines.slice(start + 1, end < 0 ? lines.length : end).join('\n');
+  const records = parseTables(section).filter((table) => ['ID', '출처', '참조'].every((column) => table.header.includes(column))).flatMap((table) => table.rows);
+  return new Map(records.map((row) => [clean(row.ID), `${clean(row['출처'])} ${clean(row['참조'])}`.trim()]).filter(([id]) => id));
+}
+
 function bizBlocks(lines) {
   const blocks = [];
+  const sources = decisionSources(lines);
   let current = null;
   for (const line of lines) {
     const heading = BIZ_HEADING.exec(line);
     if (heading || (current && SECTION_END.test(line))) {
-      current = heading ? { id: heading[1], fields: new Map(), defined: new Set(), definitions: new Map(), field: null } : null;
+      current = heading ? { id: heading[1], fields: new Map(), defined: new Set(), definitions: new Map(), sources, field: null } : null;
       if (current) blocks.push(current);
       continue;
     }
@@ -49,6 +59,7 @@ function bizBlocks(lines) {
 
 // The judgement shared by the 6.5 and 6.6 rows: 확정 cites ids defined in that BIZ; 해당 없음 gives a business reason. Returns the problem or null.
 const AGENT_SOURCE = '요청 해석(에이전트 제안)';
+const sourceOf = (block, id) => `${block?.sources?.get(id) ?? ''} ${block?.definitions.get(id) ?? ''}`;
 // 확정 cites ids defined in that BIZ; 기본값 (when allowed) cites ids whose definition is sourced as the agent's own interpretation;
 // 해당 없음 gives a business reason. Returns the problem or null.
 function judgmentProblem(block, judgment, basis, prefix, { allowDefault = false } = {}) {
@@ -57,7 +68,7 @@ function judgmentProblem(block, judgment, basis, prefix, { allowDefault = false 
     const missing = cited.filter((id) => !block.defined.has(id));
     if (!cited.length) return `${prefix}판정 ${judgment} needs the ids (INV, EX, AC, SC) of this BIZ that settle it in 근거.`;
     if (missing.length) return `${prefix}근거 cites ${missing.join(', ')}, which ${missing.length > 1 ? 'are' : 'is'} not defined in ${block.id}.`;
-    if (judgment === '기본값' && !cited.some((id) => (block.definitions.get(id) ?? '').includes(AGENT_SOURCE))) return `${prefix}판정 기본값 needs a cited id whose definition is sourced \`${AGENT_SOURCE}\`; a decision the user made is 확정.`;
+    if (judgment === '기본값' && !cited.some((id) => sourceOf(block, id).includes(AGENT_SOURCE))) return `${prefix}판정 기본값 needs a cited id recorded as \`${AGENT_SOURCE}\` in section 7 출처 기록; a decision the user made is 확정.`;
     return null;
   }
   if (judgment === '해당 없음') {
@@ -411,7 +422,7 @@ async function chainAnswers(root, ids) {
   return found;
 }
 const userSourced = (block, id, { answers, reviewedAt, revision }) => {
-  const line = block?.definitions.get(id) ?? '';
+  const line = sourceOf(block, id);
   if (revision && /사용자 수정 지시/.test(line)) return true;
   return (line.match(QUESTION_ID) ?? []).some((question) => answers.has(question) && !(answers.get(question) < reviewedAt));
 };
@@ -464,7 +475,21 @@ export async function gapReviewEvidenceErrors({ root, executionId, requirements 
     if (written.filter((row) => clean(row['영향'] ?? 'high') !== 'low').length < high) errors.push(...error(`${GAP_REVIEWER} judged ${high} gap(s) of ${biz || '(no BIZ)'} high impact but 6.6 lists fewer rows with 영향 high. The reviewer's impact stands; ask the user (a recorded answer of this chain settles it).`));
   }
   const reviewed = review.rows.map((row) => ({ biz: clean(row?.biz), axis: axisOf(row?.axis ?? row?.item), target: normalizeResource(row?.target ?? row?.resource), answered: row?.answered, impact: impactOf(row) }));
-  // A row the reviewer judged unanswered must now be settled by this chain's own answer, by 해당 없음, or (low only) by 기본값; a row it never saw is treated as high.
+  const reviewKey = ({ biz, axis, target }) => JSON.stringify([clean(biz), axisOf(axis), normalizeResource(target)]);
+  const expectedReviewKeys = new Set(shown.map((row) => reviewKey(row)));
+  const reviewCounts = new Map();
+  for (const entry of reviewed) reviewCounts.set(reviewKey(entry), (reviewCounts.get(reviewKey(entry)) ?? 0) + 1);
+  // Completion requires exact one-to-one coverage of the final 6.5 rows. Same-axis findings for another target do not count.
+  for (const row of shown) {
+    const key = reviewKey(row), count = reviewCounts.get(key) ?? 0;
+    if (count === 0) errors.push(...error(`6.5 ${row.biz} "${row.axis}" (대상 ${row.target}) has no matching row in the latest ${GAP_REVIEWER} result. Review the final 6.5 row; matching requires the same BIZ, axis and target.`));
+    else if (count > 1) errors.push(...error(`6.5 ${row.biz} "${row.axis}" (대상 ${row.target}) appears ${count} times in the latest ${GAP_REVIEWER} result. Return exactly one review row for each final 6.5 row.`));
+  }
+  for (const entry of reviewed) {
+    const key = reviewKey(entry);
+    if (!expectedReviewKeys.has(key)) errors.push(...error(`The latest ${GAP_REVIEWER} result contains an extra 6.5 review row for ${entry.biz || '(no BIZ)'} "${entry.axis || '(no axis)'}" (대상 ${entry.target || '(none)'}), which does not match any final 6.5 row. Rerun the review against the current table.`));
+  }
+  // A row the reviewer judged unanswered must now be settled by this chain's own answer, by 해당 없음, or (low only) by 기본값.
   const settled = (row, impact) => {
     if (row.judgment === '해당 없음') return true;
     if (row.judgment === '기본값') return impact === 'low';
@@ -472,10 +497,9 @@ export async function gapReviewEvidenceErrors({ root, executionId, requirements 
     return row.judgment === '확정' && (row.basis.match(NO_ID) ?? []).some((id) => userSourced(block, id, { answers, reviewedAt, revision }));
   };
   for (const row of shown) {
-    const target = normalizeResource(row.target);
-    const sameAxis = reviewed.filter((entry) => entry.biz === row.biz && entry.axis === row.axis);
-    if (!sameAxis.length) { if (!settled(row, 'high')) errors.push(...error(`6.5 ${row.biz} "${row.axis}" (대상 ${row.target}) was not among the rows the ${GAP_REVIEWER} judged and is not settled by this chain's recorded answer (an id whose definition cites it) or 해당 없음. Run the review again after the provisional 6.5 is complete.`)); continue; }
-    const unanswered = sameAxis.filter((entry) => entry.answered === false && (entry.target === target || !sameAxis.some((other) => other.target === target)));
+    const exact = reviewed.filter((entry) => reviewKey(entry) === reviewKey(row));
+    if (!exact.length) continue;
+    const unanswered = exact.filter((entry) => entry.answered === false);
     const impact = unanswered.some((entry) => entry.impact === 'high') ? 'high' : 'low';
     if (unanswered.length && !settled(row, impact)) errors.push(...error(`6.5 ${row.biz} "${row.axis}" (대상 ${row.target}): the ${GAP_REVIEWER} judged (impact ${impact}) that the cited sentence does not itself answer the axis and the row is unchanged${impact === 'high' ? '' : ' (a low one may become a 기본값 sourced 요청 해석(에이전트 제안))'}. ${impact === 'high' ? 'Ask the user (one question batch), then settle the row with an id whose definition cites the recorded question id (<execution-id>:<n> of this requirements-fix chain) of that answer or a 사용자 수정 지시 of this reopen, or 해당 없음 with a business reason.' : ''}`));
   }
@@ -515,7 +539,7 @@ export function requirementsDefaults({ root, planSetId }) {
   const blocks = bizBlocks(lines);
   const text = (block, basis) => (basis.match(NO_ID) ?? []).map((id) => (block?.definitions.get(id) ?? '').replace(/^[ \t]*(?:[-*][ \t]+)?/, '').replace(/\s*[—–-]+\s*출처:.*$/, '').trim()).filter(Boolean).join(' / ');
   // A decision whose target rule was later rewritten from a real user answer is stale text, not a default.
-  const userAnswered = (id) => blocks.some((block) => /answers\.json/.test(block.definitions.get(id) ?? ''));
+  const userAnswered = (id) => blocks.some((block) => /answers\.json|사용자 답변|사용자 수정 지시/.test(sourceOf(block, id)));
   const out = [];
   for (const row of decisionRows(requirements).filter((item) => item.judgment === '기본값')) out.push(`${row.biz} · ${row.axis}${row.target && row.target !== WHOLE ? ` (${row.target})` : ''}: ${text(blocks.find((b) => b.id === row.biz), row.basis)}`);
   const start = lines.findIndex((line) => GAP_HEADING.test(line));
@@ -525,12 +549,12 @@ export function requirementsDefaults({ root, planSetId }) {
   }
   // Hotspots of low impact decided without asking (## 5 rows sourced as the agent's interpretation).
   for (const table of parseTables(requirements).filter((item) => item.header.includes('HS') && item.header.includes('결정'))) {
-    for (const row of table.rows) if (clean(row['출처']).includes(AGENT_SOURCE) && !(clean(row['결정']).match(NO_ID) ?? []).some(userAnswered)) out.push(`${clean(row['관련 BIZ'])} · ${clean(row['질문'])}: ${clean(row['결정'])}`);
+    for (const row of table.rows) if ((clean(row['출처']).includes(AGENT_SOURCE) || sourceOf(blocks.find((block) => block.id === clean(row['관련 BIZ'])), clean(row.HS)).includes(AGENT_SOURCE)) && !(clean(row['결정']).match(NO_ID) ?? []).some(userAnswered)) out.push(`${clean(row['관련 BIZ'])} · ${clean(row['질문'])}: ${clean(row['결정'])}`);
   }
   // Subdomain table rows whose boundary or class was not asked (source 요청 해석(에이전트 제안)).
   for (const table of parseTables(requirements).filter((item) => item.header.includes('SD') && item.header.includes('상태'))) {
     for (const row of table.rows) {
-      const cells = Object.entries(row).filter(([name]) => /근거|출처/.test(name)).map(([, value]) => clean(value)).join(' ');
+      const cells = `${Object.entries(row).filter(([name]) => /근거|출처/.test(name)).map(([, value]) => clean(value)).join(' ')} ${blocks.map((block) => sourceOf(block, clean(row.SD))).join(' ')}`;
       if (cells.includes(AGENT_SOURCE)) out.push(`${clean(row.SD)} ${clean(row['이름'] ?? '')}: 분류 ${clean(row['분류'] ?? '')} (경계·분류를 묻지 않고 정함)`.replace(/\s+/g, ' '));
     }
   }

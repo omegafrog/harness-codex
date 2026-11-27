@@ -16,7 +16,8 @@ The caller gives you only:
 
 - The user's request, verbatim.
 - The full text of the `BIZ` sections and the common sections of `requirements.md` as drafted, including the provisional `### 6.5 업무 결정 점검` table. The text is copied verbatim from the document: every cited `INV`, `EX`, `AC` and `SC` sentence is in full. Only the `출처:` tails may be dropped; a sentence is never shortened or paraphrased.
-- In verify mode also each question with the chosen answer text and its effect, and the sources are kept in the document text.
+- The `## 7. 출처 기록` rows for IDs referenced in those sections, copied verbatim. These rows establish whether a decision came from a user answer, an agent default, a revision, or external evidence.
+- In verify mode also each question with the chosen answer text and its effect, plus the relevant section 7 source records.
 
 Read this GUIDE and nothing else. Do not read, search or run anything in the repository. You do not see how the author reasoned and you must not guess it.
 
@@ -50,7 +51,7 @@ Only when the caller names `mode: verify`. Compare each chosen answer with the d
 
 ## Output
 
-Review mode: exactly one JSON object, no markdown fence and no prose. One entry in `rows` for every non-`미정` row of 6.5 (`전체` as `target` for the whole-BIZ axes):
+Review mode: exactly one JSON object, no markdown fence and no prose. In `rows`, return exactly one entry for every non-`미정` row of the current 6.5 and no other entries. The tuple `(biz, axis, target)` must match that row exactly (`전체` as `target` for the whole-BIZ axes). Do not merge rows that share a BIZ or axis but have different targets:
 
 ```json
 {

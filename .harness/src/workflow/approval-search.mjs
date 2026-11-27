@@ -3,7 +3,6 @@
 export const clip = (value, size = 120) => { const text = String(value ?? ''); return text.length > size ? `${text.slice(0, size - 1)}…` : text; };
 
 const PROBLEMS = {
-  missing_orchestrator_prefix: 'it has no leading `$orchestrator` (Codex) or `/orchestrator` (Claude Code), so it is a plain chat message and not an orchestrator request',
   sent_before_gate: 'it was sent before the gate it must follow',
   sent_after_window: 'it was sent after the allowed window',
   other_workspace: 'it was sent while the conversation worked in another directory',
@@ -35,7 +34,7 @@ export function describeReplySearch(search, { gate = 'the gate' } = {}) {
   }
 }
 
-const SHORT_PROBLEMS = { missing_orchestrator_prefix: 'has no leading `$orchestrator` or `/orchestrator`', sent_before_gate: 'predates the gate', sent_after_window: 'is outside the allowed window', other_workspace: 'was sent from another directory' };
+const SHORT_PROBLEMS = { sent_before_gate: 'predates the gate', sent_after_window: 'is outside the allowed window', other_workspace: 'was sent from another directory' };
 
 // The same finding in one short clause, for the `why` of a refusal that already carries the full description.
 export function summarizeReplySearch(search) {

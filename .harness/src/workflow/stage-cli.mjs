@@ -256,17 +256,16 @@ export function compactContext(context) {
 const PUBLISH_ARGS = "--publication-approved true --approval-answer '<the user's reply verbatim>'";
 const REQUIREMENTS_APPROVAL_ARGS = "--requirements-approved true --approval-answer '<the user's reply verbatim>'";
 const DESIGN_APPROVAL_ARGS = "--design-approved true --approval-answer '<the user's reply verbatim>'";
-const APPROVAL_REPLY_INSTRUCTION = 'When asking in chat, tell the user to send a standalone `$orchestrator <approval>` (Codex) or `/orchestrator <approval>` (Claude Code) in this worktree’s owner conversation. Pass the exact reply after the command prefix. A reply collected elsewhere (an outer controller or UI form) counts only when it is sent to that conversation the same way.';
-// The guard reads only the owner conversation's transcript, so an answer collected anywhere else has to be sent there.
-const APPROVAL_ACCEPTED_FORMS = 'Accepted: a new message in the owner conversation, sent after the gate, as `$orchestrator <reply>` (Codex; headless: `codex exec resume <session-id> \'$orchestrator <reply>\'`) or `/orchestrator <reply>` (Claude Code), or the answer to an approval form that the owner conversation itself asked. Not accepted: a plain message without the prefix, a reply collected in another conversation (an outer controller, wrapper or UI form), the orchestrator\'s own words or a bare flag. Pass the reply after the prefix verbatim.';
+const APPROVAL_REPLY_INSTRUCTION = 'Ask the user to reply naturally in this worktree’s owner conversation. Do not require `$orchestrator`, `/orchestrator`, a particular link format, or exact approval wording. Pass the user’s actual reply verbatim with the intent you inferred.';
+// The guard checks the owner transcript for an actual user message after the gate; it does not require an invocation prefix.
+const APPROVAL_ACCEPTED_FORMS = 'Accepted: a plain user message in the owner conversation after the gate, or an answer to an approval form that the owner conversation itself asked. The orchestrator classifies the meaning and passes the exact user wording. Not accepted: a reply from another conversation or workspace, the orchestrator\'s own words, or a bare approval flag.';
 const approvalRefusalWhy = (message, base, search) => {
   const tail = search ? summarizeReplySearch(search) : message.replace(/^(?:Requirements|Publication|Design) approval answer was not recorded:?\s*/, '');
   return tail ? `${base} Refused because ${tail.charAt(0).toLowerCase()}${tail.slice(1)}${/[.!?]$/.test(tail) ? '' : '.'} The full search is in \`error\`.` : base;
 };
 // The nearest candidate decides what the user has to do next; the refusal never asks for a different decision.
 const approvalRefusalAction = (search) => {
-  const near = search?.candidates?.find((candidate) => candidate.problems.length === 1 && candidate.problems[0] === 'missing_orchestrator_prefix') ?? search?.candidates?.at(-1);
-  if (near?.problems?.length === 1 && near.problems[0] === 'missing_orchestrator_prefix') return `The user's exact words are already in the owner transcript as a plain message, so do not ask a new question: ask them to send the same text as \`$orchestrator ${search.wanted}\` (Claude Code: \`/orchestrator ${search.wanted}\`) in the owner conversation${search.session_id ? ` (${search.provider} session ${search.session_id})` : ''}.`;
+  const near = search?.candidates?.at(-1);
   if (near?.problems?.includes('sent_before_gate')) return 'The matching message predates the gate, so it is not approval of the current result: show the current result and ask again.';
   if (near?.problems?.includes('other_workspace')) return 'The matching message was sent while the conversation worked in another directory: ask the user to send it again from this worktree.';
   if (search?.outcome === 'not_owner_session') return `Continue in the owner conversation${search.owner ? ` (${search.owner.provider} session ${search.owner.session_id})` : ''}; this conversation's transcript is not read.`;

@@ -1,12 +1,12 @@
 ---
 name: orchestrator
-description: Coordinate a Harness workflow only when the current user request starts with $orchestrator or /orchestrator. Do not invoke for unrelated requests or Harness installation and updates.
+description: Coordinate a Harness workflow when the user invokes $orchestrator or /orchestrator, and continue an active workflow when the current user message answers its question, approves its result, requests a revision, or resumes it. Do not invoke for unrelated requests or Harness installation and updates.
 main_session: true
 ---
 
 # orchestrator
 
-사용자가 Codex의 `$orchestrator` 또는 Claude Code의 `/orchestrator`로 호출하면 메인 세션에서 workflow를 조율한다. 자유 텍스트 답변·발행 승인·재개에도 같은 호출어를 붙이며, 실행기에는 호출어 뒤의 원문을 넘긴다. 사용자가 일시정지·중단을 요청했으면 재개하지 않는다.
+새 workflow는 Codex의 `$orchestrator` 또는 Claude Code의 `/orchestrator` 호출로 시작한다. 이미 활성 workflow가 사용자 답변·승인·수정·재개를 기다리면 호출어 없이 들어온 자연어도 현재 대화와 workflow 상태를 기준으로 해석해 이어간다. 사용자의 실제 문구를 실행기에 그대로 넘기며, 고정 명령어·링크 형식·정확한 문구를 요구하지 않는다. 사용자가 일시정지·중단을 요청했으면 재개하지 않는다.
 
 ## 현재 요청에 맞는 경로
 
