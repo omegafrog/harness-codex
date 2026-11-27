@@ -1,0 +1,7 @@
+interface:
+  display_name: "Workflow 단계 되돌리기"
+  short_description: "요청한 단계로 안전하게 돌아가고 영향받는 후속 단계를 다시 승인받습니다."
+  default_prompt: "Read the active workflow state, identify the exact requested stage, and use only the runner's supported revision or reopen route. Preserve artifacts and stop on any refusal."
+
+policy:
+  allow_implicit_invocation: false

@@ -12,6 +12,8 @@ main_session: true
 
 신규 요청이나 재개 시 현재 디렉터리에서 `node .harness/scripts/harness-context.mjs --entry`를 실행한다. 맞는 `next`가 반환되면 우선한다. 구성·재개에 필요한 세션이 `session_verified: false`이면 대화를 확인할 수 없다고 알리고 멈춘다. 같은 실행에서 새 답이나 결과를 받으면 기존 실행의 반환으로 이어간다.
 
+사용자가 활성 workflow의 특정 단계를 다시 열거나 수정하라고 하면 [workflow-rewind](../workflow-rewind/SKILL.md)를 따른다. 사용자 revision과 dependency block 재개(`--reopen-for`), requirements rollback(`--restart-requirements`)을 구분하고, runner가 지원하지 않는 단계를 임의 재실행하지 않는다.
+
 Harness 설치·업데이트·진단은 현재 checkout의 [Harness Maintenance](../../../.harness/internal-skills/harness-maintenance/GUIDE.md)를 따르며 workflow를 만들지 않는다. 새 workflow는 진입 명령이 안내한 `setup` 또는 [workflow-compose](../../../.harness/internal-skills/workflow-compose/GUIDE.md)로 시작한다. 제품 경로 검증·독립 E2E·legacy 구현 같은 직접 요청일 때만 `references/capability-routing.md`를 연다.
 
 primary checkout에서 등록된 linked worktree가 있으면 먼저 기존 worktree에서 계속할지 새 workflow를 시작할지 묻는다. 기존을 선택하면 `linked_worktrees`의 절대 경로·branch·요청·상태를 보여 주고, 고른 경로로 이동해 orchestrator를 다시 호출하도록 안내한 뒤 멈춘다. 새 workflow를 선택하면 `primary_workspace_root`에서 compose를 실행한다. 문구 일치를 요구하지 말고 답의 뜻으로 선택을 판단한다.
