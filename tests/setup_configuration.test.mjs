@@ -8,6 +8,15 @@ import { fileURLToPath } from 'node:url';
 import { updateProject } from '../.harness/src/installer/update.mjs';
 import { protectLocalInstallArtifacts } from '../.harness/src/installer/local-exclude.mjs';
 import { runDoctor } from '../.harness/src/doctor/doctor.mjs';
+import { recordResolvedSetupAnswer } from '../.harness/src/workflow/setup-answers.mjs';
+
+test('setup records a clear natural-language answer by its offered value', () => {
+  const question = { id: '기존 설정을 사용하거나 다시 설정할까요?#1', options: [{ label: '기존 설정 사용', value: 'reuse' }, { label: '새로 설정', value: 'reconfigure' }] };
+  const document = { setup_id: 'setup-test', status: 'needs_input', answers: {}, batch: { id: 'batch-test', call_id: 'accepted-call', questions: [question], received: {} } };
+  const result = recordResolvedSetupAnswer(document, JSON.stringify({ question_id: question.id, value: 'reconfigure' }));
+  assert.equal(result.can_continue, true);
+  assert.equal(document.answers[question.id], 'reconfigure');
+});
 
 test('installed setup reuses current configuration and ignores old answer hashes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-setup-reuse-'));
@@ -625,7 +634,7 @@ test('setup finds its conversation and accepts a direct answer to one displayed 
     const message = (text) => '\n' + JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
     await appendFile(rollout, message('설명해 주세요'));
     assert.equal(call().can_continue, false);
-    await appendFile(rollout, message('새로 설정'));
+    await appendFile(rollout, message('새로 설정하겠다는 뜻으로 이해했습니다.'));
     assert.equal(call().can_continue, true);
     assert.equal(JSON.parse(await readFile(answers, 'utf8')).answers[batch.questions[0].id], 'reconfigure');
     assert.equal(command().status, 'needs_input');

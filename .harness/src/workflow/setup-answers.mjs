@@ -64,7 +64,7 @@ export function recordClaudeSetupReplies(document, input) {
   for (const reply of replies) {
     const question = batch.questions.find(({ id }) => id === reply?.question_id);
     if (!question || typeof reply.answer !== 'string') throw new Error('Reply does not match a question of the current setup batch');
-    const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
+    const value = question.options ? question.options.find(({ label, value }) => label === reply.answer || value === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
     if (value === undefined || value === '') throw new Error(`Answer is not an offered label for ${question.id}; address the user message before continuing setup`);
     if (Object.hasOwn(received, question.id) && received[question.id] !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
     received[question.id] = value;
@@ -91,7 +91,7 @@ export function recordSetupReplies(document, input) {
     if (identity[1] !== batch.call_id) { ignored += 1; continue; }
     const item = batch.ui_items[identity[2]], question = batch.questions[identity[2]];
     if (!item || !question || typeof reply.answer !== 'string') throw new Error('Reply does not match the displayed setup question');
-    const value = question.options ? question.options.find(({ label }) => label === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
+    const value = question.options ? question.options.find(({ label, value }) => label === reply.answer || value === reply.answer)?.value : question.current && reply.answer === `현재 값 사용: ${question.current}` ? question.current : reply.answer;
     if (value === undefined) throw new Error(`Answer is not an offered label for ${question.id}; address the user message before continuing setup`);
     if (Object.hasOwn(received, question.id) && received[question.id] !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
     received[question.id] = value;
@@ -99,6 +99,24 @@ export function recordSetupReplies(document, input) {
   batch.received = received;
   Object.assign(document.answers, received);
   return { ...setupAnswerStatus(document), ignored };
+}
+
+// The assistant may map a clear natural-language reply to an offered value when the user answered in chat
+// instead of selecting a form option. The CLI still validates the question and value against the active batch.
+export function recordResolvedSetupAnswer(document, input) {
+  if (['cancelled', 'configured'].includes(document.status)) return { ...setupAnswerStatus(document), ignored: true };
+  const batch = document.batch;
+  if (!batch?.call_id) throw new Error('Bind the accepted UI call before resolving a chat answer');
+  const reply = JSON.parse(input);
+  const question = batch.questions.find(({ id }) => id === reply?.question_id);
+  if (!question || typeof reply.value !== 'string') throw new Error('Resolved answer does not match a question of the current setup batch');
+  const option = question.options?.find(({ value }) => value === reply.value);
+  if (!option) throw new Error(`Resolved value is not offered for ${question.id}`);
+  const previous = batch.received[question.id];
+  if (previous !== undefined && previous !== option.value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
+  batch.received[question.id] = option.value;
+  document.answers[question.id] = option.value;
+  return setupAnswerStatus(document);
 }
 
 export function receiveSetupTranscript(document, transcript, root) {
@@ -114,7 +132,12 @@ export function receiveSetupTranscript(document, transcript, root) {
       if (/^<send_user_message_question_reply>/.test(item.text || '')) recordSetupReplies(document, item.text);
       else if (document.batch.questions.length === 1) {
         const question = document.batch.questions[0];
-        const option = question.options?.find(({ label }) => label === item.text.trim());
+        const answer = item.text.trim().normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+        const matches = question.options?.filter(({ label }) => {
+          const choice = label.trim().normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+          return answer === choice || (choice.length >= 2 && answer.includes(choice));
+        }) || [];
+        const option = matches.length === 1 ? matches[0] : null;
         if (option) {
           const previous = document.batch.received[question.id];
           if (previous !== undefined && previous !== option.value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
